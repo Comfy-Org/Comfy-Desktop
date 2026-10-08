@@ -96,7 +96,7 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.assertEqual(git(self.repo, "show", "%s:main.py" % backup), "user edit")
         files = git(self.repo, "ls-tree", "-r", "--name-only", backup).splitlines()
         self.assertNotIn("app/db.py", files)
-        self.assertNotIn("outputs/a.png", files)
+        self.assertIn("outputs/a.png", files)
         self.assertEqual(read(self.repo, "main.py"), "v2\n")
 
     def test_backup_branch_resolves_an_unfinished_merge(self):
@@ -128,12 +128,13 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         backup = self.backup_branch(self.update())
         self.assertEqual(git(self.repo, "show", "%s:link.py" % backup), "user edit")
 
-    def test_known_limitation_untracked_file_at_a_newly_tracked_path_is_overwritten(self):
+    def test_untracked_file_at_a_newly_tracked_path_is_only_in_the_backup(self):
         # The forced checkout replaces an untracked file at a path the target
-        # commit starts tracking. Flip this if that's ever fixed.
+        # commit starts tracking; the backup branch keeps the user's copy.
         write(self.repo, {"collide.txt": "user file\n"})
-        self.update()
+        backup = self.backup_branch(self.update())
         self.assertEqual(read(self.repo, "collide.txt"), "from v2\n")
+        self.assertEqual(git(self.repo, "show", "%s:collide.txt" % backup), "user file")
 
 
 if __name__ == "__main__":
