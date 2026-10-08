@@ -48,6 +48,11 @@ const FORCE_STOP_TIMEOUT_MS = 5_000
  * The ceiling is generous rather than tight because uv streams nothing while a
  * wheel downloads, so a slow transfer is indistinguishable from a stall. A link
  * too slow to finish inside it never gets the agent from this path.
+ *
+ * With a version override, the override's listing and install share its first
+ * `OVERRIDE_TIMEOUT_MS` and core's own file gets the rest, at least
+ * `MIN_FALLBACK_TIMEOUT_MS`. A uv that ignores the stop adds the kill grace and
+ * force-stop to each run.
  */
 const INSTALL_TIMEOUT_MS = 120_000
 
@@ -354,7 +359,15 @@ export async function installAgentRequirements(
       true
     )
   const startedAt = Date.now()
-  const decision = await tryOverride(plan, override, overrideState, runOverride, sendOutput, signal)
+  const decision = await tryOverride(
+    plan,
+    override,
+    overrideState,
+    runOverride,
+    sendOutput,
+    signal,
+    startedAt
+  )
   if (signal?.aborted || decision?.decision === 'applied') return decision
   // A failed override left the row on its terminal status; the fallback is a fresh install.
   if (decision) onStatus?.({ kind: 'installing' })
@@ -393,7 +406,8 @@ async function tryOverride(
   state: AgentOverrideState | null,
   run: BoundedRun,
   sendOutput: (text: string) => void,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  startedAt: number
 ): Promise<OverrideDecision | undefined> {
   const parsed = parseAgentRequirementsOverride(raw)
   if (parsed.kind === 'none') return undefined
@@ -424,7 +438,8 @@ async function tryOverride(
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
-    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, OVERRIDE_TIMEOUT_MS, [
+    const budget = Math.max(0, OVERRIDE_TIMEOUT_MS - (Date.now() - startedAt))
+    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, budget, [
       '--constraint',
       OVERRIDE_CONSTRAINTS
     ])

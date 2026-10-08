@@ -1025,6 +1025,30 @@ describe('installAgentRequirements with a version override', () => {
       expect(output).toContain('exceeded 30s; starting ComfyUI without it')
     })
 
+    it("counts a slow package listing against the override's 90 s", async () => {
+      const startedAt = Date.now()
+      hangUntilAborted(startedAt)
+      mockUvPip.mockImplementation(() => {
+        waiting++
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            waiting--
+            resolve({ code: 0, output: INSTALLED })
+          }, 25_000)
+        )
+      })
+
+      await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
+
+      expect(
+        calls.map((c) => [c.constraints !== null, c.timeoutAt]),
+        'the override stops at 90 s from the start, not 25 s + 90 s'
+      ).toEqual([
+        [true, 90_000],
+        [false, 120_000]
+      ])
+    })
+
     it('gives up on a package listing that never answers, and refuses', async () => {
       const startedAt = Date.now()
       hangUntilAborted(startedAt)
