@@ -140,6 +140,49 @@ vi.mock('../shared', async (importOriginal) => {
   }
 })
 
+// The location deadline, made long so real path I/O never races it under load; the
+// hang test shortens it.
+const locationDeadline = vi.hoisted(() => ({
+  ms: 60_000,
+  fails: false,
+  passedByLaunch: undefined as number | undefined,
+  calls: 0
+}))
+vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
+  const orig = await importOriginal<typeof DbLocationModule>()
+  return {
+    ...orig,
+    boundedDbLocation: (
+      compute: () => Promise<DbLocationModule.DbLocationProps>,
+      deadlineMs?: number
+    ) => {
+      locationDeadline.calls++
+      locationDeadline.passedByLaunch = deadlineMs
+      return orig.boundedDbLocation(
+        locationDeadline.fails ? () => Promise.reject(new Error('lookup failed')) : compute,
+        locationDeadline.ms
+      )
+    }
+  }
+})
+
+// Lets a test make one known folder unavailable mid-launch.
+const legacyBase = vi.hoisted(() => ({ throws: false, installDirThrows: false }))
+vi.mock('../../paths', async (importOriginal) => {
+  const orig = await importOriginal<typeof PathsModule>()
+  return {
+    ...orig,
+    legacyDesktopDefaultBase: () => {
+      if (legacyBase.throws) throw new Error('documents folder unavailable')
+      return orig.legacyDesktopDefaultBase()
+    },
+    defaultInstallDir: () => {
+      if (legacyBase.installDirThrows) throw new Error('install location unavailable')
+      return orig.defaultInstallDir()
+    }
+  }
+})
+
 /** The ownership record module, answered from here. Never the real one: records would land in
  *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
  *  live process at one of those pids to be an orphan. */
@@ -244,6 +287,8 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
+import { _resetForTest, hashPath } from '../../dbLocationTelemetry'
+import { adoptedPinArgs } from '../../comfyDbLock'
 import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
@@ -263,6 +308,8 @@ import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
+import type * as PathsModule from '../../paths'
+import type * as DbLocationModule from '../../dbLocationTelemetry'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1242,6 +1289,231 @@ describe('core beta report placement', () => {
     expect(applied?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
+  })
+
+  describe('database location on boot_started', () => {
+    const userDir = path.join(os.tmpdir(), 'db-location-user')
+
+    beforeEach(() => {
+      _resetForTest()
+      telemetry.setConsentState('granted')
+      launchHarness.schemaNames = ['listen', 'user-directory', 'database-url']
+      launchHarness.waitForPort = async () => {}
+    })
+
+    afterEach(() => {
+      telemetry.setConsentState('undecided')
+    })
+
+    /** An expected hash, asserted real first: a dead `hashPath` must not make null === null pass. */
+    const hashed = async (p: string): Promise<string> => {
+      const h = await hashPath(p)
+      expect(h, `a hash for ${p}`).toMatch(/^[0-9a-f]{16}$/)
+      return h!
+    }
+
+    /** No sent value may carry a folder name the user chose. */
+    const expectNoNames = (props: Record<string, unknown> | undefined, names: string[]) => {
+      for (const value of Object.values(props ?? {})) {
+        for (const name of names) {
+          if (typeof value === 'string') expect(value).not.toContain(name)
+        }
+      }
+    }
+
+    const launchWith = async (
+      id: string,
+      extraArgs: string[] = [],
+      inst: Partial<InstallationRecord> = {}
+    ) => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', ...extraArgs],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48234
+      }
+      const ctx = ctxFor(id)
+      ctx.inst = { ...ctx.inst, ...inst } as InstallationRecord
+      await handleLaunch(ctx)
+      return events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
+    }
+
+    it('reports it as hashes and fixed labels only', async () => {
+      const props = await launchWith('harness-db-location')
+
+      const comfy = path.join(installDir, 'ComfyUI')
+      expect(props).toMatchObject({
+        db_path_hash: await hashed(path.join(comfy, 'user', 'comfyui.db')),
+        user_dir_hash: await hashed(path.join(comfy, 'user')),
+        base_dir_hash: await hashed(comfy),
+        db_path_rel: '<this-install>/ComfyUI/user/comfyui.db',
+        user_dir_rel: '<this-install>/ComfyUI/user',
+        base_dir_rel: '<this-install>/ComfyUI',
+        db_url_source: 'install_local',
+        db_location_status: 'ok'
+      })
+      expectNoNames(props, [path.basename(installDir)])
+      expect(
+        locationDeadline.passedByLaunch,
+        'the launch uses the default deadline'
+      ).toBeUndefined()
+    })
+
+    it("reports Desktop's own pins on an adopted install as adopted_legacy", async () => {
+      const legacy = path.join(installDir, 'legacy base')
+      launchHarness.schemaNames = ['listen', 'base-directory', 'user-directory', 'database-url']
+      const ctx = ctxFor('harness-db-location-adopted')
+      ctx.inst = { ...ctx.inst, adopted: true, adoptedBaseDir: legacy } as InstallationRecord
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...adoptedPinArgs(legacy, true)],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48234
+      }
+      await handleLaunch(ctx)
+      const props = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
+
+      expect(props).toMatchObject({
+        db_path_hash: await hashed(path.join(legacy, 'user', 'comfyui.db')),
+        db_path_rel: '<legacy-root>/user/comfyui.db',
+        base_dir_rel: '<legacy-root>',
+        db_url_source: 'adopted_legacy'
+      })
+    })
+
+    it('sends no database hash when the core args could not be discovered', async () => {
+      launchHarness.schemaThrows = true
+      const props = await launchWith('harness-db-location-undiscovered').finally(() => {
+        launchHarness.schemaThrows = false
+      })
+
+      expect(props?.['db_path_hash']).toBeNull()
+      expect(props?.['base_dir_hash']).toBe(await hashed(path.join(installDir, 'ComfyUI')))
+    })
+
+    it('sends no database hash for a core without a database', async () => {
+      launchHarness.schemaNames = ['listen']
+      const props = await launchWith('harness-db-location-nodb')
+
+      expect(props?.['db_path_hash']).toBeNull()
+      expect(props?.['base_dir_hash']).toBe(await hashed(path.join(installDir, 'ComfyUI')))
+    })
+
+    it('names a user directory in another install by fixed names only', async () => {
+      const previous = settingsModule.get('installDir')
+      settingsModule.set('installDir', path.dirname(installDir))
+      const sibling = path.join(path.dirname(installDir), `Ada Secret ${path.basename(installDir)}`)
+      const props = await launchWith('harness-db-location-sibling', [
+        '--user-directory',
+        path.join(sibling, 'ComfyUI', 'user')
+      ]).finally(() => settingsModule.set('installDir', previous))
+
+      expect(props).toMatchObject({
+        user_dir_hash: await hashed(path.join(sibling, 'ComfyUI', 'user')),
+        user_dir_rel: '<install-root>/<install>/ComfyUI/user',
+        base_dir_rel: '<this-install>/ComfyUI',
+        db_url_source: 'user_override'
+      })
+      expectNoNames(props, ['Ada Secret', path.basename(installDir)])
+    })
+
+    it('sends outside_default, never the name, for a user-named folder inside the install', async () => {
+      const named = path.join(installDir, 'Ada Secret', 'user')
+      const props = await launchWith('harness-db-location-named', ['--user-directory', named])
+
+      expect(props?.['user_dir_rel']).toBe('outside_default')
+      expect(props?.['user_dir_hash']).toBe(await hashed(named))
+      expectNoNames(props, ['Ada Secret'])
+    })
+
+    it("reads the core's default from its record only while the record matches the checkout", async () => {
+      // The harness record sits exactly on v0.3.81: the fixed `<ComfyUI>/user` default.
+      const fixedDefault = await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
+      const current = await launchWith('harness-db-location-current', ['--user-directory', userDir])
+      expect(current?.['db_path_hash']).toBe(fixedDefault)
+      expect(current?.['db_url_source']).toBe('user_override')
+
+      events = []
+      const head = gitInitComfyUI() // HEAD now contradicts the recorded commit
+      const stale = await launchWith('harness-db-location-stale', ['--user-directory', userDir])
+      expect(stale?.['db_path_hash']).toBeNull()
+      expect(stale?.['user_dir_hash']).toBe(await hashed(userDir))
+
+      events = []
+      const record = ctxFor('x').inst.comfyVersion as unknown as Record<string, unknown>
+      const matching = await launchWith('harness-db-location-head', ['--user-directory', userDir], {
+        comfyVersion: { ...record, commit: head }
+      } as Partial<InstallationRecord>)
+      expect(matching?.['db_path_hash'], 'a record matching the real HEAD is trusted').toBe(
+        fixedDefault
+      )
+    })
+
+    it.each(['throws', 'installDirThrows'] as const)(
+      'keeps every other field when one known folder cannot be found (%s)',
+      async (which) => {
+        legacyBase[which] = true
+
+        const props = await launchWith(`harness-db-location-no-root-${which}`).finally(() => {
+          legacyBase[which] = false
+        })
+
+        expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+        expect(props).toMatchObject({
+          db_path_hash: await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')),
+          base_dir_rel: '<this-install>/ComfyUI',
+          db_location_status: 'ok'
+        })
+      }
+    )
+
+    it('still launches, reporting an error, when the location lookup fails', async () => {
+      locationDeadline.fails = true
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const props = await launchWith('harness-db-location-fails').finally(() => {
+        locationDeadline.fails = false
+      })
+
+      expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+      expect(props).toEqual(
+        expect.objectContaining({ db_location_status: 'error', db_url_source: 'install_local' })
+      )
+      expect(props).not.toHaveProperty('db_path_hash')
+    })
+
+    it('still launches, reporting a timeout, when resolving the location hangs', async () => {
+      // A stalled network mount: path resolution never answers.
+      vi.spyOn(fs.promises, 'realpath').mockImplementation(() => new Promise(() => {}))
+      locationDeadline.ms = 10
+
+      const props = await launchWith('harness-db-location-hangs').finally(() => {
+        locationDeadline.ms = 60_000
+      })
+
+      expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+      expect(props).toEqual(
+        expect.objectContaining({ db_location_status: 'timeout', db_url_source: 'install_local' })
+      )
+      expect(props, 'only what needs no disk access').not.toHaveProperty('db_path_hash')
+    })
+
+    it.each(['undecided', 'denied'] as const)(
+      'computes nothing while consent is %s',
+      async (state) => {
+        telemetry.setConsentState(state)
+        locationDeadline.calls = 0
+        const props = await launchWith(`harness-db-location-${state}`)
+
+        expect(locationDeadline.calls, 'the location is never looked up').toBe(0)
+
+        expect(props).not.toHaveProperty('db_url_source')
+        expect(props).not.toHaveProperty('db_path_hash')
+        expect(props).not.toHaveProperty('db_path_rel')
+      }
+    )
   })
 
   it('launches a legacy record whose version carries no commit', async () => {

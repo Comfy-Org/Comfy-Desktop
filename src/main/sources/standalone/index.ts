@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fetchJSON } from '../../lib/fetch'
+import { adoptedPinArgs, hasFlag } from '../../lib/comfyDbLock'
 import { parseArgs, extractPort, formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
@@ -274,19 +275,8 @@ export const standalone: SourcePlugin = {
     // explicitly. Skipped when the user already set their own
     // `--database-url` in launchArgs.
     const adoptedBaseDir = adopted ? (installation.adoptedBaseDir as string | undefined) : undefined
-    const userSetDatabaseUrl = parsed.some(
-      (a) => a === '--database-url' || a.startsWith('--database-url=')
-    )
     const adoptArgs = adoptedBaseDir
-      ? [
-          '--base-directory',
-          adoptedBaseDir,
-          '--user-directory',
-          path.join(adoptedBaseDir, 'user'),
-          ...(userSetDatabaseUrl
-            ? []
-            : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`])
-        ]
+      ? adoptedPinArgs(adoptedBaseDir, !hasFlag(parsed, '--database-url'))
       : []
     // Desktop-managed feature flags (e.g. show_signin_button) are injected in
     // handleLaunch after we discover the running ComfyUI's feature-flag registry,

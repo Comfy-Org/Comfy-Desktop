@@ -101,6 +101,15 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import {
+  boundedDbLocation,
+  dbLocationProps,
+  dbUrlSource,
+  defaultDbLayout,
+  optionalRoot,
+  type DbLocationProps
+} from '../../dbLocationTelemetry'
+import { defaultInstallDir, legacyDesktopDefaultBase } from '../../paths'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -115,7 +124,7 @@ import {
 } from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
-import { coreSemver, formatComfyVersion } from '../../version'
+import { coreRecordCurrent, coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
@@ -744,6 +753,10 @@ async function runLaunch(
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   let coreCommit: string | null = null
+  // What the location telemetry may assume about the core: whether its version record matches
+  // the live checkout, and whether it is known to have a database at all.
+  let coreRecordIsCurrent = false
+  let coreHasDatabase = false
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
   const coreVersionLabel = (): string | null =>
@@ -1135,6 +1148,7 @@ async function runLaunch(
       // record when HEAD is unreadable, which is the very disagreement being checked for.
       const checkout = resolveCoreCheckout(comfyuiDir)
       coreCommit = launchedCoreCommit(inst, checkout)
+      coreRecordIsCurrent = coreRecordCurrent(inst, checkout)
       // Take ownership of the array before anything downstream mutates it in place:
       // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
       // no `built.args` to replace it, so those pushes would otherwise reach the array the
@@ -1148,6 +1162,7 @@ async function runLaunch(
           installationId,
           revision
         )
+        coreHasDatabase = schema.knownFlags.has('database-url')
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
@@ -1804,6 +1819,38 @@ async function runLaunch(
     }
   }
 
+  // Where this launch's database, user and base directories resolve to, for `boot_started`.
+  // Computed from the final spawn args; retries don't change them. Only under granted consent:
+  // `capture` drops the event otherwise, so no path is resolved, and no launch waits, for
+  // nothing. Started here and awaited at the first attempt, bounded by a deadline: all of its
+  // I/O is asynchronous, so it delays a launch by at most the deadline and never fails one.
+  const adoptedBaseDir =
+    inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
+  const locationInput = {
+    cwd: launchCmd.cwd,
+    args: launchCmd.args,
+    layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
+    adoptedBaseDir
+  }
+  const consented = telemetry.getConsentState() === 'granted'
+  // Needs no I/O, so it is sent even when the location itself timed out.
+  const dbSource: Partial<DbLocationProps> = consented
+    ? { db_url_source: dbUrlSource(locationInput) }
+    : {}
+  const dbLocationPending: Promise<Partial<DbLocationProps>> = consented
+    ? boundedDbLocation(() =>
+        dbLocationProps({
+          ...locationInput,
+          hasDatabase: coreHasDatabase,
+          roots: {
+            installRoots: [optionalRoot(defaultInstallDir)],
+            installDirs: [inst.installPath],
+            legacyRoots: [optionalRoot(legacyDesktopDefaultBase), adoptedBaseDir]
+          }
+        })
+      ).then((location) => ({ ...dbSource, ...location }))
+    : Promise.resolve({})
+
   const PORT_RETRY_MAX = 3
   const REBOOT_RETRY_MAX = 5
   let portRetries = 0
@@ -1824,6 +1871,7 @@ async function runLaunch(
     // no process yet - so tests can exercise restart-during-boot without
     // racing real boot speed. No-op in production and when not armed.
     await waitLaunchSpawnHold(abort.signal)
+    const dbLocation = await dbLocationPending
     // A cancel that landed during the awaits since the marker was set (log
     // stream open, tracker arming, the E2E hold) must never spawn. Returning
     // the cancelled shape routes through the standard failure cleanup below
@@ -1859,7 +1907,8 @@ async function runLaunch(
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
       port: launchCmd.port ?? null,
-      port_bumped_from: portBumpedFrom
+      port_bumped_from: portBumpedFrom,
+      ...dbLocation
     })
     // Begin (re)buffering per-phase timings for THIS attempt. On a port /
     // reboot retry this resets so the buffer reflects the attempt that
