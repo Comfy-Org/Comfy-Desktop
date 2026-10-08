@@ -174,11 +174,17 @@ def main():
         # index: the forced checkout below removes anything staged that the
         # new commit doesn't track, which would delete a user's files kept
         # inside the checkout (e.g. an output folder). Unstaged, they're left
-        # in place.
+        # in place. Conflicted entries (from an unfinished merge) are resolved
+        # to the working-tree version, or the backup tree can't be written.
         for path, flags in repo.status().items():
-            if flags & pygit2.GIT_STATUS_WT_DELETED:
+            if flags & pygit2.GIT_STATUS_CONFLICTED:
+                if os.path.lexists(os.path.join(repo.workdir, path)):
+                    repo.index.add(path)
+                else:
+                    del repo.index.conflicts[path]
+            elif flags & pygit2.GIT_STATUS_WT_DELETED:
                 repo.index.remove(path)
-            elif flags & pygit2.GIT_STATUS_WT_MODIFIED:
+            elif flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_WT_TYPECHANGE):
                 repo.index.add(path)
         repo.index.write()
         if repo.index.diff_to_tree(repo.head.peel().tree):
