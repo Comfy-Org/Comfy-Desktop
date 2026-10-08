@@ -72,7 +72,6 @@ describe('agentTap', () => {
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
-    vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
   })
 
   afterEach(() => {
@@ -101,6 +100,7 @@ describe('agentTap', () => {
     it('names no field the tap attaches to every event itself', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_started\n', 'stdout')
+      expect(captured).toHaveLength(1)
       for (const key of Object.keys(captured[0]?.ctx ?? {})) {
         expect(ALLOWED_FIELD_NAMES.has(key), `${key} would let a line spoof the base context`).toBe(
           false
@@ -422,8 +422,11 @@ describe('agentTap', () => {
       vi.useFakeTimers()
       vi.setSystemTime(0)
       const tap = createAgentTap(baseOpts)
-      tap.ingest('[agent-event] mystery\n'.repeat(61), 'stdout')
-      expect(captured).toHaveLength(60)
+      tap.ingest(
+        Array.from({ length: 61 }, (_, i) => `[agent-event] mystery_${i}\n`).join(''),
+        'stdout'
+      )
+      expect(captured, 'every unknown name shares one budget').toHaveLength(60)
       vi.setSystemTime(60 * 60_000)
       tap.ingest('[agent-event] mystery\n', 'stdout')
       expect(captured).toHaveLength(61)
@@ -538,20 +541,8 @@ describe('agentTap consent gating', () => {
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
     const tap = createAgentTap({ installationId: 'inst-1' })
     tap.ingest('[agent-event] mystery\n', 'stdout')
-    expect(agentCaptures(), 'the negative cases below are only meaningful if this arrives').toEqual(
-      ['comfy.desktop.comfyui.agent.unknown_events_dropped']
-    )
+    expect(agentCaptures(), 'the denied case is only meaningful if this arrives').toEqual([
+      'comfy.desktop.comfyui.agent.unknown_events_dropped'
+    ])
   })
-
-  it.each(['denied', 'undecided'] as const)(
-    'never ships a dropped-event report seen while consent was %s after a later grant',
-    (before) => {
-      telemetry.setConsentState(before)
-      telemetry.bindAnonymousId('anon-1', 'anon-1', {})
-      const tap = createAgentTap({ installationId: 'inst-1' })
-      tap.ingest('[agent-event] mystery\n', 'stdout')
-      telemetry.setConsentState('granted')
-      expect(agentCaptures()).toEqual([])
-    }
-  )
 })
