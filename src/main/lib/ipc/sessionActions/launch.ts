@@ -637,7 +637,7 @@ export function createAgentTapSafe(
     return createAgentTap(base)
   } catch (err) {
     console.error('Failed to create agent telemetry tap; continuing without it:', err)
-    return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
+    return { ingest: () => {}, beginBoot: () => {} }
   }
 }
 
@@ -1469,7 +1469,6 @@ async function runLaunch(
           execTap.flushSummary()
           hwTap.flushSummary()
           assetsTap.flushSummary()
-          agentTap.flushSummary()
         }
       },
       Date.now() - launchStartedAt,
@@ -1487,7 +1486,6 @@ async function runLaunch(
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
-      agentTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
@@ -1816,8 +1814,6 @@ async function runLaunch(
     // Drain the previous attempt's unterminated records before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
-    // The agent tap never drains a partial line; this reports its dropped-event count.
-    agentTap.flushSummary()
     agentTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
@@ -2068,7 +2064,6 @@ async function runLaunch(
     // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
     assetsTap.flushSummary()
-    agentTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
@@ -2171,7 +2166,6 @@ async function runLaunch(
         execTap.flushSummary()
         hwTap.flushSummary()
         assetsTap.flushSummary()
-        agentTap.flushSummary()
       }
     },
     bootTimeMs,
@@ -2231,7 +2225,6 @@ async function runLaunch(
         execTap.flushSummary()
         hwTap.flushSummary()
         assetsTap.flushSummary()
-        agentTap.flushSummary()
         _removeSession(sessionId)
         _clearLaunchingFailed(sessionId)
         clearBetaActivationClaim(installationId)
@@ -2382,7 +2375,6 @@ async function runLaunch(
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
-      agentTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().

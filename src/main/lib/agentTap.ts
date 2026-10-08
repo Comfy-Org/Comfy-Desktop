@@ -60,19 +60,6 @@ type AgentTapOptions = {
   coreBetaFlags?: readonly string[]
 }
 
-function baseContextOf(opts: AgentTapOptions) {
-  return {
-    installation_id: opts.installationId,
-    variant: opts.variant ?? null,
-    release: opts.release ?? null,
-    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
-  }
-}
-
-const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set(
-  Object.keys(baseContextOf({ installationId: '' }))
-)
-
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
 function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
@@ -92,13 +79,8 @@ function parseFields(tail: string): Record<string, TelemetryValue> | null {
     const separatorIndex = pair.indexOf('=')
     const key = pair.slice(0, separatorIndex)
     const rawValue = pair.slice(separatorIndex + 1)
-    // Rejected as spoofing even though the merge order already defeats it.
-    if (BASE_CONTEXT_KEYS.has(key)) return null
-    if (!ALLOWED_FIELD_NAMES.has(key)) {
-      if (Object.hasOwn(Object.prototype, key)) return null
-      // A newer core's field: omit it rather than lose the whole event.
-      continue
-    }
+    // A newer core's field: omit it rather than lose the whole event.
+    if (!ALLOWED_FIELD_NAMES.has(key)) continue
     if (Object.hasOwn(fields, key)) return null
     const value = fieldValue(key, rawValue)
     if (value === undefined) return null
@@ -149,14 +131,16 @@ const RATE_WINDOW_MS = 60 * 60_000
 export function createAgentTap(opts: AgentTapOptions): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
-  flushSummary: () => void
 } {
-  const baseContext = baseContextOf(opts)
+  const baseContext = {
+    installation_id: opts.installationId,
+    variant: opts.variant ?? null,
+    release: opts.release ?? null,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
+  }
 
   // Not reset by beginBoot, so the port-conflict relaunch loop shares one cap.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
-
-  let unknownEventsDropped = 0
 
   function withinRateCap(event: string): boolean {
     const now = Date.now()
@@ -172,20 +156,20 @@ export function createAgentTap(opts: AgentTapOptions): {
 
   function handleLine(line: string): void {
     const parsed = parseLine(line)
-    if (parsed === UNKNOWN_EVENT) {
-      // Counted, never named (untrusted), and only with consent so a later grant can't ship it.
-      if (telemetry.getConsentState() === 'granted') unknownEventsDropped++
-      return
-    }
-    if (!parsed || !withinRateCap(parsed.event)) return
+    if (!parsed) return
+    // Counted, never named: an unknown event's name is untrusted input.
+    const { event, fields } =
+      parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed
+    if (!withinRateCap(event)) return
     try {
       // Base context merged last so parsed fields can never override it.
-      telemetry.emit(`${EVENT_PREFIX}${parsed.event}`, { ...parsed.fields, ...baseContext })
+      telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })
     } catch {
       // ignore - telemetry side effect, and the next line must still parse
     }
   }
 
+  // Never asked for its unterminated tail: a line without a newline may be a write cut short.
   const lineBuffer = createStreamLineBuffer()
 
   return {
@@ -199,18 +183,6 @@ export function createAgentTap(opts: AgentTapOptions): {
     },
     beginBoot(): void {
       lineBuffer.reset()
-    },
-    // Never parses an unterminated line: a tail without a newline is a write cut short.
-    flushSummary(): void {
-      try {
-        if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
-          const count = unknownEventsDropped
-          unknownEventsDropped = 0
-          telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_EVENTS_DROPPED}`, { count, ...baseContext })
-        }
-      } catch {
-        // ignore - telemetry side effect, not user-visible
-      }
     }
   }
 }

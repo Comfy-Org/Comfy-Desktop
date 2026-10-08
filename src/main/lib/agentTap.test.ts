@@ -98,6 +98,16 @@ describe('agentTap', () => {
       }
     })
 
+    it('names no field the tap attaches to every event itself', () => {
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] agent_started\n', 'stdout')
+      for (const key of Object.keys(captured[0]?.ctx ?? {})) {
+        expect(ALLOWED_FIELD_NAMES.has(key), `${key} would let a line spoof the base context`).toBe(
+          false
+        )
+      }
+    })
+
     it('exposes exactly the agent field allowlist', () => {
       expect([...ALLOWED_FIELD_NAMES].sort()).toEqual(
         ['agent_version', 'code', 'duration_ms', 'node_version', 'reason'].sort()
@@ -273,25 +283,26 @@ describe('agentTap', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] prompt_submitted\n', 'stdout')
       tap.ingest('[agent-event] agent_secret_leak code=1\n', 'stdout')
-      expect(captured).toEqual([])
-      tap.flushSummary()
-      expect(captured).toHaveLength(1)
-      expect(captured[0]?.event).toBe('comfy.desktop.comfyui.agent.unknown_events_dropped')
+      expect(captured.map((c) => c.event)).toEqual([
+        'comfy.desktop.comfyui.agent.unknown_events_dropped',
+        'comfy.desktop.comfyui.agent.unknown_events_dropped'
+      ])
       expect(captured[0]?.ctx).toEqual({
-        count: 2,
+        count: 1,
         installation_id: 'inst-1',
         variant: 'desktop',
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-agent']
       })
-      expect(JSON.stringify(captured[0]?.ctx)).not.toContain('prompt_submitted')
-      tap.flushSummary()
-      expect(captured).toHaveLength(1)
+      expect(JSON.stringify(captured)).not.toContain('prompt_submitted')
     })
 
     it('cannot have its dropped-event counter forged by a crafted line', () => {
       ingestLine('[agent-event] unknown_events_dropped count=999')
-      expect(captured).toEqual([])
+      expect(
+        captured.map((c) => c.ctx['count']),
+        'a line naming the report is itself an unknown event'
+      ).toEqual([1])
     })
 
     it('ignores assets lines and untagged agent output', () => {
@@ -299,7 +310,6 @@ describe('agentTap', () => {
       tap.ingest('[assets-event] assets.enabled hashing_enabled=true\n', 'stdout')
       tap.ingest('agent: loaded /home/user/models/secret.safetensors\n', 'stdout')
       tap.ingest('[comfy-agent] [agent-event] agent_started\n', 'stdout')
-      tap.flushSummary()
       expect(captured).toEqual([])
     })
 
@@ -329,12 +339,22 @@ describe('agentTap', () => {
       ['an unsafe integer code', 'agent_exited code=9007199254740993'],
       ['a quoted version', 'agent_started agent_version="1.0.0"'],
       ['a duplicate field', 'agent_exited code=0 code=1'],
-      ['an uppercase key', 'agent_exited Code=1'],
-      ['a prototype key', 'agent_exited constructor=1'],
-      ['a base-context collision', 'agent_exited variant=spoofed']
+      ['an uppercase key', 'agent_exited Code=1']
     ])('rejects the whole line for %s', (_label, body) => {
       ingestLine(`[agent-event] ${body}`)
       expect(captured).toEqual([])
+    })
+
+    it('omits a base-context or prototype key and keeps the event', () => {
+      ingestLine('[agent-event] agent_exited code=1 variant=spoofed constructor=1 __proto__=x')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]?.ctx, 'only the allowlist reaches the payload').toEqual({
+        code: 1,
+        installation_id: 'inst-1',
+        variant: 'desktop',
+        release: '1.0.47-rc.1',
+        core_beta_flags: ['--enable-agent']
+      })
     })
 
     it('rejects the whole line when only one of several fields is bad', () => {
@@ -365,20 +385,12 @@ describe('agentTap', () => {
         '[agent-event] mystery_event',
         '[agent-event] unknown_events_dropped count=3',
         '[agent-event] agent_exited code=1.5',
-        '[agent-event] agent_exited installation_id=x',
         '[assets-event] assets.enabled',
         '[comfy-agent] [agent-event] agent_started',
         ''
       ]) {
         expect(parseAgentEventLine(line)).toBeNull()
       }
-    })
-
-    it('does not count an unknown event toward the tap\u2019s dropped counter', () => {
-      const tap = createAgentTap(baseOpts)
-      parseAgentEventLine('[agent-event] mystery_event')
-      tap.flushSummary()
-      expect(captured).toEqual([])
     })
   })
 
@@ -406,18 +418,15 @@ describe('agentTap', () => {
       expect(captured).toHaveLength(60)
     })
 
-    it('caps the dropped-event summary too, carrying the count to the next window', () => {
+    it('caps the dropped-event report like any other event', () => {
       vi.useFakeTimers()
       vi.setSystemTime(0)
       const tap = createAgentTap(baseOpts)
-      for (let i = 0; i < 61; i++) {
-        tap.ingest('[agent-event] mystery\n', 'stdout')
-        tap.flushSummary()
-      }
+      tap.ingest('[agent-event] mystery\n'.repeat(61), 'stdout')
       expect(captured).toHaveLength(60)
       vi.setSystemTime(60 * 60_000)
-      tap.flushSummary()
-      expect(captured.map((c) => c.ctx['count'])).toEqual([...Array(60).fill(1), 1])
+      tap.ingest('[agent-event] mystery\n', 'stdout')
+      expect(captured).toHaveLength(61)
     })
   })
 
@@ -443,20 +452,11 @@ describe('agentTap', () => {
       expect(captured[0]?.ctx['code']).toBe(3)
     })
 
-    it('never forwards an unterminated line on flushSummary', () => {
+    it('never forwards an unterminated line', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_exited code=0', 'stderr')
       tap.ingest('[agent-event] agent_exited code=1', 'stdout')
-      tap.flushSummary()
       expect(captured).toEqual([])
-    })
-
-    it('forwards a value split across chunks whole after a mid-line flushSummary', () => {
-      const tap = createAgentTap(baseOpts)
-      tap.ingest('[agent-event] agent_exited code=1', 'stdout')
-      tap.flushSummary()
-      tap.ingest('2\n', 'stdout')
-      expect(captured.map((c) => c.ctx['code'])).toEqual([12])
     })
 
     it('buffers stdout and stderr separately', () => {
@@ -494,23 +494,6 @@ describe('agentTap', () => {
       ).not.toThrow()
       expect(calls).toBe(2)
     })
-
-    it('contains a telemetry.emit failure in flushSummary', () => {
-      vi.spyOn(telemetry, 'emit').mockImplementation(() => {
-        throw new Error('emit exploded')
-      })
-      const tap = createAgentTap(baseOpts)
-      tap.ingest('[agent-event] mystery\n', 'stdout')
-      expect(() => tap.flushSummary()).not.toThrow()
-    })
-
-    it('contains a throw while reading consent, never failing the stream handler', () => {
-      vi.spyOn(telemetry, 'getConsentState').mockImplementation(() => {
-        throw new Error('consent exploded')
-      })
-      const tap = createAgentTap(baseOpts)
-      expect(() => tap.ingest('[agent-event] mystery\n', 'stdout')).not.toThrow()
-    })
   })
 })
 
@@ -547,30 +530,27 @@ describe('agentTap consent gating', () => {
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
     const tap = createAgentTap({ installationId: 'inst-1' })
     tap.ingest('[agent-event] agent_started\n[agent-event] mystery\n', 'stdout')
-    tap.flushSummary()
     expect(agentCaptures()).toEqual([])
   })
 
-  it('ships the dropped-event count when consent was granted throughout', () => {
+  it('ships the dropped-event report when consent is granted', () => {
     telemetry.setConsentState('granted')
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
     const tap = createAgentTap({ installationId: 'inst-1' })
     tap.ingest('[agent-event] mystery\n', 'stdout')
-    tap.flushSummary()
     expect(agentCaptures(), 'the negative cases below are only meaningful if this arrives').toEqual(
       ['comfy.desktop.comfyui.agent.unknown_events_dropped']
     )
   })
 
   it.each(['denied', 'undecided'] as const)(
-    'never ships a dropped-event count gathered while consent was %s after a later grant',
+    'never ships a dropped-event report seen while consent was %s after a later grant',
     (before) => {
       telemetry.setConsentState(before)
       telemetry.bindAnonymousId('anon-1', 'anon-1', {})
       const tap = createAgentTap({ installationId: 'inst-1' })
       tap.ingest('[agent-event] mystery\n', 'stdout')
       telemetry.setConsentState('granted')
-      tap.flushSummary()
       expect(agentCaptures()).toEqual([])
     }
   )
