@@ -389,9 +389,7 @@ const OVERRIDE_TIMEOUT_MS = 90_000
 
 const MIN_FALLBACK_TIMEOUT_MS = 30_000
 
-const OVERRIDE_REQS = '.launch-agent-reqs-override-src.txt'
-const OVERRIDE_FILTERED_REQS = '.launch-agent-reqs-override.txt'
-const OVERRIDE_CONSTRAINTS = '.launch-agent-reqs-override-constraints.txt'
+let overrideAttempts = 0
 
 type BoundedRun = (
   reqPath: string,
@@ -428,8 +426,11 @@ async function tryOverride(
   const effective = effectiveAgentRequirements(coreText, pins)
   if (effective.kind === 'refused') return refuse(sendOutput, effective.reason, pins)
 
-  const overridePath = path.join(plan.installPath, OVERRIDE_REQS)
-  const constraintsPath = path.join(plan.installPath, OVERRIDE_CONSTRAINTS)
+  // Per attempt: two sessions of one install can run at once, and must not share these files.
+  const tag = `${process.pid}-${++overrideAttempts}`
+  const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
+  const overridePath = path.join(plan.installPath, `.launch-agent-reqs-override-${tag}-src.txt`)
+  const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     const listed = await listInstalled(plan, signal)
     const constraints = listed === null ? null : installedConstraints(listed)
@@ -439,9 +440,9 @@ async function tryOverride(
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
     const budget = Math.max(0, OVERRIDE_TIMEOUT_MS - (Date.now() - startedAt))
-    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, budget, [
+    const installed = await run(overridePath, `.launch-agent-reqs-override-${tag}.txt`, budget, [
       '--constraint',
-      OVERRIDE_CONSTRAINTS
+      constraintsName
     ])
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed) return revertOnInstall(sendOutput, pins)

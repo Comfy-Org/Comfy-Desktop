@@ -733,7 +733,10 @@ describe('installAgentRequirements with a version override', () => {
 
     const args = mockInstall.mock.calls[0]!
     expect(args[7], "the user's mirror setting still applies").toBe(mirrors)
-    expect(args[8]).toEqual(['--constraint', '.launch-agent-reqs-override-constraints.txt'])
+    expect(args[8]).toEqual([
+      '--constraint',
+      expect.stringMatching(/^\.launch-agent-reqs-override-[\w-]+-constraints\.txt$/)
+    ])
   })
 
   it('stops waiting on the package listing as soon as the launch is cancelled', async () => {
@@ -752,11 +755,11 @@ describe('installAgentRequirements with a version override', () => {
   })
 
   it('falls back to core file when the override files cannot be written', async () => {
-    fs.mkdirSync(path.join(installDir, '.launch-agent-reqs-override-src.txt'))
+    plan.installPath = path.join(installDir, 'missing')
 
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
-    expect(decision, 'a directory in the way makes the override write fail').toMatchObject({
+    expect(decision, 'an install dir that is gone makes the override write fail').toMatchObject({
       decision: 'reverted',
       reason: 'install_failed'
     })
@@ -774,6 +777,27 @@ describe('installAgentRequirements with a version override', () => {
     await installAgentRequirements(plan, sendOutput, abort.signal, undefined, OVERRIDE)
 
     expect(sendOutput.mock.calls.join('')).not.toContain('did not install')
+  })
+
+  it("falls back to core file when core's file cannot be read for the override", async () => {
+    const read = vi.spyOn(fs.promises, 'readFile').mockRejectedValueOnce(new Error('EIO'))
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+    read.mockRestore()
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+  })
+
+  it('gives each attempt its own files, so two sessions of one install cannot collide', async () => {
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    const names = mockInstall.mock.calls
+      .map((args) => (args[8] as string[] | undefined)?.[1])
+      .filter(Boolean)
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
   })
 
   it('lists nothing for a launch that was cancelled before the override began', async () => {
@@ -1080,11 +1104,10 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it("clears the override's files when uv ignores the stop and is abandoned", async () => {
-      const filtered = path.join(installDir, '.launch-agent-reqs-override.txt')
       mockInstall.mockImplementation(async (_file, ...rest) => {
         const extraArgs = rest[7] as string[] | undefined
         if (extraArgs) {
-          fs.writeFileSync(filtered, '')
+          fs.writeFileSync(path.join(installDir, rest[3] as string), '')
           waiting++
           return new Promise(() => {})
         }
@@ -1107,7 +1130,11 @@ describe('installAgentRequirements with a version override', () => {
         )
       })
 
-      await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
+      const sendOutput = vi.fn()
+      await settle(installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE))
+      expect(sendOutput.mock.calls.join('')).toContain(
+        "uv did not stop; hard-stopped it and falling back to core's versions"
+      )
       vi.useRealTimers()
       await vi.waitFor(
         () =>

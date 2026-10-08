@@ -2988,6 +2988,7 @@ describe('agent requirements at launch', () => {
       ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
 
       expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
+      await settle()
       expect(overrideState(), 'a cancel is not a failed install').toBeUndefined()
       expect(overrideEvents(), 'a cancelled launch reports no decision').toEqual([])
     })
