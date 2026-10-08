@@ -85,6 +85,8 @@ const featureFlagResultCalls: Array<{
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
 const posthogClientMock = vi.hoisted(() => ({
+  /** The client's own shutdown never settles (a dead network). */
+  hangShutdown: false,
   failNextCaptures: 0,
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
@@ -166,7 +168,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
-      return Promise.resolve()
+      return posthogClientMock.hangShutdown ? new Promise(() => {}) : Promise.resolve()
     }
     getFeatureFlagResult(
       key: string,
@@ -302,6 +304,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
 afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
+  posthogClientMock.hangShutdown = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
   posthogClientMock.autoFailNextIdentifies = 0
@@ -1948,6 +1951,39 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.map((call) => call.event)).toContain('before.quit')
     const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
     expect(ended?.distinctId).toBe('user-123')
+  })
+
+  it('drains the session end of a quit with the wait for ComfyUI on it', async () => {
+    captured.length = 0
+    await telemetry.drainForQuit({
+      quit_wait_ms: 1234,
+      quit_wait_timed_out: false,
+      quit_wait_stops: 1
+    })
+    const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
+    expect(ended?.properties).toMatchObject({
+      reason: 'quit',
+      quit_wait_ms: 1234,
+      quit_wait_timed_out: false,
+      quit_wait_stops: 1
+    })
+  })
+
+  it('bounds the quit drain when the network never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      posthogClientMock.hangShutdown = true
+      let drained = false
+      void telemetry.drainForQuit().then(() => {
+        drained = true
+      })
+      await vi.advanceTimersByTimeAsync(1_499)
+      expect(drained).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(drained).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('captures a still-staged login attribution during shutdown', async () => {
