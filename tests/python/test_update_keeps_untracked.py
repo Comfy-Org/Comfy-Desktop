@@ -55,6 +55,10 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
             git(src, "add", "-A")
             git(src, "commit", "-m", tag)
             git(src, "tag", tag)
+        # master moves on past the release, as upstream does, so the update
+        # resets to master and then checks the tag back out.
+        write(src, {"main.py": "master\n"})
+        git(src, "commit", "-am", "master")
         origin = os.path.join(self.tmp, "origin.git")
         git(self.tmp, "clone", "--bare", src, origin)
         self.repo = os.path.join(self.tmp, "ComfyUI")
@@ -149,6 +153,14 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.assertEqual(read(self.repo, "outputs/ComfyUI_00001_.png"), "image\n")
         self.assertIn("?? outputs/ComfyUI_00001_.png",
                       git(self.repo, "status", "--porcelain", "-uall").splitlines())
+
+    @unittest.skipIf(os.name == "nt", "needs a POSIX unreadable file")
+    def test_untracked_files_survive_a_failed_backup(self):
+        # add_all() stages outputs/ and then fails on the unreadable file.
+        write(self.repo, {"outputs/ComfyUI_00001_.png": "image\n", "zz_unreadable.txt": "x\n"})
+        os.chmod(os.path.join(self.repo, "zz_unreadable.txt"), 0)
+        self.assertIn("could not create backup branch", self.update())
+        self.assertEqual(read(self.repo, "outputs/ComfyUI_00001_.png"), "image\n")
 
 
 if __name__ == "__main__":
