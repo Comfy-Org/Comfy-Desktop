@@ -257,12 +257,9 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 
 onMounted(async () => {
   // All best-effort and independently fail-safe, so the picker still
-  // works if any of them errors. The free-runs flag waits for the
-  // installation id on a first launch, so its pill waits for it (and so does
-  // the fork variant, when consent was granted at boot and its key is not
-  // cached yet). The
-  // tier is applied as soon as it loads and the pill waits for it, so a paid
-  // user never sees the pill flash, whatever order the requests finish in.
+  // works if any of them errors. The free-runs flag can wait for the
+  // installation id; the tier applies as soon as it loads, and the pill
+  // waits for both, so a paid user never sees it flash.
   const userTierLoaded = loadCloudUserTier().then((tier) => {
     cloudUserTier.value = tier
   })
