@@ -546,19 +546,9 @@ export function createAssetsTap(opts: {
     beginBoot(): void {
       lineBuffer.reset()
     },
+    // Never parses an unterminated line: it may be a write cut short, so a final line without a newline is dropped.
     flushSummary(): void {
       try {
-        // Process complete-but-unterminated final lines so a trailing record
-        // isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = lineBuffer.takePending(source)
-          // Per-source isolation: a throwing stdout tail must not skip stderr's.
-          try {
-            if (pending.trim()) handleLine(pending)
-          } catch {
-            // ignore - telemetry side effect, not user-visible
-          }
-        }
         if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
           const count = unknownEventsDropped
           unknownEventsDropped = 0

@@ -1764,7 +1764,7 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('reports once and drains both assets tails before a port-conflict retry without resetting caps', async () => {
+  it('reports once and drops both unterminated assets tails before a port-conflict retry without resetting caps', async () => {
     // The only test that proves the latch: the report site lives INSIDE the recursing
     // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
@@ -1779,11 +1779,13 @@ describe('core beta report placement', () => {
     launchHarness.spawn = () => {
       if (children.length === 1) {
         expect(
-          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
-        ).toHaveLength(1)
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'),
+          "a killed attempt's unterminated line is never parsed"
+        ).toHaveLength(0)
         expect(
-          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
-        ).toHaveLength(1)
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed'),
+          "a killed attempt's unterminated line is never parsed"
+        ).toHaveLength(0)
       }
       const child = fakeChild()
       children.push(child)
@@ -1820,6 +1822,16 @@ describe('core beta report placement', () => {
       'data',
       Buffer.from('[assets-event] seeder.scan_started root=models\n')
     )
+    children[1]!.stdout.emit('data', Buffer.from('\n'))
+    children[1]!.stderr.emit('data', Buffer.from('\n'))
+    expect(
+      events.filter(
+        (e) =>
+          e.event === 'comfy.desktop.comfyui.assets.assets.enabled' ||
+          e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed'
+      ),
+      "beginBoot must drop the killed attempt's tails; each is a valid record once a newline arrives"
+    ).toEqual([])
     expect(
       events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.seeder.scan_started')
     ).toHaveLength(60)
