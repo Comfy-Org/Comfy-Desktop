@@ -118,7 +118,7 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
@@ -1530,7 +1530,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    void initCoreBetaGrants({ distinctId: installationId })
+    void initCoreBetaFlags({
+      distinctId: installationId,
+      betaEnabled: settings.peekBetaFeaturesEnabled()
+    })
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
