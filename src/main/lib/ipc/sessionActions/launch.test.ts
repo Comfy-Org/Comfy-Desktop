@@ -207,6 +207,7 @@ vi.mock('../../hardwareTap', async (importOriginal) => {
 
 import {
   attachLaunchStreams,
+  createAgentProductEventTapSafe,
   createAgentTapSafe,
   createAssetsTapSafe,
   buildLaunchArgs,
@@ -226,6 +227,7 @@ import {
 } from './launch'
 import * as assetsTapModule from '../../assetsTap'
 import * as agentTapModule from '../../agentTap'
+import * as agentProductEventTapModule from '../../agentProductEventTap'
 import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
   _resetForTest as _resetBetaNotice,
@@ -659,12 +661,44 @@ describe('createAgentTapSafe', () => {
   })
 })
 
+describe('createAgentProductEventTapSafe', () => {
+  const BASE = {
+    installationId: 'agent-product-tap-base',
+    variant: 'nvidia',
+    release: '0.3.68',
+    coreBetaFlags: []
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('forwards the trusted launch context to the product-event tap', () => {
+    const create = vi.spyOn(agentProductEventTapModule, 'createAgentProductEventTap')
+    createAgentProductEventTapSafe(BASE)
+    expect(create).toHaveBeenCalledWith(BASE)
+  })
+
+  it('substitutes an inert tap when construction throws', () => {
+    vi.spyOn(agentProductEventTapModule, 'createAgentProductEventTap').mockImplementation(() => {
+      throw new Error('Agent product tap construction exploded')
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const tap = createAgentProductEventTapSafe(BASE)
+    expect(() => {
+      tap.beginBoot()
+      tap.ingest('[agent-product-event/v1] {}\n', 'stdout')
+    }).not.toThrow()
+  })
+})
+
 describe('attachLaunchStreams event-log tap wiring', () => {
   function fakeTap() {
     return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
-  function harness(assetsTap = fakeTap(), agentTap = fakeTap()) {
+  function harness(assetsTap = fakeTap(), agentTap = fakeTap(), agentProductEventTap = fakeTap()) {
     const stdout = new EventEmitter()
     const stderr = new EventEmitter()
     const proc = { stdout, stderr } as unknown as ChildProcess
@@ -682,9 +716,19 @@ describe('attachLaunchStreams event-log tap wiring', () => {
       hwTap as unknown as ReturnType<typeof createHardwareTap>,
       assetsTap,
       agentTap,
+      agentProductEventTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr }
+    return {
+      stdout,
+      stderr,
+      execTap,
+      hwTap,
+      assetsTap,
+      agentTap,
+      agentProductEventTap,
+      getStderr
+    }
   }
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
@@ -717,6 +761,20 @@ describe('attachLaunchStreams event-log tap wiring', () => {
       'stdout'
     )
     expect(h.agentTap.ingest).toHaveBeenCalledWith('[agent-event] agent_exited code=1\n', 'stderr')
+  })
+
+  it('feeds both streams to the Agent product-event tap with their source tags', () => {
+    const h = harness()
+    h.stdout.emit('data', Buffer.from('[agent-product-event/v1] {"event":"first"}\n'))
+    h.stderr.emit('data', Buffer.from('[agent-product-event/v1] {"event":"second"}\n'))
+    expect(h.agentProductEventTap.ingest).toHaveBeenCalledWith(
+      '[agent-product-event/v1] {"event":"first"}\n',
+      'stdout'
+    )
+    expect(h.agentProductEventTap.ingest).toHaveBeenCalledWith(
+      '[agent-product-event/v1] {"event":"second"}\n',
+      'stderr'
+    )
   })
 
   it('leaves the hardware and execution taps receiving both streams unchanged', () => {

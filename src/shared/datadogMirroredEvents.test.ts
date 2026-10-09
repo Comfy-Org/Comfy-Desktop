@@ -30,6 +30,11 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
 
+  it('mirrors Local Agent parser failures, but not product events', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.comfyui.agent_product_event.invalid')).toBe(true)
+    expect(isDatadogMirroredEvent('agent_turn_completed')).toBe(false)
+  })
+
   // The fourteen scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
   // plus bare event name, verified against assetsTap.ts's own
   // `${EVENT_PREFIX}${event}` construction).
