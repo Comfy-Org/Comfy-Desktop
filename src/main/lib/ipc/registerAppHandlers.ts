@@ -43,6 +43,7 @@ import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
+import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 import {
   calculatePerformanceTestStatistics,
   deletePerformanceTestBenchmark,
@@ -374,7 +375,7 @@ export function registerAppHandlers(): void {
       const abort = new AbortController()
       let ownsAbortSlot = false
       try {
-        if (typeof sessionId !== 'string' || !sessionId.startsWith('performance-test:')) {
+        if (typeof sessionId !== 'string' || sessionKindOf(sessionId) !== 'performance_test') {
           throw new Error('Invalid performance test session.')
         }
         if (_operationAborts.has(sessionId)) {
@@ -384,8 +385,7 @@ export function registerAppHandlers(): void {
         ownsAbortSlot = true
         const session = _runningSessions.get(sessionId)
         if (!session) throw new Error('The performance test instance is not running.')
-        const sourceInstallationId =
-          session.sourceInstallationId ?? sessionId.slice('performance-test:'.length)
+        const sourceInstallationId = session.sourceInstallationId ?? installationIdOf(sessionId)
         const sourceInstallation = await installations.get(sourceInstallationId)
         const workspaceId = sourceInstallation?.workspaceId ?? null
         let workspaceName =

@@ -23,6 +23,10 @@ Each `comfy.desktop.comfyui.boot_started`, `boot_completed`, and `boot_failed` e
   not for sorting or gating.
 - `app_version`: Desktop version, attached centrally by `src/main/lib/telemetry.ts`.
 - `boot_id`: per-launch join key shared by the lifecycle events. Retries reuse the same key.
+- `session_kind`: `performance_test` for a launch from File → Performance Tests, else `normal`.
+  Filter Performance Test runs out of (or into) rollout metrics on this. The same field is on
+  `comfyui.exited`, `comfyui.boot_log`, `session.instance_started`, and the execution, hardware
+  and assets tap events.
 
 `assets_enabled` describes an explicit launch argument, not service health. It does not detect a
 future Core default that enables Assets without that argument, or prove that Assets initialized.
