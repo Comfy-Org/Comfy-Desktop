@@ -1196,7 +1196,13 @@ async function handleSave(): Promise<void> {
 
   let instData: Record<string, unknown>
   try {
-    instData = await window.api.buildInstallation(source.id, rawSelections())
+    const buildResult = await window.api.buildInstallation(source.id, rawSelections())
+    if (!buildResult.ok) {
+      sourceError.value = buildResult.message
+      step.value = 'configure'
+      return
+    }
+    instData = buildResult.data
   } catch (error) {
     sourceError.value = error instanceof Error ? error.message : String(error)
     step.value = 'configure'

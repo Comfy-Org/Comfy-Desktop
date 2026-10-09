@@ -390,14 +390,20 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         selections[field.id] = pick
       }
 
-      const instData = await window.api.buildInstallation(standalone.id, selections)
+      const buildResult = await window.api.buildInstallation(standalone.id, selections)
+      if (!buildResult.ok) {
+        emitTelemetryAction('comfy.desktop.install.express.fallback', {
+          reason: 'precondition_failed'
+        })
+        return false
+      }
       const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
       const installPath = installDir ?? ''
 
       const result = await window.api.addInstallation({
         name,
         installPath,
-        ...instData,
+        ...buildResult.data,
         status: 'installing'
       })
       if (!result.ok || !result.entry) {
