@@ -5,7 +5,6 @@ import { parse as parseYaml } from 'yaml'
 import { dataDir } from './paths'
 import { writeFileSafe } from './safe-file'
 import { findComfyUIDir } from './migrate'
-import { readGovernance } from '../comfybuilder/launch'
 import type { InstallationRecord } from '../installations'
 
 // Canonical ComfyUI model folder types from folder_paths.py. Must stay in sync with that list.
@@ -534,23 +533,20 @@ export interface LauncherModelDirs {
 /**
  * Resolve the launcher-managed model directories for an install. Shared and
  * per-install dirs are additive: the global shared dirs are included unless
- * `useSharedModels === false`, and the install's own `modelDirs` always apply
- * (except on a governed build, below).
+ * `useSharedModels === false`, and the install's own `modelDirs` always apply.
  * The promoted `modelDirsPrimary` may point at any effective dir (shared or
  * per-install), or at the install's own models dir to explicitly keep the
  * built-in folder as the download target even while shared dirs are included.
  * When absent/stale the first shared dir is primary, and with no shared dirs
  * the install's own models dir stays the default (`null`).
- * A governed build (one whose archive carries a signed policy) gets no dirs and
- * a `null` primary: its ComfyUI refuses an unsigned `--extra-model-paths-config`,
- * so it sees only its own models dir, and downloads and presence checks follow.
+ * A governed build gets the same dirs: its ComfyUI checks every custom-node pack
+ * against the signed policy when it loads, whichever folder the pack is in.
  * `sharedModelsDirs` is passed in to avoid a settings import cycle.
  */
 export function resolveLauncherModelDirs(
   inst: InstallationRecord,
   sharedModelsDirs: string[]
 ): LauncherModelDirs {
-  if (inst.installPath && readGovernance(inst.installPath)) return { dirs: [], primaryDir: null }
   const useShared = (inst.useSharedModels as boolean | undefined) !== false
   // The install's own models dir is ComfyUI's built-in root, not a launcher
   // dir: exclude it so it can't end up in the generated YAML (double-included)

@@ -1216,7 +1216,11 @@ describe('late ops-flag results reaching real persistence', () => {
   function seedGrant(): string {
     // Indented on purpose: canonical `JSON.stringify` output cannot tell "never written" from
     // "rewritten identically", and rewriting is the bug under test.
-    const stored = JSON.stringify({ [KEY]: { value: true, payload: null } }, null, 2)
+    const stored = JSON.stringify(
+      { [KEY]: { value: true, payload: null, fetchedAt: Date.now() } },
+      null,
+      2
+    )
     fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
     fs.writeFileSync(flagsFilePath() + '.bak', stored, 'utf-8')
     return stored
@@ -1239,6 +1243,8 @@ describe('late ops-flag results reaching real persistence', () => {
     captured.length = 0
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'installation-id', timeoutMs: 0 })
+    // A saved grant answers `init` at once, so let the 0 ms deadline fire before the test answers.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     return flag
   }
 
@@ -1262,15 +1268,20 @@ describe('late ops-flag results reaching real persistence', () => {
     seedGrant()
     const flag = await launchLosingTheRace()
 
+    const answeredAt = Date.now()
     posthogClientMock.deferred?.resolve({ enabled: false, payload: null })
     await flush()
 
     expect(lateEventOutcome()).toBe('value')
-    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual({
-      [KEY]: { value: false, payload: null }
+    const stored = JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))
+    expect(stored).toEqual({
+      [KEY]: { value: false, payload: null, fetchedAt: expect.any(Number) }
     })
-    // And this launch keeps what the deadline decided — convergence happens on the NEXT one
-    expect(await flag.get()).toBe('granted')
+    // Stamped with the real clock, not carried over or zeroed
+    expect(stored[KEY].fetchedAt).toBeGreaterThanOrEqual(answeredAt)
+    expect(stored[KEY].fetchedAt).toBeLessThanOrEqual(Date.now())
+    // And later reads in this session see it too
+    expect(await flag.get()).toBe('revoked')
   })
 
   it('reports a late MISS without letting it reach the file', async () => {

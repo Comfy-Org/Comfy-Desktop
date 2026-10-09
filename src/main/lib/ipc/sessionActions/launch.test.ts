@@ -53,6 +53,8 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  /** The boot fetch never settles, as on a link that hangs until its deadline. */
+  grantsPending: false,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -186,7 +188,10 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    getCoreBetaGrantsAsync: () =>
+      launchHarness.grantsPending
+        ? new Promise<CoreBetaGrant[]>(() => {})
+        : Promise.resolve(launchHarness.grants),
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
       return actual.planCoreBetaArgs(facts)
@@ -1125,6 +1130,7 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.grantsPending = false
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1367,6 +1373,16 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('does not wait on the grant fetch for an install that opted out', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.grantsPending = true
+
+    const res = await handleLaunch(ctxFor('harness-opted-out-pending'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {
