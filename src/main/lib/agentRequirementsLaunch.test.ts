@@ -907,12 +907,34 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
   })
 
-  it('refuses an override of a package core does not pin exactly', async () => {
-    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+  it('refuses an override of a package core pins by a range', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent>=0.1\ncomfy-cli==1.21.0\n')
 
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
     expect(decision).toMatchObject({ decision: 'refused', reason: 'unsupported_line' })
+    expect(calls.map((c) => c.content)).toEqual(['comfy-agent>=0.1\ncomfy-cli==1.21.0\n'])
+  })
+
+  it('installs the pin in place of a line core left unpinned', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'applied' })
+    expect(calls.map((c) => c.content)).toEqual(['comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'])
+  })
+
+  it('still waits for core to install a package it left unpinned', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])
+    })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'core_first' })
     expect(calls.map((c) => c.content)).toEqual(['comfy-agent\ncomfy-cli==1.21.0\n'])
   })
 

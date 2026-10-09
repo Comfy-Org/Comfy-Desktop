@@ -113,16 +113,20 @@ describe('effectiveAgentRequirements', () => {
   })
 
   it('refuses an override for a line core did not pin exactly', () => {
-    for (const core of [
-      'comfy-agent\n',
-      'comfy-agent>=0.2\n',
-      'comfy-agent[extra]==0.2\n',
-      'comfy-agent==0.2.*\n'
-    ])
+    for (const core of ['comfy-agent>=0.2\n', 'comfy-agent[extra]==0.2\n', 'comfy-agent==0.2.*\n'])
       expect(
         effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })),
         `going back to "${core.trim()}" would not undo the override`
       ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('lets any exact pin replace a line core left unpinned, older or newer', () => {
+    const core = 'comfy-agent\ncomfy-cli==1.21.0\n'
+    for (const version of ['0.2.3', '0.0.1'])
+      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': version }))).toEqual({
+        kind: 'text',
+        text: `comfy-agent==${version}\ncomfy-cli==1.21.0\n`
+      })
   })
 
   it('refuses an override that is not newer than core pins', () => {

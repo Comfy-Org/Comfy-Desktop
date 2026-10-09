@@ -103,10 +103,14 @@ export function effectiveAgentRequirements(
     const version = pins.get(normalized)
     if (version === undefined) continue
     const line = lines[i]!.match(REQUIREMENT_LINE)
-    if (!line || !EXACT_VERSION.test(line[2] ?? '') || seen.has(normalized)) {
+    const pinned = line?.[2]
+    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || seen.has(normalized)) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    if (compareVersions(version, line[2]!) <= 0) return { kind: 'refused', reason: 'not_newer' }
+    // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
+    if (pinned !== undefined && compareVersions(version, pinned) <= 0) {
+      return { kind: 'refused', reason: 'not_newer' }
+    }
     seen.add(normalized)
     lines[i] = `${name}==${version}`
   }
