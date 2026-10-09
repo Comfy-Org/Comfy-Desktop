@@ -774,6 +774,30 @@ describe('installAgentRequirements with a version override', () => {
     expect(listing?.aborted, 'the uv pip list process is told to stop too').toBe(true)
   })
 
+  it("leaves a fresh install to core's file, refusing without a failure to count", async () => {
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])
+    })
+    const sendOutput = vi.fn()
+
+    const decision = await installAgentRequirements(
+      plan,
+      sendOutput,
+      undefined,
+      undefined,
+      OVERRIDE
+    )
+
+    expect(decision).toEqual({
+      decision: 'refused',
+      reason: 'core_first',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
+    expect(calls, 'only core file runs').toEqual([{ content: CORE_FILE, constraints: null }])
+    expect(sendOutput.mock.calls.join('')).toContain('refused (core_first)')
+  })
+
   it('falls back to core file when the override files cannot be written', async () => {
     plan.installPath = path.join(installDir, 'missing')
 
@@ -1056,6 +1080,18 @@ describe('installAgentRequirements with a version override', () => {
       await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
 
       expect(calls.at(-1)!.timeoutAt, 'the 30 s floor is a minimum, not the budget').toBe(120_000)
+    })
+
+    it('gives core file the whole 120 s ceiling on a fresh install', async () => {
+      hangUntilAborted(Date.now())
+      mockUvPip.mockResolvedValue({ code: 0, output: '[]' })
+
+      const decision = await settle(
+        installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+      )
+
+      expect(decision).toMatchObject({ decision: 'refused', reason: 'core_first' })
+      expect(calls.map((c) => [c.constraints !== null, c.timeoutAt])).toEqual([[false, 120_000]])
     })
 
     it("says core's versions follow when the override times out", async () => {

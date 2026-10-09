@@ -2759,7 +2759,11 @@ describe('agent requirements at launch', () => {
         return proc
       }
       installed = []
-      pipHarness.installed = JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.2.0' },
+        { name: 'comfy-cli', version: '1.21.0' },
+        { name: 'requests', version: '2.32.0' }
+      ])
       pipHarness.respond = (args) => {
         installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
         return { code: 0, output: '' }
@@ -2786,6 +2790,30 @@ describe('agent requirements at launch', () => {
       expect(overrideEvents()).toEqual([
         expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
       ])
+    })
+
+    it("defers to core file on a fresh install, then applies once core's packages are in", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'refused', reason: 'core_first' })
+      ])
+      expect(overrideState(), 'deferring is not a failure').toBeUndefined()
+
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.2.0' },
+        { name: 'comfy-cli', version: '1.21.0' }
+      ])
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(installed).toEqual([CORE_FILE, OVERRIDDEN])
+      expect(overrideEvents().at(-1)).toEqual(
+        expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
+      )
     })
 
     it('applies the override for an enrolment whose record could not be saved', async () => {

@@ -3,6 +3,7 @@ import * as telemetry from './telemetry'
 import {
   START_FAILURES_TO_REVERT,
   classifyAgentEvent,
+  coreFileInstalled,
   createAgentStartWatcher,
   effectiveAgentRequirements,
   installedConstraints,
@@ -183,6 +184,25 @@ describe('installedConstraints', () => {
     expect(installedConstraints('error: no virtual environment found')).toBeNull()
     expect(installedConstraints('[{"name": "requests"}]')).toBeNull()
     expect(installedConstraints('{"name": "requests", "version": "1"}')).toBeNull()
+  })
+})
+
+describe('coreFileInstalled', () => {
+  const CORE = '# agent\ncomfy-agent\ncomfy-cli==1.21.0\nnodejs-wheel-binaries==24.19.0\n'
+  const list = (...names: string[]): string =>
+    JSON.stringify(names.map((name) => ({ name, version: '1.0' })))
+
+  it('holds once every package core names is installed, whatever its version or spelling', () => {
+    expect(coreFileInstalled(CORE, list('Comfy_Agent', 'comfy-cli', 'Nodejs.Wheel-Binaries'))).toBe(
+      true
+    )
+  })
+
+  it("does not hold while any one of core's packages is missing", () => {
+    expect(coreFileInstalled(CORE, list('comfy-cli', 'nodejs-wheel-binaries', 'requests'))).toBe(
+      false
+    )
+    expect(coreFileInstalled(CORE, list())).toBe(false)
   })
 })
 

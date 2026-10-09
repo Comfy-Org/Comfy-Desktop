@@ -23,6 +23,7 @@ export type OverrideRefusal =
   | 'unsupported_line'
   | 'not_newer'
   | 'check_failed'
+  | 'core_first'
 
 export type OverridePins = ReadonlyMap<string, string>
 
@@ -113,8 +114,7 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
-/** Pins every installed non-agent package where it is, so an override that moves one falls back. */
-export function installedConstraints(pipListOutput: string): string | null {
+function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
   // uv's stderr ("Using Python … environment at") shares the captured stream.
   const json = pipListOutput
     .split(/\r?\n/)
@@ -127,13 +127,34 @@ export function installedConstraints(pipListOutput: string): string | null {
     return null
   }
   if (!Array.isArray(installed)) return null
-  const lines: string[] = []
+  const packages: { name: string; version: string }[] = []
   for (const entry of installed) {
     const { name, version } = (entry ?? {}) as { name?: unknown; version?: unknown }
     if (typeof name !== 'string' || typeof version !== 'string') return null
-    if (!OVERRIDABLE.has(normalizePackageName(name))) lines.push(`${name}==${version}`)
+    packages.push({ name, version })
   }
+  return packages
+}
+
+/** Pins every installed non-agent package where it is, so an override that moves one falls back. */
+export function installedConstraints(pipListOutput: string): string | null {
+  const installed = parseInstalled(pipListOutput)
+  if (!installed) return null
+  const lines = installed
+    .filter(({ name }) => !OVERRIDABLE.has(normalizePackageName(name)))
+    .map(({ name, version }) => `${name}==${version}`)
   return lines.join('\n') + '\n'
+}
+
+/** False until every package core's file names is installed: on a fresh install, core's goes first. */
+export function coreFileInstalled(coreText: string, pipListOutput: string): boolean {
+  const installed = new Set(
+    (parseInstalled(pipListOutput) ?? []).map(({ name }) => normalizePackageName(name))
+  )
+  return coreText
+    .split(/\r?\n/)
+    .map((line) => line.match(LEADING_NAME)?.[1])
+    .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 
 export interface AgentOverrideState {

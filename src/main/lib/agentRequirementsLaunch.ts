@@ -9,6 +9,7 @@ import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import {
   effectiveAgentRequirements,
+  coreFileInstalled,
   installedConstraints,
   isRevertedFor,
   overrideSignature,
@@ -434,7 +435,9 @@ async function tryOverride(
   try {
     const listed = await listInstalled(plan, signal)
     const constraints = listed === null ? null : installedConstraints(listed)
-    if (constraints === null) return refuse(sendOutput, 'check_failed', pins)
+    if (listed === null || constraints === null) return refuse(sendOutput, 'check_failed', pins)
+    // Not counted toward retiring the override: it applies on a later launch, once core's are in.
+    if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
     await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
