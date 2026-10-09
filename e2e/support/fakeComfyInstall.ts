@@ -72,10 +72,10 @@ function helpText(): string {
 const SERVER_JS = `
 const http = require('node:http')
 // A \`startup-failure\` file beside this script makes the stub print it to stderr and exit 1,
-// as ComfyUI does when it refuses to start. Linux pipes write synchronously, so none is lost.
+// as ComfyUI does when it refuses to start. Written synchronously, so exiting loses none of it.
 const failurePath = require('node:path').join(__dirname, 'startup-failure')
 if (require('node:fs').existsSync(failurePath)) {
-  process.stderr.write(require('node:fs').readFileSync(failurePath))
+  require('node:fs').writeSync(2, require('node:fs').readFileSync(failurePath))
   process.exit(1)
 }
 // Serve until killed. Deliberately no stdin-close guard: the launcher spawns this with stdio

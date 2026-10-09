@@ -59,7 +59,13 @@ test.beforeAll(async () => {
   ctx = await launchApp({
     profileDir: path.join(rootDir, 'profile'),
     cdpPort: await reserveFreePort(),
-    settings: { firstUseCompleted: true, telemetryEnabled: false, hasSeenCentralPillHint: true },
+    settings: {
+      firstUseCompleted: true,
+      telemetryEnabled: false,
+      // No beta grant may add --enable-assets: the lock case must hold without it.
+      betaFeaturesEnabled: false,
+      hasSeenCentralPillHint: true
+    },
     installations: [
       {
         id: INSTALL_ID,
