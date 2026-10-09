@@ -146,14 +146,18 @@ export function installedConstraints(pipListOutput: string): string | null {
   return lines.join('\n') + '\n'
 }
 
-/** False until every package core's file names is installed: on a fresh install, core's goes first. */
+/**
+ * False until every package core's file names is installed: on a fresh install, core's goes first.
+ * Marker and URL lines are skipped: uv may rightly never install them here, which would defer forever.
+ */
 export function coreFileInstalled(coreText: string, pipListOutput: string): boolean {
   const installed = new Set(
     (parseInstalled(pipListOutput) ?? []).map(({ name }) => normalizePackageName(name))
   )
   return coreText
     .split(/\r?\n/)
-    .map((line) => line.match(LEADING_NAME)?.[1])
+    .map((line) => line.replace(/\s#.*$/, ''))
+    .map((line) => (/;|:\/\//.test(line) ? undefined : line.match(LEADING_NAME)?.[1]))
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 

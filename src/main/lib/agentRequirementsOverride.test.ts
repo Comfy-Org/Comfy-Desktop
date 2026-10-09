@@ -204,6 +204,23 @@ describe('coreFileInstalled', () => {
     )
     expect(coreFileInstalled(CORE, list())).toBe(false)
   })
+
+  it('does not wait on a line uv may never install here: a marker or a URL', () => {
+    const extra =
+      'pywin32==306 ; sys_platform == "win32"\n' +
+      'https://example.com/pkg-1.0-py3-none-any.whl\n' +
+      'git+https://github.com/org/pkg\n'
+    const installed = list('comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries')
+
+    expect(coreFileInstalled(CORE + extra, installed)).toBe(true)
+  })
+
+  it("still waits on a pinned line whose comment mentions a URL or a ';'", () => {
+    const commented = 'comfy-agent==0.0.1  # see https://example.com; pinned by core\n'
+    const installed = list('comfy-cli', 'nodejs-wheel-binaries')
+
+    expect(coreFileInstalled(commented, installed)).toBe(false)
+  })
 })
 
 describe('agent start classification', () => {
