@@ -236,6 +236,10 @@ describe('useFirstUseChain — Express Install', () => {
     expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
     expect(testApi.addInstallation).not.toHaveBeenCalled()
     expect(chain.handleShowProgress).not.toHaveBeenCalled()
+    expect(vi.mocked(emitTelemetryAction)).toHaveBeenCalledWith(
+      'comfy.desktop.install.express.fallback',
+      { reason: 'build_failed' }
+    )
   })
 
   it('opens Configure when `express` is omitted (legacy chain-local behaviour)', async () => {

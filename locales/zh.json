@@ -1421,6 +1421,7 @@
     "duplicateName": "名为“{name}”的实例已存在。请选择其他名称。",
     "nameRequired": "请输入名称。",
     "unknownSource": "此实例的来源类型无法识别。它可能由其他版本创建。请删除并重新安装。",
+    "buildFailed": "无法准备此实例。请检查所选项后重试。",
     "operationInProgress": "此实例的“{operation}”正在进行。要取消吗？",
     "operationInProgressGeneric": "此实例当前有另一个操作正在进行。要取消吗？",
     "cancelOperation": "取消操作",
