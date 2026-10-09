@@ -205,7 +205,7 @@ export type OverrideDecision =
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
-      /** The reverted pins core's file can't take back, if they went in. */
+      /** The reverted pins core's file can't take back, whether or not they went in. */
       staysInstalled?: OverridePins
     }
 
@@ -219,7 +219,7 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
-        'staysInstalled' in d && d.staysInstalled?.size ? overrideSignature(d.staysInstalled) : null
+        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
     })
   } catch {
     // Telemetry must never reach the launch.

@@ -400,7 +400,7 @@ describe('pinsOverBareLines', () => {
 })
 
 describe('reportOverrideDecision', () => {
-  it('reports the reverted pins core cannot take back, and null when there are none', () => {
+  it('reports the reverted pins core cannot take back, and null without them', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
     try {
       const reverted = { decision: 'reverted', reason: 'previously_failed' } as const
@@ -411,12 +411,11 @@ describe('reportOverrideDecision', () => {
         pins: both,
         staysInstalled: pins({ 'comfy-agent': '0.2.3' })
       })
-      reportOverrideDecision('i', { ...reverted, pins: both, staysInstalled: new Map() })
       reportOverrideDecision('i', { ...reverted, pins: both })
 
       expect(
         emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).stays_installed)
-      ).toEqual(['comfy-agent==0.2.3', null, null])
+      ).toEqual(['comfy-agent==0.2.3', null])
     } finally {
       emit.mockRestore()
     }

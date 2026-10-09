@@ -414,16 +414,21 @@ async function tryOverride(
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
   const { pins } = parsed
   if (isRevertedFor(state, pins)) {
-    // ComfyUI's file can't take back a pin over a line it leaves unversioned.
+    // Core's file can't take back a pin over a line it leaves unversioned.
     const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
     const stuck = pinsOverBareLines(coreText, pins)
     sendOutput(
       `agent version override ${overrideSignature(pins)} failed before; ` +
         (stuck.size
-          ? `ComfyUI's requirements don't pin it, so they can't take ${overrideSignature(stuck)} back\n`
+          ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
           : "using ComfyUI's versions\n")
     )
-    return { decision: 'reverted', reason: 'previously_failed', pins, staysInstalled: stuck }
+    return {
+      decision: 'reverted',
+      reason: 'previously_failed',
+      pins,
+      ...(stuck.size ? { staysInstalled: stuck } : {})
+    }
   }
   let coreText: string
   try {
