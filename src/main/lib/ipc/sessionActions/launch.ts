@@ -103,6 +103,7 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import { parseAssetsStartupFailure } from '../../assetsStartupFailure'
 import {
   installationIdOf,
   sessionKindOf,
@@ -2117,10 +2118,13 @@ async function runLaunch(
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
-    // Without assets, ComfyUI logs the lock line and carries on, so a later, unrelated crash
-    // would carry it in its tail: only a launch that takes the lock can fail on it.
+    // Cores with assets on by default name the failure. An older core without --enable-assets
+    // logs the lock line and carries on, so a later, unrelated crash would carry it in its tail:
+    // only a launch that takes the lock can fail on it.
+    const assetsFailure = parseAssetsStartupFailure(launchResult.stderr)
     const dbLocked =
-      launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr)
+      assetsFailure?.kind === 'in_use' ||
+      (launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr))
     const bootFailed = {
       installation_id: installationId,
       boot_id: bootId,
@@ -2133,7 +2137,8 @@ async function runLaunch(
       signal: launchResult.signal ?? null,
       retry_count: portRetries + rebootRetries,
       port_retry_count: portRetries,
-      reboot_retry_count: rebootRetries
+      reboot_retry_count: rebootRetries,
+      assets_startup_failure: assetsFailure?.kind ?? null
     }
     if (dbLocked) {
       // Whatever traceback ends the tail (often an unrelated custom-node warning) would
@@ -2171,7 +2176,7 @@ async function runLaunch(
     if (dbLocked) {
       return { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
-    return { ok: false, message: launchResult.message }
+    return { ok: false, message: assetsFailure?.message || launchResult.message }
   }
   // Healthy boot — discard buffered phase timings (no boot_phase on success;
   // healthy timing is covered by instance_started.boot_time_ms).

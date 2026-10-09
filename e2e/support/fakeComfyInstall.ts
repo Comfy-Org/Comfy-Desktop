@@ -71,6 +71,13 @@ function helpText(): string {
  *  unlabelled blank page would look like a rendering failure in the evidence. */
 const SERVER_JS = `
 const http = require('node:http')
+// A \`startup-failure\` file beside this script makes the stub print it to stderr and exit 1,
+// as ComfyUI does when it refuses to start. Linux pipes write synchronously, so none is lost.
+const failurePath = require('node:path').join(__dirname, 'startup-failure')
+if (require('node:fs').existsSync(failurePath)) {
+  process.stderr.write(require('node:fs').readFileSync(failurePath))
+  process.exit(1)
+}
 // Serve until killed. Deliberately no stdin-close guard: the launcher spawns this with stdio
 // pipes it does not write to, so watching stdin would fire immediately and the launch would
 // see "process exited with code 0" instead of a booted server. The launcher's own

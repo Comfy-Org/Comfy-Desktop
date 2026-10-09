@@ -3076,6 +3076,74 @@ describe('prior ComfyUI process handling at launch', () => {
       ])
     )
   })
+
+  const failBootWith = (stderr: string): void => {
+    launchHarness.waitForPort = async () => {
+      const first = children[0]!
+      first.stderr.emit('data', Buffer.from(stderr))
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+  }
+  const coreRefusal = (kind: string, ...message: string[]): string =>
+    `INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n` +
+    `\u001b[1m\u001b[31m[ERROR]\u001b[0m ASSETS_STARTUP_FAILED: ${kind}\n` +
+    `${[...message, 'Or start ComfyUI without the assets system: --disable-assets'].join('\n')}\n`
+
+  it('treats an assets-on-by-default core reporting the lock as the lock, without --enable-assets', async () => {
+    setArgs()
+    failBootWith(
+      coreRefusal(
+        'in_use',
+        "Another ComfyUI is already using this database: '/x/user/comfyui.db'.",
+        'Close the other ComfyUI and start this one again.'
+      )
+    )
+
+    const res = await handleLaunch(ctxFor('assets-default-in-use'))
+
+    expect(res.message).toBe('errors.comfyDbLocked')
+    await vi.waitFor(() =>
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+        expect.objectContaining({
+          error_class: 'comfyui_db_locked',
+          assets_startup_failure: 'in_use',
+          lock_holder_source: 'unknown'
+        })
+      ])
+    )
+  })
+
+  it.each([
+    ['corrupt', "The asset database '/x/user/comfyui.db' is corrupt (file is not a database)."],
+    ['locked', "The asset database '/x/user/comfyui.db' is locked by another program."]
+  ])("shows the core's own message for %s instead of the exit code", async (kind, what) => {
+    setArgs()
+    failBootWith(coreRefusal(kind, what, 'Move that file aside and start again.'))
+
+    const res = await handleLaunch(ctxFor(`assets-default-${kind}`))
+
+    expect(res.message).toBe(
+      `${what}\nMove that file aside and start again.\n` +
+        'Or start ComfyUI without the assets system: --disable-assets'
+    )
+    const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
+    expect(failed).toMatchObject({ assets_startup_failure: kind })
+    expect(failed?.error_class).not.toBe('comfyui_db_locked')
+  })
+
+  it('keeps the exit code and stderr for a core that prints no marker', async () => {
+    setArgs()
+    failBootWith('Traceback (most recent call last):\nRuntimeError: CUDA error\n')
+
+    const res = await handleLaunch(ctxFor('assets-no-marker'))
+
+    expect(res.message).toBe(
+      'Process exited with code 1\n\nTraceback (most recent call last):\nRuntimeError: CUDA error'
+    )
+    const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
+    expect(failed).toMatchObject({ assets_startup_failure: null })
+  })
 })
 
 describe('describePriorOutcome', () => {
