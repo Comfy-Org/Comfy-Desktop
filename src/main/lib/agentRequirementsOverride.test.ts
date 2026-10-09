@@ -113,7 +113,13 @@ describe('effectiveAgentRequirements', () => {
   })
 
   it('refuses an override for a line core did not pin exactly', () => {
-    for (const core of ['comfy-agent>=0.2\n', 'comfy-agent[extra]==0.2\n', 'comfy-agent==0.2.*\n'])
+    for (const core of [
+      'comfy-agent>=0.2\n',
+      'comfy-agent[extra]==0.2\n',
+      'comfy-agent==0.2.*\n',
+      'comfy-agent; sys_platform == "win32"\n',
+      'comfy-agent[extra]\n'
+    ])
       expect(
         effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })),
         `going back to "${core.trim()}" would not undo the override`

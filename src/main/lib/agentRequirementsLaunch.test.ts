@@ -925,6 +925,19 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls.map((c) => c.content)).toEqual(['comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'])
   })
 
+  it('rolls a package core left unpinned back below the installed version', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, {
+      'comfy-agent': '0.1.0'
+    })
+
+    expect(decision).toMatchObject({ decision: 'applied' })
+    expect(calls).toEqual([
+      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+    ])
+  })
+
   it('still waits for core to install a package it left unpinned', async () => {
     fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
     mockUvPip.mockResolvedValue({
