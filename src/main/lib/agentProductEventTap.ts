@@ -235,6 +235,7 @@ export function createAgentProductEventTap(opts: AgentProductEventTapOptions): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
 } {
+  // The stream buffer bounds pending UTF-16 code units; parseLine separately enforces bytes.
   const lineBuffer = createStreamLineBuffer(MAX_LINE_BYTES)
   const trustedContext: TelemetryContext = {
     distribution: 'local',
