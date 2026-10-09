@@ -795,7 +795,9 @@ describe('installAgentRequirements with a version override', () => {
       pins: new Map([['comfy-agent', '0.2.3']])
     })
     expect(calls, 'only core file runs').toEqual([{ content: CORE_FILE, constraints: null }])
-    expect(sendOutput.mock.calls.join('')).toContain('refused (core_first)')
+    expect(sendOutput.mock.calls.join('')).toContain(
+      "refused (core_first); using ComfyUI's versions"
+    )
   })
 
   it('falls back to core file when the override files cannot be written', async () => {
@@ -907,12 +909,47 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
   })
 
-  it('refuses an override of a package core does not pin exactly', async () => {
-    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+  it('refuses an override of a package core pins by a range', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent>=0.1\ncomfy-cli==1.21.0\n')
 
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
     expect(decision).toMatchObject({ decision: 'refused', reason: 'unsupported_line' })
+    expect(calls.map((c) => c.content)).toEqual(['comfy-agent>=0.1\ncomfy-cli==1.21.0\n'])
+  })
+
+  it('installs the pin in place of a line core left unpinned', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'applied' })
+    expect(calls.map((c) => c.content)).toEqual(['comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'])
+  })
+
+  it('rolls a package core left unpinned back below the installed version', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, {
+      'comfy-agent': '0.1.0'
+    })
+
+    expect(decision).toMatchObject({ decision: 'applied' })
+    expect(calls).toEqual([
+      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+    ])
+  })
+
+  it('still waits for core to install a package it left unpinned', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])
+    })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'core_first' })
     expect(calls.map((c) => c.content)).toEqual(['comfy-agent\ncomfy-cli==1.21.0\n'])
   })
 
@@ -967,6 +1004,64 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
   })
 
+  it("says ComfyUI's versions follow a reverted override of pinned lines", async () => {
+    const sendOutput = vi.fn()
+
+    const decision = await installAgentRequirements(
+      plan,
+      sendOutput,
+      undefined,
+      undefined,
+      OVERRIDE,
+      {
+        signature: 'comfy-agent==0.2.3',
+        failures: 2
+      }
+    )
+
+    expect(decision).not.toHaveProperty('staysInstalled')
+    expect(sendOutput.mock.calls.join('')).toContain("failed before; using ComfyUI's versions")
+    expect(mockUvPip).not.toHaveBeenCalled()
+  })
+
+  it("names only the reverted pins ComfyUI can't take back, from the record", async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+    const sendOutput = vi.fn()
+    const both = { 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' }
+
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined, both, {
+      signature: 'comfy-agent==0.2.3,comfy-cli==1.22.0',
+      failures: 2
+    })
+
+    expect(decision).toMatchObject({
+      decision: 'reverted',
+      reason: 'previously_failed',
+      staysInstalled: new Map([['comfy-agent', '0.2.3']])
+    })
+    expect(sendOutput.mock.calls.join('')).toContain(
+      "failed before; ComfyUI's requirements don't pin comfy-agent, so they can't take comfy-agent==0.2.3 back if it went in"
+    )
+    expect(mockUvPip, 'the version comes from the record, not a listing').not.toHaveBeenCalled()
+  })
+
+  it("says ComfyUI's versions follow a reverted override when its file can't be read", async () => {
+    const read = vi.spyOn(fs.promises, 'readFile').mockRejectedValueOnce(new Error('EIO'))
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE, {
+      signature: 'comfy-agent==0.2.3',
+      failures: 2
+    })
+    read.mockRestore()
+
+    expect(decision).toEqual({
+      decision: 'reverted',
+      reason: 'previously_failed',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+  })
+
   it('tries a new version even after an earlier one was reverted', async () => {
     const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
 
@@ -1000,7 +1095,7 @@ describe('installAgentRequirements with a version override', () => {
 
     await installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE)
 
-    expect(sendOutput.mock.calls.join('')).toContain("did not install; using core's versions")
+    expect(sendOutput.mock.calls.join('')).toContain("did not install; using ComfyUI's versions")
   })
 
   describe('the time budget', () => {
@@ -1094,14 +1189,14 @@ describe('installAgentRequirements with a version override', () => {
       expect(calls.map((c) => [c.constraints !== null, c.timeoutAt])).toEqual([[false, 120_000]])
     })
 
-    it("says core's versions follow when the override times out", async () => {
+    it("says ComfyUI's versions follow when the override times out", async () => {
       hangUntilAborted(Date.now())
       const sendOutput = vi.fn()
 
       await settle(installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE))
 
       const output = sendOutput.mock.calls.join('')
-      expect(output).toContain("exceeded 90s; falling back to core's versions")
+      expect(output).toContain("exceeded 90s; falling back to ComfyUI's versions")
       expect(output).toContain('exceeded 30s; starting ComfyUI without it')
     })
 
@@ -1189,7 +1284,7 @@ describe('installAgentRequirements with a version override', () => {
       const sendOutput = vi.fn()
       await settle(installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE))
       expect(sendOutput.mock.calls.join('')).toContain(
-        "uv did not stop; hard-stopped it and falling back to core's versions"
+        "uv did not stop; hard-stopped it and falling back to ComfyUI's versions"
       )
       vi.useRealTimers()
       await vi.waitFor(

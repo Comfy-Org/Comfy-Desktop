@@ -103,10 +103,14 @@ export function effectiveAgentRequirements(
     const version = pins.get(normalized)
     if (version === undefined) continue
     const line = lines[i]!.match(REQUIREMENT_LINE)
-    if (!line || !EXACT_VERSION.test(line[2] ?? '') || seen.has(normalized)) {
+    const pinned = line?.[2]
+    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || seen.has(normalized)) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    if (compareVersions(version, line[2]!) <= 0) return { kind: 'refused', reason: 'not_newer' }
+    // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
+    if (pinned !== undefined && compareVersions(version, pinned) <= 0) {
+      return { kind: 'refused', reason: 'not_newer' }
+    }
     seen.add(normalized)
     lines[i] = `${name}==${version}`
   }
@@ -162,6 +166,16 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 
+/** The pins over lines core left unversioned: core's file can't take those back. */
+export function pinsOverBareLines(coreText: string, pins: OverridePins): OverridePins {
+  const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
+  return new Map(
+    [...pins].filter(([name]) =>
+      bare.some((line) => line && !line[2] && normalizePackageName(line[1]!) === name)
+    )
+  )
+}
+
 export interface AgentOverrideState {
   signature: string
   failures: number
@@ -191,6 +205,8 @@ export type OverrideDecision =
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
+      /** The reverted pins core's file can't take back, whether or not they went in. */
+      staysInstalled?: OverridePins
     }
 
 export function reportOverrideDecision(installationId: string, d: OverrideDecision): void {
@@ -201,7 +217,9 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       decision: d.decision,
       reason: 'reason' in d ? d.reason : null,
       pins,
-      failures: 'failures' in d ? (d.failures ?? null) : null
+      failures: 'failures' in d ? (d.failures ?? null) : null,
+      stays_installed:
+        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
     })
   } catch {
     // Telemetry must never reach the launch.

@@ -13,7 +13,8 @@ import {
   installedConstraints,
   isRevertedFor,
   overrideSignature,
-  parseAgentRequirementsOverride
+  parseAgentRequirementsOverride,
+  pinsOverBareLines
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -239,7 +240,7 @@ async function runBoundedInstall(
   extraArgs?: string[],
   fallbackFollows = false
 ): Promise<boolean> {
-  const fallback = "falling back to core's versions"
+  const fallback = "falling back to ComfyUI's versions"
   // uv's own output is the only progress signal available: the download is a
   // single opaque stretch otherwise, and the row would sit on one caption for
   // its whole duration.
@@ -413,10 +414,21 @@ async function tryOverride(
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
   const { pins } = parsed
   if (isRevertedFor(state, pins)) {
+    // Core's file can't take back a pin over a line it leaves unversioned.
+    const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
+    const stuck = pinsOverBareLines(coreText, pins)
     sendOutput(
-      `agent version override ${overrideSignature(pins)} failed before; using core's versions\n`
+      `agent version override ${overrideSignature(pins)} failed before; ` +
+        (stuck.size
+          ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
+          : "using ComfyUI's versions\n")
     )
-    return { decision: 'reverted', reason: 'previously_failed', pins }
+    return {
+      decision: 'reverted',
+      reason: 'previously_failed',
+      pins,
+      ...(stuck.size ? { staysInstalled: stuck } : {})
+    }
   }
   let coreText: string
   try {
@@ -493,13 +505,13 @@ function refuse(
   reason: OverrideRefusal,
   pins?: OverridePins
 ): OverrideDecision {
-  sendOutput(`agent version override refused (${reason}); using core's versions\n`)
+  sendOutput(`agent version override refused (${reason}); using ComfyUI's versions\n`)
   return { decision: 'refused', reason, ...(pins ? { pins } : {}) }
 }
 
 function revertOnInstall(sendOutput: (text: string) => void, pins: OverridePins): OverrideDecision {
   sendOutput(
-    `agent version override ${overrideSignature(pins)} did not install; using core's versions\n`
+    `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
   )
   return { decision: 'reverted', reason: 'install_failed', pins }
 }

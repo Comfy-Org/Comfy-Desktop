@@ -3081,7 +3081,7 @@ describe('agent requirements at launch', () => {
     })
 
     it('counts no start failure against an override that did not go in', async () => {
-      fs.writeFileSync(agentReqPath(), 'comfy-agent\ncomfy-cli==1.21.0\n')
+      fs.writeFileSync(agentReqPath(), 'comfy-agent>=0.1\ncomfy-cli==1.21.0\n')
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
       await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
