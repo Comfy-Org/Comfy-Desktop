@@ -151,6 +151,7 @@ type ParseFailure =
   | 'invalid_properties'
   | 'oversized'
   | 'unsupported_version'
+  | 'capture_failed'
 
 type ParseResult =
   | { kind: 'ignored' }
@@ -269,7 +270,7 @@ export function createAgentProductEventTap(opts: AgentProductEventTapOptions): {
         ...trustedContext
       })
     } catch {
-      reportInvalid('invalid_envelope')
+      reportInvalid('capture_failed')
     }
   }
 
@@ -278,7 +279,7 @@ export function createAgentProductEventTap(opts: AgentProductEventTapOptions): {
       try {
         for (const line of lineBuffer.append(source, chunk)) handleLine(line)
       } catch {
-        reportInvalid('invalid_envelope')
+        reportInvalid('capture_failed')
       }
     },
     beginBoot(): void {

@@ -173,4 +173,18 @@ describe('agentProductEventTap', () => {
     expect(() => tap.ingest(`${envelope()}\n${envelope()}\n`, 'stdout')).not.toThrow()
     expect(telemetry.capture).toHaveBeenCalledTimes(2)
   })
+
+  it('distinguishes capture failures from invalid producer records', () => {
+    vi.mocked(telemetry.capture).mockImplementationOnce(() => {
+      throw new Error('capture failed')
+    })
+    const tap = createAgentProductEventTap(BASE)
+
+    tap.ingest(`${envelope()}\n`, 'stdout')
+
+    expect(telemetry.emit).toHaveBeenCalledWith(
+      'comfy.desktop.comfyui.agent_product_event.invalid',
+      expect.objectContaining({ reason: 'capture_failed', count: 1 })
+    )
+  })
 })
