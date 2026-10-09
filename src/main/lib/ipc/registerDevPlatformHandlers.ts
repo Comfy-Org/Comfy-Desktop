@@ -127,6 +127,20 @@ export async function signInToCloud(): Promise<AuthStatus> {
 }
 
 /**
+ * Activate `workspaceId`'s credentials and announce the result. Cached
+ * credentials activate silently; first access or expired, unusable ones run
+ * browser auth because cloud tokens are scoped at consent time. Shared by the
+ * chooser and the hosted ComfyUI view.
+ */
+export async function switchCloudWorkspace(workspaceId: string): Promise<AuthStatus> {
+  clearVersionCache()
+  const status = await getCloudSession().switchWorkspace(workspaceId)
+  clearVersionCache()
+  broadcastAuthChanged(status)
+  return status
+}
+
+/**
  * Sign Desktop out of its Cloud account and announce it. Asks first, on
  * `host`'s window, when an install or update still needs the account; without
  * a window to ask on, it keeps the session. Shared by the account chip and the
@@ -231,18 +245,8 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  // Cached workspace credentials activate silently. First access or expired,
-  // unusable credentials may run browser auth because cloud tokens are scoped
-  // at consent time. Broadcast the result so every remote surface re-scopes.
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.switchWorkspace,
-    async (_event, workspaceId: string): Promise<AuthStatus> => {
-      clearVersionCache()
-      const status = await session.switchWorkspace(workspaceId)
-      clearVersionCache()
-      broadcastAuthChanged(status)
-      return status
-    }
+  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) =>
+    switchCloudWorkspace(workspaceId)
   )
 
   ipcMain.handle(

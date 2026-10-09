@@ -391,12 +391,14 @@ describe('comfyPreload auth bridge', () => {
     await Auth.getWorkspaceToken('ws-1')
     await Auth.requestSignIn()
     await Auth.signOut()
+    await Auth.switchWorkspace('ws-2')
 
     expect(mocks.invoke.mock.calls).toEqual([
       ['desktop2-auth:get-state'],
       ['desktop2-auth:get-workspace-token', 'ws-1'],
       ['desktop2-auth:request-sign-in'],
-      ['desktop2-auth:sign-out']
+      ['desktop2-auth:sign-out'],
+      ['desktop2-auth:switch-workspace', 'ws-2']
     ])
   })
 

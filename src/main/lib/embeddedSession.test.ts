@@ -27,7 +27,8 @@ import {
   EMBEDDED_SESSION_CHANNELS,
   workspaceTokenForSender,
   broadcastEmbeddedSessionChanged,
-  stateForSender
+  stateForSender,
+  switchWorkspaceForSender
 } from './embeddedSession'
 import type { EmbeddedSessionSender } from './embeddedSession'
 
@@ -114,6 +115,51 @@ describe('embeddedSession', () => {
       await expect(workspaceTokenForSender(event, workspaceId)).resolves.toBe(expected)
     }
   )
+
+  it('switches a signed-in view to the workspace it names and returns the new state', async () => {
+    const { event } = view('http://127.0.0.1:8000')
+    const switchWorkspace = vi.fn(async () => {
+      mocks.getAccessToken.mockResolvedValue(
+        jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-2' })
+      )
+    })
+
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'user-1',
+      email: 'a@example.com',
+      workspaceId: 'ws-2'
+    })
+    expect(switchWorkspace).toHaveBeenCalledWith('ws-2')
+  })
+
+  it.each([
+    ['a remote view', 'http://192.168.1.20:8188', 'ws-2', ACCESS, { status: 'disabled' }],
+    ['a signed-out session', 'http://127.0.0.1:8000', 'ws-2', null, { status: 'signed_out' }],
+    ['an empty workspace', 'http://127.0.0.1:8000', '', ACCESS, undefined],
+    ['a non-string workspace', 'http://127.0.0.1:8000', 42, ACCESS, undefined]
+  ])('does not switch for %s', async (_name, comfyUrl, workspaceId, token, expected) => {
+    mocks.getAccessToken.mockResolvedValue(token)
+    const { event } = view(comfyUrl)
+    const switchWorkspace = vi.fn(async () => undefined)
+
+    const state = await switchWorkspaceForSender(event, workspaceId, switchWorkspace)
+
+    expect(switchWorkspace).not.toHaveBeenCalled()
+    if (expected) expect(state).toEqual(expected)
+    else expect(state).toMatchObject({ status: 'signed_in', workspaceId: 'ws-1' })
+  })
+
+  it('does not switch while the ops flag is off', async () => {
+    mocks.enabled = false
+    const { event } = view('http://127.0.0.1:8000')
+    const switchWorkspace = vi.fn(async () => undefined)
+
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
+      status: 'disabled'
+    })
+    expect(switchWorkspace).not.toHaveBeenCalled()
+  })
 
   it('refuses an unregistered sender', async () => {
     const event = {

@@ -135,6 +135,9 @@ export interface ComfyDesktop2AuthBridge {
   /** Signs Desktop out of its account (every view follows) and resolves with
    *  the resulting state; Desktop may keep the session if an install needs it. */
   signOut(): Promise<ComfyDesktop2AuthState>
+  /** Re-scopes Desktop's session to `workspaceId` (browser consent the first
+   *  time) and resolves with the resulting state; every view follows. */
+  switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
 }

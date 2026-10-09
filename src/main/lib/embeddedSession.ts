@@ -22,6 +22,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
+  switchWorkspace: 'desktop2-auth:switch-workspace',
   changed: 'desktop2-auth:changed'
 } as const
 
@@ -100,6 +101,22 @@ export async function workspaceTokenForSender(
 async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string | null> {
   if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
   return getCloudSession().getAccessToken()
+}
+
+/**
+ * Re-scopes Desktop's session to `workspaceId` for a trusted, signed-in view,
+ * then reads the state back. Anything else returns its state untouched.
+ */
+export async function switchWorkspaceForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown,
+  switchWorkspace: (workspaceId: string) => Promise<unknown>
+): Promise<ComfyDesktop2AuthState> {
+  const state = await stateForSender(event)
+  if (state.status !== 'signed_in' || typeof workspaceId !== 'string' || workspaceId === '')
+    return state
+  await switchWorkspace(workspaceId)
+  return stateForSender(event)
 }
 
 /** Bumped per broadcast, so a slower earlier read never overwrites a newer state. */
