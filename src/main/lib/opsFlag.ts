@@ -10,8 +10,8 @@
  * are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
- * operational override isn't accidentally consent-gated. Fetched once at boot; running apps
- * pick up new values on restart.
+ * operational override isn't accidentally consent-gated. Fetched once at boot; a `persist` flag
+ * answers from its saved treatment at once and refreshes it in the background.
  *
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
@@ -123,6 +123,8 @@ interface PersistedOpsFlagEntry {
   payload: unknown
 }
 
+/** `fetchedAt` is written for diagnostics only and never read back: any saved entry counts,
+ *  including one written before the stamp existed. */
 function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
   const entry = readPersistedFile().entries[key]
   if (!entry || typeof entry !== 'object') return undefined
@@ -145,7 +147,7 @@ function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
  *  primary over `.bak` at write time, which is the resurrection this ordering prevents. */
 function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
   const all = readPersistedFileForWrite()
-  all[key] = entry
+  all[key] = { ...entry, fetchedAt: Date.now() }
   const contents = JSON.stringify(all)
   const filePath = persistFilePath()
   writeFileSafe(filePath + '.bak', contents)
@@ -175,16 +177,18 @@ export function makeOpsFlag<T>(opts: {
   parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string
+  /** Boot deadline when nothing is saved. An explicit `init` `timeoutMs` wins. */
+  timeoutMs?: number
   /** Carry the last SUCCESSFULLY FETCHED treatment across launches in
    *  `<configDir>/ops-flags.json`, so an unreachable server holds it instead of dropping to
    *  `fallback`. Any successful fetch is authoritative and overwrites what is stored —
    *  including an explicit `false`, which is how a treatment already granted is taken back.
    *
-   *  "Successfully fetched" includes a fetch that answered AFTER this launch's deadline. The
-   *  deadline is a bound on how long boot waits, not on how long the answer stays useful: a
-   *  cold `/flags` POST measured ~2572 ms on Windows and is always cold at boot, so a 2000 ms
-   *  race is lost every launch and a revocation that only ever arrives late would never land.
-   *  A late value is written for the NEXT launch and deliberately does not disturb this one.
+   *  Stale-while-revalidate: a saved treatment answers `get()` at once, with no wait, and the
+   *  fetch only refreshes it. Whenever a fetched value arrives — in time or after the deadline —
+   *  it is persisted for the next launch and applied for later reads in this session; a launch
+   *  that already read the flag keeps what it read. Only a launch with nothing saved waits, on
+   *  the `timeoutMs` deadline.
    *
    *  REVOKING: deleting or archiving the flag does NOT revoke it. A missing key reads as
    *  `unreachable`, indistinguishable from an offline launch, so deletion HOLDS the very grant
@@ -196,7 +200,7 @@ export function makeOpsFlag<T>(opts: {
    *  fail-closed guard must NOT persist. */
   persist?: true
 }): OpsFlag<T> {
-  const { key, fallback, parse, logLabel, persist } = opts
+  const { key, fallback, parse, logLabel, timeoutMs, persist } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
   /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
@@ -204,26 +208,17 @@ export function makeOpsFlag<T>(opts: {
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
 
-  /** The `unreachable` path — `getOpsFlagResult` classifies timeout/network errors rather
-   *  than rejecting, so this covers both that and a defensive rejection. Read-only: an
-   *  unreachable server must never overwrite what a successful fetch stored. */
-  function applyPersisted(): boolean {
-    if (!persist) return false
+  /** The stored treatment, parsed, or `undefined` when there is none. Read once per `init`.
+   *  Read-only: an unreachable server must never overwrite what a successful fetch stored. */
+  function readPersisted(): T | undefined {
+    if (!persist) return undefined
     const stored = readPersistedResult(key)
-    if (!stored) return false
-    const parsed = parse(stored.value, stored.payload)
-    if (parsed === undefined) return false
-    cached = parsed
-    return true
+    return stored && parse(stored.value, stored.payload)
   }
 
-  /** Store a value the server produced after this launch's deadline, so the NEXT launch reads
-   *  it. Only ever reached for an explicit value — `getOpsFlagResult` withholds late misses and
-   *  late errors, both of which are `unreachable` and must never be persisted.
-   *
-   *  Deliberately does not touch `cached`. The deadline governs this launch's decision, and a
-   *  treatment that flipped partway through a session would be a worse failure than one that
-   *  converges on restart.
+  /** Store a value the server produced after this launch's deadline, and apply it for later
+   *  reads. Only ever reached for an explicit value — `getOpsFlagResult` withholds late misses
+   *  and late errors, both of which are `unreachable` and must never be persisted.
    *
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
@@ -233,6 +228,9 @@ export function makeOpsFlag<T>(opts: {
    *  Revisit if a second `persist` flag is ever added. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation) return
+    const parsed = parse(result.value, result.payload)
+    if (parsed !== undefined) cached = parsed
+    if (logLabel) console.log(`[${logLabel}] late: fetched=`, result.value)
     try {
       writePersistedResult(key, { value: result.value, payload: result.payload })
     } catch (err) {
@@ -246,11 +244,13 @@ export function makeOpsFlag<T>(opts: {
     init(initOpts) {
       if (initPromise) return initPromise
       const generationAtInit = generation
-      initPromise = mainTelemetry
+      const saved = readPersisted()
+      if (saved !== undefined) cached = saved
+      const fetched = mainTelemetry
         .getOpsFlagResult(
           key,
           initOpts.distinctId,
-          initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          initOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
           // Non-persisting flags pass no callback at all, so they stay write-free structurally
           // rather than by a guard inside one — no write path is attached to the abandoned fetch.
           // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
@@ -258,11 +258,13 @@ export function makeOpsFlag<T>(opts: {
           persist ? (late) => persistLate(generationAtInit, late) : undefined
         )
         .then((result) => {
+          // A refresh runs detached, so it can outlive a `_resetForTest`.
+          if (generationAtInit !== generation) return
           if (result.kind === 'unreachable') {
-            if (!applyPersisted()) {
-              const parsed = parse(undefined, undefined)
-              if (parsed !== undefined) cached = parsed
-            }
+            // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
+            // it here could undo a late value that landed first.
+            const parsed = saved === undefined ? parse(undefined, undefined) : undefined
+            if (parsed !== undefined) cached = parsed
           } else {
             const parsed = parse(result.value, result.payload)
             if (parsed !== undefined) cached = parsed
@@ -288,9 +290,10 @@ export function makeOpsFlag<T>(opts: {
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
-          // Otherwise fail to `fallback`: `cached` is only ever assigned on the resolved path.
-          applyPersisted()
+          // `cached` keeps what it holds: the saved treatment, or `fallback`.
         })
+      // A saved treatment answers now; the fetch above only refreshes it.
+      initPromise = saved !== undefined ? Promise.resolve() : fetched
       return initPromise
     },
     async get() {
