@@ -395,23 +395,31 @@ describe('pinsOverBareLines', () => {
     const core = 'Comfy_Agent\ncomfy-cli==1.21.0\nnodejs-wheel-binaries\n'
     expect(
       pinsOverBareLines(core, pins({ 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' }))
-    ).toEqual(['comfy-agent'])
+    ).toEqual(new Map([['comfy-agent', '0.2.3']]))
   })
 })
 
 describe('reportOverrideDecision', () => {
-  it('reports what stays installed after a revert', () => {
+  it('reports the reverted pins core cannot take back, and null when there are none', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      const reverted = { decision: 'reverted', reason: 'previously_failed' } as const
+      const both = pins({ 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' })
 
-    reportOverrideDecision('i', {
-      decision: 'reverted',
-      reason: 'previously_failed',
-      pins: pins({ 'comfy-agent': '0.2.3' }),
-      staysInstalled: pins({ 'comfy-agent': '0.2.3' })
-    })
+      reportOverrideDecision('i', {
+        ...reverted,
+        pins: both,
+        staysInstalled: pins({ 'comfy-agent': '0.2.3' })
+      })
+      reportOverrideDecision('i', { ...reverted, pins: both, staysInstalled: new Map() })
+      reportOverrideDecision('i', { ...reverted, pins: both })
 
-    expect(emit.mock.calls[0]![1]).toMatchObject({ stays_installed: 'comfy-agent==0.2.3' })
-    emit.mockRestore()
+      expect(
+        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).stays_installed)
+      ).toEqual(['comfy-agent==0.2.3', null, null])
+    } finally {
+      emit.mockRestore()
+    }
   })
 
   it('never lets a failing telemetry sink reach the launch', () => {

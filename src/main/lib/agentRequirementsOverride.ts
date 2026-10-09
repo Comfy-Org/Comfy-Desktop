@@ -140,15 +140,6 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
-export function installedVersions(pipListOutput: string): Map<string, string> {
-  return new Map(
-    (parseInstalled(pipListOutput) ?? []).map(({ name, version }) => [
-      normalizePackageName(name),
-      version
-    ])
-  )
-}
-
 /** Pins every installed non-agent package where it is, so an override that moves one falls back. */
 export function installedConstraints(pipListOutput: string): string | null {
   const installed = parseInstalled(pipListOutput)
@@ -175,14 +166,14 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 
-/** The pins over lines core left unversioned: core's file can't move those back. */
-export function pinsOverBareLines(coreText: string, pins: OverridePins): string[] {
-  return coreText
-    .split(/\r?\n/)
-    .map((line) => line.match(REQUIREMENT_LINE))
-    .filter((line) => line !== null && line[2] === undefined)
-    .map((line) => normalizePackageName(line![1]!))
-    .filter((name) => pins.has(name))
+/** The pins over lines core left unversioned: core's file can't take those back. */
+export function pinsOverBareLines(coreText: string, pins: OverridePins): OverridePins {
+  const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
+  return new Map(
+    [...pins].filter(([name]) =>
+      bare.some((line) => line && !line[2] && normalizePackageName(line[1]!) === name)
+    )
+  )
 }
 
 export interface AgentOverrideState {
@@ -214,7 +205,7 @@ export type OverrideDecision =
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
-      /** What an earlier override left that core's file can't downgrade. */
+      /** The reverted pins core's file can't take back, if they went in. */
       staysInstalled?: OverridePins
     }
 
@@ -228,7 +219,7 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
-        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
+        'staysInstalled' in d && d.staysInstalled?.size ? overrideSignature(d.staysInstalled) : null
     })
   } catch {
     // Telemetry must never reach the launch.

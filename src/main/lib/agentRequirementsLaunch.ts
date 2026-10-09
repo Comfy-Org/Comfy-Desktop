@@ -11,7 +11,6 @@ import {
   effectiveAgentRequirements,
   coreFileInstalled,
   installedConstraints,
-  installedVersions,
   isRevertedFor,
   overrideSignature,
   parseAgentRequirementsOverride,
@@ -414,7 +413,18 @@ async function tryOverride(
   if (parsed.kind === 'none') return undefined
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
   const { pins } = parsed
-  if (isRevertedFor(state, pins)) return revertedBefore(plan, pins, sendOutput, signal)
+  if (isRevertedFor(state, pins)) {
+    // ComfyUI's file can't take back a pin over a line it leaves unversioned.
+    const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
+    const stuck = pinsOverBareLines(coreText, pins)
+    sendOutput(
+      `agent version override ${overrideSignature(pins)} failed before; ` +
+        (stuck.size
+          ? `ComfyUI's requirements don't pin it, so they can't take ${overrideSignature(stuck)} back\n`
+          : "using ComfyUI's versions\n")
+    )
+    return { decision: 'reverted', reason: 'previously_failed', pins, staysInstalled: stuck }
+  }
   let coreText: string
   try {
     coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
@@ -452,35 +462,6 @@ async function tryOverride(
   } finally {
     void fs.promises.unlink(overridePath).catch(() => {})
     void fs.promises.unlink(constraintsPath).catch(() => {})
-  }
-}
-
-/** Says what stays installed when ComfyUI's file can't take a pin back. */
-async function revertedBefore(
-  plan: AgentRequirementsInstall,
-  pins: OverridePins,
-  sendOutput: (text: string) => void,
-  signal: AbortSignal | undefined
-): Promise<OverrideDecision> {
-  const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
-  const bare = pinsOverBareLines(coreText, pins)
-  const listed = bare.length > 0 ? await listInstalled(plan, signal) : null
-  const versions = listed === null ? new Map<string, string>() : installedVersions(listed)
-  const stuck = new Map(
-    bare.flatMap((name) => (versions.has(name) ? [[name, versions.get(name)!]] : []))
-  )
-  const kept = [...stuck].map(([name, version]) => `${name} ${version}`).join(', ')
-  sendOutput(
-    `agent version override ${overrideSignature(pins)} failed before; ` +
-      (kept
-        ? `ComfyUI's requirements can't downgrade it, so ${kept} stays installed\n`
-        : "using ComfyUI's versions\n")
-  )
-  return {
-    decision: 'reverted',
-    reason: 'previously_failed',
-    pins,
-    ...(kept ? { staysInstalled: stuck } : {})
   }
 }
 
