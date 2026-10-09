@@ -11,9 +11,11 @@ import {
   effectiveAgentRequirements,
   coreFileInstalled,
   installedConstraints,
+  installedVersions,
   isRevertedFor,
   overrideSignature,
-  parseAgentRequirementsOverride
+  parseAgentRequirementsOverride,
+  pinsOverBareLines
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -239,7 +241,7 @@ async function runBoundedInstall(
   extraArgs?: string[],
   fallbackFollows = false
 ): Promise<boolean> {
-  const fallback = "falling back to core's versions"
+  const fallback = "falling back to ComfyUI's versions"
   // uv's own output is the only progress signal available: the download is a
   // single opaque stretch otherwise, and the row would sit on one caption for
   // its whole duration.
@@ -412,12 +414,7 @@ async function tryOverride(
   if (parsed.kind === 'none') return undefined
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
   const { pins } = parsed
-  if (isRevertedFor(state, pins)) {
-    sendOutput(
-      `agent version override ${overrideSignature(pins)} failed before; using core's versions\n`
-    )
-    return { decision: 'reverted', reason: 'previously_failed', pins }
-  }
+  if (isRevertedFor(state, pins)) return revertedBefore(plan, pins, sendOutput, signal)
   let coreText: string
   try {
     coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
@@ -458,6 +455,35 @@ async function tryOverride(
   }
 }
 
+/** Says what stays installed when ComfyUI's file can't take a pin back. */
+async function revertedBefore(
+  plan: AgentRequirementsInstall,
+  pins: OverridePins,
+  sendOutput: (text: string) => void,
+  signal: AbortSignal | undefined
+): Promise<OverrideDecision> {
+  const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
+  const bare = pinsOverBareLines(coreText, pins)
+  const listed = bare.length > 0 ? await listInstalled(plan, signal) : null
+  const versions = listed === null ? new Map<string, string>() : installedVersions(listed)
+  const stuck = new Map(
+    bare.flatMap((name) => (versions.has(name) ? [[name, versions.get(name)!]] : []))
+  )
+  const kept = [...stuck].map(([name, version]) => `${name} ${version}`).join(', ')
+  sendOutput(
+    `agent version override ${overrideSignature(pins)} failed before; ` +
+      (kept
+        ? `ComfyUI's requirements can't downgrade it, so ${kept} stays installed\n`
+        : "using ComfyUI's versions\n")
+  )
+  return {
+    decision: 'reverted',
+    reason: 'previously_failed',
+    pins,
+    ...(kept ? { staysInstalled: stuck } : {})
+  }
+}
+
 /** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
 const LIST_TIMEOUT_MS = 30_000
 
@@ -493,13 +519,13 @@ function refuse(
   reason: OverrideRefusal,
   pins?: OverridePins
 ): OverrideDecision {
-  sendOutput(`agent version override refused (${reason}); using core's versions\n`)
+  sendOutput(`agent version override refused (${reason}); using ComfyUI's versions\n`)
   return { decision: 'refused', reason, ...(pins ? { pins } : {}) }
 }
 
 function revertOnInstall(sendOutput: (text: string) => void, pins: OverridePins): OverrideDecision {
   sendOutput(
-    `agent version override ${overrideSignature(pins)} did not install; using core's versions\n`
+    `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
   )
   return { decision: 'reverted', reason: 'install_failed', pins }
 }

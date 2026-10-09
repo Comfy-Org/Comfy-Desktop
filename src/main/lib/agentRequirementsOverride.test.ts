@@ -11,6 +11,7 @@ import {
   nextOverrideState,
   overrideSignature,
   parseAgentRequirementsOverride,
+  pinsOverBareLines,
   compareVersions,
   readOverrideState,
   reportOverrideDecision
@@ -389,7 +390,30 @@ describe('compareVersions', () => {
   })
 })
 
+describe('pinsOverBareLines', () => {
+  it('names only the pins over lines core left unversioned', () => {
+    const core = 'Comfy_Agent\ncomfy-cli==1.21.0\nnodejs-wheel-binaries\n'
+    expect(
+      pinsOverBareLines(core, pins({ 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' }))
+    ).toEqual(['comfy-agent'])
+  })
+})
+
 describe('reportOverrideDecision', () => {
+  it('reports what stays installed after a revert', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+
+    reportOverrideDecision('i', {
+      decision: 'reverted',
+      reason: 'previously_failed',
+      pins: pins({ 'comfy-agent': '0.2.3' }),
+      staysInstalled: pins({ 'comfy-agent': '0.2.3' })
+    })
+
+    expect(emit.mock.calls[0]![1]).toMatchObject({ stays_installed: 'comfy-agent==0.2.3' })
+    emit.mockRestore()
+  })
+
   it('never lets a failing telemetry sink reach the launch', () => {
     vi.spyOn(telemetry, 'emit').mockImplementation(() => {
       throw new Error('sink down')

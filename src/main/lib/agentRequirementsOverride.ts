@@ -140,6 +140,15 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
+export function installedVersions(pipListOutput: string): Map<string, string> {
+  return new Map(
+    (parseInstalled(pipListOutput) ?? []).map(({ name, version }) => [
+      normalizePackageName(name),
+      version
+    ])
+  )
+}
+
 /** Pins every installed non-agent package where it is, so an override that moves one falls back. */
 export function installedConstraints(pipListOutput: string): string | null {
   const installed = parseInstalled(pipListOutput)
@@ -164,6 +173,16 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
     .map((line) => line.replace(/\s#.*$/, ''))
     .map((line) => (/[;/\\]/.test(line) ? undefined : line.match(LEADING_NAME)?.[1]))
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
+}
+
+/** The pins over lines core left unversioned: core's file can't move those back. */
+export function pinsOverBareLines(coreText: string, pins: OverridePins): string[] {
+  return coreText
+    .split(/\r?\n/)
+    .map((line) => line.match(REQUIREMENT_LINE))
+    .filter((line) => line !== null && line[2] === undefined)
+    .map((line) => normalizePackageName(line![1]!))
+    .filter((name) => pins.has(name))
 }
 
 export interface AgentOverrideState {
@@ -195,6 +214,8 @@ export type OverrideDecision =
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
+      /** What an earlier override left that core's file can't downgrade. */
+      staysInstalled?: OverridePins
     }
 
 export function reportOverrideDecision(installationId: string, d: OverrideDecision): void {
@@ -205,7 +226,9 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       decision: d.decision,
       reason: 'reason' in d ? d.reason : null,
       pins,
-      failures: 'failures' in d ? (d.failures ?? null) : null
+      failures: 'failures' in d ? (d.failures ?? null) : null,
+      stays_installed:
+        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
     })
   } catch {
     // Telemetry must never reach the launch.
