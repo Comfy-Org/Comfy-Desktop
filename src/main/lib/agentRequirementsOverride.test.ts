@@ -205,11 +205,13 @@ describe('coreFileInstalled', () => {
     expect(coreFileInstalled(CORE, list())).toBe(false)
   })
 
-  it('does not wait on a line uv may never install here: a marker or a URL', () => {
+  it('does not wait on a line uv may never install here: a marker, a URL or a path', () => {
     const extra =
       'pywin32==306 ; sys_platform == "win32"\n' +
       'https://example.com/pkg-1.0-py3-none-any.whl\n' +
-      'git+https://github.com/org/pkg\n'
+      'git+https://github.com/org/pkg\n' +
+      'wheels/pkg-1.0-py3-none-any.whl\n' +
+      'C:\\vendor\\pkg-1.0-py3-none-any.whl\n'
     const installed = list('comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries')
 
     expect(coreFileInstalled(CORE + extra, installed)).toBe(true)
