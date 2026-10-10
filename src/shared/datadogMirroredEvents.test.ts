@@ -26,6 +26,16 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)
   })
 
+  // The SSO dashboards and monitors live in Datadog, so the hosted-view sign-in
+  // mirrors every stage; the Firebase bridge's sign_in_started stays PostHog-only.
+  it.each([
+    ['comfy.desktop.auth.host_sign_in', true],
+    ['comfy.desktop.auth.sign_in_failed', true],
+    ['comfy.desktop.auth.sign_in_started', false]
+  ])('mirrors %s: %s', (name, mirrored) => {
+    expect(isDatadogMirroredEvent(name)).toBe(mirrored)
+  })
+
   it('returns false for unknown event names', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
