@@ -228,23 +228,6 @@ const RECORD_TAG = '[agent-event] '
 // Core relays the agent's own output behind this tag so it can never pass as a record.
 const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
-// ComfyUI logs its records at INFO. A tqdm bar redraws as `\r<bar>` with no
-// newline, so a record logged mid-bar lands behind it.
-const LEVEL_TAG_AT_END = /\[INFO\]\s+$/
-const TQDM_BAR = /^[^|[\]]*\d+%\|[^|]*\| *\S+\/\S+ \[[^\]]*\]$/
-
-// Whether the record starts its log line: nothing ahead of it since the last
-// `\r` but a progress bar and the level tag, so text logged ahead of it on the
-// same line can't carry it.
-function startsLine(text: string, at: number): boolean {
-  const redraw = text.lastIndexOf('\r', at)
-  const ahead = text
-    .slice(redraw + 1, at)
-    .replace(LEVEL_TAG_AT_END, '')
-    .trim()
-  return ahead === '' || (redraw !== -1 && TQDM_BAR.test(ahead))
-}
-
 function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
   const text = stripAnsi(line)
   // Not anchored: a tqdm bar redraws as `\r<bar>` with no newline, so a record can land behind it.
@@ -256,7 +239,6 @@ function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
   if (!event || tail === undefined) return null
   const product = PRODUCT_EVENTS.get(event)
   if (product) {
-    if (!startsLine(text, at)) return null
     const fields = parseProductFields(product, tail)
     return fields ? { event, fields, product } : null
   }

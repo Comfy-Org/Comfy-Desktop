@@ -608,34 +608,15 @@ describe('agentTap product events', () => {
     )
   })
 
-  it('reads a product event only when it starts its line', () => {
-    ingest(
-      relayed(`[ERROR] The local agent could not be started: x ${PRODUCT_FIXTURE[1]}`) +
-        `note ${PRODUCT_FIXTURE[1]}\n`
-    )
-    ingest(relayed(`[ERROR] could not be started: [INFO] ${PRODUCT_FIXTURE[1]}`))
-    ingest(relayed(`Loaded [SDXL] ${PRODUCT_FIXTURE[1]}`))
-    ingest(`x[INFO]${PRODUCT_FIXTURE[1]}\n`)
-    ingest(`[SDXL] ${PRODUCT_FIXTURE[1]}\n`)
-    ingest(relayed(`[ERROR] could not be started: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}`))
-    ingest(`\r[ERROR] x: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}\n`)
-    ingest(`note: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}\n`)
-    expect(captured, 'text ahead of the record could be anyone’s').toEqual([])
-    ingest(`${PRODUCT_FIXTURE[0]}\n`)
-    expect(
-      captured.map((c) => c.event),
-      'a build without level tags'
-    ).toEqual(['agent_session_started'])
-    captured = []
+  it('reads a product event behind a progress bar, or with nothing ahead of it', () => {
     const tap = createAgentTap(baseOpts)
     tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
     tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
-    tap.ingest('\rmodel.safetensors:  50%|#####     | 1.2G/2.4G [00:10<00:10, 120MB/s]', 'stderr')
-    tap.ingest(relayed(PRODUCT_FIXTURE[2]!), 'stderr')
+    tap.ingest(`${PRODUCT_FIXTURE[0]}\n`, 'stderr')
     expect(
       captured.map((c) => c.event),
-      'a tqdm redraw ahead of it is fine'
-    ).toEqual(['agent_turn_started', 'agent_first_response'])
+      'a tqdm redraw or a build without level tags'
+    ).toEqual(['agent_turn_started', 'agent_session_started'])
   })
 
   it.each([
@@ -681,6 +662,11 @@ describe('agentTap product events', () => {
     ['a non-boolean', sessionStarted(' is_resume=yes')],
     ['an offset timestamp', turnStarted(' accepted_at=2026-10-09T14:00:01+02:00')],
     ['a duplicate key', turnStarted(` thread_id=${THREAD}`)],
+    ['a model with a slash', turnStarted(' model=a/b')],
+    ['a model with a backslash', turnStarted(' model=C:\\x')],
+    ['a non-ASCII model', turnStarted(' model=caf\u00e9')],
+    ['a model past 128 characters', turnStarted(` model=${'m'.repeat(129)}`)],
+    ['a cohort holding an email', sessionStarted(' feature_flag_cohort=a@b.com')],
     [
       'a malformed agent_version',
       sessionStarted(' agent_version=latest').replace(' agent_version=0.0.1', '')
@@ -720,6 +706,26 @@ describe('agentTap product events', () => {
     expect(captured[0]?.ctx).toMatchObject({
       mutation_id: '1'.repeat(64),
       event_schema_version: '2'
+    })
+  })
+
+  it('drops a mutation whose id is not a 64-character lowercase hex digest', () => {
+    const line = PRODUCT_FIXTURE[3]!
+    const id = line.match(/ mutation_id=([0-9a-f]+)/)![1]!
+    ingest(relayed(line.replace(id, id.slice(1))))
+    ingest(relayed(line.replace(id, id.toUpperCase())))
+    expect(captured).toEqual([])
+  })
+
+  it('accepts a 128-character model and a ComfyUI dev-build agent_version', () => {
+    ingest(
+      relayed(
+        PRODUCT_FIXTURE[1]!.replace('model=claude-opus-4-8', `model=${'m'.repeat(128)}`)
+      ).replace('agent_version=0.0.1', 'agent_version=0.0.0.dev9503+lifecycle')
+    )
+    expect(captured[0]?.ctx).toMatchObject({
+      model: 'm'.repeat(128),
+      agent_version: '0.0.0.dev9503+lifecycle'
     })
   })
 
@@ -841,16 +847,23 @@ describe('agentTap consent gating', () => {
     expect(agentCaptures()).toEqual([])
   })
 
-  it('delivers a product event under its own name only when consent is granted', () => {
-    _resetProductEventBudgetForTest()
-    telemetry.setConsentState('denied')
-    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
-    createAgentTap({ installationId: 'inst-1' }).ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
-    expect(sdkCaptures.map((c) => c.event)).not.toContain('agent_turn_started')
-    telemetry.setConsentState('granted')
-    createAgentTap({ installationId: 'inst-1' }).ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
-    expect(sdkCaptures.map((c) => c.event)).toContain('agent_turn_started')
-  })
+  it.each(['denied', 'undecided'] as const)(
+    'delivers a product event only once consent is granted, and nothing seen while %s',
+    (before) => {
+      _resetProductEventBudgetForTest()
+      telemetry.setConsentState(before)
+      telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+      const tap = createAgentTap({ installationId: 'inst-1' })
+      tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+      expect(sdkCaptures.filter((c) => c.event === 'agent_turn_started')).toHaveLength(0)
+      telemetry.setConsentState('granted')
+      tap.ingest(relayed(PRODUCT_FIXTURE[2]!), 'stderr')
+      expect(
+        sdkCaptures.map((c) => c.event).filter((e) => e.startsWith('agent_')),
+        'the line seen before consent is never sent later'
+      ).toEqual(['agent_first_response'])
+    }
+  )
 
   it('delivers at most 60 of one product event a minute, through telemetry\u2019s own limit', () => {
     _resetProductEventBudgetForTest()
