@@ -157,7 +157,7 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
 
 // Product events share telemetry's 5000-per-process cap with every other
 // Desktop event, so they get a smaller one of their own, kept across ComfyUI
-// launches in one Desktop process. Only delivered events count.
+// launches in one Desktop process. Only events telemetry accepts count.
 const PRODUCT_EVENTS_PER_PROCESS = 1500
 let productEventsThisProcess = 0
 
@@ -209,9 +209,10 @@ function parseProductFields(
   tail: string
 ): Record<string, TelemetryValue> | null {
   const names = new Set([...event.required, ...event.optional])
-  const fields = parseFields(tail, (key, rawValue) =>
-    names.has(key) ? PRODUCT_FIELDS.get(key)!(rawValue) : null
-  )
+  const fields = parseFields(tail, (key, rawValue) => {
+    const value = names.has(key) ? PRODUCT_FIELDS.get(key) : undefined
+    return value ? value(rawValue) : null
+  })
   return fields && event.required.every((key) => Object.hasOwn(fields, key)) ? fields : null
 }
 
@@ -296,8 +297,8 @@ export function createAgentTap(opts: AgentTapOptions): {
       const bucket = rateBucket(parsed.event)
       if (bucket.count >= parsed.product.hourlyCap) return
       try {
-        // Not mirrored to Datadog, unlike the lifecycle events' emit. Only a
-        // delivered event counts, so lines seen before consent use no budget.
+        // Not mirrored to Datadog, unlike the lifecycle events' emit. Only an
+        // event telemetry accepts counts, so lines seen before consent use no budget.
         if (telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })) {
           bucket.count++
           productEventsThisProcess++
