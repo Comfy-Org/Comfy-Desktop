@@ -22,6 +22,7 @@ import {
   isAncestorOf,
   findMergeBase,
   revParseRef,
+  hasTrackedChanges,
   commitPresence,
   findMergeBaseOrNone,
   fetchTags,
@@ -239,6 +240,34 @@ describe('revParseRef', () => {
       cb(new Error('bad ref'), '', '')
     })
     expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+  })
+})
+
+describe('hasTrackedChanges', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('reports tracked changes from git status, ignoring untracked files', async () => {
+    mockExecFile((_cmd, args, opts, cb) => {
+      expect(args).toEqual([
+        '-c',
+        'safe.directory=*',
+        'status',
+        '--porcelain',
+        '--untracked-files=no'
+      ])
+      expect(opts.cwd).toBe('/repo')
+      cb(null, ' M main.py\n', '')
+    })
+    expect(await hasTrackedChanges('/repo')).toBe(true)
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, '', ''))
+    expect(await hasTrackedChanges('/repo')).toBe(false)
+  })
+
+  it('returns null when git fails', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(new Error('not a repo'), '', ''))
+    expect(await hasTrackedChanges('/repo')).toBeNull()
   })
 })
 
@@ -826,6 +855,24 @@ describe('pygit2 fallback', () => {
         cb(errWithCode, '', '')
       })
       expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+    })
+  })
+
+  describe('hasTrackedChanges', () => {
+    it('reports the paths the script prints as changes', async () => {
+      mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'main.py\n', ''))
+      expect(await hasTrackedChanges('/repo')).toBe(true)
+      expect(expectPygit2Call()).toEqual(['tracked-changes', '/repo'])
+      vi.resetAllMocks()
+      configurePygit2('/usr/bin/python3', '/path/to/git_operations.py')
+      mockExecFile((_cmd, _args, _opts, cb) => cb(null, '', ''))
+      expect(await hasTrackedChanges('/repo')).toBe(false)
+    })
+
+    it('returns null when the script fails', async () => {
+      const err = Object.assign(new Error('boom'), { code: 1 })
+      mockExecFile((_cmd, _args, _opts, cb) => cb(err, '', ''))
+      expect(await hasTrackedChanges('/repo')).toBeNull()
     })
   })
 

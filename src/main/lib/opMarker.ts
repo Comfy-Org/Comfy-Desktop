@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { readGitHead, rollbackComfySource } from './git'
+import { hasTrackedChanges, readGitHead, rollbackComfySource } from './git'
 import * as telemetry from './telemetry'
 
 // Sentinel written to the install dir while an update/restore is moving ComfyUI's
@@ -38,7 +38,9 @@ export interface OpMarker {
 // drop the marker. This bounds transient failures (git index lock, AV holding a
 // file) to a few retries while preventing an unrecoverable rollback (e.g. the
 // pre-op commit is gone) from locking the user out of launching forever.
+// Restores only: an update never gives up (its mixed tree crashes on import; Update repairs it).
 const MAX_RECOVERY_ATTEMPTS = 3
+const UPDATE_UNFINISHED = 'The last update did not finish. Run Update to repair.'
 
 function markerPath(installPath: string): string {
   return path.join(installPath, MARKER_NAME)
@@ -125,7 +127,7 @@ export async function completeOpMarker(installPath: string): Promise<void> {
  * commit (the common case: the op concluded but the marker lingered). Returns
  * true when a marker was found and consumed. Throws if a rollback was needed but
  * failed, leaving the marker in place so the next launch can retry — until
- * MAX_RECOVERY_ATTEMPTS is reached, after which it gives up and drops the marker
+ * MAX_RECOVERY_ATTEMPTS is reached (restores only), after which it gives up and drops the marker
  * rather than locking the user out of launching forever.
  *
  * `onRollback` fires only when an ACTUAL source rollback ran (HEAD had moved) —
@@ -156,7 +158,7 @@ export async function recoverInterruptedComfyOp(
     const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
-      const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS
+      const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS && marker.op !== 'update'
       // Reliability signal (mirrored to Datadog): how often a hard-killed op
       // leaves source we can't roll back, and how often we give up entirely.
       telemetry.emit('comfy.desktop.recovery.failed', { op: marker.op, attempts, gave_up: gaveUp })
@@ -180,12 +182,18 @@ export async function recoverInterruptedComfyOp(
       // Persist the attempt count and block this launch so the next one retries.
       await writeOpMarker(installPath, { ...marker, recoveryAttempts: attempts })
       throw new Error(
-        `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
+        marker.op === 'update'
+          ? `${UPDATE_UNFINISHED}${backupHint}`
+          : `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
       )
     }
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })
     onRollback?.()
+  }
+  if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
+    // A restore/rollback that couldn't finish leaves mixed files, or git can't tell.
+    throw new Error(`${UPDATE_UNFINISHED}${backupBranchHint(marker.backupBranch)}`)
   }
   await clearOpMarker(installPath)
   return true

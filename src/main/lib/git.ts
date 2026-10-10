@@ -996,6 +996,23 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
   })
 }
 
+/** Whether tracked files differ from HEAD (untracked files ignored); null if git failed. */
+export function hasTrackedChanges(repoPath: string): Promise<boolean | null> {
+  if (isPygit2Configured()) {
+    return runPygit2(['tracked-changes', repoPath]).then(({ exitCode, stdout }) =>
+      exitCode === 0 ? stdout.trim() !== '' : null
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-c', 'safe.directory=*', 'status', '--porcelain', '--untracked-files=no'],
+      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? null : stdout.trim() !== '')
+    )
+  })
+}
+
 /** Exit code `git_operations.py merge-base` uses when the commits share no ancestor. */
 const MERGE_BASE_NONE = 5
 

@@ -33,6 +33,7 @@ import {
   writeOpMarker,
   completeOpMarker,
   readOpMarker,
+  clearOpMarker,
   rollbackStatusMessage
 } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
@@ -247,7 +248,10 @@ export async function runComfyUIUpdate(
   // mid-update is recovered on the next launch — see recoverInterruptedComfyOp.
   // The marker is cleared once source + packages are consistent below.
   const preOpHead = readGitHead(comfyuiDir)
-  if (preOpHead) {
+  // An earlier update left the tree half-written: only a success clears it; resync deps.
+  const pending = readOpMarker(installPath)
+  const repairing = pending?.op === 'update' && !pending.postHead
+  if (preOpHead && !repairing) {
     await writeOpMarker(installPath, { op: 'update', preHead: preOpHead, startedAt: Date.now() })
   }
 
@@ -272,7 +276,7 @@ export async function runComfyUIUpdate(
   // Record the local backup branch (created by the update script at the pre-op
   // HEAD) in the op marker so a failed launch-time recovery can point the user at
   // an offline restore point. Diagnostics only — the rollback target stays preHead.
-  if (result.markers.BACKUP_BRANCH && preOpHead) {
+  if (result.markers.BACKUP_BRANCH && preOpHead && !repairing) {
     const existingMarker = readOpMarker(installPath)
     if (existingMarker && !existingMarker.postHead) {
       await writeOpMarker(installPath, {
@@ -281,6 +285,10 @@ export async function runComfyUIUpdate(
       })
     }
   }
+
+  // The script stopped before writing (fetch failure, missing tag, cancel): nothing changed.
+  const wroteNothing = !result.markers.WRITING_TARGET && readGitHead(comfyuiDir) === preOpHead
+  if (result.exitCode !== 0 && wroteNothing && !repairing) await clearOpMarker(installPath)
 
   // A failed or cancelled git step can leave the source moved: the update script
   // advances the branch ref before the working-tree checkout, so a checkout failure
@@ -344,7 +352,9 @@ export async function runComfyUIUpdate(
     markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD
   )
   const reqsChanged = preReqs !== postReqs
-  const shouldSyncDeps = (reqsChanged || headMoved || !!opts.forceDepsSync) && postReqs.length > 0
+  // A repair resyncs too: the interrupted update may have moved HEAD already.
+  const forceDeps = repairing || !!opts.forceDepsSync
+  const shouldSyncDeps = (reqsChanged || headMoved || forceDeps) && postReqs.length > 0
 
   // Tracks a dependency-sync failure so the transactional guard below can roll
   // ComfyUI's source back instead of leaving new source + stale packages.
@@ -462,7 +472,8 @@ export async function runComfyUIUpdate(
   } catch {}
 
   // Fail fast: skip the manager requirements sync if the main one already failed.
-  if (!depFailure && !signal?.aborted && preMgrReqs !== postMgrReqs && postMgrReqs.length > 0) {
+  const mgrReqsChanged = preMgrReqs !== postMgrReqs || repairing
+  if (!depFailure && !signal?.aborted && mgrReqsChanged && postMgrReqs.length > 0) {
     const uvPath = getActiveUvPath(installation)
     const activeEnvPython = getActivePythonPath(installation)
 
