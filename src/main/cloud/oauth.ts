@@ -95,7 +95,10 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
         controller.signal.aborted ? 'timeout' : 'server_error',
         { cause }
       )
-    })) as Partial<TokenResponse>
+    })) as Partial<TokenResponse> | null
+    if (typeof data !== 'object' || data === null) {
+      throw new SignInFailure('OAuth token response was not an object', 'server_error')
+    }
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
       throw new SignInFailure('OAuth token response missing access_token', 'server_error')
     }
