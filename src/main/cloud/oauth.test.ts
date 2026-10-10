@@ -66,6 +66,34 @@ describe('oauth.refresh', () => {
     )
   })
 
+  it('reports a token request that outlives its timeout as a timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, init: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () =>
+                reject(new DOMException('aborted', 'AbortError'))
+              )
+            })
+        )
+      )
+      const refreshed = refresh('r', { tokenUrl: 'https://c/oauth/token' })
+      const settled = expect(refreshed).rejects.toMatchObject({
+        name: 'SignInFailure',
+        reason: 'timeout'
+      })
+
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      await settled
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects a response with a non-numeric expires_in', async () => {
     stub(200, { access_token: 'a', expires_in: 'soon' })
     await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(/expires_in/)
@@ -134,6 +162,52 @@ describe('oauth.signIn', () => {
     stub(200, {})
     vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))
     // timeoutMs far beyond the test timeout proves the rejection is immediate.
-    await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toThrow('no browser handler')
+    await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toMatchObject({
+      message: 'no browser handler',
+      reason: 'browser_unavailable'
+    })
+  })
+
+  it.for<{ name: string; respond: () => Promise<Response>; failure: Record<string, unknown> }>([
+    {
+      name: 'a refused token exchange',
+      respond: async () => new Response('down', { status: 503 }),
+      failure: { reason: 'server_error', httpStatus: 503 }
+    },
+    {
+      name: 'a token response without an access token',
+      respond: async () => Response.json({ expires_in: 3600 }),
+      failure: { reason: 'server_error', httpStatus: undefined }
+    },
+    {
+      name: 'a token response that is not JSON',
+      respond: async () => new Response('<html>', { status: 200 }),
+      failure: { reason: 'server_error', httpStatus: undefined }
+    },
+    {
+      name: 'a null token response',
+      respond: async () => Response.json(null),
+      failure: { reason: 'server_error', httpStatus: undefined }
+    },
+    {
+      name: 'an unreachable token endpoint',
+      respond: async () => {
+        throw new TypeError('fetch failed')
+      },
+      failure: { reason: 'network', httpStatus: undefined }
+    }
+  ])('reports $name with a reason code', async ({ respond, failure }) => {
+    vi.stubGlobal('fetch', vi.fn(respond))
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const u = new URL(authorizeUrl)
+      get(
+        `${u.searchParams.get('redirect_uri')}?code=abc&state=${u.searchParams.get('state')}`,
+        (res) => res.resume()
+      )
+    })
+    await expect(signIn({ ...opts, timeoutMs: 5000 })).rejects.toMatchObject({
+      name: 'SignInFailure',
+      ...failure
+    })
   })
 })
