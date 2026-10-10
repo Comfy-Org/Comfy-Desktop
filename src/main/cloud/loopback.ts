@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
+import { idpCallbackFailure, SignInFailure } from './signInFailure'
+
 export interface LoopbackListenerOptions {
   /** The exact `state` value generated for this authorization request. */
   expectedState: string
@@ -182,7 +184,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       fail(err)
     }
     const timeoutHandle = setTimeout(
-      () => fail(new Error('Loopback OAuth callback timed out')),
+      () => fail(new SignInFailure('Loopback OAuth callback timed out', 'timeout')),
       timeoutMs
     )
 
@@ -218,12 +220,12 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       }
       const idpError = params.get('error')
       if (idpError) {
-        failRequest(res, 200, new Error(idpError))
+        failRequest(res, 200, idpCallbackFailure(idpError))
         return
       }
       const code = params.get('code')
       if (!code) {
-        failRequest(res, 400, new Error('missing authorization code'))
+        failRequest(res, 400, new SignInFailure('missing authorization code', 'idp_error'))
         return
       }
       res.statusCode = 200

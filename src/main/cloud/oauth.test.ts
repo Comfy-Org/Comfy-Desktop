@@ -134,6 +134,42 @@ describe('oauth.signIn', () => {
     stub(200, {})
     vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))
     // timeoutMs far beyond the test timeout proves the rejection is immediate.
-    await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toThrow('no browser handler')
+    await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toMatchObject({
+      message: 'no browser handler',
+      reason: 'browser_unavailable'
+    })
+  })
+
+  it.for<{ name: string; respond: () => Promise<Response>; failure: Record<string, unknown> }>([
+    {
+      name: 'a refused token exchange',
+      respond: async () => new Response('down', { status: 503 }),
+      failure: { reason: 'server_error', httpStatus: 503 }
+    },
+    {
+      name: 'a token response without an access token',
+      respond: async () => Response.json({ expires_in: 3600 }),
+      failure: { reason: 'server_error', httpStatus: undefined }
+    },
+    {
+      name: 'an unreachable token endpoint',
+      respond: async () => {
+        throw new TypeError('fetch failed')
+      },
+      failure: { reason: 'network', httpStatus: undefined }
+    }
+  ])('reports $name with a reason code', async ({ respond, failure }) => {
+    vi.stubGlobal('fetch', vi.fn(respond))
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const u = new URL(authorizeUrl)
+      get(
+        `${u.searchParams.get('redirect_uri')}?code=abc&state=${u.searchParams.get('state')}`,
+        (res) => res.resume()
+      )
+    })
+    await expect(signIn({ ...opts, timeoutMs: 5000 })).rejects.toMatchObject({
+      name: 'SignInFailure',
+      ...failure
+    })
   })
 })
