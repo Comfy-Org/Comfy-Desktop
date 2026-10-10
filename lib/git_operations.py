@@ -6,6 +6,7 @@ available.  Each subcommand prints structured output that the TypeScript
 caller (src/main/lib/git.ts) can parse.
 
 Usage: python git_operations.py <subcommand> <repo_path> [args...]
+       python git_operations.py serve   (subcommands as JSON lines on stdin; see serve())
 
 Subcommands:
   healthcheck
@@ -26,6 +27,9 @@ Subcommands:
   ls-remote-ref      <url> <ref>
 """
 
+import contextlib
+import io
+import json
 import os
 import re
 import sys
@@ -870,15 +874,13 @@ Subcommands:
   ls-remote-ref      <url> <ref>
 """
 
-if __name__ == "__main__":
-    pygit2.option(pygit2.GIT_OPT_SET_OWNER_VALIDATION, 0)
-    HTTP_PROXY = harden_pygit2_config()
-
-    if len(sys.argv) < 2:
+def main(argv):
+    """Run one subcommand. `argv` mirrors sys.argv; the outcome is a SystemExit, as on the CLI."""
+    if len(argv) < 2:
         print(USAGE, file=sys.stderr)
         sys.exit(1)
 
-    subcmd = sys.argv[1]
+    subcmd = argv[1]
 
     try:
         if subcmd == "healthcheck":
@@ -889,96 +891,96 @@ if __name__ == "__main__":
             sys.exit(0)
 
         elif subcmd == "rev-parse":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py rev-parse <repo_path> <ref>", file=sys.stderr)
                 sys.exit(1)
-            cmd_rev_parse(sys.argv[2], sys.argv[3])
+            cmd_rev_parse(argv[2], argv[3])
 
         elif subcmd == "describe-tags":
-            if len(sys.argv) < 3:
+            if len(argv) < 3:
                 print("Usage: git_operations.py describe-tags <repo_path> [commit]", file=sys.stderr)
                 sys.exit(1)
-            commit = sys.argv[3] if len(sys.argv) > 3 else "HEAD"
-            cmd_describe_tags(sys.argv[2], commit)
+            commit = argv[3] if len(argv) > 3 else "HEAD"
+            cmd_describe_tags(argv[2], commit)
 
         elif subcmd == "tag-list":
-            if len(sys.argv) < 3:
+            if len(argv) < 3:
                 print("Usage: git_operations.py tag-list <repo_path>", file=sys.stderr)
                 sys.exit(1)
-            cmd_tag_list(sys.argv[2])
+            cmd_tag_list(argv[2])
 
         elif subcmd == "rev-list-count":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py rev-list-count <repo_path> <tag_or_ref> [commit]", file=sys.stderr)
                 sys.exit(1)
-            commit = sys.argv[4] if len(sys.argv) > 4 else "HEAD"
-            cmd_rev_list_count(sys.argv[2], sys.argv[3], commit)
+            commit = argv[4] if len(argv) > 4 else "HEAD"
+            cmd_rev_list_count(argv[2], argv[3], commit)
 
         elif subcmd == "cherry-pick-count":
-            if len(sys.argv) < 5:
+            if len(argv) < 5:
                 print("Usage: git_operations.py cherry-pick-count <repo_path> <ref1> <ref2>", file=sys.stderr)
                 sys.exit(1)
-            cmd_cherry_pick_count(sys.argv[2], sys.argv[3], sys.argv[4])
+            cmd_cherry_pick_count(argv[2], argv[3], argv[4])
 
         elif subcmd == "merge-base":
-            if len(sys.argv) < 5:
+            if len(argv) < 5:
                 print("Usage: git_operations.py merge-base <repo_path> <ref1> <ref2>", file=sys.stderr)
                 sys.exit(1)
-            cmd_merge_base(sys.argv[2], sys.argv[3], sys.argv[4])
+            cmd_merge_base(argv[2], argv[3], argv[4])
 
         elif subcmd == "has-commit":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py has-commit <repo_path> <sha>", file=sys.stderr)
                 sys.exit(1)
-            cmd_has_commit(sys.argv[2], sys.argv[3])
+            cmd_has_commit(argv[2], argv[3])
 
         elif subcmd == "is-ancestor":
-            if len(sys.argv) < 5:
+            if len(argv) < 5:
                 print("Usage: git_operations.py is-ancestor <repo_path> <ancestor> <descendant>", file=sys.stderr)
                 sys.exit(1)
-            cmd_is_ancestor(sys.argv[2], sys.argv[3], sys.argv[4])
+            cmd_is_ancestor(argv[2], argv[3], argv[4])
 
         elif subcmd == "fetch-tags":
-            if len(sys.argv) < 3:
+            if len(argv) < 3:
                 print("Usage: git_operations.py fetch-tags <repo_path>", file=sys.stderr)
                 sys.exit(1)
-            cmd_fetch_tags(sys.argv[2])
+            cmd_fetch_tags(argv[2])
 
         elif subcmd == "fetch-commit":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py fetch-commit <repo_path> <sha>", file=sys.stderr)
                 sys.exit(1)
-            cmd_fetch_commit(sys.argv[2], sys.argv[3])
+            cmd_fetch_commit(argv[2], argv[3])
 
         elif subcmd == "clone":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py clone <url> <dest>", file=sys.stderr)
                 sys.exit(1)
-            cmd_clone(sys.argv[2], sys.argv[3])
+            cmd_clone(argv[2], argv[3])
 
         elif subcmd == "checkout":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py checkout <repo_path> <commit>", file=sys.stderr)
                 sys.exit(1)
-            cmd_checkout(sys.argv[2], sys.argv[3])
+            cmd_checkout(argv[2], argv[3])
 
         elif subcmd == "fetch-and-checkout":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py fetch-and-checkout <repo_path> <commit>", file=sys.stderr)
                 sys.exit(1)
-            cmd_fetch_and_checkout(sys.argv[2], sys.argv[3])
+            cmd_fetch_and_checkout(argv[2], argv[3])
 
         elif subcmd == "ls-remote-tags":
-            if len(sys.argv) < 3:
+            if len(argv) < 3:
                 print("Usage: git_operations.py ls-remote-tags <url>", file=sys.stderr)
                 sys.exit(1)
-            cmd_ls_remote_tags(sys.argv[2])
+            cmd_ls_remote_tags(argv[2])
 
         elif subcmd == "ls-remote-ref":
-            if len(sys.argv) < 4:
+            if len(argv) < 4:
                 print("Usage: git_operations.py ls-remote-ref <url> <ref>", file=sys.stderr)
                 sys.exit(1)
-            cmd_ls_remote_ref(sys.argv[2], sys.argv[3])
+            cmd_ls_remote_ref(argv[2], argv[3])
 
         else:
             print("Unknown subcommand: %s" % subcmd, file=sys.stderr)
@@ -990,3 +992,77 @@ if __name__ == "__main__":
     except Exception as e:
         print("Error: %s" % e, file=sys.stderr)
         sys.exit(1)
+
+
+# Read-only, local subcommands: cheap, no network, no progress output, and no state kept between
+# calls, so a long-lived `serve` process answers them exactly as a fresh process would.
+SERVE_SUBCOMMANDS = frozenset([
+    "rev-parse",
+    "describe-tags",
+    "tag-list",
+    "rev-list-count",
+    "cherry-pick-count",
+    "merge-base",
+    "has-commit",
+    "is-ancestor",
+])
+
+
+def serve():
+    """Answer subcommands from stdin until EOF, one JSON request per line.
+
+    Starting Python and importing pygit2 costs far more than these queries, and on Windows every
+    process launch blocks the launcher's main thread, so the launcher keeps one process for them.
+    Request: {"id": n, "args": [subcommand, ...]}. Reply, one line each: {"id", "code", "stdout",
+    "stderr"}, the exit code and output a `git_operations.py <args>` process would have produced.
+    Each request opens the repository afresh, so a ref written by another process is always seen.
+    """
+    sys.stdin.reconfigure(encoding="utf-8")
+    out = sys.stdout
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            request = json.loads(line)
+            request_id = request["id"]
+            args = [str(arg) for arg in request["args"]]
+        except Exception as e:
+            out.write(json.dumps({"id": None, "code": 1, "stdout": "", "stderr": "bad request: %s" % e}) + "\n")
+            out.flush()
+            continue
+
+        captured_out, captured_err = io.StringIO(), io.StringIO()
+        code = 0
+        with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
+            try:
+                if not args or args[0] not in SERVE_SUBCOMMANDS:
+                    print("Not available in serve mode: %s" % (args[0] if args else ""), file=sys.stderr)
+                    sys.exit(1)
+                main([sys.argv[0]] + args)
+            except SystemExit as e:
+                if e.code is None:
+                    code = 0
+                elif isinstance(e.code, int):
+                    code = e.code
+                else:
+                    print(e.code, file=sys.stderr)
+                    code = 1
+        # Text-mode stdio would have written os.linesep; keep the bytes identical to the CLI's.
+        out.write(json.dumps({
+            "id": request_id,
+            "code": code,
+            "stdout": captured_out.getvalue().replace("\n", os.linesep),
+            "stderr": captured_err.getvalue().replace("\n", os.linesep),
+        }) + "\n")
+        out.flush()
+
+
+if __name__ == "__main__":
+    pygit2.option(pygit2.GIT_OPT_SET_OWNER_VALIDATION, 0)
+    HTTP_PROXY = harden_pygit2_config()
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "serve":
+        serve()
+        sys.exit(0)
+
+    main(sys.argv)
