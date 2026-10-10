@@ -12,6 +12,7 @@ import {
 } from './shared'
 import { updateTitleBarOverlay } from '../titleBarOverlay'
 import * as mainTelemetry from '../telemetry'
+import { captureSettingChanged } from '../settingsChangedTelemetry'
 import { detectFirstUseState } from '../firstUseDetection'
 import * as updater from '../updater'
 import { globalSettingsEvents } from '../globalSettingsEvents'
@@ -277,9 +278,26 @@ export function buildMediaSections(): SettingsSection[] {
   ]
 }
 
+/** What the Global Settings field shows, so an edit is compared as the user sees it: an unset
+ *  setting can display a fallback (Language shows the system locale). Falls back to the stored
+ *  value if building the sections fails, which must never cost the write. */
+function shownGlobalValue(key: string): unknown {
+  try {
+    for (const section of buildSettingsSections()) {
+      const fields = section.fields as { id?: string; value?: unknown }[] | undefined
+      const field = fields?.find((f) => f.id === key)
+      if (field) return field.value
+    }
+  } catch {
+    // fall through to the stored value
+  }
+  return settings.get(key)
+}
+
 // Write a setting and run its side-effect branches (theme/locale/telemetry
 // broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
-export function applySettingSet(key: string, value: unknown): void {
+// `userEdit` (Global Settings UI only) raises `settings.changed`; set-setting also carries app state.
+export function applySettingSet(key: string, value: unknown, userEdit = false): void {
   if (
     key === 'betaFeaturesEnabled' &&
     value === true &&
@@ -288,7 +306,13 @@ export function applySettingSet(key: string, value: unknown): void {
   ) {
     return
   }
+  // Not the consent toggle: consent flips below, so only an opt-in would be reported.
+  const report = userEdit && key !== 'telemetryEnabled'
+  const before = report ? shownGlobalValue(key) : undefined
   settings.set(key, value)
+  // Read before the side effects below: switching the locale would change what an unset
+  // Language shows even when the write was refused.
+  const after = report ? shownGlobalValue(key) : undefined
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
     updateTitleBarOverlay()
@@ -320,6 +344,7 @@ export function applySettingSet(key: string, value: unknown): void {
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
   }
+  if (report) captureSettingChanged(key, before, after)
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')
 }

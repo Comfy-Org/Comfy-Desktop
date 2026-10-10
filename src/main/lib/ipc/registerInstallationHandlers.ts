@@ -40,6 +40,7 @@ import { hasGitDir } from '../git'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
+import { captureSettingChanged } from '../settingsChangedTelemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import { appendLog } from '../logsBroadcast'
 import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
@@ -553,6 +554,8 @@ export function registerInstallationHandlers(): void {
       if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
       const sections = source.getDetailSections(inst)
       const allowedIds = new Set(['name', 'seen'])
+      // An unset field shows its default, which is what a user edit changes from.
+      const shown = new Map<string, unknown>()
       for (const section of sections) {
         const fields = (section as Record<string, unknown>).fields as
           | Record<string, unknown>[]
@@ -561,6 +564,7 @@ export function registerInstallationHandlers(): void {
         for (const f of fields) {
           if ((f as Record<string, unknown>).editable && (f as Record<string, unknown>).id) {
             allowedIds.add((f as Record<string, unknown>).id as string)
+            shown.set((f as Record<string, unknown>).id as string, f.value)
           }
         }
       }
@@ -590,7 +594,13 @@ export function registerInstallationHandlers(): void {
           }
         }
       }
-      await installations.update(installationId, filtered)
+      // Null if the install was removed meanwhile: nothing was saved.
+      if (await installations.update(installationId, filtered)) {
+        for (const [key, value] of Object.entries(filtered)) {
+          // Settings fields only: not `seen`, nor a rename.
+          if (shown.has(key)) captureSettingChanged(key, shown.get(key), value, installationId)
+        }
+      }
       return { ok: true }
     }
   )
