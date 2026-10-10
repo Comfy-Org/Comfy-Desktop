@@ -108,11 +108,13 @@ describe.runIf(process.platform !== 'win32')('readStartTimes (real processes)', 
     })
     try {
       const pid = child.pid!
-      const first = await readStartTimes([pid, process.pid])
+      // pid 1, not this worker: macOS tokens have one-second resolution and the worker may have
+      // started in the same second as the child.
+      const first = await readStartTimes([pid, 1])
       const second = await readStartTimes([pid])
       expect(first?.get(pid)).toBeTruthy()
-      expect(first?.get(process.pid)).toBeTruthy()
-      expect(first?.get(pid)).not.toBe(first?.get(process.pid))
+      expect(first?.get(1)).toBeTruthy()
+      expect(first?.get(pid)).not.toBe(first?.get(1))
       expect(second?.get(pid)).toBe(first?.get(pid))
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
