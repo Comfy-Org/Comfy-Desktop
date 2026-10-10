@@ -602,7 +602,10 @@ describe('agentTap product events', () => {
 
   it('never reads a product event inside the agent’s relayed output', () => {
     ingest(`\u001b[32m[INFO]\u001b[0m [comfy-agent] ${PRODUCT_FIXTURE[1]}\r\n`)
-    expect(captured).toEqual([])
+    ingest(`\u001b[32m[INFO]\u001b[0m [comfy-agent] x\r${PRODUCT_FIXTURE[1]}\r\n`)
+    expect(captured, 'a carriage return in the agent output must not start a new record').toEqual(
+      []
+    )
   })
 
   it('reads a product event only when it starts its line', () => {
@@ -611,16 +614,31 @@ describe('agentTap product events', () => {
         `note ${PRODUCT_FIXTURE[1]}\n`
     )
     expect(captured, 'text ahead of the record could be anyone’s').toEqual([])
-    ingest(`\r 50%|#####| 3/6\r${relayed(PRODUCT_FIXTURE[1]!)}`)
+    const tap = createAgentTap(baseOpts)
+    tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
     expect(
       captured.map((c) => c.event),
       'a tqdm redraw ahead of it is fine'
     ).toEqual(['agent_turn_started'])
   })
 
-  it('drops an event missing one of its ids', () => {
-    ingest(relayed(`[agent-event] agent_turn_started thread_id=${THREAD} turn_id=${TURN}`))
+  it.each([
+    ['agent_session_started', ['thread_id']],
+    ['agent_turn_started', ['thread_id', 'turn_id', 'workflow_id']],
+    ['agent_first_response', ['thread_id', 'turn_id']],
+    [
+      'agent_mutation_applied',
+      ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'mutation_id']
+    ],
+    ['agent_turn_completed', ['session_id', 'thread_id', 'turn_id', 'workflow_id']],
+    ['agent_turn_failed', ['thread_id', 'turn_id', 'workflow_id']]
+  ])('drops %s missing any of its ids', (event, ids) => {
+    const line = PRODUCT_FIXTURE.find((l) => l.startsWith(`[agent-event] ${event} `))!
+    for (const id of ids) ingest(relayed(line.replace(new RegExp(` ${id}=[^ ]+`), '')))
     expect(captured).toEqual([])
+    ingest(relayed(line))
+    expect(captured.map((c) => c.event)).toEqual([event])
   })
 
   it.each([
@@ -682,13 +700,37 @@ describe('agentTap product events', () => {
   it('keeps all-digit ids and the schema version as strings', () => {
     ingest(
       relayed(
-        `[agent-event] agent_mutation_applied session_id=${THREAD} thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW} mutation_id=${'1'.repeat(64)} event_schema_version=1`
+        `[agent-event] agent_mutation_applied session_id=${THREAD} thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW} mutation_id=${'1'.repeat(64)} event_schema_version=2`
       )
     )
     expect(captured[0]?.ctx).toMatchObject({
       mutation_id: '1'.repeat(64),
-      event_schema_version: '1'
+      event_schema_version: '2'
     })
+  })
+
+  it('keeps parsing the chunk when capture throws', () => {
+    vi.mocked(telemetry.capture).mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    ingest(relayed(PRODUCT_FIXTURE[0]!) + relayed(PRODUCT_FIXTURE[1]!))
+    expect(captured.map((c) => c.event)).toEqual(['agent_turn_started'])
+  })
+
+  it('counts only delivered events against the process budget', () => {
+    vi.mocked(telemetry.capture).mockReturnValue(false)
+    for (const _launch of [1, 2, 3]) {
+      const tap = createAgentTap(baseOpts)
+      for (const line of PRODUCT_FIXTURE) tap.ingest(relayed(line).repeat(100), 'stderr')
+    }
+    vi.mocked(telemetry.capture).mockImplementation((event, ctx) => {
+      captured.push({ event, ctx: ctx as Record<string, unknown> })
+      return true
+    })
+    ingest(PRODUCT_FIXTURE.map(relayed).join(''))
+    expect(captured, 'undelivered events (no consent yet) must not use up the budget').toHaveLength(
+      6
+    )
   })
 
   it('leaves product events out of parseAgentEventLine', () => {
@@ -775,6 +817,20 @@ describe('agentTap consent gating', () => {
     telemetry.setConsentState('granted')
     createAgentTap({ installationId: 'inst-1' }).ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
     expect(sdkCaptures.map((c) => c.event)).toContain('agent_turn_started')
+  })
+
+  it('delivers at most 60 of one product event a minute, through telemetry\u2019s own limit', () => {
+    _resetProductEventBudgetForTest()
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+    createAgentTap({ installationId: 'inst-1' }).ingest(
+      relayed(PRODUCT_FIXTURE[3]!).repeat(100),
+      'stderr'
+    )
+    expect(
+      sdkCaptures.filter((c) => c.event === 'agent_mutation_applied'),
+      'accepted limitation: a turn landing more than 60 mutations in a minute loses the rest'
+    ).toHaveLength(60)
   })
 
   it('ships the dropped-event report when consent is granted', () => {

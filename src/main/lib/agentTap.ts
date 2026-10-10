@@ -1,7 +1,7 @@
 // Core's output is untrusted: this catches accidental leakage, not deliberately encoded text.
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
-import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi } from './stderrTail'
 
 // Contract with core's emitter: the grammar and vocabulary change on both sides or not at all.
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
@@ -100,7 +100,7 @@ export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
   ['run_mode', oneOf('ask_approval auto auto_limited')],
   ['engine', oneOf('inline temporal')],
   ['response_kind', oneOf('message_delta thinking tool_call')],
-  ['event_schema_version', oneOf('1')],
+  ['event_schema_version', matching(/^\d{1,4}$/)],
   [
     'error_class',
     oneOf(
@@ -162,7 +162,8 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
 ])
 
 // Product events share telemetry's 5000-per-process cap with every other
-// Desktop event, so they get a smaller one of their own across launches.
+// Desktop event, so they get a smaller one of their own, kept across ComfyUI
+// launches in one Desktop process. Only delivered events count.
 const PRODUCT_EVENTS_PER_PROCESS = 1500
 let productEventsThisProcess = 0
 
@@ -233,11 +234,12 @@ const RECORD_TAG = '[agent-event] '
 // Core relays the agent's own output behind this tag so it can never pass as a record.
 const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
-// Whether the record starts its line: after any tqdm redraw and the level tag,
-// so text logged ahead of it on the same line can't carry it.
+// Whether the record starts its log line: nothing ahead of it since the last
+// tqdm redraw (`\r`) but a progress bar and the level tag, so text logged ahead
+// of it on the same line can't carry it.
 function startsLine(text: string, at: number): boolean {
   const segment = text.slice(text.lastIndexOf('\r', at) + 1, at)
-  return stripLogLevelPrefix(segment).trim() === ''
+  return segment.trim() === '' || /\[[A-Z]+\]\s*$/.test(segment)
 }
 
 function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
@@ -308,10 +310,11 @@ export function createAgentTap(opts: AgentTapOptions): {
     if (parsed !== UNKNOWN_EVENT && parsed.product) {
       if (productEventsThisProcess >= PRODUCT_EVENTS_PER_PROCESS) return
       if (!withinRateCap(parsed.event, parsed.product.hourlyCap)) return
-      productEventsThisProcess++
       try {
         // Not mirrored to Datadog, unlike the lifecycle events' emit.
-        telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })
+        if (telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })) {
+          productEventsThisProcess++
+        }
       } catch {
         // ignore - telemetry side effect, and the next line must still parse
       }
