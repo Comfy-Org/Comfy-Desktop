@@ -1,7 +1,7 @@
 // Core's output is untrusted: this catches accidental leakage, not deliberately encoded text.
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
-import { createStreamLineBuffer, stripAnsi } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 // Contract with core's emitter: the grammar and vocabulary change on both sides or not at all.
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
@@ -53,14 +53,129 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'reason'
 ])
 
+const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
+
+type FieldValue = (raw: string) => TelemetryValue | undefined
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const HEX64 = /^[0-9a-f]{64}$/
+const TOKEN = /^[A-Za-z0-9_.:+-]{1,128}$/
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
+
+const matching =
+  (pattern: RegExp): FieldValue =>
+  (raw) =>
+    pattern.test(raw) ? raw : undefined
+// Like `reason`: a newer agent's value still reports the event, without the raw text.
+const oneOf = (values: string): FieldValue => {
+  const allowed = new Set(values.split(' '))
+  return (raw) => (allowed.has(raw) ? raw : 'unknown')
+}
+const count: FieldValue = (raw) => {
+  const value = /^\d+$/.test(raw) ? Number(raw) : NaN
+  return Number.isSafeInteger(value) ? value : undefined
+}
+const bool: FieldValue = (raw) => (raw === 'true' ? true : raw === 'false' ? false : undefined)
+// Rejects dates that Date.parse would roll over, such as February 30.
+const timestamp: FieldValue = (raw) => {
+  const ms = UTC_TIMESTAMP.test(raw) ? Date.parse(raw) : NaN
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 19) === raw.slice(0, 19)
+    ? raw
+    : undefined
+}
+
+const fieldsOfType = (names: string, type: FieldValue): Array<[string, FieldValue]> =>
+  names.split(' ').map((name) => [name, type])
+
+// The local agent's product events: ComfyUI logs them as its own records from
+// the agent's output. They keep the names Cloud uses for the same events.
+export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
+  ...fieldsOfType('thread_id session_id turn_id workflow_id', matching(UUID)),
+  ['mutation_id', matching(HEX64)],
+  ...fieldsOfType('occurred_at timestamp accepted_at', timestamp),
+  ['agent_version', matching(VERSION)],
+  ...fieldsOfType('feature_flag_cohort model', matching(TOKEN)),
+  ...fieldsOfType('is_resume retryable is_blank_canvas_start', bool),
+  ['entry_source', oneOf('new_tab existing_thread')],
+  ['run_mode', oneOf('ask_approval auto auto_limited')],
+  ['engine', oneOf('inline temporal')],
+  ['response_kind', oneOf('message_delta thinking tool_call')],
+  ['event_schema_version', oneOf('1')],
+  [
+    'error_class',
+    oneOf(
+      'cancelled budget_exceeded turn_expired prepare_failed model_failed tool_failed finalize_failed max_tokens_truncated credential_stash_failed internal'
+    )
+  ],
+  [
+    'failure_stage',
+    oneOf('cancelled timeout budget turn_deadline prepare model tool finalize auth internal')
+  ],
+  ...fieldsOfType(
+    'time_to_first_response_ms op_count base_version result_version apply_duration_ms duration_ms mutation_count tool_call_count input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens billed_units canvas_node_count_before canvas_node_count_after',
+    count
+  )
+])
+
+type ProductEvent = { required: readonly string[]; optional: readonly string[]; hourlyCap: number }
+
+// occurred_at and agent_version are allowed on every product event.
+const productEvent = (required: string, optional: string, hourlyCap = 120): ProductEvent => ({
+  required: required.split(' '),
+  optional: `${optional} occurred_at agent_version`.split(' '),
+  hourlyCap
+})
+
+export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
+  [
+    'agent_session_started',
+    productEvent('thread_id', 'entry_source is_resume run_mode feature_flag_cohort')
+  ],
+  [
+    'agent_turn_started',
+    productEvent('thread_id turn_id workflow_id', 'run_mode engine model accepted_at')
+  ],
+  [
+    'agent_first_response',
+    productEvent('thread_id turn_id', 'response_kind time_to_first_response_ms')
+  ],
+  // Up to 100 per turn: one per mutating tool call.
+  [
+    'agent_mutation_applied',
+    productEvent(
+      'session_id thread_id turn_id workflow_id mutation_id',
+      'event_schema_version timestamp op_count base_version result_version apply_duration_ms',
+      600
+    )
+  ],
+  [
+    'agent_turn_completed',
+    productEvent(
+      'session_id thread_id turn_id workflow_id',
+      'event_schema_version timestamp duration_ms mutation_count tool_call_count input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens billed_units canvas_node_count_before canvas_node_count_after is_blank_canvas_start'
+    )
+  ],
+  [
+    'agent_turn_failed',
+    productEvent('thread_id turn_id workflow_id', 'error_class failure_stage retryable duration_ms')
+  ]
+])
+
+// Product events share telemetry's 5000-per-process cap with every other
+// Desktop event, so they get a smaller one of their own across launches.
+const PRODUCT_EVENTS_PER_PROCESS = 1500
+let productEventsThisProcess = 0
+
+export function _resetProductEventBudgetForTest(): void {
+  productEventsThisProcess = 0
+}
+
 type AgentTapOptions = {
   installationId: string
   variant?: string | null
   release?: string | null
   coreBetaFlags?: readonly string[]
 }
-
-const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
 function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   if (key === 'reason') return REASONS.has(rawValue) ? rawValue : 'unknown'
@@ -72,21 +187,37 @@ function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   return value
 }
 
-function parseFields(tail: string): Record<string, TelemetryValue> | null {
+function parseFields(
+  tail: string,
+  valueOf: (key: string, rawValue: string) => TelemetryValue | undefined | null
+): Record<string, TelemetryValue> | null {
   const fields: Record<string, TelemetryValue> = {}
   const pairs = tail ? tail.slice(1).split(' ') : []
   for (const pair of pairs) {
     const separatorIndex = pair.indexOf('=')
     const key = pair.slice(0, separatorIndex)
-    const rawValue = pair.slice(separatorIndex + 1)
+    const value = valueOf(key, pair.slice(separatorIndex + 1))
     // A newer core's field: omit it rather than lose the whole event.
-    if (!ALLOWED_FIELD_NAMES.has(key)) continue
+    if (value === null) continue
     if (Object.hasOwn(fields, key)) return null
-    const value = fieldValue(key, rawValue)
     if (value === undefined) return null
     fields[key] = value
   }
   return fields
+}
+
+const lifecycleValue = (key: string, rawValue: string): TelemetryValue | undefined | null =>
+  ALLOWED_FIELD_NAMES.has(key) ? fieldValue(key, rawValue) : null
+
+function parseProductFields(
+  event: ProductEvent,
+  tail: string
+): Record<string, TelemetryValue> | null {
+  const names = new Set([...event.required, ...event.optional])
+  const fields = parseFields(tail, (key, rawValue) =>
+    names.has(key) ? PRODUCT_FIELDS.get(key)!(rawValue) : null
+  )
+  return fields && event.required.every((key) => Object.hasOwn(fields, key)) ? fields : null
 }
 
 export interface AgentEvent {
@@ -94,13 +225,22 @@ export interface AgentEvent {
   fields: Record<string, TelemetryValue>
 }
 
+type ParsedLine = AgentEvent & { product?: ProductEvent }
+
 const UNKNOWN_EVENT = Symbol('unknown event')
 
 const RECORD_TAG = '[agent-event] '
 // Core relays the agent's own output behind this tag so it can never pass as a record.
 const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
-function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
+// Whether the record starts its line: after any tqdm redraw and the level tag,
+// so text logged ahead of it on the same line can't carry it.
+function startsLine(text: string, at: number): boolean {
+  const segment = text.slice(text.lastIndexOf('\r', at) + 1, at)
+  return stripLogLevelPrefix(segment).trim() === ''
+}
+
+function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
   const text = stripAnsi(line)
   // Not anchored: a tqdm bar redraws as `\r<bar>` with no newline, so a record can land behind it.
   const at = text.lastIndexOf(RECORD_TAG)
@@ -109,8 +249,14 @@ function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
   if (!match) return null
   const [, event, tail] = match
   if (!event || tail === undefined) return null
+  const product = PRODUCT_EVENTS.get(event)
+  if (product) {
+    if (!startsLine(text, at)) return null
+    const fields = parseProductFields(product, tail)
+    return fields ? { event, fields, product } : null
+  }
   if (!ALLOWED_EVENTS.has(event)) return UNKNOWN_EVENT
-  const fields = parseFields(tail)
+  const fields = parseFields(tail, lifecycleValue)
   return fields ? { event, fields } : null
 }
 
@@ -121,7 +267,7 @@ function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
  */
 export function parseAgentEventLine(line: string): AgentEvent | null {
   const parsed = parseLine(line)
-  return parsed === UNKNOWN_EVENT ? null : parsed
+  return parsed === UNKNOWN_EVENT || !parsed || parsed.product ? null : parsed
 }
 
 // Per-event budget on top of telemetry's own per-minute limit.
@@ -142,14 +288,16 @@ export function createAgentTap(opts: AgentTapOptions): {
   // Not reset by beginBoot, so the port-conflict relaunch loop shares one cap.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
-  function withinRateCap(event: string): boolean {
+  const productContext = { ...baseContext, distribution: 'local', deployment: 'local' }
+
+  function withinRateCap(event: string, cap = PER_EVENT_HOURLY_CAP): boolean {
     const now = Date.now()
     const bucket = rateBuckets.get(event)
     if (!bucket || now - bucket.windowStart >= RATE_WINDOW_MS) {
       rateBuckets.set(event, { windowStart: now, count: 1 })
       return true
     }
-    if (bucket.count >= PER_EVENT_HOURLY_CAP) return false
+    if (bucket.count >= cap) return false
     bucket.count++
     return true
   }
@@ -157,6 +305,18 @@ export function createAgentTap(opts: AgentTapOptions): {
   function handleLine(line: string): void {
     const parsed = parseLine(line)
     if (!parsed) return
+    if (parsed !== UNKNOWN_EVENT && parsed.product) {
+      if (productEventsThisProcess >= PRODUCT_EVENTS_PER_PROCESS) return
+      if (!withinRateCap(parsed.event, parsed.product.hourlyCap)) return
+      productEventsThisProcess++
+      try {
+        // Not mirrored to Datadog, unlike the lifecycle events' emit.
+        telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })
+      } catch {
+        // ignore - telemetry side effect, and the next line must still parse
+      }
+      return
+    }
     // Counted, never named: an unknown event's name is untrusted input.
     const { event, fields } =
       parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed

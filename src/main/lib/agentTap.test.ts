@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -37,7 +38,10 @@ const {
   AGENT_EVENT_LINE,
   ALLOWED_EVENTS,
   ALLOWED_FIELD_NAMES,
-  REASONS
+  REASONS,
+  PRODUCT_EVENTS,
+  PRODUCT_FIELDS,
+  _resetProductEventBudgetForTest
 } = await import('./agentTap')
 const telemetry = await import('./telemetry')
 
@@ -500,6 +504,232 @@ describe('agentTap', () => {
   })
 })
 
+// The agent's lines, byte-identical to cloud's
+// services/agent/internal/productevents/testdata/events.txt.
+const PRODUCT_FIXTURE = fs
+  .readFileSync(path.join(__dirname, 'fixtures', 'agent-product-events.txt'), 'utf8')
+  .trimEnd()
+  .split('\n')
+
+const THREAD = '0b6f2a8e-2f4c-4c55-9a43-6a1d2f0e7c11'
+const TURN = '5e1d9c3a-8b7f-4e2d-a1c6-3f9b0d4e8a72'
+const WORKFLOW = 'd3a8f1c6-7e2b-4a9d-8c5f-2b1e9a0d6c34'
+
+// What ComfyUI prints for an agent line it logs as its own record: ANSI level
+// tag, the line, the installed agent's version, CRLF on Windows.
+function relayed(agentLine: string): string {
+  return `\u001b[32m[INFO]\u001b[0m ${agentLine} agent_version=0.0.1\r\n`
+}
+
+describe('agentTap product events', () => {
+  let captured: Array<{ event: string; ctx: Record<string, unknown> }>
+  let emitted: string[]
+
+  const baseOpts = {
+    installationId: 'inst-1',
+    variant: 'desktop',
+    release: '1.0.47',
+    coreBetaFlags: []
+  }
+  const context = {
+    installation_id: 'inst-1',
+    variant: 'desktop',
+    release: '1.0.47',
+    core_beta_flags: [],
+    distribution: 'local',
+    deployment: 'local'
+  }
+
+  beforeEach(() => {
+    captured = []
+    emitted = []
+    _resetProductEventBudgetForTest()
+    vi.spyOn(telemetry, 'capture').mockImplementation((event, ctx) => {
+      captured.push({ event, ctx: ctx as Record<string, unknown> })
+      return true
+    })
+    vi.spyOn(telemetry, 'emit').mockImplementation((event) => {
+      emitted.push(event)
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  function ingest(text: string): void {
+    createAgentTap(baseOpts).ingest(text, 'stderr')
+  }
+
+  function turnStarted(tail: string): string {
+    return relayed(
+      `[agent-event] agent_turn_started thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW}${tail}`
+    )
+  }
+
+  it('captures the six fixture events from ComfyUI’s relay under their Cloud names', () => {
+    ingest(PRODUCT_FIXTURE.map(relayed).join(''))
+    expect(captured.map((c) => c.event)).toEqual([...PRODUCT_EVENTS.keys()])
+    expect(emitted, 'product events are captured, not emitted with a Datadog mirror').toEqual([])
+    expect(captured[1]?.ctx).toEqual({
+      accepted_at: '2026-10-09T12:00:01Z',
+      engine: 'inline',
+      model: 'claude-opus-4-8',
+      occurred_at: '2026-10-09T12:00:01Z',
+      thread_id: THREAD,
+      turn_id: TURN,
+      workflow_id: WORKFLOW,
+      agent_version: '0.0.1',
+      ...context
+    })
+    expect(captured[3]?.ctx).toMatchObject({
+      event_schema_version: '1',
+      mutation_id: '3f7a9c1e5b2d8f4a6c0e9b7d1a3f5c8e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a',
+      op_count: 3,
+      timestamp: '2026-10-09T12:00:02.123456789Z'
+    })
+    expect(captured[4]?.ctx).toMatchObject({
+      is_blank_canvas_start: true,
+      canvas_node_count_before: 0
+    })
+    expect(captured[5]?.ctx).toMatchObject({
+      error_class: 'internal',
+      retryable: true,
+      duration_ms: 800
+    })
+  })
+
+  it('never reads a product event inside the agent’s relayed output', () => {
+    ingest(`\u001b[32m[INFO]\u001b[0m [comfy-agent] ${PRODUCT_FIXTURE[1]}\r\n`)
+    expect(captured).toEqual([])
+  })
+
+  it('reads a product event only when it starts its line', () => {
+    ingest(
+      relayed(`[ERROR] The local agent could not be started: x ${PRODUCT_FIXTURE[1]}`) +
+        `note ${PRODUCT_FIXTURE[1]}\n`
+    )
+    expect(captured, 'text ahead of the record could be anyone’s').toEqual([])
+    ingest(`\r 50%|#####| 3/6\r${relayed(PRODUCT_FIXTURE[1]!)}`)
+    expect(
+      captured.map((c) => c.event),
+      'a tqdm redraw ahead of it is fine'
+    ).toEqual(['agent_turn_started'])
+  })
+
+  it('drops an event missing one of its ids', () => {
+    ingest(relayed(`[agent-event] agent_turn_started thread_id=${THREAD} turn_id=${TURN}`))
+    expect(captured).toEqual([])
+  })
+
+  it.each([
+    ['a path', 'C:private_workflow.json'],
+    ['prose-like token', 'private-prompt'],
+    ['upper-case UUID', WORKFLOW.toUpperCase()]
+  ])('drops an event whose id is %s', (_label, id) => {
+    ingest(
+      relayed(
+        `[agent-event] agent_turn_started thread_id=${THREAD} turn_id=${TURN} workflow_id=${id}`
+      )
+    )
+    expect(captured).toEqual([])
+  })
+
+  const firstResponse = (tail: string): string =>
+    relayed(`[agent-event] agent_first_response thread_id=${THREAD} turn_id=${TURN}${tail}`)
+  const sessionStarted = (tail: string): string =>
+    relayed(`[agent-event] agent_session_started thread_id=${THREAD}${tail}`)
+
+  it.each([
+    ['a fractional count', firstResponse(' time_to_first_response_ms=1.0')],
+    ['a negative count', firstResponse(' time_to_first_response_ms=-1')],
+    ['a count past 2^53-1', firstResponse(' time_to_first_response_ms=9007199254740992')],
+    ['a non-boolean', sessionStarted(' is_resume=yes')],
+    ['an offset timestamp', turnStarted(' accepted_at=2026-10-09T14:00:01+02:00')],
+    ['an impossible date', turnStarted(' accepted_at=2026-02-30T12:00:00Z')],
+    ['a duplicate key', turnStarted(` thread_id=${THREAD}`)],
+    [
+      'a malformed agent_version',
+      sessionStarted(' agent_version=latest').replace(' agent_version=0.0.1', '')
+    ]
+  ])('drops the line for %s', (_label, line) => {
+    ingest(line)
+    expect(captured).toEqual([])
+  })
+
+  it('omits a field it doesn’t know, another event’s field and prototype keys, keeping the event', () => {
+    ingest(
+      turnStarted(
+        ` cost_usd=3 mutation_id=${'a'.repeat(64)} __proto__=x constructor=y distribution=cloud`
+      )
+    )
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.ctx).toEqual({
+      thread_id: THREAD,
+      turn_id: TURN,
+      workflow_id: WORKFLOW,
+      agent_version: '0.0.1',
+      ...context
+    })
+  })
+
+  it('forwards an enum value it doesn’t know as unknown', () => {
+    ingest(turnStarted(' engine=warp run_mode=auto'))
+    expect(captured[0]?.ctx).toMatchObject({ engine: 'unknown', run_mode: 'auto' })
+  })
+
+  it('keeps all-digit ids and the schema version as strings', () => {
+    ingest(
+      relayed(
+        `[agent-event] agent_mutation_applied session_id=${THREAD} thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW} mutation_id=${'1'.repeat(64)} event_schema_version=1`
+      )
+    )
+    expect(captured[0]?.ctx).toMatchObject({
+      mutation_id: '1'.repeat(64),
+      event_schema_version: '1'
+    })
+  })
+
+  it('leaves product events out of parseAgentEventLine', () => {
+    expect(parseAgentEventLine(relayed(PRODUCT_FIXTURE[1]!).trimEnd())).toBeNull()
+    expect(parseAgentEventLine('[INFO] [agent-event] agent_started')).not.toBeNull()
+  })
+
+  it('caps agent_mutation_applied at 600 and the other events at 120 per hour', () => {
+    const tap = createAgentTap(baseOpts)
+    const mutation = relayed(PRODUCT_FIXTURE[3]!)
+    tap.ingest(mutation.repeat(601) + relayed(PRODUCT_FIXTURE[1]!).repeat(121), 'stderr')
+    expect(captured.filter((c) => c.event === 'agent_mutation_applied')).toHaveLength(600)
+    expect(captured.filter((c) => c.event === 'agent_turn_started')).toHaveLength(120)
+  })
+
+  it('caps product events at 1500 per Desktop process, across launches', () => {
+    for (const _launch of [1, 2, 3]) {
+      const tap = createAgentTap(baseOpts)
+      for (const line of PRODUCT_FIXTURE) tap.ingest(relayed(line).repeat(100), 'stderr')
+    }
+    expect(captured).toHaveLength(1500)
+    ingest('[INFO] [agent-event] agent_started\n')
+    expect(emitted, 'lifecycle events keep their own budget').toEqual([
+      'comfy.desktop.comfyui.agent.agent_started'
+    ])
+  })
+
+  it('names no product field that telemetry or the tap sets itself', () => {
+    for (const name of PRODUCT_FIELDS.keys()) {
+      expect(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(name), name).toBe(false)
+      expect(name.startsWith('$'), name).toBe(false)
+      expect(Object.hasOwn(context, name), name).toBe(false)
+    }
+    for (const event of PRODUCT_EVENTS.values()) {
+      for (const name of [...event.required, ...event.optional])
+        expect(PRODUCT_FIELDS.has(name), name).toBe(true)
+    }
+    for (const name of PRODUCT_EVENTS.keys()) expect(ALLOWED_EVENTS.has(name), name).toBe(false)
+  })
+})
+
 describe('agentTap consent gating', () => {
   beforeEach(() => {
     process.env['POSTHOG_API_KEY'] = 'test-key'
@@ -534,6 +764,17 @@ describe('agentTap consent gating', () => {
     const tap = createAgentTap({ installationId: 'inst-1' })
     tap.ingest('[agent-event] agent_started\n[agent-event] mystery\n', 'stdout')
     expect(agentCaptures()).toEqual([])
+  })
+
+  it('delivers a product event under its own name only when consent is granted', () => {
+    _resetProductEventBudgetForTest()
+    telemetry.setConsentState('denied')
+    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+    createAgentTap({ installationId: 'inst-1' }).ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    expect(sdkCaptures.map((c) => c.event)).not.toContain('agent_turn_started')
+    telemetry.setConsentState('granted')
+    createAgentTap({ installationId: 'inst-1' }).ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    expect(sdkCaptures.map((c) => c.event)).toContain('agent_turn_started')
   })
 
   it('ships the dropped-event report when consent is granted', () => {
