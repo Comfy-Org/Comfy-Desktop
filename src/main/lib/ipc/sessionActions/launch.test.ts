@@ -81,8 +81,10 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
-  /** The boot fetch never settles, as on a link that hangs until its deadline. */
-  grantsPending: false,
+  /** Stands in for the git ancestry checks when set; `null` runs the real ones. */
+  commits: null as null | CoreCommitState,
+  /** The SHAs each launch asked the ancestry checks about. */
+  commitShas: [] as string[][],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -236,13 +238,28 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: () =>
-      launchHarness.grantsPending
-        ? new Promise<CoreBetaGrant[]>(() => {})
-        : Promise.resolve(launchHarness.grants),
+    getCoreBetaGrantsAsync: () => Promise.resolve(launchHarness.grants),
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
       return actual.planCoreBetaArgs(facts)
+    }
+  }
+})
+
+vi.mock('../../coreBetaAncestry', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreBetaAncestryModule>()
+  return {
+    ...actual,
+    resolveCoreCommitState: (...args: Parameters<typeof actual.resolveCoreCommitState>) => {
+      launchHarness.commitShas.push([...args[2]])
+      const { commits } = launchHarness
+      if (commits === null) return actual.resolveCoreCommitState(...args)
+      // Like the real one, it proves only what this call asked about.
+      const asked = new Set(args[2])
+      return Promise.resolve({
+        head: commits.head,
+        ancestry: new Map([...commits.ancestry].filter(([sha]) => asked.has(sha)))
+      })
     }
   }
 })
@@ -293,7 +310,7 @@ import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
-import { NO_CORE_COMMITS } from '../../coreBetaGrants'
+import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -315,6 +332,7 @@ import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
+import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -800,6 +818,24 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
+  it("places Desktop's own --enable-assets after the desktop flags and before beta grants", () => {
+    const hashing = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+    const built = build({
+      userArgs: ['--listen'],
+      schema: schemaOf('enable-assets', 'enable-asset-hashing', 'listen'),
+      betaFlags: [hashing],
+      coreCommits: { head: 'e'.repeat(40), ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]]) }
+    })
+
+    expect(built.args).toEqual([
+      ...PREFIX,
+      ...DESKTOP_FLAGS,
+      '--enable-assets',
+      '--enable-asset-hashing',
+      '--listen'
+    ])
+  })
+
   it('injects nothing when the beta toggle is off', () => {
     const built = build({
       userArgs: ['--listen'],
@@ -809,7 +845,9 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: core 0.3.81 proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n'
+    ])
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
@@ -826,6 +864,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: core unknown proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n',
       '[core-beta] --enable-assets withheld: entry 1: core version unknown\n'
     ])
   })
@@ -836,6 +875,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: core 0.3.81 proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n',
       '[core-beta] --enable-assets withheld: entry 1: no ancestry-proven release (base 0.3.81)\n'
     ])
     // Refusing the version claim is not the core refusing the arg; telemetry must not conflate them.
@@ -848,6 +888,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: core 0.3.81 proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n',
       '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record\n'
     ])
     expect(built.beta.droppedUnsupported).toEqual([])
@@ -860,6 +901,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: not supported by this core\n',
       '[core-beta] --enable-assets withheld: not supported by this core\n'
     ])
     expect(built.beta.droppedUnsupported).toEqual(['--enable-assets'])
@@ -881,6 +923,7 @@ describe('buildLaunchArgs core beta injection', () => {
     const built = build({ schema: schemaOf('enable-assets') })
 
     expect(built.beta.logRecords).toEqual([
+      '[assets] --enable-assets withheld: core 0.3.81 proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n',
       '[core-beta] --enable-assets (core 0.3.81 >= 0.3.80, opted in)\n'
     ])
   })
@@ -901,6 +944,7 @@ describe('buildLaunchArgs core beta injection', () => {
       commitGrant
     ])
     expect(built.beta.logRecords).toEqual([
+      `[assets] --enable-assets withheld: core ${'e'.repeat(12)} proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n`,
       '[core-beta] --enable-assets (core eeeeeeeeeeee in a granted commit range, opted in)\n'
     ])
   })
@@ -1039,7 +1083,7 @@ describe('buildLaunchArgs core beta injection', () => {
     const built = build({ schema: schemaOf('enable-assets') })
 
     expect(built.args).toContain('--enable-assets')
-    expect(built.beta.logRecords).toHaveLength(1)
+    expect(built.beta.logRecords).toHaveLength(2)
   })
 })
 
@@ -1162,7 +1206,8 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
-    launchHarness.grantsPending = false
+    launchHarness.commits = null
+    launchHarness.commitShas = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1409,14 +1454,128 @@ describe('core beta report placement', () => {
     expect(peekBetaActivationNotice(id)).toBeNull()
   })
 
-  it('does not wait on the grant fetch for an install that opted out', async () => {
-    launchHarness.betaEnabled = false
-    launchHarness.grantsPending = true
+  describe('assets without a grant', () => {
+    const atFloor: CoreCommitState = {
+      head: 'e'.repeat(40),
+      ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]])
+    }
+    const forceOff: CoreBetaGrant = {
+      arg: '--disable-assets',
+      commitRanges: [[ASSETS_MIN_CORE_COMMIT, null]]
+    }
 
-    const res = await handleLaunch(ctxFor('harness-opted-out-pending'))
+    beforeEach(() => {
+      launchHarness.betaEnabled = false
+      launchHarness.grants = []
+      launchHarness.commits = atFloor
+    })
 
-    expect(res.ok).toBe(true)
-    expect(spawnArgs).not.toContain('--enable-assets')
+    it('asks an opted-out install with no grant for assets once its core has the floor commit', async () => {
+      const res = await handleLaunch(ctxFor('harness-assets-floor'))
+
+      expect(res.ok).toBe(true)
+      expect(launchHarness.commitShas).toEqual([[ASSETS_MIN_CORE_COMMIT], []])
+      expect(spawnArgs).toContain('--enable-assets')
+      expect(peekBetaActivationNotice('harness-assets-floor')).toBeNull()
+    })
+
+    it('does not ask a core without the floor commit', async () => {
+      launchHarness.commits = { head: 'e'.repeat(40), ancestry: new Map() }
+
+      const res = await handleLaunch(ctxFor('harness-assets-below-floor'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).not.toContain('--enable-assets')
+    })
+
+    it('asks a core whose verified release is at the floor without proving its ancestry', async () => {
+      launchHarness.commits = null
+      const ctx = ctxFor('harness-assets-release')
+      ctx.inst = {
+        ...ctx.inst,
+        version: '0.38.0',
+        comfyVersion: { ...ctx.inst.comfyVersion!, baseTag: 'v0.38.0' }
+      }
+
+      const res = await handleLaunch(ctx)
+
+      expect(res.ok).toBe(true)
+      expect(launchHarness.commitShas).toEqual([[], []])
+      expect(spawnArgs).toContain('--enable-assets')
+    })
+
+    it('proves no floor when the user already turned assets off', async () => {
+      launchHarness.launchCommand!.args = [
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--disable-assets'
+      ]
+
+      await handleLaunch(ctxFor('harness-assets-user-off'))
+
+      expect(launchHarness.commitShas).toEqual([[], []])
+      expect(spawnArgs).not.toContain('--enable-assets')
+    })
+
+    it('resolves no SHA of a beta grant an opted-out install cannot receive', async () => {
+      launchHarness.grants = [{ arg: '--enable-agent', commitRanges: [['a'.repeat(40), null]] }]
+
+      await handleLaunch(ctxFor('harness-assets-opted-out-shas'))
+
+      expect(launchHarness.commitShas).toEqual([[ASSETS_MIN_CORE_COMMIT], []])
+    })
+
+    it('proves the floor in its own resolve, apart from a payload as large as the grant SHA cap', async () => {
+      launchHarness.betaEnabled = true
+      const sha = (i: number): string => i.toString(16).padStart(40, '0')
+      const ranges = Array.from({ length: 8 }, (_, i): [string, string] => [
+        sha(2 * i + 1),
+        sha(2 * i + 2)
+      ])
+      launchHarness.grants = [{ arg: '--enable-agent', commitRanges: ranges }]
+
+      await handleLaunch(ctxFor('harness-assets-full-payload'))
+
+      expect(launchHarness.commitShas[0]).toEqual([ASSETS_MIN_CORE_COMMIT])
+      expect(launchHarness.commitShas[1]).toHaveLength(16)
+      expect(spawnArgs).toContain('--enable-assets')
+    })
+
+    it.each([
+      ['opted out', false],
+      ['opted in', true]
+    ])(
+      'applies a force-off %s, once, without presenting it as beta',
+      async (label, betaEnabled) => {
+        launchHarness.betaEnabled = betaEnabled
+        // In range for this 0.3.81 install, so it would also be selected if it were treated as a grant.
+        launchHarness.grants = [
+          { arg: '--disable-assets', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }
+        ]
+        launchHarness.schemaNames = ['enable-assets', 'disable-assets', 'listen', 'feature-flag']
+        const id = `harness-assets-force-off-${label}`
+
+        const res = await handleLaunch(ctxFor(id))
+
+        expect(res.ok).toBe(true)
+        expect(spawnArgs.filter((arg) => arg === '--disable-assets')).toHaveLength(1)
+        expect(spawnArgs).not.toContain('--enable-assets')
+        expect(peekBetaActivationNotice(id)).toBeNull()
+        expect(_runningSessions.get(id)?.coreBetaArgs).toEqual([])
+        expect(sent.join('')).not.toContain('[core-beta]')
+        _runningSessions.delete(id)
+      }
+    )
+
+    it('stops the ask with a force-off grant the core cannot parse', async () => {
+      launchHarness.grants = [forceOff]
+
+      const res = await handleLaunch(ctxFor('harness-assets-force-off-unparsed'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).not.toContain('--disable-assets')
+      expect(spawnArgs).not.toContain('--enable-assets')
+    })
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {
@@ -1923,6 +2082,35 @@ describe('core beta report placement', () => {
     }
   )
 
+  it("tags Desktop's own --enable-assets as assets, never as a beta grant", async () => {
+    launchHarness.grants = []
+    launchHarness.commits = {
+      head: 'e'.repeat(40),
+      ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]])
+    }
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48234
+    }
+    launchHarness.waitForPort = async () => {}
+    const id = 'harness-assets-cohort-desktop-ask'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    const booted = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(booted?.properties).toMatchObject({ assets_enabled: true, core_beta_flags: [] })
+    expect(events.some((e) => e.event === 'comfy.desktop.core_beta.applied')).toBe(false)
+    expect(peekBetaActivationNotice(id)).toBeNull()
+    expect(_runningSessions.get(id)?.coreBetaArgs).toEqual([])
+    expect(sent.join('')).toContain('[assets] --enable-assets passed')
+    _runningSessions.delete(id)
+  })
+
   it('keeps the applied Assets cohort on terminal boot failure', async () => {
     launchHarness.launchCommand = {
       cmd: process.execPath,
@@ -2072,7 +2260,7 @@ describe('core beta report placement', () => {
       _runningSessions.delete('harness-equivalence')
     })
 
-    it('hands planCoreBetaArgs the same facts as the launch that follows it', async () => {
+    it('hands planCoreBetaArgs the same facts as the launch that follows it, on a git-less install', async () => {
       settingsModule.set('betaFeaturesEnabled', true)
       launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
       launchHarness.plans = []

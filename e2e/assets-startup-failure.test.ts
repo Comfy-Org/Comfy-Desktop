@@ -62,7 +62,8 @@ test.beforeAll(async () => {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      // No beta grant may add --enable-assets: the lock case must hold without it.
+      // No --enable-assets: the v0.3.99 record below sits under Desktop's 0.38.0 assets floor,
+      // and the lock case must hold without it.
       betaFeaturesEnabled: false,
       hasSeenCentralPillHint: true
     },

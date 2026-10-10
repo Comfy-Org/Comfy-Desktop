@@ -114,7 +114,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import {
-  NO_CORE_COMMITS,
+  assetsFloorShas,
   commitGrantShas,
   getCoreBetaGrantsAsync,
   isCommitGrant,
@@ -218,7 +218,7 @@ function coreBetaLogRecord(
  * user token is the running core's args schema. Grants are selected against the UNFILTERED user
  * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
  * passed through that same schema filter so a core predating a flag never sees it. Ordering is
- * fixed: prefix, desktop feature flags, beta grants, user args.
+ * fixed: prefix, desktop feature flags, Desktop's assets arg, beta grants, user args.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
@@ -253,6 +253,7 @@ export function buildLaunchArgs(input: {
     args: [
       ...prefixArgs,
       ...desktopFlagArgs,
+      ...plan.assetsArgs,
       ...plan.applied.map((grant) => grant.arg),
       ...filtered
     ],
@@ -260,6 +261,7 @@ export function buildLaunchArgs(input: {
       applied: plan.applied,
       droppedUnsupported: plan.droppedUnsupported,
       logRecords: [
+        `${plan.assetsRecord}\n`,
         ...plan.applied.map((grant) =>
           coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)
         ),
@@ -1241,21 +1243,32 @@ async function runLaunch(
           }
         }
 
-        // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
-        const betaFlags = betaEnabled ? await getCoreBetaGrantsAsync() : []
-        // Opted-out launches skip it: the checks can reach the network and could grant nothing.
-        const coreCommits = betaEnabled
-          ? await resolveCoreCommitState(
-              comfyuiDir,
-              checkout,
-              commitGrantShas(betaFlags, userArgs),
-              abort.signal
-            )
-          : NO_CORE_COMMITS
+        // Read even when opted out: the assets force-off applies to every install.
+        const betaFlags = await getCoreBetaGrantsAsync()
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
         const core = coreVersionState(inst, checkout)
+        // The floor gets its own resolve, so the payload's SHAs never use up its cap or budget.
+        // Opted-out launches prove no grant SHA: the checks can reach the network and could grant nothing.
+        const [floor, granted] = await Promise.all([
+          resolveCoreCommitState(
+            comfyuiDir,
+            checkout,
+            assetsFloorShas(betaFlags, userArgs, schema, core),
+            abort.signal
+          ),
+          resolveCoreCommitState(
+            comfyuiDir,
+            checkout,
+            betaEnabled ? commitGrantShas(betaFlags, userArgs) : [],
+            abort.signal
+          )
+        ])
+        const coreCommits = {
+          head: granted.head ?? floor.head,
+          ancestry: new Map([...granted.ancestry, ...floor.ancestry])
+        }
         const built = buildLaunchArgs({
           prefixArgs,
           userArgs,

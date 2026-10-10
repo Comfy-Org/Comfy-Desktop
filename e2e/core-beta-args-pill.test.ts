@@ -106,7 +106,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
     installationId: INSTALL_ID,
     installationName: INSTALL_NAME,
     coreBetaArgs: [
-      { arg: '--enable-assets', name: 'Asset browser' },
+      { arg: '--enable-agent', name: 'Agent' },
       { arg: '--enable-asset-hashing', name: null },
     ],
   })
@@ -130,7 +130,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
       ])`,
   )
   expect(rows).toEqual([
-    ['--enable-assets', 'Asset browser'],
+    ['--enable-agent', 'Agent'],
     ['--enable-asset-hashing', 'Beta feature'],
   ])
 

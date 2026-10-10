@@ -26,11 +26,11 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
 const INSTALL_ID = 'inst-beta-notice-named'
 const INSTALL_NAME = 'Named Beta Fixture'
-const GRANT_ARG = '--enable-assets'
+const GRANT_ARG = '--enable-asset-hashing'
 const GRANT_MIN_CORE = '0.3.80'
 /** What the payload calls the feature. Deliberately not derivable from the arg token, so a
  *  card showing it proves the payload reached the copy rather than a table in Desktop. */
-const FEATURE_NAME = 'Asset library'
+const FEATURE_NAME = 'Asset hashing'
 
 let ctx: AppContext
 let installPath: string

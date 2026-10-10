@@ -19,6 +19,8 @@ vi.mock('./paths', () => ({
 }))
 
 import {
+  ASSETS_MIN_CORE_COMMIT,
+  assetsFloorShas,
   CORE_BETA_GRANTABLE_ARGS,
   CORE_BETA_FEATURES_FLAG_KEY,
   NO_CORE_COMMITS,
@@ -57,32 +59,32 @@ describe('parseCoreBetaGrants', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: 'v0.3.80' },
+          { arg: '--enable-asset-hashing', min_core_version: 'v0.3.80' },
           {
             arg: '--enable-asset-hashing',
             min_core_version: '0.3.81',
             max_core_version: 'v0.4.0'
           },
-          { arg: '--enable-assets', min_core_version: '0.3.90' }
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.90' }
         ]
       })
     ).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' },
       {
         arg: '--enable-asset-hashing',
         minCoreVersion: '0.3.81',
         maxCoreVersion: '0.4.0'
       },
-      { arg: '--enable-assets', minCoreVersion: '0.3.90' }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.90' }
     ])
   })
 
   it('accepts a multivariate flag assignment as enabled', () => {
     expect(
       parseCoreBetaGrants('beta', {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }]
+        flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80' }]
       })
-    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }])
   })
 
   it.each([['control'], ['off'], ['false'], ['disabled'], ['CONTROL']])(
@@ -90,24 +92,28 @@ describe('parseCoreBetaGrants', () => {
     (variant) => {
       expect(
         parseCoreBetaGrants(variant, {
-          flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }]
+          flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80' }]
         })
       ).toEqual([])
     }
   )
 
   it.each([
-    ['a disabled flag', false, { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] }],
+    [
+      'a disabled flag',
+      false,
+      { flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80' }] }
+    ],
     ['a missing payload', true, null],
-    ['an array payload', true, [{ arg: '--enable-assets', min_core_version: '0.3.80' }]],
+    ['an array payload', true, [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80' }]],
     ['malformed JSON', true, '{not-json'],
-    ['a non-array flags field', true, { flags: '--enable-assets' }],
+    ['a non-array flags field', true, { flags: '--enable-asset-hashing' }],
     [
       'an oversized list',
       true,
       {
         flags: Array.from({ length: 33 }, () => ({
-          arg: '--enable-assets',
+          arg: '--enable-asset-hashing',
           min_core_version: '0.3.80'
         }))
       }
@@ -133,17 +139,13 @@ describe('parseCoreBetaGrants', () => {
       })
     ).toEqual([])
     expect(CORE_BETA_GRANTABLE_ARGS).toEqual([
-      '--enable-assets',
       '--enable-asset-hashing',
       '--disable-assets',
       '--enable-agent'
     ])
   })
 
-  it('grants --disable-assets, the remote force-off for when assets go default-on', () => {
-    // Core has no such flag yet. Granting one it cannot parse is already safe — the args
-    // schema filters it and the launch reports it as `dropped_unsupported` — so the allowlist
-    // can carry it ahead of Core.
+  it('grants --disable-assets, the remote force-off for assets', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [{ arg: '--disable-assets', min_core_version: '0.4.0' }]
@@ -155,17 +157,17 @@ describe('parseCoreBetaGrants', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: 380 },
-          { arg: '--enable-assets', min_core_version: '61e5e3b5' },
-          { arg: '--enable-assets', min_core_version: '0.3.80rc1' },
-          { arg: '--enable-assets', min_core_version: '0.3.80', max_core_version: 400 },
+          { arg: '--enable-asset-hashing', min_core_version: 380 },
+          { arg: '--enable-asset-hashing', min_core_version: '61e5e3b5' },
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.80rc1' },
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.80', max_core_version: 400 },
           {
-            arg: '--enable-assets',
+            arg: '--enable-asset-hashing',
             min_core_version: '0.3.80',
             max_core_version: '61e5e3b5'
           },
           {
-            arg: '--enable-assets',
+            arg: '--enable-asset-hashing',
             min_core_version: '0.3.80',
             max_core_version: undefined
           }
@@ -174,7 +176,7 @@ describe('parseCoreBetaGrants', () => {
     ).toEqual([])
   })
 
-  it('grants nothing when a payload names both a flag and its opposite', () => {
+  it('drops --enable-assets: Desktop asks for assets itself, so a payload can only turn them off', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
@@ -182,19 +184,19 @@ describe('parseCoreBetaGrants', () => {
           { arg: '--disable-assets', min_core_version: '0.3.80' }
         ]
       })
-    ).toEqual([])
+    ).toEqual([{ arg: '--disable-assets', minCoreVersion: '0.3.80' }])
   })
 
   it('keeps unrelated grants when no pair contradicts', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80' },
+          { arg: '--disable-assets', min_core_version: '0.3.80' },
           { arg: '--enable-asset-hashing', min_core_version: '0.3.80' }
         ]
       })
     ).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { arg: '--disable-assets', minCoreVersion: '0.3.80' },
       { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
     ])
   })
@@ -207,22 +209,26 @@ describe('parseCoreBetaGrants notice wording', () => {
   it('grants a payload entry that says nothing about the notice', () => {
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.36.0' }]
+        flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.36.0' }]
       })
-    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.36.0' }])
+    ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.36.0' }])
   })
 
   it('carries a silent request and a feature name onto the grant', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80', description: 'Asset library' },
+          {
+            arg: '--enable-asset-hashing',
+            min_core_version: '0.3.80',
+            description: 'Asset library'
+          },
           { arg: '--enable-agent', min_core_version: '0.3.80', notice: 'silent' }
         ]
       })
     ).toEqual([
       {
-        arg: '--enable-assets',
+        arg: '--enable-asset-hashing',
         minCoreVersion: '0.3.80',
         notice: { description: 'Asset library' }
       },
@@ -236,25 +242,27 @@ describe('parseCoreBetaGrants notice wording', () => {
     for (const notice of [true, 1, 'SILENT', 'quiet', null]) {
       expect(
         parseCoreBetaGrants(true, {
-          flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', notice }]
+          flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', notice }]
         })
-      ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+      ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }])
     }
   })
 
   it('trims a description and drops a blank one', () => {
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description: '  Assets  ' }]
+        flags: [
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.80', description: '  Assets  ' }
+        ]
       })
     ).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }
     ])
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description: '   ' }]
+        flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', description: '   ' }]
       })
-    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }])
   })
 
   it('drops an over-long or non-string description instead of refusing the grant', () => {
@@ -263,9 +271,9 @@ describe('parseCoreBetaGrants notice wording', () => {
     for (const description of ['x'.repeat(49), 42, { text: 'Assets' }, ['Assets']]) {
       expect(
         parseCoreBetaGrants(true, {
-          flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+          flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', description }]
         })
-      ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+      ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }])
     }
   })
 
@@ -279,18 +287,20 @@ describe('parseCoreBetaGrants notice wording', () => {
     // that can reshape or reverse the sentence falls back to the generic wording.
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+        flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', description }]
       })
-    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    ).toEqual([{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }])
   })
 
   it('keeps a description exactly at the limit', () => {
     const description = 'x'.repeat(48)
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+        flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', description }]
       })
-    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { description } }])
+    ).toEqual([
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80', notice: { description } }
+    ])
   })
 })
 
@@ -558,7 +568,7 @@ describe('parseCoreBetaGrants commit ranges', () => {
       parseCoreBetaGrants(true, {
         flags: [
           {
-            arg: '--enable-assets',
+            arg: '--enable-asset-hashing',
             commit_ranges: [
               [SHA_A.toUpperCase(), SHA_B],
               [SHA_C, null]
@@ -569,7 +579,7 @@ describe('parseCoreBetaGrants commit ranges', () => {
       })
     ).toEqual([
       {
-        arg: '--enable-assets',
+        arg: '--enable-asset-hashing',
         commitRanges: [
           [SHA_A, SHA_B],
           [SHA_C, null]
@@ -583,13 +593,13 @@ describe('parseCoreBetaGrants commit ranges', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80' },
-          { arg: '--enable-assets', commit_ranges: [[SHA_A, null]] }
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.80' },
+          { arg: '--enable-asset-hashing', commit_ranges: [[SHA_A, null]] }
         ]
       })
     ).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
-      { arg: '--enable-assets', commitRanges: [[SHA_A, null]] }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' },
+      { arg: '--enable-asset-hashing', commitRanges: [[SHA_A, null]] }
     ])
   })
 
@@ -614,7 +624,7 @@ describe('parseCoreBetaGrants commit ranges', () => {
   ])('drops a commit entry with %s', (_label, commitRanges) => {
     expect(
       parseCoreBetaGrants(true, {
-        flags: [{ arg: '--enable-assets', commit_ranges: commitRanges }]
+        flags: [{ arg: '--enable-asset-hashing', commit_ranges: commitRanges }]
       })
     ).toEqual([])
   })
@@ -623,19 +633,16 @@ describe('parseCoreBetaGrants commit ranges', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80', commit_ranges: [[SHA_A, null]] },
-          { arg: '--enable-assets', max_core_version: '0.4.0', commit_ranges: [[SHA_A, null]] }
-        ]
-      })
-    ).toEqual([])
-  })
-
-  it('grants nothing when a commit entry and a version entry name opposite args', () => {
-    expect(
-      parseCoreBetaGrants(true, {
-        flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80' },
-          { arg: '--disable-assets', commit_ranges: [[SHA_A, null]] }
+          {
+            arg: '--enable-asset-hashing',
+            min_core_version: '0.3.80',
+            commit_ranges: [[SHA_A, null]]
+          },
+          {
+            arg: '--enable-asset-hashing',
+            max_core_version: '0.4.0',
+            commit_ranges: [[SHA_A, null]]
+          }
         ]
       })
     ).toEqual([])
@@ -999,7 +1006,7 @@ describe('core beta grants fetch', () => {
     getOpsFlagResult.mockResolvedValue({
       kind: 'value',
       value: true,
-      payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] }
+      payload: { flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80' }] }
     })
     await Promise.all([
       initCoreBetaGrants({ distinctId: 'device-id' }),
@@ -1016,7 +1023,7 @@ describe('core beta grants fetch', () => {
       expect.any(Function)
     )
     await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
     ])
   })
   it.each([
@@ -1049,7 +1056,7 @@ describe('core beta grants fetch', () => {
     getOpsFlagResult.mockResolvedValue({
       kind: 'value',
       value: true,
-      payload: { flags: [{ arg: '--enable-assets', commit_ranges: [[SHA_A, null]] }] }
+      payload: { flags: [{ arg: '--enable-asset-hashing', commit_ranges: [[SHA_A, null]] }] }
     })
 
     await initCoreBetaGrants({ distinctId: 'device-id' })
@@ -1139,6 +1146,148 @@ describe('planCoreBetaArgs', () => {
       `[core-beta] commits --enable-agent: ${SHA_A.slice(0, 12)}.. head=${HEAD.slice(0, 12)} in-range=yes`
     ])
     log.mockRestore()
+  })
+})
+
+describe('Desktop assets args', () => {
+  const HEAD = 'e'.repeat(40)
+  const schemaOf = (...names: string[]): ComfyArgsSchema => ({
+    args: [],
+    knownFlags: new Set(names)
+  })
+  const forceOff: CoreBetaGrant = { arg: '--disable-assets', minCoreVersion: '9.0.0' }
+  // Below the floor by version, so only the commit proof can pass unless a case says otherwise.
+  const preAssets = { semver: '0.37.9', exact: true, verified: true, current: true }
+  const atFloor = { semver: '0.38.0', exact: true, verified: true, current: true }
+  const gitAtFloor = { head: HEAD, ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]]) }
+  const facts = (overrides: Partial<CoreBetaFacts> = {}): CoreBetaFacts => ({
+    grants: [],
+    betaEnabled: true,
+    userArgs: [],
+    core: preAssets,
+    commits: gitAtFloor,
+    schema: schemaOf('enable-assets'),
+    ...overrides
+  })
+  const withheld = (overrides: Partial<CoreBetaFacts>): string | undefined =>
+    planCoreBetaArgs(facts(overrides)).assetsRecord.replace(
+      '[assets] --enable-assets withheld: ',
+      ''
+    )
+
+  it.each([
+    ['opted in', true],
+    ['opted out', false]
+  ])('asks a core with the floor commit, %s and with no grant', (_, betaEnabled) => {
+    const plan = planCoreBetaArgs(facts({ betaEnabled }))
+    expect(plan.assetsArgs).toEqual(['--enable-assets'])
+    expect(plan.assetsRecord).toBe('[assets] --enable-assets passed')
+    expect(plan.applied).toEqual([])
+  })
+
+  it('asks a core whose verified release is at the floor, without its ancestry', () => {
+    expect(planCoreBetaArgs(facts({ core: atFloor, commits: NO_CORE_COMMITS })).assetsArgs).toEqual(
+      ['--enable-assets']
+    )
+  })
+
+  it.each([
+    ['the core predates the flag', { schema: schemaOf() }, 'not supported by this core'],
+    [
+      'the core lacks the floor commit',
+      { commits: { head: HEAD, ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, false]]) } },
+      `core ${HEAD.slice(0, 12)} does not contain 7897b4ee3527`
+    ],
+    [
+      'the floor commit is unresolved',
+      { commits: { head: HEAD, ancestry: new Map() } },
+      `core ${HEAD.slice(0, 12)} proves neither 7897b4ee3527 nor a verified v0.38.0+ release`
+    ],
+    [
+      'a git-less release is below the floor',
+      { commits: NO_CORE_COMMITS },
+      'core 0.37.9 proves neither 7897b4ee3527 nor a verified v0.38.0+ release'
+    ],
+    [
+      'the release is not proven by ancestry',
+      { core: { ...atFloor, verified: false }, commits: NO_CORE_COMMITS },
+      'core 0.38.0 proves neither 7897b4ee3527 nor a verified v0.38.0+ release'
+    ],
+    [
+      'the record no longer describes the checkout',
+      { core: { ...atFloor, current: false }, commits: NO_CORE_COMMITS },
+      'core 0.38.0 proves neither 7897b4ee3527 nor a verified v0.38.0+ release'
+    ],
+    [
+      'the version is unknown',
+      { core: { ...atFloor, semver: null }, commits: NO_CORE_COMMITS },
+      'core unknown proves neither 7897b4ee3527 nor a verified v0.38.0+ release'
+    ],
+    ['the user passed it', { userArgs: ['--enable-assets'] }, 'already in the launch args'],
+    [
+      'the user turned assets off',
+      { userArgs: ['--disable-assets'] },
+      'the launch args contain --disable-assets'
+    ],
+    ['a force-off entry is served', { grants: [forceOff] }, 'forced off remotely'],
+    [
+      'the user turned assets off under a force-off',
+      { userArgs: ['--disable-assets'], grants: [forceOff] },
+      'the launch args contain --disable-assets'
+    ]
+  ])('does not ask when %s', (_, overrides: Partial<CoreBetaFacts>, reason) => {
+    expect(planCoreBetaArgs(facts(overrides)).assetsArgs).toEqual([])
+    expect(withheld(overrides)).toBe(reason)
+  })
+
+  it.each([
+    ['opted in', true],
+    ['opted out', false]
+  ])(
+    'a force-off entry outside its own bounds still turns assets off, %s, and is never a grant',
+    (_, betaEnabled) => {
+      const plan = planCoreBetaArgs(
+        facts({
+          grants: [forceOff],
+          betaEnabled,
+          schema: schemaOf('enable-assets', 'disable-assets')
+        })
+      )
+      expect(plan.assetsArgs).toEqual(['--disable-assets'])
+      expect(plan.applied).toEqual([])
+      expect(plan.droppedUnsupported).toEqual([])
+      expect(plan.withheld).toEqual([])
+    }
+  )
+
+  it("yields the force-off to the user's own --enable-assets", () => {
+    const plan = planCoreBetaArgs(
+      facts({
+        grants: [forceOff],
+        userArgs: ['--enable-assets'],
+        schema: schemaOf('enable-assets', 'disable-assets')
+      })
+    )
+    expect(plan.assetsArgs).toEqual([])
+  })
+
+  it('proves the floor only when nothing else decides assets', () => {
+    const shas = (overrides: Partial<CoreBetaFacts>) => {
+      const f = facts(overrides)
+      return assetsFloorShas(f.grants, f.userArgs, f.schema, f.core)
+    }
+    expect(shas({})).toEqual([ASSETS_MIN_CORE_COMMIT])
+    expect(shas({ core: atFloor })).toEqual([])
+    expect(shas({ userArgs: ['--enable-assets'] })).toEqual([])
+    expect(shas({ userArgs: ['--disable-assets'] })).toEqual([])
+    expect(shas({ grants: [forceOff] })).toEqual([])
+    expect(shas({ schema: schemaOf() })).toEqual([])
+  })
+
+  it("never resolves a force-off entry's commit bounds", () => {
+    expect(
+      commitGrantShas([{ arg: '--disable-assets', commitRanges: [[ASSETS_MIN_CORE_COMMIT, null]] }])
+    ).toEqual([])
   })
 })
 
