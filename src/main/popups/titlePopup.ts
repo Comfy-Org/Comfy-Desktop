@@ -480,6 +480,10 @@ export interface TitlePopupEntry {
   /** Monotonic nonce stamped alongside `pickerAutoAction` so a repeat
    *  open with the same action id still reads as a fresh trigger. */
   pickerAutoActionNonce: number
+  /** Install whose picker settings opened this Desktop Settings popup through the beta-args pill's
+   *  Manage link. Closing Settings returns there instead of dismissing. Every open clears it, so
+   *  only that route sets it; the picker's Storage link into Settings just closes. */
+  returnToPickerInstallationId: string | null
   /** JSON of the most recent `installs-changed` snapshot sent to this
    *  popup. Used by `broadcastInstancePickerSnapshotToTitlePopups` to
    *  skip pushes that would re-render identical data — important
@@ -897,7 +901,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
   const installs = await bindings.getInstancePickerInstalls()
   if (mySeq !== pickerSnapshotBroadcastSeq) return
   const runningInstallationIds = bindings.getRunningInstallationIds()
-  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt()
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'instance-picker') continue
@@ -1069,6 +1073,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     pickerInitialTab: null,
     pickerAutoAction: null,
     pickerAutoActionNonce: 0,
+    returnToPickerInstallationId: null,
     openedAt: 0,
     lastPickerBroadcastJson: null,
     lastGlobalSettingsBroadcastJson: null
@@ -1471,6 +1476,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   entry.parentEntryId = opts.parentEntryId
   entry.kind = opts.kind
   entry.titleBarSender = opts.titleBarSender
+  entry.returnToPickerInstallationId = null
   // Backdrop kinds own outside-click dismiss via the backdrop view, so skip
   // the blur-driven hide. Menu / downloads have no backdrop and rely on blur.
   entry.view.suppressBlurDismiss = kindUsesBackdrop(opts.kind)
@@ -1649,7 +1655,7 @@ export interface TitlePopupHostBindings {
    *  row indicator and the focus-vs-launch decision in `pickInstall`. */
   getRunningInstallationIds: () => string[]
   /** `startedAt` per running session; see `InstancePickerSnapshot.runningSessionStartedAt`. */
-  getRunningSessionStartedAt?: () => Record<string, number>
+  getRunningSessionStartedAt: () => Record<string, number>
   /** Installs mid-launch (between `instance-launching` and
    *  `instance-started` / `instance-launch-failed`). Surfaced in the
    *  picker snapshot so the popup — whose preload doesn't expose the
@@ -1861,7 +1867,7 @@ function openInstancePickerForHost(
   if (parentEntry.window.isDestroyed()) return
   const installs: InstancePickerInstall[] = cachedInstallsForPicker.slice()
   const runningInstallationIds = bindings.getRunningInstallationIds()
-  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt()
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   // A chooser host that already staked a claim (preview) reads as
   // owning the install for default-selection purposes.
@@ -2369,11 +2375,32 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 
+  /** A deliberate dismiss (Escape, close button, backdrop click). Desktop Settings opened from the
+   *  picker's settings goes back there; everything else closes. */
+  function dismissTitlePopup(entry: TitlePopupEntry): void {
+    const returnTo = entry.returnToPickerInstallationId
+    const parentEntry = returnTo === null ? undefined : comfyWindows.get(entry.parentEntryId)
+    if (returnTo === null || !parentEntry) {
+      hideTitlePopup(entry, { releaseFocusToParent: true })
+      return
+    }
+    openInstancePickerForHost(
+      parentEntry,
+      entry.parentEntryId,
+      bindings,
+      parentEntry.titleBarView.webContents,
+      { x: 0, y: TITLEBAR_HEIGHT },
+      returnTo,
+      // The config tab: the Manage link that set the target lives there (Startup Arguments).
+      'config'
+    )
+  }
+
   ipcMain.on('comfy-titlepopup:close', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
     // Escape key — popup still has focus, so push it back to the parent.
-    hideTitlePopup(entry, { releaseFocusToParent: true })
+    dismissTitlePopup(entry)
   })
 
   /** Click on the picker backdrop. Always hides the backdrop itself (safety
@@ -2394,7 +2421,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       return
     }
     if (Date.now() - popup.openedAt < BACKDROP_DISMISS_GUARD_MS) return
-    hideTitlePopup(popup, { releaseFocusToParent: true })
+    dismissTitlePopup(popup)
   })
 
   // Renderer-driven resize for the downloads popup. The downloads
@@ -3097,6 +3124,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const parentEntry = comfyWindows.get(entry.parentEntryId)
       if (!parentEntry || parentEntry.window.isDestroyed()) return
       const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
+      // The picker's selection: the beta-args pill, this channel's only sender, renders only there.
+      const returnTo = entry.pickerSelectedInstallationId
       openGlobalSettingsForHost(
         parentEntry,
         entry.parentEntryId,
@@ -3105,6 +3134,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         initialTab,
         highlightFieldId
       )
+      entry.returnToPickerInstallationId = returnTo
     }
   )
 

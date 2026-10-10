@@ -732,28 +732,27 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     }
   }
 
+  // Keyed on the session, not just "running": a restart can reach this window as running ->
+  // running (the stop and relaunch landing between two snapshots), and the session-derived rows,
+  // such as the port, belong to the old session. (The beta-args pill watches the session itself.)
   watch(
-    () => {
-      const inst = toValue(opts.installation)
-      if (!inst || !sessionStore.isRunning(inst.id)) return null
-      // Keyed on the session, not just "running": a restart can reach this window as
-      // running -> running (the stop and relaunch landing between two snapshots), and the
-      // session-derived rows - the port, the beta-args pill - belong to the old session.
-      // A string, so only a real change fires: `<install id>\0<session start>`.
-      return `${inst.id}\0${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
-    },
-    (session, previous) => {
-      const inst = toValue(opts.installation)
-      if (!inst) return
-      // The SAME install's session replaced by a new one consumed the edited values, so nothing
+    [
+      () => toValue(opts.installation)?.id ?? null,
+      () => {
+        const id = toValue(opts.installation)?.id
+        return id ? sessionStore.sessionKey(id) : null
+      }
+    ],
+    ([id, session], [previousId, previousSession]) => {
+      // A different install: the installation watcher above reloads for it, and its pending
+      // state is its own.
+      if (!id || id !== previousId) return
+      // The same install's session replaced by a new one consumed the edited values, so nothing
       // is pending any more. The stop/launching edges below would clear this, but a restart seen
       // as running -> running shows neither (e.g. a picker that was hidden for the restart).
-      // Switching between two running installs is not a restart: their pending state survives.
-      const sameInstall = session?.split('\0')[0] === previous?.split('\0')[0]
-      if (session && previous && sameInstall && session !== previous) clearRestartAndErrors(inst.id)
-      // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
-      // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
-      // reload()'s requestSeq.
+      if (session !== null && previousSession !== null) clearRestartAndErrors(id)
+      // Refetch so the "Running details" port row follows the session: appears on launch,
+      // clears on stop, renews on restart. Race-safe via reload()'s requestSeq.
       void reload()
     }
   )

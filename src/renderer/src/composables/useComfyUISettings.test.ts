@@ -715,6 +715,49 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     scope.stop()
   })
 
+  it('clears a pending restart on a restart of an install that was already running when the view mounted', async () => {
+    useSessionStore().runningInstances.set('a', {
+      installationId: 'a',
+      installationName: 'A',
+      mode: 'standalone',
+      startedAt: 1
+    })
+    const { composable, scope } = await mountWithField('a', 'window')
+    const store = useSessionStore()
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    store.runningInstances.set('a', { ...store.runningInstances.get('a')!, startedAt: 2 })
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(false)
+    scope.stop()
+  })
+
+  it('reloads once when the selection moves between running installs, not twice', async () => {
+    markRunning('a')
+    markRunning('b')
+    const { api, installation, scope } = await mountWithField('a', 'window')
+    const before = api.getDetailSections.mock.calls.length
+    installation.value = makeInstall('b', 'B')
+    await nextTick()
+    await Promise.resolve()
+    expect(api.getDetailSections.mock.calls.length).toBe(before + 1)
+    scope.stop()
+  })
+
+  it('reloads when the selected install starts after moving between stopped installs', async () => {
+    const { api, installation, scope } = await mountWithField('a', 'window')
+    installation.value = makeInstall('b', 'B')
+    await nextTick()
+    await Promise.resolve()
+    const before = api.getDetailSections.mock.calls.length
+    markRunning('b')
+    await nextTick()
+    await Promise.resolve()
+    expect(api.getDetailSections.mock.calls.length).toBe(before + 1)
+    scope.stop()
+  })
+
   it('keeps a pending restart when the selection moves between two running installs', async () => {
     const { composable, installation, scope } = await mountWithField('b', 'window')
     const store = useSessionStore()

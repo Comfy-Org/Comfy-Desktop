@@ -50,6 +50,11 @@ export function splitLaunchCommand(launchCmd: Pick<LaunchCommand, 'args' | 'cwd'
   }
 }
 
+/** The revision the args-schema cache falls back to when the checkout's HEAD cannot be read. */
+export function recordedRevision(inst: InstallationRecord): string | undefined {
+  return inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+}
+
 /** The core release as the version gate reads it, for the checkout being launched. */
 export function coreVersionState(
   inst: InstallationRecord,

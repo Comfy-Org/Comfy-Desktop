@@ -125,7 +125,12 @@ import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaAct
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
-import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
+import {
+  coreVersionState,
+  recordedRevision,
+  resolveCoreCheckout,
+  splitLaunchCommand
+} from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
@@ -1203,7 +1208,7 @@ async function runLaunch(
     const split = splitLaunchCommand(launchCmd)
     if (split) {
       const { prefixArgs, userArgs, mainPyAbs, comfyuiDir } = split
-      const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+      const revision = recordedRevision(inst)
       // Read here rather than reused from `revision` above: that one falls back to the
       // record when HEAD is unreadable, which is the very disagreement being checked for.
       const checkout = resolveCoreCheckout(comfyuiDir)

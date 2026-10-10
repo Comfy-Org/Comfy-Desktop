@@ -20,15 +20,16 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
-import {
-  closeTitlePopupIfOpen,
-  titlePopupPage,
-  TITLE_REOPEN_SUPPRESSION_MS,
-  waitForWebContents,
-  type WebContentsPage,
-} from './support/cdpPages'
+import type { WebContentsPage } from './support/cdpPages'
 import { clearRunningSessions, seedRunningSession } from './support/devHooks'
-import { byTestId, TID } from './support/testIds'
+import {
+  expectAnsweredWithNoPill,
+  MANAGE,
+  MENU,
+  openStartupArgs as openArgsFor,
+  PILL,
+} from './support/betaArgsPill'
+import { opsFlagsGrantSeed } from './support/fakeComfyInstall'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -36,14 +37,15 @@ const INSTALL_ID = 'inst-beta-args-pill'
 const INSTALL_NAME = 'Beta Args Install'
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
-const ARGS_FIELD = '[data-field-id="launchArgs"]'
-const PILL = `${ARGS_FIELD} .beta-args button`
-/** Teleported to <body>, so not under the field. */
-const MENU = '.beta-args-menu'
-const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 
 let ctx: AppContext
 let installPath: string
+let previousPosthogHost: string | undefined
+/** Keeps telemetry, which the opt-in needs, from leaving the machine. */
+const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
+/** macOS resolves the app's config dir to Electron's real userData, which ignores the harness's
+ *  isolated home, so an ops-flag seed there would stay in the real profile after the run. */
+const SEEDS_OPS_FLAGS = process.platform !== 'darwin'
 
 test.beforeAll(async () => {
   // Launching the app can run well past the 45s default on a loaded machine.
@@ -51,8 +53,12 @@ test.beforeAll(async () => {
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-beta-args-e2e-'))
   await mkdir(installPath, { recursive: true })
   await writeFile(path.join(installPath, MARKER_FILENAME), INSTALL_ID)
+  previousPosthogHost = process.env['POSTHOG_HOST']
+  process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
   ctx = await launchApp({
-    settings: { firstUseCompleted: true, telemetryEnabled: false },
+    // Opted in, with a grant this install's version qualifies for, so the only thing keeping the
+    // stopped pill away is that its next launch cannot be predicted.
+    settings: { firstUseCompleted: true, telemetryEnabled: true, betaFeaturesEnabled: true },
     installations: [
       {
         id: INSTALL_ID,
@@ -60,8 +66,17 @@ test.beforeAll(async () => {
         installPath,
         sourceId: 'standalone',
         status: 'installed',
+        comfyVersion: {
+          commit: 'b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2',
+          baseTag: 'v0.3.99',
+          commitsAhead: 0,
+          baseTagVerified: true,
+        },
       },
     ],
+    opsFlags: SEEDS_OPS_FLAGS
+      ? opsFlagsGrantSeed({ arg: '--enable-assets', minCoreVersion: '0.3.80' })
+      : undefined,
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -70,35 +85,20 @@ test.afterAll(async () => {
   if (ctx) await clearRunningSessions(ctx.app).catch(() => {})
   await ctx?.cleanup()
   if (installPath) await rm(installPath, { recursive: true, force: true })
+  if (previousPosthogHost === undefined) delete process.env['POSTHOG_HOST']
+  else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-/** Open the picker on the install's Startup Args and wait until its args field has rendered. */
-async function openStartupArgs(): Promise<WebContentsPage> {
-  await closeTitlePopupIfOpen(ctx.app)
-  await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  const opened = await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })
-      return true
-    })()`,
-  )
-  expect(opened).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
-}
+const openStartupArgs = (): Promise<WebContentsPage> =>
+  openArgsFor(ctx.app, ctx.panel, INSTALL_ID)
 
 // This fixture has no interpreter, so the settings view's schema discovery fails and the next-launch
 // preview (which only reads a cached schema) cannot be computed: the pill must stay away rather than
-// guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`.
-test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
+// guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`. Not on macOS: without
+// the grant seed there, no pill would be expected anyway.
+test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @linux', async () => {
   const popup = await openStartupArgs()
-  // The args field is on screen (waited above), so the pill's absence is a real answer.
-  expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
-    false,
-  )
+  await expectAnsweredWithNoPill(popup, 'a stopped install with no launch command showed a pill')
 })
 
 test('a running install shows its grants and links to the beta opt-in @windows @macos @linux', async () => {

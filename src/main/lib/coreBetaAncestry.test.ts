@@ -242,6 +242,20 @@ describe('resolveCoreCommitState', () => {
     expect([...state.ancestry]).toEqual([[UPPER, false]])
   })
 
+  it('warns about a git check that threw, naming the SHA, as the launch always has', async () => {
+    const failure = new Error('spawn EAGAIN')
+    git.findMergeBase.mockRejectedValue(failure)
+    const warn = vi.mocked(console.warn)
+    warn.mockClear()
+
+    await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+
+    expect(warn).toHaveBeenCalledWith(
+      `[core-beta] ancestry check failed for ${LOWER.slice(0, 12)}:`,
+      failure
+    )
+  })
+
   it('relates at most sixteen SHAs and leaves the rest unresolved', async () => {
     git.findMergeBase.mockResolvedValue(OLDER)
     const shas = Array.from({ length: 20 }, (_, i) => shaOf(i + 1))
