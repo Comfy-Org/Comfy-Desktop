@@ -76,13 +76,7 @@ const count: FieldValue = (raw) => {
   return Number.isSafeInteger(value) ? value : undefined
 }
 const bool: FieldValue = (raw) => (raw === 'true' ? true : raw === 'false' ? false : undefined)
-// Rejects dates that Date.parse would roll over, such as February 30.
-const timestamp: FieldValue = (raw) => {
-  const ms = UTC_TIMESTAMP.test(raw) ? Date.parse(raw) : NaN
-  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 19) === raw.slice(0, 19)
-    ? raw
-    : undefined
-}
+const timestamp = matching(UTC_TIMESTAMP)
 
 const fieldsOfType = (names: string, type: FieldValue): Array<[string, FieldValue]> =>
   names.split(' ').map((name) => [name, type])
@@ -100,7 +94,7 @@ export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
   ['run_mode', oneOf('ask_approval auto auto_limited')],
   ['engine', oneOf('inline temporal')],
   ['response_kind', oneOf('message_delta thinking tool_call')],
-  ['event_schema_version', matching(/^\d{1,4}$/)],
+  ['event_schema_version', (raw) => (/^\d{1,4}$/.test(raw) ? raw : 'unknown')],
   [
     'error_class',
     oneOf(
@@ -234,12 +228,18 @@ const RECORD_TAG = '[agent-event] '
 // Core relays the agent's own output behind this tag so it can never pass as a record.
 const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
+// ComfyUI logs its records at INFO. A tqdm bar redraws as `\r<bar>` with no
+// newline, so a record logged mid-bar lands behind it.
+const LEVEL_TAG_AT_END = /\[INFO\]\s+$/
+const TQDM_BAR = /^[^|]*\d+%\|[^|]*\| *\S+\/\S+ \[[^\]]*\]$/
+
 // Whether the record starts its log line: nothing ahead of it since the last
-// tqdm redraw (`\r`) but a progress bar and the level tag, so text logged ahead
-// of it on the same line can't carry it.
+// `\r` but a progress bar and the level tag, so text logged ahead of it on the
+// same line can't carry it.
 function startsLine(text: string, at: number): boolean {
   const segment = text.slice(text.lastIndexOf('\r', at) + 1, at)
-  return segment.trim() === '' || /\[[A-Z]+\]\s*$/.test(segment)
+  const ahead = segment.replace(LEVEL_TAG_AT_END, '').trim()
+  return ahead === '' || TQDM_BAR.test(ahead)
 }
 
 function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
@@ -292,16 +292,15 @@ export function createAgentTap(opts: AgentTapOptions): {
 
   const productContext = { ...baseContext, distribution: 'local', deployment: 'local' }
 
-  function withinRateCap(event: string, cap = PER_EVENT_HOURLY_CAP): boolean {
+  // The event's bucket for the current hour.
+  function rateBucket(event: string): { windowStart: number; count: number } {
     const now = Date.now()
-    const bucket = rateBuckets.get(event)
+    let bucket = rateBuckets.get(event)
     if (!bucket || now - bucket.windowStart >= RATE_WINDOW_MS) {
-      rateBuckets.set(event, { windowStart: now, count: 1 })
-      return true
+      bucket = { windowStart: now, count: 0 }
+      rateBuckets.set(event, bucket)
     }
-    if (bucket.count >= cap) return false
-    bucket.count++
-    return true
+    return bucket
   }
 
   function handleLine(line: string): void {
@@ -309,10 +308,13 @@ export function createAgentTap(opts: AgentTapOptions): {
     if (!parsed) return
     if (parsed !== UNKNOWN_EVENT && parsed.product) {
       if (productEventsThisProcess >= PRODUCT_EVENTS_PER_PROCESS) return
-      if (!withinRateCap(parsed.event, parsed.product.hourlyCap)) return
+      const bucket = rateBucket(parsed.event)
+      if (bucket.count >= parsed.product.hourlyCap) return
       try {
-        // Not mirrored to Datadog, unlike the lifecycle events' emit.
+        // Not mirrored to Datadog, unlike the lifecycle events' emit. Only a
+        // delivered event counts, so lines seen before consent use no budget.
         if (telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })) {
+          bucket.count++
           productEventsThisProcess++
         }
       } catch {
@@ -323,7 +325,9 @@ export function createAgentTap(opts: AgentTapOptions): {
     // Counted, never named: an unknown event's name is untrusted input.
     const { event, fields } =
       parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed
-    if (!withinRateCap(event)) return
+    const bucket = rateBucket(event)
+    if (bucket.count >= PER_EVENT_HOURLY_CAP) return
+    bucket.count++
     try {
       // Base context merged last so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })

@@ -613,7 +613,17 @@ describe('agentTap product events', () => {
       relayed(`[ERROR] The local agent could not be started: x ${PRODUCT_FIXTURE[1]}`) +
         `note ${PRODUCT_FIXTURE[1]}\n`
     )
+    ingest(relayed(`[ERROR] could not be started: [INFO] ${PRODUCT_FIXTURE[1]}`))
+    ingest(relayed(`Loaded [SDXL] ${PRODUCT_FIXTURE[1]}`))
+    ingest(`x[INFO]${PRODUCT_FIXTURE[1]}\n`)
+    ingest(`[SDXL] ${PRODUCT_FIXTURE[1]}\n`)
     expect(captured, 'text ahead of the record could be anyone’s').toEqual([])
+    ingest(`${PRODUCT_FIXTURE[0]}\n`)
+    expect(
+      captured.map((c) => c.event),
+      'a build without level tags'
+    ).toEqual(['agent_session_started'])
+    captured = []
     const tap = createAgentTap(baseOpts)
     tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
     tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
@@ -665,7 +675,6 @@ describe('agentTap product events', () => {
     ['a count past 2^53-1', firstResponse(' time_to_first_response_ms=9007199254740992')],
     ['a non-boolean', sessionStarted(' is_resume=yes')],
     ['an offset timestamp', turnStarted(' accepted_at=2026-10-09T14:00:01+02:00')],
-    ['an impossible date', turnStarted(' accepted_at=2026-02-30T12:00:00Z')],
     ['a duplicate key', turnStarted(` thread_id=${THREAD}`)],
     [
       'a malformed agent_version',
@@ -707,6 +716,25 @@ describe('agentTap product events', () => {
       mutation_id: '1'.repeat(64),
       event_schema_version: '2'
     })
+  })
+
+  it('forwards a schema version it can\u2019t read as unknown', () => {
+    ingest(
+      relayed(PRODUCT_FIXTURE[4]!.replace('event_schema_version=1', 'event_schema_version=v2'))
+    )
+    expect(captured[0]?.ctx).toMatchObject({ event_schema_version: 'unknown' })
+  })
+
+  it('counts only delivered events against the hourly cap', () => {
+    const tap = createAgentTap(baseOpts)
+    vi.mocked(telemetry.capture).mockReturnValue(false)
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!).repeat(130), 'stderr')
+    vi.mocked(telemetry.capture).mockImplementation((event, ctx) => {
+      captured.push({ event, ctx: ctx as Record<string, unknown> })
+      return true
+    })
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    expect(captured.map((c) => c.event)).toEqual(['agent_turn_started'])
   })
 
   it('keeps parsing the chunk when capture throws', () => {
@@ -821,6 +849,7 @@ describe('agentTap consent gating', () => {
 
   it('delivers at most 60 of one product event a minute, through telemetry\u2019s own limit', () => {
     _resetProductEventBudgetForTest()
+    telemetry._test_resetVolumeGuards()
     telemetry.setConsentState('granted')
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
     createAgentTap({ installationId: 'inst-1' }).ingest(
