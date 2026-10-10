@@ -617,6 +617,9 @@ describe('agentTap product events', () => {
     ingest(relayed(`Loaded [SDXL] ${PRODUCT_FIXTURE[1]}`))
     ingest(`x[INFO]${PRODUCT_FIXTURE[1]}\n`)
     ingest(`[SDXL] ${PRODUCT_FIXTURE[1]}\n`)
+    ingest(relayed(`[ERROR] could not be started: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}`))
+    ingest(`\r[ERROR] x: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}\n`)
+    ingest(`note: 1%|a| b/c [d] [INFO] ${PRODUCT_FIXTURE[1]}\n`)
     expect(captured, 'text ahead of the record could be anyone’s').toEqual([])
     ingest(`${PRODUCT_FIXTURE[0]}\n`)
     expect(
@@ -627,10 +630,12 @@ describe('agentTap product events', () => {
     const tap = createAgentTap(baseOpts)
     tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
     tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    tap.ingest('\rmodel.safetensors:  50%|#####     | 1.2G/2.4G [00:10<00:10, 120MB/s]', 'stderr')
+    tap.ingest(relayed(PRODUCT_FIXTURE[2]!), 'stderr')
     expect(
       captured.map((c) => c.event),
       'a tqdm redraw ahead of it is fine'
-    ).toEqual(['agent_turn_started'])
+    ).toEqual(['agent_turn_started', 'agent_first_response'])
   })
 
   it.each([

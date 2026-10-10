@@ -231,15 +231,18 @@ const AGENT_OUTPUT_TAG = '[comfy-agent] '
 // ComfyUI logs its records at INFO. A tqdm bar redraws as `\r<bar>` with no
 // newline, so a record logged mid-bar lands behind it.
 const LEVEL_TAG_AT_END = /\[INFO\]\s+$/
-const TQDM_BAR = /^[^|]*\d+%\|[^|]*\| *\S+\/\S+ \[[^\]]*\]$/
+const TQDM_BAR = /^[^|[\]]*\d+%\|[^|]*\| *\S+\/\S+ \[[^\]]*\]$/
 
 // Whether the record starts its log line: nothing ahead of it since the last
 // `\r` but a progress bar and the level tag, so text logged ahead of it on the
 // same line can't carry it.
 function startsLine(text: string, at: number): boolean {
-  const segment = text.slice(text.lastIndexOf('\r', at) + 1, at)
-  const ahead = segment.replace(LEVEL_TAG_AT_END, '').trim()
-  return ahead === '' || TQDM_BAR.test(ahead)
+  const redraw = text.lastIndexOf('\r', at)
+  const ahead = text
+    .slice(redraw + 1, at)
+    .replace(LEVEL_TAG_AT_END, '')
+    .trim()
+  return ahead === '' || (redraw !== -1 && TQDM_BAR.test(ahead))
 }
 
 function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
