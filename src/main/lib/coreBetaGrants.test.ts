@@ -145,6 +145,15 @@ describe('parseCoreBetaGrants', () => {
     ])
   })
 
+  it('parses the documented force-off payload, and drops one with no bounds', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--disable-assets', min_core_version: '0.0.0', notice: 'silent' }]
+      })
+    ).toEqual([{ arg: '--disable-assets', minCoreVersion: '0.0.0', notice: { silent: true } }])
+    expect(parseCoreBetaGrants(true, { flags: [{ arg: '--disable-assets' }] })).toEqual([])
+  })
+
   it('grants --disable-assets, the remote force-off for assets', () => {
     expect(
       parseCoreBetaGrants(true, {

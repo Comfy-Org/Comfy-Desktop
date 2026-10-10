@@ -45,6 +45,8 @@ const ASSETS_MIN_CORE_VERSION = '0.38.0'
 const ASSETS_ARG = '--enable-assets'
 /** Any payload entry naming it forces assets off on every install, whatever its bounds and the
  *  beta toggle: withholding assets is always safe, so it is never gated or shown as a beta.
+ *  The entry still has to parse, so give it bounds that cover everything (`min_core_version:
+ *  "0.0.0"`): one with no bounds is dropped like any malformed entry and turns nothing off.
  *  Ops: Desktops before this one read it as an ordinary grant, so serve it `notice: "silent"`
  *  and with no `--enable-assets` entry left (they void a payload naming both). Serving `false`
  *  on the key lifts it, like every grant. */
