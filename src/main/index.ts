@@ -27,7 +27,7 @@ import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
-import { saveWindowBounds } from './lib/windowState'
+import { flushWindowStateSync, saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
@@ -2447,6 +2447,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // restore it. Synchronous: the app exits without awaiting promises, so an
     // async write would be torn down mid-flight and lose a just-made change.
     flushLastSessionSync()
+    flushWindowStateSync()
     flushOperationOutput()
     cleanupTempDownloads()
   })
