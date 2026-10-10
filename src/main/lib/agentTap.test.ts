@@ -608,15 +608,23 @@ describe('agentTap product events', () => {
     )
   })
 
-  it('reads a product event behind a progress bar, or with nothing ahead of it', () => {
-    const tap = createAgentTap(baseOpts)
-    tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
-    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
-    tap.ingest(`${PRODUCT_FIXTURE[0]}\n`, 'stderr')
+  it.each([
+    ['nothing', '', true],
+    ['the level tag', '[INFO] ', true],
+    ['a progress-bar redraw', '\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s][INFO] ', true],
+    ['other text on the line (accepted limitation)', '[ERROR] could not be started: x ', true],
+    ['the agent relay tag', '[INFO] [comfy-agent] ', false],
+    ['the agent relay tag before a redraw', '[INFO] [comfy-agent] x\r', false]
+  ])('reads product and lifecycle records alike behind %s', (_label, ahead, read) => {
+    createAgentTap(baseOpts).ingest(`${ahead}${PRODUCT_FIXTURE[1]} agent_version=0.0.1\n`, 'stderr')
+    createAgentTap(baseOpts).ingest(`${ahead}[agent-event] agent_started\n`, 'stderr')
     expect(
       captured.map((c) => c.event),
-      'a tqdm redraw or a build without level tags'
-    ).toEqual(['agent_turn_started', 'agent_session_started'])
+      'product records follow the lifecycle relay rule'
+    ).toEqual(read ? ['agent_turn_started'] : [])
+    expect(emitted, 'product records follow the lifecycle relay rule').toEqual(
+      read ? ['comfy.desktop.comfyui.agent.agent_started'] : []
+    )
   })
 
   it.each([
