@@ -136,8 +136,52 @@ describe('parseCoreBetaGrants', () => {
       '--enable-assets',
       '--enable-asset-hashing',
       '--disable-assets',
-      '--enable-agent'
+      '--enable-agent',
+      '--enable-assets-output-scanning',
+      '--disable-assets-output-scanning'
     ])
+  })
+
+  it('grants output scanning either way, but never both in one payload', () => {
+    const range = [['7897b4ee3527847a155bc0921a44f90489548019', null]]
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--disable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', commitRanges: range },
+      { arg: '--disable-assets-output-scanning', commitRanges: range }
+    ])
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--enable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', commitRanges: range },
+      { arg: '--enable-assets-output-scanning', commitRanges: range }
+    ])
+    // Naming both directions is an operator mistake: the whole payload grants nothing, and
+    // says why so it isn't mistaken for an empty payload.
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--enable-assets-output-scanning', commit_ranges: range },
+          { arg: '--disable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([])
+    expect(log).toHaveBeenCalledWith(
+      '[core-beta] payload refused: it grants both --enable-assets-output-scanning and --disable-assets-output-scanning'
+    )
+    log.mockRestore()
   })
 
   it('grants --disable-assets, the remote force-off for when assets go default-on', () => {
