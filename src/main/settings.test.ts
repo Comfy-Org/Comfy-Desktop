@@ -66,7 +66,8 @@ beforeEach(async () => {
       getPath: (name: string) => {
         if (name === 'home') return homePath
         return userDataPath
-      }
+      },
+      getAppPath: () => process.cwd()
     }
   }))
   settings = await import('./settings')
@@ -700,6 +701,309 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 
     vi.restoreAllMocks()
     expect(readPersistedSettings()).toEqual({ pypiMirror: 'https://newer.example' })
+  })
+})
+
+describe('persisted-write logging', () => {
+  // A failed assertion would otherwise leak its console spy into the next test.
+  afterEach(() => vi.restoreAllMocks())
+
+  const writeLines = (log: { mock: { calls: unknown[][] } }): string[] =>
+    log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith('Settings: wrote'))
+
+  it('names the key, the change, and the caller', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const line = writeLines(log).find((l) => l.includes('betaFeaturesEnabled'))
+    expect(line, 'no write line logged for the key').toBeDefined()
+    expect(line).toContain('"betaFeaturesEnabled": true -> false')
+    // The point of the log: a stack, so an UNKNOWN writer is named. A per-call-site tag would
+    // only ever name the sites someone already thought to annotate. Asserted on the frame
+    // marker rather than on line count, which the format guarantees either way.
+    // Reaches past the settings module to the actual writer: this test file.
+    expect(line).toMatch(/\| via .*settings\.test\.ts/)
+    // The app's location is replaced: it can name a private install directory.
+    expect(line).not.toContain(process.cwd())
+    expect(line).toContain('<app>')
+    log.mockRestore()
+  })
+
+  it('stays silent about a key whose value does not change', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', true)
+
+    expect(writeLines(log).filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
+    log.mockRestore()
+  })
+
+  it('reports a key being removed rather than going quiet', () => {
+    // `set(key, undefined)` deletes, and a deletion is what makes a later seed re-run and
+    // write a value nobody chose. A log that only reported value changes would catch the
+    // effect and miss the cause.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', undefined)
+
+    expect(writeLines(log).some((l) => l.includes('"betaFeaturesEnabled": true -> <unset>'))).toBe(
+      true
+    )
+    log.mockRestore()
+  })
+
+  it('logs a key the file gains for the first time', () => {
+    // The baseline is what was on DISK, not the defaults-merged view. Baselining from the
+    // merged object would hide every key a sparse file gains on its first real write — they
+    // are already present in a merged baseline — and "no line for key X" would stop meaning
+    // "X was not written", which is the only claim this log exists to support.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('telemetryEnabled', false)
+
+    // `installDir` is a default the sparse file above does not contain, so this write is the
+    // first time it reaches disk.
+    expect(writeLines(log).some((l) => l.includes('installDir'))).toBe(true)
+    log.mockRestore()
+  })
+
+  it('reports a stored null as null, not as absent', () => {
+    // `loadOutcome` strips `null`s the schema does not allow, so the baseline is taken before
+    // that. Otherwise a key stored as `null` reads as never-present and the line claims
+    // `<unset> -> value` — a log that restates the state it is attributing against.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: null }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', true)
+
+    const line = writeLines(log).find((l) => l.includes('betaFeaturesEnabled'))
+    expect(line).toContain('"betaFeaturesEnabled": null -> true')
+    log.mockRestore()
+  })
+
+  it('reports what reached disk, not what was in memory', () => {
+    // `JSON.stringify` turns NaN into null. Logging the in-memory object would report a value
+    // the file does not contain, in the one place that exists to say what reached disk.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 1 }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('maxCachedDownloads', Number.NaN as unknown as number)
+
+    const line = writeLines(log).find((l) => l.includes('maxCachedDownloads'))
+    expect(line).toBeDefined()
+    expect(line).toContain('-> null')
+    expect(line).not.toContain('NaN')
+    log.mockRestore()
+  })
+
+  it('describes a string value by shape instead of printing it', () => {
+    // These lines land in `app.log`, which users attach to support requests. A path or a
+    // mirror host must not be disclosed just because it changed; the shape still answers
+    // "did this key change, and into what kind of thing".
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://old.example' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('pypiMirror', 'https://user:hunter2@secret.example/simple')
+
+    const line = writeLines(log).find((l) => l.includes('pypiMirror'))
+    expect(line).toBeDefined()
+    expect(line).toContain('<string:')
+    expect(line).not.toContain('hunter2')
+    expect(line).not.toContain('secret.example')
+    log.mockRestore()
+  })
+
+  it('reaches app.log when the write happens before the log opens', async () => {
+    // Main reads, and can repair, settings at import time, long before `initAppLog`.
+    const appLog = await import('./lib/appLog')
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-applog-'))
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      settings.set('betaFeaturesEnabled', false)
+      appLog.initAppLog({ dir: logDir })
+      expect(fs.readFileSync(path.join(logDir, 'app.log'), 'utf8')).toContain(
+        '"betaFeaturesEnabled": true -> false'
+      )
+    } finally {
+      appLog.resetAppLogForTest()
+      fs.rmSync(logDir, { recursive: true, force: true })
+    }
+  })
+
+  it('describes an array by its length, not its paths', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('oemManagedModelDirs', ['/private/models-a', '/private/models-b'])
+
+    const line = writeLines(log).find((l) => l.includes('oemManagedModelDirs'))
+    expect(line).toContain('"oemManagedModelDirs": <unset> -> <array:2>')
+    expect(line).not.toContain('private')
+  })
+
+  it('logs a load-time repair once, against the writer that made it', () => {
+    // `loadOutcome` drops `primaryInstallId` and saves. The `set` after it must diff against
+    // what that save wrote, or it repeats the removal under its own caller.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ betaFeaturesEnabled: true, primaryInstallId: 'inst-1' })
+    )
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const repairs = writeLines(log).filter((l) => l.includes('primaryInstallId'))
+    expect(repairs).toHaveLength(1)
+    expect(repairs[0]).toContain('loadOutcome')
+    expect(writeLines(log).some((l) => l.includes('"betaFeaturesEnabled": true -> false'))).toBe(
+      true
+    )
+  })
+
+  it('logs the beta seed', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.resolveBetaFeaturesEnabled()
+
+    const line = writeLines(log).find((l) => l.includes('"betaFeaturesEnabled": <unset> -> true'))
+    expect(line).toContain('resolveBetaFeaturesEnabled')
+    // Diffed against the file as it was: telemetryEnabled was already there.
+    expect(line).not.toContain('telemetryEnabled')
+  })
+
+  it('still writes when logging itself throws', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      throw new Error('console broke')
+    })
+
+    expect(() => settings.set('betaFeaturesEnabled', false)).not.toThrow()
+    expect(readPersistedSettings().betaFeaturesEnabled).toBe(false)
+  })
+
+  it('logs a stale tray close setting repaired once, not again under the next writer', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ onAppClose: 'tray' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.get('onAppClose')
+    settings.set('hideCloudFromPicker', true)
+
+    const lines = writeLines(log).filter((l) => l.includes('onAppClose'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('loadOutcome')
+    expect(lines[0]).toContain('"onAppClose": "tray" -> "quit"')
+    expect(settings.get('onAppClose')).toBe('quit')
+  })
+
+  it('says when the previous file was unparseable, so dropped keys are not invisible', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    const corrupt = '{"telemetryEnabled": true, "betaFeaturesEnabled": fals'
+    fs.writeFileSync(settingsPath, corrupt)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('hideCloudFromPicker', true)
+
+    expect(writeLines(log).join('\n')).toContain(
+      `(previous file unparseable, ${corrupt.length} characters discarded)`
+    )
+  })
+
+  it('leaves an unchanged array out of the line', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ oemManagedModelDirs: ['/a', '/b'] }))
+    settings.set('betaFeaturesEnabled', true)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const lines = writeLines(log)
+    expect(lines.some((l) => l.includes('"betaFeaturesEnabled": true -> false'))).toBe(true)
+    expect(lines.join('\n')).not.toContain('oemManagedModelDirs')
+  })
+
+  it('does not mark a readable file as unparseable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    expect(writeLines(log).join('\n')).not.toContain('unparseable')
+  })
+
+  it('reports a removed key named like an Object method as unset, not inherited', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ toString: 'abc' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('toString', undefined)
+
+    expect(writeLines(log).join('\n')).toContain('"toString": <string:3> -> <unset>')
+  })
+
+  it('prints a token-valued setting exactly, and anything else in it by shape', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ language: 'en' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('language', 'zh')
+    settings.set('language', 'C:\\Users\\alice\\odd value')
+
+    const lines = writeLines(log).join('\n')
+    expect(lines).toContain('"language": "en" -> "zh"')
+    expect(lines).toContain('"language": "zh" -> <string:')
+    expect(lines).not.toContain('alice')
+  })
+
+  it('does not log a write that never reached disk', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const realWrite = fs.writeFileSync.bind(fs) as typeof fs.writeFileSync
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(((
+      target: fs.PathOrFileDescriptor,
+      data: string | NodeJS.ArrayBufferView,
+      opts?: unknown
+    ) => {
+      if (String(target).startsWith(settingsPath)) throw new Error('fake ENOSPC')
+      return realWrite(target, data, opts as fs.WriteFileOptions)
+    }) as typeof fs.writeFileSync)
+
+    try {
+      settings.set('betaFeaturesEnabled', false)
+    } catch {
+      // The write failing is the point; whether it propagates is not what this pins.
+    } finally {
+      // Restored in a `finally`: a leaked write mock fails every later test in the file with
+      // this test's fake error, which is a confusing way to learn about a missing cleanup.
+      write.mockRestore()
+    }
+
+    expect(writeLines(log).filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
+    log.mockRestore()
   })
 })
 
