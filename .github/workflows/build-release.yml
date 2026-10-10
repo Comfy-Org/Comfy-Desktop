@@ -386,6 +386,28 @@ jobs:
         env:
           EXPECTED_BUILD_ID: ${{ steps.build_id.outputs.build_id }}
 
+      - name: Upload release metadata artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: todesktop-release-assets
+          path: release-assets.json
+
+  smoke-linux-appimage:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Smoke-test Linux AppImage
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download release metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: todesktop-release-assets
+
       - name: Smoke-test the published Linux x64 AppImage
         timeout-minutes: 20
         shell: bash
@@ -433,14 +455,8 @@ jobs:
             Comfy-Desktop-linux-x64.AppImage \
             "$(node -p "require('./package.json').version")"
 
-      - name: Upload release metadata artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: todesktop-release-assets
-          path: release-assets.json
-
   release:
-    needs: build
+    needs: [build, smoke-linux-appimage]
     if: >
       startsWith(github.ref, 'refs/tags/v') &&
       (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]')
@@ -510,7 +526,7 @@ jobs:
           echo "Published ${channel_label} release for ${tag}."
 
   comment-on-release-pr:
-    needs: build
+    needs: [build, smoke-linux-appimage]
     # Post the ToDesktop build page + downloads back onto the version-bump PR
     # that produced this tag. Runs on success or failure (a link to a failed
     # build is still useful); skipped only when no build id was produced.
@@ -529,6 +545,7 @@ jobs:
       INPUT_PR: ${{ inputs.pr_number }}
       BUILD_ID: ${{ needs.build.outputs.build_id }}
       BUILD_STATUS: ${{ needs.build.outputs.build_status }}
+      SMOKE_RESULT: ${{ needs.smoke-linux-appimage.result }}
       MAC_URL: ${{ needs.build.outputs.mac_url }}
       WIN_URL: ${{ needs.build.outputs.windows_url }}
       LINUX_URL: ${{ needs.build.outputs.linux_url }}
@@ -558,7 +575,8 @@ jobs:
             exit 0
           fi
 
-          if printf '%s' "${BUILD_STATUS}" | grep -qiE '^(succeeded|success|finished|complete|completed)$'; then
+          if printf '%s' "${BUILD_STATUS}" | grep -qiE '^(succeeded|success|finished|complete|completed|ready|done|published)$' && \
+            [[ "${SMOKE_RESULT}" == "success" ]]; then
             icon="✅"
           else
             icon="⚠️"
@@ -569,6 +587,7 @@ jobs:
             printf '%s\n' "${marker}"
             printf '### %s ToDesktop build for `%s`\n\n' "${icon}" "${tag}"
             printf '**Status:** %s  \n' "${BUILD_STATUS}"
+            printf '**Linux AppImage smoke gate:** %s  \n' "${SMOKE_RESULT}"
             printf '**Build page:** %s\n\n' "${build_url}"
             printf '**Downloads**\n'
           } > comment.md
