@@ -75,7 +75,11 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       body: body.toString(),
       signal: controller.signal
     }).catch((cause: unknown) => {
-      throw new SignInFailure(`OAuth token request failed: ${String(cause)}`, 'network', { cause })
+      throw new SignInFailure(
+        `OAuth token request failed: ${String(cause)}`,
+        controller.signal.aborted ? 'timeout' : 'network',
+        { cause }
+      )
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')

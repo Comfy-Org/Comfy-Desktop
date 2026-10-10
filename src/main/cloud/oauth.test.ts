@@ -66,6 +66,34 @@ describe('oauth.refresh', () => {
     )
   })
 
+  it('reports a token request that outlives its timeout as a timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, init: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () =>
+                reject(new DOMException('aborted', 'AbortError'))
+              )
+            })
+        )
+      )
+      const refreshed = refresh('r', { tokenUrl: 'https://c/oauth/token' })
+      const settled = expect(refreshed).rejects.toMatchObject({
+        name: 'SignInFailure',
+        reason: 'timeout'
+      })
+
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      await settled
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects a response with a non-numeric expires_in', async () => {
     stub(200, { access_token: 'a', expires_in: 'soon' })
     await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(/expires_in/)

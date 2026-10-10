@@ -57,7 +57,7 @@ function requestSignIn(): RequestSignIn {
 
 function reported(): unknown[] {
   return mocks.emit.mock.calls.map(([name, properties]) => {
-    expect(name).toBe('app:host_sign_in')
+    expect(name).toBe('comfy.desktop.auth.host_sign_in')
     return properties
   })
 }
