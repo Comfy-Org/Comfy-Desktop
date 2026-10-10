@@ -89,7 +89,13 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
         { httpStatus: resp.status }
       )
     }
-    const data = (await resp.json()) as Partial<TokenResponse>
+    const data = (await resp.json().catch((cause: unknown) => {
+      throw new SignInFailure(
+        'OAuth token response was not valid JSON',
+        controller.signal.aborted ? 'timeout' : 'server_error',
+        { cause }
+      )
+    })) as Partial<TokenResponse>
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
       throw new SignInFailure('OAuth token response missing access_token', 'server_error')
     }

@@ -180,6 +180,11 @@ describe('oauth.signIn', () => {
       failure: { reason: 'server_error', httpStatus: undefined }
     },
     {
+      name: 'a token response that is not JSON',
+      respond: async () => new Response('<html>', { status: 200 }),
+      failure: { reason: 'server_error', httpStatus: undefined }
+    },
+    {
       name: 'an unreachable token endpoint',
       respond: async () => {
         throw new TypeError('fetch failed')
