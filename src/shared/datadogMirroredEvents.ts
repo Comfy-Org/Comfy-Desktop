@@ -87,9 +87,6 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // and the SDK had to step in. One emit per process per event-name.
   'comfy.desktop.telemetry.rate_limited',
   'comfy.desktop.telemetry.session_cap_hit',
-  // Local Agent product-event transport rejected an untrusted stdout record.
-  // Product events stay PostHog-only; this parser-health failure is the alert.
-  'comfy.desktop.comfyui.agent_product_event.invalid',
   // pygit2 reliability — spike here means a release broke the bundled
   // Python env for a population of users (signing / quarantine /
   // bootstrap-python copy drift). probe_failed = single-user state;

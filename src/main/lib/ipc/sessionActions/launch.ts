@@ -64,7 +64,6 @@ import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createAssetsTap } from '../../assetsTap'
 import { createAgentTap } from '../../agentTap'
-import { createAgentProductEventTap } from '../../agentProductEventTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -642,18 +641,6 @@ export function createAgentTapSafe(
   }
 }
 
-/** Product-event tap, isolated from launch just like the Agent startup tap. */
-export function createAgentProductEventTapSafe(
-  base: Parameters<typeof createAgentProductEventTap>[0]
-): ReturnType<typeof createAgentProductEventTap> {
-  try {
-    return createAgentProductEventTap(base)
-  } catch (err) {
-    console.error('Failed to create Agent product telemetry tap; continuing without it:', err)
-    return { ingest: () => {}, beginBoot: () => {} }
-  }
-}
-
 /** Pipe a spawned process's output to the log file, renderer, telemetry taps,
  *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
  *  crash diagnostics. */
@@ -665,7 +652,6 @@ export function attachLaunchStreams(
   hwTap: ReturnType<typeof createHardwareTap>,
   assetsTap: ReturnType<typeof createAssetsTap>,
   agentTap: ReturnType<typeof createAgentTap>,
-  agentProductEventTap: ReturnType<typeof createAgentProductEventTap>,
   tracker: LaunchProgressTracker
 ): { getStderr: () => string } {
   let stderrBuf = ''
@@ -677,7 +663,6 @@ export function attachLaunchStreams(
     hwTap.ingest(text, 'stdout')
     assetsTap.ingest(text, 'stdout')
     agentTap.ingest(text, 'stdout')
-    agentProductEventTap.ingest(text, 'stdout')
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
@@ -692,7 +677,6 @@ export function attachLaunchStreams(
     hwTap.ingest(text, 'stderr')
     assetsTap.ingest(text, 'stderr')
     agentTap.ingest(text, 'stderr')
-    agentProductEventTap.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
   return { getStderr: () => stderrBuf }
@@ -927,7 +911,6 @@ async function runLaunch(
     hwTap: ReturnType<typeof createHardwareTap>
     assetsTap: ReturnType<typeof createAssetsTap>
     agentTap: ReturnType<typeof createAgentTap>
-    agentProductEventTap: ReturnType<typeof createAgentProductEventTap>
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
@@ -961,22 +944,8 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags
       })
-      const agentProductEventTap = createAgentProductEventTapSafe({
-        installationId,
-        variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null,
-        coreBetaFlags
-      })
       const tracker = await armLaunchTracker()
-      return {
-        logStream,
-        execTap,
-        hwTap,
-        assetsTap,
-        agentTap,
-        agentProductEventTap,
-        tracker
-      }
+      return { logStream, execTap, hwTap, assetsTap, agentTap, tracker }
     } catch (err) {
       logStream.end()
       throw err
@@ -1436,11 +1405,12 @@ async function runLaunch(
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
-    const { logStream, execTap, hwTap, assetsTap, agentTap, agentProductEventTap, tracker } =
-      await guardLaunchSetup(() => {
+    const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
+      () => {
         _markLaunching(sessionId, inst.name)
         return acquireLaunchResources()
-      })
+      }
+    )
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
@@ -1457,7 +1427,6 @@ async function runLaunch(
         hwTap.beginBoot()
         assetsTap.beginBoot()
         agentTap.beginBoot()
-        agentProductEventTap.beginBoot()
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
@@ -1472,7 +1441,6 @@ async function runLaunch(
               hwTap,
               assetsTap,
               agentTap,
-              agentProductEventTap,
               tracker
             )
           }
@@ -1826,15 +1794,14 @@ async function runLaunch(
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, assetsTap, agentTap, agentProductEventTap, tracker } =
-    await guardLaunchSetup(
-      () => {
-        _reservePort(launchCmd.port!, inst.name)
-        _markLaunching(sessionId, inst.name)
-        return acquireLaunchResources()
-      },
-      { port: launchCmd.port! }
-    )
+  const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
+    () => {
+      _reservePort(launchCmd.port!, inst.name)
+      _markLaunching(sessionId, inst.name)
+      return acquireLaunchResources()
+    },
+    { port: launchCmd.port! }
+  )
 
   // One id per logical boot, reused across port/reboot retries (tryLaunch
   // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
@@ -1848,7 +1815,6 @@ async function runLaunch(
     assetsTap.flushSummary()
     assetsTap.beginBoot()
     agentTap.beginBoot()
-    agentProductEventTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
@@ -1871,7 +1837,6 @@ async function runLaunch(
           hwTap,
           assetsTap,
           agentTap,
-          agentProductEventTap,
           tracker
         )
       }
