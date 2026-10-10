@@ -25,6 +25,7 @@
  */
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
+import type { SessionKind } from '../../shared/performanceTestSession'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'
@@ -98,6 +99,8 @@ export function createExecutionTap(opts: {
   coreCommit?: string | null
   /** Display form of the RECORDED version; may lag `coreCommit`, which is what to order by. */
   coreVersionLabel?: string | null
+  /** A Performance Test's ComfyUI or the user's own session. */
+  sessionKind?: SessionKind
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   flushSummary: () => void
@@ -126,6 +129,7 @@ export function createExecutionTap(opts: {
     core_beta_flags: [...(opts.coreBetaFlags ?? [])],
     core_commit: opts.coreCommit ?? null,
     core_version_label: opts.coreVersionLabel ?? null,
+    session_kind: opts.sessionKind ?? 'normal',
     // The tap tails a locally-spawned ComfyUI process, so every event it
     // emits is local execution by construction. Cloud executions never pass
     // through here — the cloud frontend/backend report those directly.

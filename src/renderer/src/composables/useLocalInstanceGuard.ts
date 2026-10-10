@@ -2,6 +2,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDialogs } from './useDialogs'
+import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 
 // Prompts when another local instance is already running before a new launch.
 export function useLocalInstanceGuard() {
@@ -24,11 +25,17 @@ export function useLocalInstanceGuard() {
     if (target && target.sourceCategory !== 'local') return true
 
     const runningLocal: { id: string; name: string }[] = []
+    // A running benchmark is listed as one, not under its install's name: "Close & Launch" stops it.
+    const label = (id: string, name: string): string =>
+      sessionKindOf(id) === 'performance_test'
+        ? t('launch.instanceRunningPerformanceTest', { name })
+        : name
     for (const [id, instance] of sessionStore.runningInstances) {
       if (id === targetId) continue
-      const inst = installationStore.installations.find((i) => i.id === id)
+      // A Performance Test's key names its installation after the prefix.
+      const inst = installationStore.installations.find((i) => i.id === installationIdOf(id))
       if (!inst || inst.sourceCategory === 'local') {
-        runningLocal.push({ id, name: instance.installationName })
+        runningLocal.push({ id, name: label(id, instance.installationName) })
       }
     }
     for (const [id, instance] of sessionStore.launchingInstances) {
@@ -36,9 +43,9 @@ export function useLocalInstanceGuard() {
       // Skip installs already counted above, to avoid double-listing during
       // the launching→running overlap.
       if (runningLocal.some((r) => r.id === id)) continue
-      const inst = installationStore.installations.find((i) => i.id === id)
+      const inst = installationStore.installations.find((i) => i.id === installationIdOf(id))
       if (!inst || inst.sourceCategory === 'local') {
-        runningLocal.push({ id, name: instance.installationName })
+        runningLocal.push({ id, name: label(id, instance.installationName) })
       }
     }
 

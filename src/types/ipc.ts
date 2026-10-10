@@ -1106,7 +1106,7 @@ export interface DatadogForwardedError {
   context?: Record<string, unknown>
   /**
    * Set when main has already handled the PostHog side of this error (which
-   * since `POSTHOG_EXCEPTIONS` became opt-in may mean it deliberately sent
+   * since `COMFY_DESKTOP_POSTHOG_EXCEPTIONS` became opt-in may mean it deliberately sent
    * nothing). Either way the renderer's listener forwards to Datadog only,
    * so it never double-reports.
    */

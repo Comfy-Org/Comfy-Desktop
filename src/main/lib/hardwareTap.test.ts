@@ -159,6 +159,20 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('tags its events with the session kind it was given', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1', sessionKind: 'performance_test' })
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      'stderr'
+    )
+
+    expect(captured).toEqual([
+      expect.objectContaining({
+        ctx: expect.objectContaining({ session_kind: 'performance_test' })
+      })
+    ])
+  })
+
   it('forwards a typed asset scanner error without its raw path', () => {
     const tap = createHardwareTap({ installationId: 'inst-1', release: 'v0.4.0' })
     tap.ingest(
@@ -189,6 +203,7 @@ describe('createHardwareTap', () => {
           core_beta_flags: [],
           core_commit: null,
           core_version_label: null,
+          session_kind: 'normal',
           scan_phase: 'discovery_stat',
           error_type: 'permission_denied'
         }

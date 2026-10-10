@@ -71,6 +71,13 @@ function helpText(): string {
  *  unlabelled blank page would look like a rendering failure in the evidence. */
 const SERVER_JS = `
 const http = require('node:http')
+// A \`startup-failure\` file beside this script makes the stub print it to stderr and exit 1,
+// as ComfyUI does when it refuses to start. Written synchronously, so exiting loses none of it.
+const failurePath = require('node:path').join(__dirname, 'startup-failure')
+if (require('node:fs').existsSync(failurePath)) {
+  require('node:fs').writeSync(2, require('node:fs').readFileSync(failurePath))
+  process.exit(1)
+}
 // Serve until killed. Deliberately no stdin-close guard: the launcher spawns this with stdio
 // pipes it does not write to, so watching stdin would fire immediately and the launch would
 // see "process exited with code 0" instead of a booted server. The launcher's own
@@ -203,7 +210,8 @@ export async function writeFakeComfyInstall(opts: {
   return { installPath, port }
 }
 
-/** The persisted ops-flag entry `coreBetaGrants` reads when PostHog is unreachable. Handed to
+/** The persisted ops-flag entry `coreBetaGrants` applies at launch, before any fetch. Unstamped,
+ *  as v1.1.6 wrote it: any saved entry counts. Handed to
  *  `launchApp`'s `opsFlags`, which delivers it through `E2E_OPS_FLAGS_SEED` so MAIN writes it to
  *  the real `configDir()`. The harness cannot write it itself: that path is Electron's
  *  `userData` off Linux, and macOS ignores the HOME override for it, so a hand-placed file is
@@ -234,8 +242,6 @@ export function opsFlagsGrantSeed(opts: {
           },
         ],
       },
-      // An unstamped entry reads as expired.
-      fetchedAt: Date.now(),
     },
   }
 }

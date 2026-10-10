@@ -106,6 +106,30 @@ describe('oauth.signIn', () => {
     await expect(signIn({ ...opts, timeoutMs: 250 })).rejects.toThrow(/timed out/)
   })
 
+  it('waits for the browser sign-in as long as the OAuth request lives', async () => {
+    stub(200, {})
+    vi.mocked(shell.openExternal).mockImplementation(() => new Promise<void>(() => {}))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let settled = false
+      const signingIn = signIn(opts).finally(() => {
+        settled = true
+      })
+      signingIn.catch(() => {})
+      for (let i = 0; i < 50 && vi.getTimerCount() === 0; i++) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+
+      await vi.advanceTimersByTimeAsync(9 * 60_000)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      await expect(signingIn).rejects.toThrow(/timed out/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('fails fast when the browser cannot be opened, without waiting for the timeout', async () => {
     stub(200, {})
     vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))

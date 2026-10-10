@@ -38,7 +38,12 @@ function baseCtx(sourceId: string): Record<string, unknown> {
   }
 }
 
-const info = { installationId: 'inst-1', portRetries: 0, rebootRetries: 0 }
+const info = {
+  installationId: 'inst-1',
+  portRetries: 0,
+  rebootRetries: 0,
+  sessionKind: 'normal' as const
+}
 
 describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard', () => {
   beforeEach(() => {
@@ -72,4 +77,19 @@ describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard
       )
     }
   )
+})
+
+describe('emitInstanceStartedTelemetry — session kind', () => {
+  it.each(['performance_test', 'normal'] as const)('says a %s boot is one', async (kind) => {
+    vi.clearAllMocks()
+    mockCtx = baseCtx('local-src')
+    mockSourceCategory = 'local'
+
+    await emitInstanceStartedTelemetry({ ...info, sessionKind: kind })
+
+    expect(telemetry.capture).toHaveBeenCalledWith(
+      'comfy.desktop.session.instance_started',
+      expect.objectContaining({ session_kind: kind })
+    )
+  })
 })

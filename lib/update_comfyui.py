@@ -171,7 +171,6 @@ def main():
         repo.branches.local.create(backup_name, repo.head.peel())
         print("[BACKUP_BRANCH] %s" % backup_name)
         repo.index.add_all()
-        repo.index.write()
         if repo.index.diff_to_tree(repo.head.peel().tree):
             tree = repo.index.write_tree()
             ident = pygit2.Signature("comfyui", "comfy@ui")
@@ -184,6 +183,12 @@ def main():
             print("Uncommitted changes saved to backup branch.")
     except Exception:
         print("Warning: could not create backup branch.")
+    # The staging above was only for the backup commit. Reset the index to
+    # HEAD so no untracked file is staged, including any an earlier updater
+    # left staged on disk: the forced checkout below removes staged files the
+    # new commit doesn't track, which would delete a user's files kept inside
+    # the checkout (e.g. an output folder).
+    repo.index.read_tree(repo.head.peel().tree)
 
     # Fetch master + tags from origin (handles shallow/single-branch clones).
     print("Fetching from origin...")

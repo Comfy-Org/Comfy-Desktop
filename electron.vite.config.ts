@@ -9,9 +9,7 @@ const { resolveDatadogReleaseVersion } = require('./scripts/datadog-release-vers
   resolveDatadogReleaseVersion: (env?: NodeJS.ProcessEnv) => string
 }
 
-if (!process.env.VITE_DATADOG_RUM_VERSION) {
-  process.env.VITE_DATADOG_RUM_VERSION = resolveDatadogReleaseVersion(process.env)
-}
+process.env.VITE_DATADOG_RUM_VERSION = resolveDatadogReleaseVersion(process.env)
 
 export default defineConfig({
   main: {

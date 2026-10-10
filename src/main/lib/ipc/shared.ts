@@ -124,6 +124,7 @@ import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
+import { sessionKindOf, type SessionKind } from '../../../shared/performanceTestSession'
 
 // Re-export frequently used imports so handler modules can import from shared
 export {
@@ -322,6 +323,7 @@ export interface InstanceStartedCallbackInfo {
   bootTimeMs?: number
   portRetries: number
   rebootRetries: number
+  sessionKind: SessionKind
 }
 
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
@@ -419,6 +421,10 @@ export function _endLaunch(installationId: string, launch: { abort: AbortControl
 
 export function _hasActiveLaunch(installationId: string): boolean {
   return _activeLaunches.has(installationId)
+}
+
+export function _getActiveLaunchIds(): string[] {
+  return Array.from(_activeLaunches.keys())
 }
 
 /**
@@ -1113,7 +1119,8 @@ export function _addSession(
       installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
-      rebootRetries: retries?.rebootRetries ?? 0
+      rebootRetries: retries?.rebootRetries ?? 0,
+      sessionKind: sessionKindOf(installationId)
     })
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
