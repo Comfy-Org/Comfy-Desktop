@@ -71,7 +71,7 @@ test.beforeAll(async () => {
         },
       },
     ],
-    opsFlags: opsFlagsGrantSeed({ arg: '--enable-assets', minCoreVersion: '0.3.80', description: 'Asset library' }),
+    opsFlags: opsFlagsGrantSeed({ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80', description: 'Asset hashing' }),
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -113,7 +113,7 @@ test('the pill follows the new session after a Restart that drops a grant @linux
   await popup.evaluate(
     `(() => {
       const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(`--port ${port} --enable-assets`)}
+      input.value = ${JSON.stringify(`--port ${port} --enable-asset-hashing`)}
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })()`,

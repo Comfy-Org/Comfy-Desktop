@@ -37,14 +37,15 @@ import path from 'node:path'
 import process from 'node:process'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 
-/** Flags the stub's `--help` advertises. `--enable-assets` is here because the grant under
- *  test names it; a core that did not know the flag would leave it out and the launch would
- *  drop it. `--port` and `--listen` are what the launcher itself passes. */
+/** Flags the stub's `--help` advertises. `--enable-asset-hashing` is here because the grant
+ *  under test names it; a core that did not know the flag would leave it out and the launch
+ *  would drop it. `--port` and `--listen` are what the launcher itself passes. */
 const SUPPORTED_FLAGS = [
   ['--port PORT', 'Set the listen port.'],
   ['--listen [IP]', 'Specify the IP address to listen on.'],
   ['--enable-manager', 'Enable ComfyUI-Manager.'],
   ['--enable-assets', 'Enable the assets subsystem.'],
+  ['--enable-asset-hashing', 'Hash assets while scanning.'],
   ['--user-directory USER_DIRECTORY', 'Set the ComfyUI user directory.'],
   ['--input-directory INPUT_DIRECTORY', 'Set the ComfyUI input directory.'],
   ['--output-directory OUTPUT_DIRECTORY', 'Set the ComfyUI output directory.'],
@@ -85,7 +86,7 @@ if (require('node:fs').existsSync(failurePath)) {
 const args = process.argv.slice(2)
 const portIndex = args.indexOf('--port')
 const port = portIndex === -1 ? 8188 : Number(args[portIndex + 1])
-const assetsOn = args.includes('--enable-assets')
+const grantOn = args.includes('--enable-asset-hashing')
 const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (e2e stub)</title>
 <style>
   html,body{margin:0;height:100%;background:#16121a;color:#cfc8d6;
@@ -94,7 +95,7 @@ const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (
   code{color:#e3ff3c}
 </style></head><body><div class="card">
   <p>ComfyUI stub &mdash; e2e fixture canvas</p>
-  <p>launched with <code>\${assetsOn ? '--enable-assets' : 'no beta grant'}</code></p>
+  <p>launched with <code>\${grantOn ? '--enable-asset-hashing' : 'no beta grant'}</code></p>
 </div></body></html>\`
 const server = http.createServer((req, res) => {
   // ComfyUI's queue endpoint, which Desktop asks before stopping an earlier ComfyUI. Reports a
