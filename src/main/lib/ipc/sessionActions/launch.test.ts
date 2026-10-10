@@ -260,6 +260,7 @@ vi.mock('../../hardwareTap', async (importOriginal) => {
 
 import {
   attachLaunchStreams,
+  createAgentTapSafe,
   createAssetsTapSafe,
   buildLaunchArgs,
   desktopFeatureFlags,
@@ -277,6 +278,7 @@ import {
   _resolvePortConflictPolicy
 } from './launch'
 import * as assetsTapModule from '../../assetsTap'
+import * as agentTapModule from '../../agentTap'
 import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
   _resetForTest as _resetBetaNotice,
@@ -656,12 +658,50 @@ describe('createAssetsTapSafe', () => {
   })
 })
 
-describe('attachLaunchStreams assets tap wiring', () => {
+describe('createAgentTapSafe', () => {
+  const BASE = {
+    installationId: 'agent-tap-base',
+    variant: 'nvidia',
+    release: '0.3.68',
+    coreBetaFlags: []
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('forwards the base context to the agent tap', () => {
+    const create = vi.spyOn(agentTapModule, 'createAgentTap')
+    createAgentTapSafe(BASE)
+    expect(create).toHaveBeenCalledWith(BASE)
+  })
+
+  it('substitutes an inert tap when construction throws, letting no exception escape', () => {
+    vi.spyOn(agentTapModule, 'createAgentTap').mockImplementation(() => {
+      throw new Error('agent tap construction exploded')
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    let tap: ReturnType<typeof createAgentTapSafe> | null = null
+    expect(() => {
+      tap = createAgentTapSafe(BASE)
+    }).not.toThrow()
+    expect(consoleError).toHaveBeenCalled()
+
+    const inert = tap as unknown as ReturnType<typeof createAgentTapSafe>
+    expect(() => {
+      inert.beginBoot()
+      inert.ingest('[agent-event] agent_started duration_ms=12\n', 'stdout')
+    }).not.toThrow()
+  })
+})
+
+describe('attachLaunchStreams event-log tap wiring', () => {
   function fakeTap() {
     return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
-  function harness(assetsTap = fakeTap()) {
+  function harness(assetsTap = fakeTap(), agentTap = fakeTap()) {
     const stdout = new EventEmitter()
     const stderr = new EventEmitter()
     const proc = { stdout, stderr } as unknown as ChildProcess
@@ -678,9 +718,10 @@ describe('attachLaunchStreams assets tap wiring', () => {
       execTap as unknown as ReturnType<typeof createExecutionTap>,
       hwTap as unknown as ReturnType<typeof createHardwareTap>,
       assetsTap,
+      agentTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, getStderr }
+    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr }
   }
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
@@ -702,6 +743,17 @@ describe('attachLaunchStreams assets tap wiring', () => {
       '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
       'stderr'
     )
+  })
+
+  it('feeds both streams to the agent tap with their source tags', () => {
+    const h = harness()
+    h.stdout.emit('data', Buffer.from('[agent-event] agent_started duration_ms=12\n'))
+    h.stderr.emit('data', Buffer.from('[agent-event] agent_exited code=1\n'))
+    expect(h.agentTap.ingest).toHaveBeenCalledWith(
+      '[agent-event] agent_started duration_ms=12\n',
+      'stdout'
+    )
+    expect(h.agentTap.ingest).toHaveBeenCalledWith('[agent-event] agent_exited code=1\n', 'stderr')
   })
 
   it('leaves the hardware and execution taps receiving both streams unchanged', () => {
@@ -1698,6 +1750,91 @@ describe('core beta report placement', () => {
     )
     expect(assetsEvents).toHaveLength(1)
     expect(assetsEvents[0]!.properties).toMatchObject({ core_beta_flags: [] })
+  })
+
+  it('forwards agent events from both streams of the launched core', async () => {
+    const child = fakeChild()
+    launchHarness.spawn = () => child
+
+    const ctx = ctxFor('harness-agent-events')
+    Object.assign(ctx.inst, { variant: 'harness-variant', release: 'harness-release' })
+    const res = await handleLaunch(ctx)
+    expect(res.ok).toBe(true)
+    child.stdout.emit('data', Buffer.from('[agent-event] agent_started duration_ms=12\n'))
+    child.stderr.emit('data', Buffer.from('[agent-event] agent_exited code=1\n'))
+
+    const agentEvents = events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.agent.'))
+    expect(agentEvents.map((e) => [e.event, e.properties])).toEqual([
+      ['comfy.desktop.comfyui.agent.agent_started', expect.objectContaining({ duration_ms: 12 })],
+      ['comfy.desktop.comfyui.agent.agent_exited', expect.objectContaining({ code: 1 })]
+    ])
+    for (const { properties } of agentEvents) {
+      expect(properties, "the launch's own attribution, not a default").toMatchObject({
+        installation_id: 'harness-agent-events',
+        variant: 'harness-variant',
+        release: 'harness-release',
+        core_beta_flags: ['--enable-assets']
+      })
+    }
+  })
+
+  it("reports an unknown agent event as the launch's unknown_events_dropped", async () => {
+    const child = fakeChild()
+    launchHarness.spawn = () => child
+
+    const res = await handleLaunch(ctxFor('harness-agent-unknown'))
+    expect(res.ok).toBe(true)
+    child.stdout.emit('data', Buffer.from('[agent-event] mystery_event\n'))
+
+    expect(
+      events
+        .filter((e) => e.event === 'comfy.desktop.comfyui.agent.unknown_events_dropped')
+        .map((e) => e.properties),
+      'reported as it is seen, with no flush to wait for'
+    ).toEqual([
+      expect.objectContaining({
+        count: 1,
+        installation_id: 'harness-agent-unknown',
+        core_beta_flags: ['--enable-assets']
+      })
+    ])
+  })
+
+  it("drops a killed attempt's unterminated agent line before a port-conflict retry", async () => {
+    const children: FakeChild[] = []
+    let attempt = 0
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48233
+    }
+    launchHarness.spawn = () => {
+      const child = fakeChild()
+      children.push(child)
+      return child
+    }
+    launchHarness.waitForPort = async () => {
+      attempt++
+      if (attempt > 1) return
+      const first = children[0]!
+      first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
+      first.stdout.emit('data', Buffer.from('[agent-event] agent_exited code=1'))
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('harness-agent-retry-drops-tail'))
+
+    expect(res.ok).toBe(true)
+    expect(children).toHaveLength(2)
+    children[1]!.stdout.emit('data', Buffer.from('2\n'))
+    children[1]!.stdout.emit('data', Buffer.from('[agent-event] agent_started\n'))
+    expect(
+      events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.agent.')).map((e) => e.event),
+      'the cut-off code=1 must not complete as code=12 after the respawn'
+    ).toEqual(['comfy.desktop.comfyui.agent.agent_started'])
   })
 
   it.each([
