@@ -558,13 +558,16 @@ export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
 // Unchanged by late-result persistence, which only moves WHEN a disable lands, never whether a
 // deletion counts as one. What it buys is convergence: a client whose `/flags` POST reliably
 // outruns the boot deadline used to lose the revocation on every launch and hold the grant
-// forever. It now persists the late `false` and picks it up on the next launch, so expect a
-// retraction to take one extra restart rather than never arriving.
+// forever. It now persists the late `false`.
+//
+// A saved decision applies at once and is refreshed in the background; a cut lands on the first
+// ComfyUI launch after the refresh answers. Only an install with nothing saved waits, up to 5 s.
 const flag = makeOpsFlag<CoreBetaGrant[]>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: [],
   parse: parseCoreBetaGrants,
   logLabel: 'core-beta',
+  timeoutMs: 5000,
   persist: true
 })
 

@@ -1019,6 +1019,31 @@ describe('core beta grants fetch', () => {
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
   })
+  it.each([
+    [
+      'a saved grant',
+      { value: true, payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] } },
+      5000
+    ],
+    ['a saved revocation', { value: false, payload: null }, 5000],
+    ['nothing saved', undefined, 5000]
+  ])('fetches with the right timeout for %s on disk', async (_, entry, deadline) => {
+    if (entry) {
+      fs.writeFileSync(
+        path.join(testConfigDir, 'ops-flags.json'),
+        JSON.stringify({ [CORE_BETA_FEATURES_FLAG_KEY]: { ...entry, fetchedAt: Date.now() } })
+      )
+    }
+    getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      CORE_BETA_FEATURES_FLAG_KEY,
+      'device-id',
+      deadline,
+      expect.any(Function)
+    )
+  })
+
   it('logs the cached commit ranges in full, on one line', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     getOpsFlagResult.mockResolvedValue({

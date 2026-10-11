@@ -119,6 +119,7 @@ import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
@@ -1530,6 +1531,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCloudFreeRuns({ distinctId: installationId })
 
     void initCoreBetaGrants({ distinctId: installationId })
+
+    void initEmbeddedSessionFlag({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud
