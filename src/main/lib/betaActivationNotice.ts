@@ -18,14 +18,12 @@
  */
 import * as settings from '../settings'
 import type { CoreBetaGrant } from './coreBetaGrants'
+import { controlledArg } from './posthogControlledArgs'
 
 /** Args already announced, as a durable string list. A LIST rather than a boolean so a second
  *  beta feature granted months later still gets its own heads-up; append-only, so a grant that
  *  is revoked and later re-granted stays silent the second time. */
 export const BETA_NOTICE_ANNOUNCED_ARGS_KEY = 'betaNoticeAnnouncedArgs'
-
-const ENABLE_PREFIX = '--enable-'
-const DISABLE_PREFIX = '--disable-'
 
 /** One grant the user has not been told about, plus the wording its payload asked for. */
 export interface PendingBetaGrant {
@@ -101,12 +99,12 @@ export function selectNewlyActiveBetaGrants(
     seen.add(grant.arg)
     if (grant.notice?.silent === true) continue
     const description = grant.notice?.description ?? null
-    // Derived from the prefix PAIR, not as a binary else. An allowlist entry with neither
-    // prefix is possible (`oppositeArg` already handles that case, and the list is documented
-    // as growing ahead of Core); defaulting it to `disabled` would turn a card that used to
-    // stay silent into one that actively says a feature was switched off when it was not.
-    if (!grant.arg.startsWith(ENABLE_PREFIX) && !grant.arg.startsWith(DISABLE_PREFIX)) continue
-    const direction = grant.arg.startsWith(ENABLE_PREFIX) ? 'enabled' : 'disabled'
+    // Read from the allowlist row, never guessed: an arg without one has no stated direction,
+    // and defaulting it to `disabled` would turn a card that used to stay silent into one that
+    // actively says a feature was switched off when it was not.
+    const row = controlledArg(grant.arg)
+    if (row === undefined) continue
+    const direction = row.direction === 'enable' ? 'enabled' : 'disabled'
     if (direction === 'disabled' && description === null) continue
     fresh.push({ arg: grant.arg, direction, description })
   }

@@ -12,29 +12,17 @@ import semver from 'semver'
 import { filterUnsupportedArgs } from './comfy-args'
 import type { ComfyArgsSchema } from './comfy-args'
 import { makeOpsFlag } from './opsFlag'
+import { POSTHOG_CONTROLLED_ARGS, isControlledArg, oppositeArg } from './posthogControlledArgs'
 import type { FeatureFlagValue } from './telemetry'
 import type { BetaArgView } from '../../types/ipc'
 
 export const CORE_BETA_FEATURES_FLAG_KEY = 'desktop_core_beta_features'
 
-/**
- * The args a PostHog payload may GRANT. That is this list's only job — it is not a registry of
- * grant-owned tokens, and membership says nothing about whether a user may pass the same arg
- * by hand (they may, and it wins; see `selectCoreBetaGrantArgs`).
- *
- * An entry need not exist in Core yet: `--disable-assets` is the planned remote force-off for
- * when assets go default-on, and `--enable-agent` lands here ahead of the Core flag because
- * Desktop reaches users on its own update cadence — the allowlist has to already be installed
- * before a payload can grant anything. Granting an arg Core cannot parse is safe meanwhile: the
- * running core's supported-argument schema filters it and the launch reports it as
- * `dropped_unsupported`.
- */
-export const CORE_BETA_GRANTABLE_ARGS = [
-  '--enable-assets',
-  '--enable-asset-hashing',
-  '--disable-assets',
-  '--enable-agent'
-] as const
+/** @deprecated Read `POSTHOG_CONTROLLED_ARGS` (`posthogControlledArgs.ts`), which every channel that
+ *  grants from a payload shares. Kept as a derived alias until the branches still naming it land. */
+export const CORE_BETA_GRANTABLE_ARGS: readonly string[] = POSTHOG_CONTROLLED_ARGS.map(
+  (row) => row.arg
+)
 
 /** How a grant's activation notice should be worded, when it is announced at all. Both fields
  *  are optional and independent of whether the grant APPLIES — copy never gates a flag. */
@@ -184,12 +172,11 @@ export function parseCoreBetaGrants(
   const requested = 'flags' in payload ? payload.flags : undefined
   if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return []
 
-  const allowed = new Set(CORE_BETA_GRANTABLE_ARGS)
   const flags: CoreBetaGrant[] = []
   for (const candidate of requested) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
     if (!('arg' in candidate) || typeof candidate.arg !== 'string') continue
-    if (!CORE_BETA_ARG_RE.test(candidate.arg) || !allowed.has(candidate.arg)) continue
+    if (!CORE_BETA_ARG_RE.test(candidate.arg) || !isControlledArg(candidate.arg)) continue
 
     const notice = parseCoreBetaNotice(candidate)
 
@@ -250,19 +237,6 @@ export interface CoreVersionState {
    *  true once it is superseded, so without this the gate can decide on code that is no longer
    *  installed. */
   current: boolean
-}
-
-const ENABLE_PREFIX = '--enable-'
-const DISABLE_PREFIX = '--disable-'
-
-/** The token that contradicts `arg`, or `null` for an arg with no negated form. Derived from
- *  the `--enable-`/`--disable-` prefix pair rather than a hardcoded table, so a new allowlist
- *  entry gets its conflict rule for free. Swapping only the prefix keeps the stem exact, so
- *  `--enable-assets` pairs with `--disable-assets` and never with `--disable-asset-hashing`. */
-function oppositeArg(arg: string): string | null {
-  if (arg.startsWith(ENABLE_PREFIX)) return DISABLE_PREFIX + arg.slice(ENABLE_PREFIX.length)
-  if (arg.startsWith(DISABLE_PREFIX)) return ENABLE_PREFIX + arg.slice(DISABLE_PREFIX.length)
-  return null
 }
 
 /** Ancestry facts the launch path resolves (repository, maybe network), so selection stays pure. */
@@ -440,7 +414,8 @@ export function selectCoreBetaGrantArgs(
       continue
     }
     // Selected grants join the conflict set so the checks above hold between two grants too, not
-    // just against the user's args. Redundant after `parseCoreBetaGrants`, load-bearing without it.
+    // just against the user's args. Redundant after `parseCoreBetaGrants`; without it, this still
+    // catches a conflict between two allowlisted args, the only ones with a known opposite.
     presentArgs.add(arg)
     selected.push(flag)
   }

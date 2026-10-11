@@ -139,15 +139,16 @@ describe('selectNewlyActiveBetaGrants', () => {
 })
 
 describe('the allowlist invariant this module depends on', () => {
-  it('every grantable arg is --enable-* or --disable-*', async () => {
-    // `selectNewlyActiveBetaArgs` announces only `--enable-*` and treats everything else as a
-    // force-off to stay silent about. An allowlist entry with neither prefix would therefore
-    // ship a grant the user is never told about — the exact failure this module exists to
-    // prevent, reintroduced silently. Asserted here because `coreBetaGrants.ts` has no reason
-    // to know about the coupling.
+  it('every grantable arg has a row stating its direction', async () => {
+    // `selectNewlyActiveBetaArgs` reads each grant's direction from its allowlist row and skips
+    // an arg without one. A grantable arg the table could not describe would therefore ship a
+    // grant the user is never told about: the exact failure this module exists to prevent,
+    // reintroduced silently. Asserted here because `coreBetaGrants.ts` has no reason to know
+    // about the coupling.
     const { CORE_BETA_GRANTABLE_ARGS } = await import('./coreBetaGrants')
+    const { controlledArg } = await import('./posthogControlledArgs')
     for (const arg of CORE_BETA_GRANTABLE_ARGS) {
-      expect(arg.startsWith('--enable-') || arg.startsWith('--disable-')).toBe(true)
+      expect(['enable', 'disable']).toContain(controlledArg(arg)?.direction)
     }
   })
 })
