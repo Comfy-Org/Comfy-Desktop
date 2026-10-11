@@ -1,6 +1,8 @@
 // @vitest-environment node
-// The unit tests inject `access`; this one uses a real directory, so the writer
-// and the reader have to agree on a path.
+// The unit tests inject `access`, so they prove the branch but not that the
+// component placing a file and the one looking for it pick the same path. Here
+// the real writer chooses the destination and the real reader is asked about
+// it; only the network boundary is replaced.
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -17,55 +19,83 @@ vi.mock('electron', () => ({
   }
 }))
 
-const { resolveInputDir, resolveTemplateInputAssetAvailability } =
+/** Writes to whatever destination the writer chose, as a transfer would. */
+const download = vi.fn(async (_url: string, destPath: string) => {
+  await fs.promises.mkdir(path.dirname(destPath), { recursive: true })
+  await fs.promises.writeFile(destPath, 'bytes')
+})
+
+vi.mock('../../lib/download', () => ({
+  download: (...args: unknown[]) => download(...(args as [string, string]))
+}))
+
+const { downloadTemplateInputAssets, resolveTemplateInputAssetAvailability } =
   await import('./templateInputAssets')
 
+const ASSET = 'subject.png'
+const workflow = { nodes: [{ type: 'LoadImage', widgets_values: [ASSET] }] }
+
 let installPath: string
+const log = () => {}
 
 function installation(): InstallationRecord {
   // Without `useSharedInput: false` the lookup escapes to the user's own
   // configured input directory.
-  return {
-    id: 'inst-test',
-    installPath,
-    useSharedInput: false
-  } as InstallationRecord
+  return { id: 'inst-test', installPath, useSharedInput: false } as InstallationRecord
+}
+
+function availability(name: string) {
+  return resolveTemplateInputAssetAvailability(installation(), [name]).then(([entry]) => entry)
 }
 
 beforeEach(() => {
+  download.mockClear()
   installPath = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-input-contract-'))
-  fs.mkdirSync(path.join(installPath, 'ComfyUI', 'input'), { recursive: true })
 })
 
 afterEach(() => {
   fs.rmSync(installPath, { recursive: true, force: true })
 })
 
-describe('template input availability against a real input directory', () => {
-  it('sees a file written where a download would put it', async () => {
-    const inputDir = resolveInputDir(installation())
-    const [before] = await resolveTemplateInputAssetAvailability(installation(), ['subject.png'])
-    expect(before).toEqual({ filename: 'subject.png', status: 'missing' })
+describe('a downloaded template input asset', () => {
+  it('lands where the availability reader looks for it', async () => {
+    expect(await availability(ASSET)).toEqual({
+      filename: ASSET,
+      status: 'missing'
+    })
 
-    fs.writeFileSync(path.join(inputDir, 'subject.png'), 'bytes')
+    const placed = await downloadTemplateInputAssets(
+      installation(),
+      'template-a',
+      log,
+      undefined,
+      workflow
+    )
 
-    const [after] = await resolveTemplateInputAssetAvailability(installation(), ['subject.png'])
-    expect(after).toEqual({ filename: 'subject.png', status: 'present' })
+    expect(placed).toEqual([{ filename: ASSET, downloaded: true }])
+    expect(await availability(ASSET)).toEqual({
+      filename: ASSET,
+      status: 'present'
+    })
   })
 
-  it('does not count a file that landed outside the input directory', async () => {
-    fs.writeFileSync(path.join(installPath, 'subject.png'), 'bytes')
+  it('is not fetched again when it is already there', async () => {
+    await downloadTemplateInputAssets(installation(), 'template-a', log, undefined, workflow)
+    download.mockClear()
 
-    const [availability] = await resolveTemplateInputAssetAvailability(installation(), [
-      'subject.png'
-    ])
-    expect(availability).toEqual({ filename: 'subject.png', status: 'missing' })
+    const placed = await downloadTemplateInputAssets(
+      installation(),
+      'template-a',
+      log,
+      undefined,
+      workflow
+    )
+
+    expect(placed).toEqual([{ filename: ASSET, downloaded: false }])
+    expect(download).not.toHaveBeenCalled()
   })
 
   it('answers nothing for a name that escapes the input directory', async () => {
-    const outside = path.join(installPath, 'escaped.png')
-    fs.writeFileSync(outside, 'bytes')
-
     await expect(
       resolveTemplateInputAssetAvailability(installation(), [
         '../escaped.png',
