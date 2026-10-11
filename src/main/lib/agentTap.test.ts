@@ -669,6 +669,12 @@ describe('agentTap product events', () => {
     ['a count past 2^53-1', firstResponse(' time_to_first_response_ms=9007199254740992')],
     ['a non-boolean', sessionStarted(' is_resume=yes')],
     ['an offset timestamp', turnStarted(' accepted_at=2026-10-09T14:00:01+02:00')],
+    ['an impossible date and time', turnStarted(' accepted_at=2026-13-45T25:61:61Z')],
+    ['month 00', turnStarted(' accepted_at=2026-00-09T12:00:00Z')],
+    ['hour 24', turnStarted(' accepted_at=2026-10-09T24:00:00Z')],
+    ['day 32', turnStarted(' accepted_at=2026-10-32T12:00:00Z')],
+    ['minute 60', turnStarted(' accepted_at=2026-10-09T12:60:00Z')],
+    ['second 60', turnStarted(' accepted_at=2026-10-09T12:00:60Z')],
     ['a duplicate key', turnStarted(` thread_id=${THREAD}`)],
     ['a model with a slash', turnStarted(' model=a/b')],
     ['a model with a backslash', turnStarted(' model=C:\\x')],
@@ -723,6 +729,15 @@ describe('agentTap product events', () => {
     ingest(relayed(line.replace(id, id.slice(1))))
     ingest(relayed(line.replace(id, id.toUpperCase())))
     expect(captured).toEqual([])
+  })
+
+  it('accepts the edges of each timestamp field', () => {
+    ingest(turnStarted(' accepted_at=2026-12-31T23:59:59.123456789Z'))
+    ingest(turnStarted(' accepted_at=2026-01-01T00:00:00Z'))
+    expect(captured.map((c) => c.ctx['accepted_at'])).toEqual([
+      '2026-12-31T23:59:59.123456789Z',
+      '2026-01-01T00:00:00Z'
+    ])
   })
 
   it('accepts a 128-character model and a ComfyUI dev-build agent_version', () => {
