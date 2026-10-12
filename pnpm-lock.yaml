@@ -61,8 +61,8 @@ importers:
         specifier: ^1.0.3
         version: 1.0.3(pinia@3.0.4(typescript@5.9.3)(vue@3.5.29(typescript@5.9.3)))
       '@playwright/test':
-        specifier: ^1.58.2
-        version: 1.58.2
+        specifier: ^1.64.0
+        version: 1.64.0
       '@storybook/addon-docs':
         specifier: 10.6.1
         version: 10.6.1(@types/react@19.3.0)(storybook@10.6.1(@types/react@19.3.0)(prettier@3.8.1)(react@19.3.0))
@@ -86,7 +86,7 @@ importers:
         version: 6.0.4(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.29(typescript@5.9.3))
       '@vitest/browser-playwright':
         specifier: 4.0.18
-        version: 4.0.18(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
+        version: 4.0.18(playwright@1.64.0)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
       '@vue/test-utils':
         specifier: ^2.4.6
         version: 2.4.6
@@ -133,8 +133,8 @@ importers:
         specifier: ^3.0.3
         version: 3.0.4(typescript@5.9.3)(vue@3.5.29(typescript@5.9.3))
       playwright:
-        specifier: ^1.58.2
-        version: 1.58.2
+        specifier: ^1.64.0
+        version: 1.64.0
       prettier:
         specifier: ^3.8.1
         version: 3.8.1
@@ -1154,9 +1154,9 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@playwright/test@1.58.2':
-    resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
-    engines: {node: '>=18'}
+  '@playwright/test@1.64.0':
+    resolution: {integrity: sha512-oTN9FNYuN6bqQMwiho6jJKLCG2/QOYCixGXuCjRmzOq23eODeukuY2XiAVoVpAECbuezMt1MHQjAiQxK8F+Y+g==}
+    engines: {node: '>=20'}
     hasBin: true
 
   '@polka/url@1.0.0-next.29':
@@ -2686,11 +2686,6 @@ packages:
   fs.realpath@1.0.0:
     resolution: {integrity: sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==}
 
-  fsevents@2.3.2:
-    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
-    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
-    os: [darwin]
-
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -3603,14 +3598,14 @@ packages:
     resolution: {integrity: sha512-1wrVzJ2STrpmONHKBy228LM1b84msXDUoAzVEl0R8Mz4Ce6EPr+IVtxm8+yvrqLYMHswREkjYFaMxnyGnaY3Ng==}
     hasBin: true
 
-  playwright-core@1.58.2:
-    resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
-    engines: {node: '>=18'}
+  playwright-core@1.64.0:
+    resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
+    engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.58.2:
-    resolution: {integrity: sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==}
-    engines: {node: '>=18'}
+  playwright@1.64.0:
+    resolution: {integrity: sha512-kVzTnYFYEyQ9RGzBjNCd2+yEqWmVbxl3AHPynv3qQ6JTjv4a+kwRcnqQwIpuP3NnrnIrE/Q6wWAIAvMfIE2/Yg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   plist@3.1.0:
@@ -5457,9 +5452,9 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@playwright/test@1.58.2':
+  '@playwright/test@1.64.0':
     dependencies:
-      playwright: 1.58.2
+      playwright: 1.64.0
 
   '@polka/url@1.0.0-next.29': {}
 
@@ -5574,7 +5569,7 @@ snapshots:
       storybook: 10.6.1(@types/react@19.3.0)(prettier@3.8.1)(react@19.3.0)
     optionalDependencies:
       '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
-      '@vitest/browser-playwright': 4.0.18(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
+      '@vitest/browser-playwright': 4.0.18(playwright@1.64.0)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
       '@vitest/runner': 4.0.18
       vitest: 4.0.18(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.0.18)(happy-dom@20.8.9)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -5923,11 +5918,11 @@ snapshots:
       vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
       vue: 3.5.29(typescript@5.9.3)
 
-  '@vitest/browser-playwright@4.0.18(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)':
+  '@vitest/browser-playwright@4.0.18(playwright@1.64.0)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)':
     dependencies:
       '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
       '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
-      playwright: 1.58.2
+      playwright: 1.64.0
       tinyrainbow: 3.0.3
       vitest: 4.0.18(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.0.18)(happy-dom@20.8.9)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -7220,9 +7215,6 @@ snapshots:
 
   fs.realpath@1.0.0: {}
 
-  fsevents@2.3.2:
-    optional: true
-
   fsevents@2.3.3:
     optional: true
 
@@ -8168,13 +8160,11 @@ snapshots:
     dependencies:
       pngjs: 7.0.0
 
-  playwright-core@1.58.2: {}
+  playwright-core@1.64.0: {}
 
-  playwright@1.58.2:
+  playwright@1.64.0:
     dependencies:
-      playwright-core: 1.58.2
-    optionalDependencies:
-      fsevents: 2.3.2
+      playwright-core: 1.64.0
 
   plist@3.1.0:
     dependencies:
@@ -8919,7 +8909,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 22.19.12
-      '@vitest/browser-playwright': 4.0.18(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
+      '@vitest/browser-playwright': 4.0.18(playwright@1.64.0)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.0.18)
       happy-dom: 20.8.9
     transitivePeerDependencies:
       - jiti

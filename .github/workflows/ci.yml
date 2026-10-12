@@ -80,6 +80,7 @@ jobs:
   storybook:
     name: Storybook
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
