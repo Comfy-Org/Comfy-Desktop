@@ -85,7 +85,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # On a pull request this is GitHub's merge commit, so the preview includes the current base.
+      # On a pull request this is GitHub's test merge commit; the summary step lists its parents.
       - name: Record the checked-out commit
         id: source
         run: echo "sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
@@ -119,16 +119,22 @@ jobs:
           ARTIFACT_URL: ${{ steps.storybook-artifact.outputs.artifact-url }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           BASE_REF: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           {
             echo "Storybook for commit $SOURCE_SHA: [download the static preview]($ARTIFACT_URL)."
             if [ -n "$BASE_REF" ]; then
-              read -r base head <<< "$(git cat-file -p "$SOURCE_SHA" | sed -n 's/^parent //p' | xargs)"
-              echo "That commit is GitHub's merge of PR head $head into $BASE_REF at $base, so the preview includes $BASE_REF as of this run."
+              # cat-file reads the parents from the commit object even in this shallow checkout.
+              parents=$(git cat-file -p "$SOURCE_SHA" | sed -n 's/^parent //p' | xargs)
+              echo "That commit is GitHub's test merge for this pull request, with parents $parents. GitHub reported base ref \`$BASE_REF\`."
+              merged_into=$(for parent in $parents; do [ "$parent" = "$PR_HEAD" ] || echo "$parent"; done | xargs)
+              if [ "$merged_into" != "$parents" ]; then
+                echo "PR head $PR_HEAD was merged into $merged_into. In a stack that commit can include lower pull requests, so it need not be the tip of \`$BASE_REF\`."
+              fi
             fi
             echo 'This job runs the story tests from the same checkout, against the Vite-served sources rather than this build.'
             echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static` and open http://localhost:6006.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps --only-shell chromium

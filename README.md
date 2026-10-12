@@ -130,12 +130,12 @@ installation is needed to run them.
 
 The **Storybook** CI job builds a static Storybook from the commit it checks out
 and links it as a downloadable `storybook-<commit>` artifact in the job summary.
-On a pull request that commit is GitHub's merge of the PR into its base branch,
-so the preview includes the base branch as of that run. The same job runs the
-story interaction tests against the Vitest/Vite-served sources of that checkout;
-it does not run the uploaded artifact. This initial setup does not deploy a
-hosted preview URL. To view an artifact without installing project
-dependencies, extract it into `storybook-static/` and run:
+On a pull request that commit is GitHub's test merge of the PR, which includes
+the base branch as of that run; the summary lists the commit's merge parents.
+The same job runs the story interaction tests against the Vitest/Vite-served
+sources of that checkout; it does not run the uploaded artifact. This initial
+setup does not deploy a hosted preview URL. To view an artifact without
+installing project dependencies, extract it into `storybook-static/` and run:
 
 ```bash
 python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static
