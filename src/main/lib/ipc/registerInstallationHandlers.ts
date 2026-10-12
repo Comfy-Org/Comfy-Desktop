@@ -657,17 +657,24 @@ export function registerInstallationHandlers(): void {
   })
 
   // Asked for only by the beta-args pill, so `get-detail-sections` never waits on it.
-  ipcMain.handle('get-core-beta-args', (_event, installationId: string, launchArgs?: unknown) => {
-    recordIpcInvocation('get-core-beta-args', installationId)
-    return answerCoreBetaArgs(installationId, launchArgs, {
-      sessionArgs: (id) => {
-        const running = _runningSessions.get(id)
-        return running ? (running.coreBetaArgs ?? []) : null
-      },
-      record: (id) => installations.get(id),
-      launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
-    })
-  })
+  ipcMain.handle(
+    'get-core-beta-args',
+    async (_event, installationId: string, launchArgs?: unknown) => {
+      recordIpcInvocation('get-core-beta-args', installationId)
+      const t0 = Date.now()
+      const answer = await answerCoreBetaArgs(installationId, launchArgs, {
+        sessionArgs: (id) => {
+          const running = _runningSessions.get(id)
+          return running ? (running.coreBetaArgs ?? []) : null
+        },
+        record: (id) => installations.get(id),
+        launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+      })
+      recordIpcInvocation('get-core-beta-args:answered', answer)
+      recordIpcInvocation('diag:answer', { t0, t1: Date.now(), n: answer.args.length })
+      return answer
+    }
+  )
 
   ipcMain.handle(
     'get-comfy-args',

@@ -1,0 +1,72 @@
+# Temporary diagnostics for the core-beta-args-pill-commit flake (PR #1698). Not for merge.
+name: diag-1698
+
+on:
+  push:
+    branches:
+      - bl/diag-1698-beta-args-flake
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: orig-natural, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '0', mutant: '0', repeat: 50 }
+          - { name: orig-natural-load, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
+          - { name: orig-force-m1, spec: e2e/diag-1698-orig.test.ts, force: m1, order: '1', load: '0', mutant: '0', repeat: 5 }
+          - { name: orig-force-m2, spec: e2e/diag-1698-orig.test.ts, force: m2, order: '1', load: '0', mutant: '0', repeat: 5 }
+          - { name: orig-mutant, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '0', mutant: '1', repeat: 3 }
+          - { name: fixed-natural, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '0', mutant: '0', repeat: 50 }
+          - { name: fixed-natural-load, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
+          - { name: fixed-force-m1, spec: e2e/diag-1698-fixed.test.ts, force: m1, order: '1', load: '0', mutant: '0', repeat: 10 }
+          - { name: fixed-force-m2, spec: e2e/diag-1698-fixed.test.ts, force: m2, order: '1', load: '0', mutant: '0', repeat: 10 }
+          - { name: fixed-force-m2-noorder, spec: e2e/diag-1698-fixed.test.ts, force: m2, order: '0', load: '0', mutant: '0', repeat: 5 }
+          - { name: fixed-mutant, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '0', mutant: '1', repeat: 3 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Make an unproven relation count as proven
+        if: matrix.mutant == '1'
+        run: |
+          sed -i 's/(proof) => proof.relation,/(proof) => proof.relation ?? true,/' src/main/lib/coreBetaPreview.ts
+          grep -n 'proof.relation ?? true' src/main/lib/coreBetaPreview.ts
+      - run: pnpm run build
+      - name: Saturate the CPUs
+        if: matrix.load == '1'
+        run: |
+          for _ in $(seq "$(nproc)"); do nohup sh -c 'while :; do :; done' >/dev/null 2>&1 & done
+          sleep 1
+          uptime
+      - name: Run ${{ matrix.spec }} x${{ matrix.repeat }}
+        env:
+          DIAG_FORCE: ${{ matrix.force }}
+          DIAG_ORDER: ${{ matrix.order }}
+        run: |
+          set +e
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux "${{ matrix.spec }}" \
+            --repeat-each=${{ matrix.repeat }} --retries=0 --reporter=list 2>&1 | tee e2e.log
+          echo "playwright exit: ${PIPESTATUS[0]}" | tee -a e2e.log
+          {
+            echo "### ${{ matrix.name }}"
+            echo '```'
+            grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|playwright exit' e2e.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-${{ matrix.name }}
+          path: e2e.log
+          retention-days: 7

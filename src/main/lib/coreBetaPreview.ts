@@ -16,6 +16,7 @@ import type { CoreCommitState } from './coreBetaGrants'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
 import { peekComfyArgsSchema } from './comfy-args'
 import { withoutPygit2Breaker } from './git'
+import { recordIpcInvocation } from './e2eOverrides'
 import { peekBetaFeaturesEnabled } from '../settings'
 import type { CoreCheckout } from './version'
 import type { InstallationRecord } from '../installations'
@@ -32,8 +33,12 @@ const inFlight = new Map<string, Promise<boolean | null>>()
 
 function relate(repoPath: string, head: string, sha: string): Promise<boolean | null> {
   const key = `${head}:${sha}`
+  const t = Date.now()
   const known = relations.get(key)
-  if (known !== undefined) return Promise.resolve(known)
+  if (known !== undefined) {
+    recordIpcInvocation('diag:relate', { t, key, via: 'cache', result: known })
+    return Promise.resolve(known)
+  }
   let pending = inFlight.get(key)
   if (!pending) {
     pending = withoutPygit2Breaker(() => proveCommitRelation(repoPath, sha, head))
@@ -42,11 +47,14 @@ function relate(repoPath: string, head: string, sha: string): Promise<boolean | 
         () => null
       )
       .then((relation) => {
+        recordIpcInvocation('diag:relate', { t, tEnd: Date.now(), key, via: 'prove', result: relation })
         if (relation !== null) relations.set(key, relation)
         inFlight.delete(key)
         return relation
       })
     inFlight.set(key, pending)
+  } else {
+    recordIpcInvocation('diag:relate', { t, key, via: 'join' })
   }
   return pending
 }
@@ -103,8 +111,15 @@ export async function previewCoreBetaArgs(
     installationId,
     inst.comfyVersion?.commit ?? (inst.version as string | undefined)
   )
-  if (!schema) return []
+  if (!schema) {
+    recordIpcInvocation('diag:head', { t: Date.now(), head: 'no-schema' })
+    return []
+  }
   const checkout = resolveCoreCheckout(split.comfyuiDir)
+  recordIpcInvocation('diag:head', {
+    t: Date.now(),
+    head: checkout.kind === 'head' ? checkout.commit : checkout.kind
+  })
   const commits = await previewCommits(
     split.comfyuiDir,
     checkout,
