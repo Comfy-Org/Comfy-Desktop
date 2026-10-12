@@ -1,14 +1,22 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment node
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getFirebaseConfig } from './config'
 import { BRIDGE_PORT, startBridgeServer } from './server'
 
-// oauth.ts goes through Chromium's net.fetch; delegate to the global fetch so
-// the raw-OAuth initiator arm keeps its pre-existing live-call behavior here.
+const firebaseFetch = vi.hoisted(() => vi.fn<typeof fetch>())
+
+// Keep real loopback HTTP coverage while stubbing the Firebase request made
+// through Chromium's net.fetch. These tests must not depend on an external API.
 vi.mock('electron', () => ({
-  net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) }
+  net: { fetch: firebaseFetch }
 }))
 
 describe('startBridgeServer', () => {
+  beforeEach(() => {
+    firebaseFetch.mockReset()
+  })
+
   it('serves a 204 for /favicon.ico', async () => {
     const handle = await startBridgeServer({ env: 'prod', providerId: 'google.com', port: 0 })
     try {
@@ -74,13 +82,35 @@ describe('startBridgeServer', () => {
   })
 
   it('302s the browser to Google OAuth for google.com providers (raw-OAuth flow)', async () => {
+    const authUri = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test-client-id'
+    firebaseFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ authUri, sessionId: 'test-session', providerId: 'google.com' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    )
     const handle = await startBridgeServer({ env: 'prod', providerId: 'google.com', port: 0 })
     try {
       const res = await fetch(handle.url, { redirect: 'manual' })
       expect(res.status).toBe(302)
-      const location = res.headers.get('location') || ''
-      expect(location).toContain('accounts.google.com')
-      expect(location).toContain('client_id=')
+      expect(res.headers.get('location')).toBe(authUri)
+      expect(firebaseFetch).toHaveBeenCalledTimes(1)
+      expect(firebaseFetch).toHaveBeenCalledWith(
+        `https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=${getFirebaseConfig('prod').apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            providerId: 'google.com',
+            continueUri: handle.url,
+            oauthScope: 'profile email'
+          }),
+          credentials: 'omit'
+        }
+      )
     } finally {
       handle.close()
     }
