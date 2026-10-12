@@ -7,7 +7,10 @@ import {
   ArrowRightLeft,
   Info,
   LoaderCircle,
-  MoreVertical
+  MoreVertical,
+  Play,
+  RotateCcw,
+  Square
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
@@ -42,6 +45,7 @@ const emit = defineEmits<{
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
+  'lifecycle-action': [action: 'start' | 'stop' | 'restart', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
   'why-cloud': []
@@ -76,6 +80,16 @@ const isUpdating = computed(() => {
   const op = sessionStore.operationInstances.get(inst.value.id)
   return op != null && progressOpKindForActionId(op.actionId) === 'update'
 })
+const showLifecycleActions = computed(
+  () =>
+    inst.value.sourceId === 'standalone' && inst.value.status === 'installed' && !isUpdating.value
+)
+const canStart = computed(
+  () => showLifecycleActions.value && !isRunning.value && !isLaunching.value && !isStopping.value
+)
+const canStopOrRestart = computed(
+  () => showLifecycleActions.value && isRunning.value && !isStopping.value
+)
 const hasError = computed(() =>
   props.lifecycleStatus == null
     ? sessionStore.errorInstances.has(inst.value.id)
@@ -337,12 +351,90 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           </span>
         </Tooltip>
       </div>
+      <div v-if="canStart || canStopOrRestart" class="chooser-tile-cta">
+        <button
+          v-if="canStart"
+          type="button"
+          class="chooser-tile-cta__button chooser-tile-cta__button--start"
+          :aria-label="t('actions.launch')"
+          @click.stop="emit('lifecycle-action', 'start', inst)"
+        >
+          <Play :size="13" aria-hidden="true" />
+          {{ t('actions.launch') }}
+        </button>
+        <template v-else>
+          <button
+            type="button"
+            class="chooser-tile-cta__button chooser-tile-cta__button--stop"
+            :aria-label="t('actions.stop')"
+            @click.stop="emit('lifecycle-action', 'stop', inst)"
+          >
+            <Square :size="12" aria-hidden="true" />
+            {{ t('actions.stop') }}
+          </button>
+          <button
+            type="button"
+            class="chooser-tile-cta__button"
+            :aria-label="t('actions.restart')"
+            @click.stop="emit('lifecycle-action', 'restart', inst)"
+          >
+            <RotateCcw :size="13" aria-hidden="true" />
+            {{ t('actions.restart') }}
+          </button>
+        </template>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 @import './chooser-tiles.css';
+
+.chooser-tile-cta {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.chooser-tile-cta__button {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 6px;
+  background: var(--chooser-surface-bg);
+  color: var(--neutral-100);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.chooser-tile-cta__button:hover,
+.chooser-tile-cta__button:focus-visible {
+  border-color: var(--chooser-surface-border-hover);
+  background: var(--chooser-surface-bg-hover);
+  outline: none;
+}
+
+.chooser-tile-cta__button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.chooser-tile-cta__button--start {
+  color: var(--comfy-yellow);
+}
+
+.chooser-tile-cta__button--stop:hover,
+.chooser-tile-cta__button--stop:focus-visible {
+  color: var(--accent-danger, #d92d20);
+}
 
 .chooser-tile-name-row {
   display: flex;

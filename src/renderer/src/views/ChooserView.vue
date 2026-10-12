@@ -9,6 +9,8 @@ import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
+import { useStopAction } from '../composables/useStopAction'
+import { stopAndWaitForExit } from '../lib/stopWarning'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
@@ -62,6 +64,10 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
+const { confirmAndStop } = useStopAction({
+  confirm: (options) => modal.confirm({ ...options, confirmStyle: 'danger' }),
+  alert: (options) => modal.alert(options)
+})
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
@@ -211,8 +217,7 @@ async function pickInstall(inst: Installation): Promise<void> {
   // The instance window owns lifecycle. If a host window already exists for
   // this install - running, launching, OR crashed (the window stays open on
   // its lifecycle/error surface) - bring it forward instead of kicking off a
-  // second launch with a dashboard takeover. Restart, stop, and crash details
-  // all live inside that window.
+  // second launch with a dashboard takeover. Crash details stay in that window.
   if (
     sessionStore.isRunning(inst.id) ||
     sessionStore.isLaunching(inst.id) ||
@@ -225,6 +230,55 @@ async function pickInstall(inst: Installation): Promise<void> {
     if (focused) return
   }
   emit('pick', inst)
+}
+
+function showLaunchProgress(
+  inst: Installation,
+  title: string,
+  apiCall: () => Promise<unknown>
+): void {
+  emit('show-progress', {
+    installationId: inst.id,
+    title: `${title} — ${inst.name}`,
+    apiCall,
+    cancellable: true,
+    triggersInstanceStart: true,
+    opKind: 'launch'
+  })
+}
+
+async function handleLifecycleAction(
+  action: 'start' | 'stop' | 'restart',
+  inst: Installation
+): Promise<void> {
+  if (inst.sourceId !== 'standalone' || inst.status !== 'installed') return
+
+  if (action === 'stop') {
+    if (sessionStore.isRunning(inst.id)) await confirmAndStop(inst.id)
+    return
+  }
+
+  if (action === 'start') {
+    if (sessionStore.isRunning(inst.id) || sessionStore.isLaunching(inst.id)) return
+    showLaunchProgress(inst, t('comfyLifecycle.launchProgressTitle'), () =>
+      window.api.runAction(inst.id, 'launch')
+    )
+    return
+  }
+
+  if (!sessionStore.isRunning(inst.id)) return
+  const confirmed = await modal.confirm({
+    title: t('actions.restartConfirmTitle'),
+    message: t('actions.restartConfirmMessage'),
+    confirmLabel: t('actions.restartConfirm'),
+    confirmStyle: 'danger'
+  })
+  if (!confirmed) return
+
+  showLaunchProgress(inst, t('actions.restartProgressTitle'), async () => {
+    await stopAndWaitForExit(inst.id, () => sessionStore.isRunning(inst.id))
+    return window.api.runAction(inst.id, 'launch')
+  })
 }
 
 const cloudGate = useCloudGate({ immediate: false })
@@ -285,6 +339,7 @@ const gridHandlers = {
   'open-kebab-menu': openKebabMenu,
   'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>
     triggerAction(action, inst),
+  'lifecycle-action': handleLifecycleAction,
   'view-error': viewError,
   'view-danger': viewDanger,
   'why-cloud': openWhyCloud
