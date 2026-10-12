@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key
+    t: (key: string, params?: { name?: string }) => (params?.name ? `${key}(${params.name})` : key)
   })
 }))
 
@@ -60,6 +60,65 @@ describe('useLocalInstanceGuard', () => {
     const result = await guard.checkBeforeLaunch('target')
 
     expect(result).toBe(true)
+  })
+
+  it('lists a running Performance Test as one, not under its install name', async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    sessionStore.runningInstances.set('performance-test:inst-1', {
+      installationId: 'performance-test:inst-1',
+      installationName: 'Test Install',
+      mode: 'console'
+    })
+    sessionStore.runningInstances.set('other', {
+      installationId: 'other',
+      installationName: 'Other',
+      mode: 'window'
+    })
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
+      'launch.instanceRunningPerformanceTest(Test Install)',
+      'Other'
+    ])
+  })
+
+  it('lists a Performance Test that is still starting as one too', async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    sessionStore.launchingInstances.set('performance-test:inst-1', {
+      installationName: 'Test Install'
+    })
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
+      'launch.instanceRunningPerformanceTest(Test Install)'
+    ])
+  })
+
+  it("does not list a remote installation's Performance Test as a local instance", async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    installationStore.installations.push(
+      makeInstallation({ id: 'remote-1', name: 'Remote Box', sourceCategory: 'remote' })
+    )
+    sessionStore.runningInstances.set('performance-test:remote-1', {
+      installationId: 'performance-test:remote-1',
+      installationName: 'Remote Box',
+      mode: 'console'
+    })
+    sessionStore.launchingInstances.set('performance-test:remote-1', {
+      installationName: 'Remote Box'
+    })
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
   })
 
   it('allows launch without prompting for non-local (cloud) targets', async () => {

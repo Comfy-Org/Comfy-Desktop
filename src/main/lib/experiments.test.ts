@@ -69,6 +69,15 @@ import type * as TelemetryModule from './telemetry'
 describe('experiments', () => {
   let experiments: typeof ExperimentsModule
   let telemetry: typeof TelemetryModule
+  const postHogEnvNames = [
+    'POSTHOG_API_KEY',
+    'POSTHOG_HOST',
+    'POSTHOG_ENABLED',
+    'COMFY_DESKTOP_POSTHOG_API_KEY',
+    'COMFY_DESKTOP_POSTHOG_HOST',
+    'COMFY_DESKTOP_POSTHOG_ENABLED'
+  ] as const
+  let previousPostHogEnv: Partial<Record<(typeof postHogEnvNames)[number], string>> = {}
 
   beforeEach(async () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'experiments-test-'))
@@ -77,8 +86,16 @@ describe('experiments', () => {
     mockFlagsDelayMs = 0
     mockFlagsGate = null
     flagRequestIds.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
+    previousPostHogEnv = Object.fromEntries(
+      postHogEnvNames.flatMap((name) =>
+        process.env[name] === undefined ? [] : [[name, process.env[name]!]]
+      )
+    )
+    for (const name of postHogEnvNames) {
+      delete process.env[name]
+    }
+    process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'test-key'
+    process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
 
     vi.resetModules()
     experiments = await import('./experiments')
@@ -91,8 +108,11 @@ describe('experiments', () => {
   })
 
   afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+    for (const name of postHogEnvNames) {
+      const previous = previousPostHogEnv[name]
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    }
     try {
       fs.rmSync(testUserData, { recursive: true, force: true })
     } catch {

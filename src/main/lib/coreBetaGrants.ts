@@ -22,19 +22,35 @@ export const CORE_BETA_FEATURES_FLAG_KEY = 'desktop_core_beta_features'
  * grant-owned tokens, and membership says nothing about whether a user may pass the same arg
  * by hand (they may, and it wins; see `selectCoreBetaGrantArgs`).
  *
- * An entry need not exist in Core yet: `--disable-assets` is the planned remote force-off for
- * when assets go default-on, and `--enable-agent` lands here ahead of the Core flag because
+ * `--enable-assets` is not here: Desktop asks for assets itself. `--disable-assets` is, but as the
+ * assets force-off rather than a grant (`assetsArgs`).
+ *
+ * An entry need not exist in Core yet: `--enable-agent` lands here ahead of the Core flag because
  * Desktop reaches users on its own update cadence — the allowlist has to already be installed
  * before a payload can grant anything. Granting an arg Core cannot parse is safe meanwhile: the
  * running core's supported-argument schema filters it and the launch reports it as
  * `dropped_unsupported`.
  */
 export const CORE_BETA_GRANTABLE_ARGS = [
-  '--enable-assets',
   '--enable-asset-hashing',
   '--disable-assets',
   '--enable-agent'
 ] as const
+
+/** Desktop passes `--enable-assets` to every Core containing this commit, with no grant and
+ *  whatever the beta toggle. */
+export const ASSETS_MIN_CORE_COMMIT = '7897b4ee3527847a155bc0921a44f90489548019'
+/** The first release containing that commit. */
+const ASSETS_MIN_CORE_VERSION = '0.38.0'
+const ASSETS_ARG = '--enable-assets'
+/** Any payload entry naming it forces assets off on every install, whatever its bounds and the
+ *  beta toggle: withholding assets is always safe, so it is never gated or shown as a beta.
+ *  The entry still has to parse, so give it bounds that cover everything (`min_core_version:
+ *  "0.0.0"`): one with no bounds is dropped like any malformed entry and turns nothing off.
+ *  Ops: Desktops before this one read it as an ordinary grant, so serve it `notice: "silent"`
+ *  and with no `--enable-assets` entry left (they void a payload naming both). Serving `false`
+ *  on the key lifts it, like every grant. */
+const ASSETS_FORCE_OFF_ARG = '--disable-assets'
 
 /** How a grant's activation notice should be worded, when it is announced at all. Both fields
  *  are optional and independent of whether the grant APPLIES — copy never gates a flag. */
@@ -283,7 +299,7 @@ export function commitGrantShas(
   const user = new Set(userArgs)
   const shas = new Set<string>()
   for (const flag of flags) {
-    if (!isCommitGrant(flag)) continue
+    if (!isCommitGrant(flag) || flag.arg === ASSETS_FORCE_OFF_ARG) continue
     const opposite = oppositeArg(flag.arg)
     if (user.has(flag.arg) || (opposite !== null && user.has(opposite))) continue
     for (const [lower, upper] of flag.commitRanges) {
@@ -514,6 +530,62 @@ export interface CoreBetaPlan {
   readonly withheld: readonly string[]
   /** Selection's own explanation lines, which the launch logs. */
   readonly trace: readonly string[]
+  /** Desktop's own assets arg for this launch: `--enable-assets`, the force-off, or nothing. */
+  readonly assetsArgs: readonly string[]
+  /** Why, for the install's log. */
+  readonly assetsRecord: string
+}
+
+const FORCED_OFF = 'forced off remotely'
+
+const releaseAtAssetsFloor = ({ semver: version, verified, current }: CoreVersionState): boolean =>
+  version !== null && verified && current && semver.gte(version, ASSETS_MIN_CORE_VERSION)
+
+/** Why Desktop cannot decide to ask for assets without the floor's ancestry, or `null` if it can. */
+function assetsDecided(
+  grants: readonly CoreBetaGrant[],
+  userArgs: readonly string[],
+  schema: ComfyArgsSchema
+): string | null {
+  if (userArgs.includes(ASSETS_ARG)) return 'already in the launch args'
+  if (userArgs.includes(ASSETS_FORCE_OFF_ARG))
+    return `the launch args contain ${ASSETS_FORCE_OFF_ARG}`
+  if (grants.some((grant) => grant.arg === ASSETS_FORCE_OFF_ARG)) return FORCED_OFF
+  if (!schema.knownFlags.has(ASSETS_ARG.slice(2))) return 'not supported by this core'
+  return null
+}
+
+/** The floor SHA to prove for this launch: none when the assets decision cannot use it. */
+export function assetsFloorShas(
+  grants: readonly CoreBetaGrant[],
+  userArgs: readonly string[],
+  schema: ComfyArgsSchema,
+  core: CoreVersionState
+): string[] {
+  const needed = assetsDecided(grants, userArgs, schema) === null && !releaseAtAssetsFloor(core)
+  return needed ? [ASSETS_MIN_CORE_COMMIT] : []
+}
+
+function assetsDecision(facts: CoreBetaFacts): Pick<CoreBetaPlan, 'assetsArgs' | 'assetsRecord'> {
+  const { grants, userArgs, schema, core, commits } = facts
+  let withheld = assetsDecided(grants, userArgs, schema)
+  if (
+    withheld === null &&
+    !releaseAtAssetsFloor(core) &&
+    !commitRangeMatches([ASSETS_MIN_CORE_COMMIT, null], commits.ancestry)
+  ) {
+    const where = `core ${commits.head?.slice(0, 12) ?? core.semver ?? 'unknown'}`
+    const floor = ASSETS_MIN_CORE_COMMIT.slice(0, 12)
+    withheld =
+      commits.ancestry.get(ASSETS_MIN_CORE_COMMIT) === false
+        ? `${where} does not contain ${floor}`
+        : `${where} proves neither ${floor} nor a verified v${ASSETS_MIN_CORE_VERSION}+ release`
+  }
+  const assetsRecord = `[assets] ${ASSETS_ARG} ${withheld === null ? 'passed' : `withheld: ${withheld}`}`
+  if (withheld === null) return { assetsArgs: [ASSETS_ARG], assetsRecord }
+  // Cores with assets on by default need the force-off itself on the command line.
+  const forceOff = withheld === FORCED_OFF && schema.knownFlags.has(ASSETS_FORCE_OFF_ARG.slice(2))
+  return { assetsArgs: forceOff ? [ASSETS_FORCE_OFF_ARG] : [], assetsRecord }
 }
 
 /** The Core beta decision as a pure function: no I/O and no logging. */
@@ -521,7 +593,7 @@ export function planCoreBetaArgs(facts: CoreBetaFacts): CoreBetaPlan {
   const withheld: string[] = []
   const trace: string[] = []
   const selected = selectCoreBetaGrantArgs(
-    facts.grants,
+    facts.grants.filter((grant) => grant.arg !== ASSETS_FORCE_OFF_ARG),
     facts.core,
     facts.betaEnabled,
     facts.userArgs,
@@ -541,7 +613,8 @@ export function planCoreBetaArgs(facts: CoreBetaFacts): CoreBetaPlan {
       .filter((grant) => !supported.has(grant.arg))
       .map((grant) => grant.arg),
     withheld,
-    trace
+    trace,
+    ...assetsDecision(facts)
   }
 }
 
