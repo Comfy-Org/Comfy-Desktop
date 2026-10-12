@@ -43,6 +43,16 @@ describe('executionTap', () => {
     })
   })
 
+  it('tags every event with the session kind it was given, normal by default', () => {
+    createExecutionTap({ installationId: 'inst-1', sessionKind: 'performance_test' }).flushSummary()
+    createExecutionTap({ installationId: 'inst-2' }).flushSummary()
+
+    expect(captured.map((c) => [c.ctx.installation_id, c.ctx.session_kind])).toEqual([
+      ['inst-1', 'performance_test'],
+      ['inst-2', 'normal']
+    ])
+  })
+
   it('emits validation_failed errors with the reason lines as the message', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // ComfyUI logs the header, then `* node:` / `- reason` detail lines, then

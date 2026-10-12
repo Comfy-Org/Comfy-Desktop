@@ -14,6 +14,7 @@ import {
   generateCodeVerifier,
   generateState
 } from './pkce'
+import { SignInFailure } from './signInFailure'
 import type { AuthStatus, AuthTokens } from './types'
 
 /** Matches ingest's OAuth request TTL; a first SSO sign-in runs well past 2 min. */
@@ -73,17 +74,36 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
       signal: controller.signal
+    }).catch((cause: unknown) => {
+      throw new SignInFailure(
+        `OAuth token request failed: ${String(cause)}`,
+        controller.signal.aborted ? 'timeout' : 'network',
+        { cause }
+      )
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')
-      throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
+      throw new SignInFailure(
+        `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
+        'server_error',
+        { httpStatus: resp.status }
+      )
     }
-    const data = (await resp.json()) as Partial<TokenResponse>
+    const data = (await resp.json().catch((cause: unknown) => {
+      throw new SignInFailure(
+        'OAuth token response was not valid JSON',
+        controller.signal.aborted ? 'timeout' : 'server_error',
+        { cause }
+      )
+    })) as Partial<TokenResponse> | null
+    if (typeof data !== 'object' || data === null) {
+      throw new SignInFailure('OAuth token response was not an object', 'server_error')
+    }
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
-      throw new Error('OAuth token response missing access_token')
+      throw new SignInFailure('OAuth token response missing access_token', 'server_error')
     }
     if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
-      throw new Error('OAuth token response missing a valid expires_in')
+      throw new SignInFailure('OAuth token response missing a valid expires_in', 'server_error')
     }
     return data as TokenResponse
   } finally {
@@ -124,7 +144,16 @@ export async function signIn(
     // openExternal rejection (no browser handler) still fails immediately.
     const { code } = await Promise.race([
       listener.waitForCode(),
-      openAuthorizePage(authorizeUrl).then(() => listener.waitForCode())
+      openAuthorizePage(authorizeUrl).then(
+        () => listener.waitForCode(),
+        (cause: unknown) => {
+          throw new SignInFailure(
+            cause instanceof Error ? cause.message : String(cause),
+            'browser_unavailable',
+            { cause }
+          )
+        }
+      )
     ])
 
     const r = await requestToken(
