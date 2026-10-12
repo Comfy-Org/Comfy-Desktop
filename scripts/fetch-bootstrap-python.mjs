@@ -6,13 +6,13 @@
  * bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/.
  *
  * Usage:
- *   node scripts/fetch-bootstrap-python.mjs [--tag bootstrap-v1] [--platform win-x64]
- *   node scripts/fetch-bootstrap-python.mjs [--tag bootstrap-v1] [--output-dir /path/to/dir]
+ *   node scripts/fetch-bootstrap-python.mjs [--tag bootstrap-v4] [--platform win-x64]
+ *   node scripts/fetch-bootstrap-python.mjs [--tag bootstrap-v4] [--output-dir /path/to/dir]
  *
  * Options:
  *   --platform   Fetch only this platform (default: all platforms)
  *   --output-dir Override the output base directory (default: bootstrap-python/ in project root)
- *   --tag        Release tag to fetch from (default: bootstrap-v1)
+ *   --tag        Release tag to fetch from (default: bootstrap-v4)
  *   --soft-fail  Exit 0 even when a platform fails to fetch or verify. Intended
  *                for local dev — `predev` already prints a warning when the
  *                directory is missing. Production builds MUST NOT pass this:
@@ -45,10 +45,11 @@ const outputBase = path.join(projectRoot, 'bootstrap-python')
 const PLATFORMS = ['win-x64', 'win-arm64', 'mac-arm64', 'linux-x64']
 // bootstrap-v2 added a bundled `uv` binary alongside python+pygit2;
 // bootstrap-v3 added the native win-arm64 build (Windows on Arm / NVIDIA
-// RTX Spark). Bump this together with the tag published from
+// RTX Spark). bootstrap-v4 updates Python to 3.13.16 (PBS 20261009) and
+// uv to 0.13.0. Bump this together with the tag published from
 // build-bootstrap-python.mjs so fresh fetches pull archives for every
 // platform listed above.
-const DEFAULT_TAG = 'bootstrap-v3'
+const DEFAULT_TAG = 'bootstrap-v4'
 const REPO = 'Comfy-Org/Comfy-Desktop'
 
 // Each platform's expected Python binary inside its bootstrap-python dir.

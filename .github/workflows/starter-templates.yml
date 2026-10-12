@@ -96,7 +96,7 @@ jobs:
       # Authenticate first. It is the likeliest failure and writes nothing, so
       # a bad key aborts before R2 is mutated and the hosts can diverge.
       - name: authenticate to GCS
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
 
@@ -114,7 +114,7 @@ jobs:
             --file assets/starter-templates.json \
             --content-type application/json
 
-      - uses: google-github-actions/upload-cloud-storage@v2
+      - uses: google-github-actions/upload-cloud-storage@v3
         if: inputs.dry_run != true
         with:
           path: assets/starter-templates.json

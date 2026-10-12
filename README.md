@@ -189,7 +189,7 @@ The app ships a minimal (~15–20 MB) standalone Python with `pygit2` baked in, 
 | Command                    | What it does                                                                                                                                                                                              |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.mjs` (no system Python needed). Auto-detects the host platform and architecture; pass `--platform win-x64\|win-arm64\|mac-arm64\|linux-x64` for another. |
-| `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v3`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v3) release (faster). Set `GITHUB_TOKEN` to authenticate.                          |
+| `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v4`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v4) release (faster). No authentication is required.                          |
 
 Both write to `bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`. `win-arm64` is the native Windows on Arm build (NVIDIA RTX Spark, Snapdragon X); the app picks `win-<process.arch>` in dev and ToDesktop's `targetOverrides` select it for the arm64 installer.
 

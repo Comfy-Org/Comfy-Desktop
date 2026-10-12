@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag for the bootstrap-python assets (e.g. bootstrap-v3)"
+        description: 'New release tag for the bootstrap-python assets (e.g. bootstrap-v4)'
         required: true
-        default: "bootstrap-v3"
+        default: 'bootstrap-v4'
 
 permissions:
   contents: write
@@ -56,17 +56,18 @@ jobs:
           ls -lh ../bootstrap-python-${{ matrix.platform }}.tar.gz
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bootstrap-python-${{ matrix.platform }}
           path: bootstrap-python-${{ matrix.platform }}.tar.gz
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: bootstrap-python-${{ matrix.platform }}.tar.gz
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
