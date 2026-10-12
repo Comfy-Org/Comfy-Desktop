@@ -1,0 +1,56 @@
+# Temporary diagnostics: why does a picker Restart sometimes never relaunch? Not for merge.
+name: diag-restart-cause
+
+on:
+  push:
+    branches:
+      - bl/diag-restart-cause
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    name: ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { job: delay-x5, mode: delay, repeat: 5 }
+          - { job: natural-a-x40, mode: log, repeat: 40 }
+          - { job: natural-b-x40, mode: log, repeat: 40 }
+    steps:
+      - uses: actions/checkout@v7
+      - run: node .github/diag-restart-cause/inject.mjs ${{ matrix.mode }} && node .github/diag-restart-cause/keep.mjs && git diff --stat
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Restart spec x${{ matrix.repeat }}
+        env:
+          DIAG_KEEP: '1'
+        run: |
+          mkdir -p diag-out
+          set +e
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux --retries=0 --reporter=list \
+            e2e/core-beta-args-pill-restart.test.ts --repeat-each=${{ matrix.repeat }} > diag-out/restart.log 2>&1
+          echo "exit $?"
+          grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|^\s+✘|\[diag-restart\] 4s' diag-out/restart.log | cut -c1-400
+          exit 0
+      - name: Collect logs
+        if: always()
+        run: |
+          for d in /tmp/comfyui-launcher-e2e-*; do [ -f "$d/.config/comfyui-desktop-2/logs/app.log" ] && mkdir -p "diag-out/profiles/$(basename "$d")" && cp "$d/.config/comfyui-desktop-2/logs/app.log" "diag-out/profiles/$(basename "$d")/"; done
+          [ -d test-results ] && cp -r test-results diag-out/ || true
+          du -sh diag-out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-restart-cause-${{ matrix.job }}
+          path: diag-out/
+          retention-days: 7
