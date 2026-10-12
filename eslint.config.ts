@@ -23,6 +23,7 @@ export default defineConfig([
     ignores: [
       'out/*',
       'dist/*',
+      'storybook-static/**',
       'node_modules/*',
       '.claude/**',
       '.worktrees/**',
@@ -36,7 +37,12 @@ export default defineConfig([
       parserOptions: {
         ...commonParserOptions,
         projectService: {
-          allowDefaultProject: ['eslint.config.ts', 'vitest.config.ts', 'vitest.setup.ts']
+          allowDefaultProject: [
+            'eslint.config.ts',
+            'vitest.config.ts',
+            'vitest.unit.config.ts',
+            'vitest.setup.ts'
+          ]
         }
       }
     }

@@ -43,3 +43,6 @@ docs/telemetry.md
 __pycache__/
 *.pyc
 coverage/
+
+# Static Storybook output
+storybook-static/

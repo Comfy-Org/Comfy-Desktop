@@ -1,4 +1,5 @@
-@import 'tailwindcss';
+/* Scan src/renderer explicitly; Storybook's Vite root is the repository. */
+@import 'tailwindcss' source('../..');
 
 /* Inter Font Family — matches ComfyUI frontend design system */
 @font-face {
