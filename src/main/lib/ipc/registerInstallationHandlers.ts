@@ -658,23 +658,22 @@ export function registerInstallationHandlers(): void {
   })
 
   // Asked for only by the beta-args pill, so `get-detail-sections` never waits on it.
-  ipcMain.handle(
-    'get-core-beta-args',
-    async (_event, installationId: string, launchArgs?: unknown) => {
-      // E2E reads each answer from its own ask's record, so a reset drops late answers with their asks.
-      const ask: { installationId: string; answer?: CoreBetaArgs } = { installationId }
-      recordIpcInvocation('get-core-beta-args', ask)
-      ask.answer = await answerCoreBetaArgs(installationId, launchArgs, {
-        sessionArgs: (id) => {
-          const running = _runningSessions.get(id)
-          return running ? (running.coreBetaArgs ?? []) : null
-        },
-        record: (id) => installations.get(id),
-        launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
-      })
-      return ask.answer
-    }
-  )
+  ipcMain.handle('get-core-beta-args', (_event, installationId: string, launchArgs?: unknown) => {
+    // E2E reads each answer off its ask's record, so a reset drops a late answer with its ask.
+    const ask: { installationId: string; answer?: CoreBetaArgs } = { installationId }
+    recordIpcInvocation('get-core-beta-args', ask)
+    return answerCoreBetaArgs(installationId, launchArgs, {
+      sessionArgs: (id) => {
+        const running = _runningSessions.get(id)
+        return running ? (running.coreBetaArgs ?? []) : null
+      },
+      record: (id) => installations.get(id),
+      launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+    }).then((answer) => {
+      ask.answer = answer
+      return answer
+    })
+  })
 
   ipcMain.handle(
     'get-comfy-args',
