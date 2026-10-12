@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from '@lucide/vue'
 import type { SnapshotDiffResult } from '../types/ipc'
 import { formatNodeVersion } from '../lib/snapshots'
 

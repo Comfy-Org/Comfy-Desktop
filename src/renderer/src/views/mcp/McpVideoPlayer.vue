@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, useTemplateRef, watch } from 'vue'
-import { Pause, Play, Volume2, VolumeX } from 'lucide-vue-next'
+import { Pause, Play, Volume2, VolumeX } from '@lucide/vue'
 
 const { src = '', ariaLabel = '' } = defineProps<{
   src?: string

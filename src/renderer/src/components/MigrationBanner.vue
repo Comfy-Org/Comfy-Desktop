@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMigrateAction } from '../composables/useMigrateAction'
-import { ArrowRightLeft, Download } from 'lucide-vue-next'
+import { ArrowRightLeft, Download } from '@lucide/vue'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 const props = defineProps<{

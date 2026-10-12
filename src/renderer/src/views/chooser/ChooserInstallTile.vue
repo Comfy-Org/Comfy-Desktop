@@ -8,7 +8,7 @@ import {
   Info,
   LoaderCircle,
   MoreVertical
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { FileText, RefreshCw } from 'lucide-vue-next'
+import { FileText, RefreshCw } from '@lucide/vue'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 

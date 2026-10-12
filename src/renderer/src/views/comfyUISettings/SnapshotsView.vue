@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
+import { ChevronDown, Download, RotateCcw, Trash2, Upload } from '@lucide/vue'
 import { TID } from '../../../../shared/testIds'
 import { MSG_CANCELLED } from '../../../../shared/operationStatus'
 import { useDialogs } from '../../composables/useDialogs'

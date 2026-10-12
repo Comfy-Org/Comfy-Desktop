@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { HardDrive } from 'lucide-vue-next'
+import { HardDrive } from '@lucide/vue'
 import { useModal } from '../composables/useModal'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import TakeoverBack from '../components/TakeoverBack.vue'

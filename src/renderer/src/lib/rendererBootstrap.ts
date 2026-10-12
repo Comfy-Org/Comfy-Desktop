@@ -368,6 +368,8 @@ async function initializeProviders(): Promise<void> {
         env: datadogEnv,
         version: datadogVersion || undefined,
         trackingConsent: toDatadogTrackingConsent(telemetryEnabled),
+        // Preserve the full masking default from Datadog RUM v6.
+        defaultPrivacyLevel: 'mask',
         beforeSend: datadogBeforeSend,
         sessionSampleRate: parseSampleRate(
           import.meta.env.VITE_DATADOG_RUM_SESSION_SAMPLE_RATE,

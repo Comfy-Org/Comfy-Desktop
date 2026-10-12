@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Loader2 } from 'lucide-vue-next'
+import { Loader2 } from '@lucide/vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import VersionStatPanel, { type VersionStatRow } from './VersionStatPanel.vue'

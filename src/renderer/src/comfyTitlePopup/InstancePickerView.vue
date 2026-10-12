@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
+import { LayoutDashboard, Plus, Search, X } from '@lucide/vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'

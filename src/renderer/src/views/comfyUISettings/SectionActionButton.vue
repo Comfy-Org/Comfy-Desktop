@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Loader2 } from 'lucide-vue-next'
+import { Loader2 } from '@lucide/vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
 import type { ActionDef } from '../../types/ipc'
 

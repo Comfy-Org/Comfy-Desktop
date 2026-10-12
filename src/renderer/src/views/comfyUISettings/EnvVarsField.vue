@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, EyeOff, Plus, X } from 'lucide-vue-next'
+import { Eye, EyeOff, Plus, X } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import type { DetailField } from '../../types/ipc'
 

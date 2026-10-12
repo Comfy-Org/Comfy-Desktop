@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** One grid of installed instances for the selected dashboard scope. */
 import { useI18n } from 'vue-i18n'
-import { Plus } from 'lucide-vue-next'
+import { Plus } from '@lucide/vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
 import type { Installation } from '../../types/ipc'
 

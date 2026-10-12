@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTimeoutFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from 'lucide-vue-next'
+import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import ArgsRawInput from './ArgsRawInput.vue'

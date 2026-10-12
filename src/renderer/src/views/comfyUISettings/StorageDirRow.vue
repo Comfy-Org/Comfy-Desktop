@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, Folder, FolderOpen, RotateCcw } from 'lucide-vue-next'
+import { ExternalLink, Folder, FolderOpen, RotateCcw } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
 /** Readonly directory row: an icon, a clickable path that opens the folder, an

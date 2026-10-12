@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ArrowUpRight, ChevronDown, ExternalLink, Terminal, X } from 'lucide-vue-next'
+import { ArrowUpRight, ChevronDown, ExternalLink, Terminal, X } from '@lucide/vue'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'

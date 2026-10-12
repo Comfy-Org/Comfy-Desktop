@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { useModalOverlay } from '../../composables/useModalOverlay'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Crown, HardDriveDownload } from 'lucide-vue-next'
+import { Check, Crown, HardDriveDownload } from '@lucide/vue'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import {

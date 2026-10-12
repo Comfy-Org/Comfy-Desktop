@@ -3,7 +3,7 @@
 // ComfyUISettingsPanel + EnvVarsField) reaches functional parity and
 // ships everywhere.
 import { ref, watch, computed } from 'vue'
-import { ShieldAlert } from 'lucide-vue-next'
+import { ShieldAlert } from '@lucide/vue'
 
 const props = defineProps<{
   modelValue: Record<string, string>

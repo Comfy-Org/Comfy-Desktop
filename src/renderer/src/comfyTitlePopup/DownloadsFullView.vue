@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
   XCircle
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
