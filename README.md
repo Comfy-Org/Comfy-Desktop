@@ -128,6 +128,11 @@ components with the app's production styles, translations, and a fresh Pinia
 store per story. No Electron app, bootstrap Python, account, or ComfyUI
 installation is needed to run them.
 
+Choose **Screens → Create a New Instance** to explore the setup screen with
+sample Electron API responses: Public Builds, sample Managed Builds after a
+simulated sign-in, target switching, a retried failed request, and empty and
+error states. File and install actions are simulated.
+
 The **Storybook** CI job builds a static Storybook from the commit it checks out
 and links it as a downloadable `storybook-<commit>` artifact in the job summary.
 On a pull request that commit is GitHub's merge of the PR into its base branch,
