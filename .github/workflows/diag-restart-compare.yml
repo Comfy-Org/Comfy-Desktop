@@ -1,0 +1,65 @@
+# Temporary diagnostics: where does the restart spec's 120 s restart wait time out? Not for merge.
+name: diag-restart-compare
+
+on:
+  push:
+    branches:
+      - bl/diag-restart-compare
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'combined #1707 + Storybook (Playwright 1.64)', key: combined, ref: 99fc61d80751b129f814074feafce18ba55b3370 }
+          - { name: '#1707 alone (Playwright 1.58)', key: pr1707, ref: c25ce4216a703d56277735c94bc87d75c5ac4c18 }
+          - { name: 'Storybook alone (Playwright 1.64, main spec)', key: storybook, ref: 01dff74b640b1ee4c0d438edc52233d99ea48330 }
+          - { name: 'main (Playwright 1.58)', key: main, ref: 069828a8ac860a4c18a90835ec03e0107cc80326 }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/checkout@v7
+        with:
+          path: .diag
+      - run: git log --format='%H %P %s' -1 && node .diag/.github/diag-restart/keep.mjs && git diff --stat
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright --version
+      - run: pnpm run build
+      - name: Restart spec x30
+        env:
+          DIAG_KEEP: '1'
+        run: |
+          mkdir -p out
+          set +e
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux --retries=0 --reporter=list \
+            e2e/core-beta-args-pill-restart.test.ts --repeat-each=30 > out/restart.log 2>&1
+          echo "exit $?"
+          grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|^\s+✘|^\s+[0-9]+\) |^\s+Error: |^\s+> [0-9]+ \||fresh profile dir' out/restart.log
+          exit 0
+      - name: Collect logs
+        if: always()
+        run: |
+          for d in /tmp/comfyui-launcher-e2e-*; do [ -d "$d/.config/comfyui-desktop-2/logs" ] && mkdir -p "out/profiles/$(basename "$d")" && cp -r "$d/.config/comfyui-desktop-2/logs" "out/profiles/$(basename "$d")/"; done
+          for d in /tmp/comfyui-beta-args-restart-*; do [ -d "$d/logs" ] && mkdir -p "out/installs/$(basename "$d")" && cp -r "$d/logs" "out/installs/$(basename "$d")/"; done
+          [ -d test-results ] && cp -r test-results out/ || true
+          ls -la /tmp | grep -E 'comfyui-(launcher-e2e|beta-args-restart)' | head -80 > out/tmp-listing.txt
+          du -sh out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-restart-${{ matrix.key }}
+          path: out/
+          retention-days: 7
