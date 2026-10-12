@@ -44,6 +44,5 @@ __pycache__/
 *.pyc
 coverage/
 
-# Static Storybook output and failure logs
+# Static Storybook output
 storybook-static/
-*storybook.log
