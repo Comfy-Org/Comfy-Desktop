@@ -1555,6 +1555,9 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // open latency on the common case.
   if (
     !requiresPerOpenConfigSync(opts) &&
+    // A different config may have been sent since this acknowledgement.
+    // Reopening the acknowledged kind must supersede that pending update.
+    entry.lastConfigJson === configJson &&
     entry.lastSyncedConfigJson === configJson &&
     !entry.view.popup.webContents.isDestroyed()
   ) {

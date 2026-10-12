@@ -1,8 +1,62 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { EmbeddedPopupViewOpts } from './embeddedPopupView'
 
 const devPlatformMocks = vi.hoisted(() => ({
   isSignedInToCloud: vi.fn(() => false),
   signInToCloud: vi.fn(async () => ({ signedIn: true }))
+}))
+
+const popupViewMocks = vi.hoisted(() => ({
+  instances: [] as {
+    popupWebContentsId: number
+    send: ReturnType<typeof vi.fn>
+    closeParent: () => void
+  }[]
+}))
+
+vi.mock('./embeddedPopupView', () => ({
+  EmbeddedPopupView: class {
+    readonly parentWindow
+    readonly parentWindowId: number
+    readonly popupWebContentsId: number
+    readonly popup
+    rendererReady = true
+    isOpen = false
+    pendingShowTimer = null
+    suppressBlurDismiss = false
+
+    constructor(private readonly opts: EmbeddedPopupViewOpts) {
+      this.parentWindow = opts.parent
+      this.parentWindowId = opts.parent.id
+      this.popupWebContentsId = 10_000 + popupViewMocks.instances.length
+      const send = vi.fn()
+      this.popup = {
+        webContents: { id: this.popupWebContentsId, isDestroyed: () => false, send },
+        setBounds: vi.fn()
+      }
+      popupViewMocks.instances.push({
+        popupWebContentsId: this.popupWebContentsId,
+        send,
+        closeParent: () => opts.onParentClosed?.()
+      })
+    }
+
+    isDestroyed(): boolean {
+      return false
+    }
+
+    cancelPendingShow(): void {}
+
+    showOnTop(): void {
+      this.isOpen = true
+    }
+
+    hide(): void {
+      if (!this.isOpen) return
+      this.isOpen = false
+      this.opts.onHide?.()
+    }
+  }
 }))
 
 // The file menu decides on sign-in state and starts sign-ins from main. Stub
@@ -47,6 +101,7 @@ import {
   buildTitlePopupMenuItems,
   computePopupHeight,
   decideFlowMenuItemTarget,
+  hideTitlePopupForParent,
   isFlowMenuItemId,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
@@ -797,6 +852,81 @@ describe('title popup renderer readiness', () => {
     expect(entry.view.rendererReady).toBe(true)
     expect(entry.lastSyncedConfigJson).toBeNull()
     expect(send).toHaveBeenCalledExactlyOnceWith('comfy-titlepopup:set-config', config)
+  })
+})
+
+describe('title popup config reuse', () => {
+  type IpcListener = (event: Electron.IpcMainEvent, payload?: unknown) => void
+  let openMenu: IpcListener
+  let openDownloads: IpcListener
+  let rendered: IpcListener
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const listenerFor = (channel: string): IpcListener => {
+      const call = vi.mocked(ipcMain.on).mock.calls.find(([name]) => name === channel)
+      if (!call) throw new Error(`IPC listener not registered: ${channel}`)
+      return call[1] as IpcListener
+    }
+    openMenu = listenerFor('comfy-window:open-title-menu')
+    openDownloads = listenerFor('comfy-window:click-downloads-tray')
+    rendered = listenerFor('comfy-titlepopup:rendered')
+  })
+
+  afterEach(() => {
+    for (const view of popupViewMocks.instances) view.closeParent()
+    popupViewMocks.instances.length = 0
+  })
+
+  function openAcknowledgedMenu() {
+    const host = makeEntry()
+    host.window = {
+      id: host.windowKey,
+      isDestroyed: () => false,
+      getContentBounds: () => ({ x: 0, y: 0, width: 1280, height: 864 }),
+      on: vi.fn()
+    } as unknown as ComfyWindowEntry['window']
+    host.titleBarView = {
+      webContents: { isDestroyed: () => false, send: vi.fn() }
+    } as unknown as ComfyWindowEntry['titleBarView']
+    comfyWindows.set(host.windowKey, host)
+    const event = { sender: host.titleBarView.webContents } as Electron.IpcMainEvent
+    openMenu(event, { menu: 'file' })
+    const view = popupViewMocks.instances[0]
+    if (!view) throw new Error('Opening the menu did not create a popup view')
+    rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
+    const menuConfig = view.send.mock.calls.find(
+      ([channel]) => channel === 'comfy-titlepopup:set-config'
+    )![1]
+    return { host, event, view, menuConfig }
+  }
+
+  it('resends the menu after an intervening downloads config that has not been acknowledged', () => {
+    const { event, view, menuConfig } = openAcknowledgedMenu()
+    openDownloads(event)
+    expect(view.send).toHaveBeenCalledWith('comfy-titlepopup:set-config', {
+      kind: 'downloads',
+      theme: menuConfig.theme
+    })
+    // Re-entering menu A must replace config B before its render acknowledgement,
+    // even though the last acknowledgement still belongs to A.
+    view.send.mockClear()
+    openMenu(event, { menu: 'file' })
+    expect(
+      view.send.mock.calls.filter(([channel]) => channel === 'comfy-titlepopup:set-config')
+    ).toEqual([['comfy-titlepopup:set-config', menuConfig]])
+  })
+
+  it('reuses an identical menu when the latest config has been acknowledged', () => {
+    const { host, event, view } = openAcknowledgedMenu()
+    hideTitlePopupForParent(host.window)
+    view.send.mockClear()
+    openMenu(event, { menu: 'file' })
+    expect(
+      view.send.mock.calls.filter(([channel]) => channel === 'comfy-titlepopup:set-config')
+    ).toEqual([])
+    expect(view.send).toHaveBeenCalledWith('comfy-titlepopup:will-show', { kind: 'menu' })
   })
 })
 
