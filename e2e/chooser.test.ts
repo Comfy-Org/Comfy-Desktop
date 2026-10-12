@@ -42,7 +42,8 @@ test.afterAll(async () => {
 
 test('chooser body renders on cold start @windows @macos @linux', async () => {
   await expectChooserVisible(ctx.panel)
-  expect(await ctx.panel.exists('.chooser-tile-new')).toBe(true)
+  // The shell mounts before scope and installation hydration reveal the tiles.
+  await ctx.panel.waitForVisible('.chooser-tile-new')
   expect(
     (
       await ctx.panel.textOf(
