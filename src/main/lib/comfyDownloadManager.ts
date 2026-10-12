@@ -1295,11 +1295,15 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     // defer a recheck. Never certify a known partial or retry it under the
     // same staging lock without giving the caller a chance to resolve it.
     const otherOperationLocked = [...lockedModelRoots.keys()].some((root) => root !== lockExemptKey)
+    // A tray retry repairs one model, whereas staging must be relaunched to
+    // finish the remaining manifest after a deterministic conflict stops it.
+    const retryInstruction = lockExemptKey
+      ? 'relaunch this installation to finish model staging.'
+      : 'press Retry.'
     const error =
       'A previous incomplete download was found at this location. Close any program using the file, ' +
-      (otherOperationLocked
-        ? 'wait for current model operations to finish, then press Retry.'
-        : 'then press Retry.')
+      (otherOperationLocked ? 'wait for current model operations to finish, then ' : 'then ') +
+      retryInstruction
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, {
       status: 'error',

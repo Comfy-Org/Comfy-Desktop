@@ -121,6 +121,35 @@ describe('WebContentsPage evaluation recovery', () => {
     expect(executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
+  it('re-resolves a vanished view before dispatching a mutation exactly once', async () => {
+    const { page, wc, executeJavaScript } = harness()
+    vi.spyOn(wc, 'isDestroyed').mockImplementationOnce(() => {
+      wc.id = 2
+      return true
+    })
+    const assertion = expect(page.click('button')).resolves.toBe(true)
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledOnce()
+  })
+
+  it('waits out a discovery gap before dispatching a key exactly once', async () => {
+    const { page, electron, executeJavaScript } = harness()
+    executeJavaScript.mockResolvedValue(undefined)
+    vi.spyOn(electron.webContents, 'getAllWebContents').mockReturnValueOnce([])
+    const assertion = expect(page.pressKey('Escape')).resolves.toBeUndefined()
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledOnce()
+  })
+
+  it('does not replay a renderer exception that resembles a failed lookup', async () => {
+    const { page, executeJavaScript } = harness()
+    const error = new Error('webContents 1 is unavailable')
+    executeJavaScript.mockRejectedValue(error)
+    const assertion = expect(page.click('button')).rejects.toBe(error)
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledOnce()
+  })
+
   it('reports a missing fixed webContents without claiming its result was lost', async () => {
     const { app, executeJavaScript } = harness()
     const error = await evaluateWebContents(app, 999, 'document.title').catch((err: unknown) => err)
@@ -175,8 +204,24 @@ describe('WebContentsPage evaluation recovery', () => {
   it('does not repeat text input after dispatch when its result is lost', async () => {
     const { page, insertText } = harness()
     insertText.mockRejectedValue(lostResult)
-    const result = page.fill('input', 'value')
+    const started = Date.now()
+    const result = page.fill('input', 'value', { timeout: 100 })
     const assertion = expect(result).rejects.toBe(lostResult)
+    await finishAssertion(assertion)
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('value')
+    expect(Date.now() - started).toBe(100)
+  })
+
+  it('re-resolves the input view when it disappears before insertion without duplicating input', async () => {
+    const { page, wc, electron, executeJavaScript, insertText } = harness()
+    executeJavaScript.mockResolvedValueOnce(true).mockResolvedValue('value')
+    vi.spyOn(electron.webContents, 'fromId')
+      .mockImplementationOnce(() => wc)
+      .mockImplementationOnce(() => {
+        wc.id = 2
+        return undefined
+      })
+    const assertion = expect(page.fill('input', 'value')).resolves.toBeUndefined()
     await finishAssertion(assertion)
     expect(insertText).toHaveBeenCalledExactlyOnceWith('value')
   })
@@ -261,7 +306,7 @@ describe('WebContentsPage evaluation recovery', () => {
     insertText.mockImplementation(async (text) => {
       setTimeout(() => {
         value = text
-      }, 100)
+      }, 1_500)
       throw lostResult
     })
     const assertion = expect(page.fill('input', 'value')).resolves.toBeUndefined()

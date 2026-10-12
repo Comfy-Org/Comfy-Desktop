@@ -1766,7 +1766,9 @@ describe('model download startup safety (issue #1322)', () => {
         await expect(h.completion).resolves.toMatchObject({
           status: 'error',
           code: 'unsafe-existing-file',
-          error: expect.stringContaining('Close any program using the file, then press Retry')
+          error: expect.stringContaining(
+            'Close any program using the file, then relaunch this installation to finish model staging'
+          )
         })
         expect(transfers.length).toBe(before)
         expect(fs.readFileSync(dest, 'utf8')).toBe('truncated legacy bytes')

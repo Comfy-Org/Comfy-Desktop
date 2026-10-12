@@ -8,17 +8,23 @@ import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { evalWithRetry, isLostEvaluationResult } from './evalRetry'
 
-/** Run once: callers must opt into retries only for read-only/idempotent expressions. */
-export function evaluateWebContents<T>(
+// Created locally only after the bridge proves that no action was dispatched.
+// An identically worded renderer exception cannot opt a mutation into retries.
+class WebContentsUnavailableError extends Error {}
+
+/** Dispatch a fixed-ID expression once, distinguishing lookup failure from a lost result. */
+export async function evaluateWebContents<T>(
   app: ElectronApplication,
   id: number,
   expr: string,
 ): Promise<T> {
-  return app.evaluate(async ({ webContents }, payload) => {
+  const result = await app.evaluate(async ({ webContents }, payload) => {
     const wc = webContents.fromId(payload.id)
-    if (!wc || wc.isDestroyed()) throw new Error(`webContents ${payload.id} is unavailable`)
-    return wc.executeJavaScript(payload.expr) as Promise<unknown>
-  }, { id, expr }) as Promise<T>
+    if (!wc || wc.isDestroyed()) return { available: false as const }
+    return { available: true as const, value: await wc.executeJavaScript(payload.expr) as unknown }
+  }, { id, expr })
+  if (!result.available) throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+  return result.value as T
 }
 
 export function findWebContentsId(
@@ -70,22 +76,17 @@ export class WebContentsPage {
     return this.evaluate<T>(expr, { readOnly: true })
   }
 
-  /** Evaluate once by default: a lost result can follow a completed mutation.
-   *  Opt into recovery only for a read-only expression or a mutation whose
-   *  repetition cannot change its effects. */
+  /** Dispatch once by default; a failed lookup can safely resolve a replacement
+   *  view. Recover a lost result only for read-only/idempotent expressions. */
   async evaluate<T>(expr: string, opts: { readOnly?: boolean; idempotent?: boolean } = {}): Promise<T> {
     const run = async () => {
       const id = await findWebContentsId(this.app, this.marker)
-      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+      if (id === null) throw new WebContentsUnavailableError(`webContents not found (marker=${this.marker})`)
       return evaluateWebContents<T>(this.app, id, expr)
     }
-    if (!opts.readOnly && !opts.idempotent) return run()
     return evalWithRetry(run, 3, (err) => {
-      // A marker can resolve to a replacement view on the next attempt. This
-      // is distinct from a lost result; mutators must not assume dispatch ran.
-      const message = err instanceof Error ? err.message : String(err)
-      return isLostEvaluationResult(err) ||
-        /webContents \d+ is unavailable|webContents not found \(marker=/.test(message)
+      return err instanceof WebContentsUnavailableError ||
+        (!!opts.readOnly || !!opts.idempotent) && isLostEvaluationResult(err)
     })
   }
 
@@ -158,7 +159,7 @@ export class WebContentsPage {
    * `input` events - unlike assigning `.value` and dispatching synthetic
    * events, which bypasses the browser's input handling entirely.
    */
-  async fill(selector: string, text: string): Promise<void> {
+  async fill(selector: string, text: string, opts: { timeout?: number } = {}): Promise<void> {
     let focused: boolean
     try {
       focused = await this.evaluate<boolean>(`(() => {
@@ -181,17 +182,21 @@ export class WebContentsPage {
       if (!focused) throw err
     }
     if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
-    const id = await findWebContentsId(this.app, this.marker)
-    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     // Do not repeat input dispatch when its result is lost: input handlers
     // can commit settings or other effects even when the final text is equal.
     let inputError: unknown
     try {
-      await this.app.evaluate(async ({ webContents }, payload) => {
-        const wc = webContents.fromId(payload.id)
-        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-        await wc.insertText(payload.text)
-      }, { id, text })
+      await evalWithRetry(async () => {
+        const id = await findWebContentsId(this.app, this.marker)
+        if (id === null) throw new WebContentsUnavailableError(`webContents not found (marker=${this.marker})`)
+        const dispatched = await this.app.evaluate(async ({ webContents }, payload) => {
+          const wc = webContents.fromId(payload.id)
+          if (!wc || wc.isDestroyed()) return false
+          await wc.insertText(payload.text)
+          return true
+        }, { id, text })
+        if (!dispatched) throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+      }, 3, (err) => err instanceof WebContentsUnavailableError)
     } catch (err) {
       if (!isLostEvaluationResult(err)) throw err
       inputError = err
@@ -202,7 +207,7 @@ export class WebContentsPage {
     })()`)
     // A lost bridge result can precede the renderer's IME commit. Wait for
     // the observable value without dispatching text input a second time.
-    const deadline = Date.now() + 1_000
+    const deadline = Date.now() + (opts.timeout ?? 15_000)
     let value = await readValue()
     while (inputError && value !== text && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 50))

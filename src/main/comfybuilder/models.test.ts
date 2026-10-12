@@ -142,7 +142,8 @@ describe('stageModels', () => {
 
   it('reports a known-incomplete existing file without retrying under the staging lock', async () => {
     const install = freshInstall()
-    const error = 'Close any program using the file, then press Retry.'
+    const error =
+      'Close any program using the file, then relaunch this installation to finish model staging.'
     const jobs = fakeJobs(() => ({ status: 'error', error, code: 'unsafe-existing-file' }))
     const failure = await stageModels({ models: [model()], installPath: install, jobs }).catch(
       (err: unknown) => err
