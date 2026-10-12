@@ -11,11 +11,9 @@ function installPlugins(app: App): void {
 }
 
 setup(installPlugins)
-// Storybook keeps setup callbacks in a global Set that outlives a hot update of this file.
-import.meta.hot?.dispose(() => {
-  const { PLUGINS_SETUP_FUNCTIONS } = globalThis as { PLUGINS_SETUP_FUNCTIONS?: Set<unknown> }
-  PLUGINS_SETUP_FUNCTIONS?.delete(installPlugins)
-})
+// Storybook keeps setup callbacks for the page's lifetime and cannot drop one, so a hot
+// update of this file would install Pinia and vue-i18n twice; reload the preview instead.
+import.meta.hot?.dispose(() => location.reload())
 
 const preview: Preview = {
   parameters: {
