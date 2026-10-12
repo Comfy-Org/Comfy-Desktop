@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { defineComponent, h, onUnmounted } from 'vue'
 import { useModal } from '../src/renderer/src/composables/useModal'
 import InstallWizardPreview from './InstallWizardPreview.vue'
 import { createDesktopApi, type InstallScenario } from './desktopApi'
@@ -10,6 +11,8 @@ const meta = {
   tags: ['autodocs'],
   parameters: {
     desktopScenario: 'publicBuilds' satisfies InstallScenario,
+    // Each mount creates fresh spies; the default restore would clear their calls on rerender.
+    test: { restoreMocks: false },
     docs: {
       description: {
         component:
@@ -17,15 +20,24 @@ const meta = {
       }
     }
   },
-  beforeEach({ parameters }) {
-    const previousApi = window.api
-    window.api = createDesktopApi(parameters.desktopScenario)
-    useModal().dismiss()
-    return () => {
-      useModal().dismiss()
-      window.api = previousApi
+  decorators: [
+    // Scoped to the Vue mount: toolbar and args rerenders re-run beforeEach without remounting.
+    (story, { parameters }) => {
+      const Story = story()
+      return defineComponent({
+        setup() {
+          const previousApi = window.api
+          window.api = createDesktopApi(parameters.desktopScenario)
+          useModal().dismiss()
+          onUnmounted(() => {
+            useModal().dismiss()
+            window.api = previousApi
+          })
+          return () => h(Story)
+        }
+      })
     }
-  }
+  ]
 } satisfies Meta<typeof InstallWizardPreview>
 
 export default meta
