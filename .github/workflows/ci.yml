@@ -105,7 +105,7 @@ jobs:
         id: storybook-artifact
         uses: actions/upload-artifact@v7
         with:
-          name: storybook-${{ github.sha }}
+          name: storybook-${{ github.event.pull_request.head.sha || github.sha }}
           path: storybook-static/
           retention-days: 14
           if-no-files-found: error
@@ -113,7 +113,7 @@ jobs:
       - name: Link the preview artifact
         env:
           ARTIFACT_URL: ${{ steps.storybook-artifact.outputs.artifact-url }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           echo "Storybook for commit $COMMIT_SHA: [download the static preview]($ARTIFACT_URL)." >> "$GITHUB_STEP_SUMMARY"
           echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --directory storybook-static` and open http://localhost:6006.' >> "$GITHUB_STEP_SUMMARY"
