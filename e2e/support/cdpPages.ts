@@ -160,6 +160,13 @@ export class WebContentsPage {
    * events, which bypasses the browser's input handling entirely.
    */
   async fill(selector: string, text: string, opts: { timeout?: number } = {}): Promise<void> {
+    const readinessExpr = `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      return !!el && document.activeElement === el &&
+        (typeof el.select !== 'function' ||
+          (el.selectionStart === null && el.selectionEnd === null) ||
+          (el.selectionStart === 0 && el.selectionEnd === el.value.length))
+    })()`
     let focused: boolean
     try {
       focused = await this.evaluate<boolean>(`(() => {
@@ -172,13 +179,7 @@ export class WebContentsPage {
     } catch (err) {
       if (!isLostEvaluationResult(err)) throw err
       // Focus can fire handlers. Verify focus and selection rather than replaying it.
-      focused = await this.wcEval<boolean>(`(() => {
-        const el = document.querySelector(${JSON.stringify(selector)})
-        return !!el && document.activeElement === el &&
-          (typeof el.select !== 'function' ||
-            (el.selectionStart === null && el.selectionEnd === null) ||
-            (el.selectionStart === 0 && el.selectionEnd === el.value.length))
-      })()`)
+      focused = await this.wcEval<boolean>(readinessExpr)
       if (!focused) throw err
     }
     if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
@@ -191,11 +192,17 @@ export class WebContentsPage {
         if (id === null) throw new WebContentsUnavailableError(`webContents not found (marker=${this.marker})`)
         const dispatched = await this.app.evaluate(async ({ webContents }, payload) => {
           const wc = webContents.fromId(payload.id)
-          if (!wc || wc.isDestroyed()) return false
+          if (!wc || wc.isDestroyed()) return 'unavailable' as const
+          // The original focus may belong to a view that has since reloaded.
+          // Check this exact target without replaying focus handlers.
+          const ready = await wc.executeJavaScript(payload.readinessExpr) as unknown
+          if (ready !== true) return 'unfocused' as const
+          if (wc.isDestroyed()) return 'unavailable' as const
           await wc.insertText(payload.text)
-          return true
-        }, { id, text })
-        if (!dispatched) throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+          return 'dispatched' as const
+        }, { id, text, readinessExpr })
+        if (dispatched === 'unavailable') throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+        if (dispatched === 'unfocused') throw new Error(`fill: input lost focus or selection before insertion (selector=${selector}, marker=${this.marker})`)
       }, 3, (err) => err instanceof WebContentsUnavailableError)
     } catch (err) {
       if (!isLostEvaluationResult(err)) throw err
