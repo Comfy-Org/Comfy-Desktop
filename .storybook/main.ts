@@ -10,8 +10,8 @@ const config: StorybookConfig = {
   addons: ['@storybook/addon-docs', '@storybook/addon-vitest'],
   framework: {
     name: '@storybook/vue3-vite',
-    // The preview wrapper has no props to document, and vue-component-meta's
-    // HMR hook throws when a story edit updates Storybook's virtual stories module.
+    // The preview wrapper has no props to document. The default vue-docgen-api is deprecated, and
+    // vue-component-meta's HMR hook throws when a story edit updates the virtual stories module.
     options: { docgen: false }
   },
   core: { disableTelemetry: true },
