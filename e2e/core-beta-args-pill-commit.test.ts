@@ -34,7 +34,6 @@ const ARGS_FIELD = '[data-field-id="launchArgs"]'
 const PILL = `${ARGS_FIELD} .beta-args button`
 const LOADING = `${ARGS_FIELD} .beta-args-loading`
 const ASKED = 'get-core-beta-args'
-const ANSWERED = 'get-core-beta-args:answered'
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
 let ctx: AppContext
@@ -127,16 +126,27 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
+/** Main records each ask, and sets its answer on that record once answered. */
+interface Ask {
+  answer?: { args: { arg: string }[] }
+}
+
+interface Opened {
+  popup: WebContentsPage
+  /** Main's answer to every ask this open made. */
+  answers: NonNullable<Ask['answer']>[]
+}
+
 /**
  * The picker stays mounted while hidden, so until this open's answers arrive its pill still shows
  * the previous open's. An open asks twice (when shown, and again once the args field's schema load
- * settles), so return only once main has answered both, which also leaves no ask in flight.
+ * settles), so return only once main has answered both. The reset drops every earlier ask's record,
+ * so a late answer to one cannot stand in for this open's.
  */
-async function openStartupArgs(): Promise<WebContentsPage> {
-  await resetIpcInvocations(ctx.app, ASKED)
-  await resetIpcInvocations(ctx.app, ANSWERED)
+async function openStartupArgs(): Promise<Opened> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
+  await resetIpcInvocations(ctx.app, ASKED)
   await ctx.panel.evaluate(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
   )
@@ -144,18 +154,18 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
   await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
+  let answers: Opened['answers'] = []
   await expect
     .poll(
       async () => {
-        // Answers first: equal to the asks read after them, no ask is still pending.
-        const answered = (await getIpcInvocations(ctx.app, ANSWERED)).length
-        const asked = (await getIpcInvocations(ctx.app, ASKED)).length
-        return asked >= 2 && answered === asked
+        const asks = (await getIpcInvocations(ctx.app, ASKED)) as Ask[]
+        answers = asks.flatMap(({ answer }) => (answer ? [answer] : []))
+        return asks.length >= 2 && answers.length === asks.length
       },
       { timeout: 15_000, intervals: [100, 200], message: 'this open never had both asks answered' },
     )
     .toBe(true)
-  return popup
+  return { popup, answers }
 }
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
@@ -164,8 +174,7 @@ const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
   )
 
 /** No answer this open got offered a grant, and once the pill has applied them it shows nothing. */
-async function expectNoPill(popup: WebContentsPage, message: string): Promise<void> {
-  const answers = (await getIpcInvocations(ctx.app, ANSWERED)) as { args: { arg: string }[] }[]
+async function expectNoPill({ popup, answers }: Opened, message: string): Promise<void> {
   expect(answers.flatMap(({ args }) => args.map(({ arg }) => arg)), message).toEqual([])
   const shown = async (): Promise<string | null> =>
     (await pillLabel(popup)) ?? ((await popup.exists(LOADING)) ? 'loading' : null)
@@ -173,18 +182,17 @@ async function expectNoPill(popup: WebContentsPage, message: string): Promise<vo
 }
 
 test('a commit grant whose range contains HEAD shows before any launch @linux', async () => {
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument eligible for the next launch, show details')
 })
 
 test('moving HEAD below the range hides it @linux', async () => {
   git('reset', '-q', '--hard', sha.base!)
-  const popup = await openStartupArgs()
-  await expectNoPill(popup, 'the grant was still shown with HEAD below its range')
+  await expectNoPill(await openStartupArgs(), 'the grant was still shown with HEAD below its range')
   git('reset', '-q', '--hard', sha.head!)
-  const back = await openStartupArgs()
-  await back.waitForVisible(PILL, { timeout: 15_000 })
+  const { popup } = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 15_000 })
 })
 
 test('an object store git cannot read hides the grant, and the settings view still loads @linux', async () => {
@@ -194,7 +202,7 @@ test('an object store git cannot read hides the grant, and the settings view sti
   for (const entry of await readdir(objects)) {
     if (entry !== 'info') await rm(path.join(objects, entry), { recursive: true, force: true })
   }
-  const popup = await openStartupArgs()
-  await expectNoPill(popup, 'the grant was shown though git could not prove it')
-  expect(await popup.exists(`${ARGS_FIELD} input`)).toBe(true)
+  const opened = await openStartupArgs()
+  await expectNoPill(opened, 'the grant was shown though git could not prove it')
+  expect(await opened.popup.exists(`${ARGS_FIELD} input`)).toBe(true)
 })

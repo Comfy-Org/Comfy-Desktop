@@ -53,6 +53,7 @@ import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
+import type { CoreBetaArgs } from '../../../types/ipc'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -660,8 +661,10 @@ export function registerInstallationHandlers(): void {
   ipcMain.handle(
     'get-core-beta-args',
     async (_event, installationId: string, launchArgs?: unknown) => {
-      recordIpcInvocation('get-core-beta-args', installationId)
-      const answer = await answerCoreBetaArgs(installationId, launchArgs, {
+      // E2E reads each answer from its own ask's record, so a reset drops late answers with their asks.
+      const ask: { installationId: string; answer?: CoreBetaArgs } = { installationId }
+      recordIpcInvocation('get-core-beta-args', ask)
+      ask.answer = await answerCoreBetaArgs(installationId, launchArgs, {
         sessionArgs: (id) => {
           const running = _runningSessions.get(id)
           return running ? (running.coreBetaArgs ?? []) : null
@@ -669,8 +672,7 @@ export function registerInstallationHandlers(): void {
         record: (id) => installations.get(id),
         launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
       })
-      recordIpcInvocation('get-core-beta-args:answered', answer)
-      return answer
+      return ask.answer
     }
   )
 
