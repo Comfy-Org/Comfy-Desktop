@@ -13,6 +13,7 @@
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",
   "packageManager": "pnpm",
+  "nodeVersion": "24.18.0",
   "pnpmVersion": "10.34.6",
   "packageJson": {
     "extends": "package.json",

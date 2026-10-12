@@ -54,18 +54,20 @@ export class WebContentsPage {
   ) {}
 
   private async wcEval<T>(expr: string): Promise<T> {
-    return this.evaluate<T>(expr)
+    return this.evaluate<T>(expr, { readOnly: true })
   }
 
-  /** Evaluate an arbitrary JS expression in the matching webContents. */
-  async evaluate<T>(expr: string): Promise<T> {
+  /** Evaluate once by default: a lost result can follow a completed mutation.
+   *  Only opt into recovery when the expression is read-only. */
+  async evaluate<T>(expr: string, opts: { readOnly?: boolean } = {}): Promise<T> {
     const id = await findWebContentsId(this.app, this.marker)
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-    return evalWithRetry(() => this.app.evaluate(async ({ webContents }, payload) => {
+    const run = () => this.app.evaluate(async ({ webContents }, payload) => {
       const wc = webContents.fromId(payload.id)
       if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
       return wc.executeJavaScript(payload.expr) as Promise<unknown>
-    }, { id, expr })) as Promise<T>
+    }, { id, expr }) as Promise<T>
+    return opts.readOnly ? evalWithRetry(run) : run()
   }
 
   url(): Promise<string> {
@@ -110,7 +112,7 @@ export class WebContentsPage {
 
   /** Click the first matching element. Returns false if not found. */
   click(selector: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)})
       if (!el) return false
       el.click()
@@ -121,7 +123,7 @@ export class WebContentsPage {
   /** Click the nth (0-based) element matching `selector`. Returns false
    *  if fewer than `index + 1` elements match. */
   clickNth(selector: string, index: number): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const els = document.querySelectorAll(${JSON.stringify(selector)})
       const el = els[${index}]
       if (!el) return false
@@ -138,33 +140,30 @@ export class WebContentsPage {
    * events, which bypasses the browser's input handling entirely.
    */
   async fill(selector: string, text: string): Promise<void> {
-    // Each retry attempt re-focuses and re-selects before inserting so a
-    // retried insert replaces the previous attempt's text instead of
-    // appending to it, then verifies the resulting value.
-    await evalWithRetry(async () => {
-      const focused = await this.wcEval<boolean>(`(() => {
-        const el = document.querySelector(${JSON.stringify(selector)})
-        if (!el) return false
-        el.focus()
-        if (typeof el.select === 'function') el.select()
-        return document.activeElement === el
-      })()`)
-      if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
-      const id = await findWebContentsId(this.app, this.marker)
-      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-      await this.app.evaluate(async ({ webContents }, payload) => {
-        const wc = webContents.fromId(payload.id)
-        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-        await wc.insertText(payload.text)
-      }, { id, text })
-      const value = await this.wcEval<string | null>(`(() => {
-        const el = document.querySelector(${JSON.stringify(selector)})
-        return el && 'value' in el ? el.value : null
-      })()`)
-      if (value !== text) {
-        throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
-      }
-    })
+    const focused = await this.evaluate<boolean>(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      if (!el) return false
+      el.focus()
+      if (typeof el.select === 'function') el.select()
+      return document.activeElement === el
+    })()`)
+    if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    // Do not repeat input dispatch when its result is lost: input handlers
+    // can commit settings or other effects even when the final text is equal.
+    await this.app.evaluate(async ({ webContents }, payload) => {
+      const wc = webContents.fromId(payload.id)
+      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+      await wc.insertText(payload.text)
+    }, { id, text })
+    const value = await this.wcEval<string | null>(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      return el && 'value' in el ? el.value : null
+    })()`)
+    if (value !== text) {
+      throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
+    }
   }
 
   /**
@@ -172,7 +171,7 @@ export class WebContentsPage {
    * `textSubstring` (case-insensitive). Returns false if no match.
    */
   clickByText(selector: string, textSubstring: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const needle = ${JSON.stringify(textSubstring.toLowerCase())}
       const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
       const match = els.find(el => (el.textContent || '').toLowerCase().includes(needle))
@@ -184,7 +183,7 @@ export class WebContentsPage {
 
   /** Press a key by dispatching a KeyboardEvent (limited; for Escape/Enter and similar). */
   pressKey(key: string): Promise<void> {
-    return this.wcEval<void>(`(() => {
+    return this.evaluate<void>(`(() => {
       const ev = new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true })
       document.dispatchEvent(ev)
     })()`)
