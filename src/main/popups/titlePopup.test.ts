@@ -956,6 +956,84 @@ describe('title popup config reuse', () => {
     expect(view.send).toHaveBeenCalledWith('comfy-titlepopup:will-show', { kind: 'menu' })
   })
 
+  it('retains and refreshes install options on reopen while GitHub stars are pending', async () => {
+    const flushRefreshes = () => new Promise<void>((resolve) => setImmediate(resolve))
+    const install: installations.InstallationRecord = {
+      id: 'auto-launch-test',
+      name: 'Cached install',
+      sourceId: 'standalone',
+      createdAt: '2026-10-12T00:00:00Z',
+      installPath: '/fixtures/install'
+    }
+    const allSettings = vi.spyOn(settings, 'getAll').mockReturnValue({
+      ...settings.getAll(),
+      autoLaunchOnStartup: install.id
+    })
+    const list = vi.spyOn(installations, 'list').mockResolvedValue([install])
+    const cachedStars = vi.spyOn(githubStars, 'getCachedGithubStarCount').mockReturnValue(100)
+    const fetchStars = vi.spyOn(githubStars, 'getGithubStarCount').mockResolvedValue(100)
+    let finishStars!: (count: number) => void
+    const pendingStars = new Promise<number>((resolve) => {
+      finishStars = resolve
+    })
+    const snapshotWith = (label: string) =>
+      expect.objectContaining({
+        generalFields: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'autoLaunchOnStartup',
+            value: install.id,
+            options: expect.arrayContaining([{ value: install.id, label }])
+          })
+        ])
+      })
+    try {
+      const { host, view } = openAcknowledgedMenu()
+      const openSettings = () =>
+        activateTitlePopupMenuItem(
+          { kind: 'menu', parentEntryId: host.windowKey } as TitlePopupEntry,
+          'settings',
+          {} as TitlePopupHostBindings
+        )
+      openSettings()
+      rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
+      await vi.waitFor(() =>
+        expect(view.send).toHaveBeenCalledWith(
+          'comfy-titlepopup:global-settings-changed',
+          snapshotWith('Cached install')
+        )
+      )
+      await flushRefreshes()
+      hideTitlePopupForParent(host.window)
+      fetchStars.mockReturnValueOnce(pendingStars)
+      list.mockResolvedValue([{ ...install, name: 'Updated install' }])
+      view.send.mockClear()
+
+      openSettings()
+      expect(view.send).toHaveBeenCalledWith(
+        'comfy-titlepopup:set-config',
+        expect.objectContaining({
+          kind: 'global-settings',
+          snapshot: snapshotWith('Cached install')
+        })
+      )
+      // The authoritative list refresh completes before the gated star fetch.
+      await vi.waitFor(() =>
+        expect(view.send).toHaveBeenCalledWith(
+          'comfy-titlepopup:global-settings-changed',
+          snapshotWith('Updated install')
+        )
+      )
+      expect(fetchStars).toHaveBeenCalledTimes(2)
+    } finally {
+      finishStars(100)
+      await flushRefreshes()
+      allSettings.mockRestore()
+      list.mockRestore()
+      cachedStars.mockRestore()
+      fetchStars.mockRestore()
+    }
+  })
+
   it('refreshes settings changed by a broadcast before a hidden popup misses the revert', async () => {
     // All async dependencies in this fixture resolve immediately. A full
     // event-loop turn drains their continuations without counting microtasks.
@@ -981,6 +1059,13 @@ describe('title popup config reuse', () => {
       openSettings()
       rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
       await vi.waitFor(() => expect(list).toHaveBeenCalled())
+      await flushRefreshes()
+      // Align the acknowledged config with this fixture's hydrated install
+      // list, independent of any options cached by an earlier popup session.
+      hideTitlePopupForParent(host.window)
+      openSettings()
+      rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
+      await flushRefreshes()
       view.send.mockClear()
 
       telemetryEnabled = true

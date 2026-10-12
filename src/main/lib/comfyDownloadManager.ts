@@ -1286,14 +1286,15 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   if (lockedAfterStartup) return lockedAfterStartup
   const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
   if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
-    // The quarantine was re-attempted by the awaited pass just above (unsafe
-    // passes are never memoized), so this fires only while the broken file is
-    // STILL immovable right now - and a completed transfer could not replace
-    // it at finalization either (install is strictly no-clobber). Refusing up
-    // front spares the full transfer; Retry re-runs the whole path.
+    // An unlocked pass re-attempts quarantine. A root transaction defers the
+    // scan and retains its previous findings, so Retry must wait for it to
+    // finish before it can reassess the file. Never certify a known partial.
     const error =
-      'A previous incomplete download is stuck at this location, likely in ' +
-      'use by another program. Close it, then press Retry.'
+      lockedModelRoots.size > 0
+        ? 'A previous incomplete download cannot be rechecked while model directories are busy. ' +
+          'Wait for current model operations to finish, then press Retry.'
+        : 'A previous incomplete download is stuck at this location, likely in ' +
+          'use by another program. Close it, then press Retry.'
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, { status: 'error', error })
   }

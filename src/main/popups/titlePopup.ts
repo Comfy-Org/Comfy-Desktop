@@ -1792,19 +1792,25 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
+    snapshot: buildGlobalSettingsSnapshot(
+      cachedGlobalSettingsInstalls,
+      initialTab,
+      highlightFieldId
+    ),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
   })
   void (async () => {
+    // Hydrate install options immediately; an unavailable GitHub service must
+    // not delay the auto-launch dropdown. Reopens retain the last full list.
+    await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
-    // Rebroadcast hydrates per-install options into the auto-launch
-    // dropdown (the fast-open snapshot only carries none/last).
+    // Refresh the star count independently of the install-options hydration.
     await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
-  })()
+  })().catch((err: unknown) => console.warn('[titlePopup] settings refresh failed:', err))
 }
 
 /** Open the large centred "View All Downloads" popup. Reuses the tray popup's
@@ -2134,6 +2140,7 @@ let globalSettingsLastCheckedAt: number | null = null
  *  "unavailable" and the badge is hidden. Prevents an infinite shimmer when
  *  offline. */
 let githubStarsFetchAttempted = false
+let cachedGlobalSettingsInstalls: { id: string; name: string }[] | undefined
 
 const SETTINGS_TYPE_TO_DETAIL_EDIT_TYPE: Record<string, string | undefined> = {
   text: 'text',
@@ -2267,6 +2274,7 @@ async function broadcastGlobalSettingsSnapshotToTitlePopups(
   // Load installs once so each open popup gets the same hydrated list
   // for the auto-launch dropdown — and we don't re-read the file per popup.
   const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
+  cachedGlobalSettingsInstalls = installs
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
