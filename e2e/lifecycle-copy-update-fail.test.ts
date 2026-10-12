@@ -108,6 +108,7 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   await popup.waitFor(
     () => popup.evaluate<boolean>(
       `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.disabled })()`,
+      { readOnly: true },
     ),
     { timeout: 30_000, message: 'copy-update button never became enabled' },
   )
@@ -128,7 +129,7 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   // new install landing in the registry), whichever comes first.
   const confirmSelector = `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
   const copyRegistered = async (): Promise<boolean> => {
-    const installs = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+    const installs = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()', { readOnly: true })
     return installs.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   }
   const confirmDeadline = Date.now() + 30_000
@@ -145,7 +146,7 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
 
   let installations: InstallationLike[] = []
   await expect.poll(async () => {
-    installations = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+    installations = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()', { readOnly: true })
     return installations.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toBe(true)
 

@@ -9,6 +9,7 @@ import type { WebContentsPage } from './cdpPages'
 export async function isHoverActive(titleBar: WebContentsPage): Promise<boolean> {
   return titleBar.evaluate<boolean>(
     `!!document.querySelector('.title-bar')?.classList.contains('is-hover-active')`,
+    { readOnly: true },
   )
 }
 

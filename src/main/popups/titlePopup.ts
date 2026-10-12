@@ -448,13 +448,10 @@ export interface TitlePopupEntry {
    *  payload — used to compare against the next open's config to skip
    *  the renderer roundtrip when the DOM is already correct. */
   lastConfigJson: string | null
-  /** JSON of the config the renderer has acked via
-   *  `comfy-titlepopup:rendered`. When equal to the next open's
-   *  config, the popup view's DOM matches what we want to show, so
-   *  we can `setVisible(true)` immediately without resending the
-   *  config or waiting for an ack — saves one frame + two IPC hops
-   *  per open (the common case for repeated opens of the same menu
-   *  in the same window). */
+  /** Latest sent config recorded when `comfy-titlepopup:rendered` arrives.
+   *  That acknowledgement has no config token. Reuse requires both this
+   *  value and `lastConfigJson` to match the next open, so an intervening
+   *  unacknowledged config cannot be mistaken for a reusable menu. */
   lastSyncedConfigJson: string | null
   /** The instance-picker's currently-selected install (the row whose
    *  Settings + Snapshots accordions are showing in the right pane).

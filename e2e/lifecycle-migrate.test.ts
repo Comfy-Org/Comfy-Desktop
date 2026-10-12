@@ -111,7 +111,7 @@ test('auto-tracker registers Legacy Desktop install on boot @lifecycle', async (
     { timeout: 15_000, message: 'auto-tracked Legacy Desktop tile never appeared in chooser' },
   )
 
-  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
+  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`, { readOnly: true })
   const desktop = installs.find((i) => i.sourceId === 'desktop')
   expect(desktop, 'desktop install not present in get-installations result').toBeDefined()
   expect(desktop!.installPath).toBe(legacyBasePath)
@@ -157,7 +157,7 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
     calls.some((c) => c.actionId === 'migrate-to-standalone'),
     'cancelled adoption confirm must not dispatch migrate-to-standalone',
   ).toBe(false)
-  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
+  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`, { readOnly: true })
   const desktop = installs.find((i) => i.id === legacyInstallId)
   expect(desktop, 'legacy desktop record must survive a cancelled migrate').toBeDefined()
   expect(desktop!.sourceId).toBe('desktop')
@@ -176,12 +176,14 @@ test('standalone source exposes a CPU variant the migration variant pick can pin
   // per-vendor `releases.json`) that pick depends on.
   const releaseOptions = await ctx.panel.evaluate<FieldOption[]>(
     `window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })`,
+    { readOnly: true },
   )
   expect(releaseOptions.length, 'no standalone releases available').toBeGreaterThan(0)
   const release = releaseOptions.find((r) => r.recommended) ?? releaseOptions[0]!
 
   const variantOptions = await ctx.panel.evaluate<FieldOption[]>(
     `window.api.getFieldOptions('standalone', 'variant', ${JSON.stringify({ release })})`,
+    { readOnly: true },
   )
   expect(variantOptions.length, 'no standalone variants available').toBeGreaterThan(0)
   const cpuVariant = variantOptions.find((v) => /cpu/i.test(v.value))

@@ -80,6 +80,10 @@ async function runTask(
   // Load this lazily: the download manager imports the source registry, which
   // includes the ComfyBuilder plugin this task belongs to.
   const downloadManager = await import('../../lib/comfyDownloadManager')
+  // Startup hydration holds every model root. Join it before staging so a
+  // completed install does not defer its models until the next launch.
+  await downloadManager.initializeModelDownloads()
+  if (signal.aborted) return
   const modelsRoot = installModelsRoot(installation.installPath)
   // Parked rows inside this root (hydrated from a previous interrupted run)
   // would block the lock forever, and their presigned URLs are stale anyway.

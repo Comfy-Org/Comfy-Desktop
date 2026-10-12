@@ -195,7 +195,7 @@ test('the card is anchored on the bell it points at @linux', async () => {
     if (!el) return -1
     const r = el.getBoundingClientRect()
     return (r.left + r.right) / 2
-  })()`)
+  })()`, { readOnly: true })
   expect(bellCentre).toBeGreaterThan(0)
 
   const popup = await ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
@@ -247,7 +247,7 @@ test('the card is anchored on the bell it points at @linux', async () => {
         if (!el) return -1
         const r = el.getBoundingClientRect()
         return (r.left + r.right) / 2
-      })()`)
+      })()`, { readOnly: true })
       const view = await ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
         const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible())
         if (!win) return null
@@ -272,7 +272,7 @@ test('the card is anchored on the bell it points at @linux', async () => {
                 ' beakInlineStyle=' + (b.style.left || '<none>') +
                 ' pageWidth=' + window.innerWidth
         })
-      })()`)
+      })()`, { readOnly: true })
       const card = JSON.parse(raw) as { beak: number; card: string }
       if (bell < 0 || !view || card.beak < 0) return null
       return {
@@ -370,7 +370,7 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
       checked: el.getAttribute('aria-checked'),
       disabled: el.getAttribute('aria-disabled'),
     }
-  })()`)
+  })()`, { readOnly: true })
   expect(state.checked).toBe('true')
   expect(state.disabled).toBe('false')
 
@@ -383,11 +383,13 @@ test('the notice is spent: a second launch stays silent @linux', async () => {
   // the title bar uses, so this asserts the contract the renderer actually depends on.
   const stillPending = await ctx.titleBar.evaluate<unknown>(
     `window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   expect(stillPending).toBeNull()
 
   const announced = await ctx.titleBar.evaluate<unknown>(
     `window.api.getSetting('betaNoticeAnnouncedArgs')`,
+    { readOnly: true },
   )
   expect(announced).toEqual([GRANT_ARG])
 })

@@ -863,9 +863,13 @@ describe('title popup config reuse', () => {
 
   beforeAll(async () => {
     const { ipcMain } = await import('electron')
+    const registrationStart = vi.mocked(ipcMain.on).mock.calls.length
     registerTitlePopupIpc({} as TitlePopupHostBindings)
     const listenerFor = (channel: string): IpcListener => {
-      const call = vi.mocked(ipcMain.on).mock.calls.find(([name]) => name === channel)
+      const call = vi
+        .mocked(ipcMain.on)
+        .mock.calls.slice(registrationStart)
+        .find(([name]) => name === channel)
       if (!call) throw new Error(`IPC listener not registered: ${channel}`)
       return call[1] as IpcListener
     }
@@ -874,10 +878,12 @@ describe('title popup config reuse', () => {
     rendered = listenerFor('comfy-titlepopup:rendered')
   })
 
-  afterEach(() => {
+  function resetPopupViews() {
     for (const view of popupViewMocks.instances) view.closeParent()
     popupViewMocks.instances.length = 0
-  })
+  }
+  beforeEach(resetPopupViews)
+  afterEach(resetPopupViews)
 
   function openAcknowledgedMenu() {
     const host = makeEntry()
@@ -893,7 +899,7 @@ describe('title popup config reuse', () => {
     comfyWindows.set(host.windowKey, host)
     const event = { sender: host.titleBarView.webContents } as Electron.IpcMainEvent
     openMenu(event, { menu: 'file' })
-    const view = popupViewMocks.instances[0]
+    const view = popupViewMocks.instances.at(-1)
     if (!view) throw new Error('Opening the menu did not create a popup view')
     rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
     const menuConfig = view.send.mock.calls.find(

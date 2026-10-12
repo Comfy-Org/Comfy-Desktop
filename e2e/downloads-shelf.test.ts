@@ -121,7 +121,7 @@ test('many entries cap at the ceiling and the list scrolls @windows @macos @linu
   const overflow = await popup.evaluate<{ scroll: number; client: number }>(`(() => {
     const el = document.querySelector('.downloads-list')
     return el ? { scroll: el.scrollHeight, client: el.clientHeight } : { scroll: 0, client: 0 }
-  })()`)
+  })()`, { readOnly: true })
   expect(overflow.scroll).toBeGreaterThan(overflow.client)
 })
 
@@ -162,7 +162,7 @@ test('per-status row close button maps to the right action @windows @macos @linu
       }
     }
     return out
-  })()`)
+  })()`, { readOnly: true })
 
   // Active rows: close X cancels the in-flight download.
   expect(summary['dl.safetensors']?.close).toContain('cancel')
@@ -197,7 +197,7 @@ test('retry affordance shows on error + cancelled rows only @windows @macos @lin
       out[name] = { retry: !!li.querySelector('.downloads-item-retry') }
     }
     return out
-  })()`)
+  })()`, { readOnly: true })
 
   expect(summary['er.safetensors']?.retry).toBe(true)
   expect(summary['ca.safetensors']?.retry).toBe(true)

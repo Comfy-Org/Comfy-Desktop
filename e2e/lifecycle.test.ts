@@ -61,6 +61,7 @@ import {
 } from './support/devHooks'
 import {
   closeTitlePopupIfOpen,
+  evaluateWebContents,
   isPopupVisible,
   titlePopupPage,
   waitForWebContents,
@@ -230,7 +231,7 @@ test.beforeAll(async () => {
     try {
       await ctx.panel.waitForVisible('.chooser-view', { timeout: 10_000 })
     } catch { /* fresh boot may still be on first-use takeover */ }
-    const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+    const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
       .catch(() => [] as InstallationLite[])
     // Filter out the Cloud install record (no `installPath`) that's
     // seeded on first chooser mount — only a local standalone is a
@@ -264,6 +265,7 @@ test.beforeAll(async () => {
       try {
         const list = await ctx.panel.evaluate<SnapshotListLite>(
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+          { readOnly: true },
         )
         const target = list.snapshots.find((s) => s.label === 'lifecycle-restore-target')
         if (target) {
@@ -414,6 +416,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   expect(
     await ctx.panel.evaluate<boolean>(
       `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+      { readOnly: true },
     ),
     'Express Install should default to unchecked on Local pick',
   ).toBe(true)
@@ -421,6 +424,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   expect(
     await ctx.panel.evaluate<boolean>(
       `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === true`,
+      { readOnly: true },
     ),
     'Express Install checkbox did not check',
   ).toBe(true)
@@ -428,6 +432,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   expect(
     await ctx.panel.evaluate<boolean>(
       `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+      { readOnly: true },
     ),
     'Express Install checkbox did not uncheck',
   ).toBe(true)
@@ -439,6 +444,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   await ctx.panel.waitFor(
     async () => ctx.panel.evaluate<boolean>(
       `!document.querySelector('[data-testid="first-use-continue"]').disabled`,
+      { readOnly: true },
     ),
     { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' },
   )
@@ -514,6 +520,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
           const sel = document.querySelector('.brand-variant-row--selected .brand-variant-row__label')
           return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
         })()`,
+        { readOnly: true },
       ),
       { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` },
     )
@@ -707,7 +714,7 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
   // Capture the install id THROUGH the extra chooser's panel first - the
   // comfy host's own panel view was destroyed by the launch attach, so
   // after the close no panel.html exists until it is remounted.
-  const installs = await ctx.panel.evaluate<Array<{ id: string }>>(`window.api.getInstallations()`)
+  const installs = await ctx.panel.evaluate<Array<{ id: string }>>(`window.api.getInstallations()`, { readOnly: true })
   expect(installs.length, 'no tracked installation to remount the panel for').toBeGreaterThan(0)
   await closeExtraWindowsKeepComfyHost()
   // Remount the install-backed panel (production mounts it lazily) so the
@@ -756,7 +763,7 @@ async function waitForCopyRegistered(name: string): Promise<InstallationLite> {
   let copyRecord: InstallationLite | undefined
   await expect
     .poll(async () => {
-      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
       copyRecord = installs.find((i) => i.name === name)
       return copyRecord ?? null
     }, { timeout: 540_000, intervals: [2_000, 5_000] })
@@ -904,7 +911,7 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
   // is up and showing the chooser instead of assuming continuity.
   await expect
     .poll(
-      () => ctx.panel.evaluate<boolean>(`!!document.querySelector('.chooser-view')`).catch(() => false),
+      () => ctx.panel.evaluate<boolean>(`!!document.querySelector('.chooser-view')`, { readOnly: true }).catch(() => false),
       { timeout: 30_000, intervals: [250, 500] },
     )
     .toBe(true)
@@ -923,6 +930,7 @@ test('stop ComfyUI again so update-comfyui (requires stopped) can run @sec-updat
 test('captures install metadata for the update tests @sec-meta @lifecycle', async () => {
   const installs = await ctx.panel.evaluate<InstallationLite[]>(
     `window.api.getInstallations()`,
+    { readOnly: true },
   )
   expect(installs.length, 'no tracked installation after install').toBeGreaterThan(0)
   const inst = installs[0]!
@@ -1076,7 +1084,7 @@ async function readPytorchPicker(popup: WebContentsPage): Promise<{
   type PickerRead = { current: PytorchPickerOption | null; options: PytorchPickerOption[]; detail: string }
   let result: PickerRead = { current: null, options: [], detail: 'never evaluated' }
   await expect.poll(async () => {
-    result = await ctx.panel.evaluate<PickerRead>(query)
+    result = await ctx.panel.evaluate<PickerRead>(query, { readOnly: true })
     return result.options.length > 0
   }, {
     timeout: 180_000, intervals: [1_000, 2_000],
@@ -1517,6 +1525,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
   const filenamesBefore = new Set(
     (await ctx.panel.evaluate<SnapshotListLite>(
       `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+      { readOnly: true },
     )).snapshots.map((s) => s.filename),
   )
 
@@ -1538,6 +1547,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
     .poll(async () => {
       const list = await ctx.panel.evaluate<SnapshotListLite>(
         `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+        { readOnly: true },
       )
       target = list.snapshots.find(
         (s) => s.label === 'lifecycle-restore-target' && !filenamesBefore.has(s.filename),
@@ -1561,6 +1571,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
     .poll(async () => {
       const list = await ctx.panel.evaluate<SnapshotListLite>(
         `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+        { readOnly: true },
       )
       return list.snapshots.find(
         (s) => s.label === 'lifecycle-latest-marker' && !filenamesBefore.has(s.filename),
@@ -1635,6 +1646,7 @@ test('per-install Manager security level + network mode land in Manager config.i
         const inst = list.find((i) => i.id === ${JSON.stringify(_updateInstallId)})
         return (inst && inst[${JSON.stringify(field)}]) || null
       })`,
+      { readOnly: true },
     )
   const readRecordLevel = (): Promise<string | null> => readRecordField('managerSecurityLevel')
   const readRecordMode = (): Promise<string | null> => readRecordField('managerNetworkMode')
@@ -1723,9 +1735,11 @@ test('per-install Manager security level + network mode land in Manager config.i
   // a reused profile carrying a stray settings.json key can't flake this.
   const globalBefore = await ctx.panel.evaluate<string | null>(
     `window.api.getSetting('managerSecurityLevel')`,
+    { readOnly: true },
   )
   const globalModeBefore = await ctx.panel.evaluate<string | null>(
     `window.api.getSetting('managerNetworkMode')`,
+    { readOnly: true },
   )
 
   // Real entry: running host title pill -> picker Startup Args tab, the
@@ -1765,11 +1779,11 @@ test('per-install Manager security level + network mode land in Manager config.i
   // Per-install means per-install: the global settings store must not
   // change as a side effect of the picker edits.
   expect(
-    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`),
+    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`, { readOnly: true }),
     'managerSecurityLevel leaked into the global settings store',
   ).toBe(globalBefore)
   expect(
-    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerNetworkMode')`),
+    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerNetworkMode')`, { readOnly: true }),
     'managerNetworkMode leaked into the global settings store',
   ).toBe(globalModeBefore)
   await closeTitlePopupIfOpen(ctx.app)
@@ -1896,6 +1910,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   // Sanity: install is on stable before drafting latest.
   const installsBefore = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
     `window.api.getInstallations()`,
+    { readOnly: true },
   )
   const before = installsBefore.find((i) => i.id === _updateInstallId)
   expect(before?.updateChannel, 'install must be on stable before the cross-channel switch').toBe('stable')
@@ -1943,6 +1958,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
     // the stable precondition above must still hold for the switch below.
     const installsRestored = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
       `window.api.getInstallations()`,
+      { readOnly: true },
     )
     expect(
       installsRestored.find((i) => i.id === _updateInstallId)?.updateChannel,
@@ -2008,6 +2024,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   // Channel actually switched on the InstallationRecord.
   const installsAfter = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
     `window.api.getInstallations()`,
+    { readOnly: true },
   )
   const after = installsAfter.find((i) => i.id === _updateInstallId)
   expect(
@@ -2322,6 +2339,7 @@ function readRecordLaunchArgs(): Promise<string> {
       const inst = list.find((i) => i.id === ${JSON.stringify(_updateInstallId)})
       return (inst && inst.launchArgs) || ''
     })`,
+    { readOnly: true },
   )
 }
 
@@ -2334,6 +2352,7 @@ async function setPortArgViaPicker(popup: WebContentsPage, port: number): Promis
   await popup.waitForVisible(rawSel, { timeout: 15_000 })
   const before = await popup.evaluate<string>(
     `document.querySelector(${JSON.stringify(rawSel)}).value`,
+    { readOnly: true },
   )
   const withoutPort = before.replace(/--port(?:[ =]\S+)?/g, ' ').replace(/\s+/g, ' ').trim()
   await popup.fill(rawSel, `${withoutPort} --port ${port}`.trim())
@@ -2731,11 +2750,11 @@ test('cleans up the copy install before the original delete test runs @sec-copy 
     .toBe(false)
   await expect
     .poll(async () => {
-      const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
       return remaining.some((i) => i.id === _copyInstallId)
     }, { timeout: 30_000, intervals: [250, 500] })
     .toBe(false)
-  const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+  const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
   expect(remaining.find((i) => i.id === _updateInstallId), 'original install was unexpectedly removed').toBeDefined()
 })
 
@@ -2840,7 +2859,7 @@ test('Manage drawer "Untrack" removes the install from the registry without touc
   await expect
     .poll(
       async () => {
-        const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+        const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
         return installs.some((i) => i.id === _kebabCopyInstallId)
       },
       { timeout: 30_000, intervals: [250, 500] },
@@ -2860,7 +2879,7 @@ test('Manage drawer "Untrack" removes the install from the registry without touc
   ).toBe(true)
 
   // Original install untouched.
-  const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+  const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
   expect(remaining.find((i) => i.id === _updateInstallId), 'untrack must not affect the original install').toBeDefined()
 })
 
@@ -2944,12 +2963,9 @@ async function openDashboardWindowViaPickerHome(): Promise<number> {
 /** Run an expression inside an arbitrary webContents by id. The remote comfy
  *  view shares its origin with the local one, so the URL-marker page facades
  *  can't address it - only the webContents id can. */
-async function evalInWebContents<T>(wcId: number, expr: string): Promise<T> {
-  return await evalWithRetry(() => ctx.app.evaluate(async ({ webContents }, p) => {
-    const wc = webContents.fromId(p.id)
-    if (!wc || wc.isDestroyed()) throw new Error(`webContents ${p.id} gone`)
-    return (await wc.executeJavaScript(p.expr)) as unknown
-  }, { id: wcId, expr })) as T
+async function evalInWebContents<T>(wcId: number, expr: string, opts: { readOnly?: boolean } = {}): Promise<T> {
+  const run = () => evaluateWebContents<T>(ctx.app, wcId, expr)
+  return opts.readOnly ? evalWithRetry(run) : run()
 }
 
 /** Recursively collect files under `dir` (relative paths, forward slashes). */
@@ -2994,7 +3010,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   // (useSharedInputOutput default) and the remote install's asset
   // downloads resolve to the same global setting - that shared directory
   // is exactly where the collision happens.
-  const outputDir = await ctx.panel.evaluate<string | null>(`window.api.getSetting('outputDir')`)
+  const outputDir = await ctx.panel.evaluate<string | null>(`window.api.getSetting('outputDir')`, { readOnly: true })
   expect(outputDir, 'shared outputDir setting is unset').toBeTruthy()
   expect(existsSync(outputDir!), `shared output dir does not exist: ${outputDir}`).toBe(true)
 
@@ -3034,6 +3050,7 @@ test('creates a Remote Connection record pointed at the running local server thr
     .poll(async () => {
       const installs = await ctx.panel.evaluate<Array<{ id: string; name: string }>>(
         `window.api.getInstallations()`,
+        { readOnly: true },
       ).catch(() => [] as Array<{ id: string; name: string }>)
       const rec = installs.find((i) => i.name === _remoteName)
       if (rec) _remoteInstallId = rec.id
@@ -3097,7 +3114,7 @@ test('remote workflow output is saved exactly once - no "(1)" duplicate next to 
       return !!(d && typeof d.downloadAsset === 'function'
         && typeof d.isRemote === 'function' && d.isRemote() === true
         && !/native code/.test(String(window.WebSocket)))
-    })()`).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
+    })()`, { readOnly: true }).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
     .toBe(true)
 
   // Submit EmptyImage -> SaveImage from INSIDE the remote view, over a
@@ -3154,13 +3171,14 @@ test('remote workflow output is saved exactly once - no "(1)" duplicate next to 
           return !!(h && h.outputs && h.outputs['2'] && h.outputs['2'].images && h.outputs['2'].images.length > 0)
         })
         .catch(() => false)
-    )()`).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
+    )()`, { readOnly: true }).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
     .toBe(true)
   const outputMeta = await evalInWebContents<{ filename: string; subfolder: string; type: string }>(
     _remoteWcId,
     `(() => fetch('/history/' + ${JSON.stringify(submitted.promptId)})
       .then((r) => r.json())
       .then((j) => j[${JSON.stringify(submitted.promptId)}].outputs['2'].images[0]))()`,
+    { readOnly: true },
   )
   expect(outputMeta.filename).toBe('output_00001_.png')
   // Windows SaveImage reports the subfolder with backslashes.
@@ -3240,7 +3258,7 @@ test('cleans up the remote connection: window closed, record untracked, local in
   await untrackViaManageDrawer(_remoteInstallId)
   await expect
     .poll(async () => {
-      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
       return installs.some((i) => i.id === _remoteInstallId)
     }, { timeout: 30_000, intervals: [250, 500] })
     .toBe(false)
@@ -3304,7 +3322,7 @@ test('stops comfy and captures the installed dir state before driving delete @se
   // delete + getInstallations.
   await stopAndReturnToDashboardViaUI()
 
-  const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+  const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
   expect(installs.length, 'no tracked installation after install').toBeGreaterThan(0)
   const inst = installs[0]!
   _deleteInstallId = inst.id
@@ -3346,7 +3364,7 @@ test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @li
   // The installation record must also be gone.
   await expect
     .poll(async () => {
-      const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`, { readOnly: true })
       return remaining.some((i) => i.id === _deleteInstallId)
     }, { timeout: 30_000, intervals: [250, 500] })
     .toBe(false)

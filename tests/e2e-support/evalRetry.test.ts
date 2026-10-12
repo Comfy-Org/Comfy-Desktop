@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { evalWithRetry } from '../../../e2e/support/evalRetry'
+import { evalWithRetry } from '../../e2e/support/evalRetry'
 
 describe('evalWithRetry', () => {
   beforeEach(() => {

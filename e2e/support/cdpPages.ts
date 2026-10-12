@@ -6,7 +6,20 @@
  */
 import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
-import { evalWithRetry } from './evalRetry'
+import { evalWithRetry, isLostEvaluationResult } from './evalRetry'
+
+/** Run once: callers must opt into retries only for read-only expressions. */
+export function evaluateWebContents<T>(
+  app: ElectronApplication,
+  id: number,
+  expr: string,
+): Promise<T> {
+  return app.evaluate(async ({ webContents }, payload) => {
+    const wc = webContents.fromId(payload.id)
+    if (!wc || wc.isDestroyed()) throw new Error('Execution context was destroyed: webContents destroyed')
+    return wc.executeJavaScript(payload.expr) as Promise<unknown>
+  }, { id, expr }) as Promise<T>
+}
 
 export function findWebContentsId(
   app: ElectronApplication,
@@ -60,13 +73,11 @@ export class WebContentsPage {
   /** Evaluate once by default: a lost result can follow a completed mutation.
    *  Only opt into recovery when the expression is read-only. */
   async evaluate<T>(expr: string, opts: { readOnly?: boolean } = {}): Promise<T> {
-    const id = await findWebContentsId(this.app, this.marker)
-    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-    const run = () => this.app.evaluate(async ({ webContents }, payload) => {
-      const wc = webContents.fromId(payload.id)
-      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-      return wc.executeJavaScript(payload.expr) as Promise<unknown>
-    }, { id, expr }) as Promise<T>
+    const run = async () => {
+      const id = await findWebContentsId(this.app, this.marker)
+      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+      return evaluateWebContents<T>(this.app, id, expr)
+    }
     return opts.readOnly ? evalWithRetry(run) : run()
   }
 
@@ -140,28 +151,47 @@ export class WebContentsPage {
    * events, which bypasses the browser's input handling entirely.
    */
   async fill(selector: string, text: string): Promise<void> {
-    const focused = await this.evaluate<boolean>(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)})
-      if (!el) return false
-      el.focus()
-      if (typeof el.select === 'function') el.select()
-      return document.activeElement === el
-    })()`)
+    let focused: boolean
+    try {
+      focused = await this.evaluate<boolean>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (!el) return false
+        el.focus()
+        if (typeof el.select === 'function') el.select()
+        return document.activeElement === el
+      })()`)
+    } catch (err) {
+      if (!isLostEvaluationResult(err)) throw err
+      // Focus can fire handlers. Verify focus and selection rather than replaying it.
+      focused = await this.wcEval<boolean>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        return !!el && document.activeElement === el &&
+          (typeof el.select !== 'function' || (el.selectionStart === 0 && el.selectionEnd === el.value.length))
+      })()`)
+      if (!focused) throw err
+    }
     if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
     const id = await findWebContentsId(this.app, this.marker)
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     // Do not repeat input dispatch when its result is lost: input handlers
     // can commit settings or other effects even when the final text is equal.
-    await this.app.evaluate(async ({ webContents }, payload) => {
-      const wc = webContents.fromId(payload.id)
-      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-      await wc.insertText(payload.text)
-    }, { id, text })
+    let inputError: unknown
+    try {
+      await this.app.evaluate(async ({ webContents }, payload) => {
+        const wc = webContents.fromId(payload.id)
+        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+        await wc.insertText(payload.text)
+      }, { id, text })
+    } catch (err) {
+      if (!isLostEvaluationResult(err)) throw err
+      inputError = err
+    }
     const value = await this.wcEval<string | null>(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)})
       return el && 'value' in el ? el.value : null
     })()`)
     if (value !== text) {
+      if (inputError) throw inputError
       throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
     }
   }
@@ -243,7 +273,14 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
       }
-      if (state === 'closed') await this.click(trigger)
+      if (state === 'closed') {
+        try {
+          await this.click(trigger)
+        } catch (err) {
+          if (!isLostEvaluationResult(err)) throw err
+          // The click may have landed. Observe the result before another click.
+        }
+      }
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
         throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
@@ -280,10 +317,15 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`selectOption: trigger ${trigger} not found`)
       }
-      if (state === 'closed') {
-        await this.click(trigger)
-      } else {
-        await this.clickByText('.ui-select-option', optionLabel)
+      try {
+        if (state === 'closed') {
+          await this.click(trigger)
+        } else {
+          await this.clickByText('.ui-select-option', optionLabel)
+        }
+      } catch (err) {
+        if (!isLostEvaluationResult(err)) throw err
+        // Re-read selection and expansion before dispatching another click.
       }
       if (Date.now() > deadline) {
         throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)

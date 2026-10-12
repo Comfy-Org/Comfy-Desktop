@@ -93,6 +93,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
   popup.evaluate<string | null>(
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+    { readOnly: true },
   )
 
 test('the pill follows the new session after a Restart that drops a grant @linux', async () => {

@@ -15,6 +15,11 @@
 // for read-only/idempotent evaluations without changing the retry budget.
 const RETRY_PATTERN = /Execution context was destroyed|Resulting promise was garbage collected/i
 
+/** The callback may have completed even though its result was lost. */
+export function isLostEvaluationResult(err: unknown): boolean {
+  return RETRY_PATTERN.test(err instanceof Error ? err.message : String(err))
+}
+
 export async function evalWithRetry<T>(
   fn: () => Promise<T>,
   attempts = 3,
@@ -25,8 +30,7 @@ export async function evalWithRetry<T>(
       return await fn()
     } catch (err) {
       lastErr = err
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!RETRY_PATTERN.test(msg)) throw err
+      if (!isLostEvaluationResult(err)) throw err
       await new Promise((r) => setTimeout(r, 50 * (i + 1)))
     }
   }

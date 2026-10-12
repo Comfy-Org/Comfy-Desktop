@@ -140,6 +140,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
   popup.evaluate<string | null>(
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+    { readOnly: true },
   )
 
 /** Open with the request count reset, so absence can be read against this open's own answers. */
