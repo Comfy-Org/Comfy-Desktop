@@ -86,13 +86,17 @@ function variantOption(
 }
 
 const never = () => new Promise<never>(() => {})
-const retiredComfybuilder = new Proxy({}, { get: () => never })
 
-// Installed on unmount: a screen's late preload calls never settle, so its
-// async work stops instead of throwing or reaching the next example's fixture.
-export const retiredDesktopApi = new Proxy({} as ElectronApi, {
-  get: (_api, key) => (key === 'comfybuilder' ? retiredComfybuilder : never)
-})
+// Called on unmount. In place, because stores keep what they read at creation
+// (the auth store keeps `comfybuilder`): the screen's late calls never settle
+// rather than resolving against a fixture no example shows.
+export function retireDesktopApi(api: ElectronApi): void {
+  for (const methods of [api, api.comfybuilder] as unknown as Record<string, unknown>[]) {
+    for (const [key, value] of Object.entries(methods)) {
+      if (typeof value === 'function') methods[key] = /^on[A-Z]/.test(key) ? () => () => {} : never
+    }
+  }
+}
 
 /** Browser-only responses at the preload boundary. No Electron or backend is imported. */
 export function createDesktopApi(scenario: InstallScenario): ElectronApi {

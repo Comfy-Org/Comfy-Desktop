@@ -46,9 +46,12 @@ shows a preview-only alert. Managed submission displays a simulated handoff.
   missing method is `undefined`, and product code that feature-detects optional
   methods or catches preload errors silently takes its fallback path.
 - Install each screen's API fixture and reset shared modal state in a decorator
-  component's setup. On unmount, reset the modal and install
-  `retiredDesktopApi`, whose calls never settle, so the unmounted screen's late
-  async work stops instead of throwing or reaching the next example's fixture.
+  component's setup. On unmount, reset the modal and pass the fixture to
+  `retireDesktopApi`. Its methods then never settle, including through
+  references a store kept (the auth store keeps `comfybuilder`), so the
+  unmounted screen's late async work stops instead of throwing or continuing
+  against a fixture no example shows. Calls it makes through `window.api` only
+  after the next example has mounted reach that example's fixture.
   Storybook re-runs `beforeEach` on toolbar and args changes without
   remounting, which would swap the fixture under the mounted screen. Keep
   `test.restoreMocks: false` so those rerenders do not clear the fresh spies'

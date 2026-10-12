@@ -3,7 +3,7 @@ import { expect, screen, userEvent, waitFor } from 'storybook/test'
 import { defineComponent, h, onUnmounted } from 'vue'
 import { useModal } from '../src/renderer/src/composables/useModal'
 import InstallWizardPreview from './InstallWizardPreview.vue'
-import { createDesktopApi, retiredDesktopApi, type InstallScenario } from './desktopApi'
+import { createDesktopApi, retireDesktopApi, type InstallScenario } from './desktopApi'
 
 const meta = {
   title: 'Screens/Create a New Instance',
@@ -26,11 +26,12 @@ const meta = {
       const Story = story()
       return defineComponent({
         setup() {
-          window.api = createDesktopApi(parameters.desktopScenario)
+          const api = createDesktopApi(parameters.desktopScenario)
+          window.api = api
           useModal().dismiss()
           onUnmounted(() => {
             useModal().dismiss()
-            window.api = retiredDesktopApi
+            retireDesktopApi(api)
           })
           return () => h(Story)
         }
