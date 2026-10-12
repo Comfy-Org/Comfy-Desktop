@@ -91,7 +91,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version-file: .node-version
+          node-version: 26.11.1
           cache: pnpm
 
       - name: Install dependencies

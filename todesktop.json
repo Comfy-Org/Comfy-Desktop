@@ -14,8 +14,7 @@
     "!storybook-static/**",
     "!tsconfig.storybook.json",
     "!vitest.storybook.config.ts",
-    "!*storybook.log",
-    "!.node-version"
+    "!*storybook.log"
   ],
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",

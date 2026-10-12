@@ -67,6 +67,6 @@ pnpm run test:storybook
 ```
 
 The tests use Storybook's Vitest addon with a single headless Chromium instance.
-CI builds and uploads the static preview, then runs these stories on the Node.js
-version pinned in `.node-version`. Existing native Electron and lifecycle tests
-continue to cover the real runtime.
+CI builds and uploads the static preview, then runs these stories on the
+Node.js version pinned in the Storybook job of `.github/workflows/ci.yml`.
+Existing native Electron and lifecycle tests continue to cover the real runtime.
