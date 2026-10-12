@@ -10,7 +10,9 @@ const config: StorybookConfig = {
   addons: ['@storybook/addon-docs', '@storybook/addon-vitest'],
   framework: {
     name: '@storybook/vue3-vite',
-    options: { docgen: { plugin: 'vue-component-meta', tsconfig: 'tsconfig.storybook.json' } }
+    // The preview wrapper has no props to document, and vue-component-meta's
+    // HMR hook throws when a story edit updates Storybook's virtual stories module.
+    options: { docgen: false }
   },
   core: { disableTelemetry: true },
   async viteFinal(config) {
