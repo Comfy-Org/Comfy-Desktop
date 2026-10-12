@@ -1,12 +1,20 @@
 import { createPinia } from 'pinia'
+import type { App } from 'vue'
 import { setup, type Preview } from '@storybook/vue3-vite'
 import { createAppI18n } from '../src/renderer/src/lib/i18nFactory'
 import '../src/renderer/src/assets/main.css'
 
-setup((app) => {
+function installPlugins(app: App): void {
   app.use(createPinia())
   // Not the panel's shared instance: vue-i18n disposes an installed instance when its app unmounts.
   app.use(createAppI18n())
+}
+
+setup(installPlugins)
+// Storybook keeps setup callbacks in a global Set that outlives a hot update of this file.
+import.meta.hot?.dispose(() => {
+  const { PLUGINS_SETUP_FUNCTIONS } = globalThis as { PLUGINS_SETUP_FUNCTIONS?: Set<unknown> }
+  PLUGINS_SETUP_FUNCTIONS?.delete(installPlugins)
 })
 
 const preview: Preview = {
