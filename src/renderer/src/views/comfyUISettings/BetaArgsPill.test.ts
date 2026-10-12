@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import { ref } from 'vue'
+import { nextTick, ref, type Ref } from 'vue'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import BetaArgsPill from './BetaArgsPill.vue'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -41,7 +41,19 @@ function mountPill(props: Partial<InstanceType<typeof BetaArgsPill>['$props']> =
   return wrapper
 }
 
+/** Mounted under a host, like the instance picker, that stays mounted while hidden. */
+function mountInReopenedHost(epoch: Ref<number>): VueWrapper {
+  const wrapper = mount(BetaArgsPill, {
+    props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0 },
+    global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
+  })
+  wrappers.push(wrapper)
+  return wrapper
+}
+
 const calls = (): number => api.getCoreBetaArgs.mock.calls.length
+const NO_ARGS: CoreBetaArgs = { timing: 'next-launch', args: [] }
+const ELIGIBLE_LABEL = '1 beta argument eligible for the next launch, show details'
 const menuText = (): string => document.body.querySelector('.beta-args-menu')?.textContent ?? ''
 
 beforeEach(() => {
@@ -248,11 +260,7 @@ describe('BetaArgsPill', () => {
 
     it('asks again each time a host that stays mounted is reopened', async () => {
       const epoch = ref(1)
-      const wrapper = mount(BetaArgsPill, {
-        props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0 },
-        global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
-      })
-      wrappers.push(wrapper)
+      mountInReopenedHost(epoch)
       await flushPromises()
       epoch.value = 2
       await flushPromises()
@@ -298,6 +306,83 @@ describe('BetaArgsPill', () => {
       const wrapper = mountPill()
       await flushPromises()
       expect(wrapper.text()).toContain('+2 beta')
+    })
+  })
+
+  describe('reopening a host that stays mounted', () => {
+    it("drops the previous open's pill at once, then shows this open's slower answer", async () => {
+      vi.useFakeTimers()
+      const epoch = ref(1)
+      api.getCoreBetaArgs.mockResolvedValueOnce(NEXT)
+      const wrapper = mountInReopenedHost(epoch)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.get('.beta-args button').attributes('aria-label')).toBe(ELIGIBLE_LABEL)
+
+      let answer: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (answer = r)))
+      epoch.value = 2
+      await nextTick()
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(150)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(true)
+
+      answer(NO_ARGS)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.html()).toBe('<!--v-if-->')
+      expect(calls()).toBe(2)
+    })
+
+    it('never shows a late answer to a request the hidden host sent before the reopen', async () => {
+      vi.useFakeTimers()
+      const epoch = ref(1)
+      api.getCoreBetaArgs.mockResolvedValueOnce(NEXT)
+      const wrapper = mountInReopenedHost(epoch)
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answerHidden: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (answerHidden = r)))
+      useSessionStore().runningInstances.set('inst-1', {
+        installationId: 'inst-1',
+        installationName: 'One',
+        mode: 'window',
+        startedAt: 100
+      })
+      await nextTick()
+      let answerReopen: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (answerReopen = r)))
+      epoch.value = 2
+      await nextTick()
+      expect(calls()).toBe(3)
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
+
+      answerHidden(SESSION)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(150)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(true)
+
+      answerReopen({ timing: 'session', args: [{ arg: '--enable-assets', name: 'Asset library' }] })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
+      expect(wrapper.get('.beta-args button').attributes('aria-label')).toBe(
+        '1 beta argument added for this session, show details'
+      )
+    })
+
+    it("keeps this open's pill while a re-ask within the same open is on its way", async () => {
+      const epoch = ref(1)
+      api.getCoreBetaArgs.mockResolvedValueOnce(NEXT)
+      const wrapper = mountInReopenedHost(epoch)
+      await flushPromises()
+
+      let answer: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (answer = r)))
+      await wrapper.setProps({ schemaVersion: 1 })
+      expect(wrapper.get('.beta-args button').attributes('aria-label')).toBe(ELIGIBLE_LABEL)
+
+      answer(NO_ARGS)
+      await flushPromises()
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
     })
   })
 })
