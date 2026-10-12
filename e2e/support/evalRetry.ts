@@ -2,7 +2,9 @@
  * Retry wrapper for Playwright Electron `app.evaluate(...)` calls. The
  * evaluation channel intermittently throws "Execution context was destroyed"
  * on loaded CI runners when child WebContentsViews churn; a retry on the next
- * tick lands on a fresh, working evaluation context.
+ * tick lands on a fresh, working evaluation context. Playwright 1.64 reports
+ * the same lost evaluation as "Resulting promise was garbage collected"
+ * (microsoft/playwright#41868).
  *
  * Only wrap read-only or idempotent evaluations. The error surfaces AFTER the
  * callback may already have executed in the app, so a retried side-effectful
@@ -10,7 +12,7 @@
  * run twice and turn an exactly-once product action into at-least-once.
  */
 
-const RETRY_PATTERN = /Execution context was destroyed/i
+const RETRY_PATTERN = /Execution context was destroyed|Resulting promise was garbage collected/i
 
 export async function evalWithRetry<T>(
   fn: () => Promise<T>,
