@@ -25,7 +25,7 @@
  *
  * A launch whose lookup misses its budget uses a random id held in memory
  * only, flagged `'provisional'`; if the lookup answers later in that launch,
- * the real id is saved for the next one.
+ * what an on-time answer would have saved is saved for the next one.
  *
  * Synchronous `getDeviceId()` is preserved for backward compatibility with
  * the existing IPC handler and main-process call sites. It must only be

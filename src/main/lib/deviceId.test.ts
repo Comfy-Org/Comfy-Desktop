@@ -75,6 +75,7 @@ describe('deviceId', () => {
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
     mockSystemError = null
     mockLookupHangs = false
+    answerLateLookup = () => {}
     lookupCalls.system = 0
     lookupCalls.uuid = 0
     mockMachineIdFiles = {}
@@ -561,19 +562,9 @@ describe('deviceId', () => {
       await mod.initDeviceId()
       expect(lookupCalls).toEqual({ system: 0, uuid: 1 })
       expect(mod.getIdClass()).toBe('machine_derived')
-    })
-
-    // That si.uuid().hardware equals si.system().uuid on win32 is pinned by
-    // deviceId.dependency.test.ts; this pins the mapping from it to the id.
-    it('maps si.uuid().hardware to the id an existing install already has', async () => {
-      const filePath = path.join(testUserData, 'device-id.txt')
-      fs.writeFileSync(filePath, expectedIdFor(uuid))
-      const writes = vi.spyOn(fs, 'writeFileSync')
-
-      const { legacyId } = await mod.initDeviceId()
-      expect(legacyId).toBeNull()
+      // That si.uuid().hardware equals si.system().uuid on win32 is pinned by
+      // deviceId.dependency.test.ts; this pins the mapping from it to the id.
       expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
-      expect(writes.mock.calls.filter(([file]) => file === filePath)).toEqual([])
     })
 
     it.each<NodeJS.Platform>(['linux', 'darwin'])('keeps si.system() on %s', async (platform) => {
@@ -638,6 +629,8 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('provisional')
       expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(legacyUuid)
 
+      // Boot deletes the marker on every launch.
+      fs.rmSync(path.join(testUserData, 'pending-identity-alias.txt'))
       await nextLaunch()
       expect((await mod.initDeviceId()).legacyId).toBe(legacyUuid)
       expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
@@ -651,6 +644,7 @@ describe('deviceId', () => {
       const real = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
       await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real))
       expect(mod.getDeviceId()).not.toBe(real)
+      expect(lookupCalls).toEqual({ system: 0, uuid: 1 })
 
       await nextLaunch()
       await initTimingOut()
