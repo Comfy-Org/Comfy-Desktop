@@ -24,7 +24,8 @@
  * "no machine id" and the install keeps its own random id instead.
  *
  * A launch whose lookup misses its budget uses a random id held in memory
- * only, flagged `'provisional'`, so the next launch derives the real one.
+ * only, flagged `'provisional'`; if the lookup answers later in that launch,
+ * the real id is saved for the next one.
  *
  * Synchronous `getDeviceId()` is preserved for backward compatibility with
  * the existing IPC handler and main-process call sites. It must only be
@@ -152,10 +153,11 @@ function isLegacyUuid(value: string): boolean {
 const MACHINE_ID_TIMEOUT_MS = 2000
 
 /**
- * win32 reads `si.uuid()`: one PowerShell spawn instead of `si.system()`'s
- * three, running the same `Win32_ComputerSystemProduct` query with the same
- * parse, so the id is unchanged (verified on 5.31.5; see
- * deviceId.dependency.test.ts). Not macOS, where `uuid().hardware` is the serial.
+ * win32 reads `si.uuid()`: one PowerShell spawn (plus a `reg query`) instead
+ * of `si.system()`'s two or three, running the same
+ * `Win32_ComputerSystemProduct` query with the same parse, so the id is
+ * unchanged (verified on 5.31.5; see deviceId.dependency.test.ts). Not macOS,
+ * where `uuid().hardware` is the serial.
  */
 async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
   if (process.platform === 'win32') return { uuid: (await si.uuid()).hardware }
@@ -165,11 +167,12 @@ async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
 let lookup: Promise<{ uuid?: string }> | null = null
 
 /** Start the hardware lookup ahead of `initDeviceId()`. Idempotent. */
-export function startMachineIdLookup(): void {
-  if (lookup) return
+export function startMachineIdLookup(): Promise<{ uuid?: string }> {
+  if (lookup) return lookup
   lookup = lookupHardwareUuid()
   // initDeviceId() may never await it (e.g. a quit before ready).
   lookup.catch(() => {})
+  return lookup
 }
 
 /**
@@ -220,18 +223,22 @@ interface DerivedMachineId {
   timedOut?: boolean
 }
 
+function isUsableUuid(uuid: string): boolean {
+  return uuid.length === 36 && !isPlaceholderUuid(uuid)
+}
+
 async function deriveMachineId(): Promise<DerivedMachineId> {
   let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    startMachineIdLookup()
+    const started = startMachineIdLookup()
     const timeoutPromise = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
         timedOut = true
         resolve(null)
       }, MACHINE_ID_TIMEOUT_MS)
     })
-    const sys = await Promise.race([lookup!, timeoutPromise])
+    const sys = await Promise.race([started, timeoutPromise])
     if (sys) {
       const uuid = (sys.uuid || '').trim()
       // Reject anything that isn't the full 36-char UUID shape (covers
@@ -240,7 +247,7 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
       // UUIDs shared by many machines.
       const wellFormed = uuid.length === 36
       const placeholder = wellFormed && isPlaceholderUuid(uuid)
-      if (wellFormed && !placeholder) {
+      if (isUsableUuid(uuid)) {
         return { machineId: uuid, idClass: 'machine_derived' }
       }
       // The lookup answered without a usable UUID, which is the steady state
@@ -371,9 +378,18 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
         : computeInstallationId(machineId)
 
     // A timed-out lookup's random id lives for this launch only: persisting it
-    // would make the next launch that reads the hardware switch ids.
+    // would make the next launch that reads the hardware switch ids. A late
+    // answer still saves the real id, so the next launch keeps it even if its
+    // own lookup times out too.
     if (timedOut && newId !== existing) {
       cached = { installationId: newId, idClass: 'provisional' }
+      void startMachineIdLookup().then(
+        (sys) => {
+          const uuid = (sys.uuid || '').trim()
+          if (isUsableUuid(uuid)) writeIdFile(computeInstallationId(uuid))
+        },
+        () => {}
+      )
       return { legacyId: null }
     }
 

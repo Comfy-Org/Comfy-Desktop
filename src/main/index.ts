@@ -1335,7 +1335,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   // The hardware-id lookup is slow on cold Windows starts; overlap it with Electron start-up.
-  startMachineIdLookup()
+  if (process.platform === 'win32') startMachineIdLookup()
 
   if (app.isPackaged) {
     app.on('second-instance', () => {
