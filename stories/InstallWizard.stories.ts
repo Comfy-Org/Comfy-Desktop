@@ -142,11 +142,12 @@ export const LowDiskSpace: Story = {
     await waitFor(() => expect(next).toBeEnabled())
     await userEvent.click(next)
     await userEvent.click(await screen.findByRole('radio', { name: /Starter Image Workflow/ }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Install' })).toHaveAttribute(
-        'aria-disabled',
-        'true'
-      )
+    // Continue restarts the wizard's 300 ms disk check; the alert shows once it has settled.
+    await expect(await screen.findByRole('alert', {}, { timeout: 10_000 })).toHaveTextContent(
+      /only 11 GB free/
     )
+    const install = screen.getByRole('button', { name: 'Install' })
+    await expect(install).toHaveAttribute('aria-disabled', 'true')
+    await expect(install).toHaveAttribute('aria-describedby', 'tps-alerts')
   }
 }
