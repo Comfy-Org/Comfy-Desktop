@@ -1,0 +1,60 @@
+# Temporary diagnostics for the beta-args reopen (PR #1698). Not for merge.
+name: diag-1698-quiet
+
+on:
+  push:
+    branches:
+      - bl/diag-1698-quiet
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: quiet, mode: quiet, load: '0', repeat: 20 }
+          - { name: quiet-load, mode: quiet, load: '1', repeat: 20 }
+          - { name: late-ask, mode: late-ask, load: '0', repeat: 3 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Saturate the CPUs
+        if: matrix.load == '1'
+        run: |
+          for _ in $(seq "$(nproc)"); do nohup sh -c 'while :; do :; done' >/dev/null 2>&1 & done
+          sleep 1
+          uptime
+      - name: Run diag-1698-quiet x${{ matrix.repeat }}
+        env:
+          DIAG_MODE: ${{ matrix.mode }}
+        run: |
+          set +e
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/diag-1698-quiet.test.ts \
+            --repeat-each=${{ matrix.repeat }} --retries=0 --reporter=list 2>&1 | tee e2e.log
+          echo "playwright exit: ${PIPESTATUS[0]}" | tee -a e2e.log
+          {
+            echo "### ${{ matrix.name }}"
+            echo '```'
+            grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|playwright exit' e2e.log
+            grep -oE 'diag-open [a-z]+ asks=[0-9]+ configs=[a-z0-9]+' e2e.log | sort | uniq -c
+            grep -oE 'a later ask, answer, config or pill change arrived|the grant was (still shown with HEAD below its range|shown though git could not prove it)|this open never had both asks answered' e2e.log | sort | uniq -c
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-quiet-${{ matrix.name }}
+          path: e2e.log
+          retention-days: 7
