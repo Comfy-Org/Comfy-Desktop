@@ -223,8 +223,31 @@ interface DerivedMachineId {
   timedOut?: boolean
 }
 
-function isUsableUuid(uuid: string): boolean {
-  return uuid.length === 36 && !isPlaceholderUuid(uuid)
+/** The machine id a lookup's answer gives, on time or late. */
+function answeredMachineId(sys: { uuid?: string }): DerivedMachineId {
+  const uuid = (sys.uuid || '').trim()
+  // Reject anything that isn't the full 36-char UUID shape (covers
+  // empty strings on restricted Linux reads, OEM sentinels like
+  // "Default string" / "To Be Filled By O.E.M.", etc.), and placeholder
+  // UUIDs shared by many machines.
+  const wellFormed = uuid.length === 36
+  const placeholder = wellFormed && isPlaceholderUuid(uuid)
+  if (wellFormed && !placeholder) {
+    return { machineId: uuid, idClass: 'machine_derived' }
+  }
+  // The lookup answered without a usable UUID, which is the steady state
+  // for a non-root Linux user. A timeout or throw is not: it can be a
+  // one-off, and switching sources for one launch would change the id.
+  const linuxMachineId = readLinuxMachineId()
+  if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
+  if (placeholder) {
+    return {
+      machineId: randomUUID(),
+      idClass: 'placeholder_fallback',
+      placeholderInstallationId: computeInstallationId(uuid)
+    }
+  }
+  return { machineId: randomUUID(), idClass: 'random_fallback' }
 }
 
 async function deriveMachineId(): Promise<DerivedMachineId> {
@@ -239,30 +262,7 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
       }, MACHINE_ID_TIMEOUT_MS)
     })
     const sys = await Promise.race([started, timeoutPromise])
-    if (sys) {
-      const uuid = (sys.uuid || '').trim()
-      // Reject anything that isn't the full 36-char UUID shape (covers
-      // empty strings on restricted Linux reads, OEM sentinels like
-      // "Default string" / "To Be Filled By O.E.M.", etc.), and placeholder
-      // UUIDs shared by many machines.
-      const wellFormed = uuid.length === 36
-      const placeholder = wellFormed && isPlaceholderUuid(uuid)
-      if (isUsableUuid(uuid)) {
-        return { machineId: uuid, idClass: 'machine_derived' }
-      }
-      // The lookup answered without a usable UUID, which is the steady state
-      // for a non-root Linux user. A timeout or throw is not: it can be a
-      // one-off, and switching sources for one launch would change the id.
-      const linuxMachineId = readLinuxMachineId()
-      if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
-      if (placeholder) {
-        return {
-          machineId: randomUUID(),
-          idClass: 'placeholder_fallback',
-          placeholderInstallationId: computeInstallationId(uuid)
-        }
-      }
-    }
+    if (sys) return answeredMachineId(sys)
   } catch {
     // fall through to fallback
   } finally {
@@ -377,16 +377,19 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
         ? existing
         : computeInstallationId(machineId)
 
-    // A timed-out lookup's random id lives for this launch only: persisting it
-    // would make the next launch that reads the hardware switch ids. A late
-    // answer still saves the real id, so the next launch keeps it even if its
-    // own lookup times out too.
+    // A timed-out lookup's random id is not saved while the lookup may still
+    // answer: persisting it would make the next launch that reads the hardware
+    // switch ids. A late answer saves what an on-time one would have (the
+    // machine id, or this launch's id as the stable fallback), so the next
+    // launch keeps it even if its own lookup times out too.
     if (timedOut && newId !== existing) {
       cached = { installationId: newId, idClass: 'provisional' }
       void startMachineIdLookup().then(
         (sys) => {
-          const uuid = (sys.uuid || '').trim()
-          if (isUsableUuid(uuid)) writeIdFile(computeInstallationId(uuid))
+          const late = answeredMachineId(sys)
+          writeIdFile(
+            late.idClass === 'machine_derived' ? computeInstallationId(late.machineId) : newId
+          )
         },
         () => {}
       )

@@ -28,7 +28,11 @@ let answerLateLookup: () => void = () => {}
 const lookupCalls = { system: 0, uuid: 0 }
 
 function mockLookup<T>(value: () => T): Promise<T> {
-  if (mockLookupHangs) return new Promise((resolve) => (answerLateLookup = () => resolve(value())))
+  if (mockLookupHangs) {
+    return new Promise((resolve, reject) => {
+      answerLateLookup = () => (mockSystemError ? reject(mockSystemError) : resolve(value()))
+    })
+  }
   return mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve(value())
 }
 
@@ -616,6 +620,7 @@ describe('deviceId', () => {
     })
 
     it('keeps reusing a stored id', async () => {
+      setPlatform('win32')
       const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
       fs.writeFileSync(deviceIdFile(), machineDerived)
       await initTimingOut()
@@ -624,7 +629,7 @@ describe('deviceId', () => {
       expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(machineDerived)
     })
 
-    it('leaves a legacy UUID for a later launch to migrate', async () => {
+    it('leaves a legacy UUID for a later launch to migrate while the lookup has not answered', async () => {
       const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
       fs.writeFileSync(deviceIdFile(), legacyUuid)
       fs.writeFileSync(path.join(testUserData, 'pending-identity-alias.txt'), legacyUuid)
@@ -652,12 +657,45 @@ describe('deviceId', () => {
       expect(mod.getDeviceId()).toBe(real)
     })
 
-    it('saves nothing when the late answer has no usable UUID', async () => {
-      setPlatform('win32')
-      mockSystemUuid = '03000200-0400-0500-0006-000700080009'
+    it.each([
+      ['a placeholder', '03000200-0400-0500-0006-000700080009'],
+      ['no', '']
+    ])(
+      'saves this launch id as the stable fallback when the late answer has %s UUID',
+      async (_label, uuid) => {
+        setPlatform('win32')
+        mockSystemUuid = uuid
+        await initTimingOut()
+        const provisional = mod.getDeviceId()
+        answerLateLookup()
+        await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
+
+        await nextLaunch()
+        await initTimingOut()
+        expect(mod.getDeviceId()).toBe(provisional)
+        expect(mod.getIdClass()).toBe('random_fallback')
+      }
+    )
+
+    it('saves the machine-id hash when a late Linux answer has no UUID', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: '0123456789abcdef0123456789abcdef' }
       await initTimingOut()
       answerLateLookup()
+      const real = expectedIdFor('0123456789abcdef0123456789abcdef')
+      await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real))
+    })
+
+    it('saves nothing when the lookup rejects late', async () => {
+      setPlatform('win32')
+      await initTimingOut()
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      mockSystemError = new Error('late failure')
+      answerLateLookup()
       await new Promise((resolve) => setTimeout(resolve, 10))
+      process.off('unhandledRejection', unhandled)
+      expect(unhandled).not.toHaveBeenCalled()
       expect(fs.existsSync(deviceIdFile())).toBe(false)
     })
 
