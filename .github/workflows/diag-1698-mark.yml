@@ -1,0 +1,73 @@
+# Temporary diagnostics for the beta-args open mark (PR #1698). Not for merge.
+name: diag-1698-mark
+
+on:
+  push:
+    branches:
+      - bl/diag-1698-open-mark
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: after-none, spec: after, mode: none, check: '1', mutant: '0', load: '0', skip: '', repeat: 20 }
+          - { name: after-none-load, spec: after, mode: none, check: '1', mutant: '0', load: '1', skip: '', repeat: 30 }
+          - { name: after-hidden, spec: after, mode: hidden, check: '1', mutant: '0', load: '0', skip: '', repeat: 20 }
+          - { name: after-hidden-mutant, spec: after, mode: hidden, check: '0', mutant: '1', load: '0', skip: '', repeat: 3 }
+          - { name: after-hidden-mutant-objects, spec: after, mode: hidden, check: '0', mutant: '1', load: '0', skip: 'moving HEAD below', repeat: 3 }
+          - { name: before-hidden, spec: before, mode: hidden, check: '1', mutant: '0', load: '0', skip: '', repeat: 5 }
+          - { name: before-hidden-mutant, spec: before, mode: hidden, check: '0', mutant: '1', load: '0', skip: '', repeat: 5 }
+          - { name: before-hidden-mutant-objects, spec: before, mode: hidden, check: '0', mutant: '1', load: '0', skip: 'moving HEAD below', repeat: 5 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Make every commit relation count as proven ancestry
+        if: matrix.mutant == '1'
+        run: |
+          sed -i -e 's/(proof) => proof.relation,/() => true,/' -e 's/^\([[:space:]]*\)() => null$/\1() => true/' src/main/lib/coreBetaPreview.ts
+          grep -n -A3 '\.then($' src/main/lib/coreBetaPreview.ts | head -8
+          test "$(grep -c '() => true' src/main/lib/coreBetaPreview.ts)" = 2
+      - run: pnpm run build
+      - name: Saturate the CPUs
+        if: matrix.load == '1'
+        run: |
+          for _ in $(seq "$(nproc)"); do nohup sh -c 'while :; do :; done' >/dev/null 2>&1 & done
+          sleep 1
+          uptime
+      - name: Run diag-1698-mark-${{ matrix.spec }} x${{ matrix.repeat }}
+        env:
+          DIAG_MODE: ${{ matrix.mode }}
+          DIAG_CHECK: ${{ matrix.check }}
+        run: |
+          set +e
+          args=()
+          if [ -n "${{ matrix.skip }}" ]; then args+=(--grep-invert "${{ matrix.skip }}"); fi
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux "e2e/diag-1698-mark-${{ matrix.spec }}.test.ts" \
+            "${args[@]}" --repeat-each=${{ matrix.repeat }} --retries=0 --reporter=list 2>&1 | tee e2e.log
+          echo "playwright exit: ${PIPESTATUS[0]}" | tee -a e2e.log
+          {
+            echo "### ${{ matrix.name }}"
+            echo '```'
+            grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|playwright exit' e2e.log
+            grep -oE "(the wait returned before this open's schema-settled ask was answered|the mark did not precede the open's asks|this open never had both asks answered|the hidden ask was not answered|the grant was (still shown with HEAD below its range|shown though git could not prove it))" e2e.log | sort | uniq -c
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-mark-${{ matrix.name }}
+          path: e2e.log
+          retention-days: 7
