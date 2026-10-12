@@ -545,9 +545,12 @@ describe('deviceId', () => {
     mockSystemError = new Error('powershell failed')
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
-    mod.startMachineIdLookup()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    process.off('unhandledRejection', unhandled)
+    try {
+      mod.startMachineIdLookup()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
     expect(unhandled).not.toHaveBeenCalled()
   })
 
@@ -686,10 +689,13 @@ describe('deviceId', () => {
       const provisional = mod.getDeviceId()
       const unhandled = vi.fn()
       process.on('unhandledRejection', unhandled)
-      mockSystemError = new Error('late failure')
-      answerLateLookup()
-      await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
-      process.off('unhandledRejection', unhandled)
+      try {
+        mockSystemError = new Error('late failure')
+        answerLateLookup()
+        await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
       expect(unhandled).not.toHaveBeenCalled()
     })
 
