@@ -30,7 +30,7 @@ Where they live:
 # Unit
 pnpm test                    # run once
 pnpm run test:watch          # watch mode
-pnpm exec vitest run src/main/lib/desktopDetect.test.ts   # one file
+pnpm test src/main/lib/desktopDetect.test.ts   # one file
 
 # Storybook (install Chromium once)
 pnpm exec playwright install --only-shell chromium
@@ -50,13 +50,14 @@ pnpm run test:e2e:lifecycle
 pnpm exec playwright test --project=lifecycle lifecycle-copy.test.ts   # one spec
 ```
 
-The root `vitest.config.ts` defines two projects: `unit` and the `storybook`
-browser project, which Storybook's **Run tests** button uses. `pnpm test` and
-`pnpm run test:watch` pass `--project unit`. A bare `pnpm exec vitest`,
-`vitest related`, or an editor's Vitest extension runs both projects, so it
-needs Chromium installed. In watch mode the Storybook addon also starts
-`pnpm storybook --ci` on port 6006 unless Storybook is already running there.
-Add `--project unit` to run only unit tests.
+`pnpm test` and `pnpm run test:watch` load only `vitest.unit.config.ts`. The
+root `vitest.config.ts` lists it and `vitest.storybook.config.ts` as the `unit`
+and `storybook` projects; Storybook's **Run tests** button needs that file. A
+bare `pnpm exec vitest`, `vitest related`, or an editor's Vitest extension also
+uses the root file. It always loads Storybook's configuration, and runs the
+stories in Chromium unless given `--project unit`. In watch mode the Storybook
+addon also starts `pnpm storybook --ci` on port 6006 unless Storybook is
+already running there.
 
 > [!WARNING]
 > `pnpm run test:e2e` with no `--project` runs **all** projects, including
