@@ -3,7 +3,14 @@ import type { ElectronApplication } from '@playwright/test'
 import { runInNewContext } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { evaluateWebContents, WebContentsPage } from '../../e2e/support/cdpPages'
-import { isHoverActive } from '../../e2e/support/hoverGate'
+import { isLostEvaluationResult } from '../../e2e/support/evalRetry'
+import {
+  dispatchPointerMove,
+  dispatchPointerLeave,
+  dispatchWindowBlur,
+  dispatchWindowFocus,
+  isHoverActive
+} from '../../e2e/support/hoverGate'
 
 const lostResult = new Error('Resulting promise was garbage collected.')
 
@@ -31,7 +38,14 @@ function harness() {
         fn(electron, payload)
     )
   } as unknown as ElectronApplication
-  return { app, wc, page: new WebContentsPage(app, 'panel.html'), executeJavaScript, insertText }
+  return {
+    app,
+    wc,
+    electron,
+    page: new WebContentsPage(app, 'panel.html'),
+    executeJavaScript,
+    insertText
+  }
 }
 
 async function finishAssertion(assertion: Promise<void>): Promise<void> {
@@ -84,6 +98,47 @@ describe('WebContentsPage evaluation recovery', () => {
       throw lostResult
     })
     const assertion = expect(page.exists('.chooser-tile')).resolves.toBe(true)
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-resolves a read when the matched webContents disappears before dispatch', async () => {
+    const { page, wc, executeJavaScript } = harness()
+    vi.spyOn(wc, 'isDestroyed').mockImplementationOnce(() => {
+      wc.id = 2
+      return true
+    })
+    const assertion = expect(page.exists('.chooser-tile')).resolves.toBe(true)
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers a read during the gap before a replacement view is discoverable', async () => {
+    const { page, electron, executeJavaScript } = harness()
+    vi.spyOn(electron.webContents, 'getAllWebContents').mockReturnValueOnce([])
+    const assertion = expect(page.exists('.chooser-tile')).resolves.toBe(true)
+    await finishAssertion(assertion)
+    expect(executeJavaScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a missing fixed webContents without claiming its result was lost', async () => {
+    const { app, executeJavaScript } = harness()
+    const error = await evaluateWebContents(app, 999, 'document.title').catch((err: unknown) => err)
+    expect(error).toEqual(new Error('webContents 999 is unavailable'))
+    expect(isLostEvaluationResult(error)).toBe(false)
+    expect(app.evaluate).toHaveBeenCalledTimes(1)
+    expect(executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['pointermove', dispatchPointerMove],
+    ['pointerleave', dispatchPointerLeave],
+    ['blur', dispatchWindowBlur],
+    ['focus', dispatchWindowFocus]
+  ])('recovers the explicitly idempotent hover-gate %s dispatch', async (_name, action) => {
+    const { page, executeJavaScript } = harness()
+    executeJavaScript.mockRejectedValueOnce(lostResult)
+    const assertion = expect(action(page)).resolves.toBeUndefined()
     await finishAssertion(assertion)
     expect(executeJavaScript).toHaveBeenCalledTimes(2)
   })
@@ -146,6 +201,33 @@ describe('WebContentsPage evaluation recovery', () => {
     const assertion = expect(page.fill('input', 'value')).rejects.toBe(lostResult)
     await finishAssertion(assertion)
     expect(insertText).not.toHaveBeenCalled()
+  })
+
+  it('recovers focus on an input without selection offsets without replaying focus', async () => {
+    const { page, executeJavaScript, insertText } = harness()
+    const document = { activeElement: null as unknown, querySelector: () => input }
+    const input = {
+      value: 'old',
+      selectionStart: null,
+      selectionEnd: null,
+      focus: vi.fn(() => {
+        document.activeElement = input
+      }),
+      select: vi.fn()
+    }
+    executeJavaScript.mockImplementation(async (expr) => {
+      const result = runInNewContext(expr, { document })
+      if (expr.includes('el.focus()')) throw lostResult
+      return result
+    })
+    insertText.mockImplementation(async (text) => {
+      input.value = text
+    })
+    const assertion = expect(page.fill('input[type=number]', '8188')).resolves.toBeUndefined()
+    await finishAssertion(assertion)
+    expect(input.focus).toHaveBeenCalledOnce()
+    expect(input.select).toHaveBeenCalledOnce()
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('8188')
   })
 
   it('accepts a completed input after its result is lost without inserting again', async () => {

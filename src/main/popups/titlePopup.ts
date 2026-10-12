@@ -1419,19 +1419,16 @@ type OpenTitlePopupOpts = {
 
 /** Whether an open must re-send its config even when it matches the last
  *  synced one, bypassing `openTitlePopup`'s identical-config fast path.
- *  A non-null global-settings `initialTab` is a per-open command, not
- *  state: the renderer may have navigated off that tab since the last
- *  identical push, so the snapshot must be re-sent for the view's
- *  tab-retarget watch to fire. `highlightFieldId` is the same kind of
- *  command — a re-open asking for the same flash on an already-open popup
- *  must still reach the view. */
+ *  Global settings can change through broadcasts independently of the last
+ *  full config, and hidden popups miss subsequent broadcasts. Always refresh
+ *  that snapshot on open. This also delivers per-open tab/highlight commands
+ *  even when they match the previous config. */
 export function requiresPerOpenConfigSync(
   opts: Pick<OpenTitlePopupOpts, 'kind'> & {
     snapshot?: { initialTab?: unknown; highlightFieldId?: unknown }
   }
 ): boolean {
-  if (opts.kind !== POPUP_KIND.globalSettings) return false
-  return opts.snapshot?.initialTab != null || opts.snapshot?.highlightFieldId != null
+  return opts.kind === POPUP_KIND.globalSettings
 }
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {

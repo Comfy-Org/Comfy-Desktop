@@ -8,7 +8,7 @@ import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { evalWithRetry, isLostEvaluationResult } from './evalRetry'
 
-/** Run once: callers must opt into retries only for read-only expressions. */
+/** Run once: callers must opt into retries only for read-only/idempotent expressions. */
 export function evaluateWebContents<T>(
   app: ElectronApplication,
   id: number,
@@ -16,7 +16,7 @@ export function evaluateWebContents<T>(
 ): Promise<T> {
   return app.evaluate(async ({ webContents }, payload) => {
     const wc = webContents.fromId(payload.id)
-    if (!wc || wc.isDestroyed()) throw new Error('Execution context was destroyed: webContents destroyed')
+    if (!wc || wc.isDestroyed()) throw new Error(`webContents ${payload.id} is unavailable`)
     return wc.executeJavaScript(payload.expr) as Promise<unknown>
   }, { id, expr }) as Promise<T>
 }
@@ -71,14 +71,22 @@ export class WebContentsPage {
   }
 
   /** Evaluate once by default: a lost result can follow a completed mutation.
-   *  Only opt into recovery when the expression is read-only. */
-  async evaluate<T>(expr: string, opts: { readOnly?: boolean } = {}): Promise<T> {
+   *  Opt into recovery only for a read-only expression or a mutation whose
+   *  repetition cannot change its effects. */
+  async evaluate<T>(expr: string, opts: { readOnly?: boolean; idempotent?: boolean } = {}): Promise<T> {
     const run = async () => {
       const id = await findWebContentsId(this.app, this.marker)
       if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
       return evaluateWebContents<T>(this.app, id, expr)
     }
-    return opts.readOnly ? evalWithRetry(run) : run()
+    if (!opts.readOnly && !opts.idempotent) return run()
+    return evalWithRetry(run, 3, (err) => {
+      // A marker can resolve to a replacement view on the next attempt. This
+      // is distinct from a lost result; mutators must not assume dispatch ran.
+      const message = err instanceof Error ? err.message : String(err)
+      return isLostEvaluationResult(err) ||
+        /webContents \d+ is unavailable|webContents not found \(marker=/.test(message)
+    })
   }
 
   url(): Promise<string> {
@@ -166,7 +174,9 @@ export class WebContentsPage {
       focused = await this.wcEval<boolean>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)})
         return !!el && document.activeElement === el &&
-          (typeof el.select !== 'function' || (el.selectionStart === 0 && el.selectionEnd === el.value.length))
+          (typeof el.select !== 'function' ||
+            (el.selectionStart === null && el.selectionEnd === null) ||
+            (el.selectionStart === 0 && el.selectionEnd === el.value.length))
       })()`)
       if (!focused) throw err
     }

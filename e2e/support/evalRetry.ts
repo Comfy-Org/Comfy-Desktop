@@ -23,6 +23,7 @@ export function isLostEvaluationResult(err: unknown): boolean {
 export async function evalWithRetry<T>(
   fn: () => Promise<T>,
   attempts = 3,
+  shouldRetry: (err: unknown) => boolean = isLostEvaluationResult,
 ): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
@@ -30,7 +31,7 @@ export async function evalWithRetry<T>(
       return await fn()
     } catch (err) {
       lastErr = err
-      if (!isLostEvaluationResult(err)) throw err
+      if (!shouldRetry(err)) throw err
       await new Promise((r) => setTimeout(r, 50 * (i + 1)))
     }
   }

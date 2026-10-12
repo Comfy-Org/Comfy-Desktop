@@ -151,20 +151,19 @@ describe('startModelStaging', () => {
     expect(updateInstallation).not.toHaveBeenCalled()
   })
 
-  it('keeps an install unstaged when startup hydration fails', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      initializeModelDownloads.mockRejectedValueOnce(new Error('hydration failed'))
-      startModelStaging(record(), [model])
-      await settle(() =>
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('hydration failed'))
-      )
-      expect(acquireModelDownloadRootLock).not.toHaveBeenCalled()
-      expect(stageModels).not.toHaveBeenCalled()
-      expect(updateInstallation).not.toHaveBeenCalled()
-    } finally {
-      warn.mockRestore()
-    }
+  it('continues managed staging after advisory startup hydration fails', async () => {
+    initializeModelDownloads.mockRejectedValueOnce(new Error('hydration failed'))
+    startModelStaging(record(), [model])
+    await settle(() =>
+      expect(updateInstallation).toHaveBeenCalledWith('i1', { modelsStaged: true })
+    )
+    expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+    expect(acquireModelDownloadRootLock).toHaveBeenCalledOnce()
+    expect(stageModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
+      })
+    )
   })
 
   it('releases the lock and never records completion when staging fails', async () => {

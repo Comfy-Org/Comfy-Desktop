@@ -46,7 +46,10 @@ test.beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Cloud fixture has no TCP address')
   ctx = await launchApp({
     settings: { firstUseCompleted: true, telemetryEnabled: false },
-    installations: [{ sourceId: 'cloud', remoteUrl: `http://127.0.0.1:${address.port}/` }],
+    installations: [{
+      name: 'Comfy Cloud', sourceId: 'cloud', installPath: undefined,
+      remoteUrl: `http://127.0.0.1:${address.port}/`, launchMode: 'window', browserPartition: 'shared',
+    }],
   })
   titleBar = ctx.titleBar
 
@@ -74,6 +77,7 @@ test.afterAll(async () => {
     if (cloudServer?.listening) {
       await new Promise<void>((resolve, reject) => {
         cloudServer.close((error) => error ? reject(error) : resolve())
+        cloudServer.closeAllConnections()
       })
     }
   }

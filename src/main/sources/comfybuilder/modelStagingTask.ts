@@ -82,7 +82,9 @@ async function runTask(
   const downloadManager = await import('../../lib/comfyDownloadManager')
   // Startup hydration holds every model root. Join it before staging so a
   // completed install does not defer its models until the next launch.
-  await downloadManager.initializeModelDownloads()
+  // The pass is advisory: per-job admission still guards unsafe paths. One
+  // unrelated stuck file must not prevent every build from staging its models.
+  await downloadManager.initializeModelDownloads().catch(() => {})
   if (signal.aborted) return
   const modelsRoot = installModelsRoot(installation.installPath)
   // Parked rows inside this root (hydrated from a previous interrupted run)

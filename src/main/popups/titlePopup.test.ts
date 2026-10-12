@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import type { EmbeddedPopupViewOpts } from './embeddedPopupView'
 
 const devPlatformMocks = vi.hoisted(() => ({
@@ -37,7 +38,10 @@ vi.mock('./embeddedPopupView', () => ({
       popupViewMocks.instances.push({
         popupWebContentsId: this.popupWebContentsId,
         send,
-        closeParent: () => opts.onParentClosed?.()
+        closeParent: () => {
+          opts.onParentClosed?.()
+          opts.parent.emit?.('closed')
+        }
       })
     }
 
@@ -77,7 +81,21 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
-  WebContentsView: class {},
+  WebContentsView: class MockWebContentsView {
+    private static nextId = 20_000
+    private destroyed = false
+    readonly webContents = {
+      id: ++MockWebContentsView.nextId,
+      isDestroyed: () => this.destroyed,
+      loadURL: async () => {},
+      close: () => {
+        this.destroyed = true
+      }
+    }
+    setBackgroundColor(): void {}
+    setVisible(): void {}
+    setBounds(): void {}
+  },
   BrowserWindow: { getAllWindows: () => [] },
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
@@ -114,6 +132,9 @@ import {
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
 import * as settings from '../settings'
+import * as installations from '../installations'
+import * as githubStars from '../lib/githubStars'
+import { globalSettingsEvents } from '../lib/globalSettingsEvents'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -548,10 +569,10 @@ describe('requiresPerOpenConfigSync', () => {
     ).toBe(true)
   })
 
-  it('keeps the fast path for a global-settings open without a requested tab', () => {
+  it('refreshes a global-settings open without a requested tab', () => {
     expect(
       requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: null } })
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('keeps the fast path for non-global-settings kinds', () => {
@@ -887,12 +908,12 @@ describe('title popup config reuse', () => {
 
   function openAcknowledgedMenu() {
     const host = makeEntry()
-    host.window = {
+    host.window = Object.assign(new EventEmitter(), {
       id: host.windowKey,
       isDestroyed: () => false,
       getContentBounds: () => ({ x: 0, y: 0, width: 1280, height: 864 }),
-      on: vi.fn()
-    } as unknown as ComfyWindowEntry['window']
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }
+    }) as unknown as ComfyWindowEntry['window']
     host.titleBarView = {
       webContents: { isDestroyed: () => false, send: vi.fn() }
     } as unknown as ComfyWindowEntry['titleBarView']
@@ -933,6 +954,64 @@ describe('title popup config reuse', () => {
       view.send.mock.calls.filter(([channel]) => channel === 'comfy-titlepopup:set-config')
     ).toEqual([])
     expect(view.send).toHaveBeenCalledWith('comfy-titlepopup:will-show', { kind: 'menu' })
+  })
+
+  it('refreshes settings changed by a broadcast before a hidden popup misses the revert', async () => {
+    let telemetryEnabled = false
+    const originalGet = settings.get
+    const settingGet = vi
+      .spyOn(settings, 'get')
+      .mockImplementation((key) =>
+        key === 'telemetryEnabled' ? telemetryEnabled : originalGet(key)
+      )
+    const list = vi.spyOn(installations, 'list').mockResolvedValue([])
+    const cachedStars = vi.spyOn(githubStars, 'getCachedGithubStarCount').mockReturnValue(100)
+    const fetchStars = vi.spyOn(githubStars, 'getGithubStarCount').mockResolvedValue(100)
+    try {
+      const { host, view } = openAcknowledgedMenu()
+      const openSettings = () =>
+        activateTitlePopupMenuItem(
+          { kind: 'menu', parentEntryId: host.windowKey } as TitlePopupEntry,
+          'settings',
+          {} as TitlePopupHostBindings
+        )
+      openSettings()
+      rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
+      await vi.waitFor(() => expect(list).toHaveBeenCalled())
+      view.send.mockClear()
+
+      telemetryEnabled = true
+      globalSettingsEvents.emit('changed')
+      await vi.waitFor(() =>
+        expect(view.send).toHaveBeenCalledWith(
+          'comfy-titlepopup:global-settings-changed',
+          expect.objectContaining({ telemetryGranted: true })
+        )
+      )
+      hideTitlePopupForParent(host.window)
+      telemetryEnabled = false
+      view.send.mockClear()
+      globalSettingsEvents.emit('changed')
+      await Promise.resolve()
+      expect(view.send).not.toHaveBeenCalled()
+
+      openSettings()
+      expect(view.send).toHaveBeenCalledWith(
+        'comfy-titlepopup:set-config',
+        expect.objectContaining({
+          kind: 'global-settings',
+          snapshot: expect.objectContaining({ telemetryGranted: false })
+        })
+      )
+      // Drain the background refresh before restoring its dependencies.
+      await Promise.resolve()
+      await Promise.resolve()
+    } finally {
+      settingGet.mockRestore()
+      list.mockRestore()
+      cachedStars.mockRestore()
+      fetchStars.mockRestore()
+    }
   })
 })
 
