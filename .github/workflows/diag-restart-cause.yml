@@ -18,9 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { job: delay-x5, mode: delay, repeat: 5 }
-          - { job: natural-a-x40, mode: log, repeat: 40 }
-          - { job: natural-b-x40, mode: log, repeat: 40 }
+          - { job: trace-delay-x3, mode: delay, repeat: 3 }
+          - { job: trace-natural-x40, mode: log, repeat: 40 }
     steps:
       - uses: actions/checkout@v7
       - run: node .github/diag-restart-cause/inject.mjs ${{ matrix.mode }} && node .github/diag-restart-cause/keep.mjs && git diff --stat
