@@ -46,11 +46,14 @@ shows a preview-only alert. Managed submission displays a simulated handoff.
   missing method is `undefined`, and product code that feature-detects optional
   methods or catches preload errors silently takes its fallback path.
 - Install each screen's API fixture and reset shared modal state in a decorator
-  component's setup, then restore them on unmount. Storybook re-runs
-  `beforeEach` on toolbar and args changes without remounting, which would swap
-  the fixture under the mounted screen. Keep `test.restoreMocks: false` so those
-  rerenders do not clear the fresh spies' call history.
-- Query the owning document's body for takeover screens and alerts, which
+  component's setup. On unmount, reset the modal and install
+  `retiredDesktopApi`, whose calls never settle, so the unmounted screen's late
+  async work stops instead of throwing or reaching the next example's fixture.
+  Storybook re-runs `beforeEach` on toolbar and args changes without
+  remounting, which would swap the fixture under the mounted screen. Keep
+  `test.restoreMocks: false` so those rerenders do not clear the fresh spies'
+  call history.
+- Query `screen` (the document body) for takeover screens and alerts, which
   teleport outside the story canvas. Use condition-based assertions instead of
   sleeps.
 - Keep Docs examples in separate iframes so their API fixtures and stores remain

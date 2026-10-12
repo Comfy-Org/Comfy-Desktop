@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, screen, userEvent, waitFor } from 'storybook/test'
 import { defineComponent, h, onUnmounted } from 'vue'
 import { useModal } from '../src/renderer/src/composables/useModal'
 import InstallWizardPreview from './InstallWizardPreview.vue'
-import { createDesktopApi, type InstallScenario } from './desktopApi'
+import { createDesktopApi, retiredDesktopApi, type InstallScenario } from './desktopApi'
 
 const meta = {
   title: 'Screens/Create a New Instance',
@@ -26,12 +26,11 @@ const meta = {
       const Story = story()
       return defineComponent({
         setup() {
-          const previousApi = window.api
           window.api = createDesktopApi(parameters.desktopScenario)
           useModal().dismiss()
           onUnmounted(() => {
             useModal().dismiss()
-            window.api = previousApi
+            window.api = retiredDesktopApi
           })
           return () => h(Story)
         }
@@ -43,14 +42,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// The real takeover and its alerts teleport outside canvasElement.
-function screenFor(canvasElement: HTMLElement) {
-  return within(canvasElement.ownerDocument.body)
-}
+// The real takeover and its alerts teleport outside canvasElement, so plays query `screen`.
 
 export const PublicBuilds: Story = {
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Create a New Instance' })).toBeVisible()
     )
@@ -64,8 +59,7 @@ export const PublicBuilds: Story = {
 
 export const ManagedBuilds: Story = {
   parameters: { desktopScenario: 'managedBuilds' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     await waitFor(() =>
       expect(screen.getByTestId('workspace-build-field')).toHaveTextContent('Studio Image Build')
     )
@@ -80,8 +74,7 @@ export const ManagedBuilds: Story = {
 
 export const ManagedInstallRequested: Story = {
   parameters: { desktopScenario: 'managedBuilds' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     await waitFor(() =>
       expect(screen.getByTestId('workspace-build-field')).toHaveTextContent('Studio Image Build')
     )
@@ -96,8 +89,7 @@ export const ManagedInstallRequested: Story = {
 }
 
 export const SignInToManagedBuilds: Story = {
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled())
     await userEvent.click(await screen.findByRole('radio', { name: 'Managed Builds' }))
     await waitFor(() =>
@@ -109,8 +101,7 @@ export const SignInToManagedBuilds: Story = {
 
 export const NoCompatibleBuilds: Story = {
   parameters: { desktopScenario: 'noCompatibleBuilds' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     // The real screen defaults to Public Builds when the workspace has no
     // compatible release. Select Managed Builds to inspect its empty state.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled())
@@ -124,8 +115,7 @@ export const NoCompatibleBuilds: Story = {
 
 export const BuildLoadError: Story = {
   parameters: { desktopScenario: 'buildLoadError' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: "Couldn't load builds. Retry" })).toBeVisible()
     )
@@ -134,8 +124,7 @@ export const BuildLoadError: Story = {
 
 export const InstallError: Story = {
   parameters: { desktopScenario: 'installError' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     const install = await screen.findByRole('button', { name: 'Continue' })
     await waitFor(() => expect(install).toBeEnabled())
     await userEvent.click(install)
@@ -147,8 +136,7 @@ export const InstallError: Story = {
 
 export const LowDiskSpace: Story = {
   parameters: { desktopScenario: 'lowDiskSpace' satisfies InstallScenario },
-  play: async ({ canvasElement }) => {
-    const screen = screenFor(canvasElement)
+  play: async () => {
     const next = await screen.findByRole('button', { name: 'Continue' })
     await waitFor(() => expect(next).toBeEnabled())
     await userEvent.click(next)

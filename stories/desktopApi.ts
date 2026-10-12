@@ -65,12 +65,18 @@ const builds: DevPlatformBuild[] = [
 ]
 
 // Same data shape as the standalone source's variant cards.
-function variantOption(variantId: string, label: string, sizeBytes: number, recommended = false) {
+function variantOption(
+  variantId: string,
+  label: string,
+  sizeBytes: number,
+  comfyVersion: string,
+  recommended = false
+) {
   const filename = `${variantId}.7z`
   return {
     value: variantId,
     label,
-    description: `ComfyUI 0.3.92  ·  Python 3.12  ·  ${(sizeBytes / 1048576).toFixed(0)} MB`,
+    description: `ComfyUI ${comfyVersion}  ·  Python 3.12  ·  ${(sizeBytes / 1048576).toFixed(0)} MB`,
     recommended,
     data: {
       variantId,
@@ -78,6 +84,15 @@ function variantOption(variantId: string, label: string, sizeBytes: number, reco
     }
   }
 }
+
+const never = () => new Promise<never>(() => {})
+const retiredComfybuilder = new Proxy({}, { get: () => never })
+
+// Installed on unmount: a screen's late preload calls never settle, so its
+// async work stops instead of throwing or reaching the next example's fixture.
+export const retiredDesktopApi = new Proxy({} as ElectronApi, {
+  get: (_api, key) => (key === 'comfybuilder' ? retiredComfybuilder : never)
+})
 
 /** Browser-only responses at the preload boundary. No Electron or backend is imported. */
 export function createDesktopApi(scenario: InstallScenario): ElectronApi {
@@ -107,23 +122,45 @@ export function createDesktopApi(scenario: InstallScenario): ElectronApi {
   const api = {
     platform: 'win32',
     getSources: async () => structuredClone(sources),
-    getFieldOptions: async (_sourceId, fieldId) => {
+    getFieldOptions: async (_sourceId, fieldId, selections) => {
+      const stable = selections.release?.value === 'stable'
       switch (fieldId) {
         case 'release':
           return [
-            { value: 'stable', label: 'Stable', recommended: true },
-            { value: 'latest', label: 'Latest' }
+            {
+              value: 'stable',
+              label: 'Stable',
+              description: 'Tested releases, recommended for most users',
+              recommended: true
+            },
+            {
+              value: 'latest',
+              label: 'Latest on GitHub',
+              description: 'Newest commits from the master branch'
+            }
           ]
         case 'comfyVersion':
-          return [{ value: 'v0.3.92', label: 'v0.3.92' }]
-        case 'variant':
+          // Only the stable channel offers a version picker.
+          return stable
+            ? [
+                {
+                  value: 'v0.3.92',
+                  label: 'v0.3.92',
+                  recommended: true,
+                  description: 'Latest stable'
+                }
+              ]
+            : []
+        case 'variant': {
+          const comfyVersion = stable ? '0.3.92' : '0.3.92 (nightly)'
           return [
-            variantOption('win-nvidia', 'NVIDIA', 3_000_000_000, true),
-            variantOption('win-cpu', 'CPU', 1_000_000_000)
+            variantOption('win-nvidia', 'NVIDIA', 3_000_000_000, comfyVersion, true),
+            variantOption('win-cpu', 'CPU', 1_000_000_000, comfyVersion)
           ]
+        }
         case 'bundledTemplate':
           return [
-            { value: 'none', label: 'None' },
+            { value: 'none', label: 'None', description: 'Start with a blank canvas' },
             {
               value: 'starter-upscale',
               label: 'Starter Upscale Workflow',
