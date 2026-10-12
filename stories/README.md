@@ -30,9 +30,11 @@ page explains it and embeds isolated examples.
 - Query `screen` (the document body) for popovers, takeover screens and alerts,
   which teleport outside the story canvas. Use condition-based assertions
   instead of sleeps.
-- Keep Docs examples in separate iframes so their stores remain isolated.
-  Proprietary fonts are not copied into this browser build; it uses the
-  committed Inter fallback.
+- Docs pages embed examples in separate iframes, which keep their stores
+  isolated and run every example's play function at once. A component whose
+  plays move focus, like BaseSelect, sets `docs.story.inline: true`; Storybook
+  does not run plays in inline Docs examples. Proprietary fonts are not copied
+  into this browser build; it uses the committed Inter fallback.
 
 ## Validate
 

@@ -9,7 +9,7 @@ and a per-spec inventory, see [`e2e/README.md`](e2e/README.md).
 | Category | What it tests | May fake | Speed | Runs in CI |
 | --- | --- | --- | --- | --- |
 | **Unit** | Individual modules/components in isolation ([Vitest](https://vitest.dev/), `happy-dom`) | Anything — mocks encouraged | Seconds | Every PR |
-| **Storybook** | Real renderer components and screens in headless Chromium ([Storybook](https://storybook.js.org/) stories run by Vitest browser mode) | The preload API (`window.api`), via sample responses | Seconds | Every PR (`Storybook` job) |
+| **Storybook** | Real renderer components and screens in headless Chromium ([Storybook](https://storybook.js.org/) stories run by Vitest browser mode) | The preload API (`window.api`), with sample responses the story installs | Seconds | Every PR (`Storybook` job) |
 | **Integration** | Multiple main-process modules against real subprocesses/disk (Vitest, `node`, serial) | External services | Tens of seconds | Every PR |
 | **E2E** | The real built app driven by [Playwright](https://playwright.dev/), per platform | Synthetic state via dev hooks; may assert on IPC dispatch instead of real side effects | Minutes | Every PR (`@windows` / `@macos` / `@linux`) |
 | **Lifecycle** | Full user flows with **zero mocking**: real clicks, real downloads, real git, real disk | Nothing during app execution (staging fixtures and stubbed native OS dialogs only) | Up to hours (~500 MB real install) | Nightly + manual (`lifecycle.yml`) |

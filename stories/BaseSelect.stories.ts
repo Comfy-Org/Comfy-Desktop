@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
 import { expect, fn, screen, userEvent, waitFor, within } from 'storybook/test'
-import { h, ref } from 'vue'
+import { h, ref, watch } from 'vue'
 import BaseSelect from '../src/renderer/src/components/ui/BaseSelect.vue'
 
 const meta = {
@@ -10,6 +10,8 @@ const meta = {
   parameters: {
     layout: 'centered',
     docs: {
+      // Docs iframes all play at once and these plays move focus; inline stories don't autoplay.
+      story: { inline: true },
       description: {
         component:
           'The renderer select: a combobox trigger with a listbox teleported to `<body>` and positioned against the trigger. Arrow keys skip disabled options; Enter picks, and Escape or a click outside closes without a change.'
@@ -31,6 +33,11 @@ const meta = {
     setup() {
       // A v-model host, as in the app; the args spy still records each update.
       const value = ref(args.modelValue)
+      // Controls and Reset update args in place; selections stay local, so replays start from args.
+      watch(
+        () => args.modelValue,
+        (next) => (value.value = next)
+      )
       return () =>
         h('div', { style: { width: '240px' } }, [
           h(BaseSelect, {
@@ -102,7 +109,8 @@ export const DismissWithoutChange: Story = {
     await userEvent.click(button)
     const listbox = await screen.findByRole('listbox', { name: 'Release channel' })
     await userEvent.click(within(listbox).getByRole('option', { name: /^Legacy/ }))
-    await expect(listbox).toBeInTheDocument()
+    // The leave transition keeps a closed listbox in the DOM, so check the trigger's state.
+    await expect(button).toHaveAttribute('aria-expanded', 'true')
 
     await userEvent.click(document.body)
     await closed()
