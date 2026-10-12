@@ -18,17 +18,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: orig-natural, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '0', mutant: '0', repeat: 50 }
-          - { name: orig-natural-load, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
-          - { name: orig-force-m1, spec: e2e/diag-1698-orig.test.ts, force: m1, order: '1', load: '0', mutant: '0', repeat: 5 }
-          - { name: orig-force-m2, spec: e2e/diag-1698-orig.test.ts, force: m2, order: '1', load: '0', mutant: '0', repeat: 5 }
-          - { name: orig-mutant, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '0', mutant: '1', repeat: 3 }
-          - { name: fixed-natural, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '0', mutant: '0', repeat: 50 }
-          - { name: fixed-natural-load, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
-          - { name: fixed-force-m1, spec: e2e/diag-1698-fixed.test.ts, force: m1, order: '1', load: '0', mutant: '0', repeat: 10 }
-          - { name: fixed-force-m2, spec: e2e/diag-1698-fixed.test.ts, force: m2, order: '1', load: '0', mutant: '0', repeat: 10 }
-          - { name: fixed-force-m2-noorder, spec: e2e/diag-1698-fixed.test.ts, force: m2, order: '0', load: '0', mutant: '0', repeat: 5 }
-          - { name: fixed-mutant, spec: e2e/diag-1698-fixed.test.ts, force: none, order: '1', load: '0', mutant: '1', repeat: 3 }
+          - { name: final-natural, spec: e2e/diag-1698-final.test.ts, force: none, order: '1', load: '0', mutant: '0', repeat: 50 }
+          - { name: final-natural-load-a, spec: e2e/diag-1698-final.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
+          - { name: final-natural-load-b, spec: e2e/diag-1698-final.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
+          - { name: final-force-m1, spec: e2e/diag-1698-final.test.ts, force: m1, order: '1', load: '0', mutant: '0', repeat: 10 }
+          - { name: final-mutant, spec: e2e/diag-1698-final.test.ts, force: none, order: '1', load: '0', mutant: '1', repeat: 3 }
+          - { name: orig-natural-load-a, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
+          - { name: orig-natural-load-b, spec: e2e/diag-1698-orig.test.ts, force: none, order: '1', load: '1', mutant: '0', repeat: 50 }
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
