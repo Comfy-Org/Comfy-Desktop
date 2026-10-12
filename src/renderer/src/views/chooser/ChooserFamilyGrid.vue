@@ -29,6 +29,7 @@ const emit = defineEmits<{
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
+  'lifecycle-action': [action: 'start' | 'stop' | 'restart', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
   'why-cloud': []
@@ -95,6 +96,7 @@ function unlockTileSize(el: Element): void {
       @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"
       @open-kebab-menu="(event, inst) => emit('open-kebab-menu', event, inst)"
       @trigger-action="(action, inst) => emit('trigger-action', action, inst)"
+      @lifecycle-action="(action, inst) => emit('lifecycle-action', action, inst)"
       @view-error="emit('view-error', $event)"
       @view-danger="emit('view-danger', $event)"
     />
