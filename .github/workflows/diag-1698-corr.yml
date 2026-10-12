@@ -1,0 +1,59 @@
+# Temporary diagnostics for the beta-args answer-correlation gap (PR #1698). Not for merge.
+name: diag-1698-corr
+
+on:
+  push:
+    branches:
+      - bl/diag-1698-answer-correlation
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.spec }} ${{ matrix.late }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { spec: after, late: none, repeat: 20 }
+          - { spec: after, late: ask-1, repeat: 20 }
+          - { spec: after, late: answer-1, repeat: 20 }
+          - { spec: after, late: ask-2-hold, repeat: 20 }
+          - { spec: after, late: answer-2, repeat: 20 }
+          - { spec: before, late: ask-1, repeat: 3 }
+          - { spec: before, late: answer-1, repeat: 3 }
+          - { spec: before, late: ask-2-hold, repeat: 3 }
+          - { spec: before, late: answer-2, repeat: 3 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Run diag-1698-corr-${{ matrix.spec }} x${{ matrix.repeat }} (DIAG_LATE=${{ matrix.late }})
+        env:
+          DIAG_LATE: ${{ matrix.late }}
+        run: |
+          set +e
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux "e2e/diag-1698-corr-${{ matrix.spec }}.test.ts" \
+            --repeat-each=${{ matrix.repeat }} --retries=0 --reporter=list 2>&1 | tee e2e.log
+          echo "playwright exit: ${PIPESTATUS[0]}" | tee -a e2e.log
+          {
+            echo "### ${{ matrix.spec }} ${{ matrix.late }}"
+            echo '```'
+            grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped|did not run)|playwright exit' e2e.log
+            grep -oE "(the wait returned before main had answered both of this open's asks|this open never had both asks answered|the grant was (still shown with HEAD below its range|shown though git could not prove it))" e2e.log | sort | uniq -c
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diag-corr-${{ matrix.spec }}-${{ matrix.late }}
+          path: e2e.log
+          retention-days: 7

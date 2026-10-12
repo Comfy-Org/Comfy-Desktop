@@ -55,6 +55,21 @@ import { isInstallationVisibleToRenderer } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 import type { CoreBetaArgs } from '../../../types/ipc'
 
+// diag(#1698): the held late answer, released by the event its mode names. Not for merge.
+let diagHeld: { mode: string; asks: number; answers: number; release: () => void } | null = null
+
+/** Count an ask or answer toward the held answer's release. Returns ms to hold this ask's own answer. */
+function diagTick(kind: 'ask' | 'answer'): number {
+  const held = diagHeld
+  if (!held) return 0
+  const [event, n, hold] = held.mode.split('-')
+  const count = kind === 'ask' ? ++held.asks : ++held.answers
+  if (event !== kind || count < Number(n)) return 0
+  diagHeld = null
+  held.release()
+  return hold === 'hold' ? 1500 : 0
+}
+
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
  *  so renderers re-pull statusTag (which drives the dashboard's
@@ -659,18 +674,43 @@ export function registerInstallationHandlers(): void {
 
   // Asked for only by the beta-args pill, so `get-detail-sections` never waits on it.
   ipcMain.handle('get-core-beta-args', (_event, installationId: string, launchArgs?: unknown) => {
+    // diag(#1698): `{ diagLate: mode }` asks with the stored args and holds the answer until the
+    // event `mode` names among the asks that follow. Not for merge.
+    const late =
+      launchArgs && typeof launchArgs === 'object'
+        ? (launchArgs as { diagLate?: string }).diagLate
+        : undefined
+    const holdOwn = late ? 0 : diagTick('ask')
     // E2E reads each answer off its ask's record, so a reset drops a late answer with its ask.
     const ask: { installationId: string; answer?: CoreBetaArgs } = { installationId }
     recordIpcInvocation('get-core-beta-args', ask)
-    return answerCoreBetaArgs(installationId, launchArgs, {
+    return answerCoreBetaArgs(installationId, late ? undefined : launchArgs, {
       sessionArgs: (id) => {
         const running = _runningSessions.get(id)
         return running ? (running.coreBetaArgs ?? []) : null
       },
       record: (id) => installations.get(id),
       launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
-    }).then((answer) => {
+    }).then(async (answer) => {
+      if (late) {
+        recordIpcInvocation('diag:late', {
+          phase: 'computed',
+          args: answer.args.map(({ arg }) => arg)
+        })
+        await new Promise<void>((release) => {
+          diagHeld = { mode: late, asks: 0, answers: 0, release }
+        })
+        recordIpcInvocation('diag:late', { phase: 'landed', t: Date.now() })
+      } else if (holdOwn) {
+        await new Promise((resolve) => setTimeout(resolve, holdOwn))
+      }
       ask.answer = answer
+      // The channel the spec before this fix read.
+      recordIpcInvocation('get-core-beta-args:answered', answer)
+      if (!late) {
+        recordIpcInvocation('diag:answer', { t: Date.now() })
+        diagTick('answer')
+      }
       return answer
     })
   })
