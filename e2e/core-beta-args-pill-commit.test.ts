@@ -34,6 +34,8 @@ const ARGS_FIELD = '[data-field-id="launchArgs"]'
 const PILL = `${ARGS_FIELD} .beta-args button`
 const LOADING = `${ARGS_FIELD} .beta-args-loading`
 const ASKED = 'get-core-beta-args'
+/** Not an install: what the hidden picker asks for to mark where an open's asks start. */
+const OPEN_MARK = 'e2e-open-mark'
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
 let ctx: AppContext
@@ -128,25 +130,71 @@ test.afterAll(async () => {
 
 /** Main records each ask, and sets its answer on that record once answered. */
 interface Ask {
+  installationId: string
   answer?: { args: { arg: string }[] }
 }
 
+type Answer = NonNullable<Ask['answer']>
+
 interface Opened {
   popup: WebContentsPage
+  /** Whether a hidden picker was there to mark where this open's asks start. */
+  marked: boolean
   /** Main's answer to every ask this open made. */
-  answers: NonNullable<Ask['answer']>[]
+  answers: Answer[]
+}
+
+/** Whether an earlier open mounted the picker, whose pill can then ask while hidden. */
+let pickerMounted = false
+
+/**
+ * Has the hidden picker ask for OPEN_MARK as the next config reaches it. This listener runs after
+ * the picker's own, before Vue flushes the watchers that ask for the open, and main records one
+ * renderer's asks in the order it sent them. So the asks after the mark are the open's, and none
+ * the hidden picker sent before the config arrived is.
+ */
+async function markNextOpen(): Promise<void> {
+  await titlePopupPage(ctx.app).evaluate(`(() => {
+    window.__e2eUnmarkOpen?.()
+    const off = window.__comfyTitlePopup.onConfig(() => {
+      off()
+      void window.api.getCoreBetaArgs(${JSON.stringify(OPEN_MARK)})
+    })
+    window.__e2eUnmarkOpen = off
+  })()`)
 }
 
 /**
- * The picker stays mounted while hidden, so until this open's answers arrive its pill still shows
- * the previous open's. An open asks twice (when shown, and again once the args field's schema load
- * settles), so return only once main has answered both. The reset drops every earlier ask's record,
- * so a late answer to one cannot stand in for this open's.
+ * Main's answers once the open has asked at least twice (when shown, and again once the args
+ * field's schema load settles) and every ask so far is answered. Until then the hidden picker's
+ * pill still shows the previous open's answer.
  */
+async function answersOf(marked: boolean): Promise<Answer[]> {
+  let answers: Answer[] = []
+  await expect
+    .poll(
+      async () => {
+        const recorded = (await getIpcInvocations(ctx.app, ASKED)) as Ask[]
+        const start = marked
+          ? recorded.findIndex(({ installationId }) => installationId === OPEN_MARK) + 1
+          : 0
+        const asks = marked && start === 0 ? [] : recorded.slice(start)
+        answers = asks.flatMap(({ answer }) => (answer ? [answer] : []))
+        return asks.length >= 2 && answers.length === asks.length
+      },
+      { timeout: 15_000, intervals: [100, 200], message: 'this open never had both asks answered' },
+    )
+    .toBe(true)
+  return answers
+}
+
+/** The reset drops every earlier ask's record, so a late answer to one cannot stand in for this open's. */
 async function openStartupArgs(): Promise<Opened> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
   await resetIpcInvocations(ctx.app, ASKED)
+  const marked = pickerMounted
+  if (marked) await markNextOpen()
   await ctx.panel.evaluate(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
   )
@@ -154,18 +202,9 @@ async function openStartupArgs(): Promise<Opened> {
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
   await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  let answers: Opened['answers'] = []
-  await expect
-    .poll(
-      async () => {
-        const asks = (await getIpcInvocations(ctx.app, ASKED)) as Ask[]
-        answers = asks.flatMap(({ answer }) => (answer ? [answer] : []))
-        return asks.length >= 2 && answers.length === asks.length
-      },
-      { timeout: 15_000, intervals: [100, 200], message: 'this open never had both asks answered' },
-    )
-    .toBe(true)
-  return { popup, answers }
+  const answers = await answersOf(marked)
+  pickerMounted = true
+  return { popup, marked, answers }
 }
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
@@ -173,12 +212,17 @@ const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
   )
 
-/** No answer this open got offered a grant, and once the pill has applied them it shows nothing. */
-async function expectNoPill({ popup, answers }: Opened, message: string): Promise<void> {
-  expect(answers.flatMap(({ args }) => args.map(({ arg }) => arg)), message).toEqual([])
+const granted = (answers: Answer[]): string[] =>
+  answers.flatMap(({ args }) => args.map(({ arg }) => arg))
+
+/** No answer this open got offered a grant, the pill shows nothing once it has applied them, and
+ *  no ask the open made by then offered one either. */
+async function expectNoPill({ popup, marked, answers }: Opened, message: string): Promise<void> {
+  expect(granted(answers), message).toEqual([])
   const shown = async (): Promise<string | null> =>
     (await pillLabel(popup)) ?? ((await popup.exists(LOADING)) ? 'loading' : null)
   await expect.poll(shown, { timeout: 10_000, message }).toBeNull()
+  expect(granted(await answersOf(marked)), message).toEqual([])
 }
 
 test('a commit grant whose range contains HEAD shows before any launch @linux', async () => {
