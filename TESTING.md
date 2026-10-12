@@ -1,14 +1,15 @@
 # Testing
 
-This repo has four test categories. They differ in what they are allowed to fake,
+This repo has five test categories. They differ in what they are allowed to fake,
 how fast they run, and when CI runs them. For the full lifecycle zero-mock policy
 and a per-spec inventory, see [`e2e/README.md`](e2e/README.md).
 
-## The four categories
+## The five categories
 
 | Category | What it tests | May fake | Speed | Runs in CI |
 | --- | --- | --- | --- | --- |
 | **Unit** | Individual modules/components in isolation ([Vitest](https://vitest.dev/), `happy-dom`) | Anything — mocks encouraged | Seconds | Every PR |
+| **Storybook** | Real renderer screens in headless Chromium ([Storybook](https://storybook.js.org/) stories run by Vitest browser mode) | The preload API (`window.api`), via sample responses | Seconds | Every PR (`Storybook` job) |
 | **Integration** | Multiple main-process modules against real subprocesses/disk (Vitest, `node`, serial) | External services | Tens of seconds | Every PR |
 | **E2E** | The real built app driven by [Playwright](https://playwright.dev/), per platform | Synthetic state via dev hooks; may assert on IPC dispatch instead of real side effects | Minutes | Every PR (`@windows` / `@macos` / `@linux`) |
 | **Lifecycle** | Full user flows with **zero mocking**: real clicks, real downloads, real git, real disk | Nothing during app execution (staging fixtures and stubbed native OS dialogs only) | Up to hours (~500 MB real install) | Nightly + manual (`lifecycle.yml`) |
@@ -16,6 +17,8 @@ and a per-spec inventory, see [`e2e/README.md`](e2e/README.md).
 Where they live:
 
 - Unit: `src/**/*.test.ts` (excluding `*.integration.test.ts`)
+- Storybook: `stories/*.stories.ts` (each story's play function is a test;
+  sample preload responses live in `stories/desktopApi.ts`)
 - Integration: `src/**/*.integration.test.ts`
 - E2E + Lifecycle: `e2e/*.test.ts`, selected by tag in the test title
   (`@windows @macos @linux` vs `@lifecycle`), mapped to Playwright projects in
@@ -28,6 +31,10 @@ Where they live:
 pnpm test                    # run once
 pnpm run test:watch          # watch mode
 pnpm exec vitest run src/main/lib/desktopDetect.test.ts   # one file
+
+# Storybook (install Chromium once)
+pnpm exec playwright install --only-shell chromium
+pnpm run test:storybook
 
 # Integration
 pnpm run test:integration
@@ -43,6 +50,14 @@ pnpm run test:e2e:lifecycle
 pnpm exec playwright test --project=lifecycle lifecycle-copy.test.ts   # one spec
 ```
 
+The root `vitest.config.ts` defines two projects: `unit` and the `storybook`
+browser project, which Storybook's **Run tests** button uses. `pnpm test` and
+`pnpm run test:watch` pass `--project unit`. A bare `pnpm exec vitest`,
+`vitest related`, or an editor's Vitest extension runs both projects, so it
+needs Chromium installed. In watch mode the Storybook addon also starts
+`pnpm storybook --ci` on port 6006 unless Storybook is already running there.
+Add `--project unit` to run only unit tests.
+
 > [!WARNING]
 > `pnpm run test:e2e` with no `--project` runs **all** projects, including
 > `lifecycle` — which downloads ~500 MB and performs real installs. Use the
@@ -55,6 +70,9 @@ The lifecycle harness prints the per-run profile directory
 ## Which category does my test belong in?
 
 - Testing a function, composable, or component contract → **unit**.
+- Making a renderer screen's states explorable for review, with browser
+  interaction checks against sample preload responses → **Storybook** (see
+  [`stories/README.md`](stories/README.md)).
 - Testing several main-process modules working together against real
   subprocesses or the filesystem → **integration**.
 - Driving the built app's UI, but seeding synthetic state via dev hooks
@@ -84,7 +102,7 @@ acceptable — fix them when discovered (see [`AGENTS.md`](AGENTS.md)).
 
 | Workflow | Trigger | What runs |
 | --- | --- | --- |
-| `ci.yml` | Every PR | Unit + integration on Linux; E2E per platform (`test:e2e:macos` / `:windows` / `:linux`) |
+| `ci.yml` | Every PR | Unit + integration on Linux; Storybook build + story tests on Linux; E2E per platform (`test:e2e:macos` / `:windows` / `:linux`) |
 | `lifecycle.yml` | Nightly + manual dispatch | The whole `lifecycle` Playwright project |
 
 Playwright traces, videos, and screenshots for failures are uploaded as CI
