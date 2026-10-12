@@ -36,4 +36,14 @@ describe('evalWithRetry', () => {
     expect(evaluate).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('does not wait after the last permitted attempt fails', async () => {
+    const error = new Error('Execution context was destroyed')
+    const evaluate = vi.fn<() => Promise<never>>().mockRejectedValue(error)
+    const result = evalWithRetry(evaluate).catch((err: unknown) => err)
+    await vi.advanceTimersByTimeAsync(150)
+    expect(evaluate).toHaveBeenCalledTimes(3)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(await result).toBe(error)
+  })
 })

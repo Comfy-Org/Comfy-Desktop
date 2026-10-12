@@ -957,6 +957,9 @@ describe('title popup config reuse', () => {
   })
 
   it('refreshes settings changed by a broadcast before a hidden popup misses the revert', async () => {
+    // All async dependencies in this fixture resolve immediately. A full
+    // event-loop turn drains their continuations without counting microtasks.
+    const flushRefreshes = () => new Promise<void>((resolve) => setImmediate(resolve))
     let telemetryEnabled = false
     const originalGet = settings.get
     const settingGet = vi
@@ -992,7 +995,7 @@ describe('title popup config reuse', () => {
       telemetryEnabled = false
       view.send.mockClear()
       globalSettingsEvents.emit('changed')
-      await Promise.resolve()
+      await flushRefreshes()
       expect(view.send).not.toHaveBeenCalled()
 
       openSettings()
@@ -1004,13 +1007,20 @@ describe('title popup config reuse', () => {
         })
       )
       // Drain the background refresh before restoring its dependencies.
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushRefreshes()
     } finally {
+      await flushRefreshes()
       settingGet.mockRestore()
       list.mockRestore()
       cachedStars.mockRestore()
       fetchStars.mockRestore()
+    }
+    const lateSettingsReads = vi.spyOn(settings, 'get')
+    try {
+      await flushRefreshes()
+      expect(lateSettingsReads).not.toHaveBeenCalled()
+    } finally {
+      lateSettingsReads.mockRestore()
     }
   })
 })

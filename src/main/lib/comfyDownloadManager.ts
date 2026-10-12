@@ -1280,7 +1280,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   try {
     startupSafety = await initializeModelDownloads()
   } catch {
-    startupSafety = { safe: false, unsafePaths: [] }
+    startupSafety = { safe: false, unsafePaths: currentUnsafeModelPaths() }
   }
   const lockedAfterStartup = rejectLockedRoot()
   if (lockedAfterStartup) return lockedAfterStartup
@@ -2499,7 +2499,9 @@ export function initializeModelDownloads(): Promise<ModelDownloadStartupSafety> 
   const run = prior
     .catch(() => undefined)
     .then(async () => {
-      if (lockedModelRoots.size > 0) return { safe: false, unsafePaths: [] }
+      // A staging transaction cannot rescan its locked root. Preserve known
+      // incomplete files so its own exempt jobs cannot certify them as present.
+      if (lockedModelRoots.size > 0) return { safe: false, unsafePaths: currentUnsafeModelPaths() }
       modelDownloadsInitRunning++
       try {
         return await doInitializeModelDownloads()
@@ -2666,7 +2668,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
     // Without the roots the legacy migration cannot certify anything -
     // treat the whole pass as unsafe rather than silently skipping it.
     console.error('Model download startup: collecting model roots failed:', err)
-    return { safe: false, unsafePaths: [] }
+    return { safe: false, unsafePaths: currentUnsafeModelPaths() }
   }
   // Known-incomplete model files that could NOT be hidden from ComfyUI's
   // scan (move failed, e.g. file locked). Their sidecars were kept so the

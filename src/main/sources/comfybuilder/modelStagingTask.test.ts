@@ -145,6 +145,9 @@ describe('startModelStaging', () => {
     abortModelStaging('i1')
     finish()
     await initialization
+    // The task's catch/await chain resumes after the deferred promise does.
+    // Drain its resolved continuations before asserting that it did no work.
+    await new Promise<void>((resolve) => setImmediate(resolve))
     expect(releaseParkedModelJobsUnder).not.toHaveBeenCalled()
     expect(acquireModelDownloadRootLock).not.toHaveBeenCalled()
     expect(stageModels).not.toHaveBeenCalled()

@@ -194,7 +194,9 @@ export function registerE2EHooks(): void {
         const dm = await import('./comfyDownloadManager')
         // Mounted renderers can be ready while startup hydration still owns
         // every model root. Join that pass before acquiring the staging lock.
-        await dm.initializeModelDownloads().catch(() => {})
+        await dm.initializeModelDownloads().catch((err: unknown) => {
+          console.warn('[e2e] startup model scan failed; continuing managed staging:', err)
+        })
         // Match background staging: retire stale parked rows before locking.
         dm.releaseParkedModelJobsUnder(installModelsRoot(installPath))
         // Staging must not run concurrently with another writer of this root.

@@ -32,7 +32,7 @@ export async function evalWithRetry<T>(
     } catch (err) {
       lastErr = err
       if (!shouldRetry(err)) throw err
-      await new Promise((r) => setTimeout(r, 50 * (i + 1)))
+      if (i + 1 < attempts) await new Promise((r) => setTimeout(r, 50 * (i + 1)))
     }
   }
   throw lastErr
