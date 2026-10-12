@@ -196,10 +196,18 @@ export class WebContentsPage {
       if (!isLostEvaluationResult(err)) throw err
       inputError = err
     }
-    const value = await this.wcEval<string | null>(`(() => {
+    const readValue = () => this.wcEval<string | null>(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)})
       return el && 'value' in el ? el.value : null
     })()`)
+    // A lost bridge result can precede the renderer's IME commit. Wait for
+    // the observable value without dispatching text input a second time.
+    const deadline = Date.now() + 1_000
+    let value = await readValue()
+    while (inputError && value !== text && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      value = await readValue()
+    }
     if (value !== text) {
       if (inputError) throw inputError
       throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)

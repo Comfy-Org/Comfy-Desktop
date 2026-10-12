@@ -1718,7 +1718,7 @@ describe('model download startup safety (issue #1322)', () => {
     })
     await expect(h.completion).resolves.toMatchObject({
       status: 'error',
-      error: expect.stringContaining('incomplete download is stuck')
+      error: expect.stringContaining('Close any program using the file, then press Retry')
     })
     await flush()
     // No staging, no transport, and no alreadyPresent certification of the
@@ -1765,9 +1765,8 @@ describe('model download startup safety (issue #1322)', () => {
         })
         await expect(h.completion).resolves.toMatchObject({
           status: 'error',
-          error: expect.stringContaining(
-            'Wait for current model operations to finish, then press Retry'
-          )
+          code: 'unsafe-existing-file',
+          error: expect.stringContaining('Close any program using the file, then press Retry')
         })
         expect(transfers.length).toBe(before)
         expect(fs.readFileSync(dest, 'utf8')).toBe('truncated legacy bytes')
@@ -1812,7 +1811,7 @@ describe('model download startup safety (issue #1322)', () => {
       await expect(refused.completion).resolves.toMatchObject({
         status: 'error',
         error: expect.stringContaining(
-          'Wait for current model operations to finish, then press Retry'
+          'wait for current model operations to finish, then press Retry'
         )
       })
       expect(transfers.length).toBe(before)
@@ -1856,7 +1855,7 @@ describe('model download startup safety (issue #1322)', () => {
       })
       await expect(h.completion).resolves.toMatchObject({
         status: 'error',
-        error: expect.stringContaining('incomplete download is stuck')
+        error: expect.stringContaining('Close any program using the file, then press Retry')
       })
     } finally {
       overrides.collectModelScanRoots = null

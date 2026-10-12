@@ -243,12 +243,16 @@ function findActiveByRef(ref: string): PendingDownload | undefined {
   return byUrl.length === 1 ? byUrl[0] : undefined
 }
 
-/** Machine-readable cause for callers that must distinguish integrity
- *  failures from transport failures (e.g. ComfyBuilder model staging):
+/** Machine-readable cause for callers that must distinguish deterministic
+ *  refusals from transport failures (e.g. ComfyBuilder model staging):
  *  `checksum-mismatch` means the downloaded bytes failed sha256 verification;
  *  `existing-file-mismatch` means a file already at the destination does not
- *  match the expected sha256. */
-export type ModelJobErrorCode = 'checksum-mismatch' | 'existing-file-mismatch'
+ *  match the expected sha256; `unsafe-existing-file` means a previous
+ *  incomplete file must be quarantined before another transfer can start. */
+export type ModelJobErrorCode =
+  | 'checksum-mismatch'
+  | 'existing-file-mismatch'
+  | 'unsafe-existing-file'
 
 /** Terminal outcome of a managed model job. `paused` is deliberately absent:
  *  a paused job's completion promise stays pending until it is resumed and
@@ -1286,17 +1290,22 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   if (lockedAfterStartup) return lockedAfterStartup
   const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
   if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
-    // An unlocked pass re-attempts quarantine. A root transaction defers the
-    // scan and retains its previous findings, so Retry must wait for it to
-    // finish before it can reassess the file. Never certify a known partial.
+    // A root transaction retains earlier quarantine failures. Its own lock
+    // does not explain the stuck file; another transaction can additionally
+    // defer a recheck. Never certify a known partial or retry it under the
+    // same staging lock without giving the caller a chance to resolve it.
+    const otherOperationLocked = [...lockedModelRoots.keys()].some((root) => root !== lockExemptKey)
     const error =
-      lockedModelRoots.size > 0
-        ? 'A previous incomplete download cannot be rechecked while model directories are busy. ' +
-          'Wait for current model operations to finish, then press Retry.'
-        : 'A previous incomplete download is stuck at this location, likely in ' +
-          'use by another program. Close it, then press Retry.'
+      'A previous incomplete download was found at this location. Close any program using the file, ' +
+      (otherOperationLocked
+        ? 'wait for current model operations to finish, then press Retry.'
+        : 'then press Retry.')
     reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return settledJobHandle(id, url, savePath, {
+      status: 'error',
+      error,
+      code: 'unsafe-existing-file'
+    })
   }
 
   // Report completed without downloading only when the file already exists

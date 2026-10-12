@@ -251,6 +251,24 @@ describe('WebContentsPage evaluation recovery', () => {
     expect(insertText).toHaveBeenCalledExactlyOnceWith('value')
     expect(executeJavaScript).toHaveBeenCalledTimes(3)
   })
+
+  it('waits for a delayed input commit after losing the result without inserting again', async () => {
+    const { page, executeJavaScript, insertText } = harness()
+    let value = 'old'
+    executeJavaScript.mockImplementation(async (expr) =>
+      expr.includes('el.focus()') ? true : value
+    )
+    insertText.mockImplementation(async (text) => {
+      setTimeout(() => {
+        value = text
+      }, 100)
+      throw lostResult
+    })
+    const assertion = expect(page.fill('input', 'value')).resolves.toBeUndefined()
+    await finishAssertion(assertion)
+    expect(value).toBe('value')
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('value')
+  })
 })
 
 function toggleHarness(lostClick: 'toggle' | 'option', error = lostResult) {

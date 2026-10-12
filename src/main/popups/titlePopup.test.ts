@@ -956,6 +956,40 @@ describe('title popup config reuse', () => {
     expect(view.send).toHaveBeenCalledWith('comfy-titlepopup:will-show', { kind: 'menu' })
   })
 
+  it('settles GitHub star loading even if the initial install hydration fails', async () => {
+    const flushRefreshes = () => new Promise<void>((resolve) => setImmediate(resolve))
+    const hydrationError = new Error('install hydration unavailable')
+    const list = vi
+      .spyOn(installations, 'list')
+      .mockRejectedValueOnce(hydrationError)
+      .mockResolvedValue([])
+    const cachedStars = vi.spyOn(githubStars, 'getCachedGithubStarCount').mockReturnValue(null)
+    const fetchStars = vi.spyOn(githubStars, 'getGithubStarCount').mockResolvedValue(null)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { host, view } = openAcknowledgedMenu()
+      activateTitlePopupMenuItem(
+        { kind: 'menu', parentEntryId: host.windowKey } as TitlePopupEntry,
+        'settings',
+        {} as TitlePopupHostBindings
+      )
+      rendered({ sender: { id: view.popupWebContentsId } } as Electron.IpcMainEvent)
+      await flushRefreshes()
+      expect(fetchStars).toHaveBeenCalledExactlyOnceWith('comfy-org/ComfyUI')
+      expect(view.send).toHaveBeenCalledWith(
+        'comfy-titlepopup:global-settings-changed',
+        expect.objectContaining({ githubStars: null, githubStarsLoading: false })
+      )
+      expect(warn).toHaveBeenCalledWith('[titlePopup] settings hydration failed:', hydrationError)
+    } finally {
+      await flushRefreshes()
+      list.mockRestore()
+      cachedStars.mockRestore()
+      fetchStars.mockRestore()
+      warn.mockRestore()
+    }
+  })
+
   it('retains and refreshes install options on reopen while GitHub stars are pending', async () => {
     const flushRefreshes = () => new Promise<void>((resolve) => setImmediate(resolve))
     const install: installations.InstallationRecord = {

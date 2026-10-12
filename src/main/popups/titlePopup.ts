@@ -1801,10 +1801,12 @@ function openGlobalSettingsForHost(
     theme: parentEntry.lastTheme,
     titleBarSender
   })
+  // Hydration and star fetching settle independently: a failed broadcast
+  // must not leave the badge loading, nor may GitHub delay install options.
+  void broadcastGlobalSettingsSnapshotToTitlePopups(bindings).catch((err: unknown) =>
+    console.warn('[titlePopup] settings hydration failed:', err)
+  )
   void (async () => {
-    // Hydrate install options immediately; an unavailable GitHub service must
-    // not delay the auto-launch dropdown. Reopens retain the last full list.
-    await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
