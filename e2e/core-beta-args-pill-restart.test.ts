@@ -18,6 +18,11 @@ import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible, openPickerViaTitlePill } from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, isPopupVisible, type WebContentsPage } from './support/cdpPages'
 import { getRunningSessionSnapshot } from './support/devHooks'
+import {
+  expectNoBetaArgsPill,
+  openWithBetaArgsAnswers,
+  type BetaArgsOpen,
+} from './support/betaArgsAnswers'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
 
@@ -83,11 +88,13 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-async function openStartupArgs(): Promise<WebContentsPage> {
+async function openStartupArgs(): Promise<BetaArgsOpen> {
   await closeTitlePopupIfOpen(ctx.app)
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 15_000 })
-  return popup
+  return openWithBetaArgsAnswers(ctx.app, async () => {
+    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 15_000 })
+    return popup
+  })
 }
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
@@ -105,7 +112,7 @@ test('the pill follows the new session after a Restart that drops a grant @linux
     })
     .not.toBeNull()
 
-  let popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument added for this session, show details')
 
@@ -143,13 +150,14 @@ test('the pill follows the new session after a Restart that drops a grant @linux
     )
     .toBe(true)
 
-  popup = await openStartupArgs()
-  await popup.waitFor(async () => (await pillLabel(popup)) === null, {
-    timeout: 10_000,
-    message: "the pill still showed the previous session's grant after the restart",
-  })
+  const reopened = await openStartupArgs()
+  await expectNoBetaArgsPill(
+    ctx.app,
+    reopened,
+    "the pill still showed the previous session's grant after the restart",
+  )
   // The new session consumed the edit, so nothing is pending any more.
-  await popup.waitFor(async () => !(await popup.exists(RESTART_TAG)), {
+  await reopened.popup.waitFor(async () => !(await reopened.popup.exists(RESTART_TAG)), {
     timeout: 10_000,
     message: '"Restart to apply" was still shown after the restart',
   })
