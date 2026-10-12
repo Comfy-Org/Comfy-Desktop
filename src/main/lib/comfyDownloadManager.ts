@@ -250,9 +250,7 @@ function findActiveByRef(ref: string): PendingDownload | undefined {
  *  match the expected sha256; `unsafe-existing-file` means a previous
  *  incomplete file must be quarantined before another transfer can start. */
 export type ModelJobErrorCode =
-  | 'checksum-mismatch'
-  | 'existing-file-mismatch'
-  | 'unsafe-existing-file'
+  'checksum-mismatch' | 'existing-file-mismatch' | 'unsafe-existing-file'
 
 /** Terminal outcome of a managed model job. `paused` is deliberately absent:
  *  a paused job's completion promise stays pending until it is resumed and
