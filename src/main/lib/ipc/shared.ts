@@ -1423,8 +1423,7 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
         resolved.ancestorTag !== cv.ancestorTag
 
       const existing = inst.updateInfoByChannel as
-        | Record<string, Record<string, unknown>>
-        | undefined
+        Record<string, Record<string, unknown>> | undefined
       let reconciledChannels: Record<string, Record<string, unknown>> | undefined
       if (existing) {
         let changed = false

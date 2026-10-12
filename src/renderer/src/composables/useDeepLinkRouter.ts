@@ -137,8 +137,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           // self-stop for REQUIRES_STOPPED, append relaunch for IN_PLACE_RELAUNCH.
           const isRestart = !!payload.isRestart
           const actionData = (payload.actionData ?? undefined) as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
           const wasRunning = sessionStore.isRunning(id)
           // migrate-to-standalone owns its confirm UI upstream, but the
           // reconstructed apiCall must still self-stop a running install so

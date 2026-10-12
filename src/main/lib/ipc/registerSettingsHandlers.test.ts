@@ -134,12 +134,10 @@ describe('buildSettingsSections', () => {
     const sections = buildSettingsSections()
     const generalFields =
       (sections.find((section) => section.title === 'General')?.fields as
-        | { id?: string }[]
-        | undefined) ?? []
+        { id?: string }[] | undefined) ?? []
     const advancedFields =
       (sections.find((section) => section.title === 'Advanced')?.fields as
-        | { id?: string; value?: unknown; description?: string }[]
-        | undefined) ?? []
+        { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
 
     expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
     expect(advancedFields).toContainEqual(

@@ -31,8 +31,7 @@ export async function copyDirWithProgress(
   src: string,
   dest: string,
   onProgress:
-    | ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void)
-    | null,
+    ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void) | null,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
   const { files, symlinks } = await collectFiles(src)

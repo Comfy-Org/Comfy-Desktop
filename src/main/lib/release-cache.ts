@@ -144,8 +144,7 @@ export function getEffectiveInfo(
   const cached = get(repo, channel)
   if (!cached) return null
   const updateInfoByChannel = installation.updateInfoByChannel as
-    | Record<string, Record<string, unknown>>
-    | undefined
+    Record<string, Record<string, unknown>> | undefined
   const perInstall = updateInfoByChannel?.[channel]
   const cv = installation.comfyVersion as ComfyVersion | undefined
   const installedTag =

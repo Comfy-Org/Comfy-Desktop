@@ -33,8 +33,7 @@ describe('getMcpSidebarContentScript', () => {
 
   afterEach(() => {
     const state = Reflect.get(window, '__comfyDesktopMcpSidebar') as
-      | { observer?: MutationObserver }
-      | undefined
+      { observer?: MutationObserver } | undefined
     state?.observer?.disconnect()
     vi.clearAllTimers()
     vi.useRealTimers()

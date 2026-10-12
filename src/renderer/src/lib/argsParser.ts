@@ -102,12 +102,7 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
 /** Per-token validation status for the raw-args field. `partial` is the trailing
  *  flag the user is still typing — neither valid nor an error yet. */
 export type ArgTokenStatus =
-  | 'ok'
-  | 'unsupported'
-  | 'missing-value'
-  | 'awaiting-value'
-  | 'orphaned'
-  | 'partial'
+  'ok' | 'unsupported' | 'missing-value' | 'awaiting-value' | 'orphaned' | 'partial'
 
 export interface ArgToken {
   text: string

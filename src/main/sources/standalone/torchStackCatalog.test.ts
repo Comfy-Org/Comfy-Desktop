@@ -282,8 +282,7 @@ describe('compute-cap mismatch is informational, never a gate', () => {
       updates.push(data)
     })
     const adopted = updates.find((u) => u.lastVerifiedTorchStack)?.lastVerifiedTorchStack as
-      | { stackId?: string; capWarning?: unknown }
-      | undefined
+      { stackId?: string; capWarning?: unknown } | undefined
     expect(adopted?.stackId).toBe(CU130_ID)
     expect(adopted?.capWarning).toBeUndefined()
   })

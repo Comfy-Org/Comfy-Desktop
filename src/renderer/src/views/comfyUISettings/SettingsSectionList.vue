@@ -373,13 +373,11 @@ function fieldOwnsLabel(field: DetailField): boolean {
               v-else-if="field.editType === 'select'"
               :model-value="asString(field.value)"
               :options="
-                (field.options ?? []).map(
-                  (opt): BaseSelectOption => ({
-                    value: opt.value,
-                    label: opt.label,
-                    description: opt.description
-                  })
-                )
+                (field.options ?? []).map((opt): BaseSelectOption => ({
+                  value: opt.value,
+                  label: opt.label,
+                  description: opt.description
+                }))
               "
               :aria-label="field.label"
               @update:model-value="(v: string) => emit('update-field', field, v)"
