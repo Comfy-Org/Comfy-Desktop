@@ -39,12 +39,17 @@ shows a preview-only alert. Managed submission displays a simulated handoff.
 - Put `*.stories.ts` files under `stories/` and import the actual renderer
   component. Avoid copying product markup into the story.
 - Shared production CSS and a fresh Pinia/i18n setup are configured in
-  `.storybook/preview.ts`.
+  `.storybook/preview.ts`. Tailwind generates utilities only from
+  `src/renderer`, so story-only wrapper markup uses scoped CSS.
 - Screen-specific preload responses live in `desktopApi.ts`, checked against the
-  production IPC types. Implement additional API calls explicitly as needed;
-  unsupported methods intentionally fail rather than pretending to succeed.
-- Install each screen's API fixture before mounting and restore it in the
-  story's `beforeEach` cleanup. Reset any shared modal state as well.
+  production IPC types. Implement every preload method the screen calls. A
+  missing method is `undefined`, and product code that feature-detects optional
+  methods or catches preload errors silently takes its fallback path.
+- Install each screen's API fixture and reset shared modal state in a decorator
+  component's setup, then restore them on unmount. Storybook re-runs
+  `beforeEach` on toolbar and args changes without remounting, which would swap
+  the fixture under the mounted screen. Keep `test.restoreMocks: false` so those
+  rerenders do not clear the fresh spies' call history.
 - Query the owning document's body for takeover screens and alerts, which
   teleport outside the story canvas. Use condition-based assertions instead of
   sleeps.
@@ -62,5 +67,6 @@ pnpm run test:storybook
 ```
 
 The tests use Storybook's Vitest addon with a single headless Chromium instance.
-CI builds and uploads the static preview, then runs these stories. Existing
-native Electron and lifecycle tests continue to cover the real runtime.
+CI builds and uploads the static preview, then runs these stories on the Node.js
+version pinned in `.node-version`. Existing native Electron and lifecycle tests
+continue to cover the real runtime.

@@ -5,6 +5,7 @@ import '../src/renderer/src/assets/main.css'
 
 setup((app) => {
   app.use(createPinia())
+  // Not the panel's shared instance: vue-i18n disposes an installed instance when its app unmounts.
   app.use(createAppI18n())
 })
 

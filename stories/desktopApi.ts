@@ -203,7 +203,8 @@ export function createDesktopApi(scenario: InstallScenario): ElectronApi {
     comfybuilder: Partial<ElectronApi['comfybuilder']>
   }
 
-  // Only the methods used by these screens are provided. An unexpected call
-  // fails rather than silently returning a fabricated success.
+  // Only the methods these screens call are provided. Missing methods are
+  // undefined, and callers that feature-detect or catch preload errors take
+  // their fallback path, so add every method a new screen uses.
   return api as unknown as ElectronApi
 }

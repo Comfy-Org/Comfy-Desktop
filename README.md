@@ -154,7 +154,7 @@ lifecycle testing.
 | `pnpm run test:integration`      | Integration suite                                                     |
 | `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
 | `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
-| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
+| `pnpm run typecheck`             | Type-check (node + web + e2e + integration + Storybook)               |
 | `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
 | `pnpm run format`                | Format (Prettier)                                                     |
 | `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
