@@ -192,7 +192,11 @@ export function registerE2EHooks(): void {
       const manifest = await resolveModelManifest(getBuilderClient(), buildId, version)
       try {
         const dm = await import('./comfyDownloadManager')
+        // Mounted renderers can be ready while startup hydration still owns
+        // every model root. Join that pass before acquiring the staging lock.
         await dm.initializeModelDownloads()
+        // Same root-lock discipline as the production install path: staging
+        // must not run concurrently with another writer of this model root.
         const releaseModelRoot = dm.acquireModelDownloadRootLock(installModelsRoot(installPath))
         if (!releaseModelRoot) {
           return { error: 'The model directory is busy.', kind: 'busy' }

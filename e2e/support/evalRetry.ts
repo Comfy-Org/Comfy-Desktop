@@ -10,7 +10,10 @@
  * run twice and turn an exactly-once product action into at-least-once.
  */
 
-const RETRY_PATTERN = /Execution context was destroyed/i
+// Playwright 1.64 gives CDP's "Promise was collected" a distinct message.
+// Earlier versions reported it as a destroyed context; keep the same recovery
+// for read-only/idempotent evaluations without changing the retry budget.
+const RETRY_PATTERN = /Execution context was destroyed|Resulting promise was garbage collected/i
 
 export async function evalWithRetry<T>(
   fn: () => Promise<T>,
