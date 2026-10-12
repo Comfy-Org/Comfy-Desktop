@@ -61,12 +61,28 @@ jobs:
           name: bootstrap-python-${{ matrix.platform }}
           path: bootstrap-python-${{ matrix.platform }}.tar.gz
 
+  release:
+    name: Assemble draft release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download platform archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bootstrap-python-*
+          merge-multiple: true
+          path: archives
+
       - name: Upload to release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: bootstrap-python-${{ matrix.platform }}.tar.gz
+          files: |
+            archives/bootstrap-python-win-x64.tar.gz
+            archives/bootstrap-python-win-arm64.tar.gz
+            archives/bootstrap-python-mac-arm64.tar.gz
+            archives/bootstrap-python-linux-x64.tar.gz
           fail_on_unmatched_files: true
           draft: true
         env:
