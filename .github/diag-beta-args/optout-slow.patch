@@ -1,0 +1,26 @@
+diff --git a/src/main/lib/coreBetaPreview.ts b/src/main/lib/coreBetaPreview.ts
+index 27045a20..55597ad3 100644
+--- a/src/main/lib/coreBetaPreview.ts
++++ b/src/main/lib/coreBetaPreview.ts
+@@ -94,7 +94,7 @@ export async function previewCoreBetaArgs(
+   if (!launchCmd?.cmd) return []
+   const split = splitLaunchCommand(launchCmd)
+   if (!split) return []
+-  if (!peekBetaFeaturesEnabled()) return []
++  void peekBetaFeaturesEnabled()
+   const grants = await getCoreBetaGrantsAsync()
+   if (grants.length === 0) return []
+   // A launch without a schema injects no managed args; the args field fills this cache.
+diff --git a/src/main/lib/ipc/registerInstallationHandlers.ts b/src/main/lib/ipc/registerInstallationHandlers.ts
+index 5ddf4566..962bf48b 100644
+--- a/src/main/lib/ipc/registerInstallationHandlers.ts
++++ b/src/main/lib/ipc/registerInstallationHandlers.ts
+@@ -669,7 +669,7 @@ export function registerInstallationHandlers(): void {
+       },
+       record: (id) => installations.get(id),
+       launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+-    }).then((answer) => {
++    }).then(async (real) => { await new Promise((r) => setTimeout(r, 1_500)); return real }).then((answer) => {
+       ask.answer = answer
+       return answer
+     })

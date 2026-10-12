@@ -1,0 +1,34 @@
+diff --git a/e2e/support/betaArgsAnswers.ts b/e2e/support/betaArgsAnswers.ts
+index 234b032f..5ae549fd 100644
+--- a/e2e/support/betaArgsAnswers.ts
++++ b/e2e/support/betaArgsAnswers.ts
+@@ -4,7 +4,7 @@
+  * In E2E, main records each `get-core-beta-args` ask and sets its answer on that record.
+  */
+ 
+-import { expect, type ElectronApplication } from '@playwright/test'
++import { expect, test, type ElectronApplication } from '@playwright/test'
+ import { titlePopupPage, type WebContentsPage } from './cdpPages'
+ import { getIpcInvocations, resetIpcInvocations } from './devHooks'
+ 
+@@ -89,6 +89,20 @@ export async function openWithBetaArgsAnswers(
+   if (marked) await markNextOpen(app)
+   const popup = await open()
+   const answers = await answersOf(app, marked)
++  if (process.env['DIAG_QUIET'] === '1') {
++    const asksNow = async (): Promise<number> => {
++      const recorded = (await getIpcInvocations(app, ASKED)) as Ask[]
++      const start = marked
++        ? recorded.findIndex(({ installationId }) => installationId === OPEN_MARK) + 1
++        : 0
++      return recorded.slice(start).length
++    }
++    const asks = await asksNow()
++    await new Promise((resolve) => setTimeout(resolve, 3_000))
++    const later = await asksNow()
++    console.log(`diag-open ${test.info().title.split(' @')[0]} | marked=${marked} asks=${asks} later=${later}`)
++    expect(later, 'a later ask arrived after the open settled').toBe(asks)
++  }
+   pickerShown.add(app)
+   return { popup, marked, answers }
+ }
