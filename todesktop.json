@@ -8,7 +8,14 @@
     "!electron-builder.yml",
     "!out/**/*.map",
     "!bootstrap-python/**",
-    "!todesktop-targets/**"
+    "!todesktop-targets/**",
+    "!.storybook/**",
+    "!stories/**",
+    "!storybook-static/**",
+    "!tsconfig.storybook.json",
+    "!vitest.storybook.config.ts",
+    "!*storybook.log",
+    "!.node-version"
   ],
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",
