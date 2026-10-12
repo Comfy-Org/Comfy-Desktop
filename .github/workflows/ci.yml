@@ -115,7 +115,7 @@ jobs:
           COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           echo "Storybook for commit $COMMIT_SHA: [download the static preview]($ARTIFACT_URL)." >> "$GITHUB_STEP_SUMMARY"
-          echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --directory storybook-static` and open http://localhost:6006.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static` and open http://localhost:6006.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps --only-shell chromium

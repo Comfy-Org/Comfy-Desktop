@@ -14,6 +14,7 @@
     "!storybook-static/**",
     "!tsconfig.storybook.json",
     "!vitest.storybook.config.ts",
+    "!vitest.unit.config.ts",
     "!*storybook.log"
   ],
   "appId": "com.todesktop.241012ess7yxs0e",

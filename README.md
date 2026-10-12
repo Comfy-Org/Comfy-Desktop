@@ -136,7 +136,7 @@ hosted preview URL. To view an artifact without installing project dependencies,
 extract it into `storybook-static/` and run:
 
 ```bash
-python3 -m http.server 6006 --directory storybook-static
+python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static
 ```
 
 See [`stories/README.md`](stories/README.md) for the sample scenarios, how to add

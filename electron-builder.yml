@@ -13,6 +13,7 @@ files:
   - '!docs/*'
   - '!{.storybook,stories,storybook-static}/*'
   - '!{tsconfig.storybook.json,vitest.storybook.config.ts,*storybook.log}'
+  - '!vitest.unit.config.ts'
   - '!out/**/*.map'
   - '!reference/*'
   - '!**/*.wsb'
