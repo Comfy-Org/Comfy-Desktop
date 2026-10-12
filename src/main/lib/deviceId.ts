@@ -153,6 +153,13 @@ function isLegacyUuid(value: string): boolean {
 const MACHINE_ID_TIMEOUT_MS = 2000
 
 /**
+ * A lookup still unanswered this far into a timed-out launch is hung rather
+ * than slow (systeminformation's PowerShell call has no timeout of its own),
+ * so the launch's provisional id is saved as the stable fallback.
+ */
+const HUNG_LOOKUP_MS = 60_000
+
+/**
  * win32 reads `si.uuid()`: one PowerShell spawn (plus a `reg query`) instead
  * of `si.system()`'s two or three, running the same
  * `Win32_ComputerSystemProduct` query with the same parse, so the id is
@@ -381,17 +388,24 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
     // answer: persisting it would make the next launch that reads the hardware
     // switch ids. A late answer saves what an on-time one would have (the
     // machine id, or this launch's id as the stable fallback), so the next
-    // launch keeps it even if its own lookup times out too.
+    // launch keeps it even if its own lookup times out too. A hung lookup
+    // saves the fallback after HUNG_LOOKUP_MS; a later answer overwrites it.
     if (timedOut && newId !== existing) {
       cached = { installationId: newId, idClass: 'provisional' }
+      const hung = setTimeout(() => writeIdFile(newId), HUNG_LOOKUP_MS)
+      hung.unref()
       void startMachineIdLookup().then(
         (sys) => {
+          clearTimeout(hung)
           const late = answeredMachineId(sys)
           writeIdFile(
             late.idClass === 'machine_derived' ? computeInstallationId(late.machineId) : newId
           )
         },
-        () => {}
+        () => {
+          clearTimeout(hung)
+          writeIdFile(newId)
+        }
       )
       return { legacyId: null }
     }

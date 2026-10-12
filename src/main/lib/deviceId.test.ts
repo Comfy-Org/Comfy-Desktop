@@ -680,22 +680,20 @@ describe('deviceId', () => {
       await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real))
     })
 
-    it('saves nothing when the lookup rejects late', async () => {
+    it('saves this launch id as the stable fallback when the lookup rejects late', async () => {
       setPlatform('win32')
       await initTimingOut()
+      const provisional = mod.getDeviceId()
       const unhandled = vi.fn()
       process.on('unhandledRejection', unhandled)
       mockSystemError = new Error('late failure')
       answerLateLookup()
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
       process.off('unhandledRejection', unhandled)
       expect(unhandled).not.toHaveBeenCalled()
-      expect(fs.existsSync(deviceIdFile())).toBe(false)
     })
 
-    // Known limitation: with no stored id and a lookup that never answers,
-    // every launch is provisional and gets a new id.
-    it('gives each launch a new provisional id while the lookup never answers', async () => {
+    it('saves nothing in a session that ends before the lookup answers or is ruled hung', async () => {
       setPlatform('win32')
       await initTimingOut()
       const first = mod.getDeviceId()
@@ -704,6 +702,52 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('provisional')
       expect(mod.getDeviceId()).not.toBe(first)
       expect(fs.existsSync(deviceIdFile())).toBe(false)
+    })
+
+    describe('a lookup that hangs', () => {
+      const real = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+
+      async function initHanging(): Promise<void> {
+        setPlatform('win32')
+        vi.useFakeTimers()
+        mockLookupHangs = true
+        const pending = mod.initDeviceId()
+        await vi.advanceTimersByTimeAsync(2000)
+        await pending
+      }
+
+      it('saves this launch id 60 s in, and the next timed-out launch keeps it', async () => {
+        await initHanging()
+        const provisional = mod.getDeviceId()
+        await vi.advanceTimersByTimeAsync(59_999)
+        expect(fs.existsSync(deviceIdFile())).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional)
+        vi.useRealTimers()
+
+        await nextLaunch()
+        await initTimingOut()
+        expect(mod.getDeviceId()).toBe(provisional)
+        expect(mod.getIdClass()).toBe('random_fallback')
+      })
+
+      it('lets a real answer after the hung save overwrite it', async () => {
+        await initHanging()
+        await vi.advanceTimersByTimeAsync(60_000)
+        answerLateLookup()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+      })
+
+      it('does not save the fallback over an answer that came first', async () => {
+        await initHanging()
+        await vi.advanceTimersByTimeAsync(30_000)
+        answerLateLookup()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+      })
     })
 
     it('counts the budget from initDeviceId(), not from the early start', async () => {
