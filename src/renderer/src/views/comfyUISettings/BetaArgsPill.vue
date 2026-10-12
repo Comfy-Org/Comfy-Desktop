@@ -41,9 +41,13 @@ const reopenEpoch = inject(SETTINGS_REOPEN_EPOCH, null)
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
-  // Never show another install's args, or an earlier open's, while this one's are on the way.
+  // Never show another install's args, or an earlier open's, or their placeholder, while this
+  // one's are on the way.
   const showing = `${reopenEpoch?.value}:${props.installationId}`
-  if (shownFor !== showing) data.value = null
+  if (shownFor !== showing) {
+    data.value = null
+    loading.value = false
+  }
   shownFor = showing
   const slow = setTimeout(() => {
     if (seq === requestSeq) loading.value = true

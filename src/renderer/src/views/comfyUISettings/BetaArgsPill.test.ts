@@ -369,6 +369,38 @@ describe('BetaArgsPill', () => {
       )
     })
 
+    it('waits the full delay before the placeholder when the hidden host was still loading', async () => {
+      vi.useFakeTimers()
+      const epoch = ref(1)
+      api.getCoreBetaArgs.mockResolvedValueOnce(NEXT)
+      const wrapper = mountInReopenedHost(epoch)
+      await vi.advanceTimersByTimeAsync(0)
+
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise(() => {}))
+      useSessionStore().runningInstances.set('inst-1', {
+        installationId: 'inst-1',
+        installationName: 'One',
+        mode: 'window',
+        startedAt: 100
+      })
+      await vi.advanceTimersByTimeAsync(150)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(true)
+
+      let answer: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (answer = r)))
+      epoch.value = 2
+      await nextTick()
+      expect(wrapper.html()).toBe('<!--v-if-->')
+      await vi.advanceTimersByTimeAsync(149)
+      expect(wrapper.html()).toBe('<!--v-if-->')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(true)
+
+      answer(NO_ARGS)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.html()).toBe('<!--v-if-->')
+    })
+
     it("keeps this open's pill while a re-ask within the same open is on its way", async () => {
       const epoch = ref(1)
       api.getCoreBetaArgs.mockResolvedValueOnce(NEXT)
