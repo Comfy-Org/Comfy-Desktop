@@ -106,7 +106,10 @@ export async function expectNoBetaArgsPill(
   expect(grantedArgs(answers), message).toEqual([])
   const shown = async (): Promise<string | null> =>
     (await popup.evaluate<string | null>(
-      `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+      `(() => {
+        const pill = document.querySelector(${JSON.stringify(PILL)})
+        return pill ? (pill.getAttribute('aria-label') ?? 'pill') : null
+      })()`,
     )) ?? ((await popup.exists(LOADING)) ? 'loading' : null)
   await expect.poll(shown, { timeout: 10_000, message }).toBeNull()
   expect(grantedArgs(await answersOf(app, marked)), message).toEqual([])
