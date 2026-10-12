@@ -71,7 +71,7 @@
     "prepare": "node ./scripts/prepare.mjs",
     "storybook": "storybook dev -p 6006 --host 127.0.0.1 --no-open",
     "build-storybook": "storybook build",
-    "typecheck:storybook": "vue-tsc --noEmit -p tsconfig.storybook.json --composite false",
+    "typecheck:storybook": "vue-tsc --noEmit -p tsconfig.storybook.json",
     "test:storybook": "vitest run -c vitest.storybook.config.ts"
   },
   "dependencies": {

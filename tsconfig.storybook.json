@@ -1,5 +1,9 @@
 {
   "extends": "./tsconfig.web.json",
+  "compilerOptions": {
+    // Stories import files that other projects own, which a composite project must list.
+    "composite": false
+  },
   "include": [
     ".storybook/**/*.ts",
     "stories/**/*.ts",
