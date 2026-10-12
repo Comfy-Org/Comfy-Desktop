@@ -116,6 +116,36 @@ pnpm run dev               # Windows / macOS
 
 On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
 
+### Explore the UI with Storybook
+
+```bash
+pnpm install
+pnpm storybook
+```
+
+Open **http://localhost:6006** to browse stories that render actual renderer
+components with the app's production styles, translations, and a fresh Pinia
+store per story. No Electron app, bootstrap Python, account, or ComfyUI
+installation is needed to run them.
+
+The **Storybook** CI job builds a static Storybook from the commit it checks out
+and links it as a downloadable `storybook-<commit>` artifact in the job summary.
+On a pull request that commit is GitHub's merge of the PR into its base branch,
+so the preview includes the base branch as of that run. The same job runs the
+story interaction tests against the Vitest/Vite-served sources of that checkout;
+it does not run the uploaded artifact. This initial setup does not deploy a
+hosted preview URL. To view an artifact without installing project
+dependencies, extract it into `storybook-static/` and run:
+
+```bash
+python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static
+```
+
+See [`stories/README.md`](stories/README.md) for the available stories, how to
+add one, and how to run their browser interaction tests. Storybook covers UI
+behavior; native installation and hardware compatibility still need Electron and
+lifecycle testing.
+
 ### Common tasks
 
 | Command                          | Description                                                           |
@@ -126,7 +156,7 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 | `pnpm run test:integration`      | Integration suite                                                     |
 | `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
 | `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
-| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
+| `pnpm run typecheck`             | Type-check (node + web + e2e + integration + Storybook)               |
 | `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
 | `pnpm run format`                | Format (Prettier)                                                     |
 | `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |

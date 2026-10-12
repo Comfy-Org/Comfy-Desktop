@@ -9,6 +9,7 @@ lifecycle tests, and an inventory of every Playwright spec. Background:
 | Category | What it is | Command | Runs in CI |
 | --- | --- | --- | --- |
 | **Unit** | Fast Vitest tests of individual modules. | `pnpm test` | Every PR |
+| **Storybook** | Story play functions run against real renderer components and screens in headless Chromium, with sample preload responses where they call the preload API. See [`stories/README.md`](../stories/README.md). | `pnpm run test:storybook` | Every PR (`Storybook` job) |
 | **Integration** | Vitest suite with its own config (`vitest.integration.config.ts`). | `pnpm run test:integration` | Every PR |
 | **E2E** | Playwright tests that drive the real built app, but **may** use dev hooks to inject synthetic state and may assert on IPC dispatch instead of real side effects. Must be fast. Tagged `@windows` / `@macos` / `@linux`. | `pnpm run test:e2e:<platform>` | Every PR, per platform |
 | **Lifecycle** | Playwright tests that validate full user flows with **zero mocking** during app execution: real clicks, real downloads, real git, real disk. Tagged `@lifecycle`. | `pnpm run test:e2e:lifecycle` | Nightly + manual (`lifecycle.yml`) |
