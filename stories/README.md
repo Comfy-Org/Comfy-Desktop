@@ -16,11 +16,12 @@ examples.
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | Public Builds             | Change release/hardware, continue to the starter workflow picker.                         |
 | Managed Builds            | Inspect a sample workspace build and switch its installation target.                      |
+| Managed Install Requested | See the simulated handoff after Continue requests a Managed Build install.                |
 | Sign In To Managed Builds | See the result of simulated sign-in; remount Public Builds to perform the click yourself. |
 | No Compatible Builds      | Inspect the empty picker and disabled installation button.                                |
 | Build Load Error          | Click Retry to recover the sample failed request.                                         |
 | Install Error             | Inspect the alert after the sample installation request is rejected.                      |
-| Low Disk Space            | Inspect the blocked starter workflow, then pick None to proceed.                          |
+| Low Disk Space            | Inspect the blocked starter workflow, then pick a smaller one or None to proceed.         |
 
 **Public Builds** are the standard ComfyUI environments. **Managed Builds** are
 packaged setups published to a Comfy platform workspace. The **wizard** is this

@@ -43,7 +43,7 @@ const builds: DevPlatformBuild[] = [
         releaseVersion: 3,
         os: 'windows',
         gpu: 'nvidia',
-        accelVariant: 'cuda130-py312',
+        accelVariant: 'cu130',
         recommended: true
       },
       {
@@ -51,7 +51,7 @@ const builds: DevPlatformBuild[] = [
         releaseVersion: 3,
         os: 'windows',
         gpu: 'cpu',
-        accelVariant: 'cpu-py312',
+        accelVariant: 'cpu',
         recommended: false
       }
     ]
@@ -63,6 +63,21 @@ const builds: DevPlatformBuild[] = [
     targetOs: ['linux']
   }
 ]
+
+// Same data shape as the standalone source's variant cards.
+function variantOption(variantId: string, label: string, sizeBytes: number, recommended = false) {
+  const filename = `${variantId}.7z`
+  return {
+    value: variantId,
+    label,
+    description: `ComfyUI 0.3.92  ·  Python 3.12  ·  ${(sizeBytes / 1048576).toFixed(0)} MB`,
+    recommended,
+    data: {
+      variantId,
+      downloadFiles: [{ url: `https://example.com/${filename}`, filename, size: sizeBytes }]
+    }
+  }
+}
 
 /** Browser-only responses at the preload boundary. No Electron or backend is imported. */
 export function createDesktopApi(scenario: InstallScenario): ElectronApi {
@@ -103,17 +118,18 @@ export function createDesktopApi(scenario: InstallScenario): ElectronApi {
           return [{ value: 'v0.3.92', label: 'v0.3.92' }]
         case 'variant':
           return [
-            {
-              value: 'win-nvidia-cuda130-py312',
-              label: 'NVIDIA CUDA 13.0 / Python 3.12',
-              recommended: true,
-              data: { sizeBytes: 8_000_000_000 }
-            },
-            { value: 'win-cpu-py312', label: 'CPU / Python 3.12' }
+            variantOption('win-nvidia', 'NVIDIA', 3_000_000_000, true),
+            variantOption('win-cpu', 'CPU', 1_000_000_000)
           ]
         case 'bundledTemplate':
           return [
             { value: 'none', label: 'None' },
+            {
+              value: 'starter-upscale',
+              label: 'Starter Upscale Workflow',
+              description: 'Upscale an existing image.',
+              data: { modality: 'image', sizeBytes: 2_000_000_000, modelsPresent: false }
+            },
             {
               value: 'starter-image',
               label: 'Starter Image Workflow',
@@ -138,7 +154,7 @@ export function createDesktopApi(scenario: InstallScenario): ElectronApi {
       hasLegacyDesktop: false
     }),
     getDiskSpace: async () => ({
-      free: scenario === 'lowDiskSpace' ? 1_000_000_000 : 500_000_000_000,
+      free: scenario === 'lowDiskSpace' ? 12_000_000_000 : 500_000_000_000,
       total: 1_000_000_000_000
     }),
     validateInstallPath: async () => [],
@@ -184,7 +200,7 @@ export function createDesktopApi(scenario: InstallScenario): ElectronApi {
       )
     }
   } satisfies Partial<Omit<ElectronApi, 'comfybuilder'>> & {
-    comfybuilder: Omit<ElectronApi['comfybuilder'], 'promoteLocalInstance'>
+    comfybuilder: Partial<ElectronApi['comfybuilder']>
   }
 
   // Only the methods used by these screens are provided. An unexpected call

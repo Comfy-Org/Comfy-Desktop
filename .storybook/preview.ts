@@ -11,8 +11,9 @@ setup((app) => {
 const preview: Preview = {
   parameters: {
     layout: 'fullscreen',
-    // Takeover screens teleport to body. Separate iframes also isolate each
-    // example's Electron API fixture and stores on the generated Docs page.
+    // Takeover screens teleport to body. On the generated Docs page, separate
+    // iframes run each example's play function and isolate its Electron API
+    // fixture and stores; `docs.story.autoplay` applies only to inline stories.
     docs: { story: { inline: false, height: '800px' } }
   },
   beforeEach() {

@@ -12,8 +12,10 @@ onMounted(() => {
   void wizard.value?.open()
 })
 
+// The production host swaps the wizard for its progress takeover here.
 function showProgress(opts: ShowProgressOpts): void {
   message.value = `Simulated installation requested for ${opts.installationId}. No files were written.`
+  visible.value = false
 }
 </script>
 

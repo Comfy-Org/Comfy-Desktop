@@ -62,6 +62,24 @@ export const ManagedBuilds: Story = {
       'true'
     )
     await expect(screen.queryByText('Build for another platform')).not.toBeInTheDocument()
+    await expect(screen.getByText('Windows - NVIDIA (CUDA 13.0)')).toBeInTheDocument()
+  }
+}
+
+export const ManagedInstallRequested: Story = {
+  parameters: { desktopScenario: 'managedBuilds' satisfies InstallScenario },
+  play: async ({ canvasElement }) => {
+    const screen = screenFor(canvasElement)
+    await waitFor(() =>
+      expect(screen.getByTestId('workspace-build-field')).toHaveTextContent('Studio Image Build')
+    )
+    const install = screen.getByRole('button', { name: 'Continue' })
+    await waitFor(() => expect(install).toBeEnabled())
+    await userEvent.click(install)
+    await expect(
+      await screen.findByText(/Simulated installation requested for preview-install/)
+    ).toBeVisible()
+    await expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
   }
 }
 
