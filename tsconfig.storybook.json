@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.web.json",
+  "include": [
+    ".storybook/**/*.ts",
+    "stories/**/*.ts",
+    "stories/**/*.vue",
+    "vitest.storybook.config.ts",
+    "src/renderer/src/env.d.ts",
+    "src/preload/*.d.ts"
+  ],
+  "exclude": []
+}

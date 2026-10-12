@@ -23,6 +23,7 @@ export default defineConfig([
     ignores: [
       'out/*',
       'dist/*',
+      'storybook-static/**',
       'node_modules/*',
       '.claude/**',
       '.worktrees/**',

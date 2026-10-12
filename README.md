@@ -116,6 +116,34 @@ pnpm run dev               # Windows / macOS
 
 On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
 
+### Explore the UI with Storybook
+
+```bash
+pnpm install
+pnpm storybook
+```
+
+Open **http://localhost:6006** and choose **Screens → Create a New Instance**.
+The examples render the actual Vue screen, styles, and translations using sample
+Electron API responses. You can explore Public Builds, sign in to sample Managed
+Builds, switch targets, retry a failed request, and inspect empty and error states.
+No Electron app, bootstrap Python, account, or ComfyUI installation is needed to
+run the examples. File and install actions are simulated.
+
+PR CI builds a static Storybook and links a downloadable `storybook-<commit>`
+artifact in the **Storybook** job summary. This initial setup does not deploy a
+hosted preview URL. To view an artifact without installing project dependencies,
+extract it into `storybook-static/` and run:
+
+```bash
+python3 -m http.server 6006 --directory storybook-static
+```
+
+See [`stories/README.md`](stories/README.md) for the sample scenarios, how to add
+stories, and how to run their browser interaction tests. Storybook covers UI
+behavior; native installation and hardware compatibility still need Electron and
+lifecycle testing.
+
 ### Common tasks
 
 | Command                          | Description                                                           |

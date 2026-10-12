@@ -11,6 +11,7 @@ export default defineConfig({
     }
   },
   test: {
+    projects: [{ extends: true, test: { name: 'unit' } }, './vitest.storybook.config.ts'],
     environment: 'happy-dom',
     // Run `afterEach` hooks in registration order rather than vitest's default
     // reverse ('stack'). The suite-wide unmount in `vitest.setup.ts` registers

@@ -77,6 +77,51 @@ jobs:
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 
+  storybook:
+    name: Storybook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Storybook
+        run: pnpm run build-storybook
+
+      - name: Upload Storybook
+        id: storybook-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: storybook-${{ github.sha }}
+          path: storybook-static/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Link the preview artifact
+        env:
+          ARTIFACT_URL: ${{ steps.storybook-artifact.outputs.artifact-url }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Storybook for commit $COMMIT_SHA: [download the static preview]($ARTIFACT_URL)." >> "$GITHUB_STEP_SUMMARY"
+          echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --directory storybook-static` and open http://localhost:6006.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      - name: Test stories
+        run: pnpm run test:storybook
+
   python-git-helpers:
     name: Test (Python git helpers)
     runs-on: ubuntu-latest
