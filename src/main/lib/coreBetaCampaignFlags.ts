@@ -1,4 +1,5 @@
 import { initCoreBetaGrants } from './coreBetaGrants'
+import { getIdClass } from './deviceId'
 import {
   CAMPAIGN_REGISTRY_KEY,
   parseCampaignAnswer,
@@ -66,6 +67,9 @@ export async function initCoreBetaFlags(opts: {
   betaEnabled: boolean
 }): Promise<void> {
   const distinctId = await opts.distinctId
+  // A provisional id lasts one launch: an answer drawn on it, once saved, would enrol the next
+  // launch under a different id. That launch cannot enrol anyway, so the campaigns sit it out.
+  if (getIdClass() === 'provisional') return initCoreBetaGrants({ distinctId })
   bootId = distinctId
   await Promise.all([
     initCoreBetaGrants({ distinctId }),

@@ -9,6 +9,9 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
+let idClass = 'machine_derived'
+vi.mock('./deviceId', () => ({ getIdClass: () => idClass }))
+
 let testConfigDir = ''
 vi.mock('./paths', () => ({
   configDir: () => testConfigDir
@@ -68,6 +71,7 @@ function reset(): void {
   _resetForTest()
   resetCoreBetaGrants()
   getOpsFlagResult.mockReset()
+  idClass = 'machine_derived'
 }
 
 beforeEach(() => {
@@ -122,6 +126,19 @@ describe('initCoreBetaFlags', () => {
     const { registry, answers } = await getCoreBetaCampaigns()
     expect(registry, 'the registry itself arrives this session').toEqual(REGISTRY)
     expect(answers.size, 'its keys are discovered one boot late').toBe(0)
+  })
+
+  it('neither fetches nor saves a campaign answer under a provisional id', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
+    })
+    const before = fs.readFileSync(file('campaign-flags.json'))
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+    idClass = 'provisional'
+    await initCoreBetaFlags({ distinctId: 'random-id', betaEnabled: true })
+    expect(await getCoreBetaCampaigns()).toEqual({ registry: [], answers: new Map() })
+    expect(fetchedKeys(), 'slot #0 still fetches').toEqual(['desktop_core_beta_features'])
+    expect(fs.readFileSync(file('campaign-flags.json'))).toEqual(before)
   })
 
   it('fetches no campaign flag on a beta-off boot', async () => {
