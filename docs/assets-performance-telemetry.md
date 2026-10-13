@@ -102,6 +102,7 @@ WHERE event = 'comfy.desktop.comfyui.boot_completed'
   AND properties.assets_enabled IS NOT NULL
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
+LIMIT 10000
 ```
 
 Boot outcome with the same segmentation, one row per boot ID that started in the window. A
@@ -139,6 +140,7 @@ FROM (
 )
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
+LIMIT 10000
 ```
 
 Use the first query as a duration trend and the second as an outcome table. Compare Assets cohorts
