@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { PAGE_COVERED } from '../lib/pageCovered'
 
 /**
  * Single modal primitive.
@@ -38,6 +39,7 @@ const emit = defineEmits<{
 
 const overlayRef = ref<HTMLDivElement | null>(null)
 const mouseDownOnOverlay = ref(false)
+const pageCovered = inject(PAGE_COVERED, ref(false))
 
 function handleOverlayMouseDown(e: MouseEvent): void {
   mouseDownOnOverlay.value = e.target === overlayRef.value
@@ -74,6 +76,7 @@ onUnmounted(() => {
   <Teleport v-else to="body">
     <div
       ref="overlayRef"
+      :inert="pageCovered"
       class="view-modal active"
       :class="{
         'view-modal--heavy-dim': resolvedOpacity === 'heavy-dim',

@@ -3,6 +3,7 @@
 
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { PanelModal } from '../shared/panelModal'
 export type { FirstUseMode }
 
 // Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
@@ -1447,6 +1448,8 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Ask main to close a title-bar modal; it answers through `onDismissPanelModal`. */
+  closePanelModal(modal: PanelModal): void
   /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
@@ -1510,6 +1513,8 @@ export interface ElectronApi {
    *  mounts the announcement modal over the live canvas. Returns an
    *  unsubscribe. */
   onOpenAnnouncement(callback: () => void): Unsubscribe
+  /** Main closed a title-bar modal, on request or because the window navigated. */
+  onDismissPanelModal(callback: (modal: PanelModal) => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main

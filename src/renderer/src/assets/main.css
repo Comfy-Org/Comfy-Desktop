@@ -2211,6 +2211,9 @@ input[type='checkbox']:checked::after {
   justify-content: center;
   z-index: 100;
 }
+.modal-overlay:focus {
+  outline: none;
+}
 .modal-box {
   background: var(--neutral-800);
   border: 1px solid var(--border);
