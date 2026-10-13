@@ -35,8 +35,33 @@ let bootId: string | null = null
 let savedOnly = false
 let started = false
 
+// QA-ONLY (OBL-118 integration build, never merged): one hard-coded campaign that grants
+// --enable-agent replaces the PostHog registry, so no campaign flag is ever fetched. Unit tests
+// (VITEST) keep the real path.
+const QA_CAMPAIGNS = !process.env.VITEST
+const QA_CAMPAIGN_KEY = 'qa_obl118_agent'
+
+function qaCampaigns(): {
+  registry: CampaignRegistryEntry[]
+  answers: Map<string, CampaignAnswer>
+} {
+  const registry =
+    parseCampaignRegistry(true, [{ key: QA_CAMPAIGN_KEY, args: ['--enable-agent'] }]) ?? []
+  const answer = parseCampaignAnswer(
+    'enrol',
+    {
+      grants: [
+        { arg: '--enable-agent', min_core_version: '0.0.1', enrolment: { epoch: 1, epochs: [1] } }
+      ]
+    },
+    Date.now()
+  )
+  return { registry, answers: new Map(answer ? [[QA_CAMPAIGN_KEY, answer]] : []) }
+}
+
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
   started = true
+  if (QA_CAMPAIGNS) return
   // Whatever its age: an expired registry still names the keys; only fresh answers decide.
   const saved: unknown = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY]
   const { value, payload } = (saved ?? {}) as {
@@ -98,6 +123,7 @@ export async function getCoreBetaCampaigns(): Promise<{
   registry: CampaignRegistryEntry[]
   answers: Map<string, CampaignAnswer>
 }> {
+  if (QA_CAMPAIGNS) return qaCampaigns()
   if (savedOnly) return readSavedCampaigns()
   // Beta turned on after a beta-off boot: start the campaigns now, under the boot's id.
   if (!started && bootId !== null) await initCoreBetaCampaigns({ distinctId: bootId })
