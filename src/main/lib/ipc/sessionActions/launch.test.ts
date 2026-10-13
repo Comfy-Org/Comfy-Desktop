@@ -3513,9 +3513,10 @@ describe('prior ComfyUI process handling at launch', () => {
   })
 
   describe('an asset database from a newer ComfyUI', () => {
+    // What a released Core (v0.39.2 and earlier) prints when the asset database is from a newer one.
     const NEWER_DB =
       'INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n' +
-      "ERROR: Can't locate revision identified by '0009_created_at_from_mtime'\n" +
+      "Failed to initialize database: Can't locate revision identified by '0009_created_at_from_mtime'\n" +
       'The --enable-assets flag requires a working database connection.\n'
     let spawnArgs: string[][] = []
 
@@ -3616,6 +3617,16 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
         expect.objectContaining({ assets_enabled: true, assets_retry_count: 0 })
       ])
+    })
+
+    it('does not retry while the failed process is still alive', async () => {
+      launchHarness.killExits = false
+      attempts(NEWER_DB)
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-kill-timeout'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(1)
     })
 
     it('does not retry a boot that timed out without exiting', async () => {
