@@ -10,13 +10,18 @@
 // packaged builds and stays undefined under plain Node, so production and
 // tests always use the canonical hosts. Kept free of electron imports so this
 // leaf module needs no mocking in tests.
-const DEV_BASE_URL_OVERRIDE =
-  (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true
+// QA-ONLY (OBL-118 integration build, never merged): packaged builds honour the override too, and
+// default to the QA environment host on the tailnet. Unit tests keep the canonical hosts.
+const QA_STANDALONE_BASE_URL =
+  'https://simon-qa-linux-1.fennec-typhon.ts.net/obl-118/standalone-environments'
+const DEV_BASE_URL_OVERRIDE = process.env.VITEST
+  ? (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true
     ? process.env.COMFY_STANDALONE_BASE_URL?.replace(/\/+$/, '') || undefined
     : undefined
+  : process.env.COMFY_STANDALONE_BASE_URL?.replace(/\/+$/, '') || QA_STANDALONE_BASE_URL
 
 if (DEV_BASE_URL_OVERRIDE) {
-  console.warn(`[dev] standalone base URL overridden: ${DEV_BASE_URL_OVERRIDE}`)
+  console.warn(`[qa-obl118] standalone base URL overridden: ${DEV_BASE_URL_OVERRIDE}`)
 }
 
 export const R2_BASE_URL =
