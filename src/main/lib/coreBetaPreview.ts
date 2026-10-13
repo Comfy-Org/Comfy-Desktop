@@ -117,11 +117,23 @@ export async function previewCoreBetaArgs(
   if (!schema) return []
   const checkout = resolveCoreCheckout(split.comfyuiDir)
   const core = coreVersionState(inst, checkout)
-  // The floor too: a campaign's `requires_args` can name Desktop's own `--enable-assets`.
-  const commits = await previewCommits(split.comfyuiDir, checkout, [
-    ...assetsFloorShas(grants, split.userArgs, schema, core),
-    ...commitGrantShas([...grants, ...campaignGrants], split.userArgs)
+  // The floor gets its own proof, as at launch, so it never uses up the grants' cap or budget.
+  const [floor, granted] = await Promise.all([
+    previewCommits(
+      split.comfyuiDir,
+      checkout,
+      assetsFloorShas(grants, split.userArgs, schema, core)
+    ),
+    previewCommits(
+      split.comfyuiDir,
+      checkout,
+      commitGrantShas([...grants, ...campaignGrants], split.userArgs)
+    )
   ])
+  const commits = {
+    head: granted.head ?? floor.head,
+    ancestry: new Map([...granted.ancestry, ...floor.ancestry])
+  }
   const plan = planCoreBetaArgs({
     grants,
     betaEnabled: true,

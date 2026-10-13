@@ -260,7 +260,7 @@ describe('planCampaignArgs: enrol', () => {
     expect(args(plan)).toEqual(['--enable-agent'])
   })
 
-  it.each([['random_fallback'], ['placeholder_fallback']] as const)(
+  it.each([['random_fallback'], ['placeholder_fallback'], ['provisional']] as const)(
     'never enrols on a %s id',
     (idClass) => {
       const plan = planCampaignArgs(facts({ idClass }))
@@ -277,6 +277,30 @@ describe('planCampaignArgs: enrol', () => {
       facts({ answers: new Map([[KEY, answer('enrol', agentPayload(), fetchedAt)]]) })
     )
     expect(plan.misses).toMatchObject([{ reason: 'stale_answer' }])
+  })
+
+  it('reports a stale commit-range answer as stale, not as failing its gates', () => {
+    const ranged = {
+      grants: [
+        {
+          arg: '--enable-agent',
+          commit_ranges: [['a'.repeat(40), null]],
+          enrolment: { epoch: 1, epochs: [1] }
+        }
+      ]
+    }
+    const stale = NOW - ENROL_MAX_AGE_MS - 1
+    const plan = planCampaignArgs(
+      facts({ answers: new Map([[KEY, answer('enrol', ranged, stale)]]) })
+    )
+    expect(plan.misses).toMatchObject([{ reason: 'stale_answer' }])
+    const held = planCampaignArgs(
+      facts({
+        answers: new Map([[KEY, answer('hold', ranged, NOW - 8 * 24 * HOUR_MS)]]),
+        records: member
+      })
+    )
+    expect(held.misses).toMatchObject([{ member: true, reason: 'stale_answer' }])
   })
 
   it('enrols on an answer exactly 48 h old', () => {

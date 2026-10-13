@@ -188,6 +188,21 @@ describe('previewCoreBetaArgs', () => {
     await expect(preview()).resolves.toEqual([{ arg: '--enable-agent', name: null }])
   })
 
+  it("proves the assets floor apart from the grants' cap, as the launch does", async () => {
+    const bounds = Array.from({ length: 16 }, (_, i) => i.toString(16).repeat(40))
+    const ranges = Array.from({ length: 8 }, (_, i): [string, string] => [
+      i.toString(16).repeat(40),
+      (i + 8).toString(16).repeat(40)
+    ])
+    h.grants = [{ arg: '--enable-asset-hashing', commitRanges: ranges }]
+    h.schema = { args: [], knownFlags: new Set([...SCHEMA.knownFlags, 'enable-assets']) }
+    proven({})
+    await preview()
+    const asked = h.prove.mock.calls.map((call) => call[1])
+    expect(asked).toContain(ASSETS_MIN_CORE_COMMIT)
+    expect(asked, 'all 16 grant bounds still proven').toEqual(expect.arrayContaining(bounds))
+  })
+
   it('proves a campaign commit range before listing its arg', async () => {
     h.grants = [versionGrant]
     h.campaigns = {

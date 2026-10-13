@@ -266,6 +266,21 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('requires_args', `requires ${missing.join(' ')}`)
         continue
       }
+      // Before the gates: a stale answer's commit ranges are never proven, so they would fail there.
+      if (member && !answerFresh(answer, facts.now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)) {
+        miss('stale_answer', 'the answer holding it is older than 7 days')
+        continue
+      }
+      if (!member) {
+        if (!answerFresh(answer, facts.now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)) {
+          miss('stale_answer', 'the enrol answer is missing a fetch time or older than 48 h')
+          continue
+        }
+        if (facts.idClass !== 'machine_derived') {
+          miss('id_class', `id class ${facts.idClass}`)
+          continue
+        }
+      }
       const withheld: string[] = []
       const selected = selectCoreBetaGrantArgs(
         [candidate.grant],
@@ -283,20 +298,6 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
       if (filterUnsupportedArgs([arg], facts.schema).length === 0) {
         miss('unsupported', 'not supported by this core')
         continue
-      }
-      if (member && !answerFresh(answer, facts.now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)) {
-        miss('stale_answer', 'the answer holding it is older than 7 days')
-        continue
-      }
-      if (!member) {
-        if (!answerFresh(answer, facts.now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)) {
-          miss('stale_answer', 'the enrol answer is missing a fetch time or older than 48 h')
-          continue
-        }
-        if (facts.idClass !== 'machine_derived') {
-          miss('id_class', `id class ${facts.idClass}`)
-          continue
-        }
       }
       const epoch = record?.epoch ?? candidate.epoch
       trace.push(`[core-campaign] ${key}: ${arg} ${member ? 'held' : 'enrolled'}, epoch ${epoch}`)
