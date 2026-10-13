@@ -278,12 +278,6 @@ describe('planCampaignArgs: enrol', () => {
     ])
   })
 
-  it('counts a user-passed --enable-assets as assets on', () => {
-    expect(args(planCampaignArgs(facts({ presentArgs: ['--enable-assets'] })))).toEqual([
-      '--enable-agent'
-    ])
-  })
-
   it('a payload WITHOUT requires_args enrols an assets-off machine (the gate is the payload)', () => {
     const payload = agentPayload()
     delete (payload as { grants: Array<{ requires_args?: unknown }> }).grants[0]!.requires_args

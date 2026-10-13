@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -523,6 +523,20 @@ describe('enrolment records', () => {
         '--enable-agent': { epoch: 1, enrolledAt: NOW },
         '--enable-other': { epoch: 1, enrolledAt: NOW + 1 }
       })
+    })
+
+    it('a restore that fails still reads the backup, and later writes refuse', () => {
+      const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+        throw new Error('EBUSY')
+      })
+      onTestFinished(() => copy.mockRestore())
+      expect(readCampaignRecords()[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
+      expect(() => writeCampaignRecord(KEY, '--enable-other', 1, NOW + 1)).toThrow(
+        /refusing to modify/
+      )
+      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
     })
   })
 
