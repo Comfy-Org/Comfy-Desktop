@@ -23,6 +23,10 @@ Each `comfy.desktop.comfyui.boot_started`, `boot_completed`, and `boot_failed` e
   not for sorting or gating.
 - `app_version`: Desktop version, attached centrally by `src/main/lib/telemetry.ts`.
 - `boot_id`: per-launch join key shared by the lifecycle events. Retries reuse the same key.
+- `assets_retry_count`: 1 when Desktop retried the launch without its own `--enable-assets`
+  because Core could not open an asset database migrated by a newer ComfyUI, else 0. Such a
+  launch sends `boot_started` with `assets_enabled` true and then false under one `boot_id`, and
+  ends in the false cohort. Count it in the cohort of its final attempt, or filter on this field.
 - `session_kind`: `performance_test` for a launch from File → Performance Tests, else `normal`.
   Filter Performance Test runs out of (or into) rollout metrics on this. The same field is on
   `comfyui.exited`, `comfyui.boot_log`, `session.instance_started`, and the execution, hardware
