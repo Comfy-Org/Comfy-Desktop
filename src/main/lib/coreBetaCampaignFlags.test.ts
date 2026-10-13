@@ -44,7 +44,7 @@ const AGENT = {
     }
   ]
 }
-const ASSETS = { flags: [{ arg: '--enable-assets', min_core_version: '0.3.0' }] }
+const HASHING = { flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.0' }] }
 
 type Answer = { kind: 'value'; value: unknown; payload?: unknown } | { kind: 'unreachable' }
 const value = (v: unknown, payload?: unknown): Answer => ({ kind: 'value', value: v, payload })
@@ -277,7 +277,7 @@ describe('initCoreBetaCampaigns', () => {
 
   it('writes a campaign answer that arrives after the deadline to campaign-flags.json only', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     fs.writeFileSync(file('ops-flags.json.bak'), fs.readFileSync(file('ops-flags.json')))
     const before = fs.readFileSync(file('ops-flags.json'))
@@ -319,7 +319,7 @@ describe('initCoreBetaCampaigns', () => {
 describe('two cache files', () => {
   it('writes campaign answers to campaign-flags.json and leaves ops-flags.json byte-identical', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     fs.writeFileSync(file('ops-flags.json.bak'), fs.readFileSync(file('ops-flags.json')))
     const before = fs.readFileSync(file('ops-flags.json'))
@@ -339,13 +339,13 @@ describe('two cache files', () => {
       ['desktop_campaigns', KEY].sort()
     )
     expect(await getCoreBetaGrantsAsync()).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.0' }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.0' }
     ])
   })
 
   it('a failing campaign write leaves ops-flags.json to slot #0 alone', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     const before = fs.readFileSync(file('ops-flags.json'))
     seed('campaign-flags.json', {
@@ -357,7 +357,7 @@ describe('two cache files', () => {
       return write(target, ...rest)
     })
     serve({
-      desktop_core_beta_features: value(true, ASSETS),
+      desktop_core_beta_features: value(true, HASHING),
       desktop_campaigns: value(true, REGISTRY),
       [KEY]: value('enrol', AGENT)
     })
@@ -503,7 +503,7 @@ describe('enrolment records', () => {
 
   it('a corrupt ops-flags.json still reads as an empty cache and is repaired by the next answer', async () => {
     fs.writeFileSync(file('ops-flags.json'), 'not json{')
-    serve({ desktop_core_beta_features: value(true, ASSETS) })
+    serve({ desktop_core_beta_features: value(true, HASHING) })
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
     expect(readJson('ops-flags.json')['desktop_core_beta_features']).toMatchObject({ value: true })
   })

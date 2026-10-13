@@ -65,6 +65,7 @@ import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createAssetsTap } from '../../assetsTap'
+import { createAgentTap } from '../../agentTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -103,6 +104,7 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import { parseAssetsStartupFailure } from '../../assetsStartupFailure'
 import {
   installationIdOf,
   sessionKindOf,
@@ -113,7 +115,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import {
-  NO_CORE_COMMITS,
+  assetsFloorShas,
   commitGrantShas,
   getCoreBetaGrantsAsync,
   isCommitGrant,
@@ -229,7 +231,7 @@ function coreBetaLogRecord(
  * user token is the running core's args schema. Grants are selected against the UNFILTERED user
  * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
  * passed through that same schema filter so a core predating a flag never sees it. Ordering is
- * fixed: prefix, desktop feature flags, beta grants, user args.
+ * fixed: prefix, desktop feature flags, Desktop's assets arg, beta grants, user args.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
@@ -268,7 +270,7 @@ export function buildLaunchArgs(input: {
       campaign = planCampaignArgs({
         ...input.campaign,
         betaEnabled: input.betaEnabled,
-        presentArgs: [...userArgs, ...plan.applied.map((grant) => grant.arg)],
+        presentArgs: [...userArgs, ...plan.assetsArgs, ...plan.applied.map((grant) => grant.arg)],
         core: {
           semver: coreVersion,
           exact: input.coreVersionExact,
@@ -284,12 +286,19 @@ export function buildLaunchArgs(input: {
   for (const line of campaign.trace) console.log(line)
   const applied = [...plan.applied, ...campaign.applied.map((entry) => entry.grant)]
   return {
-    args: [...prefixArgs, ...desktopFlagArgs, ...applied.map((grant) => grant.arg), ...filtered],
+    args: [
+      ...prefixArgs,
+      ...desktopFlagArgs,
+      ...plan.assetsArgs,
+      ...applied.map((grant) => grant.arg),
+      ...filtered
+    ],
     beta: {
       applied,
       campaign: { applied: campaign.applied, misses: campaign.misses },
       droppedUnsupported: plan.droppedUnsupported,
       logRecords: [
+        `${plan.assetsRecord}\n`,
         ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)),
         ...plan.withheld.map((line) => `${line}\n`),
         ...plan.droppedUnsupported.map(
@@ -739,6 +748,18 @@ export function createAssetsTapSafe(
   }
 }
 
+/** The agent tap, with the same never-cost-a-launch contract as `createAssetsTapSafe`. */
+export function createAgentTapSafe(
+  base: Parameters<typeof createAgentTap>[0]
+): ReturnType<typeof createAgentTap> {
+  try {
+    return createAgentTap(base)
+  } catch (err) {
+    console.error('Failed to create agent telemetry tap; continuing without it:', err)
+    return { ingest: () => {}, beginBoot: () => {} }
+  }
+}
+
 /** Pipe a spawned process's output to the log file, renderer, telemetry taps,
  *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
  *  crash diagnostics. */
@@ -749,6 +770,7 @@ export function attachLaunchStreams(
   execTap: ReturnType<typeof createExecutionTap>,
   hwTap: ReturnType<typeof createHardwareTap>,
   assetsTap: ReturnType<typeof createAssetsTap>,
+  agentTap: ReturnType<typeof createAgentTap>,
   tracker: LaunchProgressTracker
 ): { getStderr: () => string } {
   let stderrBuf = ''
@@ -759,6 +781,7 @@ export function attachLaunchStreams(
     execTap.ingest(text, 'stdout')
     hwTap.ingest(text, 'stdout')
     assetsTap.ingest(text, 'stdout')
+    agentTap.ingest(text, 'stdout')
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
@@ -772,6 +795,7 @@ export function attachLaunchStreams(
     execTap.ingest(text, 'stderr')
     hwTap.ingest(text, 'stderr')
     assetsTap.ingest(text, 'stderr')
+    agentTap.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
   return { getStderr: () => stderrBuf }
@@ -1068,6 +1092,7 @@ async function runLaunch(
     execTap: ReturnType<typeof createExecutionTap>
     hwTap: ReturnType<typeof createHardwareTap>
     assetsTap: ReturnType<typeof createAssetsTap>
+    agentTap: ReturnType<typeof createAgentTap>
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
@@ -1098,8 +1123,14 @@ async function runLaunch(
         coreBetaFlags,
         sessionKind
       })
+      const agentTap = createAgentTapSafe({
+        installationId,
+        variant: (inst.variant as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
+      })
       const tracker = await armLaunchTracker()
-      return { logStream, execTap, hwTap, assetsTap, tracker }
+      return { logStream, execTap, hwTap, assetsTap, agentTap, tracker }
     } catch (err) {
       logStream.end()
       throw err
@@ -1348,24 +1379,37 @@ async function runLaunch(
           }
         }
 
-        // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
-        const [betaFlags, campaigns] = betaEnabled
-          ? await Promise.all([getCoreBetaGrantsAsync(), loadCampaignInputs()])
-          : [[], null]
+        // Read even when opted out: the assets force-off applies to every install. Campaigns
+        // are opted-in only, so an opted-out launch does not wait on their fetch.
+        const [betaFlags, campaigns] = await Promise.all([
+          getCoreBetaGrantsAsync(),
+          betaEnabled ? loadCampaignInputs() : null
+        ])
         const campaignGrants = campaigns?.grants ?? []
-        // Opted-out launches skip it: the checks can reach the network and could grant nothing.
-        const coreCommits = betaEnabled
-          ? await resolveCoreCommitState(
-              comfyuiDir,
-              checkout,
-              commitGrantShas([...betaFlags, ...campaignGrants], userArgs),
-              abort.signal
-            )
-          : NO_CORE_COMMITS
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
         const core = coreVersionState(inst, checkout)
+        // The floor gets its own resolve, so the payload's SHAs never use up its cap or budget.
+        // Opted-out launches prove no grant SHA: the checks can reach the network and could grant nothing.
+        const [floor, granted] = await Promise.all([
+          resolveCoreCommitState(
+            comfyuiDir,
+            checkout,
+            assetsFloorShas(betaFlags, userArgs, schema, core),
+            abort.signal
+          ),
+          resolveCoreCommitState(
+            comfyuiDir,
+            checkout,
+            betaEnabled ? commitGrantShas([...betaFlags, ...campaignGrants], userArgs) : [],
+            abort.signal
+          )
+        ])
+        const coreCommits = {
+          head: granted.head ?? floor.head,
+          ancestry: new Map([...granted.ancestry, ...floor.ancestry])
+        }
         const built = buildLaunchArgs({
           prefixArgs,
           userArgs,
@@ -1576,10 +1620,12 @@ async function runLaunch(
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
-    const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(() => {
-      _markLaunching(sessionId, inst.name)
-      return acquireLaunchResources()
-    })
+    const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
+      () => {
+        _markLaunching(sessionId, inst.name)
+        return acquireLaunchResources()
+      }
+    )
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
@@ -1595,13 +1641,23 @@ async function runLaunch(
       async () => {
         hwTap.beginBoot()
         assetsTap.beginBoot()
+        agentTap.beginBoot()
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
         try {
           return {
             proc: p,
-            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+            ...attachLaunchStreams(
+              p,
+              logStream,
+              sendOutput,
+              execTap,
+              hwTap,
+              assetsTap,
+              agentTap,
+              tracker
+            )
           }
         } catch (err) {
           // Stream wiring failed: kill and WAIT for the child so the settled
@@ -1954,7 +2010,7 @@ async function runLaunch(
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(
+  const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
       _markLaunching(sessionId, inst.name)
@@ -1971,9 +2027,9 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
-    // Drain the previous attempt's unterminated records before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
+    agentTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
@@ -1988,7 +2044,16 @@ async function runLaunch(
     try {
       return {
         proc: p,
-        ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+        ...attachLaunchStreams(
+          p,
+          logStream,
+          sendOutput,
+          execTap,
+          hwTap,
+          assetsTap,
+          agentTap,
+          tracker
+        )
       }
     } catch (err) {
       // Stream wiring failed: kill and WAIT for the child so cleanup can't
@@ -2238,10 +2303,13 @@ async function runLaunch(
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
-    // Without assets, ComfyUI logs the lock line and carries on, so a later, unrelated crash
-    // would carry it in its tail: only a launch that takes the lock can fail on it.
+    // Cores with assets on by default name the failure. An older core without --enable-assets
+    // logs the lock line and carries on, so a later, unrelated crash would carry it in its tail:
+    // only a launch that takes the lock can fail on it.
+    const assetsFailure = parseAssetsStartupFailure(launchResult.stderr)
     const dbLocked =
-      launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr)
+      assetsFailure?.kind === 'in_use' ||
+      (launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr))
     const bootFailed = {
       installation_id: installationId,
       boot_id: bootId,
@@ -2254,7 +2322,8 @@ async function runLaunch(
       signal: launchResult.signal ?? null,
       retry_count: portRetries + rebootRetries,
       port_retry_count: portRetries,
-      reboot_retry_count: rebootRetries
+      reboot_retry_count: rebootRetries,
+      assets_startup_failure: assetsFailure?.kind ?? null
     }
     if (dbLocked) {
       // Whatever traceback ends the tail (often an unrelated custom-node warning) would
@@ -2292,7 +2361,7 @@ async function runLaunch(
     if (dbLocked) {
       return { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
-    return { ok: false, message: launchResult.message }
+    return { ok: false, message: assetsFailure?.message || launchResult.message }
   }
   // Healthy boot — discard buffered phase timings (no boot_phase on success;
   // healthy timing is covered by instance_started.boot_time_ms).

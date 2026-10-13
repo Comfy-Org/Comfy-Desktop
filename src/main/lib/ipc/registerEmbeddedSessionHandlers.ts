@@ -12,6 +12,7 @@ import {
   switchWorkspaceForSender,
   workspaceTokenForSender
 } from '../embeddedSession'
+import { reportHostSignIn } from '../hostSignInTelemetry'
 import { signInToCloud, signOutOfCloud, switchCloudWorkspace } from './registerDevPlatformHandlers'
 
 export function registerEmbeddedSessionHandlers(): void {
@@ -25,8 +26,10 @@ export function registerEmbeddedSessionHandlers(): void {
     EMBEDDED_SESSION_CHANNELS.requestSignIn,
     async (event): Promise<ComfyDesktop2AuthState> => {
       if ((await stateForSender(event)).status === 'disabled') return { status: 'disabled' }
-      await signInToCloud()
-      return stateForSender(event)
+      return reportHostSignIn(async () => {
+        await signInToCloud()
+        return stateForSender(event)
+      })
     }
   )
 

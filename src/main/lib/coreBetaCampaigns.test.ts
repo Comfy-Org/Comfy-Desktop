@@ -482,23 +482,27 @@ describe('planCampaignArgs: isolation', () => {
     expect(plan.applied).toEqual([])
   })
 
-  it('withholds a campaign arg whose opposite slot #0 applied', () => {
+  it('withholds a campaign arg whose opposite is already present', () => {
     const payload = {
       grants: [
-        { arg: '--enable-assets', min_core_version: '0.3.0', enrolment: { epoch: 1, epochs: [1] } }
+        {
+          arg: '--enable-asset-hashing',
+          min_core_version: '0.3.0',
+          enrolment: { epoch: 1, epochs: [1] }
+        }
       ]
     }
     const plan = planCampaignArgs(
       facts({
-        registry: [{ key: KEY, args: ['--enable-assets'] }],
+        registry: [{ key: KEY, args: ['--enable-asset-hashing'] }],
         answers: new Map([[KEY, answer('enrol', payload)]]),
-        presentArgs: ['--disable-assets']
+        presentArgs: ['--disable-asset-hashing']
       })
     )
     expect(plan.misses).toMatchObject([{ reason: 'present' }])
   })
 
-  it('accepts a campaign granting an assets arg (no reservation)', () => {
+  it('refuses a campaign granting --enable-assets: Desktop asks for assets itself', () => {
     const payload = {
       grants: [
         { arg: '--enable-assets', min_core_version: '0.3.0', enrolment: { epoch: 1, epochs: [1] } }
@@ -511,7 +515,7 @@ describe('planCampaignArgs: isolation', () => {
         presentArgs: []
       })
     )
-    expect(args(plan)).toEqual(['--enable-assets'])
+    expect(args(plan)).toEqual([])
   })
 
   it('decides earlier registry entries first: a wave-1 member never enrols into wave 2', () => {

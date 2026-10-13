@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
+import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
 vi.mock('electron', () => ({
   app: {
@@ -265,7 +266,39 @@ interface SetupTelemetryOptions {
   bind?: string | null
   appVersion?: string
   appEnv?: string
+  isPackaged?: boolean
+  env?: Partial<Record<PostHogEnvName, string | undefined>>
 }
+
+type PostHogEnvName =
+  | 'POSTHOG_API_KEY'
+  | 'POSTHOG_HOST'
+  | 'POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_API_KEY'
+  | 'COMFY_DESKTOP_POSTHOG_HOST'
+  | 'COMFY_DESKTOP_POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+  | 'POSTHOG_EXCEPTIONS'
+
+const postHogEnvNames: PostHogEnvName[] = [
+  'POSTHOG_API_KEY',
+  'POSTHOG_HOST',
+  'POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_API_KEY',
+  'COMFY_DESKTOP_POSTHOG_HOST',
+  'COMFY_DESKTOP_POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_EXCEPTIONS',
+  'POSTHOG_EXCEPTIONS'
+]
+let previousPostHogEnv: Partial<Record<PostHogEnvName, string>> = {}
+
+beforeEach(() => {
+  previousPostHogEnv = Object.fromEntries(
+    postHogEnvNames.flatMap((name) =>
+      process.env[name] === undefined ? [] : [[name, process.env[name]!]]
+    )
+  )
+})
 
 /**
  * Reset module state and the capture buffers, then run the standard boot
@@ -279,21 +312,28 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     consent = 'granted',
     bind = 'test-distinct-id',
     appVersion = '0.0.0',
-    appEnv = 'test'
+    appEnv = 'test',
+    isPackaged = true,
+    env = {}
   } = options
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  process.env['POSTHOG_API_KEY'] = 'test-key'
-  process.env['POSTHOG_ENABLED'] = '1'
+  for (const name of postHogEnvNames) delete process.env[name]
+  process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
+  process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
   // observable keep working; the opt-out default is pinned by its own test.
-  process.env['POSTHOG_EXCEPTIONS'] = '1'
+  process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'] = '1'
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
-  telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged })
   if (consent) telemetry.setConsentState(consent)
   if (bind) bindTestAnonymous(bind)
   telemetry._test_resetVolumeGuards()
@@ -311,9 +351,11 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
-  delete process.env['POSTHOG_API_KEY']
-  delete process.env['POSTHOG_ENABLED']
-  delete process.env['POSTHOG_EXCEPTIONS']
+  for (const name of postHogEnvNames) {
+    const previous = previousPostHogEnv[name]
+    if (previous === undefined) delete process.env[name]
+    else process.env[name] = previous
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -531,6 +573,140 @@ describe('telemetry PostHog client options', () => {
     setupTelemetry()
 
     expect(constructorOptions()).not.toHaveProperty('requestTimeout')
+  })
+
+  it('ignores generic PostHog key and host environment variables in packaged builds', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('uses packaged defaults when the scoped key and host are absent', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: undefined,
+        COMFY_DESKTOP_POSTHOG_HOST: undefined
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('preserves the generic PostHog disable switch in packaged builds', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('accepts product-scoped PostHog overrides in packaged builds', () => {
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('keeps generic PostHog overrides available for unpackaged development', () => {
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'dev-key',
+        POSTHOG_HOST: 'https://dev-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'dev-key',
+      options: { host: 'https://dev-posthog.example' }
+    })
+  })
+
+  it('prefers product-scoped PostHog overrides during unpackaged development', () => {
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'generic-key',
+        POSTHOG_HOST: 'https://generic-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('honors the product-scoped disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('accepts common privacy opt-out spellings', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: 'disabled' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('does not let an unrelated inherited spelling disable telemetry', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: 'unrelated-tool-value' } })
+
+    expect(posthogConstructorCalls).toHaveLength(1)
+  })
+
+  it('preserves the generic disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('falls back from whitespace-only overrides to packaged defaults', () => {
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: '  ',
+        COMFY_DESKTOP_POSTHOG_HOST: '\t'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('rejects a non-HTTPS packaged host override', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_HOST: 'http://posthog.example' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('rejects credentials embedded in a packaged host override', () => {
+    setupTelemetry({
+      env: { COMFY_DESKTOP_POSTHOG_HOST: 'https://user:password@posthog.example' }
+    })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
   })
 })
 
@@ -983,8 +1159,8 @@ describe('telemetry late ops-flag results', () => {
 
   it('does not report late when the client is not initialised', async () => {
     // Given telemetry disabled, so there is no fetch to abandon in the first place
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+    delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
+    delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
     telemetry._resetForTest()
     const late: unknown[] = []
 
@@ -2356,8 +2532,8 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     expect(forwardedContext).not.toHaveProperty('error_message')
   })
 
-  it('suppresses the PostHog exception copy unless POSTHOG_EXCEPTIONS opts in', () => {
-    delete process.env['POSTHOG_EXCEPTIONS']
+  it('suppresses the PostHog exception copy unless the product-scoped flag opts in', () => {
+    delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
     const target = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(target.wc)
 

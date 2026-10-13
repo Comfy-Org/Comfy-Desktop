@@ -23,10 +23,14 @@
  * every such machine the same installation id, so a placeholder counts as
  * "no machine id" and the install keeps its own random id instead.
  *
+ * A launch whose lookup misses its budget uses a random id held in memory
+ * only, flagged `'provisional'`; if the lookup answers later in that launch,
+ * what an on-time answer would have saved is saved for the next one.
+ *
  * Synchronous `getDeviceId()` is preserved for backward compatibility with
  * the existing IPC handler and main-process call sites. It must only be
  * called after `initDeviceId()` has resolved; if called earlier it falls back
- * to a random UUID flagged as `'random_fallback'` so dashboards can spot it.
+ * to an unpersisted random UUID flagged as `'random_fallback'`.
  */
 import { randomUUID, createHash } from 'crypto'
 import path from 'path'
@@ -56,7 +60,7 @@ import { configDir } from './paths'
  */
 const INSTALLATION_ID_SALT = 'comfy-installation-id-v1'
 
-export type IdClass = 'machine_derived' | 'random_fallback' | 'placeholder_fallback'
+export type IdClass = 'machine_derived' | 'random_fallback' | 'placeholder_fallback' | 'provisional'
 
 interface CachedId {
   installationId: string
@@ -142,10 +146,41 @@ function isLegacyUuid(value: string): boolean {
  * Hard cap on how long we block boot waiting for `systeminformation`'s
  * platform-specific lookups (SMBIOS / WMI / `/sys/class/dmi/id/...`).
  * On VMs and certain firmwares this call can stall for several seconds;
- * past this budget we fall through to `random_fallback` so the splash
- * screen does not freeze on a slow `dmidecode` shell-out.
+ * past this budget the launch gets a `provisional` id so the splash screen
+ * does not freeze on a slow `dmidecode` shell-out. Counted from
+ * `initDeviceId()`, so a lookup started earlier gets the head start on top.
  */
 const MACHINE_ID_TIMEOUT_MS = 2000
+
+/**
+ * A lookup still unanswered this far into a timed-out launch is hung rather
+ * than slow (systeminformation's PowerShell call has no timeout of its own),
+ * so the launch's provisional id is saved as the stable fallback.
+ */
+const HUNG_LOOKUP_MS = 60_000
+
+/**
+ * win32 reads `si.uuid()`: one PowerShell spawn (plus a `reg query`) instead
+ * of `si.system()`'s two or three, running the same
+ * `Win32_ComputerSystemProduct` query with the same parse, so the id is
+ * unchanged (verified on 5.31.5; see deviceId.dependency.test.ts). Not macOS,
+ * where `uuid().hardware` is the serial.
+ */
+async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
+  if (process.platform === 'win32') return { uuid: (await si.uuid()).hardware }
+  return si.system()
+}
+
+let lookup: Promise<{ uuid?: string }> | null = null
+
+/** Start the hardware lookup ahead of `initDeviceId()`. Idempotent. */
+export function startMachineIdLookup(): Promise<{ uuid?: string }> {
+  if (lookup) return lookup
+  lookup = lookupHardwareUuid()
+  // initDeviceId() may never await it (e.g. a quit before ready).
+  lookup.catch(() => {})
+  return lookup
+}
 
 /**
  * Placeholder UUIDs that firmware ships unchanged on many boards, beyond the
@@ -192,47 +227,56 @@ interface DerivedMachineId {
   idClass: IdClass
   /** Installation id the rejected placeholder UUID would have produced. */
   placeholderInstallationId?: string
+  timedOut?: boolean
+}
+
+/** The machine id a lookup's answer gives, on time or late. */
+function answeredMachineId(sys: { uuid?: string }): DerivedMachineId {
+  const uuid = (sys.uuid || '').trim()
+  // Reject anything that isn't the full 36-char UUID shape (covers
+  // empty strings on restricted Linux reads, OEM sentinels like
+  // "Default string" / "To Be Filled By O.E.M.", etc.), and placeholder
+  // UUIDs shared by many machines.
+  const wellFormed = uuid.length === 36
+  const placeholder = wellFormed && isPlaceholderUuid(uuid)
+  if (wellFormed && !placeholder) {
+    return { machineId: uuid, idClass: 'machine_derived' }
+  }
+  // The lookup answered without a usable UUID, which is the steady state
+  // for a non-root Linux user. A timeout or throw is not: it can be a
+  // one-off, and switching sources for one launch would change the id.
+  const linuxMachineId = readLinuxMachineId()
+  if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
+  if (placeholder) {
+    return {
+      machineId: randomUUID(),
+      idClass: 'placeholder_fallback',
+      placeholderInstallationId: computeInstallationId(uuid)
+    }
+  }
+  return { machineId: randomUUID(), idClass: 'random_fallback' }
 }
 
 async function deriveMachineId(): Promise<DerivedMachineId> {
+  let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const sysPromise = si.system()
+    const started = startMachineIdLookup()
     const timeoutPromise = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), MACHINE_ID_TIMEOUT_MS)
+      timer = setTimeout(() => {
+        timedOut = true
+        resolve(null)
+      }, MACHINE_ID_TIMEOUT_MS)
     })
-    const sys = await Promise.race([sysPromise, timeoutPromise])
-    if (sys) {
-      const uuid = (sys.uuid || '').trim()
-      // Reject anything that isn't the full 36-char UUID shape (covers
-      // empty strings on restricted Linux reads, OEM sentinels like
-      // "Default string" / "To Be Filled By O.E.M.", etc.), and placeholder
-      // UUIDs shared by many machines.
-      const wellFormed = uuid.length === 36
-      const placeholder = wellFormed && isPlaceholderUuid(uuid)
-      if (wellFormed && !placeholder) {
-        return { machineId: uuid, idClass: 'machine_derived' }
-      }
-      // The lookup answered without a usable UUID, which is the steady state
-      // for a non-root Linux user. A timeout or throw is not: it can be a
-      // one-off, and switching sources for one launch would change the id.
-      const linuxMachineId = readLinuxMachineId()
-      if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
-      if (placeholder) {
-        return {
-          machineId: randomUUID(),
-          idClass: 'placeholder_fallback',
-          placeholderInstallationId: computeInstallationId(uuid)
-        }
-      }
-    }
+    const sys = await Promise.race([started, timeoutPromise])
+    if (sys) return answeredMachineId(sys)
   } catch {
     // fall through to fallback
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
   // Fallback: random UUID, flagged so dashboards can quarantine.
-  return { machineId: randomUUID(), idClass: 'random_fallback' }
+  return { machineId: randomUUID(), idClass: 'random_fallback', timedOut }
 }
 
 /**
@@ -315,7 +359,7 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
   if (initPromise) return initPromise
   initPromise = (async () => {
     const filePath = deviceIdPath()
-    const { machineId, idClass, placeholderInstallationId } = await deriveMachineId()
+    const { machineId, idClass, placeholderInstallationId, timedOut } = await deriveMachineId()
 
     let existing: string | null = null
     try {
@@ -339,6 +383,32 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
       !isKnownPlaceholderInstallationId(existing)
         ? existing
         : computeInstallationId(machineId)
+
+    // A timed-out lookup's random id is not saved while the lookup may still
+    // answer: persisting it would make the next launch that reads the hardware
+    // switch ids. A late answer saves what an on-time one would have (the
+    // machine id, or this launch's id as the stable fallback), so the next
+    // launch keeps it even if its own lookup times out too. A hung lookup
+    // saves the fallback after HUNG_LOOKUP_MS; a later answer overwrites it.
+    if (timedOut && newId !== existing) {
+      cached = { installationId: newId, idClass: 'provisional' }
+      const hung = setTimeout(() => writeIdFile(newId), HUNG_LOOKUP_MS)
+      hung.unref()
+      void startMachineIdLookup().then(
+        (sys) => {
+          clearTimeout(hung)
+          const late = answeredMachineId(sys)
+          writeIdFile(
+            late.idClass === 'machine_derived' ? computeInstallationId(late.machineId) : newId
+          )
+        },
+        () => {
+          clearTimeout(hung)
+          writeIdFile(newId)
+        }
+      )
+      return { legacyId: null }
+    }
 
     cached = { installationId: newId, idClass }
 
@@ -388,7 +458,8 @@ export function getDeviceId(): string {
 
   // Degraded path — getDeviceId() was called before initDeviceId() resolved.
   // Try the on-disk value first; if it's a previously-computed id, use it.
-  // Otherwise produce a random UUID (flagged) and persist it best-effort.
+  // Otherwise produce a random UUID (flagged), never persisted: the next launch
+  // would take it for a legacy id.
   try {
     const raw = fs.readFileSync(deviceIdPath(), 'utf-8').trim()
     if (raw.length > 0) {
@@ -400,7 +471,6 @@ export function getDeviceId(): string {
   }
   const id = randomUUID()
   cached = { installationId: id, idClass: 'random_fallback' }
-  writeIdFile(id)
   return id
 }
 
@@ -424,4 +494,5 @@ export function markIdentityMigrationCompleted(): void {
 export function _resetForTest(): void {
   cached = null
   initPromise = null
+  lookup = null
 }

@@ -7,6 +7,7 @@
 import { MAX_RESOLVED_SHAS, proveCommitRelation } from './coreBetaAncestry'
 import {
   NO_CORE_COMMITS,
+  assetsFloorShas,
   commitGrantShas,
   getCoreBetaGrantsAsync,
   planCoreBetaArgs,
@@ -115,12 +116,12 @@ export async function previewCoreBetaArgs(
   )
   if (!schema) return []
   const checkout = resolveCoreCheckout(split.comfyuiDir)
-  const commits = await previewCommits(
-    split.comfyuiDir,
-    checkout,
-    commitGrantShas([...grants, ...campaignGrants], split.userArgs)
-  )
   const core = coreVersionState(inst, checkout)
+  // The floor too: a campaign's `requires_args` can name Desktop's own `--enable-assets`.
+  const commits = await previewCommits(split.comfyuiDir, checkout, [
+    ...assetsFloorShas(grants, split.userArgs, schema, core),
+    ...commitGrantShas([...grants, ...campaignGrants], split.userArgs)
+  ])
   const plan = planCoreBetaArgs({
     grants,
     betaEnabled: true,
@@ -136,7 +137,7 @@ export async function previewCoreBetaArgs(
     idClass: getIdClass(),
     now: Date.now(),
     betaEnabled: true,
-    presentArgs: [...split.userArgs, ...plan.applied.map((grant) => grant.arg)],
+    presentArgs: [...split.userArgs, ...plan.assetsArgs, ...plan.applied.map((grant) => grant.arg)],
     core,
     commits,
     schema
