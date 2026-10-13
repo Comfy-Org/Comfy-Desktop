@@ -179,7 +179,9 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (entry.activePanel === panel && !reassertFullPageTool) return
 
   entry.panelBeforeAnnouncement =
-    panel === 'announcement' ? announcementReturnPanel(entry.activePanel) : undefined
+    panel === 'announcement'
+      ? { panel: announcementReturnPanel(entry.activePanel), bodyMode: computeBodyMode(entry) }
+      : undefined
   entry.activePanel = panel
   const mode = computeBodyMode(entry)
   if (mode !== 'comfy') {
@@ -296,7 +298,7 @@ export function registerPanelViewIpc(): void {
       if (entry.panelView?.webContents === event.sender) {
         const returnPanel =
           entry.activePanel === 'announcement'
-            ? (entry.panelBeforeAnnouncement ?? 'comfy')
+            ? (entry.panelBeforeAnnouncement?.panel ?? 'comfy')
             : 'comfy'
         setActivePanel(id, returnPanel)
         return

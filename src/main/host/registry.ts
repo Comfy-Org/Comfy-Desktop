@@ -94,7 +94,7 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
-  panelBeforeAnnouncement?: ComfyPanelKey
+  panelBeforeAnnouncement?: { panel: ComfyPanelKey; bodyMode: BodyMode }
   /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
    *  keeps the panel hidden so its pre-transparent frame can't flash. */
   pendingOverlayReveal?: boolean
@@ -298,9 +298,7 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
 export function hasTransparentPanelOverlay(entry: ComfyWindowEntry): boolean {
   const mode = computeBodyMode(entry)
   const backgroundMode =
-    mode === 'announcement'
-      ? computeBodyMode({ ...entry, activePanel: entry.panelBeforeAnnouncement ?? 'comfy' })
-      : mode
+    mode === 'announcement' ? (entry.panelBeforeAnnouncement?.bodyMode ?? 'comfy') : mode
   return isTransparentPanelOverlay(mode, backgroundMode)
 }
 

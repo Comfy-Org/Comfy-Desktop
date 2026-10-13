@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 import TrackModal from './TrackModal.vue'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
 import type { ProbeResult } from '../types/ipc'
 
 /**
@@ -103,6 +104,29 @@ describe('TrackModal — browse-only install directory', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('keeps a named Track wizard open when Escape dismisses the announcement above it', async () => {
+    const track = mountTrack()
+    track.vm.open()
+    await flushPromises()
+    await track.get('input').setValue('Keep this installation')
+    const announcement = mount(AnnouncementModal)
+    await flushPromises()
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    )
+    await flushPromises()
+
+    expect(announcement.emitted('close')).toHaveLength(1)
+    expect(track.emitted('close')).toBeUndefined()
+    expect(track.get('input').element).toHaveProperty('value', 'Keep this installation')
+
+    announcement.unmount()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(track.emitted('close')).toHaveLength(1)
   })
 
   it('renders a non-clickable placeholder (no editable input) before a folder is picked', async () => {

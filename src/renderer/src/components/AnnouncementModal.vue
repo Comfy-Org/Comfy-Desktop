@@ -77,18 +77,21 @@ function onOverlayClick(e: MouseEvent) {
   mouseDownOnOverlay.value = false
 }
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') dismiss()
+  if (e.key !== 'Escape') return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  dismiss()
 }
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
-  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('keydown', onKeydown, true)
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
   // Focus the dialog container, not a button. Traps focus without a ring on open.
   void nextTick(() => overlayRef.value?.focus())
 })
 onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('keydown', onKeydown, true)
   returnFocusTo?.focus()
 })
 </script>

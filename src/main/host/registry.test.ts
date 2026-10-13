@@ -152,14 +152,15 @@ describe('announcement backgrounds', () => {
   ] as const)(
     'keeps $background transparent=$transparent on a dashboard host',
     ({ background, transparent }) => {
-      const entry = makeEntry({ installationId: null, activePanel: 'announcement' })
-      entry.panelBeforeAnnouncement = background
+      const entry = makeEntry({ installationId: null, activePanel: background })
+      entry.panelBeforeAnnouncement = { panel: background, bodyMode: computeBodyMode(entry) }
+      entry.activePanel = 'announcement'
 
       expect(hasTransparentPanelOverlay(entry)).toBe(transparent)
     }
   )
 
-  it('reveals the live canvas beneath an announcement until the instance starts stopping', () => {
+  it('keeps the opening canvas backdrop while an instance stops beneath an announcement', () => {
     const entry = makeEntry({ installationId: 'inst-A', activePanel: 'comfy' })
     _runningSessions.set('inst-A', {
       proc: null,
@@ -170,15 +171,18 @@ describe('announcement backgrounds', () => {
     })
     expect(hasTransparentPanelOverlay(entry)).toBe(false)
 
+    entry.panelBeforeAnnouncement = { panel: 'comfy', bodyMode: computeBodyMode(entry) }
     entry.activePanel = 'announcement'
-    entry.panelBeforeAnnouncement = 'comfy'
     expect(hasTransparentPanelOverlay(entry)).toBe(true)
 
     _stoppingInstallationIds.add('inst-A')
-    expect(hasTransparentPanelOverlay(entry)).toBe(false)
+    expect(hasTransparentPanelOverlay(entry)).toBe(true)
     _stoppingInstallationIds.clear()
     _runningSessions.clear()
+    expect(hasTransparentPanelOverlay(entry)).toBe(true)
+    entry.activePanel = 'comfy'
     expect(hasTransparentPanelOverlay(entry)).toBe(false)
+    expect(computeBodyMode(entry)).toBe('comfy-lifecycle')
   })
 })
 

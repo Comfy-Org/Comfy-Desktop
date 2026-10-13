@@ -688,7 +688,7 @@ onUnmounted(() => {
     </template>
 
     <McpSetupModal
-      v-if="activePanel === 'mcp-setup'"
+      v-if="bodyPanel === 'mcp-setup'"
       @close="handleMcpClose"
       @open-terminal="handleMcpOpenTerminal"
     />
