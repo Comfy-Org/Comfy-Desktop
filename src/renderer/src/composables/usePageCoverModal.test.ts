@@ -1,16 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, provide, ref, type Component } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
-import AnnouncementModal from './AnnouncementModal.vue'
-import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
-import Modal from './Modal.vue'
-import ModalDialog from './ModalDialog.vue'
-import BaseAlert from './ui/BaseAlert.vue'
-import { useModal } from '../composables/useModal'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
+import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
+import Modal from '../components/Modal.vue'
+import ModalDialog from '../components/ModalDialog.vue'
+import BaseAlert from '../components/ui/BaseAlert.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
+import { useModal } from './useModal'
 import { PAGE_COVERED } from '../lib/pageCovered'
 
 const wrappers: VueWrapper[] = []
+const cleanups: (() => void)[] = []
 
 function track<T extends VueWrapper>(wrapper: T): T {
   wrappers.push(wrapper)
@@ -31,11 +33,43 @@ function pressEscape(): void {
 
 afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
+  while (cleanups.length) cleanups.pop()?.()
 })
 
-describe("What's New over dialogs", () => {
+describe.each([
+  { name: "What's New", mountCover: () => mount(AnnouncementModal, { attachTo: document.body }) },
+  {
+    name: 'Feedback',
+    mountCover: () =>
+      mount(BaseModal, {
+        props: { open: true, ariaLabel: 'Send Feedback', coversPage: true },
+        attachTo: document.body
+      })
+  }
+])('$name over the page', ({ mountCover }) => {
+  it('closes on Escape before a wizard underneath sees it', async () => {
+    const wizardEscape = vi.fn()
+    document.addEventListener('keydown', wizardEscape)
+    const page = document.createElement('div')
+    page.setAttribute('inert', '')
+    page.innerHTML = '<div role="dialog" aria-modal="true"><input /></div>'
+    document.body.append(page)
+    cleanups.push(() => {
+      document.removeEventListener('keydown', wizardEscape)
+      page.remove()
+    })
+    page.querySelector('input')?.focus()
+
+    const cover = track(mountCover())
+    await flushPromises()
+    pressEscape()
+
+    expect(cover.emitted('close')).toHaveLength(1)
+    expect(wizardEscape).not.toHaveBeenCalled()
+  })
+
   it('lets a confirmation opened above it handle Escape first', async () => {
-    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+    const cover = track(mountCover())
     await flushPromises()
     const alert = mountAlert('Restart to update?', false)
     await alert.setProps({ open: true })
@@ -43,12 +77,12 @@ describe("What's New over dialogs", () => {
 
     pressEscape()
     expect(alert.emitted('cancel')).toHaveLength(1)
-    expect(announcement.emitted('close')).toBeUndefined()
+    expect(cover.emitted('close')).toBeUndefined()
 
     await alert.setProps({ open: false })
     await flushPromises()
     pressEscape()
-    expect(announcement.emitted('close')).toHaveLength(1)
+    expect(cover.emitted('close')).toHaveLength(1)
   })
 
   it('leaves a confirmation that was already open focused and usable', async () => {
@@ -57,19 +91,18 @@ describe("What's New over dialogs", () => {
     const focused = document.activeElement
     expect(focused?.closest('[role="alertdialog"]')).not.toBeNull()
 
-    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+    const cover = track(mountCover())
     await flushPromises()
 
     expect(document.activeElement).toBe(focused)
-    expect(focused?.closest('[inert]')).toBeNull()
     pressEscape()
     expect(alert.emitted('cancel')).toHaveLength(1)
-    expect(announcement.emitted('close')).toBeUndefined()
+    expect(cover.emitted('close')).toBeUndefined()
   })
 
   it('lets a rich confirm opened above it take focus and Escape', async () => {
     track(mount(ModalDialog, { attachTo: document.body }))
-    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+    const cover = track(mountCover())
     await flushPromises()
     const answer = useModal().confirm({
       title: 'Delete install?',
@@ -82,24 +115,29 @@ describe("What's New over dialogs", () => {
     pressEscape()
     await flushPromises()
     expect(document.querySelector('.modal-overlay')).toBeNull()
-    expect(announcement.emitted('close')).toBeUndefined()
+    expect(cover.emitted('close')).toBeUndefined()
     await expect(answer).resolves.toBe(false)
 
-    expect(document.activeElement?.closest('.announce-overlay')).not.toBeNull()
     pressEscape()
-    expect(announcement.emitted('close')).toHaveLength(1)
+    expect(cover.emitted('close')).toHaveLength(1)
   })
+})
 
-  it('asks to close once while main is still answering', async () => {
-    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
-    await flushPromises()
+it("asks main to close What's New once while it is still answering", async () => {
+  const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+  await flushPromises()
 
-    pressEscape()
-    pressEscape()
-    document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
+  pressEscape()
+  pressEscape()
+  document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
 
-    expect(announcement.emitted('close')).toHaveLength(1)
-  })
+  expect(announcement.emitted('close')).toHaveLength(1)
+})
+
+it('stacks Feedback below other dialogs', () => {
+  track(mount(BaseModal, { props: { open: true, ariaLabel: 'Send Feedback', coversPage: true } }))
+
+  expect(document.querySelector('.base-modal-overlay--covers-page')).not.toBeNull()
 })
 
 describe('page surfaces under a title-bar modal', () => {

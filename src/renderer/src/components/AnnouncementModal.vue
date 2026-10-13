@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { usePageCoverModal } from '../composables/usePageCoverModal'
 
 /**
  * One-off announcement modal (currently the Comfy API launch).
@@ -57,9 +58,6 @@ function toggleSound(): void {
     muted: v.muted
   })
 }
-// Element focused before open; restored on close to return focus to the trigger.
-let returnFocusTo: HTMLElement | null = null
-
 // Main unmounts the modal once it has hidden the panel; ignore repeats meanwhile.
 let dismissed = false
 function dismiss(): void {
@@ -80,32 +78,10 @@ function onOverlayClick(e: MouseEvent) {
   if (e.target === overlayRef.value && mouseDownOnOverlay.value) dismiss()
   mouseDownOnOverlay.value = false
 }
-// Dialogs paint above What's New and keep their own focus and Escape. The page
-// and wizards underneath are inert (PanelApp's PAGE_COVERED).
-function isInLiveDialog(el: Element | null): boolean {
-  const dialog = el?.closest('[aria-modal="true"]')
-  return !!dialog && dialog !== overlayRef.value && !dialog.closest('[inert]')
-}
-// Window capture runs before the document Escape handlers of wizards underneath.
-function onKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape' || isInLiveDialog(document.activeElement)) return
-  e.preventDefault()
-  e.stopImmediatePropagation()
-  dismiss()
-}
+usePageCoverModal(() => true, overlayRef, dismiss)
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
-  window.addEventListener('keydown', onKeydown, true)
-  returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button, so open paints no focus ring.
-  void nextTick(() => {
-    if (!isInLiveDialog(document.activeElement)) overlayRef.value?.focus()
-  })
-})
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown, true)
-  returnFocusTo?.focus()
 })
 </script>
 

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useModalOverlay } from '../../composables/useModalOverlay'
+import { usePageCoverModal } from '../../composables/usePageCoverModal'
 
 // Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,
 // body scroll lock, and a11y attrs. One of aria-label / aria-labelledby is
@@ -20,6 +21,8 @@ interface Props {
   preventScroll?: boolean
   /** Opt-in: backdrop-filter is GPU-bound and costly on Electron. */
   blurOverlay?: boolean
+  /** A title-bar modal over the page: sits below other dialogs and leaves them their focus. */
+  coversPage?: boolean
   contentClass?: string | string[] | Record<string, boolean>
 }
 
@@ -32,6 +35,7 @@ const props = withDefaults(defineProps<Props>(), {
   showCloseButton: true,
   preventScroll: true,
   blurOverlay: false,
+  coversPage: false,
   contentClass: undefined
 })
 
@@ -51,9 +55,16 @@ let previousBodyOverflow: string | null = null
 
 const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
   // Re-checks the prop so a same-tick dismiss flip still wins.
-  () => props.open && props.dismissOnEscape,
+  () => props.open && props.dismissOnEscape && !props.coversPage,
   () => emit('close')
 )
+if (props.coversPage) {
+  usePageCoverModal(
+    () => props.open,
+    dialogRef,
+    () => emit('close')
+  )
+}
 
 function onOverlayMouseDown(e: MouseEvent) {
   if (!props.dismissOnOutside) return
@@ -103,10 +114,10 @@ watch(
   (isOpen, wasOpen) => {
     if (isOpen && !wasOpen) {
       lockBodyScroll()
-      captureAndFocus()
+      if (!props.coversPage) captureAndFocus()
     } else if (!isOpen && wasOpen) {
       unlockBodyScroll()
-      restoreFocus()
+      if (!props.coversPage) restoreFocus()
     }
   },
   { immediate: true }
@@ -128,7 +139,10 @@ const sizeClass = computed(() => `is-size-${props.size}`)
         v-if="open"
         ref="dialogRef"
         class="base-modal-overlay"
-        :class="{ 'base-modal-overlay--blur': blurOverlay }"
+        :class="{
+          'base-modal-overlay--blur': blurOverlay,
+          'base-modal-overlay--covers-page': coversPage
+        }"
         role="dialog"
         aria-modal="true"
         :aria-label="ariaLabel"
@@ -175,6 +189,10 @@ const sizeClass = computed(() => `is-size-${props.size}`)
 }
 .base-modal-overlay:focus {
   outline: none;
+}
+.base-modal-overlay--covers-page {
+  /* Above takeovers (50), below other dialogs (60+). */
+  z-index: 55;
 }
 .base-modal-overlay--blur {
   backdrop-filter: blur(8px) saturate(115%);
