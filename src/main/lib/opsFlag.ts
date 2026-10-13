@@ -144,7 +144,7 @@ interface PersistedOpsFlagEntry {
 
 /** Nothing here expires an entry: any saved entry counts, including one written before
  *  `fetchedAt` existed. `fetchedAt` goes to `parse` for flags that age answers themselves. */
-function readPersistedResult(
+export function readPersistedResult(
   file: string,
   key: string
 ): (PersistedOpsFlagEntry & { fetchedAt?: number }) | undefined {

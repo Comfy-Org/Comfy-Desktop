@@ -7,7 +7,7 @@ import {
   parseCampaignRegistry
 } from './coreBetaCampaigns'
 import type { CampaignAnswer, CampaignRecords, CampaignRegistryEntry } from './coreBetaCampaigns'
-import { makeOpsFlag, readPersistedFile, writePersistedEntry } from './opsFlag'
+import { makeOpsFlag, readPersistedFile, readPersistedResult, writePersistedEntry } from './opsFlag'
 import type { OpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
 
@@ -32,6 +32,7 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
 let registry = makeRegistryFlag()
 let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
 let bootId: string | null = null
+let savedOnly = false
 let started = false
 
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
@@ -67,20 +68,37 @@ export async function initCoreBetaFlags(opts: {
   betaEnabled: boolean
 }): Promise<void> {
   const distinctId = await opts.distinctId
-  // A provisional id lasts one launch: an answer drawn on it, once saved, would enrol the next
-  // launch under a different id. That launch cannot enrol anyway, so the campaigns sit it out.
-  if (getIdClass() === 'provisional') return initCoreBetaGrants({ distinctId })
+  // Only a hardware-derived id lasts: an answer drawn on any other and saved could enrol a later
+  // launch under a different id. Such a launch cannot enrol, so it reads the saved answers (a
+  // member still holds) and fetches and saves none.
+  savedOnly = getIdClass() !== 'machine_derived'
   bootId = distinctId
   await Promise.all([
     initCoreBetaGrants({ distinctId }),
-    opts.betaEnabled ? initCoreBetaCampaigns({ distinctId }) : undefined
+    opts.betaEnabled && !savedOnly ? initCoreBetaCampaigns({ distinctId }) : undefined
   ])
+}
+
+function readSavedCampaigns(): {
+  registry: CampaignRegistryEntry[]
+  answers: Map<string, CampaignAnswer>
+} {
+  const saved = readPersistedResult(CAMPAIGN_FLAGS_FILE, CAMPAIGN_REGISTRY_KEY)
+  const registry = parseCampaignRegistry(saved?.value, saved?.payload) ?? []
+  const answers = new Map<string, CampaignAnswer>()
+  for (const { key } of registry) {
+    const entry = readPersistedResult(CAMPAIGN_FLAGS_FILE, key)
+    const answer = entry && parseCampaignAnswer(entry.value, entry.payload, entry.fetchedAt)
+    if (answer) answers.set(key, answer)
+  }
+  return { registry, answers }
 }
 
 export async function getCoreBetaCampaigns(): Promise<{
   registry: CampaignRegistryEntry[]
   answers: Map<string, CampaignAnswer>
 }> {
+  if (savedOnly) return readSavedCampaigns()
   // Beta turned on after a beta-off boot: start the campaigns now, under the boot's id.
   if (!started && bootId !== null) await initCoreBetaCampaigns({ distinctId: bootId })
   const entries = await registry.get()
@@ -121,5 +139,6 @@ export function _resetForTest(): void {
   registry = makeRegistryFlag()
   campaigns = new Map()
   bootId = null
+  savedOnly = false
   started = false
 }

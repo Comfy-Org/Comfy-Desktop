@@ -128,18 +128,27 @@ describe('initCoreBetaFlags', () => {
     expect(answers.size, 'its keys are discovered one boot late').toBe(0)
   })
 
-  it('neither fetches nor saves a campaign answer under a provisional id', async () => {
-    seed('campaign-flags.json', {
-      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
-    })
-    const before = fs.readFileSync(file('campaign-flags.json'))
-    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
-    idClass = 'provisional'
-    await initCoreBetaFlags({ distinctId: 'random-id', betaEnabled: true })
-    expect(await getCoreBetaCampaigns()).toEqual({ registry: [], answers: new Map() })
-    expect(fetchedKeys(), 'slot #0 still fetches').toEqual(['desktop_core_beta_features'])
-    expect(fs.readFileSync(file('campaign-flags.json'))).toEqual(before)
-  })
+  it.each([['provisional'], ['random_fallback'], ['placeholder_fallback']])(
+    'reads the saved campaign answers under a %s id, but neither fetches nor saves any',
+    async (cls) => {
+      seed('campaign-flags.json', {
+        desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+        [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - DAY_MS }
+      })
+      const before = fs.readFileSync(file('campaign-flags.json'))
+      serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+      idClass = cls
+      await initCoreBetaFlags({ distinctId: 'other-id', betaEnabled: true })
+      const { registry, answers } = await getCoreBetaCampaigns()
+      expect(registry).toEqual(REGISTRY)
+      expect(answers.get(KEY), 'a member still holds on the saved answer').toMatchObject({
+        enrol: false,
+        fetchedAt: NOW - DAY_MS
+      })
+      expect(fetchedKeys(), 'slot #0 still fetches').toEqual(['desktop_core_beta_features'])
+      expect(fs.readFileSync(file('campaign-flags.json'))).toEqual(before)
+    }
+  )
 
   it('fetches no campaign flag on a beta-off boot', async () => {
     serve({})
