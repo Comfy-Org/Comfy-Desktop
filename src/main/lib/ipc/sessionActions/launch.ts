@@ -104,7 +104,7 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
-import { parseAssetsStartupFailure } from '../../assetsStartupFailure'
+import { isNewerAssetDbFailure, parseAssetsStartupFailure } from '../../assetsStartupFailure'
 import {
   installationIdOf,
   sessionKindOf,
@@ -829,6 +829,8 @@ async function runLaunch(
   // Resolved during arg assembly below, then read by the taps, the launch log
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
+  // Desktop's own `--enable-assets`, not the user's: only that one may be dropped on a retry.
+  let desktopAddedAssets = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
@@ -1307,6 +1309,8 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
+        desktopAddedAssets =
+          built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
       } catch {
         // Discovery failed; launch the user's own args without injecting managed flags.
       }
@@ -1939,6 +1943,7 @@ async function runLaunch(
   const REBOOT_RETRY_MAX = 5
   let portRetries = 0
   let rebootRetries = 0
+  let assetsRetries = 0
 
   const tryLaunch = async (): Promise<
     | { ok: true; proc: ChildProcess; getStderr: () => string }
@@ -1989,6 +1994,7 @@ async function runLaunch(
       ...bootCohort(),
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
+      assets_retry_count: assetsRetries,
       port: launchCmd.port ?? null,
       port_bumped_from: portBumpedFrom
     })
@@ -2050,6 +2056,8 @@ async function runLaunch(
       if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
+      // Read before any kill below: only a process that exited by itself during startup counts.
+      const exitedDuringStartup = exitCode !== null
       // A user abort (cancel, or restart-during-boot) is terminal: kill the
       // spawn and WAIT for it to die before returning, so the launching
       // marker and operation slot are only cleared after the process has
@@ -2078,6 +2086,24 @@ async function runLaunch(
       if (stopped.exited && checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
         sendOutput('\n--- Manager requested restart during startup, respawning… ---\n\n')
+        return tryLaunch()
+      }
+      // An asset database migrated by a newer ComfyUI (Latest, then back to Stable) stops an older
+      // one from starting with assets on. Without them it starts, and assets come back on a later
+      // launch once its ComfyUI knows that revision. The user's own `--enable-assets` is kept.
+      if (
+        stopped.exited &&
+        exitedDuringStartup &&
+        desktopAddedAssets &&
+        assetsRetries === 0 &&
+        isNewerAssetDbFailure(spawned.getStderr())
+      ) {
+        assetsRetries++
+        launchCmd.args = launchCmd.args!.filter((arg) => arg !== '--enable-assets')
+        const record =
+          '[assets] --enable-assets withheld: the asset database is from a newer ComfyUI\n'
+        writeLog(logStream, record)
+        sendOutput(`\n${record}\n`)
         return tryLaunch()
       }
       const stderr = spawned.getStderr().toLowerCase()
@@ -2192,9 +2218,10 @@ async function runLaunch(
       error_tail: tail,
       exit_code: launchResult.exitCode ?? null,
       signal: launchResult.signal ?? null,
-      retry_count: portRetries + rebootRetries,
+      retry_count: portRetries + rebootRetries + assetsRetries,
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
+      assets_retry_count: assetsRetries,
       assets_startup_failure: assetsFailure?.kind ?? null
     }
     if (dbLocked) {
@@ -2273,7 +2300,8 @@ async function runLaunch(
     ...bootCohort(),
     boot_time_ms: bootTimeMs,
     port_retry_count: portRetries,
-    reboot_retry_count: rebootRetries
+    reboot_retry_count: rebootRetries,
+    assets_retry_count: assetsRetries
   })
   writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
 
