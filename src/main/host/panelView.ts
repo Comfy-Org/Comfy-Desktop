@@ -8,7 +8,7 @@ import { TITLEBAR_HEIGHT, titleBarOverlayForTheme } from '../lib/titleBarOverlay
 import {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
-  _activeOperationStatus
+  _runningSessions
 } from '../lib/ipc/shared'
 import {
   bodyLayout,
@@ -17,6 +17,7 @@ import {
   findEntryByPanelSender,
   findEntryByTitleBarSender,
   getEntryByInstallationId,
+  heldCanvases,
   isCanvasOverlay,
   revealColdStartHostIfPending,
   VALID_PANELS
@@ -299,10 +300,8 @@ export function refreshComfyTabBody(installationId: string): void {
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return
   if (entry.activePanel !== 'comfy') return
-  // A background op (inline picker update/restore) is managing this lifecycle; don't flash
-  // the "not running" screen while it's in-flight.
-  const bgOp = _activeOperationStatus.get(installationId)
-  if (bgOp && !bgOp.done) return
+  // Releasing the hold re-runs this; refreshing now would only pull focus off the picker.
+  if (heldCanvases.has(installationId)) return
 
   const mode = computeBodyMode(entry)
   if (mode === 'comfy-lifecycle') {
@@ -317,6 +316,19 @@ export function refreshComfyTabBody(installationId: string): void {
   forwardToPanelRenderer(entry, 'panel-switch', { panel: mode, installationId })
   entry.layoutViews()
   focusActiveBody(entry)
+}
+
+/**
+ * Keep a running install's canvas up while a background op stops it, instead of flashing
+ * the lifecycle page. The returned release shows whatever the install's state then calls for.
+ */
+export function holdCanvas(installationId: string): () => void {
+  // A lifecycle page already showing stays put.
+  if (!_runningSessions.has(installationId)) return () => {}
+  heldCanvases.add(installationId)
+  return () => {
+    if (heldCanvases.delete(installationId)) refreshComfyTabBody(installationId)
+  }
 }
 
 /**

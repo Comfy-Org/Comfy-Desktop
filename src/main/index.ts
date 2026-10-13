@@ -171,6 +171,7 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  holdCanvas,
   navigateToPanel,
   openPanelModal,
   prewarmAttachedPanel,
@@ -1739,6 +1740,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         // Fire-and-forget: runs the action on main with a custom sendProgress
         // that feeds _activeOperationStatus so the picker snapshot loop
         // delivers live status to the inline progress view.
+        let releaseCanvas: (() => void) | undefined
         void (async () => {
           const inst = await getInstallation(installationId)
           if (!inst) {
@@ -1810,6 +1812,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           // Stop the session if needed (REQUIRES_STOPPED).
           const wasRunning = _runningSessions.has(installationId)
           if (REQUIRES_STOPPED.has(actionId) && wasRunning) {
+            releaseCanvas = holdCanvas(installationId)
             _activeOperationStatus.set(installationId, {
               status: 'Stopping…',
               percent: -1,
@@ -1969,7 +1972,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
               triggerPickerSnapshotBroadcast()
             }
           }, 15_000)
-        })()
+        })().finally(() => releaseCanvas?.())
       },
       broadcastPickerSnapshot: () => triggerPickerSnapshotBroadcast(),
       getInstancePickerInstalls: async () => {

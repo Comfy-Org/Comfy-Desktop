@@ -266,6 +266,9 @@ export function hasRunningSessionForEntry(
   return !!entry && isInstallHost(entry) && _runningSessions.has(entry.installationId)
 }
 
+/** Installs a background op is stopping; their Comfy pill keeps the canvas until it settles. */
+export const heldCanvases = new Set<string>()
+
 /**
  * Decide what fills a comfy window's body. Install-backed: the Comfy pill →
  * live ComfyUI view (running) or lifecycle panel (stopped). Install-less: the
@@ -277,6 +280,7 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
     return entry.activePanel === 'comfy' ? 'chooser' : entry.activePanel
   }
   if (entry.activePanel !== 'comfy') return entry.activePanel
+  if (heldCanvases.has(entry.installationId)) return 'comfy'
   // Stopping shows the lifecycle ("Stopping…") panel even though the session is
   // still present — otherwise the dead canvas reads as black during the kill.
   if (_isStopping(entry.installationId)) return 'comfy-lifecycle'
