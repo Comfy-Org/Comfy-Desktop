@@ -27,6 +27,7 @@ import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
 import { useAnnouncement } from '../composables/useAnnouncement'
+import { useMcpSetup } from '../composables/useMcpSetup'
 import { usePanelModal } from '../composables/usePanelModal'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { PAGE_COVERED } from '../lib/pageCovered'
@@ -80,6 +81,7 @@ const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdate
 const panelModal = usePanelModal()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback(panelModal)
 const { announcementOpen, closeAnnouncement } = useAnnouncement(panelModal)
+const { mcpSetupOpen, closeMcpSetup } = useMcpSetup(panelModal)
 // Pages and wizards stay mounted under a title-bar modal; dialogs above it stay live.
 const pageCovered = computed(() => panelModal.current.value !== null)
 provide(PAGE_COVERED, pageCovered)
@@ -364,28 +366,19 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
 }
 
 /**
- * Dismisses the MCP overlay and restores the main canvas.
- * The 'mcp-setup' overlay leaves the underlying view active.
- */
-function handleMcpClose(): void {
-  window.api.closeCurrentPanel()
-}
-
-/**
- * Handles the "Open terminal" CTA.
- * Switches to the console tab, and restores the canvas when closed.
+ * Handles the "Open terminal" CTA: opens the console tab; the modal then closes.
  */
 function handleMcpOpenTerminal(): void {
   if (!installationId) return
   window.api.openInstancePicker({ installationId, initialTab: 'console' })
 }
 
-/** Make the panel transparent for overlay modes, then tell main to reveal it. */
+/** Make the panel transparent for a modal over the canvas, then tell main to reveal it. */
 watch(
   [activePanel, pageCovered, () => currentOverlay.value?.kind === 'takeover'],
   ([panel, covered, takeover]) => {
     // Mirrors main's `isCanvasOverlay`; file-menu wizards hide the canvas but leave `activePanel`.
-    const isOverlay = panel === 'mcp-setup' || (panel === 'comfy' && covered && !takeover)
+    const isOverlay = panel === 'comfy' && covered && !takeover
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
@@ -687,8 +680,8 @@ onUnmounted(() => {
     </template>
 
     <McpSetupModal
-      v-if="activePanel === 'mcp-setup'"
-      @close="handleMcpClose"
+      v-if="mcpSetupOpen"
+      @close="closeMcpSetup"
       @open-terminal="handleMcpOpenTerminal"
     />
 

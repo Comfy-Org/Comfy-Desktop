@@ -48,6 +48,7 @@ import {
   isChooserHost
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
+import type { PanelModal } from '../../shared/panelModal'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
@@ -1625,6 +1626,8 @@ export interface TitlePopupHostBindings {
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
   /** Forward a Send Feedback request to the host's panel renderer. */
   triggerOpenFeedback: (entryId: number, source: 'titlebar' | 'menu') => void
+  /** Show a modal over the host's body without changing its page. */
+  openPanelModal: (windowKey: number, modal: PanelModal, channel: string, payload: unknown) => void
   /** Reset the host install's comfyView zoom to 100%. Routes through the
    *  same per-install closure (`comfyZoomResets`) the title-bar zoom pill
    *  uses, so the menu path also pushes `comfy-titlebar:zoom-changed` and
@@ -2317,10 +2320,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.handle('desktop2-open-mcp-setup', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
-    // 'mcp-setup' overlays the live canvas rather than hiding it.
-    const panelView = bindings.ensurePanelViewForEntry(parentEntry)
-    if (panelView.webContents.isDestroyed()) return false
-    bindings.setActivePanel(parentEntry.windowKey, 'mcp-setup')
+    bindings.openPanelModal(parentEntry.windowKey, 'mcp-setup', 'comfy-panel:open-mcp-setup', {})
     return true
   })
 

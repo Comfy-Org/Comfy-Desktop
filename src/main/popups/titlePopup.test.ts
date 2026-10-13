@@ -756,6 +756,46 @@ describe('parseGlobalSettingsTarget', () => {
   })
 })
 
+describe('MCP setup IPC', () => {
+  type IpcHandler = (event: Electron.IpcMainInvokeEvent) => unknown
+  const openPanelModal = vi.fn()
+  let openMcpSetup: IpcHandler
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({ openPanelModal } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.filter(([channel]) => channel === 'desktop2-open-mcp-setup')
+      .at(-1)
+    if (!call) throw new Error('IPC handler not registered: desktop2-open-mcp-setup')
+    openMcpSetup = call[1] as IpcHandler
+  })
+
+  beforeEach(() => {
+    openPanelModal.mockClear()
+  })
+
+  it.each([
+    { sourceCategory: 'local', opened: true },
+    { sourceCategory: 'cloud', opened: false }
+  ] as const)(
+    'opens MCP setup as a modal over a $sourceCategory canvas: $opened',
+    ({ sourceCategory, opened }) => {
+      const host = { ...makeEntry({ installationId: 'inst-1' }), sourceCategory }
+      comfyWindows.set(host.windowKey, host)
+
+      const result = openMcpSetup({ sender: host.comfyView.webContents } as never)
+
+      comfyWindows.delete(host.windowKey)
+      expect(result).toBe(opened)
+      expect(openPanelModal.mock.calls).toEqual(
+        opened ? [[host.windowKey, 'mcp-setup', 'comfy-panel:open-mcp-setup', {}]] : []
+      )
+    }
+  )
+})
+
 describe('title popup renderer readiness', () => {
   type IpcListener = (event: Electron.IpcMainEvent) => void
   let ready: IpcListener

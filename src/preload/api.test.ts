@@ -37,4 +37,17 @@ describe('title-bar modal channels', () => {
     unsubscribe()
     expect(mocks.removeListener).toHaveBeenCalledWith('comfy-panel:dismiss-modal', handler)
   })
+
+  it('opens MCP setup on the channel main sends', () => {
+    const callback = vi.fn()
+    const unsubscribe = buildElectronApi().onOpenMcpSetup(callback)
+    const [channel, handler] = mocks.on.mock.calls[0] ?? []
+
+    expect(channel).toBe('comfy-panel:open-mcp-setup')
+    handler({})
+    expect(callback).toHaveBeenCalledOnce()
+
+    unsubscribe()
+    expect(mocks.removeListener).toHaveBeenCalledWith('comfy-panel:open-mcp-setup', handler)
+  })
 })

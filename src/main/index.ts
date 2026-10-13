@@ -1730,6 +1730,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // Every title-popup panel switch is a user pick, so it closes What's New.
       setActivePanel: navigateToPanel,
       triggerOpenFeedback,
+      openPanelModal,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
