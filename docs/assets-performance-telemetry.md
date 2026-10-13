@@ -104,8 +104,8 @@ GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
 ```
 
-Boot outcome with the same segmentation, one row per boot ID. A retried launch counts once, in
-the cohort of its final attempt (see `assets_retry_count`):
+Boot outcome with the same segmentation, one row per boot ID that started in the window. A
+retried launch counts once, in the cohort of its final attempt (see `assets_retry_count`):
 
 ```sql
 SELECT
@@ -135,6 +135,7 @@ FROM (
     AND timestamp >= now() - INTERVAL 14 DAY
     AND properties.assets_enabled IS NOT NULL
   GROUP BY boot_id
+  HAVING max(event = 'comfy.desktop.comfyui.boot_started')
 )
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
