@@ -309,7 +309,9 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         continue
       }
       const epoch = record?.epoch ?? candidate.epoch
-      trace.push(`[core-campaign] ${key}: ${arg} ${member ? 'held' : 'enrolled'}, epoch ${epoch}`)
+      trace.push(
+        `[core-campaign] ${key}: ${arg} ${member ? 'held' : 'would enrol at spawn'}, epoch ${epoch}`
+      )
       present.add(arg)
       applied.push({
         key,
