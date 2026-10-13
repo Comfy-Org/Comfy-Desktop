@@ -3582,6 +3582,13 @@ describe('prior ComfyUI process handling at launch', () => {
         expect.objectContaining({ assets_enabled: false, assets_retry_count: 1 })
       ])
       expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([])
+      // One launch: the retry and its completion keep the first attempt's boot_id.
+      const bootIds = [
+        ...eventsNamed('comfy.desktop.comfyui.boot_started'),
+        ...eventsNamed('comfy.desktop.comfyui.boot_completed')
+      ].map((props) => props?.boot_id)
+      expect(new Set(bootIds).size).toBe(1)
+      expect(bootIds[0]).toEqual(expect.any(String))
     })
 
     it('retries once only', async () => {
