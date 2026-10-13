@@ -1138,13 +1138,27 @@ async function runLaunch(
     }
   }
 
-  // Called once per launch from each spawn path, as soon as that path has both
-  // destinations: the log records go to the on-disk log and the renderer, the
-  // events to telemetry.
+  // Called once per launch, when the first child of either spawn path is created ('spawn'
+  // precedes any output): the log records go to the on-disk log and the renderer, the events
+  // to telemetry.
+  function reportCoreBetaLaunchOnSpawn(
+    proc: ChildProcess,
+    logStream: WriteStream,
+    sendOutput: (text: string) => void
+  ): void {
+    proc.once('spawn', () => {
+      try {
+        reportCoreBetaLaunch(logStream, sendOutput)
+      } catch (err) {
+        console.warn('[core-beta] launch report failed:', err)
+      }
+    })
+  }
+
   function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
     if (coreBetaReported) return
     coreBetaReported = true
-    // Here, not at planning: a launch that stops before spawning must not make a member.
+    // At spawn, not planning: a launch that stops before its process exists must not make a member.
     coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
     emitCoreBetaRecords(coreBeta.logRecords, {
       writeLog: (text) => writeLog(logStream, text),
@@ -1635,9 +1649,6 @@ async function runLaunch(
       _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
-    // Past the final gate: this launch is going to spawn, so the grants it applied are now
-    // real. Reporting before the gate attributes grants to launches that never started.
-    reportCoreBetaLaunch(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
@@ -1647,6 +1658,8 @@ async function runLaunch(
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
+        // The grants are real only once the process exists; a failed spawn reports nothing.
+        reportCoreBetaLaunchOnSpawn(p, logStream, sendOutput)
         try {
           return {
             proc: p,
@@ -2035,6 +2048,8 @@ async function runLaunch(
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
+    // Latched: retries spawn again, and the grants belong to the launch, not to each attempt.
+    reportCoreBetaLaunchOnSpawn(p, logStream, sendOutput)
     // Every (re)spawn is recorded, so a later Desktop can prove this child is ours.
     trackSpawn(p, {
       sessionKey: sessionId,
@@ -2092,9 +2107,6 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
-    // Past the final gate, so this attempt will spawn. Latched: retries re-enter here, and the
-    // grants belong to the launch, not to each attempt at it.
-    reportCoreBetaLaunch(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'

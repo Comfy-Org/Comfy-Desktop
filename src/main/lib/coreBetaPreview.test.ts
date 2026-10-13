@@ -196,11 +196,22 @@ describe('previewCoreBetaArgs', () => {
     ])
     h.grants = [{ arg: '--enable-asset-hashing', commitRanges: ranges }]
     h.schema = { args: [], knownFlags: new Set([...SCHEMA.knownFlags, 'enable-assets']) }
+    serveCampaign('enrol')
     proven({})
     await preview()
     const asked = h.prove.mock.calls.map((call) => call[1])
     expect(asked).toContain(ASSETS_MIN_CORE_COMMIT)
     expect(asked, 'all 16 grant bounds still proven').toEqual(expect.arrayContaining(bounds))
+  })
+
+  it('proves no assets floor when no campaign can read it', async () => {
+    h.grants = [{ arg: '--enable-asset-hashing', commitRanges: [[SHA_A, null]] }]
+    h.schema = { args: [], knownFlags: new Set([...SCHEMA.knownFlags, 'enable-assets']) }
+    proven({})
+    await preview()
+    const asked = h.prove.mock.calls.map((call) => call[1])
+    expect(asked).toContain(SHA_A)
+    expect(asked).not.toContain(ASSETS_MIN_CORE_COMMIT)
   })
 
   it('proves a campaign commit range before listing its arg', async () => {

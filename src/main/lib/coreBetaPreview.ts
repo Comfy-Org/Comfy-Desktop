@@ -1,6 +1,7 @@
 /**
  * Which Core beta grants a stopped install's next launch is eligible for, decided by the launch's
- * own `planCoreBetaArgs` over facts read without side effects. Commit ranges are proven against
+ * own `planCoreBetaArgs`. Nothing launches, but reading the enrolments can restore their file from
+ * its backup, and the first read with beta on can start the campaign fetches. Commit ranges are proven against
  * the current HEAD and cached per (HEAD, commit), which never needs invalidating; a relation git
  * cannot prove is not cached, and its grant is not shown.
  */
@@ -119,11 +120,12 @@ export async function previewCoreBetaArgs(
   const checkout = resolveCoreCheckout(split.comfyuiDir)
   const core = coreVersionState(inst, checkout)
   // The floor gets its own proof, as at launch, so it never uses up the grants' cap or budget.
+  // Only campaigns read the assets decision here; slot #0's own list does not depend on it.
   const [floor, granted] = await Promise.all([
     previewCommits(
       split.comfyuiDir,
       checkout,
-      assetsFloorShas(grants, split.userArgs, schema, core)
+      campaignGrants.length > 0 ? assetsFloorShas(grants, split.userArgs, schema, core) : []
     ),
     previewCommits(
       split.comfyuiDir,

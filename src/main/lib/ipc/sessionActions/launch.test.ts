@@ -89,6 +89,8 @@ const launchHarness = vi.hoisted(() => ({
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
+  /** A child that never emits 'spawn', as one whose process could not be created (ENOENT). */
+  spawnFails: false,
   /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
    *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
   waitForPort: null as null | (() => Promise<void>),
@@ -169,7 +171,13 @@ vi.mock('../shared', async (importOriginal) => {
         return typeof value === 'function' ? value.bind(target) : value
       }
     }),
-    spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
+    spawnProcess: (...args: unknown[]) => {
+      const proc = launchHarness.spawn?.(...args) as { emit?: (event: string) => void } | undefined
+      // A real child emits 'spawn' asynchronously, once its process exists.
+      if (typeof proc?.emit === 'function' && !launchHarness.spawnFails)
+        queueMicrotask(() => proc.emit!('spawn'))
+      return proc
+    },
     waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
       launchHarness.waitForUrl ? launchHarness.waitForUrl() : actual.waitForUrl(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
@@ -1374,6 +1382,7 @@ describe('core beta report placement', () => {
     launchHarness.commitShas = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
+    launchHarness.spawnFails = false
     // Both halves of the activation-notice state: the in-process pending queue and the
     // persisted announced list, which the real settings module keeps in this run's temp
     // app dir. Without the reset, the first test to launch spends the notice for the rest.
@@ -1522,6 +1531,16 @@ describe('core beta report placement', () => {
         _operationAborts.get(id)?.abort()
       }
       expect(await handleLaunch(ctxFor(id))).toMatchObject({ ok: false, cancelled: true })
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+    })
+
+    it('makes no member of a launch whose process is never created', async () => {
+      serveCampaign('enrol')
+      launchHarness.spawnFails = true
+      await handleLaunch(ctxFor('campaign-spawn-failed'))
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(spawnArgs).toContain('--enable-agent')
       expect(launchHarness.recordWrites).toEqual([])
       expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
     })
