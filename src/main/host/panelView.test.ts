@@ -151,9 +151,9 @@ afterEach(() => {
 
 describe('setActivePanel', () => {
   it('no-ops when the requested panel is already active', () => {
-    const fixture = makeEntry({ activePanel: 'feedback' })
+    const fixture = makeEntry({ activePanel: 'mcp-setup' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'feedback')
+    setActivePanel(fixture.entry.windowKey, 'mcp-setup')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.titleBarWc.sent).toHaveLength(0)
   })
@@ -180,13 +180,13 @@ describe('setActivePanel', () => {
   )
 
   it('no-ops when the windowKey does not resolve to an entry', () => {
-    expect(() => setActivePanel(999_999, 'feedback')).not.toThrow()
+    expect(() => setActivePanel(999_999, 'mcp-setup')).not.toThrow()
   })
 
   it('no-ops when the host window has been destroyed', () => {
     const fixture = makeEntry({ activePanel: 'comfy', destroyed: true })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'feedback')
+    setActivePanel(fixture.entry.windowKey, 'mcp-setup')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.entry.activePanel).toBe('comfy')
   })
@@ -229,7 +229,7 @@ describe('refreshComfyTabBody', () => {
   })
 
   it('no-ops when the entry is currently parked on a non-comfy panel', () => {
-    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'feedback' })
+    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'mcp-setup' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
     indexInstallationId('inst-1', fixture.entry.windowKey)
     refreshComfyTabBody('inst-1')
@@ -238,7 +238,7 @@ describe('refreshComfyTabBody', () => {
   })
 })
 
-describe("What's New modal", () => {
+describe('title-bar modals', () => {
   type Fixture = ReturnType<typeof makeEntry>
 
   function register(opts: NonNullable<Parameters<typeof makeEntry>[0]>, running = false): Fixture {
@@ -452,6 +452,29 @@ describe("What's New modal", () => {
 
     expect(fixture.entry.panelModal).toBe('announcement')
     expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement'])
+  })
+
+  it("swaps What's New for Feedback in place without hiding the panel", () => {
+    const fixture = register({ installationId: 'inst-A' }, true)
+    open(fixture)
+    sendFromPanel(fixture, 'comfy-window:overlay-ready')
+
+    openPanelModal(fixture.entry.windowKey, 'feedback', 'comfy-panel:open-feedback', {
+      source: 'titlebar'
+    })
+
+    expect(fixture.entry.panelModal).toBe('feedback')
+    expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: true })
+    expect(panelChannels(fixture)).toEqual([
+      'comfy-panel:open-announcement',
+      'comfy-panel:open-feedback'
+    ])
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
+    expect(fixture.entry.panelModal, 'a stale close leaves Feedback open').toBe('feedback')
+
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'feedback', 1)
+    expect(fixture.entry.panelModal).toBeUndefined()
+    expect(bodyLayout(fixture.entry)).toEqual({ panel: false, canvas: true })
   })
 
   it('forgets the modal and its pending reveal when its renderer is destroyed', () => {

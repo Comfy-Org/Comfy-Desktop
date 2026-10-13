@@ -1,13 +1,14 @@
-import { onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type ComputedRef, type Ref } from 'vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { buildSupportUrl } from '../lib/supportUrl'
+import type { PanelModalState } from './usePanelModal'
 
 interface UseSendFeedbackApi {
-  /** True while the in-app feedback modal is mounted. */
-  feedbackOpen: Ref<boolean>
+  /** True while the in-app feedback modal is open. */
+  feedbackOpen: ComputedRef<boolean>
   /** Typeform URL with `ver` + `platform` query params resolved at open time. */
   feedbackUrl: Ref<string>
-  /** Imperative dismiss for the modal's `@close` handler. */
+  /** Asks main to close the modal; it closes once main has hidden the panel. */
   closeFeedback: () => void
 }
 
@@ -24,25 +25,15 @@ interface UseSendFeedbackApi {
  * await an IPC. Empty string while in flight or on failure —
  * `buildSupportUrl` treats falsy as "omit the param".
  */
-export function useSendFeedback(): UseSendFeedbackApi {
+export function useSendFeedback(panelModal: PanelModalState): UseSendFeedbackApi {
   const appVersion = ref('')
-  const feedbackOpen = ref(false)
   const feedbackUrl = ref('')
   let unsubOpenFeedback: (() => void) | null = null
 
   function handleOpenFeedback(source: 'titlebar' | 'menu'): void {
     emitTelemetryAction('comfy.desktop.feedback.opened', { source })
     feedbackUrl.value = buildSupportUrl(appVersion.value || undefined)
-    feedbackOpen.value = true
-  }
-
-  function closeFeedback(): void {
-    feedbackOpen.value = false
-    // Main flipped activePanel to 'feedback' (overlay over comfyView)
-    // when the click arrived. Restoring the panel here is symmetrical
-    // — without it the empty panel would stay layered on top of comfy
-    // after the user dismisses the modal.
-    void window.api.closeCurrentPanel()
+    panelModal.open('feedback')
   }
 
   onMounted(() => {
@@ -62,5 +53,9 @@ export function useSendFeedback(): UseSendFeedbackApi {
     unsubOpenFeedback?.()
   })
 
-  return { feedbackOpen, feedbackUrl, closeFeedback }
+  return {
+    feedbackOpen: computed(() => panelModal.current.value === 'feedback'),
+    feedbackUrl,
+    closeFeedback: () => panelModal.requestClose('feedback')
+  }
 }
