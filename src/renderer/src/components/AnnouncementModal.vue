@@ -60,12 +60,7 @@ function toggleSound(): void {
 // Element focused before open; restored on close to return focus to the trigger.
 let returnFocusTo: HTMLElement | null = null
 
-// Main unmounts the modal once it has hidden the panel; ignore repeats meanwhile.
-let dismissed = false
 function dismiss(): void {
-  if (dismissed) return
-  dismissed = true
-  emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   emit('close')
 }
 function openCta(cta: string, url: string): void {
@@ -103,7 +98,9 @@ onMounted(() => {
     if (!isInLiveDialog(document.activeElement)) overlayRef.value?.focus()
   })
 })
+// Every close unmounts, including one main makes for navigation.
 onUnmounted(() => {
+  emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   window.removeEventListener('keydown', onKeydown, true)
   returnFocusTo?.focus()
 })

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useModalOverlay } from '../../composables/useModalOverlay'
+import { IN_PAGE, PAGE_COVERED } from '../../lib/pageCovered'
 
 // Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,
 // body scroll lock, and a11y attrs. One of aria-label / aria-labelledby is
@@ -44,6 +45,8 @@ if (!props.ariaLabel && !props.ariaLabelledby) {
 }
 
 const dialogRef = ref<HTMLElement | null>(null)
+// A page's own modal goes under a title-bar modal with the page; dialogs stay above.
+const pageCovered = inject(IN_PAGE, false) ? inject(PAGE_COVERED, ref(false)) : ref(false)
 // Pre-open focus owner, restored on close so focus returns to the trigger.
 let returnFocusTo: HTMLElement | null = null
 // Prior body `overflow`, restored so we don't clobber a host-set value.
@@ -128,7 +131,11 @@ const sizeClass = computed(() => `is-size-${props.size}`)
         v-if="open"
         ref="dialogRef"
         class="base-modal-overlay"
-        :class="{ 'base-modal-overlay--blur': blurOverlay }"
+        :class="{
+          'base-modal-overlay--blur': blurOverlay,
+          'base-modal-overlay--covered': pageCovered
+        }"
+        :inert="pageCovered"
         role="dialog"
         aria-modal="true"
         :aria-label="ariaLabel"
@@ -172,6 +179,10 @@ const sizeClass = computed(() => `is-size-${props.size}`)
   place-items: center;
   padding: clamp(32px, 6vh, 72px) clamp(16px, 4vw, 48px);
   background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
+}
+/* Below What's New (55). */
+.base-modal-overlay--covered {
+  z-index: 54;
 }
 .base-modal-overlay:focus {
   outline: none;

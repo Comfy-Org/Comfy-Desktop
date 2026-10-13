@@ -161,11 +161,8 @@ describe('setActivePanel', () => {
   it.each(['performance-test', 'benchmarks'] as const)(
     'reasserts an already-active %s page so a stale dashboard renderer can recover',
     (panel) => {
-      const fixture = makeEntry({ activePanel: panel })
-      const panelWc = makeWc()
-      fixture.entry.panelView = {
-        webContents: panelWc
-      } as unknown as ComfyWindowEntry['panelView']
+      const fixture = makeEntry({ activePanel: panel, withPanel: true })
+      const panelWc = fixture.panelWc
       comfyWindows.set(fixture.entry.windowKey, fixture.entry)
 
       setActivePanel(fixture.entry.windowKey, panel)
@@ -285,7 +282,7 @@ describe("What's New modal", () => {
       open(fixture)
       expect(fixture.entry.panelModal).toBe('announcement')
       expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: false })
-      sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+      sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
 
       expect(fixture.entry.panelModal).toBeUndefined()
       expect(fixture.entry.activePanel).toBe(activePanel)
@@ -306,7 +303,7 @@ describe("What's New modal", () => {
     sendFromPanel(fixture, 'comfy-window:overlay-ready')
     expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: true })
 
-    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
     expect(bodyLayout(fixture.entry)).toEqual({ panel: false, canvas: true })
     expect(panelChannels(fixture)).not.toContain('panel-switch')
   })
@@ -329,7 +326,7 @@ describe("What's New modal", () => {
     open(fixture)
     _runningSessions.delete('inst-A')
     expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: false })
-    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
 
     expect(computeBodyMode(fixture.entry)).toBe('comfy-lifecycle')
     expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: false })
@@ -372,7 +369,7 @@ describe("What's New modal", () => {
     navigateToPanel(fixture.entry.windowKey, 'benchmarks')
     const layoutCalls = fixture.layoutCalls
 
-    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
 
     expect(fixture.entry.activePanel).toBe('benchmarks')
     expect(fixture.layoutCalls).toBe(layoutCalls)
@@ -418,6 +415,33 @@ describe("What's New modal", () => {
     expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: true })
     expect(fixture.panelBackground).toBe('#00000000')
     expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement', 'panel-switch'])
+  })
+
+  it('keeps a reopen that overtook the close request', () => {
+    const fixture = register({ activePanel: 'benchmarks' })
+    open(fixture)
+    open(fixture)
+
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 1)
+
+    expect(fixture.entry.panelModal).toBe('announcement')
+    expect(panelChannels(fixture)).not.toContain('comfy-panel:dismiss-modal')
+
+    sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement', 2)
+    expect(fixture.entry.panelModal).toBeUndefined()
+    expect(panelChannels(fixture).at(-1)).toBe('comfy-panel:dismiss-modal')
+  })
+
+  it('makes the panel opaque again when navigation leaves the canvas for a page', () => {
+    const fixture = register({ installationId: 'inst-A' }, true)
+    open(fixture)
+    sendFromPanel(fixture, 'comfy-window:overlay-ready')
+    expect(fixture.panelBackground).toBe('#00000000')
+
+    navigateToPanel(fixture.entry.windowKey, 'performance-test')
+
+    expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: false })
+    expect(fixture.panelBackground).not.toBe('#00000000')
   })
 
   it('ignores a close for an unknown modal', () => {

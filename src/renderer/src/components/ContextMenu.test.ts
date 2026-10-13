@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick, ref } from 'vue'
 
 import ContextMenu from './ContextMenu.vue'
 import { TID } from '../../../shared/testIds'
+import { PAGE_COVERED } from '../lib/pageCovered'
 
 let wrapper: VueWrapper | undefined
 const originalApi = Object.getOwnPropertyDescriptor(window, 'api')
@@ -16,15 +18,20 @@ afterEach(() => {
 })
 
 describe('ContextMenu', () => {
-  it('closes when focus leaves the panel, such as a click in the title bar', async () => {
+  it('closes when a title-bar modal covers the page, but not when the window blurs', async () => {
+    const covered = ref(false)
     wrapper = mount(ContextMenu, {
-      props: { open: false, x: 0, y: 0, items: [{ id: 'open-folder', label: 'Open Folder' }] }
+      props: { open: false, x: 0, y: 0, items: [{ id: 'open-folder', label: 'Open Folder' }] },
+      global: { provide: { [PAGE_COVERED as symbol]: covered } }
     })
     await wrapper.setProps({ open: true })
     await flushPromises()
 
     window.dispatchEvent(new Event('blur'))
+    expect(wrapper.emitted('close')).toBeUndefined()
 
+    covered.value = true
+    await nextTick()
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 

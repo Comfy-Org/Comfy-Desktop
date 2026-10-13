@@ -1448,8 +1448,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
-  /** Ask main to close a title-bar modal; it answers through `onDismissPanelModal`. */
-  closePanelModal(modal: PanelModal): void
+  /** Ask main to close a title-bar modal; it answers through `onDismissPanelModal`.
+   *  `opens` counts opens seen since the last dismiss, so main can ignore a stale close. */
+  closePanelModal(modal: PanelModal, opens: number): void
   /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void

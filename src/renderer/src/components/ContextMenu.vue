@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { inject, ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
 import type { ContextMenuItem } from '../types/context-menu'
+import { PAGE_COVERED } from '../lib/pageCovered'
 
 const props = defineProps<{
   open: boolean
@@ -30,20 +31,22 @@ watch(
       clampToViewport()
       document.addEventListener('mousedown', onOutsideClick, true)
       document.addEventListener('keydown', onEscape, true)
-      // A click in the title bar moves focus to another view without a mousedown here.
-      window.addEventListener('blur', onBlur)
     } else {
       document.removeEventListener('mousedown', onOutsideClick, true)
       document.removeEventListener('keydown', onEscape, true)
-      window.removeEventListener('blur', onBlur)
     }
   }
 )
 
+// A title-bar modal opening over the page would otherwise sit under this menu.
+const pageCovered = inject(PAGE_COVERED, ref(false))
+watch(pageCovered, (covered) => {
+  if (covered && props.open) emit('close')
+})
+
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onOutsideClick, true)
   document.removeEventListener('keydown', onEscape, true)
-  window.removeEventListener('blur', onBlur)
 })
 
 function clampToViewport(): void {
@@ -65,10 +68,6 @@ function onOutsideClick(e: MouseEvent): void {
 
 function onEscape(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close')
-}
-
-function onBlur(): void {
-  emit('close')
 }
 
 function handleClick(item: ContextMenuItem): void {

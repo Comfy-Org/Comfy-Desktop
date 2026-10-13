@@ -757,7 +757,7 @@ describe('PanelApp', () => {
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
 
       await pressEscape()
-      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement')
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
       expect(window.api.closeCurrentPanel).not.toHaveBeenCalled()
       expect(document.querySelector('.announce-overlay')).toBeNull()
       expect(wrapper.get(selector).element).toBe(page)
@@ -813,7 +813,7 @@ describe('PanelApp', () => {
       expect(window.api.signalOverlayReady).toHaveBeenCalledOnce()
 
       await pressEscape()
-      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement')
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
       expect(document.querySelector('.announce-overlay')).not.toBeNull()
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
 
@@ -823,9 +823,10 @@ describe('PanelApp', () => {
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
     })
 
-    it('closes when main dismisses it for navigation', async () => {
+    it('closes and reports the dismissal when main dismisses it for navigation', async () => {
       mountPanel()
       await flushPromises()
+      const events = captureTelemetry()
       await openAnnouncement()
 
       mockState.dismissPanelModalCallbacks.forEach((cb) => cb('announcement'))
@@ -833,6 +834,39 @@ describe('PanelApp', () => {
 
       expect(document.querySelector('.announce-overlay')).toBeNull()
       expect(window.api.closePanelModal).not.toHaveBeenCalled()
+      expect(
+        events.filter((e) => e.actionName === 'comfy.desktop.announcement.dismissed')
+      ).toHaveLength(1)
+    })
+
+    it('asks to close once while main is still answering', async () => {
+      mountPanel()
+      await flushPromises()
+      vi.mocked(window.api.closePanelModal).mockImplementation(() => {})
+      await openAnnouncement()
+
+      await pressEscape()
+      await pressEscape()
+      document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
+
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
+    })
+
+    it('stays closable when the bell reopens it before main answers a close', async () => {
+      mountPanel()
+      await flushPromises()
+      vi.mocked(window.api.closePanelModal).mockImplementation(() => {})
+      await openAnnouncement()
+      await pressEscape()
+
+      // Main sent the reopen first, so it drops that close and keeps the modal.
+      await openAnnouncement()
+      await pressEscape()
+
+      expect(vi.mocked(window.api.closePanelModal).mock.calls).toEqual([
+        ['announcement', 1],
+        ['announcement', 2]
+      ])
     })
   })
 

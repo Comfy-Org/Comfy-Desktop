@@ -1754,8 +1754,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseAllHostWindows: (parentWindow) =>
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
-      // Every title-popup panel switch is a user pick, so it closes What's New.
-      setActivePanel: navigateToPanel,
+      setActivePanel,
+      navigateToPanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,

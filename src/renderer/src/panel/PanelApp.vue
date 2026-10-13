@@ -28,7 +28,7 @@ import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboard
 import { useSendFeedback } from '../composables/useSendFeedback'
 import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { PAGE_COVERED } from '../lib/pageCovered'
+import { PAGE_COVERED, PageScope } from '../lib/pageCovered'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useActionGuard } from '../composables/useActionGuard'
@@ -596,32 +596,34 @@ onUnmounted(() => {
            bleed-through during BrandTakeoverLayout's fade-in). Flow
            takeovers keep the chooser mounted underneath by design. -->
       <div v-if="showPanelBody" class="panel-body" :inert="pageCovered">
-        <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
-          <ComfyLifecycleView
-            :installation="installation"
-            :installation-id="installationId"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+        <PageScope>
+          <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
+            <ComfyLifecycleView
+              :installation="installation"
+              :installation-id="installationId"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
-          <ChooserView
-            @pick="handleChooserPick"
-            @show-new-install="handleChooserShowNewInstall"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+          <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
+            <ChooserView
+              @pick="handleChooserPick"
+              @show-new-install="handleChooserShowNewInstall"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
-          <BenchmarksView />
-        </div>
+          <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
+            <BenchmarksView />
+          </div>
 
-        <KeepAlive>
-          <PerformanceTestView
-            v-if="activePanel === 'performance-test'"
-            class="panel-performance-test"
-          />
-        </KeepAlive>
+          <KeepAlive>
+            <PerformanceTestView
+              v-if="activePanel === 'performance-test'"
+              class="panel-performance-test"
+            />
+          </KeepAlive>
+        </PageScope>
       </div>
     </main>
 

@@ -146,6 +146,7 @@ export function destroyPanelView(entry: ComfyWindowEntry): void {
   }
   // The modal and any reveal it was waiting on lived in the destroyed renderer.
   entry.panelModal = undefined
+  entry.panelModalOpens = undefined
   clearOverlayReveal(entry)
   // The rebuilt panel starts with no overlay, so any `firstUseMode` the old renderer pushed
   // is stale. Reset to `'none'` and broadcast so the title bar paints full chrome; the new
@@ -194,15 +195,17 @@ function armOverlayReveal(entry: ComfyWindowEntry): void {
   }, 400)
 }
 
-/** Over the live canvas the panel must be see-through, but a lifecycle page leaves it opaque. */
-function syncCanvasOverlayBackground(entry: ComfyWindowEntry): void {
+/** See-through over the live canvas; opaque again once a full page replaces it. */
+function syncPanelBackground(entry: ComfyWindowEntry): void {
   const pv = entry.panelView
-  if (!pv || pv.webContents.isDestroyed() || !isCanvasOverlay(entry)) return
-  pv.setBackgroundColor('#00000000')
+  if (!pv || pv.webContents.isDestroyed()) return
+  if (isCanvasOverlay(entry)) pv.setBackgroundColor('#00000000')
+  else if (isOpaqueBodyMode(computeBodyMode(entry))) pv.setBackgroundColor(opaquePanelBg())
 }
 
 function hidePanelModal(entry: ComfyWindowEntry): void {
   entry.panelModal = undefined
+  entry.panelModalOpens = undefined
   clearOverlayReveal(entry)
   entry.layoutViews()
   focusActiveBody(entry)
@@ -218,10 +221,11 @@ export function openPanelModal(
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
   const panelWasHidden = computeBodyMode(entry) === 'comfy' && !entry.panelModal
+  entry.panelModalOpens = entry.panelModal === modal ? (entry.panelModalOpens ?? 0) + 1 : 1
   entry.panelModal = modal
   const panelView = ensurePanelView(windowKey, entry, computeBodyMode(entry))
   if (panelWasHidden) armOverlayReveal(entry)
-  syncCanvasOverlayBackground(entry)
+  syncPanelBackground(entry)
   sendToPanelDeferred(panelView, channel, payload)
   entry.layoutViews()
   focusActiveBody(entry)
@@ -261,7 +265,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   }
   if (isCanvasOverlay(entry) && !modalShowing) armOverlayReveal(entry)
   else clearOverlayReveal(entry)
-  syncCanvasOverlayBackground(entry)
+  syncPanelBackground(entry)
   forwardToPanelRenderer(entry, 'panel-switch', {
     panel: mode,
     installationId: entry.installationId ?? ''
@@ -312,7 +316,7 @@ export function refreshComfyTabBody(installationId: string): void {
       lifecyclePanel.setBackgroundColor(opaquePanelBg())
     }
   }
-  syncCanvasOverlayBackground(entry)
+  syncPanelBackground(entry)
   forwardToPanelRenderer(entry, 'panel-switch', { panel: mode, installationId })
   entry.layoutViews()
   focusActiveBody(entry)
@@ -363,11 +367,15 @@ export function registerPanelViewIpc(): void {
     if (entry) setActivePanel(entry.windowKey, 'comfy')
   })
 
-  ipcMain.on('comfy-window:close-panel-modal', (event, modal: unknown) => {
+  ipcMain.on('comfy-window:close-panel-modal', (event, modal: unknown, opens: unknown) => {
     if (!isPanelModal(modal)) return
     const entry = findEntryByPanelSender(event.sender)
     // Already cleared if navigation dismissed it first.
-    if (entry?.panelModal === modal && !entry.window.isDestroyed()) hidePanelModal(entry)
+    if (entry?.panelModal === modal && !entry.window.isDestroyed()) {
+      // Reopened after the renderer asked; it re-arms on that open, so keep it.
+      if (opens !== entry.panelModalOpens) return
+      hidePanelModal(entry)
+    }
     // Reply only after hiding the panel, so its opaque frame can't flash over the canvas.
     if (!event.sender.isDestroyed()) event.sender.send('comfy-panel:dismiss-modal', modal)
   })

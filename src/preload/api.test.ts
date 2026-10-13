@@ -19,9 +19,9 @@ beforeEach(() => {
 
 describe('title-bar modal channels', () => {
   it('asks main to close a modal on the channel main handles', () => {
-    buildElectronApi().closePanelModal('announcement')
+    buildElectronApi().closePanelModal('announcement', 2)
 
-    expect(mocks.send).toHaveBeenCalledWith('comfy-window:close-panel-modal', 'announcement')
+    expect(mocks.send).toHaveBeenCalledWith('comfy-window:close-panel-modal', 'announcement', 2)
   })
 
   it('passes only known modals from main to the renderer', () => {

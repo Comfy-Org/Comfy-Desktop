@@ -91,6 +91,8 @@ export interface ComfyWindowEntry {
   activePanel: ComfyPanelKey
   /** Title-bar modal shown over the body; independent of `activePanel`. */
   panelModal?: PanelModal
+  /** Opens sent for `panelModal`, so main can drop a close the renderer sent before a reopen. */
+  panelModalOpens?: number
   /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
    *  keeps the panel hidden so its pre-transparent frame can't flash. */
   pendingOverlayReveal?: boolean

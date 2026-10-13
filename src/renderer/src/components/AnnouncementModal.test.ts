@@ -8,7 +8,9 @@ import Modal from './Modal.vue'
 import ModalDialog from './ModalDialog.vue'
 import BaseAlert from './ui/BaseAlert.vue'
 import { useModal } from '../composables/useModal'
-import { PAGE_COVERED } from '../lib/pageCovered'
+import { PAGE_COVERED, PageScope } from '../lib/pageCovered'
+import BaseModal from './ui/BaseModal.vue'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 
 const wrappers: VueWrapper[] = []
 
@@ -90,19 +92,55 @@ describe("What's New over dialogs", () => {
     expect(announcement.emitted('close')).toHaveLength(1)
   })
 
-  it('asks to close once while main is still answering', async () => {
-    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
-    await flushPromises()
+  it('reports the dismissal once, when it unmounts', async () => {
+    const events: TelemetryActionEventDetail[] = []
+    const listener = (event: Event): void => {
+      events.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    try {
+      const announcement = mount(AnnouncementModal, { attachTo: document.body })
+      await flushPromises()
+      pressEscape()
+      pressEscape()
+      const dismissed = (): number =>
+        events.filter((e) => e.actionName === 'comfy.desktop.announcement.dismissed').length
+      expect(dismissed()).toBe(0)
 
-    pressEscape()
-    pressEscape()
-    document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
-
-    expect(announcement.emitted('close')).toHaveLength(1)
+      announcement.unmount()
+      expect(dismissed()).toBe(1)
+    } finally {
+      window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    }
   })
 })
 
 describe('page surfaces under a title-bar modal', () => {
+  it("puts a page's own modal under What's New, but not a dialog", async () => {
+    const covered = ref(false)
+    const modal = (label: string) =>
+      h(BaseModal, { open: true, ariaLabel: label }, { default: () => h('input') })
+    track(
+      mount(() => [h(PageScope, null, { default: () => modal('Page') }), modal('Dialog')], {
+        attachTo: document.body,
+        global: { provide: { [PAGE_COVERED as symbol]: covered } }
+      })
+    )
+    await flushPromises()
+    const page = document.querySelector('[aria-label="Page"]')
+    const dialog = document.querySelector('[aria-label="Dialog"]')
+
+    covered.value = true
+    await nextTick()
+    expect(page?.hasAttribute('inert')).toBe(true)
+    expect(getComputedStyle(page as Element).zIndex).not.toBe('60')
+    expect(dialog?.hasAttribute('inert')).toBe(false)
+
+    covered.value = false
+    await nextTick()
+    expect(page?.hasAttribute('inert')).toBe(false)
+  })
+
   it.each([
     { name: 'brand takeover', component: BrandTakeoverLayout, root: '.brand-takeover-root' },
     { name: 'legacy modal', component: Modal, root: '.view-modal' }
