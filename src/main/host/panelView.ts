@@ -34,7 +34,7 @@ function opaquePanelBg(): string {
 /** Full-screen bodies that hide the comfy view, so the panel must paint opaque
  *  during load rather than compositing the (hidden) canvas through. `comfy-
  *  lifecycle` is included so the 1-2s `stopping` window shows the spinner over
- *  an opaque surface instead of black. Overlay modes (downloads / feedback)
+ *  an opaque surface instead of black. Overlay modes (downloads / MCP setup)
  *  deliberately stay transparent. */
 function isOpaqueBodyMode(mode: BodyMode): boolean {
   return (
@@ -218,6 +218,7 @@ export function openPanelModal(
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
   const panelWasHidden = computeBodyMode(entry) === 'comfy' && !entry.panelModal
+  // One title-bar modal at a time; the renderer swaps them in one render.
   entry.panelModal = modal
   const panelView = ensurePanelView(windowKey, entry, computeBodyMode(entry))
   if (panelWasHidden) armOverlayReveal(entry)

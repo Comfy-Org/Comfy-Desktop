@@ -145,7 +145,6 @@ describe('bodyLayout', () => {
   it.each([
     { activePanel: 'comfy', panelModal: undefined, layout: { panel: false, canvas: true } },
     { activePanel: 'comfy', panelModal: 'announcement', layout: { panel: true, canvas: true } },
-    { activePanel: 'feedback', panelModal: undefined, layout: { panel: true, canvas: true } },
     { activePanel: 'mcp-setup', panelModal: undefined, layout: { panel: true, canvas: true } },
     {
       activePanel: 'benchmarks',
@@ -183,8 +182,8 @@ describe('computeBodyMode', () => {
   })
 
   it('passes non-comfy panels through for install-less hosts', () => {
-    const entry = makeEntry({ installationId: null, activePanel: 'feedback' })
-    expect(computeBodyMode(entry)).toBe('feedback')
+    const entry = makeEntry({ installationId: null, activePanel: 'mcp-setup' })
+    expect(computeBodyMode(entry)).toBe('mcp-setup')
   })
 
   it('routes the comfy pill to comfy when the install session is running', () => {

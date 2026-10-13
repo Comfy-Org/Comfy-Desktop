@@ -83,6 +83,7 @@ onBeforeUnmount(() => {
     size="xl"
     :aria-label="t('feedback.modalLabel', 'Send Feedback')"
     content-class="feedback-modal-panel"
+    covers-page
     @close="onClose"
   >
     <div class="feedback-modal-body">
