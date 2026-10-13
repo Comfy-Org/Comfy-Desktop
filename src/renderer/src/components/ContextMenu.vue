@@ -30,9 +30,12 @@ watch(
       clampToViewport()
       document.addEventListener('mousedown', onOutsideClick, true)
       document.addEventListener('keydown', onEscape, true)
+      // A click in the title bar moves focus to another view without a mousedown here.
+      window.addEventListener('blur', onBlur)
     } else {
       document.removeEventListener('mousedown', onOutsideClick, true)
       document.removeEventListener('keydown', onEscape, true)
+      window.removeEventListener('blur', onBlur)
     }
   }
 )
@@ -40,6 +43,7 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onOutsideClick, true)
   document.removeEventListener('keydown', onEscape, true)
+  window.removeEventListener('blur', onBlur)
 })
 
 function clampToViewport(): void {
@@ -61,6 +65,10 @@ function onOutsideClick(e: MouseEvent): void {
 
 function onEscape(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close')
+}
+
+function onBlur(): void {
+  emit('close')
 }
 
 function handleClick(item: ContextMenuItem): void {

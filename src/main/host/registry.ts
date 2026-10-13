@@ -4,7 +4,7 @@ import { _runningSessions, _isStopping } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
-import { isTransparentPanelOverlay } from '../../shared/panelOverlay'
+import type { PanelModal } from '../../shared/panelModal'
 
 /**
  * Bus for host-window install attachment changes. `'changed'` fires when the
@@ -34,9 +34,6 @@ export type ComfyPanelKey =
   /** Overlay mode (like `'feedback'`): the MCP setup modal mounts over the live
    *  canvas, which stays visible underneath and dimmed. Set programmatically. */
   | 'mcp-setup'
-  /** Overlay mode (like `'feedback'`): the launch-announcement modal, opened
-   *  from the title-bar news bell. Set programmatically. */
-  | 'announcement'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
@@ -48,8 +45,7 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup',
-  'announcement'
+  'mcp-setup'
 ])
 
 /**
@@ -72,7 +68,6 @@ export type BodyMode =
   | 'load-snapshot'
   | 'quick-install'
   | 'mcp-setup'
-  | 'announcement'
 
 /**
  * Per-installation handle for a ComfyUI window. The window is a parent
@@ -94,7 +89,8 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
-  panelBeforeAnnouncement?: { panel: ComfyPanelKey; bodyMode: BodyMode }
+  /** Title-bar modal shown over the body; independent of `activePanel`. */
+  panelModal?: PanelModal
   /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
    *  keeps the panel hidden so its pre-transparent frame can't flash. */
   pendingOverlayReveal?: boolean
@@ -295,11 +291,21 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
   return _runningSessions.has(entry.installationId) ? 'comfy' : 'comfy-lifecycle'
 }
 
-export function hasTransparentPanelOverlay(entry: ComfyWindowEntry): boolean {
+/** The panel paints transparent with the live canvas visible underneath. */
+export function isCanvasOverlay(entry: ComfyWindowEntry): boolean {
   const mode = computeBodyMode(entry)
-  const backgroundMode =
-    mode === 'announcement' ? (entry.panelBeforeAnnouncement?.bodyMode ?? 'comfy') : mode
-  return isTransparentPanelOverlay(mode, backgroundMode)
+  return mode === 'feedback' || mode === 'mcp-setup' || (mode === 'comfy' && !!entry.panelModal)
+}
+
+/** Which body views `layoutViews` shows. A hidden canvas stays alive but collapsed. */
+export function bodyLayout(entry: ComfyWindowEntry): { panel: boolean; canvas: boolean } {
+  const overlay = isCanvasOverlay(entry)
+  // Keep an overlay panel hidden until the renderer acks it painted, so its
+  // opaque pre-transparent frame can't flash over ComfyUI.
+  const panel =
+    (computeBodyMode(entry) !== 'comfy' || !!entry.panelModal) &&
+    !(overlay && entry.pendingOverlayReveal)
+  return { panel, canvas: !panel || overlay }
 }
 
 /**

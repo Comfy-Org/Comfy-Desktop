@@ -171,6 +171,7 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  openPanelModal,
   prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
@@ -1095,16 +1096,8 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
-/** Flip into the 'announcement' overlay panel (mirrors triggerOpenFeedback):
- * lazily ensure the panel view, make it visible over comfyView, and tell the
- * panel renderer to mount the announcement modal. */
 function triggerOpenAnnouncement(entryId: number): void {
-  const parentEntry = comfyWindows.get(entryId)
-  if (!parentEntry || parentEntry.window.isDestroyed()) return
-  const panelView =
-    parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, computeBodyMode(parentEntry))
-  setActivePanel(entryId, 'announcement')
-  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
+  openPanelModal(entryId, 'announcement', 'comfy-panel:open-announcement', {})
 }
 
 /** Title-bar news-bell click. Resolves the host entry from the title-bar

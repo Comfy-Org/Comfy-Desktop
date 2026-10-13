@@ -48,8 +48,8 @@ import {
   comfyWindows,
   computeBodyMode,
   dropAttachClaimsForWindow,
+  bodyLayout,
   hasRunningSessionForEntry,
-  hasTransparentPanelOverlay,
   isChooserHost,
   isInstallHost,
   nextWindowKey,
@@ -650,22 +650,11 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     // one with default bounds and invisible — ComfyUI loads but never paints.
     const activeComfyView = entry?.comfyView ?? comfyView
 
-    // The Comfy pill maps to the live ComfyUI view *or* a panel
-    // (lifecycle / chooser / settings / etc.) depending on mode.
-    // `computeBodyMode` already returns `'chooser'` for install-less
-    // hosts, so the install-backed visibility branch handles both.
-    const mode = entry ? computeBodyMode(entry) : 'comfy'
-    /** Overlay mode mounts a modal over the live canvas, kept visible underneath at full
-     *  bodyRect; the panel paints transparent (PanelApp's `panel-overlay-mode`) so it
-     *  composites through on macOS CALayers. */
-    const isOverlayMode = entry ? hasTransparentPanelOverlay(entry) : false
-    // Keep an overlay panel hidden until the renderer acks it painted, so its
-    // opaque pre-transparent frame can't flash over ComfyUI.
-    const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
-    if (showPanel && entry?.panelView) {
+    const layout = entry ? bodyLayout(entry) : { panel: false, canvas: true }
+    if (layout.panel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
       entry.panelView.setVisible(true)
-      if (isOverlayMode) {
+      if (layout.canvas) {
         activeComfyView.setBounds(bodyRect)
         activeComfyView.setVisible(true)
       } else {

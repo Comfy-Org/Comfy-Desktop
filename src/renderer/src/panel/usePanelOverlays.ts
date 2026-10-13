@@ -37,11 +37,6 @@ export type PanelKey =
    *  swallowing the event. */
   | 'progress'
   | 'mcp-setup'
-  /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
-   *  announcement modal renders via its own ref (like feedback), so there's
-   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
-   *  the panel-switch so the overlay transparency watcher still fires. */
-  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -55,8 +50,7 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup',
-  'announcement'
+  'mcp-setup'
 ])
 
 /**
@@ -134,8 +128,6 @@ export interface UsePanelOverlaysOpts {
 export interface UsePanelOverlaysApi {
   // State / overlay slot proxied from `useOverlay`.
   activePanel: Ref<PanelKey>
-  /** The page under What's New: `activePanel`, minus `'announcement'`. */
-  bodyPanel: Ref<PanelKey>
   initialPanel: PanelKey
   defaultBodyPanel: () => PanelKey
   currentOverlay: ReturnType<typeof useOverlay>['current']
@@ -245,17 +237,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   const activePanel = ref<PanelKey>(
     FLOW_PANELS.has(initialPanel) ? defaultBodyPanel() : initialPanel
-  )
-
-  const bodyPanel = ref<PanelKey>(
-    activePanel.value === 'announcement' ? defaultBodyPanel() : activePanel.value
-  )
-  watch(
-    activePanel,
-    (panel) => {
-      if (panel !== 'announcement') bodyPanel.value = panel
-    },
-    { flush: 'sync' }
   )
 
   /**
@@ -487,14 +468,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   async function switchPanel(panel: PanelKey, entrypoint: string = 'titlebar'): Promise<void> {
     const fromView = activePanel.value
     if (FLOW_PANELS.has(panel)) {
-      // Closing What's New over a wizard restores main's wizard key; reopening
-      // the already-mounted wizard would reset its form.
-      const cur = currentOverlay.value
-      if (cur?.kind === 'takeover' && cur.component === panel) {
-        // Wizards never set activePanel, so leave the announcement key behind.
-        if (activePanel.value === 'announcement') activePanel.value = bodyPanel.value
-        return
-      }
       await openFlowTakeover(panel as FlowComponent, entrypoint)
       return
     }
@@ -508,7 +481,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   return {
     activePanel,
-    bodyPanel,
     initialPanel,
     defaultBodyPanel,
     currentOverlay,

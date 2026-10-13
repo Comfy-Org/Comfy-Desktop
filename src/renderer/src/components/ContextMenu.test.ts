@@ -16,6 +16,18 @@ afterEach(() => {
 })
 
 describe('ContextMenu', () => {
+  it('closes when focus leaves the panel, such as a click in the title bar', async () => {
+    wrapper = mount(ContextMenu, {
+      props: { open: false, x: 0, y: 0, items: [{ id: 'open-folder', label: 'Open Folder' }] }
+    })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+
+    window.dispatchEvent(new Event('blur'))
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
   it('shows a linked explanation from an info icon beside an enabled action', async () => {
     vi.useFakeTimers()
     wrapper = mount(ContextMenu, {

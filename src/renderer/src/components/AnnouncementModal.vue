@@ -59,9 +59,6 @@ function toggleSound(): void {
 }
 // Element focused before open; restored on close to return focus to the trigger.
 let returnFocusTo: HTMLElement | null = null
-// The page or wizard underneath stays mounted; making it inert keeps Tab (and so
-// Escape) out of it. Dialogs stacked above later mount as new body children.
-let inertedBackground: HTMLElement[] = []
 
 function dismiss(): void {
   emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
@@ -79,8 +76,15 @@ function onOverlayClick(e: MouseEvent) {
   if (e.target === overlayRef.value && mouseDownOnOverlay.value) dismiss()
   mouseDownOnOverlay.value = false
 }
+// Dialogs paint above What's New and keep their own focus and Escape. The page
+// and wizards underneath are inert (PanelApp's PAGE_COVERED).
+function isInLiveDialog(el: Element | null): boolean {
+  const dialog = el?.closest('[aria-modal="true"]')
+  return !!dialog && dialog !== overlayRef.value && !dialog.closest('[inert]')
+}
+// Window capture runs before the document Escape handlers of wizards underneath.
 function onKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
+  if (e.key !== 'Escape' || isInLiveDialog(document.activeElement)) return
   e.preventDefault()
   e.stopImmediatePropagation()
   dismiss()
@@ -88,22 +92,15 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
+  window.addEventListener('keydown', onKeydown, true)
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button. Traps focus without a ring on open.
+  // Focus the dialog container, not a button, so open paints no focus ring.
   void nextTick(() => {
-    const overlay = overlayRef.value
-    if (!overlay) return
-    inertedBackground = Array.from(document.body.children).filter(
-      (el): el is HTMLElement =>
-        el instanceof HTMLElement && !el.contains(overlay) && !el.hasAttribute('inert')
-    )
-    for (const el of inertedBackground) el.setAttribute('inert', '')
-    overlay.focus()
+    if (!isInLiveDialog(document.activeElement)) overlayRef.value?.focus()
   })
 })
 onUnmounted(() => {
-  for (const el of inertedBackground) el.removeAttribute('inert')
-  inertedBackground = []
+  window.removeEventListener('keydown', onKeydown, true)
   returnFocusTo?.focus()
 })
 </script>
@@ -118,7 +115,6 @@ onUnmounted(() => {
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"
         tabindex="-1"
-        @keydown.capture="onKeydown"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
       >
@@ -196,7 +192,8 @@ onUnmounted(() => {
 .announce-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Above takeovers (50), below dialogs (BaseModal 60, BaseAlert 1000). */
+  z-index: 55;
   display: grid;
   place-items: center;
   padding: clamp(72px, 10vh, 132px) clamp(32px, 5vw, 80px) clamp(80px, 11vh, 140px);

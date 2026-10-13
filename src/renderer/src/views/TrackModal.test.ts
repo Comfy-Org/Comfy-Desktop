@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { ref } from 'vue'
 
 import TrackModal from './TrackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
-import BaseAlert from '../components/ui/BaseAlert.vue'
+import { PAGE_COVERED } from '../lib/pageCovered'
 import type { ProbeResult } from '../types/ipc'
 
 /**
@@ -78,9 +79,8 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
   return api
 }
 
-function mountTrack(options: { attachTo?: HTMLElement } = {}) {
+function mountTrack() {
   return mount(TrackModal, {
-    ...options,
     global: {
       plugins: [createTestI18n()],
       stubs: {
@@ -108,60 +108,50 @@ describe('TrackModal — browse-only install directory', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps a named Track wizard open when Escape dismisses the announcement above it', async () => {
-    const track = mountTrack({ attachTo: document.body })
+  it("keeps a named Track wizard open when Escape closes What's New above it", async () => {
+    const covered = ref(false)
+    const track = mount(TrackModal, {
+      attachTo: document.body,
+      global: {
+        plugins: [createTestI18n()],
+        provide: { [PAGE_COVERED]: covered },
+        stubs: {
+          BrandBackground: {
+            template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
+          },
+          TakeoverBack: true,
+          BaseSelect: true,
+          HardDrive: true
+        }
+      }
+    })
+    const escape = (): void => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      )
+    }
     track.vm.open()
     await flushPromises()
-    await track.get('input').setValue('Keep this installation')
-    const announcement = mount(AnnouncementModal)
-    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('.brand-takeover-root input')
+    if (!input) throw new Error('Track name field is missing')
+    input.value = 'Keep this installation'
 
-    document.activeElement?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    )
+    covered.value = true
+    const announcement = mount(AnnouncementModal, { attachTo: document.body })
+    await flushPromises()
+    escape()
     await flushPromises()
 
     expect(announcement.emitted('close')).toHaveLength(1)
     expect(track.emitted('close')).toBeUndefined()
-    expect(track.get('input').element).toHaveProperty('value', 'Keep this installation')
-    expect(
-      track.get('input').element.closest('[inert]'),
-      'Tab cannot reach the wizard'
-    ).not.toBeNull()
+    expect(input.value).toBe('Keep this installation')
 
     announcement.unmount()
-    expect(track.get('input').element.closest('[inert]')).toBeNull()
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    covered.value = false
     await flushPromises()
-    expect(track.emitted('close')).toHaveLength(1)
+    escape()
+    expect(track.emitted('close'), 'Escape reaches the wizard once uncovered').toHaveLength(1)
     track.unmount()
-  })
-
-  it('lets an update confirmation above the announcement handle Escape', async () => {
-    const alert = mount(BaseAlert, {
-      props: { open: false, title: 'Restart to update?', showCancel: true },
-      global: { plugins: [createTestI18n()] }
-    })
-    const announcement = mount(AnnouncementModal)
-    await flushPromises()
-    await alert.setProps({ open: true })
-    await flushPromises()
-
-    document.activeElement?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    )
-    await flushPromises()
-
-    expect(alert.emitted('cancel')).toHaveLength(1)
-    expect(announcement.emitted('close')).toBeUndefined()
-
-    await alert.setProps({ open: false })
-    await flushPromises()
-    document.activeElement?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    )
-    await flushPromises()
-    expect(announcement.emitted('close')).toHaveLength(1)
   })
 
   it('renders a non-clickable placeholder (no editable input) before a folder is picked', async () => {

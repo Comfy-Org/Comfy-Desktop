@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
+  bodyLayout,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -32,7 +33,6 @@ import {
   nextWindowKey,
   forceRevealHostWindow,
   hasRunningSessionForEntry,
-  hasTransparentPanelOverlay,
   raiseAllHostWindows,
   registerHostEntry,
   setHostFactories,
@@ -141,48 +141,38 @@ describe('nextWindowKey', () => {
   })
 })
 
-describe('announcement backgrounds', () => {
+describe('bodyLayout', () => {
   it.each([
-    { background: 'comfy', transparent: false },
-    { background: 'feedback', transparent: true },
-    { background: 'mcp-setup', transparent: true },
-    { background: 'performance-test', transparent: false },
-    { background: 'benchmarks', transparent: false },
-    { background: 'progress', transparent: false }
+    { activePanel: 'comfy', panelModal: undefined, layout: { panel: false, canvas: true } },
+    { activePanel: 'comfy', panelModal: 'announcement', layout: { panel: true, canvas: true } },
+    { activePanel: 'feedback', panelModal: undefined, layout: { panel: true, canvas: true } },
+    { activePanel: 'mcp-setup', panelModal: undefined, layout: { panel: true, canvas: true } },
+    {
+      activePanel: 'benchmarks',
+      panelModal: 'announcement',
+      layout: { panel: true, canvas: false }
+    }
   ] as const)(
-    'keeps $background transparent=$transparent on a dashboard host',
-    ({ background, transparent }) => {
-      const entry = makeEntry({ installationId: null, activePanel: background })
-      entry.panelBeforeAnnouncement = { panel: background, bodyMode: computeBodyMode(entry) }
-      entry.activePanel = 'announcement'
+    'shows $layout for $activePanel with modal $panelModal over a running install',
+    ({ activePanel, panelModal, layout }) => {
+      const entry = makeEntry({ installationId: 'inst-A', activePanel })
+      entry.panelModal = panelModal
+      _runningSessions.set('inst-A', {} as never)
 
-      expect(hasTransparentPanelOverlay(entry)).toBe(transparent)
+      expect(bodyLayout(entry)).toEqual(layout)
+      entry.pendingOverlayReveal = true
+      expect(bodyLayout(entry), 'hidden until painted').toEqual(
+        layout.canvas ? { panel: false, canvas: true } : layout
+      )
     }
   )
 
-  it('keeps the opening canvas backdrop while an instance stops beneath an announcement', () => {
-    const entry = makeEntry({ installationId: 'inst-A', activePanel: 'comfy' })
-    _runningSessions.set('inst-A', {
-      proc: null,
-      port: 8188,
-      mode: 'window',
-      installationName: 'Test Install',
-      startedAt: 0
-    })
-    expect(hasTransparentPanelOverlay(entry)).toBe(false)
+  it('shows only the dashboard under a modal on an install-less host', () => {
+    const entry = makeEntry({ installationId: null })
+    entry.panelModal = 'announcement'
+    entry.pendingOverlayReveal = true
 
-    entry.panelBeforeAnnouncement = { panel: 'comfy', bodyMode: computeBodyMode(entry) }
-    entry.activePanel = 'announcement'
-    expect(hasTransparentPanelOverlay(entry)).toBe(true)
-
-    _stoppingInstallationIds.add('inst-A')
-    expect(hasTransparentPanelOverlay(entry)).toBe(true)
-    _stoppingInstallationIds.clear()
-    _runningSessions.clear()
-    expect(hasTransparentPanelOverlay(entry)).toBe(true)
-    entry.activePanel = 'comfy'
-    expect(hasTransparentPanelOverlay(entry)).toBe(false)
-    expect(computeBodyMode(entry)).toBe('comfy-lifecycle')
+    expect(bodyLayout(entry)).toEqual({ panel: true, canvas: false })
   })
 })
 

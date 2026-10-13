@@ -10,6 +10,7 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import { isPanelModal } from '../shared/panelModal'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -110,7 +111,7 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
+    closePanelModal: (modal) => ipcRenderer.send('comfy-window:close-panel-modal', modal),
     /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
@@ -145,6 +146,13 @@ export function buildElectronApi(): ElectronApi {
       const handler = (): void => callback()
       ipcRenderer.on('comfy-panel:open-announcement', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
+    },
+    onDismissPanelModal: (callback) => {
+      const handler = (_event: IpcRendererEvent, modal: unknown): void => {
+        if (isPanelModal(modal)) callback(modal)
+      }
+      ipcRenderer.on('comfy-panel:dismiss-modal', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:dismiss-modal', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

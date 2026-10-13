@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -28,11 +28,12 @@ import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboard
 import { useSendFeedback } from '../composables/useSendFeedback'
 import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { PAGE_COVERED } from '../lib/pageCovered'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useActionGuard } from '../composables/useActionGuard'
 import { registerMigrateTakeover } from '../composables/useMigrateAction'
-import { isFlowPanel, isValidPanel, usePanelOverlays, type PanelKey } from './usePanelOverlays'
+import { isFlowPanel, isValidPanel, usePanelOverlays } from './usePanelOverlays'
 import { useChooserHandoff } from './useChooserHandoff'
 import { useFirstUseChain } from './useFirstUseChain'
 import { bindE2EPanelHooks } from './e2eRendererHooks'
@@ -46,7 +47,6 @@ import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { useMediaPrefetch } from '../composables/useMediaPrefetch'
 import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
-import { isTransparentPanelOverlay } from '../../../shared/panelOverlay'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -78,6 +78,9 @@ useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
+// Pages and wizards stay mounted under a title-bar modal; dialogs above it stay live.
+const pageCovered = computed(() => announcementOpen.value)
+provide(PAGE_COVERED, pageCovered)
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
 // inside the store itself, so the panel just needs to read from it.
@@ -156,7 +159,6 @@ overlays = usePanelOverlays({
 })
 const {
   activePanel,
-  bodyPanel,
   initialPanel,
   currentOverlay,
   openOverlay,
@@ -378,18 +380,12 @@ function handleMcpOpenTerminal(): void {
 
 /** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
-  activePanel,
-  (next) => {
-    // A wizard takeover is the page under What's New, matching main's snapshot of
-    // the wizard key even though wizards never change bodyPanel.
-    const overlay = currentOverlay.value
-    const background =
-      overlay?.kind === 'takeover' && isFlowPanel(overlay.component as PanelKey)
-        ? overlay.component
-        : bodyPanel.value
-    const isOverlay = isTransparentPanelOverlay(next, background)
+  [activePanel, pageCovered],
+  ([panel, covered]) => {
+    const isOverlay =
+      panel === 'feedback' || panel === 'mcp-setup' || (panel === 'comfy' && covered)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
-    if (!isOverlay && next !== 'announcement') return
+    if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
     // and Chromium pauses rAF for an occluded view, so it would never fire.
     void nextTick(() => window.api.signalOverlayReady())
@@ -598,8 +594,8 @@ onUnmounted(() => {
            hidden while the first-use takeover is mounted (no chooser
            bleed-through during BrandTakeoverLayout's fade-in). Flow
            takeovers keep the chooser mounted underneath by design. -->
-      <div v-if="showPanelBody" class="panel-body">
-        <div v-if="bodyPanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
+      <div v-if="showPanelBody" class="panel-body" :inert="pageCovered">
+        <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
           <ComfyLifecycleView
             :installation="installation"
             :installation-id="installationId"
@@ -607,7 +603,7 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="bodyPanel === 'chooser'" class="panel-chooser">
+        <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
           <ChooserView
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
@@ -615,13 +611,13 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="bodyPanel === 'benchmarks'" class="panel-benchmarks">
+        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
           <BenchmarksView />
         </div>
 
         <KeepAlive>
           <PerformanceTestView
-            v-if="bodyPanel === 'performance-test'"
+            v-if="activePanel === 'performance-test'"
             class="panel-performance-test"
           />
         </KeepAlive>
@@ -689,7 +685,7 @@ onUnmounted(() => {
     </template>
 
     <McpSetupModal
-      v-if="bodyPanel === 'mcp-setup'"
+      v-if="activePanel === 'mcp-setup'"
       @close="handleMcpClose"
       @open-terminal="handleMcpOpenTerminal"
     />
