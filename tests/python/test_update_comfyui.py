@@ -237,13 +237,13 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(self.head(), self.sha["v1"])
         self.assertEqual(read_tree(self.repo)["app/db.py"], "edited\n")
 
-    def test_update_removes_untracked_files_kept_on_the_backup_branch(self):
-        # As in 1.1.6: the backup step stages everything, so the reset removes
-        # a stray untracked file; the backup branch keeps it.
+    def test_update_keeps_untracked_files_and_backs_them_up(self):
         with open(os.path.join(self.repo, "notes.txt"), "w") as f:
             f.write("mine\n")
         self.assertEqual(self.update("--stable").returncode, 0)
-        self.assert_clean_at(self.sha["v2"], V2)
+        self.assertEqual(self.head(), self.sha["v2"])
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "?? notes.txt")
+        self.assertEqual(read_tree(self.repo), {**V2, "notes.txt": "mine\n"})
         backup = git(self.repo, "branch", "--list", "backup_branch_*",
                      "--format=%(refname:short)")
         self.assertEqual(git(self.repo, "show", "%s:notes.txt" % backup), "mine")
