@@ -21,12 +21,14 @@ import {
   bodyLayout,
   comfyWindows,
   computeBodyMode,
+  heldCanvases,
   indexInstallationId,
   nextWindowKey,
   type ComfyWindowEntry
 } from './registry'
 import {
   destroyPanelView,
+  holdCanvas,
   navigateToPanel,
   openPanelModal,
   prewarmAttachedPanel,
@@ -89,12 +91,15 @@ function makeEntry(
   titleBarWc: FakeWebContents
   panelWc: FakeWebContents
   layoutCalls: number
+  /** What the most recent `layoutViews` pass (e.g. a window resize) applied. */
+  lastLayout: ReturnType<typeof bodyLayout> | undefined
   panelBackground: string | undefined
 } {
   const window = makeWindow({ destroyed: opts.destroyed })
   const titleBarWc = makeWc()
   const panelWc = makeWc()
   const counters = { layout: 0 }
+  let lastLayout: ReturnType<typeof bodyLayout> | undefined
   const panel = { background: undefined as string | undefined }
   const entry: ComfyWindowEntry = {
     windowKey: nextWindowKey(),
@@ -113,6 +118,7 @@ function makeEntry(
     lastTheme: { bg: '#000', text: '#fff' },
     layoutViews: () => {
       counters.layout += 1
+      lastLayout = bodyLayout(entry)
     },
     comfyUrl: '',
     installationId: opts.installationId ?? null,
@@ -132,6 +138,9 @@ function makeEntry(
     get layoutCalls(): number {
       return counters.layout
     },
+    get lastLayout(): ReturnType<typeof bodyLayout> | undefined {
+      return lastLayout
+    },
     get panelBackground(): string | undefined {
       return panel.background
     }
@@ -141,11 +150,13 @@ function makeEntry(
 beforeEach(() => {
   comfyWindows.clear()
   _runningSessions.clear()
+  heldCanvases.clear()
 })
 
 afterEach(() => {
   comfyWindows.clear()
   _runningSessions.clear()
+  heldCanvases.clear()
   vi.useRealTimers()
 })
 
@@ -238,6 +249,69 @@ describe('refreshComfyTabBody', () => {
     refreshComfyTabBody('inst-1')
     // No layout pass since the entry isn't on the comfy pill.
     expect(fixture.layoutCalls).toBe(0)
+  })
+
+  describe('during a background op', () => {
+    function register(running: boolean): ReturnType<typeof makeEntry> {
+      const fixture = makeEntry({ installationId: 'inst-A', withPanel: true })
+      comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+      indexInstallationId('inst-A', fixture.entry.windowKey)
+      if (running) _runningSessions.set('inst-A', {} as never)
+      return fixture
+    }
+
+    /** The op's stop: the session ends and the exit callback refreshes the body. */
+    function stopInstance(): void {
+      _runningSessions.delete('inst-A')
+      refreshComfyTabBody('inst-A')
+    }
+
+    const panelSwitches = (fixture: ReturnType<typeof makeEntry>): unknown[] =>
+      fixture.panelWc.sent.filter((m) => m.channel === 'panel-switch').map((m) => m.args[0])
+
+    it('keeps the canvas through a resize, then shows the stopped page when the op ends', () => {
+      const fixture = register(true)
+      const release = holdCanvas('inst-A')
+      stopInstance()
+
+      fixture.entry.layoutViews()
+      expect(fixture.lastLayout).toEqual({ panel: false, canvas: true })
+      expect(panelSwitches(fixture)).toEqual([])
+
+      release()
+      expect(panelSwitches(fixture)).toEqual([
+        { panel: 'comfy-lifecycle', installationId: 'inst-A' }
+      ])
+      fixture.entry.layoutViews()
+      expect(fixture.lastLayout).toEqual({ panel: true, canvas: false })
+    })
+
+    it('stays on the canvas when the op relaunches the instance', () => {
+      const fixture = register(true)
+      const release = holdCanvas('inst-A')
+      stopInstance()
+      _runningSessions.set('inst-A', {} as never)
+      refreshComfyTabBody('inst-A')
+
+      release()
+
+      expect(panelSwitches(fixture)).toEqual([{ panel: 'comfy', installationId: 'inst-A' }])
+      expect(fixture.lastLayout).toEqual({ panel: false, canvas: true })
+    })
+
+    it('leaves the stopped page through a resize when the instance was already stopped', () => {
+      const fixture = register(false)
+      refreshComfyTabBody('inst-A')
+      const release = holdCanvas('inst-A')
+
+      fixture.entry.layoutViews()
+      expect(fixture.lastLayout).toEqual({ panel: true, canvas: false })
+
+      release()
+      expect(panelSwitches(fixture)).toEqual([
+        { panel: 'comfy-lifecycle', installationId: 'inst-A' }
+      ])
+    })
   })
 })
 
@@ -418,6 +492,47 @@ describe('title-bar modals', () => {
     expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: true })
     expect(fixture.panelBackground).toBe('#00000000')
     expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement', 'panel-switch'])
+  })
+
+  describe('while a background op holds the canvas of a stopped instance', () => {
+    function startOp(): { fixture: Fixture; release: () => void } {
+      const fixture = register({ installationId: 'inst-A' }, true)
+      const release = holdCanvas('inst-A')
+      _runningSessions.delete('inst-A')
+      refreshComfyTabBody('inst-A')
+      return { fixture, release }
+    }
+
+    it('opens over the canvas and closes back to it', () => {
+      const { fixture } = startOp()
+
+      open(fixture)
+      sendFromPanel(fixture, 'comfy-window:overlay-ready')
+      expect(fixture.lastLayout).toEqual({ panel: true, canvas: true })
+      expect(fixture.panelBackground).toBe('#00000000')
+
+      sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+      expect(fixture.lastLayout).toEqual({ panel: false, canvas: true })
+      expect(panelChannels(fixture)).toEqual([
+        'comfy-panel:open-announcement',
+        'comfy-panel:dismiss-modal'
+      ])
+    })
+
+    it('stays open over the stopped page once the op ends, then closes onto it', () => {
+      const { fixture, release } = startOp()
+      open(fixture)
+      sendFromPanel(fixture, 'comfy-window:overlay-ready')
+
+      release()
+      expect(fixture.entry.panelModal).toBe('announcement')
+      expect(fixture.lastLayout).toEqual({ panel: true, canvas: false })
+      expect(fixture.panelBackground).not.toBe('#00000000')
+      expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement', 'panel-switch'])
+
+      sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
+      expect(fixture.lastLayout).toEqual({ panel: true, canvas: false })
+    })
   })
 
   it('ignores a close for an unknown modal', () => {

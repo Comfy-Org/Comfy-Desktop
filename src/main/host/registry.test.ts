@@ -28,6 +28,7 @@ import {
   dropInstallationIndex,
   findPreferredHostByVisibility,
   getEntryByInstallationId,
+  heldCanvases,
   hostInstallEvents,
   indexInstallationId,
   nextWindowKey,
@@ -111,6 +112,7 @@ beforeEach(() => {
   _resetAttachClaimsForTest()
   _runningSessions.clear()
   _stoppingInstallationIds.clear()
+  heldCanvases.clear()
 })
 
 afterEach(() => {
@@ -118,6 +120,7 @@ afterEach(() => {
   _resetAttachClaimsForTest()
   _runningSessions.clear()
   _stoppingInstallationIds.clear()
+  heldCanvases.clear()
   setLastFocusedInstallationId(null)
 })
 
@@ -173,6 +176,23 @@ describe('bodyLayout', () => {
 
     expect(bodyLayout(entry)).toEqual({ panel: true, canvas: false })
   })
+
+  it('keeps a held canvas up through layout passes and a modal over a stopped install', () => {
+    const entry = makeEntry({ installationId: 'inst-A' })
+    heldCanvases.add('inst-A')
+
+    expect(bodyLayout(entry)).toEqual({ panel: false, canvas: true })
+    entry.panelModal = 'announcement'
+    entry.pendingOverlayReveal = true
+    expect(bodyLayout(entry), 'hidden until painted').toEqual({ panel: false, canvas: true })
+    entry.pendingOverlayReveal = false
+    expect(bodyLayout(entry)).toEqual({ panel: true, canvas: true })
+    entry.panelModal = undefined
+    expect(bodyLayout(entry)).toEqual({ panel: false, canvas: true })
+
+    heldCanvases.delete('inst-A')
+    expect(bodyLayout(entry)).toEqual({ panel: true, canvas: false })
+  })
 })
 
 describe('computeBodyMode', () => {
@@ -204,6 +224,18 @@ describe('computeBodyMode', () => {
     _runningSessions.set('inst-A', {} as never)
     _stoppingInstallationIds.add('inst-A')
     expect(computeBodyMode(entry)).toBe('comfy-lifecycle')
+  })
+
+  it('keeps the comfy pill on the canvas while a background op holds it', () => {
+    const entry = makeEntry({ installationId: 'inst-A', activePanel: 'comfy' })
+    heldCanvases.add('inst-A')
+    _stoppingInstallationIds.add('inst-A')
+    expect(computeBodyMode(entry), 'stopping').toBe('comfy')
+    _stoppingInstallationIds.delete('inst-A')
+    expect(computeBodyMode(entry), 'stopped').toBe('comfy')
+
+    entry.activePanel = 'track'
+    expect(computeBodyMode(entry)).toBe('track')
   })
 
   it('passes non-comfy panels through for install-backed hosts', () => {
