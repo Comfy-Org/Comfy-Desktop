@@ -63,6 +63,16 @@ for path in "${required_executables[@]}"; do
   fi
 done
 
+for path in "$appdir/comfyui-desktop-2" "$appdir/resources/bootstrap-python/bin/python3"; do
+  file_description="$(file -L -- "$path")"
+  if [[ ! "$file_description" =~ ELF\ 64-bit.*x86-64 ]]; then
+    echo "Bundled executable is not a 64-bit x86-64 ELF binary: $path" >&2
+    echo "$file_description" >&2
+    exit 1
+  fi
+done
+"$appdir/resources/bootstrap-python/bin/python3" -c 'import sys; assert sys.version_info.major == 3'
+
 desktop_file="$appdir/comfyui-desktop-2.desktop"
 if [[ ! -f "$desktop_file" ]]; then
   echo "Desktop entry is missing: $desktop_file" >&2
@@ -98,13 +108,19 @@ mkdir -p "$smoke_dir/home" "$smoke_dir/config" "$smoke_dir/cache"
 log="$smoke_dir/app.log"
 dump_log() {
   sed "s|$smoke_dir|<smoke-dir>|g" "$log" | tail -n 120 >&2
+  while IFS= read -r app_log; do
+    printf '\nDurable application log (%s):\n' "${app_log#"$smoke_dir"}" >&2
+    sed "s|$smoke_dir|<smoke-dir>|g" "$app_log" | tail -n 120 >&2
+  done < <(find "$smoke_dir/config" -type f -path '*/logs/app.log' -print 2>/dev/null)
 }
+cd "$smoke_dir"
 setsid env -i \
   PATH="$PATH" \
   HOME="$smoke_dir/home" \
   XDG_CONFIG_HOME="$smoke_dir/config" \
   XDG_CACHE_HOME="$smoke_dir/cache" \
-  xvfb-run -a "$appdir/AppRun" --no-sandbox --enable-logging=stderr >"$log" 2>&1 &
+  APPIMAGE_EXTRACT_AND_RUN=1 \
+  xvfb-run -a "$appimage" --no-sandbox --enable-logging=stderr >"$log" 2>&1 &
 app_pid=$!
 
 ready=0
@@ -136,6 +152,12 @@ fi
 sleep 5
 if ! kill -0 "$app_pid" 2>/dev/null; then
   echo "AppImage did not remain running after startup" >&2
+  dump_log
+  exit 1
+fi
+if find "$smoke_dir/config" -type f -path '*/logs/app.log' -exec \
+  grep -E -q 'CRITICAL|unhandledRejection|child-process-gone|render-process-gone' {} +; then
+  echo "AppImage reported a startup failure in its durable application log" >&2
   dump_log
   exit 1
 fi

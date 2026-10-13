@@ -207,7 +207,9 @@ jobs:
           NODE
 
       - name: Fetch ToDesktop build metadata
-        run: todesktop builds --config=todesktop.json --format=json --exit > todesktop-build.json
+        # `builds` returns only five rows unless count is explicit. Keep enough history
+        # to find this build when other builds finish while this job is waiting.
+        run: todesktop builds --config=todesktop.json --count 100 --format=json --exit > todesktop-build.json
 
       - name: Extract build details
         id: extract
@@ -237,7 +239,12 @@ jobs:
               if (start < 0 || end < start) continue
               try {
                 const candidate = JSON.parse(rawMetadata.slice(start, end + 1))
-                if (asBuilds(candidate)) {
+                const candidateBuilds = asBuilds(candidate)
+                if (
+                  candidateBuilds?.some(
+                    (candidateBuild) => String(candidateBuild?.id || '') === expectedBuildId
+                  )
+                ) {
                   metadata = candidate
                   break
                 }
@@ -378,7 +385,7 @@ jobs:
           appendOutput('windows_url', windowsUrl)
           appendOutput('linux_url', linuxUrl)
 
-          const succeededStatus = /^(succeeded|success|finished|complete|completed|ready|done|published)$/i
+          const succeededStatus = /^(succeeded|success|finished|complete|completed)$/i
           if (!succeededStatus.test(String(status))) {
             throw new Error(`ToDesktop build did not succeed (status=${status || 'missing'})`)
           }
@@ -402,6 +409,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download release metadata
         uses: actions/download-artifact@v8
@@ -426,34 +435,33 @@ jobs:
             exit 1
           fi
           if [[ ! "${appimage_url}" =~ ^https://dl\.todesktop\.com/ ]]; then
-            echo "::error::Refusing unexpected AppImage download URL: ${appimage_url}"
+            echo "::error::Refusing unexpected AppImage download host"
             exit 1
           fi
 
-          sudo apt-get update
-          sudo apt-get install --yes xvfb
-          download_effective_url="$(curl \
+          curl \
             --fail \
             --location \
             --retry 3 \
             --retry-all-errors \
             --retry-delay 2 \
+            --retry-max-time 840 \
             --connect-timeout 15 \
-            --max-time 900 \
+            --max-time 600 \
             --max-filesize 2147483648 \
             --proto '=https' \
             --proto-redir '=https' \
             --output Comfy-Desktop-linux-x64.AppImage \
-            --write-out '%{url_effective}' \
-            --url "${appimage_url}")"
-          if [[ ! "${download_effective_url}" =~ ^https://dl\.todesktop\.com/ ]]; then
-            echo "::error::Refusing AppImage redirected outside dl.todesktop.com"
+            --url "${appimage_url}"
+          chmod +x Comfy-Desktop-linux-x64.AppImage
+          expected_version="${GITHUB_REF_NAME#v}"
+          if [[ -z "${expected_version}" || "${expected_version}" == "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::Release smoke test requires a v-prefixed tag"
             exit 1
           fi
-          chmod +x Comfy-Desktop-linux-x64.AppImage
           ./scripts/smoke-linux-appimage.sh \
             Comfy-Desktop-linux-x64.AppImage \
-            "$(node -p "require('./package.json').version")"
+            "${expected_version}"
 
   release:
     needs: [build, smoke-linux-appimage]
@@ -575,7 +583,7 @@ jobs:
             exit 0
           fi
 
-          if printf '%s' "${BUILD_STATUS}" | grep -qiE '^(succeeded|success|finished|complete|completed|ready|done|published)$' && \
+          if printf '%s' "${BUILD_STATUS}" | grep -qiE '^(succeeded|success|finished|complete|completed)$' && \
             [[ "${SMOKE_RESULT}" == "success" ]]; then
             icon="✅"
           else
