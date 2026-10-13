@@ -35,7 +35,6 @@ export type PanelKey =
    *  separately — but accepting it keeps `isValidPanel` from
    *  swallowing the event. */
   | 'progress'
-  | 'mcp-setup'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -47,8 +46,7 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'track',
   'load-snapshot',
   'quick-install',
-  'progress',
-  'mcp-setup'
+  'progress'
 ])
 
 /**
