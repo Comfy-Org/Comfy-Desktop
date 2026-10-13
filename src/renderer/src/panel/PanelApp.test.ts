@@ -705,6 +705,101 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
   })
 
+  it("keeps the live ComfyUI canvas transparent beneath What's New", async () => {
+    window.api.signalOverlayReady = vi.fn()
+    window.history.replaceState(
+      {},
+      '',
+      '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+    )
+    mountPanel()
+    await flushPromises()
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
+    vi.mocked(window.api.onOpenAnnouncement).mock.calls[0]?.[0]()
+    await flushPromises()
+
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+    expect(window.api.signalOverlayReady).toHaveBeenCalledOnce()
+  })
+
+  it("keeps a running performance test usable after dismissing What's New", async () => {
+    window.api.signalOverlayReady = vi.fn()
+    mockState.installations = [{ ...SAMPLE_INSTALL, status: 'installed' }]
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: false })
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    const option = document.querySelector('[role="option"]')
+    expect(option).toBeInstanceOf(HTMLElement)
+    if (!(option instanceof HTMLElement)) throw new Error('Instance option is missing')
+    option.click()
+    await flushPromises()
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+
+    const submission = Promise.withResolvers<RunPerformanceTestWorkflowResult>()
+    vi.mocked(window.api.runPerformanceTestWorkflow).mockReturnValueOnce(submission.promise)
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBeUndefined()
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
+    vi.mocked(window.api.onOpenAnnouncement).mock.calls[0]?.[0]()
+    await flushPromises()
+    mockState.performanceTestProgressCallbacks.forEach((callback) =>
+      callback({ sessionId: 'performance-test:test-id', completedRuns: 2, totalRuns: 6 })
+    )
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
+    await flushPromises()
+
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
+    expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBeUndefined()
+    expect(window.api.stopComfyUI).not.toHaveBeenCalled()
+    expect(window.api.cancelOperation).not.toHaveBeenCalled()
+    submission.resolve({ ok: true, submitted: 5 })
+    await flushPromises()
+    expect(wrapper.get('.performance-test__logs').text()).toContain('Finished 5 measured runs')
+  })
+
+  it.each([
+    { panel: 'chooser', selector: '[data-testid="chooser-view"]' },
+    { panel: 'comfy-lifecycle', selector: '[data-testid="comfy-lifecycle"]' },
+    { panel: 'performance-test', selector: '[data-testid="performance-test"]' },
+    { panel: 'benchmarks', selector: '[data-testid="benchmarks"]' }
+  ])(
+    "keeps the $panel page mounted while What's New opens and closes",
+    async ({ panel, selector }) => {
+      window.api.signalOverlayReady = vi.fn()
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel }))
+      await flushPromises()
+      const page = wrapper.get(selector).element
+
+      mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
+      vi.mocked(window.api.onOpenAnnouncement).mock.calls[0]?.[0]()
+      await flushPromises()
+
+      expect(wrapper.get(selector).element).toBe(page)
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+      expect(window.api.signalOverlayReady).toHaveBeenCalled()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await flushPromises()
+      expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
+      mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel }))
+      await flushPromises()
+
+      expect(wrapper.get(selector).element).toBe(page)
+    }
+  )
+
   it('refetches the installation when onInstallationsChanged fires', async () => {
     window.history.replaceState({}, '', '/?installationId=test-id&firstUseCompleted=true')
     mountPanel()

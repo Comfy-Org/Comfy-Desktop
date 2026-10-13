@@ -93,6 +93,7 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
+  panelBeforeAnnouncement?: ComfyPanelKey
   /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
    *  keeps the panel hidden so its pre-transparent frame can't flash. */
   pendingOverlayReveal?: boolean

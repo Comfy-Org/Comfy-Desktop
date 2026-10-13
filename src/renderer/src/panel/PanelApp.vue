@@ -166,6 +166,15 @@ const {
   switchPanel
 } = overlays
 
+const bodyPanel = ref(activePanel.value === 'announcement' ? 'comfy' : activePanel.value)
+watch(
+  activePanel,
+  (panel) => {
+    if (panel !== 'announcement') bodyPanel.value = panel
+  },
+  { flush: 'sync' }
+)
+
 // Defers only for a running instance, not an open overlay — the picker lives
 // inside the new-install takeover, which is exactly when we want it warm.
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
@@ -378,11 +387,12 @@ function handleMcpOpenTerminal(): void {
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
+    const isOverlay =
+      next === 'feedback' ||
+      next === 'mcp-setup' ||
+      (next === 'announcement' && bodyPanel.value === 'comfy')
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
-    if (!isOverlay) return
-    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
-    // and Chromium pauses rAF for an occluded view, so it would never fire.
+    if (!isOverlay && next !== 'announcement') return
     void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
@@ -590,7 +600,7 @@ onUnmounted(() => {
            bleed-through during BrandTakeoverLayout's fade-in). Flow
            takeovers keep the chooser mounted underneath by design. -->
       <div v-if="showPanelBody" class="panel-body">
-        <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
+        <div v-if="bodyPanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
           <ComfyLifecycleView
             :installation="installation"
             :installation-id="installationId"
@@ -598,7 +608,7 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
+        <div v-else-if="bodyPanel === 'chooser'" class="panel-chooser">
           <ChooserView
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
@@ -606,13 +616,13 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
+        <div v-else-if="bodyPanel === 'benchmarks'" class="panel-benchmarks">
           <BenchmarksView />
         </div>
 
         <KeepAlive>
           <PerformanceTestView
-            v-if="activePanel === 'performance-test'"
+            v-if="bodyPanel === 'performance-test'"
             class="panel-performance-test"
           />
         </KeepAlive>
@@ -680,7 +690,7 @@ onUnmounted(() => {
     </template>
 
     <McpSetupModal
-      v-if="activePanel === 'mcp-setup'"
+      v-if="bodyPanel === 'mcp-setup'"
       @close="handleMcpClose"
       @open-terminal="handleMcpOpenTerminal"
     />

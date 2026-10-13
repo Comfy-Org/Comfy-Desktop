@@ -1101,7 +1101,8 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
 function triggerOpenAnnouncement(entryId: number): void {
   const parentEntry = comfyWindows.get(entryId)
   if (!parentEntry || parentEntry.window.isDestroyed()) return
-  const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'announcement')
+  const panelView =
+    parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, computeBodyMode(parentEntry))
   setActivePanel(entryId, 'announcement')
   sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
 }
