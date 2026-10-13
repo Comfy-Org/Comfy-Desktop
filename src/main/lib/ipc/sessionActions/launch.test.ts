@@ -89,7 +89,8 @@ const launchHarness = vi.hoisted(() => ({
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
-  /** A child that never emits 'spawn', as one whose process could not be created (ENOENT). */
+  /** A child whose process could not be created (ENOENT): no 'spawn', and an 'error' wherever
+   *  the launch listens for one (the skip-port path doesn't). */
   spawnFails: false,
   /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
    *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
@@ -165,10 +166,18 @@ vi.mock('../shared', async (importOriginal) => {
       }
     }),
     spawnProcess: (...args: unknown[]) => {
-      const proc = launchHarness.spawn?.(...args) as { emit?: (event: string) => void } | undefined
+      const proc = launchHarness.spawn?.(...args) as
+        | { emit?: (event: string, err?: Error) => void; listenerCount?: (event: string) => number }
+        | undefined
+      if (typeof proc?.emit !== 'function') return proc
       // A real child emits 'spawn' asynchronously, once its process exists.
-      if (typeof proc?.emit === 'function' && !launchHarness.spawnFails)
-        queueMicrotask(() => proc.emit!('spawn'))
+      if (!launchHarness.spawnFails) queueMicrotask(() => proc.emit!('spawn'))
+      // After the launch has wired its listeners, as a real creation error arrives.
+      else
+        setImmediate(() => {
+          if ((proc.listenerCount?.('error') ?? 0) > 0)
+            proc.emit!('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }))
+        })
       return proc
     },
     waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
@@ -1374,7 +1383,6 @@ describe('core beta report placement', () => {
     launchHarness.commitShas = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
-    launchHarness.spawnFails = false
     // Both halves of the activation-notice state: the in-process pending queue and the
     // persisted announced list, which the real settings module keeps in this run's temp
     // app dir. Without the reset, the first test to launch spends the notice for the rest.
@@ -1527,14 +1535,32 @@ describe('core beta report placement', () => {
       expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
     })
 
-    it('makes no member of a launch whose process is never created', async () => {
+    it.each([
+      ['skip-port', true],
+      ['normal', false]
+    ])('makes no member on the %s path when the process is never created', async (_path, skip) => {
       serveCampaign('enrol')
       launchHarness.spawnFails = true
-      await handleLaunch(ctxFor('campaign-spawn-failed'))
+      onTestFinished(() => {
+        launchHarness.spawnFails = false
+      })
+      if (!skip) {
+        launchHarness.launchCommand = {
+          cmd: process.execPath,
+          args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+          cwd: installDir,
+          skipPortWait: false,
+          port: 48233
+        }
+        // Never boots, so only the creation error can settle the attempt.
+        launchHarness.waitForPort = () => new Promise<void>(() => {})
+      }
+      await handleLaunch(ctxFor(`campaign-spawn-failed-${String(skip)}`))
       await new Promise((resolve) => setImmediate(resolve))
       expect(spawnArgs).toContain('--enable-agent')
       expect(launchHarness.recordWrites).toEqual([])
       expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(sent.join(''), 'the decision is still logged').toContain('[core-beta] --enable-agent')
     })
 
     it('holds for an enrolled machine on hold, writing nothing new', async () => {

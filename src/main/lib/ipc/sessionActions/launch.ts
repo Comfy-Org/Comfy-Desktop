@@ -953,6 +953,7 @@ async function runLaunch(
   // past the report site, so an unlatched report fires once per attempt; a module-global
   // latch would instead silence every launch after the first in the process lifetime.
   let coreBetaReported = false
+  let coreBetaLogged = false
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
@@ -1138,32 +1139,34 @@ async function runLaunch(
     }
   }
 
-  // Called once per launch, when the first child of either spawn path is created ('spawn'
-  // precedes any output): the log records go to the on-disk log and the renderer, the events
-  // to telemetry.
-  function reportCoreBetaLaunchOnSpawn(
-    proc: ChildProcess,
-    logStream: WriteStream,
-    sendOutput: (text: string) => void
-  ): void {
+  // Once per launch, at each path's final pre-spawn gate, so even a launch whose process can't
+  // be created logs what it decided: to the on-disk log and the renderer.
+  function logCoreBetaRecords(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    if (coreBetaLogged) return
+    coreBetaLogged = true
+    emitCoreBetaRecords(coreBeta.logRecords, {
+      writeLog: (text) => writeLog(logStream, text),
+      sendOutput
+    })
+  }
+
+  // Once per launch, when the first child of either spawn path is created: membership, the
+  // notice and the telemetry are only real once a process exists.
+  function reportCoreBetaLaunchOnSpawn(proc: ChildProcess): void {
     proc.once('spawn', () => {
       try {
-        reportCoreBetaLaunch(logStream, sendOutput)
+        reportCoreBetaLaunch()
       } catch (err) {
         console.warn('[core-beta] launch report failed:', err)
       }
     })
   }
 
-  function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
+  function reportCoreBetaLaunch(): void {
     if (coreBetaReported) return
     coreBetaReported = true
     // At spawn, not planning: a launch that stops before its process exists must not make a member.
     coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
-    emitCoreBetaRecords(coreBeta.logRecords, {
-      writeLog: (text) => writeLog(logStream, text),
-      sendOutput
-    })
     // Same latch, same reason: a grant is only worth announcing once it is provably on this
     // launch's command line. Queued rather than shown — the host window may still be mid-attach
     // or under the progress takeover, so the title bar drains this when its own gate opens.
@@ -1649,6 +1652,7 @@ async function runLaunch(
       _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
+    logCoreBetaRecords(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
@@ -1659,7 +1663,7 @@ async function runLaunch(
           showWindow: launchCmd.showWindow
         })
         // The grants are real only once the process exists; a failed spawn reports nothing.
-        reportCoreBetaLaunchOnSpawn(p, logStream, sendOutput)
+        reportCoreBetaLaunchOnSpawn(p)
         try {
           return {
             proc: p,
@@ -2049,7 +2053,7 @@ async function runLaunch(
       showWindow: launchCmd.showWindow
     })
     // Latched: retries spawn again, and the grants belong to the launch, not to each attempt.
-    reportCoreBetaLaunchOnSpawn(p, logStream, sendOutput)
+    reportCoreBetaLaunchOnSpawn(p)
     // Every (re)spawn is recorded, so a later Desktop can prove this child is ours.
     trackSpawn(p, {
       sessionKey: sessionId,
@@ -2107,6 +2111,7 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
+    logCoreBetaRecords(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
