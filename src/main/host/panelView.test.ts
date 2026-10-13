@@ -151,9 +151,9 @@ afterEach(() => {
 
 describe('setActivePanel', () => {
   it('no-ops when the requested panel is already active', () => {
-    const fixture = makeEntry({ activePanel: 'mcp-setup' })
+    const fixture = makeEntry({ activePanel: 'progress' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'mcp-setup')
+    setActivePanel(fixture.entry.windowKey, 'progress')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.titleBarWc.sent).toHaveLength(0)
   })
@@ -183,13 +183,13 @@ describe('setActivePanel', () => {
   )
 
   it('no-ops when the windowKey does not resolve to an entry', () => {
-    expect(() => setActivePanel(999_999, 'mcp-setup')).not.toThrow()
+    expect(() => setActivePanel(999_999, 'progress')).not.toThrow()
   })
 
   it('no-ops when the host window has been destroyed', () => {
     const fixture = makeEntry({ activePanel: 'comfy', destroyed: true })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'mcp-setup')
+    setActivePanel(fixture.entry.windowKey, 'progress')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.entry.activePanel).toBe('comfy')
   })
@@ -232,7 +232,7 @@ describe('refreshComfyTabBody', () => {
   })
 
   it('no-ops when the entry is currently parked on a non-comfy panel', () => {
-    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'mcp-setup' })
+    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'progress' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
     indexInstallationId('inst-1', fixture.entry.windowKey)
     refreshComfyTabBody('inst-1')

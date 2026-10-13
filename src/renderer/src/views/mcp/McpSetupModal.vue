@@ -89,6 +89,7 @@ function dismiss(): void {
     aria-label="Connect an agent with Comfy MCP"
     :show-close-button="false"
     blur-overlay
+    covers-page
     content-class="mcp-modal-panel"
     @close="dismiss"
   >

@@ -312,6 +312,7 @@ interface MockApiState {
    *  with the originating `source`. */
   openFeedbackCallbacks: ((data: { source: 'titlebar' | 'menu' }) => void)[]
   openAnnouncementCallbacks: (() => void)[]
+  openMcpSetupCallbacks: (() => void)[]
   dismissPanelModalCallbacks: ((modal: PanelModal) => void)[]
   /** Window-close consult callbacks. Main fires `comfy-window:request-close`
    *  when the user clicks the ✕; tests fire each callback to simulate that. */
@@ -359,6 +360,7 @@ function installMockApi(initial?: {
     firstUseSkipCallbacks: [],
     openFeedbackCallbacks: [],
     openAnnouncementCallbacks: [],
+    openMcpSetupCallbacks: [],
     dismissPanelModalCallbacks: [],
     closeRequestCallbacks: [],
     installations,
@@ -477,6 +479,10 @@ function installMockApi(initial?: {
     }),
     onOpenAnnouncement: vi.fn((cb: () => void) => {
       state.openAnnouncementCallbacks.push(cb)
+      return () => {}
+    }),
+    onOpenMcpSetup: vi.fn((cb: () => void) => {
+      state.openMcpSetupCallbacks.push(cb)
       return () => {}
     }),
     openExternal: state.openExternal,
@@ -872,6 +878,28 @@ describe('PanelApp', () => {
 
       await pressEscape()
       expect(document.querySelector('iframe.feedback-modal-frame')).toBeNull()
+    })
+
+    it("replaces What's New with MCP setup over the canvas and closes it through main", async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+      )
+      mountPanel()
+      await flushPromises()
+      await openAnnouncement()
+
+      mockState.openMcpSetupCallbacks.forEach((cb) => cb())
+      await flushPromises()
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(document.querySelector('.mcp-modal')).not.toBeNull()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+
+      await pressEscape()
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('mcp-setup')
+      expect(window.api.closeCurrentPanel).not.toHaveBeenCalled()
+      expect(document.querySelector('.mcp-modal')).toBeNull()
     })
 
     it('closes when main dismisses it for navigation', async () => {

@@ -1450,7 +1450,7 @@ export interface ElectronApi {
   closeCurrentPanel(): void
   /** Ask main to close a title-bar modal; it answers through `onDismissPanelModal`. */
   closePanelModal(modal: PanelModal): void
-  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+  /** Tell main a modal over the canvas has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
@@ -1513,6 +1513,8 @@ export interface ElectronApi {
    *  mounts the announcement modal over the live canvas. Returns an
    *  unsubscribe. */
   onOpenAnnouncement(callback: () => void): Unsubscribe
+  /** ComfyUI's MCP sidebar entry asked for MCP setup; mount it over the canvas. */
+  onOpenMcpSetup(callback: () => void): Unsubscribe
   /** Main closed a title-bar modal, on request or because the window navigated. */
   onDismissPanelModal(callback: (modal: PanelModal) => void): Unsubscribe
   /** Main consults the panel renderer before tearing down

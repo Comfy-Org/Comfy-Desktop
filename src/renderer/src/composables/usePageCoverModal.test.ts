@@ -8,6 +8,7 @@ import Modal from '../components/Modal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
+import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import { useModal } from './useModal'
 import { PAGE_COVERED } from '../lib/pageCovered'
 
@@ -45,7 +46,8 @@ describe.each([
         props: { open: true, ariaLabel: 'Send Feedback', coversPage: true },
         attachTo: document.body
       })
-  }
+  },
+  { name: 'MCP setup', mountCover: () => mount(McpSetupModal, { attachTo: document.body }) }
 ])('$name over the page', ({ mountCover }) => {
   it('closes on Escape before a wizard underneath sees it', async () => {
     const wizardEscape = vi.fn()
@@ -134,8 +136,15 @@ it("asks main to close What's New once while it is still answering", async () =>
   expect(announcement.emitted('close')).toHaveLength(1)
 })
 
-it('stacks Feedback below other dialogs', () => {
-  track(mount(BaseModal, { props: { open: true, ariaLabel: 'Send Feedback', coversPage: true } }))
+it.each([
+  {
+    name: 'Feedback',
+    mountCover: () =>
+      mount(BaseModal, { props: { open: true, ariaLabel: 'Send Feedback', coversPage: true } })
+  },
+  { name: 'MCP setup', mountCover: () => mount(McpSetupModal) }
+])('stacks $name below other dialogs', ({ mountCover }) => {
+  track(mountCover())
 
   expect(document.querySelector('.base-modal-overlay--covers-page')).not.toBeNull()
 })
