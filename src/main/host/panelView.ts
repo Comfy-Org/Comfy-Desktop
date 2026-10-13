@@ -166,29 +166,32 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
   }
 }
 
-function announcementReturnPanel(panel: ComfyPanelKey): ComfyPanelKey {
-  return ['new-install', 'track', 'load-snapshot', 'quick-install'].includes(panel)
-    ? 'comfy'
-    : panel
-}
-
 export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
+  // Full-page tool selections must reassert their renderer state. A dashboard
+  // renderer can still be showing after main has recorded one of these keys;
+  // treating the menu click as a no-op then strands the user on the dashboard
+  // until they select a different page first.
   const reassertFullPageTool = panel === 'performance-test' || panel === 'benchmarks'
   if (entry.activePanel === panel && !reassertFullPageTool) return
 
   entry.panelBeforeAnnouncement =
     panel === 'announcement'
-      ? { panel: announcementReturnPanel(entry.activePanel), bodyMode: computeBodyMode(entry) }
+      ? { panel: entry.activePanel, bodyMode: computeBodyMode(entry) }
       : undefined
   entry.activePanel = panel
   const mode = computeBodyMode(entry)
+  // Broadcast every body-mode change including 'comfy', else the renderer's activePanel ref
+  // goes stale after a drawer close and the next open no-ops.
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
+  // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
+  // layoutViews); clear the flag for non-overlay targets so it can't strand.
   const isOverlay = hasTransparentPanelOverlay(entry)
   entry.pendingOverlayReveal = isOverlay
+  // Drop any prior fallback timer so a stale one can't reveal this open early.
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
   entry.overlayRevealTimer = undefined
   forwardToPanelRenderer(entry, 'panel-switch', {
@@ -196,6 +199,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
     installationId: entry.installationId ?? ''
   })
   entry.layoutViews()
+  // Reveal anyway if the ack never arrives (crash / lost IPC); a late ack no-ops.
   if (isOverlay) {
     entry.overlayRevealTimer = setTimeout(() => {
       entry.overlayRevealTimer = undefined
@@ -205,6 +209,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
     }, 400)
   }
   if (!entry.titleBarView.webContents.isDestroyed()) {
+    // Pill stays on the user-visible key, not 'comfy-lifecycle'.
     entry.titleBarView.webContents.send('comfy-titlebar:panel-changed', panel)
   }
   focusActiveBody(entry)
@@ -296,11 +301,20 @@ export function registerPanelViewIpc(): void {
   ipcMain.on('comfy-window:close-current-panel', (event) => {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
-        const returnPanel =
-          entry.activePanel === 'announcement'
-            ? (entry.panelBeforeAnnouncement?.panel ?? 'comfy')
-            : 'comfy'
-        setActivePanel(id, returnPanel)
+        setActivePanel(id, 'comfy')
+        return
+      }
+    }
+  })
+
+  // What's New dismissed: restore the page it opened over. A no-op once the user has
+  // navigated elsewhere underneath it, so the dismiss can't undo that navigation.
+  ipcMain.on('comfy-window:close-announcement', (event) => {
+    for (const [id, entry] of comfyWindows) {
+      if (entry.panelView?.webContents === event.sender) {
+        if (entry.activePanel === 'announcement') {
+          setActivePanel(id, entry.panelBeforeAnnouncement?.panel ?? 'comfy')
+        }
         return
       }
     }

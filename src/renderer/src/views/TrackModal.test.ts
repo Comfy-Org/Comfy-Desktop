@@ -78,8 +78,9 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
   return api
 }
 
-function mountTrack() {
+function mountTrack(options: { attachTo?: HTMLElement } = {}) {
   return mount(TrackModal, {
+    ...options,
     global: {
       plugins: [createTestI18n()],
       stubs: {
@@ -108,7 +109,7 @@ describe('TrackModal — browse-only install directory', () => {
   })
 
   it('keeps a named Track wizard open when Escape dismisses the announcement above it', async () => {
-    const track = mountTrack()
+    const track = mountTrack({ attachTo: document.body })
     track.vm.open()
     await flushPromises()
     await track.get('input').setValue('Keep this installation')
@@ -123,11 +124,17 @@ describe('TrackModal — browse-only install directory', () => {
     expect(announcement.emitted('close')).toHaveLength(1)
     expect(track.emitted('close')).toBeUndefined()
     expect(track.get('input').element).toHaveProperty('value', 'Keep this installation')
+    expect(
+      track.get('input').element.closest('[inert]'),
+      'Tab cannot reach the wizard'
+    ).not.toBeNull()
 
     announcement.unmount()
+    expect(track.get('input').element.closest('[inert]')).toBeNull()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(track.emitted('close')).toHaveLength(1)
+    track.unmount()
   })
 
   it('lets an update confirmation above the announcement handle Escape', async () => {

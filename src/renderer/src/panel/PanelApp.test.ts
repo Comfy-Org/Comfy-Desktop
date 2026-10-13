@@ -453,6 +453,7 @@ function installMockApi(initial?: {
     downloadUpdate: state.downloadUpdate,
     setFirstUseMode: vi.fn(),
     closeCurrentPanel: vi.fn(),
+    closeAnnouncement: vi.fn(),
     onFirstUseSkip: vi.fn((cb: () => void) => {
       state.firstUseSkipCallbacks.push(cb)
       return () => {}
@@ -727,7 +728,7 @@ describe('PanelApp', () => {
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
       )
       await flushPromises()
-      expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
+      expect(window.api.closeAnnouncement).toHaveBeenCalledOnce()
     }
   )
 
@@ -748,16 +749,55 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
     )
     await flushPromises()
-    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'chooser' }))
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'new-install' }))
     await flushPromises()
 
     expect(wrapper.get('[data-testid="new-install-modal"]').element).toBe(wizard)
     expect(installWizardOpen).toHaveBeenCalledOnce()
-    expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
+    expect(window.api.closeAnnouncement).toHaveBeenCalledOnce()
     vi.mocked(window.api.signalOverlayReady).mockClear()
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
     await flushPromises()
     expect(window.api.signalOverlayReady).toHaveBeenCalledOnce()
+  })
+
+  it("keeps What's New opaque over a file-menu wizard on a running install", async () => {
+    window.api.signalOverlayReady = vi.fn()
+    window.history.replaceState(
+      {},
+      '',
+      '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'new-install' }))
+    await flushPromises()
+    const wizard = wrapper.get('[data-testid="new-install-modal"]').element
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
+    vi.mocked(window.api.onOpenAnnouncement).mock.calls[0]?.[0]()
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'new-install' }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="new-install-modal"]').element).toBe(wizard)
+    expect(installWizardOpen).toHaveBeenCalledOnce()
+  })
+
+  it('renders the dashboard under an announcement when the panel is built mid-announcement', async () => {
+    window.api.signalOverlayReady = vi.fn()
+    window.history.replaceState({}, '', '/?panel=announcement&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
   })
 
   it("keeps a running performance test usable after dismissing What's New", async () => {
@@ -833,7 +873,7 @@ describe('PanelApp', () => {
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
       )
       await flushPromises()
-      expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
+      expect(window.api.closeAnnouncement).toHaveBeenCalledOnce()
       mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel }))
       await flushPromises()
 

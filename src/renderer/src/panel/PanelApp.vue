@@ -32,7 +32,7 @@ import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useActionGuard } from '../composables/useActionGuard'
 import { registerMigrateTakeover } from '../composables/useMigrateAction'
-import { isFlowPanel, isValidPanel, usePanelOverlays } from './usePanelOverlays'
+import { isFlowPanel, isValidPanel, usePanelOverlays, type PanelKey } from './usePanelOverlays'
 import { useChooserHandoff } from './useChooserHandoff'
 import { useFirstUseChain } from './useFirstUseChain'
 import { bindE2EPanelHooks } from './e2eRendererHooks'
@@ -156,6 +156,7 @@ overlays = usePanelOverlays({
 })
 const {
   activePanel,
+  bodyPanel,
   initialPanel,
   currentOverlay,
   openOverlay,
@@ -166,15 +167,6 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
-
-const bodyPanel = ref(activePanel.value === 'announcement' ? 'comfy' : activePanel.value)
-watch(
-  activePanel,
-  (panel) => {
-    if (panel !== 'announcement') bodyPanel.value = panel
-  },
-  { flush: 'sync' }
-)
 
 // Defers only for a running instance, not an open overlay — the picker lives
 // inside the new-install takeover, which is exactly when we want it warm.
@@ -388,9 +380,18 @@ function handleMcpOpenTerminal(): void {
 watch(
   activePanel,
   (next) => {
-    const isOverlay = isTransparentPanelOverlay(next, bodyPanel.value)
+    // A wizard takeover is the page under What's New, matching main's snapshot of
+    // the wizard key even though wizards never change bodyPanel.
+    const overlay = currentOverlay.value
+    const background =
+      overlay?.kind === 'takeover' && isFlowPanel(overlay.component as PanelKey)
+        ? overlay.component
+        : bodyPanel.value
+    const isOverlay = isTransparentPanelOverlay(next, background)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay && next !== 'announcement') return
+    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
+    // and Chromium pauses rAF for an occluded view, so it would never fire.
     void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }

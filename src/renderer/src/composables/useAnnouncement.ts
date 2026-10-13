@@ -19,9 +19,9 @@ export function useAnnouncement(): UseAnnouncementApi {
 
   function closeAnnouncement(): void {
     announcementOpen.value = false
-    // Main flipped activePanel to 'announcement' (overlay over comfyView) when
-    // the click arrived; restore the panel so the empty overlay doesn't linger.
-    void window.api.closeCurrentPanel()
+    // Main flipped activePanel to 'announcement' when the click arrived; restore
+    // the page it opened over so the empty overlay doesn't linger.
+    window.api.closeAnnouncement()
   }
 
   onMounted(() => {

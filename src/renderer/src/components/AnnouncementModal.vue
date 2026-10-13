@@ -59,6 +59,9 @@ function toggleSound(): void {
 }
 // Element focused before open; restored on close to return focus to the trigger.
 let returnFocusTo: HTMLElement | null = null
+// The page or wizard underneath stays mounted; making it inert keeps Tab (and so
+// Escape) out of it. Dialogs stacked above later mount as new body children.
+let inertedBackground: HTMLElement[] = []
 
 function dismiss(): void {
   emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
@@ -86,9 +89,21 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  void nextTick(() => overlayRef.value?.focus())
+  // Focus the dialog container, not a button. Traps focus without a ring on open.
+  void nextTick(() => {
+    const overlay = overlayRef.value
+    if (!overlay) return
+    inertedBackground = Array.from(document.body.children).filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && !el.contains(overlay) && !el.hasAttribute('inert')
+    )
+    for (const el of inertedBackground) el.setAttribute('inert', '')
+    overlay.focus()
+  })
 })
 onUnmounted(() => {
+  for (const el of inertedBackground) el.removeAttribute('inert')
+  inertedBackground = []
   returnFocusTo?.focus()
 })
 </script>

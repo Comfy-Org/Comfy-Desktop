@@ -199,12 +199,15 @@ describe('setActivePanel', () => {
 })
 
 describe('closing announcements', () => {
-  function closePanel(entry: ComfyWindowEntry): void {
+  function closePanel(
+    entry: ComfyWindowEntry,
+    ipcChannel = 'comfy-window:close-announcement'
+  ): void {
     vi.mocked(ipcMain.on).mockClear()
     registerPanelViewIpc()
     const handler = vi
       .mocked(ipcMain.on)
-      .mock.calls.find(([channel]) => channel === 'comfy-window:close-current-panel')?.[1]
+      .mock.calls.find(([channel]) => channel === ipcChannel)?.[1]
     expect(handler).toBeDefined()
     if (!entry.panelView) throw new Error('Panel view is missing')
     handler?.({
@@ -227,10 +230,11 @@ describe('closing announcements', () => {
     { panel: 'performance-test', installationId: null, body: 'performance-test' },
     { panel: 'benchmarks', installationId: null, body: 'benchmarks' },
     { panel: 'progress', installationId: 'inst-A', body: 'progress' },
-    { panel: 'new-install', installationId: null, body: 'chooser' },
-    { panel: 'track', installationId: null, body: 'chooser' },
-    { panel: 'load-snapshot', installationId: null, body: 'chooser' },
-    { panel: 'quick-install', installationId: null, body: 'chooser' }
+    { panel: 'new-install', installationId: null, body: 'new-install' },
+    { panel: 'track', installationId: null, body: 'track' },
+    { panel: 'track', installationId: 'inst-A', body: 'track' },
+    { panel: 'load-snapshot', installationId: null, body: 'load-snapshot' },
+    { panel: 'quick-install', installationId: null, body: 'quick-install' }
   ] as const)(
     'returns to $body after repeated news-bell clicks from $panel',
     ({ panel, installationId, body }) => {
@@ -243,7 +247,7 @@ describe('closing announcements', () => {
       setActivePanel(fixture.entry.windowKey, 'announcement')
       closePanel(fixture.entry)
 
-      const returnPanel = body === 'chooser' ? 'comfy' : panel
+      const returnPanel = panel
       expect(fixture.entry.activePanel).toBe(returnPanel)
       expect(computeBodyMode(fixture.entry)).toBe(body)
       expect(fixture.panelWc.sent.at(-1)).toEqual({
@@ -271,11 +275,22 @@ describe('closing announcements', () => {
     expect(fixture.entry.activePanel).toBe('benchmarks')
   })
 
+  it('keeps a page the user navigated to underneath an open announcement', () => {
+    const fixture = makeEntry({ activePanel: 'comfy' })
+    comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+
+    setActivePanel(fixture.entry.windowKey, 'announcement')
+    setActivePanel(fixture.entry.windowKey, 'performance-test')
+    closePanel(fixture.entry)
+
+    expect(fixture.entry.activePanel).toBe('performance-test')
+  })
+
   it('still closes other pages to the dashboard', () => {
     const fixture = makeEntry({ activePanel: 'benchmarks' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
 
-    closePanel(fixture.entry)
+    closePanel(fixture.entry, 'comfy-window:close-current-panel')
 
     expect(computeBodyMode(fixture.entry)).toBe('chooser')
   })

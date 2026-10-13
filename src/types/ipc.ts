@@ -1447,6 +1447,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** What's New dismissed: main restores the page it opened over, unless the
+   *  user has already navigated elsewhere underneath it. Fire-and-forget. */
+  closeAnnouncement(): void
   /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
