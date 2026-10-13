@@ -104,26 +104,38 @@ GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
 ```
 
-Boot outcome with the same segmentation. Distinct boot IDs prevent retries from inflating counts:
+Boot outcome with the same segmentation, one row per boot ID. A retried launch counts once, in
+the cohort of its final attempt (see `assets_retry_count`):
 
 ```sql
 SELECT
-  properties.app_version AS desktop_version,
-  properties.core_version AS core_version,
-  properties.core_beta_opted_in AS beta_opted_in,
-  properties.assets_enabled AS assets_enabled,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_started') AS boots_started,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_completed') AS boots_completed,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_failed') AS boots_failed,
+  desktop_version,
+  core_version,
+  beta_opted_in,
+  assets_enabled,
+  count() AS boots_started,
+  countIf(completed) AS boots_completed,
+  countIf(failed) AS boots_failed,
   round(100 * boots_completed / nullIf(boots_started, 0), 2) AS success_rate_pct
-FROM events
-WHERE event IN (
-  'comfy.desktop.comfyui.boot_started',
-  'comfy.desktop.comfyui.boot_completed',
-  'comfy.desktop.comfyui.boot_failed'
+FROM (
+  SELECT
+    properties.boot_id AS boot_id,
+    argMax(properties.app_version, timestamp) AS desktop_version,
+    argMax(properties.core_version, timestamp) AS core_version,
+    argMax(properties.core_beta_opted_in, timestamp) AS beta_opted_in,
+    argMax(properties.assets_enabled, timestamp) AS assets_enabled,
+    max(event = 'comfy.desktop.comfyui.boot_completed') AS completed,
+    max(event = 'comfy.desktop.comfyui.boot_failed') AS failed
+  FROM events
+  WHERE event IN (
+    'comfy.desktop.comfyui.boot_started',
+    'comfy.desktop.comfyui.boot_completed',
+    'comfy.desktop.comfyui.boot_failed'
+  )
+    AND timestamp >= now() - INTERVAL 14 DAY
+    AND properties.assets_enabled IS NOT NULL
+  GROUP BY boot_id
 )
-  AND timestamp >= now() - INTERVAL 14 DAY
-  AND properties.assets_enabled IS NOT NULL
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
 ```
