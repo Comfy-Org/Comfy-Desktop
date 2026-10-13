@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 
 import TrackModal from './TrackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
+import BaseAlert from '../components/ui/BaseAlert.vue'
 import type { ProbeResult } from '../types/ipc'
 
 /**
@@ -114,7 +115,7 @@ describe('TrackModal — browse-only install directory', () => {
     const announcement = mount(AnnouncementModal)
     await flushPromises()
 
-    document.dispatchEvent(
+    document.activeElement?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     )
     await flushPromises()
@@ -127,6 +128,33 @@ describe('TrackModal — browse-only install directory', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(track.emitted('close')).toHaveLength(1)
+  })
+
+  it('lets an update confirmation above the announcement handle Escape', async () => {
+    const alert = mount(BaseAlert, {
+      props: { open: false, title: 'Restart to update?', showCancel: true },
+      global: { plugins: [createTestI18n()] }
+    })
+    const announcement = mount(AnnouncementModal)
+    await flushPromises()
+    await alert.setProps({ open: true })
+    await flushPromises()
+
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    )
+    await flushPromises()
+
+    expect(alert.emitted('cancel')).toHaveLength(1)
+    expect(announcement.emitted('close')).toBeUndefined()
+
+    await alert.setProps({ open: false })
+    await flushPromises()
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    )
+    await flushPromises()
+    expect(announcement.emitted('close')).toHaveLength(1)
   })
 
   it('renders a non-clickable placeholder (no editable input) before a folder is picked', async () => {

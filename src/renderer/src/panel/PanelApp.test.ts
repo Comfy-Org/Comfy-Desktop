@@ -723,7 +723,9 @@ describe('PanelApp', () => {
 
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
       expect(window.api.signalOverlayReady).toHaveBeenCalled()
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      )
       await flushPromises()
       expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
     }
@@ -742,7 +744,9 @@ describe('PanelApp', () => {
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'announcement' }))
     vi.mocked(window.api.onOpenAnnouncement).mock.calls[0]?.[0]()
     await flushPromises()
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
     await flushPromises()
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'chooser' }))
     await flushPromises()
@@ -786,7 +790,9 @@ describe('PanelApp', () => {
     mockState.performanceTestProgressCallbacks.forEach((callback) =>
       callback({ sessionId: 'performance-test:test-id', completedRuns: 2, totalRuns: 6 })
     )
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
     await flushPromises()
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
     await flushPromises()
@@ -823,7 +829,9 @@ describe('PanelApp', () => {
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
       expect(window.api.signalOverlayReady).toHaveBeenCalled()
 
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      )
       await flushPromises()
       expect(window.api.closeCurrentPanel).toHaveBeenCalledOnce()
       mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel }))

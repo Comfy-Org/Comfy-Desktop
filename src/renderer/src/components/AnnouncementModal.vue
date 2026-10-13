@@ -85,13 +85,10 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
-  document.addEventListener('keydown', onKeydown, true)
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button. Traps focus without a ring on open.
   void nextTick(() => overlayRef.value?.focus())
 })
 onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown, true)
   returnFocusTo?.focus()
 })
 </script>
@@ -106,6 +103,7 @@ onUnmounted(() => {
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"
         tabindex="-1"
+        @keydown.capture="onKeydown"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
       >
