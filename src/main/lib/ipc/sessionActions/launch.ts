@@ -128,10 +128,13 @@ import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
-import { campaignCandidateGrants, planCampaignArgs } from '../../coreBetaCampaigns'
+import {
+  campaignCandidateGrants,
+  campaignPresentArgs,
+  planCampaignArgs
+} from '../../coreBetaCampaigns'
 import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
 import {
-  campaignRecordSaved,
   getCoreBetaCampaigns,
   readCampaignRecords,
   writeCampaignRecord
@@ -270,7 +273,7 @@ export function buildLaunchArgs(input: {
       campaign = planCampaignArgs({
         ...input.campaign,
         betaEnabled: input.betaEnabled,
-        presentArgs: [...userArgs, ...plan.assetsArgs, ...plan.applied.map((grant) => grant.arg)],
+        presentArgs: campaignPresentArgs(userArgs, plan),
         core: {
           semver: coreVersion,
           exact: input.coreVersionExact,
@@ -346,12 +349,9 @@ export function recordCampaignEnrolments(
     try {
       if (!writeCampaignRecord(key, grant.arg, epoch, now)) continue
     } catch (err) {
-      // On a first enrolment the backup lands first, so the record survives a failed primary write.
-      if (!campaignRecordSaved(key, grant.arg, epoch)) {
-        console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
-        misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
-        continue
-      }
+      console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
+      misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
+      continue
     }
     try {
       telemetry.emit('comfy.desktop.core_beta.enrolled', {

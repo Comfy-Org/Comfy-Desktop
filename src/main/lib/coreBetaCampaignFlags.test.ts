@@ -19,7 +19,6 @@ vi.mock('./paths', () => ({
 
 import {
   _resetForTest,
-  campaignRecordSaved,
   getCoreBetaCampaigns,
   initCoreBetaCampaigns,
   initCoreBetaFlags,
@@ -458,7 +457,6 @@ describe('enrolment records', () => {
     })
     expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow('ENOSPC')
     vi.mocked(safeFile.writeFileSafe).mockRestore()
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(true)
     expect(readCampaignRecords()[KEY]?.['--enable-agent']?.epoch).toBe(1)
   })
 
@@ -471,22 +469,7 @@ describe('enrolment records', () => {
     })
     expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW)).toThrow('EPERM')
     vi.mocked(safeFile.writeFileSafe).mockRestore()
-    expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1), 'the old epoch is no match').toBe(true)
-  })
-
-  it('a record behind an unreadable primary is not saved', () => {
-    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
-    fs.writeFileSync(
-      file('campaign-enrolments.json.bak'),
-      fs.readFileSync(file('campaign-enrolments.json'))
-    )
-    vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({
-      kind: 'data',
-      data: fs.readFileSync(file('campaign-enrolments.json.bak'), 'utf-8'),
-      primaryUnreadable: true
-    } as ReturnType<typeof safeFile.readFileSafe>)
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+    expect(readCampaignRecords()[KEY]?.['--enable-agent']?.epoch, 'the old epoch stays').toBe(1)
   })
 
   describe('an unparseable primary next to a valid backup', () => {
@@ -514,7 +497,9 @@ describe('enrolment records', () => {
     })
 
     it('the read restores the backup over the garbage, so later writes keep the record', () => {
-      expect(campaignRecordSaved(KEY, '--enable-agent', 1), 'a member, so no re-enrol').toBe(true)
+      expect(readCampaignRecords()[KEY], 'a member, so no re-enrol').toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
       expect(readJson('campaign-enrolments.json')[KEY]).toEqual({
         '--enable-agent': { epoch: 1, enrolledAt: NOW }
       })
@@ -544,7 +529,7 @@ describe('enrolment records', () => {
     fs.writeFileSync(file('campaign-enrolments.json'), 'not json{')
     fs.writeFileSync(file('campaign-enrolments.json.bak'), 'also not json')
     expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow(/refusing to modify/)
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+    expect(readCampaignRecords()).toEqual({})
     expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
   })
 

@@ -114,12 +114,6 @@ export function readCampaignRecords(): CampaignRecords {
   return parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE, true).entries)
 }
 
-/** `.bak` standing in for an unreadable primary doesn't count: the next launch rereads the primary. */
-export function campaignRecordSaved(key: string, arg: string, epoch: number): boolean {
-  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE, true)
-  return !primaryUnreadable && parseCampaignRecords(entries)[key]?.[arg]?.epoch === epoch
-}
-
 /** Throws when the file cannot be safely rewritten. Returns `false`, writing nothing, when the
  *  record already exists: a concurrent launch enrolled first, and keeps its `enrolledAt`. */
 export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): boolean {

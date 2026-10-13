@@ -12,7 +12,12 @@ import {
   parseCoreBetaGrants,
   selectCoreBetaGrantArgs
 } from './coreBetaGrants'
-import type { CoreBetaGrant, CoreCommitState, CoreVersionState } from './coreBetaGrants'
+import type {
+  CoreBetaGrant,
+  CoreBetaPlan,
+  CoreCommitState,
+  CoreVersionState
+} from './coreBetaGrants'
 import { filterUnsupportedArgs } from './comfy-args'
 import type { ComfyArgsSchema } from './comfy-args'
 import type { IdClass } from './deviceId'
@@ -166,13 +171,8 @@ export function campaignCandidateGrants(
     return answer.grants
       .filter((candidate) => {
         if (!args.includes(candidate.grant.arg)) return false
-        if (heldRecord(records, key, candidate) !== undefined)
-          return answerFresh(answer, now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)
-        return (
-          answer.enrol &&
-          idClass === 'machine_derived' &&
-          answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)
-        )
+        const member = heldRecord(records, key, candidate) !== undefined
+        return (member || answer.enrol) && answerRefusal(answer, member, now, idClass) === null
       })
       .map((candidate) => candidate.grant)
   })
@@ -236,6 +236,31 @@ function answerFresh(
   return age <= maxAgeMs && age >= -skewMs
 }
 
+/** Why this answer can't carry a grant for this machine, or `null`; the candidate filter shares it. */
+function answerRefusal(
+  answer: CampaignAnswer,
+  member: boolean,
+  now: number,
+  idClass: IdClass
+): readonly [CampaignMissReason, string] | null {
+  if (member)
+    return answerFresh(answer, now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)
+      ? null
+      : ['stale_answer', 'the answer holding it is older than 7 days']
+  if (!answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS))
+    return ['stale_answer', 'the enrol answer is missing a fetch time or older than 48 h']
+  return idClass === 'machine_derived' ? null : ['id_class', `id class ${idClass}`]
+}
+
+/** What a campaign grant sees as already on the command line: the user's args, Desktop's assets
+ *  decision and slot #0's grants. The launch and the preview both use it. */
+export function campaignPresentArgs(
+  userArgs: readonly string[],
+  slot0: Pick<CoreBetaPlan, 'assetsArgs' | 'applied'>
+): string[] {
+  return [...userArgs, ...slot0.assetsArgs, ...slot0.applied.map((grant) => grant.arg)]
+}
+
 export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   const applied: CampaignApplied[] = []
   const misses: CampaignMiss[] = []
@@ -276,19 +301,10 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         continue
       }
       // Before the gates: a stale answer's commit ranges are never proven, so they would fail there.
-      if (member && !answerFresh(answer, facts.now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)) {
-        miss('stale_answer', 'the answer holding it is older than 7 days')
+      const refusal = answerRefusal(answer, member, facts.now, facts.idClass)
+      if (refusal !== null) {
+        miss(...refusal)
         continue
-      }
-      if (!member) {
-        if (!answerFresh(answer, facts.now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)) {
-          miss('stale_answer', 'the enrol answer is missing a fetch time or older than 48 h')
-          continue
-        }
-        if (facts.idClass !== 'machine_derived') {
-          miss('id_class', `id class ${facts.idClass}`)
-          continue
-        }
       }
       const withheld: string[] = []
       const selected = selectCoreBetaGrantArgs(

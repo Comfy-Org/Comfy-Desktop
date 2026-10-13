@@ -109,7 +109,6 @@ const launchHarness = vi.hoisted(() => ({
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
   recordWrites: [] as Array<[string, string, number]>,
   recordWriteThrows: false,
-  recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
   campaignsReject: false,
@@ -128,13 +127,7 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
     return launchHarness.campaigns
   },
   readCampaignRecords: () => launchHarness.campaignRecords,
-  campaignRecordSaved: (key: string, arg: string, epoch: number) =>
-    launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
-    if (launchHarness.recordWriteRecovers) {
-      launchHarness.campaignRecords = { [key]: { [arg]: { epoch, enrolledAt: 1 } } }
-      throw new Error('ENOSPC')
-    }
     if (launchHarness.recordWriteThrows) throw new Error('EIO')
     if (launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch) return false
     launchHarness.recordWrites.push([key, arg, epoch])
@@ -1374,7 +1367,6 @@ describe('core beta report placement', () => {
     launchHarness.campaignRecords = {}
     launchHarness.recordWrites = []
     launchHarness.recordWriteThrows = false
-    launchHarness.recordWriteRecovers = false
     launchHarness.idClass = 'machine_derived'
     launchHarness.campaignFetches = 0
     launchHarness.campaignsReject = false
@@ -1656,15 +1648,6 @@ describe('core beta report placement', () => {
       }
       await handleLaunch(ctxFor('campaign-commit-range'))
       expect(spawnArgs).toContain('--enable-agent')
-    })
-
-    it('counts an enrolment whose record reads back after a failed write', async () => {
-      launchHarness.recordWriteRecovers = true
-      serveCampaign('enrol')
-      await handleLaunch(ctxFor('campaign-write-recovers'))
-      expect(reportedEvents()).toContain('comfy.desktop.core_beta.enrolled')
-      expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
-      expect(missedEvent()).toBeUndefined()
     })
 
     describe('recordCampaignEnrolments', () => {

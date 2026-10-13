@@ -16,7 +16,7 @@ import {
 } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
-import { campaignCandidateGrants, planCampaignArgs } from './coreBetaCampaigns'
+import { campaignCandidateGrants, campaignPresentArgs, planCampaignArgs } from './coreBetaCampaigns'
 import { getCoreBetaCampaigns, readCampaignRecords } from './coreBetaCampaignFlags'
 import { getIdClass } from './deviceId'
 import { peekComfyArgsSchema } from './comfy-args'
@@ -152,7 +152,7 @@ export async function previewCoreBetaArgs(
     idClass: getIdClass(),
     now: Date.now(),
     betaEnabled: true,
-    presentArgs: [...split.userArgs, ...plan.assetsArgs, ...plan.applied.map((grant) => grant.arg)],
+    presentArgs: campaignPresentArgs(split.userArgs, plan),
     core,
     commits,
     schema
