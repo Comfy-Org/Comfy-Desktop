@@ -32,6 +32,7 @@ import {
   nextWindowKey,
   forceRevealHostWindow,
   hasRunningSessionForEntry,
+  hasTransparentPanelOverlay,
   raiseAllHostWindows,
   registerHostEntry,
   setHostFactories,
@@ -137,6 +138,47 @@ describe('nextWindowKey', () => {
       expect(seen.has(key)).toBe(false)
       seen.add(key)
     }
+  })
+})
+
+describe('announcement backgrounds', () => {
+  it.each([
+    { background: 'comfy', transparent: false },
+    { background: 'feedback', transparent: true },
+    { background: 'mcp-setup', transparent: true },
+    { background: 'performance-test', transparent: false },
+    { background: 'benchmarks', transparent: false },
+    { background: 'progress', transparent: false }
+  ] as const)(
+    'keeps $background transparent=$transparent on a dashboard host',
+    ({ background, transparent }) => {
+      const entry = makeEntry({ installationId: null, activePanel: 'announcement' })
+      entry.panelBeforeAnnouncement = background
+
+      expect(hasTransparentPanelOverlay(entry)).toBe(transparent)
+    }
+  )
+
+  it('reveals the live canvas beneath an announcement until the instance starts stopping', () => {
+    const entry = makeEntry({ installationId: 'inst-A', activePanel: 'comfy' })
+    _runningSessions.set('inst-A', {
+      proc: null,
+      port: 8188,
+      mode: 'window',
+      installationName: 'Test Install',
+      startedAt: 0
+    })
+    expect(hasTransparentPanelOverlay(entry)).toBe(false)
+
+    entry.activePanel = 'announcement'
+    entry.panelBeforeAnnouncement = 'comfy'
+    expect(hasTransparentPanelOverlay(entry)).toBe(true)
+
+    _stoppingInstallationIds.add('inst-A')
+    expect(hasTransparentPanelOverlay(entry)).toBe(false)
+    _stoppingInstallationIds.clear()
+    _runningSessions.clear()
+    expect(hasTransparentPanelOverlay(entry)).toBe(false)
   })
 })
 

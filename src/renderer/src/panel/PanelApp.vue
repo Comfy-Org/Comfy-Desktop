@@ -46,6 +46,7 @@ import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { useMediaPrefetch } from '../composables/useMediaPrefetch'
 import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
+import { isTransparentPanelOverlay } from '../../../shared/panelOverlay'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -387,10 +388,7 @@ function handleMcpOpenTerminal(): void {
 watch(
   activePanel,
   (next) => {
-    const isOverlay =
-      next === 'feedback' ||
-      next === 'mcp-setup' ||
-      (next === 'announcement' && bodyPanel.value === 'comfy')
+    const isOverlay = isTransparentPanelOverlay(next, bodyPanel.value)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay && next !== 'announcement') return
     void nextTick(() => window.api.signalOverlayReady())
@@ -690,7 +688,7 @@ onUnmounted(() => {
     </template>
 
     <McpSetupModal
-      v-if="bodyPanel === 'mcp-setup'"
+      v-if="activePanel === 'mcp-setup'"
       @close="handleMcpClose"
       @open-terminal="handleMcpOpenTerminal"
     />

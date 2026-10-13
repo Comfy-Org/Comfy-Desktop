@@ -4,6 +4,7 @@ import { _runningSessions, _isStopping } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
+import { isTransparentPanelOverlay } from '../../shared/panelOverlay'
 
 /**
  * Bus for host-window install attachment changes. `'changed'` fires when the
@@ -292,6 +293,15 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
   // still present — otherwise the dead canvas reads as black during the kill.
   if (_isStopping(entry.installationId)) return 'comfy-lifecycle'
   return _runningSessions.has(entry.installationId) ? 'comfy' : 'comfy-lifecycle'
+}
+
+export function hasTransparentPanelOverlay(entry: ComfyWindowEntry): boolean {
+  const mode = computeBodyMode(entry)
+  const backgroundMode =
+    mode === 'announcement'
+      ? computeBodyMode({ ...entry, activePanel: entry.panelBeforeAnnouncement ?? 'comfy' })
+      : mode
+  return isTransparentPanelOverlay(mode, backgroundMode)
 }
 
 /**

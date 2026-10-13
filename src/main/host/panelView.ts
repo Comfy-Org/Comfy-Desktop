@@ -15,6 +15,7 @@ import {
   computeBodyMode,
   findEntryByTitleBarSender,
   getEntryByInstallationId,
+  hasTransparentPanelOverlay,
   revealColdStartHostIfPending,
   VALID_PANELS
 } from './registry'
@@ -165,19 +166,26 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
   }
 }
 
+function announcementReturnPanel(panel: ComfyPanelKey): ComfyPanelKey {
+  return ['new-install', 'track', 'load-snapshot', 'quick-install'].includes(panel)
+    ? 'comfy'
+    : panel
+}
+
 export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
   const reassertFullPageTool = panel === 'performance-test' || panel === 'benchmarks'
   if (entry.activePanel === panel && !reassertFullPageTool) return
 
-  entry.panelBeforeAnnouncement = panel === 'announcement' ? entry.activePanel : undefined
+  entry.panelBeforeAnnouncement =
+    panel === 'announcement' ? announcementReturnPanel(entry.activePanel) : undefined
   entry.activePanel = panel
   const mode = computeBodyMode(entry)
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  const isOverlay = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+  const isOverlay = hasTransparentPanelOverlay(entry)
   entry.pendingOverlayReveal = isOverlay
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
   entry.overlayRevealTimer = undefined

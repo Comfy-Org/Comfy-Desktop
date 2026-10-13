@@ -226,18 +226,25 @@ describe('closing announcements', () => {
     { panel: 'comfy', installationId: 'inst-A', body: 'comfy-lifecycle' },
     { panel: 'performance-test', installationId: null, body: 'performance-test' },
     { panel: 'benchmarks', installationId: null, body: 'benchmarks' },
-    { panel: 'progress', installationId: 'inst-A', body: 'progress' }
+    { panel: 'progress', installationId: 'inst-A', body: 'progress' },
+    { panel: 'new-install', installationId: null, body: 'chooser' },
+    { panel: 'track', installationId: null, body: 'chooser' },
+    { panel: 'load-snapshot', installationId: null, body: 'chooser' },
+    { panel: 'quick-install', installationId: null, body: 'chooser' }
   ] as const)(
-    'returns to $body after repeated news-bell clicks',
+    'returns to $body after repeated news-bell clicks from $panel',
     ({ panel, installationId, body }) => {
       const fixture = makeEntry({ activePanel: panel, installationId })
       comfyWindows.set(fixture.entry.windowKey, fixture.entry)
 
       setActivePanel(fixture.entry.windowKey, 'announcement')
+      expect(fixture.entry.pendingOverlayReveal).toBe(false)
+      expect(fixture.entry.overlayRevealTimer).toBeUndefined()
       setActivePanel(fixture.entry.windowKey, 'announcement')
       closePanel(fixture.entry)
 
-      expect(fixture.entry.activePanel).toBe(panel)
+      const returnPanel = body === 'chooser' ? 'comfy' : panel
+      expect(fixture.entry.activePanel).toBe(returnPanel)
       expect(computeBodyMode(fixture.entry)).toBe(body)
       expect(fixture.panelWc.sent.at(-1)).toEqual({
         channel: 'panel-switch',
@@ -245,7 +252,7 @@ describe('closing announcements', () => {
       })
       expect(fixture.titleBarWc.sent.at(-1)).toEqual({
         channel: 'comfy-titlebar:panel-changed',
-        args: [panel]
+        args: [returnPanel]
       })
       expect(fixture.entry.pendingOverlayReveal).toBe(false)
       expect(fixture.entry.overlayRevealTimer).toBeUndefined()

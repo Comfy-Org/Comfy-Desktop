@@ -49,6 +49,7 @@ import {
   computeBodyMode,
   dropAttachClaimsForWindow,
   hasRunningSessionForEntry,
+  hasTransparentPanelOverlay,
   isChooserHost,
   isInstallHost,
   nextWindowKey,
@@ -657,7 +658,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     /** Overlay mode mounts a modal over the live canvas, kept visible underneath at full
      *  bodyRect; the panel paints transparent (PanelApp's `panel-overlay-mode`) so it
      *  composites through on macOS CALayers. */
-    const isOverlayMode = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+    const isOverlayMode = entry ? hasTransparentPanelOverlay(entry) : false
     // Keep an overlay panel hidden until the renderer acks it painted, so its
     // opaque pre-transparent frame can't flash over ComfyUI.
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
