@@ -261,7 +261,11 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('present', 'already decided by the launch args or an earlier grant')
         continue
       }
-      const missing = candidate.requiresArgs.filter((required) => !present.has(required))
+      // Present AND supported: the schema strips an unsupported user arg from the command line.
+      const missing = candidate.requiresArgs.filter(
+        (required) =>
+          !present.has(required) || filterUnsupportedArgs([required], facts.schema).length === 0
+      )
       if (missing.length > 0) {
         miss('requires_args', `requires ${missing.join(' ')}`)
         continue

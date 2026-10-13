@@ -279,6 +279,11 @@ describe('planCampaignArgs: enrol', () => {
     expect(plan.misses).toMatchObject([{ reason: 'stale_answer' }])
   })
 
+  it('does not count a required arg the core does not support', () => {
+    const plan = planCampaignArgs(facts({ schema: schemaOf('enable-agent') }))
+    expect(plan.misses).toMatchObject([{ reason: 'requires_args' }])
+  })
+
   it('reports a stale commit-range answer as stale, not as failing its gates', () => {
     const ranged = {
       grants: [

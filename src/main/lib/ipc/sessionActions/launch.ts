@@ -1143,6 +1143,8 @@ async function runLaunch(
   function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
     if (coreBetaReported) return
     coreBetaReported = true
+    // Here, not at planning: a launch that stops before spawning must not make a member.
+    coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
     emitCoreBetaRecords(coreBeta.logRecords, {
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
@@ -1434,7 +1436,6 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
-        coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
       } catch {
         // Discovery failed; launch the user's own args without injecting managed flags.
       }
