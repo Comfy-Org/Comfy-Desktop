@@ -100,6 +100,13 @@ import {
   planAgentRequirementsInstall
 } from '../../agentRequirementsLaunch'
 import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
+import {
+  createAgentStartWatcher,
+  nextOverrideState,
+  readOverrideState,
+  reportOverrideDecision
+} from '../../agentRequirementsOverride'
+import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import {
@@ -134,6 +141,7 @@ import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import {
+  appliedPassThrough,
   campaignCandidateGrants,
   campaignPresentArgs,
   planCampaignArgs
@@ -452,6 +460,56 @@ export function agentInstallStatusText(status: AgentInstallStatus): string {
       return i18n.t('launch.agentRequirements.failed')
   }
 }
+
+const overrideRecording = new Map<string, Promise<void>>()
+
+/** Queued per install: two outcomes folding the same count at once would lose one. */
+function recordOverrideOutcome(
+  installationId: string,
+  pins: OverridePins,
+  outcome: AgentStartOutcome,
+  failedBy: 'start_failed' | 'install_failed' | 'check_failed' = 'start_failed'
+): Promise<void> {
+  const queued = (overrideRecording.get(installationId) ?? Promise.resolve()).then(() =>
+    foldOverrideOutcome(installationId, pins, outcome, failedBy)
+  )
+  overrideRecording.set(installationId, queued)
+  return queued
+}
+
+/** Never throws: it runs from ComfyUI's output stream. */
+async function foldOverrideOutcome(
+  installationId: string,
+  pins: OverridePins,
+  outcome: AgentStartOutcome,
+  failedBy: 'start_failed' | 'install_failed' | 'check_failed'
+): Promise<void> {
+  try {
+    const current = await installations.get(installationId)
+    if (!current) return
+    const next = nextOverrideState(readOverrideState(current), pins, outcome)
+    if (!next) return
+    await installations.update(installationId, { agentRequirementsOverride: next.state })
+    if (next.reverted) {
+      reportOverrideDecision(installationId, {
+        decision: 'reverted',
+        reason: failedBy,
+        pins,
+        failures: next.state.failures
+      })
+    }
+  } catch (err) {
+    console.warn('agent requirements override: could not record the outcome:', err)
+  }
+}
+
+function watchOverriddenAgentStart(installationId: string, pins: OverridePins): AgentStartWatch {
+  return createAgentStartWatcher(
+    (outcome) => void recordOverrideOutcome(installationId, pins, outcome)
+  )
+}
+
+type AgentStartWatch = ReturnType<typeof createAgentStartWatcher>
 
 export interface StorageLaunchState {
   preLaunchExtras: string[]
@@ -793,7 +851,8 @@ export function attachLaunchStreams(
   hwTap: ReturnType<typeof createHardwareTap>,
   assetsTap: ReturnType<typeof createAssetsTap>,
   agentTap: ReturnType<typeof createAgentTap>,
-  tracker: LaunchProgressTracker
+  tracker: LaunchProgressTracker,
+  agentStartWatch?: AgentStartWatch
 ): { getStderr: () => string } {
   let stderrBuf = ''
   proc.stdout?.on('data', (chunk: Buffer) => {
@@ -804,6 +863,7 @@ export function attachLaunchStreams(
     hwTap.ingest(text, 'stdout')
     assetsTap.ingest(text, 'stdout')
     agentTap.ingest(text, 'stdout')
+    agentStartWatch?.ingest(text, 'stdout')
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
@@ -818,6 +878,7 @@ export function attachLaunchStreams(
     hwTap.ingest(text, 'stderr')
     assetsTap.ingest(text, 'stderr')
     agentTap.ingest(text, 'stderr')
+    agentStartWatch?.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
   return { getStderr: () => stderrBuf }
@@ -1506,11 +1567,15 @@ async function runLaunch(
   //
   // The step is added through `addLatePhase` rather than `preLaunchPhases`
   // because a torch repair may already have armed the tracker, freezing that list.
+  //
+  // An agent version override rides on the same step: when it went in, this launch's output is
+  // watched for how the agent's start went, so a version that keeps failing goes back to core's.
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
+  let overridePins: OverridePins | undefined
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
-    await installAgentRequirements(
+    const overrideDecision = await installAgentRequirements(
       agentRequirements,
       makeSendOutput(sender, installationId),
       abort.signal,
@@ -1518,9 +1583,21 @@ async function runLaunch(
         sendProgress('agentRequirements', {
           percent: -1,
           status: agentInstallStatusText(status)
-        })
+        }),
+      // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
+      appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
+      readOverrideState(inst)
     )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (overrideDecision) {
+      reportOverrideDecision(installationId, overrideDecision)
+      if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
+      // Counted like a failed start, so a version that cannot install stops costing launch time.
+      const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
+      if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
+        void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
+      }
+    }
   }
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
@@ -1723,7 +1800,8 @@ async function runLaunch(
               hwTap,
               assetsTap,
               agentTap,
-              tracker
+              tracker,
+              overridePins && watchOverriddenAgentStart(installationId, overridePins)
             )
           }
         } catch (err) {
@@ -2121,7 +2199,9 @@ async function runLaunch(
           hwTap,
           assetsTap,
           agentTap,
-          tracker
+          tracker,
+          // Per spawn: a respawned ComfyUI's agent start is its own outcome.
+          overridePins && watchOverriddenAgentStart(installationId, overridePins)
         )
       }
     } catch (err) {
