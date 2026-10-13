@@ -105,7 +105,8 @@ export async function previewCoreBetaArgs(
     campaigns.registry,
     campaigns.answers,
     records,
-    Date.now()
+    Date.now(),
+    getIdClass()
   )
   if (grants.length === 0 && campaignGrants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.

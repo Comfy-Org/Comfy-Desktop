@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { WriteStream } from 'fs'
 
 // Electron's home for this run: a directory of its own, so concurrent runs on one machine never
@@ -1475,6 +1475,9 @@ describe('core beta report placement', () => {
     })
 
     it('enrols an assets-on machine on enrol: arg after slot #0, a record, and the enrolled event', async () => {
+      // A fixed clock, so the lag is exactly the answer's age whatever the wall clock does.
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 12))
+      onTestFinished(() => clock.mockRestore())
       serveCampaign('enrol')
       const id = 'campaign-enrol'
       expect((await handleLaunch(ctxFor(id))).ok).toBe(true)
@@ -1487,7 +1490,7 @@ describe('core beta report placement', () => {
         key: KEY,
         arg: '--enable-agent',
         epoch: 1,
-        lag_ms: expect.toSatisfy((lag: number) => lag >= 5_000 && lag < 65_000)
+        lag_ms: 5_000
       })
       expect(appliedEvent()).toMatchObject({
         args: ['--enable-agent'],

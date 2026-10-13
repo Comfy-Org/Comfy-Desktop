@@ -325,7 +325,8 @@ async function loadCampaignInputs(): Promise<
       campaigns.registry,
       campaigns.answers,
       records,
-      Date.now()
+      Date.now(),
+      getIdClass()
     )
     return { ...campaigns, records, grants }
   } catch (err) {

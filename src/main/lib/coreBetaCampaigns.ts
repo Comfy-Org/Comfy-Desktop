@@ -157,7 +157,8 @@ export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
   records: CampaignRecords,
-  now: number
+  now: number,
+  idClass: IdClass
 ): CoreBetaGrant[] {
   return registry.flatMap(({ key, args }) => {
     const answer = answers.get(key)
@@ -167,7 +168,11 @@ export function campaignCandidateGrants(
         if (!args.includes(candidate.grant.arg)) return false
         if (heldRecord(records, key, candidate) !== undefined)
           return answerFresh(answer, now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)
-        return answer.enrol && answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)
+        return (
+          answer.enrol &&
+          idClass === 'machine_derived' &&
+          answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)
+        )
       })
       .map((candidate) => candidate.grant)
   })

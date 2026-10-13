@@ -128,9 +128,15 @@ describe('initCoreBetaFlags', () => {
     expect(answers.size, 'its keys are discovered one boot late').toBe(0)
   })
 
-  it.each([['provisional'], ['random_fallback'], ['placeholder_fallback']])(
-    'reads the saved campaign answers under a %s id, but neither fetches nor saves any',
-    async (cls) => {
+  it.each([
+    ['provisional', true],
+    ['random_fallback', true],
+    ['placeholder_fallback', true],
+    ['provisional', false],
+    ['random_fallback', false]
+  ])(
+    'reads the saved campaign answers under a %s id (beta on at boot: %s), but neither fetches nor saves any',
+    async (cls, betaEnabled) => {
       seed('campaign-flags.json', {
         desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
         [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - DAY_MS }
@@ -138,7 +144,8 @@ describe('initCoreBetaFlags', () => {
       const before = fs.readFileSync(file('campaign-flags.json'))
       serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
       idClass = cls
-      await initCoreBetaFlags({ distinctId: 'other-id', betaEnabled: true })
+      await initCoreBetaFlags({ distinctId: 'other-id', betaEnabled })
+      // On a beta-off boot this is the first use after beta is turned on.
       const { registry, answers } = await getCoreBetaCampaigns()
       expect(registry).toEqual(REGISTRY)
       expect(answers.get(KEY), 'a member still holds on the saved answer').toMatchObject({
