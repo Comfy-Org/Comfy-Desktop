@@ -171,10 +171,17 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 }
 
+// Rich dialogs take focus like BaseAlert, so What's New underneath leaves them Escape.
+let returnFocusTo: HTMLElement | null = null
+
 watch(
   () => state.visible,
   async (visible) => {
-    if (!visible) return
+    if (!visible) {
+      returnFocusTo?.focus()
+      returnFocusTo = null
+      return
+    }
 
     if (state.type === 'prompt') {
       inputValue.value = state.defaultValue
@@ -193,6 +200,12 @@ watch(
       for (const opt of state.options) {
         localOptions.push({ id: opt.id, label: opt.label, checked: opt.checked ?? false })
       }
+    }
+
+    if (state.type !== 'prompt' && !usesBaseAlert.value) {
+      returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      await nextTick()
+      overlayRef.value?.focus()
     }
   }
 )
@@ -228,6 +241,9 @@ onUnmounted(() => {
       v-if="state.visible && !usesBaseAlert"
       ref="overlayRef"
       class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >

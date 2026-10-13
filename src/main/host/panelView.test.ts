@@ -27,6 +27,7 @@ import {
 } from './registry'
 import {
   destroyPanelView,
+  navigateToPanel,
   openPanelModal,
   prewarmAttachedPanel,
   refreshComfyTabBody,
@@ -88,18 +89,25 @@ function makeEntry(
   titleBarWc: FakeWebContents
   panelWc: FakeWebContents
   layoutCalls: number
+  panelBackground: string | undefined
 } {
   const window = makeWindow({ destroyed: opts.destroyed })
   const titleBarWc = makeWc()
   const panelWc = makeWc()
   const counters = { layout: 0 }
+  const panel = { background: undefined as string | undefined }
   const entry: ComfyWindowEntry = {
     windowKey: nextWindowKey(),
     window: window as unknown as ComfyWindowEntry['window'],
     comfyView: { webContents: makeWc() } as unknown as ComfyWindowEntry['comfyView'],
     titleBarView: { webContents: titleBarWc } as unknown as ComfyWindowEntry['titleBarView'],
     panelView: opts.withPanel
-      ? ({ webContents: panelWc } as unknown as ComfyWindowEntry['panelView'])
+      ? ({
+          webContents: panelWc,
+          setBackgroundColor: (color: string) => {
+            panel.background = color
+          }
+        } as unknown as ComfyWindowEntry['panelView'])
       : null,
     activePanel: opts.activePanel ?? 'comfy',
     lastTheme: { bg: '#000', text: '#fff' },
@@ -123,6 +131,9 @@ function makeEntry(
     panelWc,
     get layoutCalls(): number {
       return counters.layout
+    },
+    get panelBackground(): string | undefined {
+      return panel.background
     }
   }
 }
@@ -330,7 +341,7 @@ describe("What's New modal", () => {
     const fixture = register({ activePanel: 'performance-test' })
 
     open(fixture)
-    setActivePanel(fixture.entry.windowKey, 'benchmarks')
+    navigateToPanel(fixture.entry.windowKey, 'benchmarks')
 
     expect(fixture.entry.panelModal).toBeUndefined()
     expect(panelChannels(fixture)).toEqual([
@@ -340,12 +351,15 @@ describe("What's New modal", () => {
     ])
   })
 
-  it('closes when the page already showing is picked again', () => {
+  it('closes when a title-bar pill picks the page already showing', () => {
     const fixture = register({ installationId: 'inst-A' }, true)
     open(fixture)
     sendFromPanel(fixture, 'comfy-window:overlay-ready')
 
-    setActivePanel(fixture.entry.windowKey, 'comfy')
+    vi.mocked(ipcMain.on).mockClear()
+    registerPanelViewIpc()
+    const setPanel = vi.mocked(ipcMain.on).mock.calls.find(([c]) => c === 'comfy-window:set-panel')
+    setPanel?.[1]({ sender: fixture.titleBarWc } as never, { panel: 'comfy' })
 
     expect(fixture.entry.panelModal).toBeUndefined()
     expect(bodyLayout(fixture.entry)).toEqual({ panel: false, canvas: true })
@@ -355,7 +369,7 @@ describe("What's New modal", () => {
   it('answers a close that arrives after navigation without changing the new page', () => {
     const fixture = register({ activePanel: 'performance-test' })
     open(fixture)
-    setActivePanel(fixture.entry.windowKey, 'benchmarks')
+    navigateToPanel(fixture.entry.windowKey, 'benchmarks')
     const layoutCalls = fixture.layoutCalls
 
     sendFromPanel(fixture, 'comfy-window:close-panel-modal', 'announcement')
@@ -363,6 +377,47 @@ describe("What's New modal", () => {
     expect(fixture.entry.activePanel).toBe('benchmarks')
     expect(fixture.layoutCalls).toBe(layoutCalls)
     expect(panelChannels(fixture).at(-1)).toBe('comfy-panel:dismiss-modal')
+  })
+
+  it('stays open, still showing, when a finished operation returns the page to the canvas', () => {
+    const fixture = register({ installationId: 'inst-A', activePanel: 'progress' }, true)
+    open(fixture)
+
+    sendFromPanel(fixture, 'comfy-window:close-current-panel')
+
+    expect(fixture.entry.activePanel).toBe('comfy')
+    expect(fixture.entry.panelModal).toBe('announcement')
+    expect(bodyLayout(fixture.entry), 'no reveal hold for a modal on screen').toEqual({
+      panel: true,
+      canvas: true
+    })
+    expect(fixture.panelBackground).toBe('#00000000')
+    expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement', 'panel-switch'])
+  })
+
+  it('stays open when a relaunch reasserts the canvas', () => {
+    const fixture = register({ installationId: 'inst-A' }, true)
+    open(fixture)
+    sendFromPanel(fixture, 'comfy-window:overlay-ready')
+
+    setActivePanel(fixture.entry.windowKey, 'comfy')
+
+    expect(fixture.entry.panelModal).toBe('announcement')
+    expect(panelChannels(fixture)).not.toContain('comfy-panel:dismiss-modal')
+  })
+
+  it('stays open and turns the panel see-through when the instance starts under it', () => {
+    const fixture = register({ installationId: 'inst-A' })
+    open(fixture)
+    expect(computeBodyMode(fixture.entry)).toBe('comfy-lifecycle')
+
+    _runningSessions.set('inst-A', {} as never)
+    refreshComfyTabBody('inst-A')
+
+    expect(fixture.entry.panelModal).toBe('announcement')
+    expect(bodyLayout(fixture.entry)).toEqual({ panel: true, canvas: true })
+    expect(fixture.panelBackground).toBe('#00000000')
+    expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement', 'panel-switch'])
   })
 
   it('ignores a close for an unknown modal', () => {
@@ -375,13 +430,16 @@ describe("What's New modal", () => {
     expect(panelChannels(fixture)).toEqual(['comfy-panel:open-announcement'])
   })
 
-  it('forgets the modal when its renderer is destroyed', () => {
+  it('forgets the modal and its pending reveal when its renderer is destroyed', () => {
+    vi.useFakeTimers()
     const fixture = register({ installationId: 'inst-A' }, true)
     open(fixture)
 
     destroyPanelView(fixture.entry)
 
     expect(fixture.entry.panelModal).toBeUndefined()
+    expect(fixture.entry.pendingOverlayReveal).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
     expect(bodyLayout(fixture.entry)).toEqual({ panel: false, canvas: true })
   })
 })

@@ -60,7 +60,11 @@ function toggleSound(): void {
 // Element focused before open; restored on close to return focus to the trigger.
 let returnFocusTo: HTMLElement | null = null
 
+// Main unmounts the modal once it has hidden the panel; ignore repeats meanwhile.
+let dismissed = false
 function dismiss(): void {
+  if (dismissed) return
+  dismissed = true
   emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   emit('close')
 }

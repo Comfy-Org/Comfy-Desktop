@@ -380,10 +380,11 @@ function handleMcpOpenTerminal(): void {
 
 /** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
-  [activePanel, pageCovered],
-  ([panel, covered]) => {
+  [activePanel, pageCovered, () => currentOverlay.value?.kind === 'takeover'],
+  ([panel, covered, takeover]) => {
+    // Mirrors main's `isCanvasOverlay`; file-menu wizards hide the canvas but leave `activePanel`.
     const isOverlay =
-      panel === 'feedback' || panel === 'mcp-setup' || (panel === 'comfy' && covered)
+      panel === 'feedback' || panel === 'mcp-setup' || (panel === 'comfy' && covered && !takeover)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden

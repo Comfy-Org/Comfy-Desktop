@@ -342,6 +342,13 @@ export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null
   return null
 }
 
+export function findEntryByPanelSender(wc: WebContents): ComfyWindowEntry | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return entry
+  }
+  return null
+}
+
 /** Resolve the installationId backing the comfyView whose webContents sent an
  *  IPC message. Used by the terminal bridge so the served ComfyUI frontend
  *  (which has no idea which install it belongs to) reaches the right shell. */

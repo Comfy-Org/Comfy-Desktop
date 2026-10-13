@@ -171,6 +171,7 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  navigateToPanel,
   openPanelModal,
   prewarmAttachedPanel,
   refreshComfyTabBody,
@@ -1080,11 +1081,11 @@ function _broadcastDownloadsToTitleBars(): void {
 function triggerOpenFeedback(entryId: number, source: 'titlebar' | 'menu'): void {
   const parentEntry = comfyWindows.get(entryId)
   if (!parentEntry || parentEntry.window.isDestroyed()) return
-  // Flip into the 'feedback' overlay panel. setActivePanel lazily ensures the
+  // Flip into the 'feedback' overlay panel. navigateToPanel lazily ensures the
   // panel view, makes it visible over comfyView, and broadcasts `panel-switch`.
   // The IPC below carries the click `source` for telemetry (titlebar vs. menu).
   const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'feedback')
-  setActivePanel(entryId, 'feedback')
+  navigateToPanel(entryId, 'feedback')
   sendToPanelDeferred(panelView, 'comfy-panel:open-feedback', { source })
 }
 
@@ -1753,7 +1754,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseAllHostWindows: (parentWindow) =>
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
-      setActivePanel,
+      // Every title-popup panel switch is a user pick, so it closes What's New.
+      setActivePanel: navigateToPanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,

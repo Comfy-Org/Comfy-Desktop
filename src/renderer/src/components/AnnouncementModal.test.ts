@@ -5,7 +5,9 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import AnnouncementModal from './AnnouncementModal.vue'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import Modal from './Modal.vue'
+import ModalDialog from './ModalDialog.vue'
 import BaseAlert from './ui/BaseAlert.vue'
+import { useModal } from '../composables/useModal'
 import { PAGE_COVERED } from '../lib/pageCovered'
 
 const wrappers: VueWrapper[] = []
@@ -63,6 +65,40 @@ describe("What's New over dialogs", () => {
     pressEscape()
     expect(alert.emitted('cancel')).toHaveLength(1)
     expect(announcement.emitted('close')).toBeUndefined()
+  })
+
+  it('lets a rich confirm opened above it take focus and Escape', async () => {
+    track(mount(ModalDialog, { attachTo: document.body }))
+    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+    await flushPromises()
+    const answer = useModal().confirm({
+      title: 'Delete install?',
+      message: 'This removes:',
+      messageDetails: [{ label: 'Files', items: ['models/'] }]
+    })
+    await flushPromises()
+    expect(document.activeElement?.closest('.modal-overlay')).not.toBeNull()
+
+    pressEscape()
+    await flushPromises()
+    expect(document.querySelector('.modal-overlay')).toBeNull()
+    expect(announcement.emitted('close')).toBeUndefined()
+    await expect(answer).resolves.toBe(false)
+
+    expect(document.activeElement?.closest('.announce-overlay')).not.toBeNull()
+    pressEscape()
+    expect(announcement.emitted('close')).toHaveLength(1)
+  })
+
+  it('asks to close once while main is still answering', async () => {
+    const announcement = track(mount(AnnouncementModal, { attachTo: document.body }))
+    await flushPromises()
+
+    pressEscape()
+    pressEscape()
+    document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
+
+    expect(announcement.emitted('close')).toHaveLength(1)
   })
 })
 

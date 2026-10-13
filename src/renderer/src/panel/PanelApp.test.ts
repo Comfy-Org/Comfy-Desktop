@@ -780,6 +780,24 @@ describe('PanelApp', () => {
       expect(installWizardOpen).toHaveBeenCalledOnce()
     })
 
+    it('stays opaque over a file-menu wizard opened from the running canvas', async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+      )
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+
+      await openAnnouncement()
+
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+      expect(window.api.signalOverlayReady).not.toHaveBeenCalled()
+    })
+
     it('stays transparent over the running canvas until main has hidden the panel', async () => {
       window.history.replaceState(
         {},
