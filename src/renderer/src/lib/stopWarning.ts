@@ -53,7 +53,7 @@ export function augmentActionWithStopWarning<T extends ActionLike>(
 }
 
 /** Stop the install's ComfyUI and poll until the session store reports it
- *  stopped, with a 10s deadline. */
+ *  stopped, rejecting if the 10s deadline expires first. */
 export async function stopAndWaitForExit(
   installationId: string,
   isRunning: () => boolean
@@ -62,5 +62,8 @@ export async function stopAndWaitForExit(
   const deadline = Date.now() + 10_000
   while (isRunning() && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 100))
+  }
+  if (isRunning()) {
+    throw new Error('Timed out waiting for ComfyUI to stop.')
   }
 }
