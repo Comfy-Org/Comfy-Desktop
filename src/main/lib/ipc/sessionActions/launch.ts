@@ -1223,6 +1223,11 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+  // Only a launch that passes Desktop's folders needs settings; it must not use stand-in defaults.
+  const storageSettings =
+    !launchCmd.skipSharedPaths && launchCmd.args ? await settings.readSettled() : settings.defaults
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
+  if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
@@ -1331,8 +1336,6 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
-  const storageSettings = await settings.readSettled()
-  if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 

@@ -74,18 +74,20 @@ function yamlPath(installationId: string): string {
 /** The launch's one settings read, handed to every `applyStorageLaunchArgs` call below. */
 let snapshot: Parameters<typeof applyWithSnapshot>[3]
 
-function mockSettings(values: Parameters<typeof applyWithSnapshot>[3]): void {
+function setSnapshot(values: Parameters<typeof applyWithSnapshot>[3]): void {
   snapshot = values
 }
 
 function applyStorageLaunchArgs(
-  ...args: Parameters<typeof applyWithSnapshot> extends [...infer Head, unknown] ? Head : never
+  inst: InstallationRecord,
+  installationId: string,
+  launchCmd: LaunchCommand
 ): ReturnType<typeof applyWithSnapshot> {
-  return applyWithSnapshot(...args, snapshot)
+  return applyWithSnapshot(inst, installationId, launchCmd, snapshot)
 }
 
 beforeEach(() => {
-  mockSettings({ inputDir: globalInput, outputDir: globalOutput, modelsDirs: [] })
+  setSnapshot({ inputDir: globalInput, outputDir: globalOutput, modelsDirs: [] })
 })
 
 afterEach(() => {
@@ -105,7 +107,7 @@ describe('applyStorageLaunchArgs', () => {
     const inst = makeInstall({ modelDirs: [owned] })
     fs.mkdirSync(path.join(inst.installPath, 'ComfyUI', 'models', 'z-extra'), { recursive: true })
     fs.mkdirSync(path.join(shared, 'a-extra'), { recursive: true })
-    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
     const state = applyStorageLaunchArgs(inst, 'combined', launchCmd)
@@ -123,7 +125,7 @@ describe('applyStorageLaunchArgs', () => {
   it('excludes shared model dirs when shared models are disabled', () => {
     const shared = path.join(root, 'excluded-shared')
     const owned = path.join(root, 'included-owned')
-    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
     applyStorageLaunchArgs(
@@ -138,7 +140,7 @@ describe('applyStorageLaunchArgs', () => {
   })
 
   it('does not write model YAML when shared models are disabled without per-install dirs', () => {
-    mockSettings({
+    setSnapshot({
       modelsDirs: [path.join(root, 'unused-shared')],
       inputDir: globalInput,
       outputDir: globalOutput
@@ -155,7 +157,7 @@ describe('applyStorageLaunchArgs', () => {
   it('marks a shared primary model dir as the YAML default', () => {
     const first = path.join(root, 'shared-first')
     const primary = path.join(root, 'shared-primary')
-    mockSettings({ modelsDirs: [first, primary], inputDir: globalInput, outputDir: globalOutput })
+    setSnapshot({ modelsDirs: [first, primary], inputDir: globalInput, outputDir: globalOutput })
 
     applyStorageLaunchArgs(makeInstall({ modelDirsPrimary: primary }), 'primary', makeLaunchCmd())
     const yaml = fs.readFileSync(yamlPath('primary'), 'utf8')
@@ -269,7 +271,7 @@ describe('applyStorageLaunchArgs', () => {
   it('gives a governed build its shared and per-install model dirs', () => {
     const shared = path.join(root, 'governed-shared')
     fs.mkdirSync(shared, { recursive: true })
-    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const owned = path.join(root, 'governed-owned')
     const launchCmd = makeLaunchCmd()
 
@@ -314,7 +316,7 @@ describe('applyStorageLaunchArgs', () => {
 
   it('reads the folders from the launch snapshot, never from settings again', () => {
     const shared = path.join(root, 'snapshot-models')
-    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
     applyStorageLaunchArgs(makeInstall(), 'snapshot', launchCmd)
@@ -331,7 +333,7 @@ describe('applyStorageLaunchArgs', () => {
   })
 
   it('falls back to the default input dir when the setting is empty', () => {
-    mockSettings({ inputDir: '', outputDir: globalOutput, modelsDirs: [] })
+    setSnapshot({ inputDir: '', outputDir: globalOutput, modelsDirs: [] })
     const launchCmd = makeLaunchCmd()
 
     applyStorageLaunchArgs(makeInstall(), 'default-input', launchCmd)

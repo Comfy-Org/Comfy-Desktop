@@ -865,6 +865,7 @@ describe('resolveBetaFeaturesEnabled', () => {
 
 describe('settings.json and its .bak both unreadable', () => {
   const locked = new Set<string>()
+  const customModels = path.join(tmpRoot, 'unreadable-custom-models')
 
   function writeSettings(values: Record<string, unknown>): void {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
@@ -874,6 +875,10 @@ describe('settings.json and its .bak both unreadable', () => {
 
   beforeEach(() => {
     locked.clear()
+    // Earlier tests in this file leave their own readFileSync spies installed.
+    vi.restoreAllMocks()
+    // Custom dirs that don't exist are normalized away, so each test owns its own.
+    fs.mkdirSync(customModels, { recursive: true })
     const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
     vi.spyOn(fs, 'readFileSync').mockImplementation(((
       p: fs.PathOrFileDescriptor,
@@ -895,8 +900,6 @@ describe('settings.json and its .bak both unreadable', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
-
-  const customModels = path.join(tmpRoot, 'custom-models')
 
   it('readSettled returns null while both files stay unreadable', async () => {
     writeSettings({ modelsDirs: [customModels] })
@@ -924,8 +927,10 @@ describe('settings.json and its .bak both unreadable', () => {
     writeSettings({ modelsDirs: [customModels] })
     locked.add(settingsPath)
 
-    // No timers advanced: a wait here would leave the promise pending and time out.
-    expect((await settings.readSettled())?.['modelsDirs']).toEqual([customModels])
+    const result = settings.readSettled()
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect((await result)?.['modelsDirs']).toEqual([customModels])
   })
 
   it('reports first use as completed instead of reopening onboarding', () => {

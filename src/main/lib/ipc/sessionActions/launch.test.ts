@@ -80,8 +80,8 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
-  /** `settings.readSettled` gives up: settings.json and its .bak stayed unreadable. */
-  settingsUnreadable: false,
+  /** Stands in for `settings.readSettled`; null = the real one. */
+  readSettled: null as null | (() => Promise<unknown>),
   grants: [] as CoreBetaGrant[],
   /** Stands in for the git ancestry checks when set; `null` runs the real ones. */
   commits: null as null | CoreCommitState,
@@ -127,9 +127,7 @@ vi.mock('../shared', async (importOriginal) => {
     },
     settings: new Proxy(actual.settings, {
       get(target, key) {
-        if (key === 'readSettled' && launchHarness.settingsUnreadable) {
-          return async () => null
-        }
+        if (key === 'readSettled' && launchHarness.readSettled) return launchHarness.readSettled
         if (key === 'resolveBetaFeaturesEnabled') {
           return () => {
             if (launchHarness.betaEnabledThrows) throw new Error('settings write failed: EROFS')
@@ -310,6 +308,7 @@ import {
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
 import { instanceModelPathsYaml } from '../../models'
+import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
@@ -1261,7 +1260,7 @@ describe('core beta report placement', () => {
     launchHarness.registryCalls = 0
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
-    launchHarness.settingsUnreadable = false
+    launchHarness.readSettled = null
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
@@ -1330,19 +1329,72 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('refuses to launch while settings.json and its .bak stay unreadable', async () => {
-    launchHarness.settingsUnreadable = true
+  describe('settings.json and its .bak unreadable', () => {
     let spawned = false
-    launchHarness.spawn = () => {
-      spawned = true
-      return fakeChild()
+    beforeEach(() => {
+      spawned = false
+      launchHarness.spawn = () => {
+        spawned = true
+        return fakeChild()
+      }
+      launchHarness.readSettled = async () => null
+    })
+
+    it('refuses to launch, with a translated message', async () => {
+      const res = await handleLaunch(ctxFor('harness-settings-unreadable'))
+
+      expect(res).toEqual({ ok: false, message: i18nModule.t('errors.settingsUnreadable') })
+      expect(lookupEnMessage('errors.settingsUnreadable')).toMatch(/settings file/)
+      expect(spawned).toBe(false)
+      expect(fs.existsSync(instanceModelPathsYaml('harness-settings-unreadable'))).toBe(false)
+    })
+
+    it('reports a cancel during the wait as cancelled, not as a failure', async () => {
+      launchHarness.readSettled = async () => {
+        _operationAborts.get('harness-settings-cancelled')?.abort()
+        return null
+      }
+
+      const res = await handleLaunch(ctxFor('harness-settings-cancelled'))
+
+      expect(res).toEqual({ ok: false, cancelled: true })
+      expect(spawned).toBe(false)
+    })
+
+    it('still launches a command that takes none of the folder arguments', async () => {
+      launchHarness.launchCommand = { ...launchHarness.launchCommand, skipSharedPaths: true }
+      let reads = 0
+      launchHarness.readSettled = async () => {
+        reads++
+        return null
+      }
+
+      const res = await handleLaunch(ctxFor('harness-settings-skip-shared'))
+
+      expect(res.ok).toBe(true)
+      expect(spawned).toBe(true)
+      expect(reads).toBe(0)
+    })
+  })
+
+  it('launches with the folders from settings', async () => {
+    const inputDir = path.join(installDir, 'custom-input')
+    const outputDir = path.join(installDir, 'custom-output')
+    fs.mkdirSync(inputDir)
+    fs.mkdirSync(outputDir)
+    settingsModule.set('inputDir', inputDir)
+    settingsModule.set('outputDir', outputDir)
+    try {
+      const res = await handleLaunch(ctxFor('harness-settings-folders'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).toEqual(
+        expect.arrayContaining(['--input-directory', inputDir, '--output-directory', outputDir])
+      )
+    } finally {
+      settingsModule.set('inputDir', undefined)
+      settingsModule.set('outputDir', undefined)
     }
-
-    const res = await handleLaunch(ctxFor('harness-settings-unreadable'))
-
-    expect(res).toEqual({ ok: false, message: i18nModule.t('errors.settingsUnreadable') })
-    expect(spawned).toBe(false)
-    expect(fs.existsSync(instanceModelPathsYaml('harness-settings-unreadable'))).toBe(false)
   })
 
   function gitInitComfyUI(): string {
@@ -2523,7 +2575,7 @@ describe('Performance Test guardrail', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
-    launchHarness.settingsUnreadable = false
+    launchHarness.readSettled = null
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
@@ -3032,7 +3084,7 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = false
     launchHarness.betaEnabledThrows = false
-    launchHarness.settingsUnreadable = false
+    launchHarness.readSettled = null
     launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null

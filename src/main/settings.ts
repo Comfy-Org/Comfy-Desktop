@@ -713,7 +713,8 @@ export function getAll(): Settings {
 
 const SETTLED_RETRY_DELAYS_MS = [500, 1000, 1500, 2000]
 
-/** Settings, retried for ~5 s while settings.json and .bak are both unreadable; else `null`. */
+/** Settings, retried for 5 s (plus each read's own retries) while settings.json and .bak are
+ *  both unreadable; else `null`. */
 export async function readSettled(): Promise<Settings | null> {
   let outcome = loadOutcome()
   for (const delayMs of SETTLED_RETRY_DELAYS_MS) {
