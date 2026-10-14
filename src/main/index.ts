@@ -119,7 +119,11 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { getCoreBetaCampaigns, initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
+import {
+  getCoreBetaCampaigns,
+  initCoreBetaFlags,
+  readCampaignRecords
+} from './lib/coreBetaCampaignFlags'
 import { answeredFrontendPins, syncFrontendCache } from './lib/frontendCache'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -1541,7 +1545,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // it; with beta off nothing is pinned and the cache empties.
       .then(async () =>
         syncFrontendCache(
-          betaAtBoot ? answeredFrontendPins((await getCoreBetaCampaigns()).answers) : []
+          betaAtBoot
+            ? answeredFrontendPins((await getCoreBetaCampaigns()).answers, readCampaignRecords())
+            : []
         )
       )
       .catch((err: unknown) => console.warn('[core-campaign] frontend cache upkeep skipped:', err))

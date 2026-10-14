@@ -129,8 +129,8 @@ describe('appliedFrontendPin', () => {
 })
 
 describe('answeredFrontendPins', () => {
-  const answer = (grants: number, payload: unknown): CampaignAnswer => ({
-    enrol: false,
+  const answer = (grants: number, payload: unknown, enrol = false): CampaignAnswer => ({
+    enrol,
     grants: Array.from({ length: grants }, () => ({
       grant: { arg: '--enable-agent', minCoreVersion: '0.3.60' },
       epoch: 1,
@@ -139,15 +139,23 @@ describe('answeredFrontendPins', () => {
     })),
     payload
   })
+  const member = { epoch: 1, enrolledAt: 1 }
 
-  it('names each valid pin once, from answers that grant something', () => {
+  it('names each valid pin once, from members and enrol draws whose answer grants something', () => {
     const answers = new Map([
       ['a', answer(1, { frontend: pin() })],
-      ['b', answer(1, { frontend: pin() })],
+      ['b', answer(1, { frontend: pin({ sha256: 'f'.repeat(64) }) }, true)],
       ['killed', answer(0, { frontend: pin({ sha256: 'c'.repeat(64) }) })],
       ['invalid', answer(1, { frontend: { url: WHEEL_URL } })]
     ])
-    expect(answeredFrontendPins(answers)).toEqual([pin()])
+    const records = { a: { '--enable-agent': member }, killed: { '--enable-agent': member } }
+    expect(answeredFrontendPins(answers, records)).toEqual([pin(), pin({ sha256: 'f'.repeat(64) })])
+  })
+
+  it('skips a campaign this machine is not in and did not draw enrol on', () => {
+    const answers = new Map([['other', answer(1, { frontend: pin() })]])
+    expect(answeredFrontendPins(answers, {})).toEqual([])
+    expect(answeredFrontendPins(answers, { other: { '--enable-agent': member } })).toEqual([pin()])
   })
 })
 
@@ -194,6 +202,12 @@ describe('the cache', () => {
     expect(await prefetchFrontend(pin(), root, deps('wheel', 'tampered'))).toBeNull()
     expect(cachedFrontendDir(SHA, root)).toBeNull()
     expect(fs.readdirSync(root)).toEqual([])
+  })
+
+  it('replaces a leftover build directory that has no index.html', async () => {
+    fs.mkdirSync(path.join(root, SHA, 'assets'), { recursive: true })
+    expect(await prefetchFrontend(pin(), root, deps('dist'))).toBe(path.join(root, SHA))
+    expect(cachedFrontendDir(SHA, root)).toBe(path.join(root, SHA))
   })
 
   it('refuses an archive with no index.html', async () => {

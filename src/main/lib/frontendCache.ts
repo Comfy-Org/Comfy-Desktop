@@ -18,7 +18,7 @@ import { extract } from './extract'
 import { sha256File } from './modelDownloadStaging'
 import { isTrustedArtifactUrl } from './trustedArtifactUrls'
 import type { ComfyArgsSchema } from './comfy-args'
-import type { CampaignAnswer, CampaignApplied } from './coreBetaCampaigns'
+import type { CampaignAnswer, CampaignApplied, CampaignRecords } from './coreBetaCampaigns'
 
 const FRONTEND_PAYLOAD_FIELD = 'frontend'
 
@@ -80,11 +80,18 @@ export function appliedFrontendPin(applied: readonly CampaignApplied[]): Fronten
   return pin
 }
 
-/** Every valid pin a saved answer that grants something names: what app start keeps and fetches. */
-export function answeredFrontendPins(answers: ReadonlyMap<string, CampaignAnswer>): FrontendPin[] {
+/**
+ * Every valid pin a saved answer names, from campaigns this machine is in or drew `enrol` on: what
+ * app start keeps and fetches. Every beta user holds the other campaigns' answers, and a pin that
+ * can't apply here is not worth a download.
+ */
+export function answeredFrontendPins(
+  answers: ReadonlyMap<string, CampaignAnswer>,
+  records: CampaignRecords
+): FrontendPin[] {
   const pins = new Map<string, FrontendPin>()
-  for (const answer of answers.values()) {
-    if (answer.grants.length === 0) continue
+  for (const [key, answer] of answers) {
+    if (answer.grants.length === 0 || !(answer.enrol || key in records)) continue
     const pin = parseFrontendPin(payloadPin(answer.payload))
     if (pin !== null) pins.set(pin.sha256, pin)
   }
@@ -130,6 +137,10 @@ async function fetchIntoCache(
     if (served === undefined) throw new Error('no index.html at the root or in the wheel')
     // Same volume as the target, so the build appears whole or not at all.
     const target = path.join(root, pin.sha256)
+    // A leftover without index.html (an interrupted removal) would block the rename on every boot.
+    if (cachedFrontendDir(pin.sha256, root) === null) {
+      await fs.promises.rm(target, { recursive: true, force: true })
+    }
     try {
       await fs.promises.rename(served, target)
     } catch (err) {
@@ -166,7 +177,7 @@ export function prefetchFrontend(
       return dir
     })
     .catch((err: unknown) => {
-      console.log(`[core-campaign] frontend ${pin.url} fetch failed: ${(err as Error).message}`)
+      console.log(`[core-campaign] frontend ${pin.url} fetch failed: ${String(err)}`)
       return null
     })
     .finally(() => inFlight.delete(key))
@@ -205,7 +216,7 @@ export async function syncFrontendCache(
     )
     await Promise.all(pins.map((pin) => prefetchFrontend(pin, root, deps)))
   } catch (err) {
-    console.log(`[core-campaign] frontend cache upkeep failed: ${(err as Error).message}`)
+    console.log(`[core-campaign] frontend cache upkeep failed: ${String(err)}`)
   }
 }
 
