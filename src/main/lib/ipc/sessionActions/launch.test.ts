@@ -359,6 +359,7 @@ import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
 import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns'
+import { frontendCacheRoot } from '../../frontendCache'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -1631,6 +1632,32 @@ describe('core beta report placement', () => {
       expect(normalise(spawnArgs)).toEqual(without)
       expect(appliedEvent()).toEqual(withoutApplied)
       expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.applied')).toHaveLength(2)
+    })
+
+    it('serves the frontend the applied campaign pins, once its build is cached', async () => {
+      const sha256 = 'a'.repeat(64)
+      const build = path.join(frontendCacheRoot(), sha256)
+      fs.mkdirSync(build, { recursive: true })
+      fs.writeFileSync(path.join(build, 'index.html'), '<html></html>')
+      onTestFinished(() => fs.rmSync(build, { recursive: true, force: true }))
+      launchHarness.schemaNames = [...launchHarness.schemaNames, 'front-end-root']
+      const answer = parseCampaignAnswer(
+        'hold',
+        {
+          ...(agentAnswer('hold') as { payload: object }).payload,
+          frontend: { url: 'https://files.pythonhosted.org/packages/x/f.whl', sha256 }
+        },
+        Date.now() - 5_000
+      )
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, answer]])
+      }
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-frontend'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(spawnArgs[spawnArgs.indexOf('--front-end-root') + 1]).toBe(build)
+      expect(sent.join('')).toContain(`served from ${build}`)
     })
 
     it('applies the arg but counts no enrolment when the record cannot be written', async () => {

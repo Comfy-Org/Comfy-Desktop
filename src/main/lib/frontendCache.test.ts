@@ -1,0 +1,257 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { createHash } from 'crypto'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('electron', () => ({ app: { getPath: () => '' } }))
+// The pending path fetches with the real deps; a test must never reach the network.
+const realDownload = vi.hoisted(() =>
+  vi.fn((..._args: unknown[]) => Promise.reject(new Error('offline')))
+)
+vi.mock('./download', () => ({
+  download: realDownload,
+  downloadMetaPath: (file: string) => `${file}.dl-meta`
+}))
+
+import {
+  _resetForTest,
+  answeredFrontendPins,
+  appliedFrontendPin,
+  cachedFrontendDir,
+  frontendRootArgs,
+  parseFrontendPin,
+  prefetchFrontend,
+  syncFrontendCache
+} from './frontendCache'
+import type { FrontendCacheDeps, FrontendPin } from './frontendCache'
+import type { CampaignAnswer, CampaignApplied } from './coreBetaCampaigns'
+import type { ComfyArgsSchema } from './comfy-args'
+import { isTrustedArtifactUrl } from './trustedArtifactUrls'
+
+const WHEEL_URL =
+  'https://files.pythonhosted.org/packages/60/c6/aab1/comfyui_frontend_package-1.53.6-py3-none-any.whl'
+const ZIP_URL = 'https://github.com/Comfy-Org/ComfyUI_frontend/releases/download/v1.53.6/dist.zip'
+const ARCHIVE = 'archive bytes'
+const SHA = createHash('sha256').update(ARCHIVE).digest('hex')
+
+const pin = (over: Partial<FrontendPin> = {}): FrontendPin => ({
+  url: WHEEL_URL,
+  sha256: SHA,
+  ...over
+})
+
+describe('isTrustedArtifactUrl', () => {
+  it.each([WHEEL_URL, ZIP_URL, 'https://GITHUB.com/Comfy-Org/x/dist.zip'])('trusts %s', (url) => {
+    expect(isTrustedArtifactUrl(url)).toBe(true)
+  })
+
+  it.each([
+    ['plain http', WHEEL_URL.replace('https', 'http')],
+    ['another host', 'https://example.com/dist.zip'],
+    ['another GitHub owner', 'https://github.com/someone/ComfyUI_frontend/dist.zip'],
+    ['an owner sharing the prefix', 'https://github.com/Comfy-Orgx/dist.zip'],
+    ['a path stepping out of the owner', 'https://github.com/Comfy-Org/../someone/dist.zip'],
+    ['an encoded step out', 'https://github.com/Comfy-Org/%2e%2e/someone/dist.zip'],
+    ['credentials', 'https://user:pw@files.pythonhosted.org/x.whl'],
+    ['not a URL', 'files.pythonhosted.org/x.whl']
+  ])('refuses %s', (_label, url) => {
+    expect(isTrustedArtifactUrl(url)).toBe(false)
+  })
+})
+
+describe('parseFrontendPin', () => {
+  it.each([WHEEL_URL, ZIP_URL])('accepts %s with a sha256', (url) => {
+    expect(parseFrontendPin({ url, sha256: SHA })).toEqual({ url, sha256: SHA })
+  })
+
+  it.each([
+    ['an unknown key', { url: WHEEL_URL, sha256: SHA, version: '1.53.6' }],
+    ['no sha256', { url: WHEEL_URL }],
+    ['an uppercase sha256', { url: WHEEL_URL, sha256: SHA.toUpperCase() }],
+    ['a short sha256', { url: WHEEL_URL, sha256: SHA.slice(1) }],
+    ['an untrusted host', { url: 'https://example.com/f.whl', sha256: SHA }],
+    ['an archive that is neither wheel nor zip', { url: `${ZIP_URL}.tar.gz`, sha256: SHA }],
+    ['a string', WHEEL_URL],
+    ['an array', [WHEEL_URL, SHA]],
+    ['null', null]
+  ])('refuses %s', (_label, value) => {
+    expect(parseFrontendPin(value)).toBeNull()
+  })
+})
+
+const applied = (...payloads: unknown[]): CampaignApplied[] =>
+  payloads.map((payload, i) => ({
+    key: `campaign_${i}`,
+    grant: { arg: `--flag-${i}`, minCoreVersion: '0.3.60' },
+    epoch: 1,
+    enrolledNow: false,
+    payload
+  }))
+
+describe('appliedFrontendPin', () => {
+  it('is null when no applied campaign pins a frontend', () => {
+    expect(appliedFrontendPin(applied({ grants: [] }, undefined))).toBeNull()
+  })
+
+  it('takes the pin of an applied campaign, and agrees with a second naming the same build', () => {
+    expect(appliedFrontendPin(applied({ frontend: pin() }))).toEqual(pin())
+    expect(appliedFrontendPin(applied({}, { frontend: pin() }, { frontend: pin() }))).toEqual(pin())
+  })
+
+  it('cancels on campaigns naming different builds, or on an invalid pin', () => {
+    const other = pin({ sha256: 'b'.repeat(64) })
+    expect(appliedFrontendPin(applied({ frontend: pin() }, { frontend: other }))).toBeNull()
+    expect(appliedFrontendPin(applied({ frontend: pin() }, { frontend: { url: 1 } }))).toBeNull()
+  })
+})
+
+describe('answeredFrontendPins', () => {
+  const answer = (grants: number, payload: unknown): CampaignAnswer => ({
+    enrol: false,
+    grants: Array.from({ length: grants }, () => ({
+      grant: { arg: '--enable-agent', minCoreVersion: '0.3.60' },
+      epoch: 1,
+      epochs: [1],
+      requiresArgs: []
+    })),
+    payload
+  })
+
+  it('names each valid pin once, from answers that grant something', () => {
+    const answers = new Map([
+      ['a', answer(1, { frontend: pin() })],
+      ['b', answer(1, { frontend: pin() })],
+      ['killed', answer(0, { frontend: pin({ sha256: 'c'.repeat(64) }) })],
+      ['invalid', answer(1, { frontend: { url: WHEEL_URL } })]
+    ])
+    expect(answeredFrontendPins(answers)).toEqual([pin()])
+  })
+})
+
+describe('the cache', () => {
+  let root = ''
+  let downloads: string[] = []
+
+  /** `layout` is where the archive puts `index.html`: a wheel's package dir, a dist zip's root. */
+  const deps = (layout: 'wheel' | 'dist' | 'none', bytes = ARCHIVE): FrontendCacheDeps => ({
+    download: async (url, dest) => {
+      downloads.push(url)
+      await fs.promises.writeFile(dest, bytes)
+    },
+    sha256File: async (file) =>
+      createHash('sha256')
+        .update(await fs.promises.readFile(file))
+        .digest('hex'),
+    extract: async (_archive, dest) => {
+      const dir = layout === 'wheel' ? path.join(dest, 'comfyui_frontend_package', 'static') : dest
+      await fs.promises.mkdir(dir, { recursive: true })
+      if (layout !== 'none') await fs.promises.writeFile(path.join(dir, 'index.html'), 'ok')
+    }
+  })
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-cache-'))
+    downloads = []
+    realDownload.mockClear()
+    _resetForTest()
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it.each(['wheel', 'dist'] as const)('caches a %s build under its sha256', async (layout) => {
+    const dir = await prefetchFrontend(pin(), root, deps(layout))
+    expect(dir).toBe(path.join(root, SHA))
+    expect(cachedFrontendDir(SHA, root)).toBe(dir)
+    expect(fs.readdirSync(root), 'no temp leftovers').toEqual([SHA])
+  })
+
+  it('refuses a download whose sha256 differs from the pin, leaving nothing behind', async () => {
+    expect(await prefetchFrontend(pin(), root, deps('wheel', 'tampered'))).toBeNull()
+    expect(cachedFrontendDir(SHA, root)).toBeNull()
+    expect(fs.readdirSync(root)).toEqual([])
+  })
+
+  it('refuses an archive with no index.html', async () => {
+    expect(await prefetchFrontend(pin(), root, deps('none'))).toBeNull()
+    expect(fs.readdirSync(root)).toEqual([])
+  })
+
+  it('shares one download between concurrent fetches, and none once cached', async () => {
+    const d = deps('wheel')
+    await Promise.all([prefetchFrontend(pin(), root, d), prefetchFrontend(pin(), root, d)])
+    await prefetchFrontend(pin(), root, d)
+    expect(downloads).toEqual([WHEEL_URL])
+  })
+
+  it('app start removes builds no pin names and interrupted fetches, and fetches the rest', async () => {
+    const stale = path.join(root, 'd'.repeat(64))
+    fs.mkdirSync(stale, { recursive: true })
+    fs.writeFileSync(path.join(stale, 'index.html'), 'old')
+    fs.mkdirSync(path.join(root, '.tmp-interrupted'))
+    await syncFrontendCache([pin()], root, deps('dist'))
+    expect(fs.readdirSync(root)).toEqual([SHA])
+    await syncFrontendCache([], root, deps('dist'))
+    expect(fs.readdirSync(root)).toEqual([])
+  })
+
+  describe('frontendRootArgs', () => {
+    const schema = (...names: string[]): ComfyArgsSchema =>
+      ({ args: [], knownFlags: new Set(names) }) as unknown as ComfyArgsSchema
+    const cache = (): string => {
+      const dir = path.join(root, SHA)
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'index.html'), 'ok')
+      return dir
+    }
+
+    it('passes the cached build', () => {
+      const dir = cache()
+      const out = frontendRootArgs(applied({ frontend: pin() }), [], schema('front-end-root'), root)
+      expect(out.args).toEqual(['--front-end-root', dir])
+      expect(out.record).toContain('served from')
+    })
+
+    it('passes nothing without a pin', () => {
+      cache()
+      expect(frontendRootArgs(applied({}), [], schema('front-end-root'), root)).toEqual({
+        args: [],
+        record: null
+      })
+    })
+
+    it.each([
+      ['--front-end-root', 'x'],
+      ['--front-end-root=x'],
+      ['--front-end-version', 'Comfy-Org/ComfyUI_frontend@latest'],
+      ['--front-end-version=Comfy-Org/ComfyUI_frontend@latest']
+    ])('lets the user own %s win', (...userArgs) => {
+      cache()
+      const out = frontendRootArgs(
+        applied({ frontend: pin() }),
+        userArgs,
+        schema('front-end-root'),
+        root
+      )
+      expect(out.args).toEqual([])
+      expect(out.record).toContain('your own frontend arg wins')
+    })
+
+    it('passes nothing to a ComfyUI without the flag', () => {
+      cache()
+      const out = frontendRootArgs(applied({ frontend: pin() }), [], schema(), root)
+      expect(out.args).toEqual([])
+      expect(out.record).toContain('not supported')
+    })
+
+    it('serves the bundled frontend while the build downloads, and starts the download', async () => {
+      const out = frontendRootArgs(applied({ frontend: pin() }), [], schema('front-end-root'), root)
+      expect(out.args).toEqual([])
+      expect(out.record).toContain('pending')
+      await vi.waitFor(() => expect(realDownload).toHaveBeenCalledOnce())
+      expect(realDownload.mock.calls[0]).toContain(WHEEL_URL)
+    })
+  })
+})
