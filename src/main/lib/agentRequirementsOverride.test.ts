@@ -22,7 +22,8 @@ import type { InstallationRecord } from '../installations'
 const pins = (entries: Record<string, OverridePin>): OverridePins =>
   new Map(Object.entries(entries))
 
-const WHEEL = 'https://example.com/comfy_agent-0.0.1.dev120-py3-none-manylinux2014_x86_64.whl'
+const WHEEL =
+  'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/comfy_agent-0.0.1.dev120-py3-none-manylinux2014_x86_64.whl'
 const LINUX = 'sys_platform == "linux" and platform_machine == "x86_64"'
 const WIN = 'sys_platform == "win32"'
 
@@ -125,16 +126,20 @@ describe('parseAgentRequirementsOverride', () => {
   it('refuses a URL entry that is not https or could smuggle anything into the file', () => {
     for (const entry of [
       'http://example.com/a.whl',
-      'https://example.com/comfy_agent-0.2.3.tar.gz',
-      'https://example.com/a.whl?X-Amz-Signature=x',
-      'https://example.com/a.whl#sha256=ab',
-      'https://example.com/a,b.whl',
+      'https://example.com/comfy_agent-0.2.3-py3-none-any.whl',
+      'https://github.com/someone-else/comfy_agent-0.2.3-py3-none-any.whl',
+      'https://github.com/Comfy-Org/../someone-else/a.whl',
+      'https://github.com/Comfy-Org/%2e%2e/someone-else/a.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/comfy_agent-0.2.3.tar.gz',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl?X-Amz-Signature=x',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl#sha256=ab',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a,b.whl',
       `${WHEEL} ; platform_machine in "x86_64,AMD64"`,
       'file:///tmp/a.whl',
-      'https://example.com/${TOKEN}.whl',
-      'https://example.com/a.whl\\',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/${TOKEN}.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl\\',
       `${WHEEL} ; sys_platform == "win32" \\`,
-      'https://example.com/a b.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a b.whl',
       `${WHEEL} ; ${WIN} ; ${LINUX}`,
       `${WHEEL} ; ${WIN} # c`,
       `${WHEEL} ; ${WIN}\n-r extra.txt`,
