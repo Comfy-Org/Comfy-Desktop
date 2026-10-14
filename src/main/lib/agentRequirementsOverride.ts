@@ -11,12 +11,12 @@ const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
-/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker. */
-const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/[^\s;]+\s*(?:;([^#]*))?(?:#.*)?$/
-/** An override's URL entry: https, no whitespace, `$` (pip and uv expand `${VAR}`) or `\` (continues a line). */
-const OVERRIDE_URL = /^https:\/\/[^\s;$\\]+$/
-/** Marker expressions only: no `#`, `;`, `$`, `\`, newline or tab. */
-const OVERRIDE_MARKER = /^[A-Za-z0-9_.,'" =<>!~()-]+$/
+/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker (uv needs the space before `;`). */
+const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s+;([^#]*))?(?:\s#.*)?$/
+/** An override's URL entry: https, printable ASCII without `$` (pip and uv expand `${VAR}`), `;` or `\`. */
+const OVERRIDE_URL = /^https:\/\/[\x21-\x23\x25-\x3a\x3c-\x5b\x5d-\x7e]+$/
+/** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
+const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 export const START_FAILURES_TO_REVERT = 2
@@ -77,7 +77,7 @@ function normalizeOverrideUrl(entry: unknown): string | null {
   const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
   if (rest.length > 0 || !OVERRIDE_URL.test(url!)) return null
   if (marker === undefined) return url!
-  return OVERRIDE_MARKER.test(marker) ? `${url} ; ${marker}` : null
+  return MARKER.test(marker) ? `${url} ; ${marker}` : null
 }
 
 /** The requirement lines a pin puts in place of the package's own. */
@@ -135,10 +135,12 @@ export function effectiveAgentRequirements(
       continue
     }
     const url = text.match(URL_LINE)
+    const marker = url?.[1]?.trim()
     const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
     if (
       (!line && !url) ||
+      (marker !== undefined && !MARKER.test(marker)) ||
       /\\\s*$/.test(text) ||
       (pinned !== undefined && !EXACT_VERSION.test(pinned)) ||
       (seen.has(normalized!) && !(url && seen.get(normalized!)))
@@ -147,13 +149,9 @@ export function effectiveAgentRequirements(
     }
     // Only a pinned line has a version to be newer than; a URL pin has none, so it can't go over one.
     // A bare line takes any pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (
-      pinned !== undefined &&
-      (typeof pin !== 'string' || compareVersions(pin, pinned) <= 0)
-    ) {
+    if (pinned !== undefined && (typeof pin !== 'string' || compareVersions(pin, pinned) <= 0)) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    const marker = url?.[1]?.trim()
     // An exact pin keeps each URL line's marker, so it lands only where core's file would install.
     if (url && typeof pin === 'string') out.push(`${name}==${pin}${marker ? ` ; ${marker}` : ''}`)
     else if (!seen.has(normalized!)) out.push(...pinLines(name!, pin))

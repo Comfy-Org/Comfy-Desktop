@@ -126,6 +126,9 @@ describe('parseAgentRequirementsOverride', () => {
       `${WHEEL} ; ${WIN} # c`,
       `${WHEEL} ; ${WIN}\n-r extra.txt`,
       `${WHEEL}\n-rextra.txt`,
+      `${WHEEL}\x85--index-url=https://evil`,
+      `${WHEEL} ; sys_platform == "linux" --no-deps`,
+      `${WHEEL} ; sys_platform == "linux" -C k=v`,
       `${WHEEL} ; sys_platform\t== "win32"`,
       `${WHEEL} ;`,
       3
@@ -219,14 +222,20 @@ describe('effectiveAgentRequirements', () => {
   })
 
   it("pins each of core's per-platform URL lines to an exact version, keeping its marker", () => {
-    const core = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}#sha256=ab;${WIN} # w\ncomfy-cli==1.21.0\n`
+    const core = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}#sha256=ab ; ${WIN} # w\ncomfy-cli==1.21.0\n`
     expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.0.1' }))).toEqual({
       kind: 'text',
       text: `comfy-agent==0.0.1 ; ${LINUX}\ncomfy-agent==0.0.1 ; ${WIN}\ncomfy-cli==1.21.0\n`
     })
-    expect(
-      effectiveAgentRequirements(`comfy-agent @ ${WHEEL}\n`, pins({ 'comfy-agent': '0.0.1' }))
-    ).toEqual({ kind: 'text', text: 'comfy-agent==0.0.1\n' })
+    // uv reads `url;marker` with no space as one URL, with no marker.
+    for (const core of [
+      `comfy-agent @ ${WHEEL}\n`,
+      `comfy-agent @ ${WHEEL};sys_platform=="win32"\n`
+    ])
+      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.0.1' }))).toEqual({
+        kind: 'text',
+        text: 'comfy-agent==0.0.1\n'
+      })
   })
 
   it("replaces core's URL or bare lines with the override's URL lines, once", () => {
@@ -247,7 +256,7 @@ describe('effectiveAgentRequirements', () => {
 
   it('refuses a line core continues onto the next', () => {
     for (const core of [
-      `comfy-agent @ ${WHEEL} \\\n    --hash=sha256:ab\n`,
+      `comfy-agent @ ${WHEEL}\\\n    --hash=sha256:ab\n`,
       `comfy-agent @ ${WHEEL} ; sys_platform == "linux" and \\ \n    platform_machine == "x86_64"\n`
     ])
       expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
@@ -267,12 +276,16 @@ describe('effectiveAgentRequirements', () => {
       })
   })
 
-  it('refuses a URL line core points anywhere but https', () => {
-    const core = 'comfy-agent @ file:///opt/comfy_agent.whl\n'
-    expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
-      kind: 'refused',
-      reason: 'unsupported_line'
-    })
+  it('refuses a URL line it cannot carry over: not https, extras, or options after the marker', () => {
+    for (const core of [
+      'comfy-agent @ file:///opt/comfy_agent.whl\n',
+      `comfy-agent[extra] @ ${WHEEL}\n`,
+      `comfy-agent @ ${WHEEL} ; ${WIN} --hash=sha256:ab\n`
+    ])
+      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })), core).toEqual({
+        kind: 'refused',
+        reason: 'unsupported_line'
+      })
   })
 
   it('never adds a package core does not list', () => {
