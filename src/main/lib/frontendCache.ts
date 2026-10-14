@@ -197,8 +197,10 @@ export async function syncFrontendCache(
         .filter((name) => !keep.has(name))
         .map(async (name) => {
           const entry = path.join(root, name)
-          if ((await fs.promises.stat(entry)).mtimeMs > cutoff) return
-          await fs.promises.rm(entry, { recursive: true, force: true })
+          // Per entry, so one that vanished or can't be removed never costs this boot's fetches.
+          const stat = await fs.promises.stat(entry).catch(() => null)
+          if (stat === null || stat.mtimeMs > cutoff) return
+          await fs.promises.rm(entry, { recursive: true, force: true }).catch(() => {})
         })
     )
     await Promise.all(pins.map((pin) => prefetchFrontend(pin, root, deps)))

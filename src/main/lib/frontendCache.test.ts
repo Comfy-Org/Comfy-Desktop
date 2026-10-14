@@ -227,6 +227,15 @@ describe('the cache', () => {
     expect(fs.readdirSync(root)).toEqual([])
   })
 
+  it.skipIf(process.platform === 'win32')(
+    'app start still fetches when an entry cannot be read',
+    async () => {
+      fs.symlinkSync(path.join(root, 'missing'), path.join(root, 'dangling'))
+      await syncFrontendCache([pin()], root, deps('dist'))
+      expect(cachedFrontendDir(SHA, root)).toBe(path.join(root, SHA))
+    }
+  )
+
   it('app start keeps an unnamed build used this week, and a fetch still running', async () => {
     const recent = 'e'.repeat(64)
     fs.mkdirSync(path.join(root, recent))
