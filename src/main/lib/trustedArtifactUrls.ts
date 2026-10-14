@@ -9,8 +9,8 @@
 const PYPI_FILES = 'https://files.pythonhosted.org/'
 const GITHUB_RELEASE_ASSET = /^https:\/\/github\.com\/Comfy-Org\/[^/]+\/releases\/download\//
 
-/** PyPI hosts every project's files on one host but accepts a file only from the project it is
- *  named for, so `pypiProject` narrows that host to its own files. */
+/** PyPI hosts every project's files on one host but accepts a wheel only from the project it is
+ *  named for, so `pypiProject` narrows that host to its own wheels. */
 export function isTrustedArtifactUrl(url: string, pypiProject: string): boolean {
   let parsed: URL
   try {
@@ -21,7 +21,8 @@ export function isTrustedArtifactUrl(url: string, pypiProject: string): boolean 
   // Matched on the normalized form, so `..` segments, host case and userinfo can't step outside.
   if (GITHUB_RELEASE_ASSET.test(parsed.href)) return true
   const file = parsed.pathname.slice(parsed.pathname.lastIndexOf('/') + 1)
-  return (
-    parsed.href.startsWith(PYPI_FILES) && file.startsWith(`${pypiProject.replaceAll('-', '_')}-`)
-  )
+  // Wheels only: a wheel's first `-` field is its exact project name, while an old source archive's
+  // name can run on (`<project>-extra-1.0.zip`) into another project's.
+  const wheelOf = file.endsWith('.whl') ? file.split('-')[0] : undefined
+  return parsed.href.startsWith(PYPI_FILES) && wheelOf === pypiProject.replaceAll('-', '_')
 }

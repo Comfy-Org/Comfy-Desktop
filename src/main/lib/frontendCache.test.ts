@@ -64,7 +64,11 @@ describe('isTrustedArtifactUrl', () => {
     ['credentials', 'https://user:pw@files.pythonhosted.org/x.whl'],
     ['not a URL', 'files.pythonhosted.org/x.whl'],
     ["another PyPI project's file", WHEEL_URL.replace('comfyui_frontend_package', 'other_package')],
-    ['a PyPI project sharing the prefix', WHEEL_URL.replace('package-', 'package_extra-')]
+    ['a PyPI project sharing the prefix', WHEEL_URL.replace('package-', 'package_extra-')],
+    [
+      "another project's old source zip",
+      'https://files.pythonhosted.org/packages/a/comfyui_frontend_package-extra-1.0.zip'
+    ]
   ])('refuses %s', (_label, url) => {
     expect(isTrustedArtifactUrl(url, 'comfyui-frontend-package')).toBe(false)
   })
