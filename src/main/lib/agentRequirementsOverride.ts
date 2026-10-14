@@ -11,18 +11,20 @@ const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
-/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker (uv needs the space before `;`). */
-const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s+;([^#]*))?\s*(?:\s#.*)?$/
 /**
- * An override's URL entry: a wheel under Comfy-Org on GitHub (so nothing builds at install), with an optional
- * sha256. Printable ASCII without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `,` (the signature's
- * separator), `%` or `..` (either could leave Comfy-Org once the URL is normalised).
+ * An override's URL entry: a wheel under Comfy-Org on GitHub, so nothing builds at install. Printable ASCII
+ * without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..` (either could leave Comfy-Org once
+ * the URL is normalised).
  */
 const OVERRIDE_URL =
-  /^https:\/\/github\.com\/Comfy-Org\/(?!.*\.\.)[\x21\x22\x26-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]+\.whl(?:#sha256=[0-9a-f]{64})?$/
-/** Marker expressions only: no `-` (so no option), `,`, `#`, `;`, `$`, `\`, newline or tab. */
-const MARKER = /^[A-Za-z0-9_.'" =<>!~()]+$/
+  /^https:\/\/github\.com\/Comfy-Org\/(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+/** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
+const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
+/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker. uv reads `url;marker` as one URL. */
+const URL_LINE = new RegExp(
+  LEADING_NAME.source + String.raw`\s*@\s*https:\/\/[^\s;]+(?:\s+;([^#]*))?\s*(?:\s#.*)?$`
+)
 
 export const START_FAILURES_TO_REVERT = 2
 
@@ -140,7 +142,7 @@ export function effectiveAgentRequirements(
       continue
     }
     const url = text.match(URL_LINE)
-    const marker = url?.[1]?.trim()
+    const marker = url?.[2]?.trim()
     const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
     if (
@@ -153,7 +155,7 @@ export function effectiveAgentRequirements(
       return { kind: 'refused', reason: 'unsupported_line' }
     }
     // Only a pinned line has a version to be newer than; a URL pin has none, so it can't go over one.
-    // A bare line takes any pin, older ones included: core's file can't downgrade it, the campaign can.
+    // A bare or URL line takes any pin, older ones included, so over these the campaign decides the version.
     if (pinned !== undefined && (typeof pin !== 'string' || compareVersions(pin, pinned) <= 0)) {
       return { kind: 'refused', reason: 'not_newer' }
     }

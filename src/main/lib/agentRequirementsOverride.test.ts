@@ -95,14 +95,6 @@ describe('parseAgentRequirementsOverride', () => {
     }
   })
 
-  it('accepts a wheel URL with a sha256 fragment', () => {
-    const url = `${WHEEL}#sha256=${'ab'.repeat(32)}`
-    expect(parseAgentRequirementsOverride({ 'comfy-agent': [url] })).toEqual({
-      kind: 'pins',
-      pins: pins({ 'comfy-agent': [url] })
-    })
-  })
-
   it('reads URL entries, with or without a marker, spaced the one way', () => {
     const raw = { 'comfy-agent': [`${WHEEL};${LINUX}`, `  ${WHEEL}  `] }
     expect(parseAgentRequirementsOverride(raw)).toEqual({
@@ -114,7 +106,7 @@ describe('parseAgentRequirementsOverride', () => {
   it('accepts the marker grammar: quotes, comparisons, parentheses, membership', () => {
     for (const marker of [
       "(sys_platform == 'darwin' or os_name != \"nt\") and python_version >= '3.10'",
-      'platform_machine in "x86_64 AMD64"',
+      'platform_machine in "x86_64,AMD64"',
       'python_full_version ~= "3.12.0"'
     ])
       expect(
@@ -131,20 +123,19 @@ describe('parseAgentRequirementsOverride', () => {
       'https://github.com/Comfy-Org/../someone-else/a.whl',
       'https://github.com/Comfy-Org/%2e%2e/someone-else/a.whl',
       'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/comfy_agent-0.2.3.tar.gz',
-      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl?X-Amz-Signature=x',
+      'https://github.com/Comfy-Org/comfy-cli/archive/refs/heads/main.tar.gz?file=a.whl',
       'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl#sha256=ab',
-      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a,b.whl',
-      `${WHEEL} ; platform_machine in "x86_64,AMD64"`,
       'file:///tmp/a.whl',
       'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/${TOKEN}.whl',
-      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl\\',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a\\b.whl',
       `${WHEEL} ; sys_platform == "win32" \\`,
       'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a b.whl',
       `${WHEEL} ; ${WIN} ; ${LINUX}`,
       `${WHEEL} ; ${WIN} # c`,
       `${WHEEL} ; ${WIN}\n-r extra.txt`,
-      `${WHEEL}\n-rextra.txt`,
-      `${WHEEL}\x85--index-url=https://evil`,
+      `${WHEEL}\n-rx.whl`,
+      `${WHEEL}\r--index-url=https://evil/x.whl`,
+      `${WHEEL}\x85--index-url=https://evil/x.whl`,
       `${WHEEL} ; sys_platform == "linux" --no-deps`,
       `${WHEEL} ; sys_platform == "linux" -C k=v`,
       `${WHEEL} ; sys_platform\t== "win32"`,
@@ -245,15 +236,9 @@ describe('effectiveAgentRequirements', () => {
       kind: 'text',
       text: `comfy-agent==0.0.1 ; ${LINUX}\ncomfy-agent==0.0.1 ; ${WIN}\ncomfy-cli==1.21.0\n`
     })
-    // uv reads `url;marker` with no space as one URL, with no marker.
-    for (const core of [
-      `comfy-agent @ ${WHEEL}\n`,
-      `comfy-agent @ ${WHEEL};sys_platform=="win32"\n`
-    ])
-      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.0.1' }))).toEqual({
-        kind: 'text',
-        text: 'comfy-agent==0.0.1\n'
-      })
+    expect(
+      effectiveAgentRequirements(`comfy-agent @ ${WHEEL}\n`, pins({ 'comfy-agent': '0.0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==0.0.1\n' })
   })
 
   it("replaces core's URL or bare lines with the override's URL lines, once", () => {
@@ -299,7 +284,9 @@ describe('effectiveAgentRequirements', () => {
     for (const core of [
       'comfy-agent @ file:///opt/comfy_agent.whl\n',
       `comfy-agent[extra] @ ${WHEEL}\n`,
-      `comfy-agent @ ${WHEEL} ; ${WIN} --hash=sha256:ab\n`
+      `comfy-agent @ ${WHEEL} ; ${WIN} --hash=sha256:ab\n`,
+      // uv reads `url;marker` as one URL, which it can't install anywhere.
+      `comfy-agent @ ${WHEEL};sys_platform=="win32"\n`
     ])
       expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })), core).toEqual({
         kind: 'refused',
