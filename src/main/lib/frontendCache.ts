@@ -34,10 +34,7 @@ const TEMP_PREFIX = '.tmp-'
  *  they are not always the same build (v1.53.6's GitHub zip was a dev-Firebase build). */
 const WHEEL_STATIC = path.join('comfyui_frontend_package', 'static')
 
-/** PyPI hosts every project's files on one host, but only accepts a file named for its project,
- *  so on that host only the frontend package's own wheel is accepted. */
-const PYPI_HOST = 'https://files.pythonhosted.org/'
-const PYPI_WHEEL = /\/comfyui_frontend_package-[^/]+-py3-none-any\.whl$/
+const FRONTEND_PACKAGE = 'comfyui-frontend-package'
 
 export function frontendCacheRoot(): string {
   return path.join(cacheDir(), 'frontend-cache')
@@ -50,10 +47,9 @@ export function parseFrontendPin(value: unknown): FrontendPin | null {
   if (Object.keys(rest).length > 0) return null
   if (typeof url !== 'string' || typeof sha256 !== 'string') return null
   if (!/^[0-9a-f]{64}$/.test(sha256)) return null
-  if (!isTrustedArtifactUrl(url)) return null
+  if (!isTrustedArtifactUrl(url, FRONTEND_PACKAGE)) return null
   const { href, pathname } = new URL(url)
   if (!/\.(whl|zip)$/.test(pathname)) return null
-  if (href.startsWith(PYPI_HOST) && !PYPI_WHEEL.test(pathname)) return null
   return { url: href, sha256 }
 }
 
@@ -199,25 +195,32 @@ export async function syncFrontendCache(
   root = frontendCacheRoot(),
   deps: FrontendCacheDeps = defaultDeps
 ): Promise<void> {
-  try {
-    const keep = new Set(pins.map((pin) => pin.sha256))
-    const entries = await fs.promises.readdir(root).catch(() => [] as string[])
-    const cutoff = Date.now() - UNUSED_FOR_MS
-    await Promise.all(
-      entries
-        .filter((name) => !keep.has(name))
-        .map(async (name) => {
-          const entry = path.join(root, name)
-          // Per entry, so one that vanished or can't be removed never costs this boot's fetches.
-          const stat = await fs.promises.stat(entry).catch(() => null)
-          if (stat === null || stat.mtimeMs > cutoff) return
-          await fs.promises.rm(entry, { recursive: true, force: true }).catch(() => {})
-        })
-    )
-    await Promise.all(pins.map((pin) => prefetchFrontend(pin, root, deps)))
-  } catch (err) {
-    console.log(`[core-campaign] frontend cache upkeep failed: ${String(err)}`)
-  }
+  const keep = new Set(pins.map((pin) => pin.sha256))
+  const entries = await fs.promises.readdir(root).catch(() => [] as string[])
+  const cutoff = Date.now() - UNUSED_FOR_MS
+  await Promise.all(
+    entries
+      .filter((name) => !keep.has(name))
+      .map(async (name) => {
+        const entry = path.join(root, name)
+        // Per entry, so one that vanished or can't be removed never costs this boot's fetches.
+        const stat = await fs.promises.stat(entry).catch(() => null)
+        if (stat === null || stat.mtimeMs > cutoff) return
+        // Out of the way first, so a removal cut short never leaves a partial build under its
+        // sha256 for a later pin to serve. The temp name keeps the old mtime: the next boot
+        // finishes the job.
+        const trash = path.join(root, `${TEMP_PREFIX}rm-${name}-${process.pid}-${Date.now()}`)
+        if (
+          await fs.promises.rename(entry, trash).then(
+            () => true,
+            () => false
+          )
+        ) {
+          await fs.promises.rm(trash, { recursive: true, force: true }).catch(() => {})
+        }
+      })
+  )
+  await Promise.all(pins.map((pin) => prefetchFrontend(pin, root, deps)))
 }
 
 /**

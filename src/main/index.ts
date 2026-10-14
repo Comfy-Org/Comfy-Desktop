@@ -1550,7 +1550,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
             : []
         )
       )
-      .catch((err: unknown) => console.warn('[core-campaign] frontend cache upkeep skipped:', err))
+      .catch((err: unknown) =>
+        console.warn('[core-campaign] campaign flags or frontend cache upkeep failed:', err)
+      )
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 

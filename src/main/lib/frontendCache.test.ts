@@ -45,7 +45,7 @@ describe('isTrustedArtifactUrl', () => {
   it.each([WHEEL_URL, ZIP_URL, 'https://GITHUB.com/Comfy-Org/x/releases/download/v1/dist.zip'])(
     'trusts %s',
     (url) => {
-      expect(isTrustedArtifactUrl(url)).toBe(true)
+      expect(isTrustedArtifactUrl(url, 'comfyui-frontend-package')).toBe(true)
     }
   )
 
@@ -62,9 +62,11 @@ describe('isTrustedArtifactUrl', () => {
     ['a path stepping out of the owner', 'https://github.com/Comfy-Org/../someone/dist.zip'],
     ['an encoded step out', 'https://github.com/Comfy-Org/%2e%2e/someone/dist.zip'],
     ['credentials', 'https://user:pw@files.pythonhosted.org/x.whl'],
-    ['not a URL', 'files.pythonhosted.org/x.whl']
+    ['not a URL', 'files.pythonhosted.org/x.whl'],
+    ["another PyPI project's file", WHEEL_URL.replace('comfyui_frontend_package', 'other_package')],
+    ['a PyPI project sharing the prefix', WHEEL_URL.replace('package-', 'package_extra-')]
   ])('refuses %s', (_label, url) => {
-    expect(isTrustedArtifactUrl(url)).toBe(false)
+    expect(isTrustedArtifactUrl(url, 'comfyui-frontend-package')).toBe(false)
   })
 })
 
@@ -249,6 +251,20 @@ describe('the cache', () => {
       expect(cachedFrontendDir(SHA, root)).toBe(path.join(root, SHA))
     }
   )
+
+  it('a removal cut short leaves nothing under the sha256 for a later pin to serve', async () => {
+    const stale = 'd'.repeat(64)
+    fs.mkdirSync(path.join(root, stale))
+    fs.writeFileSync(path.join(root, stale, 'index.html'), 'old')
+    age(stale, 8)
+    const rm = vi.spyOn(fs.promises, 'rm').mockRejectedValue(new Error('interrupted'))
+    try {
+      await syncFrontendCache([], root, deps('dist'))
+    } finally {
+      rm.mockRestore()
+    }
+    expect(cachedFrontendDir(stale, root)).toBeNull()
+  })
 
   it('app start keeps an unnamed build used this week, and a fetch still running', async () => {
     const recent = 'e'.repeat(64)
