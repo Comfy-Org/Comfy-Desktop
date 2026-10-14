@@ -73,6 +73,12 @@ describe('parseFrontendPin', () => {
     expect(parseFrontendPin({ url, sha256: SHA })).toEqual({ url, sha256: SHA })
   })
 
+  it('returns the normalized URL, which the downloader accepts', () => {
+    expect(parseFrontendPin({ url: ZIP_URL.replace('https', 'HTTPS'), sha256: SHA })?.url).toBe(
+      ZIP_URL
+    )
+  })
+
   it.each([
     ['an unknown key', { url: WHEEL_URL, sha256: SHA, version: '1.53.6' }],
     ['no sha256', { url: WHEEL_URL }],

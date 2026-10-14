@@ -54,7 +54,7 @@ export function parseFrontendPin(value: unknown): FrontendPin | null {
   const { href, pathname } = new URL(url)
   if (!/\.(whl|zip)$/.test(pathname)) return null
   if (href.startsWith(PYPI_HOST) && !PYPI_WHEEL.test(pathname)) return null
-  return { url, sha256 }
+  return { url: href, sha256 }
 }
 
 function payloadPin(payload: unknown): unknown {
