@@ -11,6 +11,12 @@ const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
+/** `name @ https://… ; marker`, the per-platform wheel form. */
+const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s*;[^#]*)?(?:\s#.*)?$/
+/** An override's URL entry: https, no whitespace, `$` (pip and uv expand `${VAR}`) or `\` (continues a line). */
+const OVERRIDE_URL = /^https:\/\/[^\s;$\\]+$/
+/** Marker expressions only: no `#`, `;`, `$`, `\`, newline or tab. */
+const OVERRIDE_MARKER = /^[A-Za-z0-9_.'" =<>!~()-]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 export const START_FAILURES_TO_REVERT = 2
@@ -19,13 +25,16 @@ export type OverrideRefusal =
   | 'not_object'
   | 'unknown_package'
   | 'bad_version'
+  | 'bad_url'
   | 'not_in_core_file'
   | 'unsupported_line'
   | 'not_newer'
   | 'check_failed'
   | 'core_first'
 
-export type OverridePins = ReadonlyMap<string, string>
+/** An exact version, or the URL entries (`https://…[ ; marker]`) that replace the package's lines. */
+export type OverridePin = string | readonly string[]
+export type OverridePins = ReadonlyMap<string, OverridePin>
 
 export type ParsedOverride =
   | { kind: 'none' }
@@ -43,18 +52,40 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     return { kind: 'refused', reason: 'not_object' }
   const entries = Object.entries(raw)
   if (entries.length === 0) return { kind: 'none' }
-  const pins = new Map<string, string>()
-  for (const [name, version] of entries) {
+  const pins = new Map<string, OverridePin>()
+  for (const [name, pin] of entries) {
     const normalized = normalizePackageName(name)
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
-    if (typeof version !== 'string' || !EXACT_VERSION.test(version)) {
+    if (Array.isArray(pin)) {
+      if (pin.length === 0 || !pin.every(isOverrideUrl))
+        return { kind: 'refused', reason: 'bad_url' }
+    } else if (typeof pin !== 'string' || !EXACT_VERSION.test(pin)) {
       return { kind: 'refused', reason: 'bad_version' }
     }
-    pins.set(normalized, version)
+    pins.set(normalized, pin as OverridePin)
   }
   return { kind: 'pins', pins }
+}
+
+function isOverrideUrl(entry: unknown): boolean {
+  if (typeof entry !== 'string') return false
+  const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
+  return (
+    rest.length === 0 &&
+    OVERRIDE_URL.test(url!) &&
+    (marker === undefined || OVERRIDE_MARKER.test(marker))
+  )
+}
+
+/** The requirement lines a pin puts in place of the package's own. */
+function pinLines(name: string, pin: OverridePin): string[] {
+  if (typeof pin === 'string') return [`${name}==${pin}`]
+  return pin.map((entry) => {
+    const [url, marker] = entry.split(';').map((part) => part.trim())
+    return marker ? `${name} @ ${url} ; ${marker}` : `${name} @ ${url}`
+  })
 }
 
 const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
@@ -85,7 +116,7 @@ export function compareVersions(a: string, b: string): number {
 
 export function overrideSignature(pins: OverridePins): string {
   return [...pins]
-    .map(([name, version]) => `${name}==${version}`)
+    .flatMap(([name, pin]) => pinLines(name, pin))
     .sort()
     .join(',')
 }
@@ -94,28 +125,36 @@ export function effectiveAgentRequirements(
   coreText: string,
   pins: OverridePins
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
-  const seen = new Set<string>()
-  const lines = coreText.split(/\r?\n/)
-  for (let i = 0; i < lines.length; i++) {
-    const name = lines[i]!.match(LEADING_NAME)?.[1]
-    if (!name) continue
-    const normalized = normalizePackageName(name)
-    const version = pins.get(normalized)
-    if (version === undefined) continue
-    const line = lines[i]!.match(REQUIREMENT_LINE)
+  // Per package: whether its lines so far are URL lines, which may repeat (one per platform).
+  const seen = new Map<string, boolean>()
+  const out: string[] = []
+  for (const text of coreText.split(/\r?\n/)) {
+    const name = text.match(LEADING_NAME)?.[1]
+    const normalized = name && normalizePackageName(name)
+    const pin = normalized ? pins.get(normalized) : undefined
+    if (pin === undefined) {
+      out.push(text)
+      continue
+    }
+    const isUrl = URL_LINE.test(text)
+    const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
-    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || seen.has(normalized)) {
+    if (
+      (!line && !isUrl) ||
+      (pinned !== undefined && !EXACT_VERSION.test(pinned)) ||
+      (seen.has(normalized!) && !(isUrl && seen.get(normalized!)))
+    ) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (pinned !== undefined && compareVersions(version, pinned) <= 0) {
+    // A bare or URL line takes any pin, older ones included: core's file can't downgrade it, the campaign can.
+    if (typeof pin === 'string' && pinned !== undefined && compareVersions(pin, pinned) <= 0) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    seen.add(normalized)
-    lines[i] = `${name}==${version}`
+    if (!seen.has(normalized!)) out.push(...pinLines(name!, pin))
+    seen.set(normalized!, isUrl)
   }
   if (seen.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
-  return { kind: 'text', text: lines.join('\n') }
+  return { kind: 'text', text: out.join('\n') }
 }
 
 function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
