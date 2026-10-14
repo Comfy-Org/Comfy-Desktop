@@ -20,7 +20,7 @@ import { isTrustedArtifactUrl } from './trustedArtifactUrls'
 import type { ComfyArgsSchema } from './comfy-args'
 import type { CampaignAnswer, CampaignApplied } from './coreBetaCampaigns'
 
-export const FRONTEND_PAYLOAD_FIELD = 'frontend'
+const FRONTEND_PAYLOAD_FIELD = 'frontend'
 
 export interface FrontendPin {
   readonly url: string
@@ -30,8 +30,14 @@ export interface FrontendPin {
 /** Temp entries are dot-prefixed so no sha256 lookup can ever match a half-built one. */
 const TEMP_PREFIX = '.tmp-'
 
-/** Where `index.html` sits in a wheel; a `dist` zip has it at the root. */
+/** Where `index.html` sits in a wheel; a `dist` zip has it at the root. Both are accepted because
+ *  they are not always the same build (v1.53.6's GitHub zip was a dev-Firebase build). */
 const WHEEL_STATIC = path.join('comfyui_frontend_package', 'static')
+
+/** PyPI hosts every project's files on one host, but only accepts a file named for its project,
+ *  so on that host only the frontend package's own wheel is accepted. */
+const PYPI_HOST = 'https://files.pythonhosted.org/'
+const PYPI_WHEEL = /\/comfyui_frontend_package-[^/]+-py3-none-any\.whl$/
 
 export function frontendCacheRoot(): string {
   return path.join(cacheDir(), 'frontend-cache')
@@ -44,7 +50,10 @@ export function parseFrontendPin(value: unknown): FrontendPin | null {
   if (Object.keys(rest).length > 0) return null
   if (typeof url !== 'string' || typeof sha256 !== 'string') return null
   if (!/^[0-9a-f]{64}$/.test(sha256)) return null
-  if (!isTrustedArtifactUrl(url) || !/\.(whl|zip)$/.test(new URL(url).pathname)) return null
+  if (!isTrustedArtifactUrl(url)) return null
+  const { href, pathname } = new URL(url)
+  if (!/\.(whl|zip)$/.test(pathname)) return null
+  if (href.startsWith(PYPI_HOST) && !PYPI_WHEEL.test(pathname)) return null
   return { url, sha256 }
 }
 

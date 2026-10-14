@@ -72,6 +72,14 @@ describe('parseFrontendPin', () => {
     ['a short sha256', { url: WHEEL_URL, sha256: SHA.slice(1) }],
     ['an untrusted host', { url: 'https://example.com/f.whl', sha256: SHA }],
     ['an archive that is neither wheel nor zip', { url: `${ZIP_URL}.tar.gz`, sha256: SHA }],
+    [
+      "another PyPI project's wheel",
+      { url: WHEEL_URL.replace('comfyui_frontend_package', 'evil_package'), sha256: SHA }
+    ],
+    [
+      'a zip on PyPI',
+      { url: 'https://files.pythonhosted.org/packages/a/comfyui_frontend_package.zip', sha256: SHA }
+    ],
     ['a string', WHEEL_URL],
     ['an array', [WHEEL_URL, SHA]],
     ['null', null]

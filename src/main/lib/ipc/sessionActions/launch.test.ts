@@ -1645,7 +1645,10 @@ describe('core beta report placement', () => {
         'hold',
         {
           ...(agentAnswer('hold') as { payload: object }).payload,
-          frontend: { url: 'https://files.pythonhosted.org/packages/x/f.whl', sha256 }
+          frontend: {
+            url: 'https://files.pythonhosted.org/packages/x/comfyui_frontend_package-1.53.6-py3-none-any.whl',
+            sha256
+          }
         },
         Date.now() - 5_000
       )
