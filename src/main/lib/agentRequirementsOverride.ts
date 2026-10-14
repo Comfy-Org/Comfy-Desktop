@@ -12,11 +12,15 @@ const EXACT_VERSION =
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
 /** `name @ https://… ; marker`, the per-platform wheel form; captures the marker (uv needs the space before `;`). */
-const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s+;([^#]*))?(?:\s#.*)?$/
-/** An override's URL entry: https, printable ASCII without `$` (pip and uv expand `${VAR}`), `;` or `\`. */
-const OVERRIDE_URL = /^https:\/\/[\x21-\x23\x25-\x3a\x3c-\x5b\x5d-\x7e]+$/
-/** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
-const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
+const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s+;([^#]*))?\s*(?:\s#.*)?$/
+/**
+ * An override's URL entry: an https wheel (so nothing builds at install), with an optional sha256. Printable
+ * ASCII without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#` or `,` (the signature's separator).
+ */
+const OVERRIDE_URL =
+  /^https:\/\/[\x21\x22\x25-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]+\.whl(?:#sha256=[0-9a-f]{64})?$/
+/** Marker expressions only: no `-` (so no option), `,`, `#`, `;`, `$`, `\`, newline or tab. */
+const MARKER = /^[A-Za-z0-9_.'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 export const START_FAILURES_TO_REVERT = 2

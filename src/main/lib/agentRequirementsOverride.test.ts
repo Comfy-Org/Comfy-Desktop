@@ -94,6 +94,14 @@ describe('parseAgentRequirementsOverride', () => {
     }
   })
 
+  it('accepts a wheel URL with a sha256 fragment', () => {
+    const url = `${WHEEL}#sha256=${'ab'.repeat(32)}`
+    expect(parseAgentRequirementsOverride({ 'comfy-agent': [url] })).toEqual({
+      kind: 'pins',
+      pins: pins({ 'comfy-agent': [url] })
+    })
+  })
+
   it('reads URL entries, with or without a marker, spaced the one way', () => {
     const raw = { 'comfy-agent': [`${WHEEL};${LINUX}`, `  ${WHEEL}  `] }
     expect(parseAgentRequirementsOverride(raw)).toEqual({
@@ -102,10 +110,10 @@ describe('parseAgentRequirementsOverride', () => {
     })
   })
 
-  it('accepts the marker grammar: quotes, comparisons, parentheses, membership lists', () => {
+  it('accepts the marker grammar: quotes, comparisons, parentheses, membership', () => {
     for (const marker of [
       "(sys_platform == 'darwin' or os_name != \"nt\") and python_version >= '3.10'",
-      'platform_machine in "x86_64,AMD64"',
+      'platform_machine in "x86_64 AMD64"',
       'python_full_version ~= "3.12.0"'
     ])
       expect(
@@ -117,6 +125,11 @@ describe('parseAgentRequirementsOverride', () => {
   it('refuses a URL entry that is not https or could smuggle anything into the file', () => {
     for (const entry of [
       'http://example.com/a.whl',
+      'https://example.com/comfy_agent-0.2.3.tar.gz',
+      'https://example.com/a.whl?X-Amz-Signature=x',
+      'https://example.com/a.whl#sha256=ab',
+      'https://example.com/a,b.whl',
+      `${WHEEL} ; platform_machine in "x86_64,AMD64"`,
       'file:///tmp/a.whl',
       'https://example.com/${TOKEN}.whl',
       'https://example.com/a.whl\\',
@@ -242,7 +255,8 @@ describe('effectiveAgentRequirements', () => {
     const override = pins({ 'comfy-agent': [`${WHEEL} ; ${LINUX}`, WHEEL] })
     const expected = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}\n`
     for (const core of [
-      `comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\ncomfy-agent @ ${WHEEL} ; ${WIN}\n`,
+      `comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\ncomfy-agent @ ${WHEEL} ; ${WIN} \n`,
+      `comfy-agent @ ${WHEEL}  # poc\n`,
       'comfy-agent\n'
     ])
       expect(effectiveAgentRequirements(core, override)).toEqual({ kind: 'text', text: expected })
