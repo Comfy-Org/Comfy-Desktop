@@ -358,6 +358,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           class="chooser-tile-cta__button chooser-tile-cta__button--start"
           :aria-label="t('actions.launch')"
           @click.stop="emit('lifecycle-action', 'start', inst)"
+          @keydown.enter.stop
+          @keydown.space.stop
         >
           <Play :size="13" aria-hidden="true" />
           {{ t('actions.launch') }}
@@ -368,6 +370,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             class="chooser-tile-cta__button chooser-tile-cta__button--stop"
             :aria-label="t('actions.stop')"
             @click.stop="emit('lifecycle-action', 'stop', inst)"
+            @keydown.enter.stop
+            @keydown.space.stop
           >
             <Square :size="12" aria-hidden="true" />
             {{ t('actions.stop') }}
@@ -377,6 +381,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             class="chooser-tile-cta__button"
             :aria-label="t('actions.restart')"
             @click.stop="emit('lifecycle-action', 'restart', inst)"
+            @keydown.enter.stop
+            @keydown.space.stop
           >
             <RotateCcw :size="13" aria-hidden="true" />
             {{ t('actions.restart') }}

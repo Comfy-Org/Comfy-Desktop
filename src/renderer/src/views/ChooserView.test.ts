@@ -405,6 +405,34 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
+  it('does not pick a tile when lifecycle buttons receive Enter or Space', async () => {
+    installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const tile = wrapper.get(`[data-testid="${TID.dashboardTile('a')}"]`)
+    const launch = tile.get('.chooser-tile-cta__button--start')
+    expect(launch.attributes('aria-label')).toBe('Launch')
+    await launch.trigger('keydown', { key: 'Enter' })
+    await launch.trigger('keydown', { key: ' ' })
+
+    useSessionStore().runningInstances.set('a', { installationId: 'a' } as never)
+    await flushPromises()
+
+    const stop = tile.get('.chooser-tile-cta__button--stop')
+    const restart = tile.get('.chooser-tile-cta__button:not(.chooser-tile-cta__button--stop)')
+    expect(stop.attributes('aria-label')).toBe('Stop')
+    expect(restart.attributes('aria-label')).toBe('Restart')
+    for (const button of [stop, restart]) {
+      await button.trigger('keydown', { key: 'Enter' })
+      await button.trigger('keydown', { key: ' ' })
+    }
+
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
   it('confirms before stopping a running standalone instance', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
