@@ -47,11 +47,18 @@ function qaCampaigns(): {
 } {
   const registry =
     parseCampaignRegistry(true, [{ key: QA_CAMPAIGN_KEY, args: ['--enable-agent'] }]) ?? []
+  // A commit range, not a version window: a ComfyUI-private checkout has no ancestry-proven
+  // public release, so a version grant would be withheld. The range starts at the QA
+  // environment's ComfyUI-private commit (synap5e/integration/agent-comfyui).
   const answer = parseCampaignAnswer(
     'enrol',
     {
       grants: [
-        { arg: '--enable-agent', min_core_version: '0.0.1', enrolment: { epoch: 1, epochs: [1] } }
+        {
+          arg: '--enable-agent',
+          commit_ranges: [['c8fc707204e76cd7d7736a2faf3ee1abaa07cd4c', null]],
+          enrolment: { epoch: 1, epochs: [1] }
+        }
       ]
     },
     Date.now()
