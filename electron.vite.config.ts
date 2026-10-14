@@ -13,6 +13,11 @@ process.env.VITE_DATADOG_RUM_VERSION = resolveDatadogReleaseVersion(process.env)
 
 export default defineConfig({
   main: {
+    // QA-ONLY (OBL-118 integration build, never merged): which flavour's environments the
+    // installer downloads, fixed at build time (OBL118_ENV_BASE=... pnpm run build).
+    define: {
+      'process.env.OBL118_ENV_BASE': JSON.stringify(process.env.OBL118_ENV_BASE ?? '')
+    },
     build: {
       sourcemap: 'hidden',
       rollupOptions: {

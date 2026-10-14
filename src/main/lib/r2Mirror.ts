@@ -11,9 +11,11 @@
 // tests always use the canonical hosts. Kept free of electron imports so this
 // leaf module needs no mocking in tests.
 // QA-ONLY (OBL-118 integration build, never merged): packaged builds honour the override too, and
-// default to the QA environment host on the tailnet. Unit tests keep the canonical hosts.
+// default to the flavour's QA environment host, set at build time (testcloud unless the build
+// sets OBL118_ENV_BASE). Unit tests keep the canonical hosts.
 const QA_STANDALONE_BASE_URL =
-  'https://simon-qa-linux-1.fennec-typhon.ts.net/obl-118/standalone-environments'
+  process.env.OBL118_ENV_BASE ||
+  'https://lab-linux-build.fennec-typhon.ts.net/obl-118/testcloud/standalone-environments'
 const DEV_BASE_URL_OVERRIDE = process.env.VITEST
   ? (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true
     ? process.env.COMFY_STANDALONE_BASE_URL?.replace(/\/+$/, '') || undefined
