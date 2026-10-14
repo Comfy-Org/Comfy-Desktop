@@ -145,8 +145,8 @@ export function effectiveAgentRequirements(
     ) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    // A bare or URL line takes any pin, older ones included: core's file can't downgrade it, the campaign
-    // can. A URL pin has no version to be newer than a pinned line with.
+    // Only a pinned line has a version to be newer than; a URL pin has none, so it can't go over one.
+    // A bare line takes any pin, older ones included: core's file can't downgrade it, the campaign can.
     if (
       pinned !== undefined &&
       (typeof pin !== 'string' || compareVersions(pin, pinned) <= 0)
