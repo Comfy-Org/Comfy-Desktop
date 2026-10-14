@@ -174,10 +174,14 @@ export function prefetchFrontend(
   return run
 }
 
+/** A launch touches the build it serves, so cleanup never removes one in recent use. */
+const UNUSED_FOR_MS = 7 * 24 * 60 * 60 * 1000
+
 /**
- * App-start upkeep: remove every cached build no pin names (and leftovers of interrupted fetches),
- * then fetch the missing ones. It runs only at app start because a ComfyUI that is still running
- * may be serving a build a newer payload dropped. Never throws.
+ * App-start upkeep: remove cached builds no pin names that no launch has served for a week (and
+ * leftovers of fetches that old), then fetch the missing ones. The age guard covers a launch that
+ * picked a build from an answer this boot's refresh has since replaced, and a ComfyUI a crashed
+ * Desktop left serving one. Never throws.
  */
 export async function syncFrontendCache(
   pins: readonly FrontendPin[],
@@ -187,10 +191,15 @@ export async function syncFrontendCache(
   try {
     const keep = new Set(pins.map((pin) => pin.sha256))
     const entries = await fs.promises.readdir(root).catch(() => [] as string[])
+    const cutoff = Date.now() - UNUSED_FOR_MS
     await Promise.all(
       entries
         .filter((name) => !keep.has(name))
-        .map((name) => fs.promises.rm(path.join(root, name), { recursive: true, force: true }))
+        .map(async (name) => {
+          const entry = path.join(root, name)
+          if ((await fs.promises.stat(entry)).mtimeMs > cutoff) return
+          await fs.promises.rm(entry, { recursive: true, force: true })
+        })
     )
     await Promise.all(pins.map((pin) => prefetchFrontend(pin, root, deps)))
   } catch (err) {
@@ -221,6 +230,12 @@ export function frontendRootArgs(
   if (dir === null) {
     void prefetchFrontend(pin, root)
     return { args: [], record: `${label} pending: not downloaded yet, serving the bundled one` }
+  }
+  try {
+    const now = new Date()
+    fs.utimesSync(dir, now, now)
+  } catch {
+    // Only the cleanup's age guard reads it; serving the build matters more.
   }
   return { args: ['--front-end-root', dir], record: `${label} served from ${dir}` }
 }

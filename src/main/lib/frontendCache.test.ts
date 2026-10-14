@@ -42,15 +42,23 @@ const pin = (over: Partial<FrontendPin> = {}): FrontendPin => ({
 })
 
 describe('isTrustedArtifactUrl', () => {
-  it.each([WHEEL_URL, ZIP_URL, 'https://GITHUB.com/Comfy-Org/x/dist.zip'])('trusts %s', (url) => {
-    expect(isTrustedArtifactUrl(url)).toBe(true)
-  })
+  it.each([WHEEL_URL, ZIP_URL, 'https://GITHUB.com/Comfy-Org/x/releases/download/v1/dist.zip'])(
+    'trusts %s',
+    (url) => {
+      expect(isTrustedArtifactUrl(url)).toBe(true)
+    }
+  )
 
   it.each([
     ['plain http', WHEEL_URL.replace('https', 'http')],
     ['another host', 'https://example.com/dist.zip'],
     ['another GitHub owner', 'https://github.com/someone/ComfyUI_frontend/dist.zip'],
-    ['an owner sharing the prefix', 'https://github.com/Comfy-Orgx/dist.zip'],
+    ['an owner sharing the prefix', 'https://github.com/Comfy-Orgx/x/releases/download/v1/d.zip'],
+    [
+      'a repo file, which can be a fork PR commit',
+      `${ZIP_URL.split('/releases')[0]}/raw/abc/d.zip`
+    ],
+    ['a source archive', 'https://github.com/Comfy-Org/x/archive/refs/heads/main.zip'],
     ['a path stepping out of the owner', 'https://github.com/Comfy-Org/../someone/dist.zip'],
     ['an encoded step out', 'https://github.com/Comfy-Org/%2e%2e/someone/dist.zip'],
     ['credentials', 'https://user:pw@files.pythonhosted.org/x.whl'],
@@ -194,15 +202,32 @@ describe('the cache', () => {
     expect(downloads).toEqual([WHEEL_URL])
   })
 
-  it('app start removes builds no pin names and interrupted fetches, and fetches the rest', async () => {
-    const stale = path.join(root, 'd'.repeat(64))
-    fs.mkdirSync(stale, { recursive: true })
-    fs.writeFileSync(path.join(stale, 'index.html'), 'old')
+  const age = (entry: string, days: number): void => {
+    const then = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    fs.utimesSync(path.join(root, entry), then, then)
+  }
+
+  it('app start removes week-old builds no pin names and old fetches, and fetches the rest', async () => {
+    const stale = 'd'.repeat(64)
+    fs.mkdirSync(path.join(root, stale), { recursive: true })
+    fs.writeFileSync(path.join(root, stale, 'index.html'), 'old')
     fs.mkdirSync(path.join(root, '.tmp-interrupted'))
+    age(stale, 8)
+    age('.tmp-interrupted', 8)
     await syncFrontendCache([pin()], root, deps('dist'))
     expect(fs.readdirSync(root)).toEqual([SHA])
+    age(SHA, 8)
     await syncFrontendCache([], root, deps('dist'))
     expect(fs.readdirSync(root)).toEqual([])
+  })
+
+  it('app start keeps an unnamed build used this week, and a fetch still running', async () => {
+    const recent = 'e'.repeat(64)
+    fs.mkdirSync(path.join(root, recent))
+    fs.mkdirSync(path.join(root, '.tmp-running'))
+    age(recent, 6)
+    await syncFrontendCache([], root, deps('dist'))
+    expect(fs.readdirSync(root).sort()).toEqual(['.tmp-running', recent])
   })
 
   describe('frontendRootArgs', () => {
@@ -217,9 +242,13 @@ describe('the cache', () => {
 
     it('passes the cached build', () => {
       const dir = cache()
+      age(SHA, 8)
       const out = frontendRootArgs(applied({ frontend: pin() }), [], schema('front-end-root'), root)
       expect(out.args).toEqual(['--front-end-root', dir])
       expect(out.record).toContain('served from')
+      expect(Date.now() - fs.statSync(dir).mtimeMs, 'served, so cleanup keeps it').toBeLessThan(
+        60_000
+      )
     })
 
     it('passes nothing without a pin', () => {
