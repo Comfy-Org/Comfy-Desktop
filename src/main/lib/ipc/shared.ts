@@ -1020,7 +1020,8 @@ export function buildLaunchEnv(
   sessionPath?: string
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
-  return {
+  const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
+  const env: Record<string, string | undefined> = {
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
@@ -1035,9 +1036,7 @@ export function buildLaunchEnv(
     // desktop-win / desktop-mac form factor to the registry, reads the ComfyUI version from
     // pyproject.toml instead of `git describe`, and leaves its own updates and the
     // "ComfyUI is outdated" warning to us.
-    ...(DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
-      ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() }
-      : {}),
+    ...(desktopManaged ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring
@@ -1047,6 +1046,10 @@ export function buildLaunchEnv(
       ? { CM_USE_PYGIT2: '1' }
       : {})
   }
+  // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
+  // user-managed portable or git install as Desktop-managed.
+  if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  return env
 }
 
 export function checkRebootMarker(sessionPath: string): boolean {

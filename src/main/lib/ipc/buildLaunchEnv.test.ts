@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: {
@@ -29,6 +29,10 @@ function inst(sourceId: string, envVars?: Record<string, string>): InstallationR
 }
 
 describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it.each(['standalone', 'desktop', 'comfybuilder'])(
     'sets the app version for desktop-managed source %s',
     (sourceId) => {
@@ -38,6 +42,19 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
 
   it.each(['portable', 'git'])('leaves it unset for user-managed source %s', (sourceId) => {
     expect(buildLaunchEnv(inst(sourceId))).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+  })
+
+  it.each(['portable', 'git'])(
+    'drops a marker inherited from process.env for user-managed source %s',
+    (sourceId) => {
+      vi.stubEnv('__COMFYUI_DESKTOP_VERSION__', '1.0.0')
+      expect(buildLaunchEnv(inst(sourceId))).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+    }
+  )
+
+  it('overrides a marker inherited from process.env for desktop-managed sources', () => {
+    vi.stubEnv('__COMFYUI_DESKTOP_VERSION__', '1.0.0')
+    expect(buildLaunchEnv(inst('standalone')).__COMFYUI_DESKTOP_VERSION__).toBe('2.3.4')
   })
 
   it('ignores a user env var override', () => {
