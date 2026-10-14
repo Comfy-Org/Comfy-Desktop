@@ -94,12 +94,24 @@ describe('parseAgentRequirementsOverride', () => {
     }
   })
 
-  it('reads URL entries, with or without a marker', () => {
-    const raw = { 'comfy-agent': [`${WHEEL} ; ${LINUX}`, WHEEL] }
+  it('reads URL entries, with or without a marker, spaced the one way', () => {
+    const raw = { 'comfy-agent': [`${WHEEL};${LINUX}`, `  ${WHEEL}  `] }
     expect(parseAgentRequirementsOverride(raw)).toEqual({
       kind: 'pins',
       pins: pins({ 'comfy-agent': [`${WHEEL} ; ${LINUX}`, WHEEL] })
     })
+  })
+
+  it('accepts the marker grammar: quotes, comparisons, parentheses, membership lists', () => {
+    for (const marker of [
+      "(sys_platform == 'darwin' or os_name != \"nt\") and python_version >= '3.10'",
+      'platform_machine in "x86_64,AMD64"',
+      'python_full_version ~= "3.12.0"'
+    ])
+      expect(
+        parseAgentRequirementsOverride({ 'comfy-agent': [`${WHEEL} ; ${marker}`] }).kind,
+        marker
+      ).toBe('pins')
   })
 
   it('refuses a URL entry that is not https or could smuggle anything into the file', () => {
@@ -107,11 +119,14 @@ describe('parseAgentRequirementsOverride', () => {
       'http://example.com/a.whl',
       'file:///tmp/a.whl',
       'https://example.com/${TOKEN}.whl',
-      'https://example.com/a.whl \\',
+      'https://example.com/a.whl\\',
+      `${WHEEL} ; sys_platform == "win32" \\`,
       'https://example.com/a b.whl',
       `${WHEEL} ; ${WIN} ; ${LINUX}`,
       `${WHEEL} ; ${WIN} # c`,
-      `${WHEEL} ; ${WIN}\n--index-url https://evil`,
+      `${WHEEL} ; ${WIN}\n-r extra.txt`,
+      `${WHEEL}\n-rextra.txt`,
+      `${WHEEL} ; sys_platform\t== "win32"`,
       `${WHEEL} ;`,
       3
     ])
@@ -119,6 +134,9 @@ describe('parseAgentRequirementsOverride', () => {
         parseAgentRequirementsOverride({ 'comfy-agent': [entry] }),
         JSON.stringify(entry)
       ).toEqual({ kind: 'refused', reason: 'bad_url' })
+    expect(
+      parseAgentRequirementsOverride({ 'comfy-agent': [WHEEL, `${WHEEL} ; ${WIN}\n-r extra.txt`] })
+    ).toEqual({ kind: 'refused', reason: 'bad_url' })
     expect(parseAgentRequirementsOverride({ 'comfy-agent': [] })).toEqual({
       kind: 'refused',
       reason: 'bad_url'
@@ -200,19 +218,42 @@ describe('effectiveAgentRequirements', () => {
     })
   })
 
-  it("replaces core's per-platform URL lines with an exact pin, once", () => {
-    const core = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL} ; ${WIN}\ncomfy-cli==1.21.0\n`
+  it("pins each of core's per-platform URL lines to an exact version, keeping its marker", () => {
+    const core = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}#sha256=ab;${WIN} # w\ncomfy-cli==1.21.0\n`
     expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.0.1' }))).toEqual({
       kind: 'text',
-      text: 'comfy-agent==0.0.1\ncomfy-cli==1.21.0\n'
+      text: `comfy-agent==0.0.1 ; ${LINUX}\ncomfy-agent==0.0.1 ; ${WIN}\ncomfy-cli==1.21.0\n`
     })
+    expect(
+      effectiveAgentRequirements(`comfy-agent @ ${WHEEL}\n`, pins({ 'comfy-agent': '0.0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==0.0.1\n' })
   })
 
-  it("replaces core's lines with the override's URL lines, over a URL or a pinned line", () => {
-    const override = pins({ 'comfy-agent': [`${WHEEL} ; ${LINUX}`, `${WHEEL};${WIN}`] })
-    const expected = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL} ; ${WIN}\n`
-    for (const core of [`comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\n`, 'comfy-agent==9.0\n'])
+  it("replaces core's URL or bare lines with the override's URL lines, once", () => {
+    const override = pins({ 'comfy-agent': [`${WHEEL} ; ${LINUX}`, WHEEL] })
+    const expected = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}\n`
+    for (const core of [
+      `comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\ncomfy-agent @ ${WHEEL} ; ${WIN}\n`,
+      'comfy-agent\n'
+    ])
       expect(effectiveAgentRequirements(core, override)).toEqual({ kind: 'text', text: expected })
+  })
+
+  it('refuses a URL override over a line core pinned, which it cannot be newer than', () => {
+    expect(
+      effectiveAgentRequirements('comfy-agent==9.0\n', pins({ 'comfy-agent': [WHEEL] }))
+    ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it('refuses a line core continues onto the next', () => {
+    for (const core of [
+      `comfy-agent @ ${WHEEL} \\\n    --hash=sha256:ab\n`,
+      `comfy-agent @ ${WHEEL} ; sys_platform == "linux" and \\ \n    platform_machine == "x86_64"\n`
+    ])
+      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
+        kind: 'refused',
+        reason: 'unsupported_line'
+      })
   })
 
   it('refuses a package core lists both as a URL and as a version', () => {

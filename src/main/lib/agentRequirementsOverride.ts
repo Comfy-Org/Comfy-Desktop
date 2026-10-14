@@ -11,12 +11,12 @@ const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
-/** `name @ https://… ; marker`, the per-platform wheel form. */
-const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/\S+(?:\s*;[^#]*)?(?:\s#.*)?$/
+/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker. */
+const URL_LINE = /^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https:\/\/[^\s;]+\s*(?:;([^#]*))?(?:#.*)?$/
 /** An override's URL entry: https, no whitespace, `$` (pip and uv expand `${VAR}`) or `\` (continues a line). */
 const OVERRIDE_URL = /^https:\/\/[^\s;$\\]+$/
 /** Marker expressions only: no `#`, `;`, `$`, `\`, newline or tab. */
-const OVERRIDE_MARKER = /^[A-Za-z0-9_.'" =<>!~()-]+$/
+const OVERRIDE_MARKER = /^[A-Za-z0-9_.,'" =<>!~()-]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 export const START_FAILURES_TO_REVERT = 2
@@ -32,7 +32,7 @@ export type OverrideRefusal =
   | 'check_failed'
   | 'core_first'
 
-/** An exact version, or the URL entries (`https://…[ ; marker]`) that replace the package's lines. */
+/** An exact version, or the URL entries (`https://…[ ; marker]`, normalised) that replace the package's lines. */
 export type OverridePin = string | readonly string[]
 export type OverridePins = ReadonlyMap<string, OverridePin>
 
@@ -59,33 +59,31 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
       return { kind: 'refused', reason: 'unknown_package' }
     }
     if (Array.isArray(pin)) {
-      if (pin.length === 0 || !pin.every(isOverrideUrl))
-        return { kind: 'refused', reason: 'bad_url' }
+      const urls = pin.map(normalizeOverrideUrl)
+      if (urls.length === 0 || urls.includes(null)) return { kind: 'refused', reason: 'bad_url' }
+      pins.set(normalized, urls as string[])
     } else if (typeof pin !== 'string' || !EXACT_VERSION.test(pin)) {
       return { kind: 'refused', reason: 'bad_version' }
+    } else {
+      pins.set(normalized, pin)
     }
-    pins.set(normalized, pin as OverridePin)
   }
   return { kind: 'pins', pins }
 }
 
-function isOverrideUrl(entry: unknown): boolean {
-  if (typeof entry !== 'string') return false
+/** `url ; marker` or `url`, or null for anything else. */
+function normalizeOverrideUrl(entry: unknown): string | null {
+  if (typeof entry !== 'string') return null
   const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
-  return (
-    rest.length === 0 &&
-    OVERRIDE_URL.test(url!) &&
-    (marker === undefined || OVERRIDE_MARKER.test(marker))
-  )
+  if (rest.length > 0 || !OVERRIDE_URL.test(url!)) return null
+  if (marker === undefined) return url!
+  return OVERRIDE_MARKER.test(marker) ? `${url} ; ${marker}` : null
 }
 
 /** The requirement lines a pin puts in place of the package's own. */
 function pinLines(name: string, pin: OverridePin): string[] {
   if (typeof pin === 'string') return [`${name}==${pin}`]
-  return pin.map((entry) => {
-    const [url, marker] = entry.split(';').map((part) => part.trim())
-    return marker ? `${name} @ ${url} ; ${marker}` : `${name} @ ${url}`
-  })
+  return pin.map((entry) => `${name} @ ${entry}`)
 }
 
 const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
@@ -136,22 +134,30 @@ export function effectiveAgentRequirements(
       out.push(text)
       continue
     }
-    const isUrl = URL_LINE.test(text)
+    const url = text.match(URL_LINE)
     const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
     if (
-      (!line && !isUrl) ||
+      (!line && !url) ||
+      /\\\s*$/.test(text) ||
       (pinned !== undefined && !EXACT_VERSION.test(pinned)) ||
-      (seen.has(normalized!) && !(isUrl && seen.get(normalized!)))
+      (seen.has(normalized!) && !(url && seen.get(normalized!)))
     ) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    // A bare or URL line takes any pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (typeof pin === 'string' && pinned !== undefined && compareVersions(pin, pinned) <= 0) {
+    // A bare or URL line takes any pin, older ones included: core's file can't downgrade it, the campaign
+    // can. A URL pin has no version to be newer than a pinned line with.
+    if (
+      pinned !== undefined &&
+      (typeof pin !== 'string' || compareVersions(pin, pinned) <= 0)
+    ) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    if (!seen.has(normalized!)) out.push(...pinLines(name!, pin))
-    seen.set(normalized!, isUrl)
+    const marker = url?.[1]?.trim()
+    // An exact pin keeps each URL line's marker, so it lands only where core's file would install.
+    if (url && typeof pin === 'string') out.push(`${name}==${pin}${marker ? ` ; ${marker}` : ''}`)
+    else if (!seen.has(normalized!)) out.push(...pinLines(name!, pin))
+    seen.set(normalized!, !!url)
   }
   if (seen.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
   return { kind: 'text', text: out.join('\n') }
