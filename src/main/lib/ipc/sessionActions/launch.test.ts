@@ -80,6 +80,8 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
+  /** `settings.readSettled` gives up: settings.json and its .bak stayed unreadable. */
+  settingsUnreadable: false,
   grants: [] as CoreBetaGrant[],
   /** Stands in for the git ancestry checks when set; `null` runs the real ones. */
   commits: null as null | CoreCommitState,
@@ -125,6 +127,9 @@ vi.mock('../shared', async (importOriginal) => {
     },
     settings: new Proxy(actual.settings, {
       get(target, key) {
+        if (key === 'readSettled' && launchHarness.settingsUnreadable) {
+          return async () => null
+        }
         if (key === 'resolveBetaFeaturesEnabled') {
           return () => {
             if (launchHarness.betaEnabledThrows) throw new Error('settings write failed: EROFS')
@@ -304,6 +309,7 @@ import {
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
+import { instanceModelPathsYaml } from '../../models'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
@@ -1255,6 +1261,7 @@ describe('core beta report placement', () => {
     launchHarness.registryCalls = 0
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
+    launchHarness.settingsUnreadable = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
@@ -1321,6 +1328,21 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain('[core-beta] --enable-assets')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('refuses to launch while settings.json and its .bak stay unreadable', async () => {
+    launchHarness.settingsUnreadable = true
+    let spawned = false
+    launchHarness.spawn = () => {
+      spawned = true
+      return fakeChild()
+    }
+
+    const res = await handleLaunch(ctxFor('harness-settings-unreadable'))
+
+    expect(res).toEqual({ ok: false, message: i18nModule.t('errors.settingsUnreadable') })
+    expect(spawned).toBe(false)
+    expect(fs.existsSync(instanceModelPathsYaml('harness-settings-unreadable'))).toBe(false)
   })
 
   function gitInitComfyUI(): string {
@@ -2501,6 +2523,7 @@ describe('Performance Test guardrail', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
+    launchHarness.settingsUnreadable = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
@@ -3009,6 +3032,7 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = false
     launchHarness.betaEnabledThrows = false
+    launchHarness.settingsUnreadable = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null

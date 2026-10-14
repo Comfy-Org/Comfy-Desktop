@@ -329,7 +329,8 @@ export interface StorageLaunchState {
 export function applyStorageLaunchArgs(
   inst: InstallationRecord,
   installationId: string,
-  launchCmd: LaunchCommand
+  launchCmd: LaunchCommand,
+  storage: Pick<settings.Settings, 'modelsDirs' | 'inputDir' | 'outputDir'>
 ): StorageLaunchState {
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
@@ -342,7 +343,7 @@ export function applyStorageLaunchArgs(
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
   if (argsAvailable) {
-    const sharedDirs = (settings.get('modelsDirs') as string[] | undefined) ?? []
+    const sharedDirs = storage.modelsDirs ?? []
     const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
     if (dirs.length > 0) {
       manageModelFolders = true
@@ -374,8 +375,7 @@ export function applyStorageLaunchArgs(
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
     if (useSharedInput) {
-      const inputDir =
-        (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+      const inputDir = storage.inputDir || settings.defaults.inputDir
       fs.mkdirSync(inputDir, { recursive: true })
       launchCmd.args!.push('--input-directory', inputDir)
     } else {
@@ -386,8 +386,7 @@ export function applyStorageLaunchArgs(
       }
     }
     if (useSharedOutput) {
-      const outputDir =
-        (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+      const outputDir = storage.outputDir || settings.defaults.outputDir
       fs.mkdirSync(outputDir, { recursive: true })
       launchCmd.args!.push('--output-directory', outputDir)
     } else {
@@ -1332,8 +1331,12 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
+  // Fail closed: launching from stand-in defaults would hand Core the default folders, and its
+  // startup prune would mark everything in the user's own folders missing.
+  const storageSettings = await settings.readSettled()
+  if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
-    applyStorageLaunchArgs(inst, installationId, launchCmd)
+    applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   /** Gates the `template-models` row: the bar derives "prior steps done" from
    *  the active phase index, so the row stays silent through the real phases and

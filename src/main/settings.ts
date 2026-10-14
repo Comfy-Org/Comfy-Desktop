@@ -473,13 +473,14 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+function loadOutcome(): { settings: Settings; unreadable: boolean; defaultsOnly?: true } {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    // Neither settings.json nor its .bak could be read: these are stand-in defaults.
+    return { settings: { ...defaults }, unreadable: true, defaultsOnly: true }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -657,7 +658,11 @@ export const AUTO_LAUNCH_LAST = 'last'
 export function get<K extends KnownSettingKey>(key: K): KnownSettings[K]
 export function get(key: string): unknown
 export function get(key: string): unknown {
-  const value = load()[key]
+  const { settings: loaded, defaultsOnly } = loadOutcome()
+  // An unreadable settings.json still exists, so Desktop has run before: never reopen
+  // first-use onboarding (with its pre-ticked consent) from stand-in defaults.
+  if (key === 'firstUseCompleted' && defaultsOnly) return true
+  const value = loaded[key]
   // Absence means the default — surface `'none'` to callers so they don't have
   // to special-case undefined everywhere they branch on the auto-launch mode.
   if (key === 'autoLaunchOnStartup' && (value === undefined || value === null)) {
@@ -706,6 +711,23 @@ export function set<K extends string>(
 
 export function getAll(): Settings {
   return load()
+}
+
+/** Waits between `readSettled` re-reads, about 5 s in all. How long a real lock holder keeps
+ *  the files is unknown; past this the caller fails visibly instead of guessing. */
+const SETTLED_RETRY_DELAYS_MS = [500, 1000, 1500, 2000]
+
+/** One read for a decision that must not be made from stand-in defaults (a Core launch's
+ *  folders). While settings.json and its .bak are both unreadable, waits and reads again;
+ *  `null` if they never become readable. A readable .bak is served as `get()` serves it. */
+export async function readSettled(): Promise<Settings | null> {
+  let outcome = loadOutcome()
+  for (const delayMs of SETTLED_RETRY_DELAYS_MS) {
+    if (!outcome.defaultsOnly) break
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+    outcome = loadOutcome()
+  }
+  return outcome.defaultsOnly ? null : outcome.settings
 }
 
 /**

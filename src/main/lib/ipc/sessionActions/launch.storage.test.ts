@@ -43,7 +43,7 @@ vi.mock('../../../settings', () => ({
   }
 }))
 
-import { applyStorageLaunchArgs } from './launch'
+import { applyStorageLaunchArgs as applyWithSnapshot } from './launch'
 import { dataDir } from '../../paths'
 import * as settingsMock from '../../../settings'
 
@@ -71,8 +71,17 @@ function yamlPath(installationId: string): string {
   return path.join(dataDir(), 'instance-model-paths', `${installationId}.yaml`)
 }
 
-function mockSettings(values: Record<string, unknown>): void {
-  vi.mocked(settingsMock.get).mockImplementation((key) => values[key])
+/** The launch's one settings read, handed to every `applyStorageLaunchArgs` call below. */
+let snapshot: Parameters<typeof applyWithSnapshot>[3]
+
+function mockSettings(values: Parameters<typeof applyWithSnapshot>[3]): void {
+  snapshot = values
+}
+
+function applyStorageLaunchArgs(
+  ...args: Parameters<typeof applyWithSnapshot> extends [...infer Head, unknown] ? Head : never
+): ReturnType<typeof applyWithSnapshot> {
+  return applyWithSnapshot(...args, snapshot)
 }
 
 beforeEach(() => {
@@ -301,6 +310,24 @@ describe('applyStorageLaunchArgs', () => {
       modelDirsForLaunch: [path.resolve(shared), path.resolve(owned)],
       modelSyncOptions: { yamlPath: target, primaryDir: path.resolve(shared) }
     })
+  })
+
+  it('reads the folders from the launch snapshot, never from settings again', () => {
+    const shared = path.join(root, 'snapshot-models')
+    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    const launchCmd = makeLaunchCmd()
+
+    applyStorageLaunchArgs(makeInstall(), 'snapshot', launchCmd)
+
+    expect(fs.readFileSync(yamlPath('snapshot'), 'utf8')).toContain(
+      `base_path: '${path.resolve(shared)}'`
+    )
+    expect(launchCmd.args).toEqual(
+      expect.arrayContaining(['--input-directory', globalInput, '--output-directory', globalOutput])
+    )
+    for (const key of ['modelsDirs', 'inputDir', 'outputDir']) {
+      expect(settingsMock.get).not.toHaveBeenCalledWith(key)
+    }
   })
 
   it('falls back to the default input dir when the setting is empty', () => {
