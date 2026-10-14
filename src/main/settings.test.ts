@@ -33,7 +33,7 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
-  readSettled: () => Promise<Record<string, unknown> | null>
+  readSettled: (signal?: AbortSignal) => Promise<Record<string, unknown> | null>
   peekBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
@@ -865,6 +865,8 @@ describe('resolveBetaFeaturesEnabled', () => {
 
 describe('settings.json and its .bak both unreadable', () => {
   const locked = new Set<string>()
+  /** Locked for the blocking reads only: the lock is back by the time readSettled re-reads. */
+  const lockedSync = new Set<string>()
   const customModels = path.join(tmpRoot, 'unreadable-custom-models')
 
   function writeSettings(values: Record<string, unknown>): void {
@@ -875,6 +877,7 @@ describe('settings.json and its .bak both unreadable', () => {
 
   beforeEach(() => {
     locked.clear()
+    lockedSync.clear()
     // Earlier tests in this file leave their own readFileSync spies installed.
     vi.restoreAllMocks()
     // Custom dirs that don't exist are normalized away, so each test owns its own.
@@ -884,13 +887,24 @@ describe('settings.json and its .bak both unreadable', () => {
       p: fs.PathOrFileDescriptor,
       opts?: unknown
     ) => {
-      if (typeof p === 'string' && locked.has(p)) {
+      if (typeof p === 'string' && (locked.has(p) || lockedSync.has(p))) {
         const err = new Error('fake EBUSY') as NodeJS.ErrnoException
         err.code = 'EBUSY'
         throw err
       }
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
+    // Async reads go through the sync spy, so only fake timers decide when they settle.
+    vi.spyOn(fs.promises, 'readFile').mockImplementation(((p: fs.PathLike, opts?: unknown) => {
+      try {
+        if (typeof p === 'string' && lockedSync.has(p) && !locked.has(p)) {
+          return Promise.resolve(realRead(p, opts as BufferEncoding))
+        }
+        return Promise.resolve(fs.readFileSync(p, opts as BufferEncoding))
+      } catch (err) {
+        return Promise.reject(err)
+      }
+    }) as typeof fs.promises.readFile)
     // safe-file's own per-read retries block on Atomics.wait; skip those sleeps.
     vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
     vi.useFakeTimers({ toFake: ['setTimeout'] })
@@ -909,6 +923,8 @@ describe('settings.json and its .bak both unreadable', () => {
     await vi.runAllTimersAsync()
 
     await expect(result).resolves.toBeNull()
+    // Waiting never blocks the main process on safe-file's synchronous lock retries.
+    expect(Atomics.wait).not.toHaveBeenCalled()
   })
 
   it('readSettled returns the real settings once the lock lifts mid-wait', async () => {
@@ -916,21 +932,48 @@ describe('settings.json and its .bak both unreadable', () => {
     locked.add(settingsPath).add(settingsPath + '.bak')
 
     const result = settings.readSettled()
-    await vi.advanceTimersByTimeAsync(500)
+    // Past the first read and its own lock retries (600 ms), into the first settled wait.
+    await vi.advanceTimersByTimeAsync(1000)
     locked.clear()
     await vi.runAllTimersAsync()
 
     expect((await result)?.['modelsDirs']).toEqual([customModels])
   })
 
+  it('readSettled keeps waiting when the lock is back by the time it reads', async () => {
+    writeSettings({ modelsDirs: [customModels] })
+    lockedSync.add(settingsPath).add(settingsPath + '.bak')
+
+    const result = settings.readSettled()
+    await vi.runAllTimersAsync()
+
+    await expect(result).resolves.toBeNull()
+  })
+
   it('readSettled serves a readable .bak at once, without waiting', async () => {
     writeSettings({ modelsDirs: [customModels] })
     locked.add(settingsPath)
 
-    const result = settings.readSettled()
+    let settled: Record<string, unknown> | null | undefined
+    void settings.readSettled().then((value) => (settled = value))
+    // The primary's own lock retries take 300 ms; the first settled wait would take 500.
+    await vi.advanceTimersByTimeAsync(400)
 
-    expect(vi.getTimerCount()).toBe(0)
-    expect((await result)?.['modelsDirs']).toEqual([customModels])
+    expect(settled?.['modelsDirs']).toEqual([customModels])
+  })
+
+  it('readSettled gives up as soon as the launch is cancelled', async () => {
+    writeSettings({ modelsDirs: [customModels] })
+    locked.add(settingsPath).add(settingsPath + '.bak')
+    const abort = new AbortController()
+
+    let settled: Record<string, unknown> | null | undefined
+    void settings.readSettled(abort.signal).then((value) => (settled = value))
+    await vi.advanceTimersByTimeAsync(1000)
+    abort.abort()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(settled).toBeNull()
   })
 
   it('reports first use as completed instead of reopening onboarding', () => {

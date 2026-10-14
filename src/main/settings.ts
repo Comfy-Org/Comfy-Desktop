@@ -10,7 +10,7 @@ import {
   setInstallDirResolver
 } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
-import { readFileSafe, writeFileSafe } from './lib/safe-file'
+import { readFileSafe, readFileSafeAsync, writeFileSafe } from './lib/safe-file'
 
 export interface KnownSettings {
   cacheDir: string
@@ -713,16 +713,25 @@ export function getAll(): Settings {
 
 const SETTLED_RETRY_DELAYS_MS = [500, 1000, 1500, 2000]
 
-/** Settings, retried for 5 s (plus each read's own retries) while settings.json and .bak are
- *  both unreadable; else `null`. */
-export async function readSettled(): Promise<Settings | null> {
-  let outcome = loadOutcome()
-  for (const delayMs of SETTLED_RETRY_DELAYS_MS) {
-    if (!outcome.defaultsOnly) break
-    await new Promise((resolve) => setTimeout(resolve, delayMs))
-    outcome = loadOutcome()
+/** Settings, waited for (without blocking) for ~5 s while settings.json and .bak are both
+ *  unreadable; `null` if they stay unreadable or `signal` aborts. */
+export async function readSettled(signal?: AbortSignal): Promise<Settings | null> {
+  for (const delayMs of [0, ...SETTLED_RETRY_DELAYS_MS]) {
+    if (delayMs > 0 && !signal?.aborted) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, delayMs)
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+      })
+    }
+    if (signal?.aborted) return null
+    if ((await readFileSafeAsync(dataPath)).kind === 'unreadable') continue
+    const outcome = loadOutcome()
+    if (!outcome.defaultsOnly) return outcome.settings
   }
-  return outcome.defaultsOnly ? null : outcome.settings
+  return null
 }
 
 /**

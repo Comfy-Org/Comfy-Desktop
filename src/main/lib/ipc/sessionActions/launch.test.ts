@@ -81,7 +81,7 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   /** Stands in for `settings.readSettled`; null = the real one. */
-  readSettled: null as null | (() => Promise<unknown>),
+  readSettled: null as null | ((signal?: AbortSignal) => Promise<unknown>),
   grants: [] as CoreBetaGrant[],
   /** Stands in for the git ancestry checks when set; `null` runs the real ones. */
   commits: null as null | CoreCommitState,
@@ -1350,7 +1350,9 @@ describe('core beta report placement', () => {
     })
 
     it('reports a cancel during the wait as cancelled, not as a failure', async () => {
-      launchHarness.readSettled = async () => {
+      let waitSignal: AbortSignal | undefined
+      launchHarness.readSettled = async (signal?: AbortSignal) => {
+        waitSignal = signal
         _operationAborts.get('harness-settings-cancelled')?.abort()
         return null
       }
@@ -1358,6 +1360,8 @@ describe('core beta report placement', () => {
       const res = await handleLaunch(ctxFor('harness-settings-cancelled'))
 
       expect(res).toEqual({ ok: false, cancelled: true })
+      // The wait itself sees the cancel, so it ends at once rather than after its retries.
+      expect(waitSignal?.aborted).toBe(true)
       expect(spawned).toBe(false)
     })
 

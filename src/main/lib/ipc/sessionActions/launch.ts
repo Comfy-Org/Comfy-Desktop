@@ -1225,7 +1225,9 @@ async function runLaunch(
   const launchCmd = launchCmdRaw
   // Only a launch that passes Desktop's folders needs settings; it must not use stand-in defaults.
   const storageSettings =
-    !launchCmd.skipSharedPaths && launchCmd.args ? await settings.readSettled() : settings.defaults
+    !launchCmd.skipSharedPaths && launchCmd.args
+      ? await settings.readSettled(abort.signal)
+      : settings.defaults
   if (abort.signal.aborted) return { ok: false, cancelled: true }
   if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
 
