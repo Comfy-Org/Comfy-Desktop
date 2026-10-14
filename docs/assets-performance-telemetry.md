@@ -23,6 +23,10 @@ Each `comfy.desktop.comfyui.boot_started`, `boot_completed`, and `boot_failed` e
   not for sorting or gating.
 - `app_version`: Desktop version, attached centrally by `src/main/lib/telemetry.ts`.
 - `boot_id`: per-launch join key shared by the lifecycle events. Retries reuse the same key.
+- `assets_retry_count`: 1 when Desktop retried the launch without its own `--enable-assets`
+  because Core could not open an asset database migrated by a newer ComfyUI, else 0. Such a
+  launch sends `boot_started` with `assets_enabled` true and then false under one `boot_id`, and
+  ends in the false cohort. Count it in the cohort of its final attempt, or filter on this field.
 - `session_kind`: `performance_test` for a launch from File → Performance Tests, else `normal`.
   Filter Performance Test runs out of (or into) rollout metrics on this. The same field is on
   `comfyui.exited`, `comfyui.boot_log`, `session.instance_started`, and the execution, hardware
@@ -98,30 +102,45 @@ WHERE event = 'comfy.desktop.comfyui.boot_completed'
   AND properties.assets_enabled IS NOT NULL
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
+LIMIT 10000
 ```
 
-Boot outcome with the same segmentation. Distinct boot IDs prevent retries from inflating counts:
+Boot outcome with the same segmentation, one row per boot ID that started in the window. A
+retried launch counts once, in the cohort of its final attempt (see `assets_retry_count`):
 
 ```sql
 SELECT
-  properties.app_version AS desktop_version,
-  properties.core_version AS core_version,
-  properties.core_beta_opted_in AS beta_opted_in,
-  properties.assets_enabled AS assets_enabled,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_started') AS boots_started,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_completed') AS boots_completed,
-  uniqIf(properties.boot_id, event = 'comfy.desktop.comfyui.boot_failed') AS boots_failed,
+  desktop_version,
+  core_version,
+  beta_opted_in,
+  assets_enabled,
+  count() AS boots_started,
+  countIf(completed) AS boots_completed,
+  countIf(failed) AS boots_failed,
   round(100 * boots_completed / nullIf(boots_started, 0), 2) AS success_rate_pct
-FROM events
-WHERE event IN (
-  'comfy.desktop.comfyui.boot_started',
-  'comfy.desktop.comfyui.boot_completed',
-  'comfy.desktop.comfyui.boot_failed'
+FROM (
+  SELECT
+    properties.boot_id AS boot_id,
+    argMax(properties.app_version, timestamp) AS desktop_version,
+    argMax(properties.core_version, timestamp) AS core_version,
+    argMax(properties.core_beta_opted_in, timestamp) AS beta_opted_in,
+    argMax(properties.assets_enabled, timestamp) AS assets_enabled,
+    max(event = 'comfy.desktop.comfyui.boot_completed') AS completed,
+    max(event = 'comfy.desktop.comfyui.boot_failed') AS failed
+  FROM events
+  WHERE event IN (
+    'comfy.desktop.comfyui.boot_started',
+    'comfy.desktop.comfyui.boot_completed',
+    'comfy.desktop.comfyui.boot_failed'
+  )
+    AND timestamp >= now() - INTERVAL 14 DAY
+    AND properties.assets_enabled IS NOT NULL
+  GROUP BY boot_id
+  HAVING max(event = 'comfy.desktop.comfyui.boot_started')
 )
-  AND timestamp >= now() - INTERVAL 14 DAY
-  AND properties.assets_enabled IS NOT NULL
 GROUP BY desktop_version, core_version, beta_opted_in, assets_enabled
 ORDER BY desktop_version DESC, core_version DESC, beta_opted_in DESC, assets_enabled DESC
+LIMIT 10000
 ```
 
 Use the first query as a duration trend and the second as an outcome table. Compare Assets cohorts

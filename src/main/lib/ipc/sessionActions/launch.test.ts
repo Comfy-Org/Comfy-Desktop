@@ -3772,6 +3772,143 @@ describe('prior ComfyUI process handling at launch', () => {
     const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
     expect(failed).toMatchObject({ assets_startup_failure: null })
   })
+
+  describe('an asset database from a newer ComfyUI', () => {
+    // What a released Core (v0.39.2 and earlier) prints when the asset database is from a newer one.
+    const NEWER_DB =
+      'INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n' +
+      "Failed to initialize database: Can't locate revision identified by '0009_created_at_from_mtime'\n" +
+      'The --enable-assets flag requires a working database connection.\n'
+    let spawnArgs: string[][] = []
+
+    beforeEach(() => {
+      // Desktop asks for assets itself: the floor commit is proven and the user's args lack it.
+      setArgs()
+      launchHarness.commits = {
+        head: 'e'.repeat(40),
+        ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]])
+      }
+      spawnArgs = []
+      launchHarness.spawn = (_cmd, args) => {
+        spawnArgs.push([...(args as string[])])
+        const child = fakeChild()
+        children.push(child)
+        return child
+      }
+    })
+
+    afterEach(() => {
+      launchHarness.commits = null
+    })
+
+    /** Each attempt fails with `stderr[n]`, or boots once the list runs out. */
+    const attempts = (...stderr: string[]): void => {
+      let attempt = 0
+      launchHarness.waitForPort = async () => {
+        const text = stderr[attempt++]
+        if (text === undefined) return
+        const child = children.at(-1)!
+        child.stderr.emit('data', Buffer.from(text))
+        child.emit('close', 1, null)
+        return new Promise<void>(() => {})
+      }
+    }
+
+    it("starts without Desktop's --enable-assets and says why", async () => {
+      attempts(NEWER_DB)
+      const id = 'assets-newer-db'
+
+      const output: string[] = []
+      const send = (channel: string, data: { text?: string }): void => {
+        if (channel === 'comfy-output') output.push(data.text ?? '')
+      }
+
+      const res = await handleLaunch({
+        ...ctxFor(id),
+        event: {
+          sender: { isDestroyed: () => false, send }
+        } as unknown as Electron.IpcMainInvokeEvent
+      })
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs.map((args) => args.includes('--enable-assets'))).toEqual([true, false])
+      expect(output.join('')).toContain(
+        '[assets] --enable-assets withheld: the asset database is from a newer ComfyUI\n'
+      )
+      expect(eventsNamed('comfy.desktop.comfyui.boot_started')).toEqual([
+        expect.objectContaining({ assets_enabled: true, assets_retry_count: 0 }),
+        expect.objectContaining({ assets_enabled: false, assets_retry_count: 1 })
+      ])
+      expect(eventsNamed('comfy.desktop.comfyui.boot_completed')).toEqual([
+        expect.objectContaining({ assets_enabled: false, assets_retry_count: 1 })
+      ])
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([])
+      // One launch: the retry and its completion keep the first attempt's boot_id.
+      const bootIds = [
+        ...eventsNamed('comfy.desktop.comfyui.boot_started'),
+        ...eventsNamed('comfy.desktop.comfyui.boot_completed')
+      ].map((props) => props?.boot_id)
+      expect(new Set(bootIds).size).toBe(1)
+      expect(bootIds[0]).toEqual(expect.any(String))
+    })
+
+    it('retries once only', async () => {
+      attempts(NEWER_DB, NEWER_DB)
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-twice'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(2)
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+        expect.objectContaining({ retry_count: 1, assets_retry_count: 1 })
+      ])
+    })
+
+    it("keeps the user's own --enable-assets and fails as before", async () => {
+      setArgs('--enable-assets')
+      attempts(NEWER_DB)
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-user-flag'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(1)
+      expect(res.message).toContain("Can't locate revision identified by")
+    })
+
+    it('does not retry on any other startup failure', async () => {
+      attempts('Traceback (most recent call last):\nRuntimeError: CUDA error\n')
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-other-error'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(1)
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+        expect.objectContaining({ assets_enabled: true, assets_retry_count: 0 })
+      ])
+    })
+
+    it('does not retry while the failed process is still alive', async () => {
+      launchHarness.killExits = false
+      attempts(NEWER_DB)
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-kill-timeout'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(1)
+    })
+
+    it('does not retry a boot that timed out without exiting', async () => {
+      launchHarness.waitForPort = async () => {
+        children.at(-1)!.stderr.emit('data', Buffer.from(NEWER_DB))
+        throw new Error('Timed out waiting for port')
+      }
+
+      const res = await handleLaunch(ctxFor('assets-newer-db-timeout'))
+
+      expect(res.ok).toBe(false)
+      expect(children).toHaveLength(1)
+    })
+  })
 })
 
 describe('describePriorOutcome', () => {
