@@ -272,8 +272,13 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONIOENCODING',
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
-  'CM_USE_PYGIT2'
+  'CM_USE_PYGIT2',
+  '__COMFYUI_DESKTOP_VERSION__'
 ])
+
+/** Sources whose ComfyUI and Manager are installed and updated by this app. Portable and git
+ *  installs are user-managed, so Manager keeps treating them as plain git checkouts there. */
+const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'desktop', 'comfybuilder'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -1026,6 +1031,13 @@ export function buildLaunchEnv(
     // Cost is one-time handler install; zero overhead on the normal path.
     PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
+    // ComfyUI-Manager's desktop marker, set by legacy Desktop too. Manager then reports the
+    // desktop-win / desktop-mac form factor to the registry, reads the ComfyUI version from
+    // pyproject.toml instead of `git describe`, and leaves its own updates and the
+    // "ComfyUI is outdated" warning to us.
+    ...(DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
+      ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() }
+      : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring
