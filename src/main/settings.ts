@@ -479,7 +479,6 @@ function loadOutcome(): { settings: Settings; unreadable: boolean; defaultsOnly?
   let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    // Neither settings.json nor its .bak could be read: these are stand-in defaults.
     return { settings: { ...defaults }, unreadable: true, defaultsOnly: true }
   }
   if (read.kind === 'data') {
@@ -659,8 +658,7 @@ export function get<K extends KnownSettingKey>(key: K): KnownSettings[K]
 export function get(key: string): unknown
 export function get(key: string): unknown {
   const { settings: loaded, defaultsOnly } = loadOutcome()
-  // An unreadable settings.json still exists, so Desktop has run before: never reopen
-  // first-use onboarding (with its pre-ticked consent) from stand-in defaults.
+  // The unreadable file exists, so first use already ran: never reopen onboarding from defaults.
   if (key === 'firstUseCompleted' && defaultsOnly) return true
   const value = loaded[key]
   // Absence means the default — surface `'none'` to callers so they don't have
@@ -713,13 +711,9 @@ export function getAll(): Settings {
   return load()
 }
 
-/** Waits between `readSettled` re-reads, about 5 s in all. How long a real lock holder keeps
- *  the files is unknown; past this the caller fails visibly instead of guessing. */
 const SETTLED_RETRY_DELAYS_MS = [500, 1000, 1500, 2000]
 
-/** One read for a decision that must not be made from stand-in defaults (a Core launch's
- *  folders). While settings.json and its .bak are both unreadable, waits and reads again;
- *  `null` if they never become readable. A readable .bak is served as `get()` serves it. */
+/** Settings, retried for ~5 s while settings.json and .bak are both unreadable; else `null`. */
 export async function readSettled(): Promise<Settings | null> {
   let outcome = loadOutcome()
   for (const delayMs of SETTLED_RETRY_DELAYS_MS) {

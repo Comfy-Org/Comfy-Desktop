@@ -1331,8 +1331,6 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
-  // Fail closed: launching from stand-in defaults would hand Core the default folders, and its
-  // startup prune would mark everything in the user's own folders missing.
   const storageSettings = await settings.readSettled()
   if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
