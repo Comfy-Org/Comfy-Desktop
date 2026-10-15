@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'async_hooks'
-import { execFile, spawn, type ExecFileException } from 'child_process'
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type ExecFileException
+} from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
@@ -33,7 +38,7 @@ import { buildErrorFields } from '../../shared/errorEvent'
 
 type Pygit2State =
   | { status: 'unconfigured' }
-  | { status: 'healthy'; python: string; script: string; failures: number }
+  | { status: 'healthy'; python: string; script: string; failures: number; server: boolean }
   | { status: 'disabled'; reason: string }
 
 let _pygit2: Pygit2State = { status: 'unconfigured' }
@@ -54,8 +59,20 @@ const PYGIT2_PROBE_TIMEOUT_MS = 5_000
  *  so we don't pay the codesign cost more than once per env. */
 const _pygit2RepairedDirs = new Set<string>()
 
-export function configurePygit2(pythonPath: string, scriptPath: string): void {
-  _pygit2 = { status: 'healthy', python: pythonPath, script: scriptPath, failures: 0 }
+/** `server` answers read-only queries from one long-lived helper process (see `runPygit2`). */
+export function configurePygit2(
+  pythonPath: string,
+  scriptPath: string,
+  options: { server?: boolean } = {}
+): void {
+  stopPygit2Server()
+  _pygit2 = {
+    status: 'healthy',
+    python: pythonPath,
+    script: scriptPath,
+    failures: 0,
+    server: options.server === true
+  }
 }
 
 export function isPygit2Configured(): boolean {
@@ -77,6 +94,8 @@ export function getPygit2Status(): Pygit2State {
 export function resetPygit2State(): void {
   _pygit2 = { status: 'unconfigured' }
   _pygit2RepairedDirs.clear()
+  stopPygit2Server()
+  _serverCrashes = 0
 }
 
 function disablePygit2(reason: string): void {
@@ -93,6 +112,7 @@ function disablePygit2(reason: string): void {
     failures
   })
   _pygit2 = { status: 'disabled', reason }
+  stopPygit2Server()
 }
 
 const _breakerExempt = new AsyncLocalStorage<true>()
@@ -249,7 +269,7 @@ export async function tryConfigurePygit2Fallback(installPath: string): Promise<b
     return false
   }
 
-  configurePygit2(pythonPath, scriptPath)
+  configurePygit2(pythonPath, scriptPath, { server: true })
   console.log('[git] pygit2 fallback configured via', pythonPath)
   return true
 }
@@ -300,15 +320,232 @@ export async function tryConfigureBootstrapPygit2(): Promise<boolean> {
     return false
   }
 
-  configurePygit2(pythonPath, scriptPath)
+  configurePygit2(pythonPath, scriptPath, { server: true })
   console.log('[git] bootstrap pygit2 configured via', pythonPath)
   return true
 }
 
-function runPygit2(
+// ---------------------------------------------------------------------------
+// pygit2 query server
+//
+// Starting the interpreter and importing pygit2 costs ~200ms per process, far more than the local
+// queries themselves (a few ms to tens of ms), and on Windows every launch also blocks this
+// (main) thread in CreateProcess. Version labels alone run hundreds of queries, so read-only local
+// subcommands go to one long-lived `git_operations.py serve` process instead. It takes one query
+// at a time, queued here so each query's timeout measures the query, not its wait. Anything the
+// server cannot answer falls back to a process of its own, which is the answer it would have given.
+// ---------------------------------------------------------------------------
+
+/** Read-only, local subcommands; mirrors SERVE_SUBCOMMANDS in git_operations.py. */
+const PYGIT2_SERVE_SUBCOMMANDS = new Set([
+  'rev-parse',
+  'describe-tags',
+  'tag-list',
+  'rev-list-count',
+  'cherry-pick-count',
+  'merge-base',
+  'has-commit',
+  'is-ancestor'
+])
+
+/** Unexpected server exits (query timeouts excluded) before the session stops using one. */
+const PYGIT2_SERVER_MAX_CRASHES = 3
+
+/** An idle server exits after this long; the next query starts another. */
+const PYGIT2_SERVER_IDLE_MS = 60_000
+
+interface Pygit2Result {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
+interface Pygit2Query {
+  args: string[]
+  timeout: number
+  resolve: (result: Pygit2Result) => void
+  /** Runs `fn` in the caller's async context, where `withoutPygit2Breaker` is visible. */
+  inCaller: <R>(fn: () => R) => R
+}
+
+interface Pygit2Server {
+  proc: ChildProcessWithoutNullStreams
+  python: string
+  pending: string
+  active: (Pygit2Query & { id: number; timer: ReturnType<typeof setTimeout> }) | null
+}
+
+let _server: Pygit2Server | null = null
+const _serverQueue: Pygit2Query[] = []
+let _serverCrashes = 0
+let _serverNextId = 0
+let _serverIdleTimer: ReturnType<typeof setTimeout> | null = null
+
+function serverUsable(): boolean {
+  return (
+    _pygit2.status === 'healthy' && _pygit2.server && _serverCrashes < PYGIT2_SERVER_MAX_CRASHES
+  )
+}
+
+/** Answer `query` with a process of its own, as when no server is configured. */
+function runQueryInOwnProcess(query: Pygit2Query): void {
+  void query.inCaller(() => runPygit2Process(query.args, query.timeout)).then(query.resolve)
+}
+
+function stopPygit2Server(): void {
+  if (_serverIdleTimer) {
+    clearTimeout(_serverIdleTimer)
+    _serverIdleTimer = null
+  }
+  const server = _server
+  if (!server) return
+  // Cleared first, so the exit this causes is not taken for a crash.
+  _server = null
+  const active = server.active
+  server.active = null
+  server.proc.stdin.end()
+  server.proc.kill()
+  if (active) {
+    clearTimeout(active.timer)
+    runQueryInOwnProcess(active)
+  }
+}
+
+function startPygit2Server(): Pygit2Server | null {
+  if (_pygit2.status !== 'healthy') return null
+  let proc: ChildProcessWithoutNullStreams
+  try {
+    proc = spawn(_pygit2.python, ['-s', '-u', _pygit2.script, 'serve'], {
+      stdio: 'pipe',
+      windowsHide: true
+    })
+  } catch (err) {
+    noteServerCrash((err as Error).message)
+    return null
+  }
+  const server: Pygit2Server = { proc, python: _pygit2.python, pending: '', active: null }
+  let stderrTail = ''
+  proc.stdout.setEncoding('utf-8')
+  proc.stdout.on('data', (chunk: string) => onServerOutput(server, chunk))
+  proc.stderr.setEncoding('utf-8')
+  proc.stderr.on('data', (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-2000)
+  })
+  // A write to a server that just died fails with EPIPE; its 'exit' handles the query.
+  proc.stdin.on('error', () => {})
+  proc.on('error', (err) => onServerGone(server, err.message))
+  proc.on('exit', (code, signal) =>
+    onServerGone(server, `exited with ${signal ?? code}: ${stderrTail.trim()}`)
+  )
+  return server
+}
+
+function noteServerCrash(reason: string): void {
+  _serverCrashes++
+  console.warn('[git] pygit2 server stopped unexpectedly:', reason)
+  if (_serverCrashes === PYGIT2_SERVER_MAX_CRASHES) {
+    console.warn('[git] pygit2 server disabled for this session; using a process per query')
+  }
+}
+
+function onServerGone(server: Pygit2Server, reason: string): void {
+  if (_server !== server) return // already stopped or replaced
+  _server = null
+  noteServerCrash(reason)
+  const active = server.active
+  if (active) {
+    server.active = null
+    clearTimeout(active.timer)
+    runQueryInOwnProcess(active)
+  }
+  pumpPygit2Server()
+}
+
+function onServerOutput(server: Pygit2Server, chunk: string): void {
+  server.pending += chunk
+  let newline: number
+  while ((newline = server.pending.indexOf('\n')) >= 0) {
+    const line = server.pending.slice(0, newline)
+    server.pending = server.pending.slice(newline + 1)
+    let reply: { id?: unknown; code?: unknown; stdout?: unknown; stderr?: unknown }
+    try {
+      reply = JSON.parse(line) as typeof reply
+    } catch {
+      continue
+    }
+    const active = server.active
+    if (!active || reply.id !== active.id) continue
+    server.active = null
+    clearTimeout(active.timer)
+    active.inCaller(recordPygit2Success)
+    active.resolve({
+      exitCode: typeof reply.code === 'number' ? reply.code : 1,
+      stdout: typeof reply.stdout === 'string' ? reply.stdout : '',
+      stderr: typeof reply.stderr === 'string' ? reply.stderr : ''
+    })
+  }
+  if (_server === server) pumpPygit2Server()
+}
+
+function onServerTimeout(server: Pygit2Server): void {
+  const active = server.active
+  if (!active || _server !== server) return
+  server.active = null
+  // Stuck mid-query: replace it, as a timed-out process would be killed.
+  stopPygit2Server()
+  const message = `Timed out running pygit2 helper after ${Math.round(active.timeout / 1000)}s`
+  active.inCaller(() => recordPygit2Failure(`${message} (server: ${active.args[0]})`))
+  active.resolve({ exitCode: 1, stdout: '', stderr: message })
+  pumpPygit2Server()
+}
+
+function pumpPygit2Server(): void {
+  for (;;) {
+    if (_server?.active) return
+    const query = _serverQueue.shift()
+    if (!query) break
+    if (_serverIdleTimer) {
+      clearTimeout(_serverIdleTimer)
+      _serverIdleTimer = null
+    }
+    if (_pygit2.status !== 'healthy' || _server?.python !== _pygit2.python) stopPygit2Server()
+    const server = serverUsable() ? (_server ?? (_server = startPygit2Server())) : null
+    if (!server) {
+      runQueryInOwnProcess(query)
+      continue
+    }
+    const id = ++_serverNextId
+    server.active = {
+      ...query,
+      id,
+      timer: setTimeout(() => onServerTimeout(server), query.timeout)
+    }
+    server.proc.stdin.write(JSON.stringify({ id, args: query.args }) + '\n')
+    return
+  }
+  if (_server && !_serverIdleTimer) {
+    _serverIdleTimer = setTimeout(() => {
+      _serverIdleTimer = null
+      if (!_server?.active && _serverQueue.length === 0) stopPygit2Server()
+    }, PYGIT2_SERVER_IDLE_MS)
+    _serverIdleTimer.unref?.()
+  }
+}
+
+function runPygit2(args: string[], timeout: number = LOCAL_GIT_TIMEOUT_MS): Promise<Pygit2Result> {
+  if (!serverUsable() || !PYGIT2_SERVE_SUBCOMMANDS.has(args[0] ?? '')) {
+    return runPygit2Process(args, timeout)
+  }
+  return new Promise((resolve) => {
+    _serverQueue.push({ args, timeout, resolve, inCaller: AsyncLocalStorage.snapshot() })
+    pumpPygit2Server()
+  })
+}
+
+function runPygit2Process(
   args: string[],
   timeout: number = LOCAL_GIT_TIMEOUT_MS
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<Pygit2Result> {
   return new Promise((resolve) => {
     if (_pygit2.status !== 'healthy') {
       resolve({ exitCode: 1, stdout: '', stderr: 'pygit2 fallback is not available' })
