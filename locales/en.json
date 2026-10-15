@@ -1421,6 +1421,7 @@
     "duplicateName": "An instance named \"{name}\" already exists. Please choose a different name.",
     "nameRequired": "Please enter a name.",
     "unknownSource": "This instance has an unrecognized source type. It may have been created by a different version. Delete it and reinstall.",
+    "buildFailed": "Could not prepare this instance. Check your selections and try again.",
     "operationInProgress": "\"{operation}\" is currently in progress for this instance. Would you like to cancel it?",
     "operationInProgressGeneric": "Another operation is currently in progress for this instance. Would you like to cancel it?",
     "cancelOperation": "Cancel Operation",

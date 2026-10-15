@@ -392,9 +392,8 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
 
       const buildResult = await window.api.buildInstallation(standalone.id, selections)
       if (!buildResult.ok) {
-        emitTelemetryAction('comfy.desktop.install.express.fallback', {
-          reason: 'precondition_failed'
-        })
+        console.warn('[firstUseChain] express: buildInstallation failed', buildResult.message)
+        emitTelemetryAction('comfy.desktop.install.express.fallback', { reason: 'build_failed' })
         return false
       }
       const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
