@@ -218,8 +218,7 @@ async function handleInstall(): Promise<void> {
     if (instPath.value) {
       try {
         const downloadFiles = selectedVariant.value.data?.downloadFiles as
-          | Array<{ size: number }>
-          | undefined
+          Array<{ size: number }> | undefined
         const downloadBytes = downloadFiles ? downloadFiles.reduce((sum, f) => sum + f.size, 0) : 0
         const estimatedRequired = downloadBytes > 0 ? downloadBytes * 2 : 0
 

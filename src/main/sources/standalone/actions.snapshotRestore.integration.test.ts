@@ -80,16 +80,14 @@ const snapshotsMock = vi.hoisted(() => ({
     failed: [],
     unreportable: []
   })),
-  restorePipPackages: vi.fn(
-    async (): Promise<RestoreResult> => ({
-      installed: [],
-      removed: [],
-      changed: [],
-      protectedSkipped: [],
-      failed: [],
-      errors: []
-    })
-  ),
+  restorePipPackages: vi.fn(async (): Promise<RestoreResult> => ({
+    installed: [],
+    removed: [],
+    changed: [],
+    protectedSkipped: [],
+    failed: [],
+    errors: []
+  })),
   repairNodeRequirements: vi.fn(async () => ({ changed: [], errors: [] })),
   protectedPackageDrift: vi.fn(async () => []),
   describePackageRevert: vi.fn((revert?: unknown) => (revert ? 'REVERT_NOTE' : 'NO_OUTCOME_NOTE')),

@@ -3,8 +3,7 @@ import { allocateUniqueDir, findDuplicatePath, sanitizeDirName, uniqueName } fro
 /** Resolved identity for a new installation record. `installPath` is present
  *  exactly when an install root was given. */
 export type InstallIdentity =
-  | { ok: true; name: string; installPath?: string }
-  | { ok: false; message: string }
+  { ok: true; name: string; installPath?: string } | { ok: false; message: string }
 
 /** Resolve a collision-free display name and, when an install root is given,
  *  a unique directory under it for a new installation, refusing a directory

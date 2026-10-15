@@ -38,13 +38,7 @@ import type { Systeminformation } from 'systeminformation'
 import { probePcieLinkCaps, deviceLookupKey, type PcieLinkCaps } from './pcieInfo'
 
 export type StorageClass =
-  | 'hdd'
-  | 'sata_ssd'
-  | 'nvme_ssd'
-  | 'other_ssd'
-  | 'virtual'
-  | 'network'
-  | 'unknown'
+  'hdd' | 'sata_ssd' | 'nvme_ssd' | 'other_ssd' | 'virtual' | 'network' | 'unknown'
 
 export type DriveBus =
   | 'nvme'

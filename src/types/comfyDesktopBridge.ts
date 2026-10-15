@@ -103,9 +103,7 @@ export interface ComfyDesktop2Error {
 }
 
 export type ComfyDesktop2FirebaseAuthState =
-  | { status: 'pending' }
-  | { status: 'signed_out' }
-  | { status: 'signed_in'; userId: string }
+  { status: 'pending' } | { status: 'signed_out' } | { status: 'signed_in'; userId: string }
 
 /**
  * Desktop's own Comfy account session, as the hosted local ComfyUI view sees it.

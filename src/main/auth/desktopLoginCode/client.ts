@@ -55,8 +55,7 @@ export interface DesktopLoginCodeGrant {
 }
 
 export type DesktopLoginCodeExchange =
-  | { status: 'pending' }
-  | { status: 'complete'; custom_token: string }
+  { status: 'pending' } | { status: 'complete'; custom_token: string }
 
 export interface RequestOpts {
   signal?: AbortSignal

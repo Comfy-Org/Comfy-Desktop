@@ -1009,9 +1009,10 @@ describe('adoptDesktopInstall', () => {
   it('continues adoption when validateLegacyVenv fails and user picks use-anyway', async () => {
     const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
     try {
-      const prompt = vi.fn(
-        async (_kind, _ctx): Promise<UserChoice> => ({ kind: 'venv-broken', choice: 'use-anyway' })
-      )
+      const prompt = vi.fn(async (_kind, _ctx): Promise<UserChoice> => ({
+        kind: 'venv-broken',
+        choice: 'use-anyway'
+      }))
       const tools = buildSilentTools(prompt)
       const validate = vi.fn(async () => ({ ok: false as const, message: 'no torch' }))
       const record = await adoptDesktopInstall({
@@ -1032,9 +1033,10 @@ describe('adoptDesktopInstall', () => {
   it('aborts adoption when validateLegacyVenv fails and user cancels', async () => {
     const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
     try {
-      const prompt = vi.fn(
-        async (): Promise<UserChoice> => ({ kind: 'venv-broken', choice: 'cancel' })
-      )
+      const prompt = vi.fn(async (): Promise<UserChoice> => ({
+        kind: 'venv-broken',
+        choice: 'cancel'
+      }))
       const tools = buildSilentTools(prompt)
       const validate = vi.fn(async () => ({ ok: false as const, message: 'no torch' }))
       await expect(

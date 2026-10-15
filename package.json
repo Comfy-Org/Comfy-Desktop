@@ -120,7 +120,7 @@
     "jiti": "^2.7.0",
     "pinia": "^4.0.3",
     "playwright": "^1.64.0",
-    "prettier": "3.8.1",
+    "prettier": "^3.9.10",
     "storybook": "10.6.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",

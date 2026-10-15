@@ -31,9 +31,7 @@ import type { Artifact, InstallProgress } from './types'
 const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
 
 export type ComfyBuilderInstallErrorKind =
-  | 'invalid-artifact'
-  | 'invalid-layout'
-  | 'checksum-mismatch'
+  'invalid-artifact' | 'invalid-layout' | 'checksum-mismatch'
 
 export class ComfyBuilderInstallError extends Error {
   override name = 'ComfyBuilderInstallError'

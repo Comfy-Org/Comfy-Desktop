@@ -555,8 +555,7 @@ export function registerInstallationHandlers(): void {
       const allowedIds = new Set(['name', 'seen'])
       for (const section of sections) {
         const fields = (section as Record<string, unknown>).fields as
-          | Record<string, unknown>[]
-          | undefined
+          Record<string, unknown>[] | undefined
         if (!fields) continue
         for (const f of fields) {
           if ((f as Record<string, unknown>).editable && (f as Record<string, unknown>).id) {

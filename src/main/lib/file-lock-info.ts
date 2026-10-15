@@ -25,8 +25,7 @@ export type LockProbeFailure =
  * entirely and must not be reported to the user as "nothing is using it".
  */
 export type LockProbeResult =
-  | { ok: true; processes: LockingProcess[] }
-  | { ok: false; reason: LockProbeFailure }
+  { ok: true; processes: LockingProcess[] } | { ok: false; reason: LockProbeFailure }
 
 const TIMEOUT_MS = 10000
 
