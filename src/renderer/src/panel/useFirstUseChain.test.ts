@@ -69,7 +69,7 @@ function buildApi(overrides: Partial<TestApi> = {}): TestApi {
     }),
     buildInstallation: vi
       .fn()
-      .mockResolvedValue({ sourceId: 'standalone', sourceCategory: 'local' }),
+      .mockResolvedValue({ ok: true, data: { sourceId: 'standalone', sourceCategory: 'local' } }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     addInstallation: vi
       .fn()
@@ -226,6 +226,16 @@ describe('useFirstUseChain — Express Install', () => {
 
     expect(chain.handleShowProgress).not.toHaveBeenCalled()
     expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
+  })
+
+  it('falls back to Configure on a structured build validation failure', async () => {
+    testApi.buildInstallation.mockResolvedValue({ ok: false, message: 'Runtime unavailable' })
+    const chain = mountChain()
+    await chain.api!.handleFirstUseChainLocal({ express: true })
+
+    expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
+    expect(testApi.addInstallation).not.toHaveBeenCalled()
+    expect(chain.handleShowProgress).not.toHaveBeenCalled()
   })
 
   it('opens Configure when `express` is omitted (legacy chain-local behaviour)', async () => {
