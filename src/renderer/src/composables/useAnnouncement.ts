@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 interface UseAnnouncementApi {
   /** True while the launch-announcement modal is mounted. */
   announcementOpen: Ref<boolean>
-  /** Imperative dismiss for the modal's `@close` handler. */
+  /** Asks main to close the modal; it unmounts once main has hidden the panel. */
   closeAnnouncement: () => void
 }
 
@@ -16,23 +16,35 @@ interface UseAnnouncementApi {
 export function useAnnouncement(): UseAnnouncementApi {
   const announcementOpen = ref(false)
   let unsubOpen: (() => void) | null = null
+  let unsubDismiss: (() => void) | null = null
+  // Opens seen since the last dismiss; main drops a close that a later open overtook.
+  let opens = 0
+  let closeRequested = false
 
   function closeAnnouncement(): void {
-    announcementOpen.value = false
-    // Main flipped activePanel to 'announcement' (overlay over comfyView) when
-    // the click arrived; restore the panel so the empty overlay doesn't linger.
-    void window.api.closeCurrentPanel()
+    if (!announcementOpen.value || closeRequested) return
+    closeRequested = true
+    window.api.closePanelModal('announcement', opens)
   }
 
   onMounted(() => {
     unsubOpen = window.api.onOpenAnnouncement(() => {
       void window.api.setSetting('comfyApiAnnouncementSeen', true)
+      opens++
+      closeRequested = false
       announcementOpen.value = true
+    })
+    unsubDismiss = window.api.onDismissPanelModal((modal) => {
+      if (modal !== 'announcement') return
+      opens = 0
+      closeRequested = false
+      announcementOpen.value = false
     })
   })
 
   onUnmounted(() => {
     unsubOpen?.()
+    unsubDismiss?.()
   })
 
   return { announcementOpen, closeAnnouncement }

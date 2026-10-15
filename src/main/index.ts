@@ -171,6 +171,8 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  navigateToPanel,
+  openPanelModal,
   prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
@@ -1079,11 +1081,11 @@ function _broadcastDownloadsToTitleBars(): void {
 function triggerOpenFeedback(entryId: number, source: 'titlebar' | 'menu'): void {
   const parentEntry = comfyWindows.get(entryId)
   if (!parentEntry || parentEntry.window.isDestroyed()) return
-  // Flip into the 'feedback' overlay panel. setActivePanel lazily ensures the
+  // Flip into the 'feedback' overlay panel. navigateToPanel lazily ensures the
   // panel view, makes it visible over comfyView, and broadcasts `panel-switch`.
   // The IPC below carries the click `source` for telemetry (titlebar vs. menu).
   const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'feedback')
-  setActivePanel(entryId, 'feedback')
+  navigateToPanel(entryId, 'feedback')
   sendToPanelDeferred(panelView, 'comfy-panel:open-feedback', { source })
 }
 
@@ -1095,15 +1097,8 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
-/** Flip into the 'announcement' overlay panel (mirrors triggerOpenFeedback):
- * lazily ensure the panel view, make it visible over comfyView, and tell the
- * panel renderer to mount the announcement modal. */
 function triggerOpenAnnouncement(entryId: number): void {
-  const parentEntry = comfyWindows.get(entryId)
-  if (!parentEntry || parentEntry.window.isDestroyed()) return
-  const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'announcement')
-  setActivePanel(entryId, 'announcement')
-  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
+  openPanelModal(entryId, 'announcement', 'comfy-panel:open-announcement', {})
 }
 
 /** Title-bar news-bell click. Resolves the host entry from the title-bar
@@ -1760,6 +1755,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
       setActivePanel,
+      navigateToPanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -28,6 +28,7 @@ import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboard
 import { useSendFeedback } from '../composables/useSendFeedback'
 import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { PAGE_COVERED, PageScope } from '../lib/pageCovered'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useActionGuard } from '../composables/useActionGuard'
@@ -77,6 +78,9 @@ useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
+// Pages and wizards stay mounted under a title-bar modal; dialogs above it stay live.
+const pageCovered = computed(() => announcementOpen.value)
+provide(PAGE_COVERED, pageCovered)
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
 // inside the store itself, so the panel just needs to read from it.
@@ -376,9 +380,11 @@ function handleMcpOpenTerminal(): void {
 
 /** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
-  activePanel,
-  (next) => {
-    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
+  [activePanel, pageCovered, () => currentOverlay.value?.kind === 'takeover'],
+  ([panel, covered, takeover]) => {
+    // Mirrors main's `isCanvasOverlay`; file-menu wizards hide the canvas but leave `activePanel`.
+    const isOverlay =
+      panel === 'feedback' || panel === 'mcp-setup' || (panel === 'comfy' && covered && !takeover)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
@@ -589,33 +595,35 @@ onUnmounted(() => {
            hidden while the first-use takeover is mounted (no chooser
            bleed-through during BrandTakeoverLayout's fade-in). Flow
            takeovers keep the chooser mounted underneath by design. -->
-      <div v-if="showPanelBody" class="panel-body">
-        <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
-          <ComfyLifecycleView
-            :installation="installation"
-            :installation-id="installationId"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+      <div v-if="showPanelBody" class="panel-body" :inert="pageCovered">
+        <PageScope>
+          <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
+            <ComfyLifecycleView
+              :installation="installation"
+              :installation-id="installationId"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
-          <ChooserView
-            @pick="handleChooserPick"
-            @show-new-install="handleChooserShowNewInstall"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+          <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
+            <ChooserView
+              @pick="handleChooserPick"
+              @show-new-install="handleChooserShowNewInstall"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
-          <BenchmarksView />
-        </div>
+          <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
+            <BenchmarksView />
+          </div>
 
-        <KeepAlive>
-          <PerformanceTestView
-            v-if="activePanel === 'performance-test'"
-            class="panel-performance-test"
-          />
-        </KeepAlive>
+          <KeepAlive>
+            <PerformanceTestView
+              v-if="activePanel === 'performance-test'"
+              class="panel-performance-test"
+            />
+          </KeepAlive>
+        </PageScope>
       </div>
     </main>
 

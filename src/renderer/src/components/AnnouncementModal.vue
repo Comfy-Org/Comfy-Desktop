@@ -61,7 +61,6 @@ function toggleSound(): void {
 let returnFocusTo: HTMLElement | null = null
 
 function dismiss(): void {
-  emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   emit('close')
 }
 function openCta(cta: string, url: string): void {
@@ -76,19 +75,33 @@ function onOverlayClick(e: MouseEvent) {
   if (e.target === overlayRef.value && mouseDownOnOverlay.value) dismiss()
   mouseDownOnOverlay.value = false
 }
+// Dialogs paint above What's New and keep their own focus and Escape. The page
+// and wizards underneath are inert (PanelApp's PAGE_COVERED).
+function isInLiveDialog(el: Element | null): boolean {
+  const dialog = el?.closest('[aria-modal="true"]')
+  return !!dialog && dialog !== overlayRef.value && !dialog.closest('[inert]')
+}
+// Window capture runs before the document Escape handlers of wizards underneath.
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') dismiss()
+  if (e.key !== 'Escape' || isInLiveDialog(document.activeElement)) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  dismiss()
 }
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
-  document.addEventListener('keydown', onKeydown)
+  window.addEventListener('keydown', onKeydown, true)
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button. Traps focus without a ring on open.
-  void nextTick(() => overlayRef.value?.focus())
+  // Focus the dialog container, not a button, so open paints no focus ring.
+  void nextTick(() => {
+    if (!isInLiveDialog(document.activeElement)) overlayRef.value?.focus()
+  })
 })
+// Every close unmounts, including one main makes for navigation.
 onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown)
+  emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
+  window.removeEventListener('keydown', onKeydown, true)
   returnFocusTo?.focus()
 })
 </script>
@@ -180,7 +193,8 @@ onUnmounted(() => {
 .announce-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Above takeovers (50), below dialogs (BaseModal 60, BaseAlert 1000). */
+  z-index: 55;
   display: grid;
   place-items: center;
   padding: clamp(72px, 10vh, 132px) clamp(32px, 5vw, 80px) clamp(80px, 11vh, 140px);

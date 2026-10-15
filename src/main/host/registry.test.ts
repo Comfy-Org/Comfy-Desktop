@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
+  bodyLayout,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -137,6 +138,41 @@ describe('nextWindowKey', () => {
       expect(seen.has(key)).toBe(false)
       seen.add(key)
     }
+  })
+})
+
+describe('bodyLayout', () => {
+  it.each([
+    { activePanel: 'comfy', panelModal: undefined, layout: { panel: false, canvas: true } },
+    { activePanel: 'comfy', panelModal: 'announcement', layout: { panel: true, canvas: true } },
+    { activePanel: 'feedback', panelModal: undefined, layout: { panel: true, canvas: true } },
+    { activePanel: 'mcp-setup', panelModal: undefined, layout: { panel: true, canvas: true } },
+    {
+      activePanel: 'benchmarks',
+      panelModal: 'announcement',
+      layout: { panel: true, canvas: false }
+    }
+  ] as const)(
+    'shows $layout for $activePanel with modal $panelModal over a running install',
+    ({ activePanel, panelModal, layout }) => {
+      const entry = makeEntry({ installationId: 'inst-A', activePanel })
+      entry.panelModal = panelModal
+      _runningSessions.set('inst-A', {} as never)
+
+      expect(bodyLayout(entry)).toEqual(layout)
+      entry.pendingOverlayReveal = true
+      expect(bodyLayout(entry), 'hidden until painted').toEqual(
+        layout.canvas ? { panel: false, canvas: true } : layout
+      )
+    }
+  )
+
+  it('shows only the dashboard under a modal on an install-less host', () => {
+    const entry = makeEntry({ installationId: null })
+    entry.panelModal = 'announcement'
+    entry.pendingOverlayReveal = true
+
+    expect(bodyLayout(entry)).toEqual({ panel: true, canvas: false })
   })
 })
 

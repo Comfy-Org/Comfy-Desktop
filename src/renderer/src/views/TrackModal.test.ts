@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { ref } from 'vue'
 
 import TrackModal from './TrackModal.vue'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
+import { PAGE_COVERED } from '../lib/pageCovered'
 import type { ProbeResult } from '../types/ipc'
 
 /**
@@ -103,6 +106,52 @@ describe('TrackModal — browse-only install directory', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it("keeps a named Track wizard open when Escape closes What's New above it", async () => {
+    const covered = ref(false)
+    const track = mount(TrackModal, {
+      attachTo: document.body,
+      global: {
+        plugins: [createTestI18n()],
+        provide: { [PAGE_COVERED]: covered },
+        stubs: {
+          BrandBackground: {
+            template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
+          },
+          TakeoverBack: true,
+          BaseSelect: true,
+          HardDrive: true
+        }
+      }
+    })
+    const escape = (): void => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      )
+    }
+    track.vm.open()
+    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('.brand-takeover-root input')
+    if (!input) throw new Error('Track name field is missing')
+    input.value = 'Keep this installation'
+
+    covered.value = true
+    const announcement = mount(AnnouncementModal, { attachTo: document.body })
+    await flushPromises()
+    escape()
+    await flushPromises()
+
+    expect(announcement.emitted('close')).toHaveLength(1)
+    expect(track.emitted('close')).toBeUndefined()
+    expect(input.value).toBe('Keep this installation')
+
+    announcement.unmount()
+    covered.value = false
+    await flushPromises()
+    escape()
+    expect(track.emitted('close'), 'Escape reaches the wizard once uncovered').toHaveLength(1)
+    track.unmount()
   })
 
   it('renders a non-clickable placeholder (no editable input) before a folder is picked', async () => {

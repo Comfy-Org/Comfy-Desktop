@@ -1623,6 +1623,8 @@ export interface TitlePopupHostBindings {
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
   /** Switch the host's body to the named panel (settings, new-install, ...). */
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
+  /** Same, for a pick made in this host's own popup, which also closes What's New. */
+  navigateToPanel: (windowKey: number, panel: ComfyPanelKey) => void
   /** Forward a Send Feedback request to the host's panel renderer. */
   triggerOpenFeedback: (entryId: number, source: 'titlebar' | 'menu') => void
   /** Reset the host install's comfyView zoom to 100%. Routes through the
@@ -2096,7 +2098,7 @@ export function activateTitlePopupMenuItem(
     if (parentEntry) {
       const target = decideFlowMenuItemTarget(parentEntry, id)
       if (target.kind === 'set-active-panel') {
-        bindings.setActivePanel(entry.parentEntryId, target.panel)
+        bindings.navigateToPanel(entry.parentEntryId, target.panel)
       } else {
         bindings.openChooserHostWindow(target.panel)
         releaseFocusToParent = false
@@ -2909,7 +2911,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
       // Flip the target host into 'progress' panel mode so the layout
       // brings panelView forward (panel full, comfy hidden).
-      bindings.setActivePanel(targetEntry.windowKey, 'progress')
+      if (routing === 'same-host') bindings.navigateToPanel(targetEntry.windowKey, 'progress')
+      else bindings.setActivePanel(targetEntry.windowKey, 'progress')
 
       bindings.sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
         kind: 'picker-show-progress',
@@ -3037,7 +3040,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     // straight into the new-install flow, so the running instance in this
     // window keeps running undisturbed (issue #629).
     if (parentEntry.installationId === null) {
-      bindings.setActivePanel(entry.parentEntryId, 'new-install')
+      bindings.navigateToPanel(entry.parentEntryId, 'new-install')
     } else {
       bindings.openChooserHostWindow('new-install')
     }

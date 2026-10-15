@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { inject, ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
 import type { ContextMenuItem } from '../types/context-menu'
+import { PAGE_COVERED } from '../lib/pageCovered'
 
 const props = defineProps<{
   open: boolean
@@ -36,6 +37,12 @@ watch(
     }
   }
 )
+
+// A title-bar modal opening over the page would otherwise sit under this menu.
+const pageCovered = inject(PAGE_COVERED, ref(false))
+watch(pageCovered, (covered) => {
+  if (covered && props.open) emit('close')
+})
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onOutsideClick, true)
