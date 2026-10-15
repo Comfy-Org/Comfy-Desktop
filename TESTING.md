@@ -17,7 +17,8 @@ and a per-spec inventory, see [`e2e/README.md`](e2e/README.md).
 Where they live:
 
 - Unit: `src/**/*.test.ts` (excluding `*.integration.test.ts`)
-- Storybook: `stories/**/*.stories.ts` (each story's play function is a test)
+- Storybook: `stories/**/*.stories.ts` (each story's play function is a test;
+  the setup screen's sample preload responses live in `stories/desktopApi.ts`)
 - Integration: `src/**/*.integration.test.ts`
 - E2E + Lifecycle: `e2e/*.test.ts`, selected by tag in the test title
   (`@windows @macos @linux` vs `@lifecycle`), mapped to Playwright projects in
