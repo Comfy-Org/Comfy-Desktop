@@ -273,7 +273,7 @@ describe('handleReleaseUpdate (release-update success path)', () => {
             variantId: 'cuda',
             manifest: { id: 'cuda', comfyui_ref: 'v0.3.0', python_version: '3.12.4' },
             downloadFiles: [],
-            downloadUrl: '',
+            downloadUrl: 'https://example.com/x.zip',
             r2Release: {
               tag: 'v1.0.0',
               comfyui_version: '0.3.0',
