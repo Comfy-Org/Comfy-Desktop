@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
-import { loadTemplateCatalog, resetTemplateCatalogCache } from './templateCatalog'
+import {
+  loadTemplateCatalog,
+  resetTemplateCatalogCache,
+  toTemplateFieldOption
+} from './templateCatalog'
 import { CURATED_TEMPLATES, TEMPLATE_MODALITY_ORDER, thumbnailUrlFor } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 
@@ -25,6 +29,18 @@ function indexFor(overrides: Record<string, Record<string, unknown>>, category =
 }
 
 describe('loadTemplateCatalog', () => {
+  it('marks only the gated template as requiring Hugging Face access', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const [template] = await loadTemplateCatalog()
+    if (!template) throw new Error('Missing template fixture')
+    const gated = toTemplateFieldOption(
+      { ...template, id: 'image_flux3_klein_distilled_t2i' },
+      false
+    )
+    const ungated = toTemplateFieldOption({ ...template, id: 'image_z_image_turbo' }, false)
+    expect(gated.data?.requiresHuggingFaceAccess).toBe(true)
+    expect(ungated.data?.requiresHuggingFaceAccess).toBe(false)
+  })
   beforeEach(() => {
     mockedFetchJSON.mockReset()
     resetTemplateCatalogCache()

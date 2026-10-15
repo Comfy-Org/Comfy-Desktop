@@ -976,6 +976,8 @@
     "templateModelsDownloaded": "Downloaded",
     "templateTabsAria": "Filter starter workflows by type",
     "templateApiBadge": "Requires credits",
+    "templateHuggingFaceBadge": "Hugging Face sign-in",
+    "templateHuggingFaceNotice": "These models require Hugging Face access. After setup, click the lock beside a missing model to sign in and accept the repository’s terms, then retry the download.",
     "templateInstall": "Install",
     "templateSkipAndInstall": "Skip & Install",
     "templateSkipAndInstallAria": "Skip starter workflow and install ComfyUI",

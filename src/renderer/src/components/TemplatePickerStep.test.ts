@@ -56,6 +56,23 @@ function mountPicker(
 }
 
 describe('TemplatePickerStep', () => {
+  it('labels gated models before selection and explains access when selected', async () => {
+    const gated = {
+      ...IMAGE_ALT,
+      data: { ...IMAGE_ALT.data, requiresHuggingFaceAccess: true }
+    }
+    const wrapper = mountPicker({ options: [IMAGE_REC, gated] })
+    expect(wrapper.get(`[role="radio"][title="${IMAGE_ALT.description}"]`).text()).toContain(
+      'Hugging Face sign-in'
+    )
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    await wrapper.setProps({ selectedValue: gated.value })
+    expect(wrapper.get('[role="status"]').text()).toBe(
+      'These models require Hugging Face access. After setup, click the lock beside a missing model to sign in and accept the repository’s terms, then retry the download.'
+    )
+    await wrapper.setProps({ selectedValue: IMAGE_REC.value })
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
   it('renders one tab per populated modality, excluding the none sentinel', () => {
     const tabs = mountPicker().findAll('[role="tab"]')
     expect(tabs).toHaveLength(2) // Video + Image

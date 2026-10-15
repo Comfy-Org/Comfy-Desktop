@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Crown, HardDriveDownload } from 'lucide-vue-next'
+import { Check, Crown, HardDriveDownload, LockKeyhole } from 'lucide-vue-next'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import {
@@ -30,8 +30,9 @@ const props = withDefaults(
     diskSpace: DiskSpaceInfo | null
     diskSpaceLoading: boolean
     compact?: boolean
+    modelAccessHint?: string
   }>(),
-  { noneValue: '', compact: false }
+  { noneValue: '', compact: false, modelAccessHint: '' }
 )
 
 const emit = defineEmits<{
@@ -210,6 +211,10 @@ defineExpose({ shownDiskError })
           <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
           {{ t('standalone.templateApiBadge') }}
         </span>
+        <span v-else-if="opt.data?.requiresHuggingFaceAccess === true" class="tps__api">
+          <LockKeyhole :size="12" aria-hidden="true" />
+          {{ t('standalone.templateHuggingFaceBadge') }}
+        </span>
 
         <span class="tps__card-footer">
           <span class="tps__card-text">
@@ -236,6 +241,14 @@ defineExpose({ shownDiskError })
         </span>
       </button>
     </div>
+    <div
+      v-if="selectedOption?.data?.requiresHuggingFaceAccess === true"
+      role="status"
+      class="tps__access-notice"
+    >
+      <p>{{ modelAccessHint || t('standalone.templateHuggingFaceNotice') }}</p>
+      <slot name="model-access" />
+    </div>
   </div>
 </template>
 
@@ -243,6 +256,18 @@ defineExpose({ shownDiskError })
 .tps {
   width: 100%;
   text-align: center;
+}
+
+.tps__access-notice {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--neutral-700);
+  border-radius: 8px;
+  background: var(--neutral-900);
+  color: var(--neutral-200);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .tps__tabs {
