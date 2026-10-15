@@ -4,6 +4,7 @@ import {
   isCheckoutUrl,
   isLikelyDownloadUrl,
   POPUP_ALLOWED_PREFIXES,
+  reservedTabRoute,
   shouldOpenInPopup
 } from './allowedPopups'
 
@@ -132,5 +133,41 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
 
   it('matching is case-insensitive (.ZIP works too)', () => {
     expect(isLikelyDownloadUrl('https://example.com/FILE.ZIP')).toBe(true)
+  })
+})
+
+describe('reservedTabRoute (#1729 blank-tab reservation)', () => {
+  it('sends checkout to the system browser, ahead of the popup allowlist', () => {
+    expect(reservedTabRoute('https://checkout.comfy.org/session/abc')).toBe('checkout')
+  })
+
+  it('blocks the Firebase auth handler, which must go through the system-browser bridge', () => {
+    expect(reservedTabRoute('https://dreamboothy.firebaseapp.com/__/auth/handler?x=1')).toBe(
+      'block'
+    )
+  })
+
+  it('loads allowlisted popup destinations in the child window', () => {
+    expect(reservedTabRoute('https://accounts.google.com/o/oauth2/auth')).toBe('load')
+  })
+
+  it('loads blob: URLs in the child window (cloud open-image-in-new-tab)', () => {
+    expect(reservedTabRoute('blob:https://cloud.comfy.org/1234-abcd')).toBe('load')
+  })
+
+  it('routes download URLs to the downloads tray', () => {
+    expect(reservedTabRoute('https://app.comfy.org/api/exports/abc/workflow.zip')).toBe('download')
+  })
+
+  it('sends any other http(s) page to the system browser', () => {
+    expect(reservedTabRoute('https://billing.stripe.com/p/session/test')).toBe('external')
+    expect(reservedTabRoute('https://billing.comfy.org/v1/payment-methods')).toBe('external')
+    expect(reservedTabRoute('http://example.com/')).toBe('external')
+  })
+
+  it('blocks non-web schemes and unparseable URLs', () => {
+    expect(reservedTabRoute('javascript:alert(1)')).toBe('block')
+    expect(reservedTabRoute('file:///etc/passwd')).toBe('block')
+    expect(reservedTabRoute('not a url')).toBe('block')
   })
 })
