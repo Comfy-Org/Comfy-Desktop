@@ -113,7 +113,7 @@ export function buildElectronApi(): ElectronApi {
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
     closePanelModal: (modal, opens) =>
       ipcRenderer.send('comfy-window:close-panel-modal', modal, opens),
-    /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
+    /** Signal that a modal over the canvas has painted, so main
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>
@@ -147,6 +147,11 @@ export function buildElectronApi(): ElectronApi {
       const handler = (): void => callback()
       ipcRenderer.on('comfy-panel:open-announcement', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
+    },
+    onOpenMcpSetup: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('comfy-panel:open-mcp-setup', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:open-mcp-setup', handler)
     },
     onDismissPanelModal: (callback) => {
       const handler = (_event: IpcRendererEvent, modal: unknown): void => {
