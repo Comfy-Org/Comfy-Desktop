@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Check, Crown } from 'lucide-vue-next'
+import { Check, Crown } from '@lucide/vue'
 import type { FieldOption } from '../types/ipc'
 import { getVariantImage } from '../lib/variants'
 import { isApiNodeTemplate } from '../lib/installHelpers'

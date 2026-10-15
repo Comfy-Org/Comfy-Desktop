@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, LoaderCircle, X } from 'lucide-vue-next'
+import { Check, LoaderCircle, X } from '@lucide/vue'
 import type { ProgressStepVM } from '../lib/progressViewModel'
 
 /**

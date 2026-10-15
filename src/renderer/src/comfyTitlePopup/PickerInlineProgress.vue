@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircle, XCircle, Ban } from 'lucide-vue-next'
+import { CheckCircle, XCircle, Ban } from '@lucide/vue'
 import { operationInflightLabel, operationSuccessLabel } from '../lib/progressStatusLabel'
 import { MSG_CANCELLED } from '../../../shared/operationStatus'
 import OperationErrorDetail from '../components/ui/OperationErrorDetail.vue'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCcw, Loader2, ArrowLeft } from 'lucide-vue-next'
+import { RefreshCcw, Loader2, ArrowLeft } from '@lucide/vue'
 import { useSessionStore } from '../stores/sessionStore'
 import {
   useReturnToDashboardConfirm,

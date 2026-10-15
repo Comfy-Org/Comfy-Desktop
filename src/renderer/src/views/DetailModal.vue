@@ -28,7 +28,7 @@ import {
   runSelectChain
 } from '../composables/actionShoppingList'
 import { REQUIRES_STOPPED } from '../types/ipc'
-import { Pencil } from 'lucide-vue-next'
+import { Pencil } from '@lucide/vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import type {
   Installation,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Camera, RotateCcw, Trash2 } from 'lucide-vue-next'
+import { Camera, RotateCcw, Trash2 } from '@lucide/vue'
 import SnapshotRow from '../../views/comfyUISettings/SnapshotRow.vue'
 import { changeSummary } from '../../lib/snapshots'
 import type { SnapshotListData, SnapshotSummary } from '../../types/ipc'

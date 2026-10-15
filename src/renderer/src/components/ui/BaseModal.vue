@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import { useModalOverlay } from '../../composables/useModalOverlay'
 
 // Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Settings } from 'lucide-vue-next'
+import { Settings } from '@lucide/vue'
 import ArgsRawInput from './ArgsRawInput.vue'
 import BetaArgsPill from './BetaArgsPill.vue'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'

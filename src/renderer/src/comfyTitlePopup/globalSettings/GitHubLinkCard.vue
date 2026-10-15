@@ -2,7 +2,7 @@
 // Intentionally NOT a variant of ChoiceCard.vue (an onboarding takeover
 // primitive); reusing it here would fork its typography and surface.
 import { computed } from 'vue'
-import { ExternalLink, Github, Star } from 'lucide-vue-next'
+import { ExternalLink, GitFork, Star } from '@lucide/vue'
 
 const props = withDefaults(
   defineProps<{
@@ -33,7 +33,7 @@ const starCountLabel = computed(() => {
 <template>
   <button type="button" class="github-link-card" @click="emit('open', url)">
     <span class="github-link-main">
-      <Github :size="16" aria-hidden="true" />
+      <GitFork :size="16" aria-hidden="true" />
       <span class="github-link-label">{{ label }}</span>
       <ExternalLink :size="12" class="github-link-external" aria-hidden="true" />
     </span>

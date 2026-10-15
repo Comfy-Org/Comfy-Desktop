@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
+import { Check, Volume2, VolumeX, X } from '@lucide/vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**

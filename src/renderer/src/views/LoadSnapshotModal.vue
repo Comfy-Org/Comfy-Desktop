@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, toRaw, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Upload } from 'lucide-vue-next'
+import { ChevronRight, Upload } from '@lucide/vue'
 import { useModal } from '../composables/useModal'
 
 import type { SnapshotFilePreview, FieldOption, GPUInfo, ShowProgressOpts } from '../types/ipc'

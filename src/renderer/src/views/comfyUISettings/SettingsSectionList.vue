@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, ShieldAlert } from 'lucide-vue-next'
+import { ChevronRight, ShieldAlert } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import BooleanToggle from './BooleanToggle.vue'

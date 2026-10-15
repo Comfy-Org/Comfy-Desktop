@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** Account identity and authentication controls shown at the dashboard's top-right. */
 import { computed, ref } from 'vue'
-import { ChevronDown, LogOut } from 'lucide-vue-next'
+import { ChevronDown, LogOut } from '@lucide/vue'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'

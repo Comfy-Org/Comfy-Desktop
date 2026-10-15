@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, ChevronDown } from 'lucide-vue-next'
+import { Check, ChevronDown } from '@lucide/vue'
 
 // Custom select primitive: trigger + popover listbox, teleported to <body>
 // so a drawer host's overflow:hidden can't clip it.

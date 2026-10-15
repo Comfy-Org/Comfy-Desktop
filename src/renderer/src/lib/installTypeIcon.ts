@@ -1,5 +1,5 @@
-import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
-import type { LucideIcon } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from '@lucide/vue'
+import type { LucideIcon } from '@lucide/vue'
 import { isBuildSource } from '../devplatform/buildState'
 
 /** Stable UX-side install-type key. Callers switch on this for styling /

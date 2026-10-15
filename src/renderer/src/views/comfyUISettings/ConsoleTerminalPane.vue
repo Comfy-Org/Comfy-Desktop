@@ -8,7 +8,10 @@ import '@xterm/xterm/css/xterm.css'
 import type { TerminalRestore } from '../../../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { normalizePlatform } from '../../composables/usePlatform'
-import { decideTerminalKeyAction } from '../../../../shared/terminalShortcuts'
+import {
+  decideTerminalKeyAction,
+  terminalAltArrowSequence
+} from '../../../../shared/terminalShortcuts'
 import ContextMenu from '../../components/ContextMenu.vue'
 import type { ContextMenuItem } from '../../types/context-menu'
 
@@ -195,6 +198,12 @@ async function attach(id: string): Promise<void> {
   // tells xterm to swallow the key. See decideTerminalKeyAction for the
   // per-OS matrix.
   terminal.attachCustomKeyEventHandler((e) => {
+    const arrowSequence = terminalAltArrowSequence(e, platform)
+    if (arrowSequence) {
+      e.preventDefault()
+      terminal?.input(arrowSequence, true)
+      return false
+    }
     const action = decideTerminalKeyAction(e, platform, terminal?.hasSelection() ?? false)
     switch (action) {
       case 'copy':

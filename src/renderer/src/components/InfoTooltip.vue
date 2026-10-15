@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleHelp, Info } from 'lucide-vue-next'
+import { CircleHelp, Info } from '@lucide/vue'
 import Tooltip from './ui/Tooltip.vue'
 import type { TooltipSide } from '../composables/useTooltip'
 
