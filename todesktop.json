@@ -9,7 +9,13 @@
     "!out/**/*.map",
     "!tests/**",
     "!bootstrap-python/**",
-    "!todesktop-targets/**"
+    "!todesktop-targets/**",
+    "!.storybook/**",
+    "!stories/**",
+    "!storybook-static/**",
+    "!tsconfig.storybook.json",
+    "!vitest.*.ts",
+    "!*storybook.log"
   ],
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",
