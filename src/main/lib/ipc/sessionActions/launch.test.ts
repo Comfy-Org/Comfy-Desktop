@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { WriteStream } from 'fs'
 
 // Electron's home for this run: a directory of its own, so concurrent runs on one machine never
@@ -89,6 +89,9 @@ const launchHarness = vi.hoisted(() => ({
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
+  /** A child whose process could not be created (ENOENT): no 'spawn', and an 'error' wherever
+   *  the launch listens for one (the skip-port path doesn't). */
+  spawnFails: false,
   /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
    *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
   waitForPort: null as null | (() => Promise<void>),
@@ -103,12 +106,39 @@ const launchHarness = vi.hoisted(() => ({
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true,
+  campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
+  campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
+  recordWrites: [] as Array<[string, string, number]>,
+  recordWriteThrows: false,
+  idClass: 'machine_derived' as string,
+  campaignFetches: 0,
+  campaignsReject: false,
   /** Installation records `installations.list` answers with, by id; null = the real store. */
   installRecords: null as null | Record<string, { name: string; sourceId: string }>,
   /** Holds every `installations.list` call until it resolves; null = answer at once. */
   listGate: null as null | Promise<void>,
   /** Stands in for a remote server's URL poll; null = the real one. */
   waitForUrl: null as null | (() => Promise<void>)
+}))
+
+vi.mock('../../coreBetaCampaignFlags', () => ({
+  getCoreBetaCampaigns: async () => {
+    launchHarness.campaignFetches++
+    if (launchHarness.campaignsReject) throw new Error('campaign fetch failed')
+    return launchHarness.campaigns
+  },
+  readCampaignRecords: () => launchHarness.campaignRecords,
+  writeCampaignRecord: (key: string, arg: string, epoch: number) => {
+    if (launchHarness.recordWriteThrows) throw new Error('EIO')
+    if (launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch) return false
+    launchHarness.recordWrites.push([key, arg, epoch])
+    return true
+  }
+}))
+
+vi.mock('../../deviceId', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getIdClass: () => launchHarness.idClass
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -135,7 +165,21 @@ vi.mock('../shared', async (importOriginal) => {
         return typeof value === 'function' ? value.bind(target) : value
       }
     }),
-    spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
+    spawnProcess: (...args: unknown[]) => {
+      const proc = launchHarness.spawn?.(...args) as
+        | { emit?: (event: string, err?: Error) => void; listenerCount?: (event: string) => number }
+        | undefined
+      if (typeof proc?.emit !== 'function') return proc
+      // A real child emits 'spawn' asynchronously, once its process exists.
+      if (!launchHarness.spawnFails) queueMicrotask(() => proc.emit!('spawn'))
+      // After the launch has wired its listeners, as a real creation error arrives.
+      else
+        setImmediate(() => {
+          if ((proc.listenerCount?.('error') ?? 0) > 0)
+            proc.emit!('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }))
+        })
+      return proc
+    },
     waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
       launchHarness.waitForUrl ? launchHarness.waitForUrl() : actual.waitForUrl(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
@@ -284,6 +328,7 @@ import {
   emitCoreBetaRecords,
   emitCoreBetaTelemetry,
   handleLaunch,
+  recordCampaignEnrolments,
   isCrashedExit,
   launchedCoreCommit,
   onProcessTerminated,
@@ -313,6 +358,7 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
+import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -839,6 +885,7 @@ const build = (over: {
   coreVersionCurrent?: boolean
   coreCommits?: CoreCommitState
   betaEnabled?: boolean
+  campaign?: Parameters<typeof buildLaunchArgs>[0]['campaign']
 }): ReturnType<typeof buildLaunchArgs> =>
   buildLaunchArgs({
     prefixArgs: PREFIX,
@@ -851,8 +898,75 @@ const build = (over: {
     coreVersionVerified: over.coreVersionVerified ?? true,
     coreVersionCurrent: over.coreVersionCurrent ?? true,
     coreCommits: over.coreCommits ?? NO_CORE_COMMITS,
-    betaEnabled: over.betaEnabled ?? true
+    betaEnabled: over.betaEnabled ?? true,
+    ...(over.campaign && { campaign: over.campaign })
   })
+
+describe('buildLaunchArgs campaigns', () => {
+  const KEY = 'desktop_core_beta_agent'
+  const schema = schemaOf('enable-assets', 'enable-agent', 'disable-agent')
+  const campaign = (variant = 'enrol', answer?: unknown) => ({
+    registry: [{ key: KEY, args: ['--enable-agent'] }],
+    answers: new Map([
+      [
+        KEY,
+        (answer ??
+          parseCampaignAnswer(
+            variant,
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  requires_args: ['--enable-assets'],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )) as NonNullable<ReturnType<typeof parseCampaignAnswer>>
+      ]
+    ]),
+    records: {},
+    idClass: 'machine_derived' as const,
+    now: Date.now()
+  })
+
+  it("never injects the arg when the user's own args opt out", () => {
+    const built = build({ userArgs: ['--disable-agent'], schema, campaign: campaign() })
+    expect(built.args, 'the user opt-out wins').not.toContain('--enable-agent')
+    expect(built.beta.campaign.misses).toMatchObject([{ reason: 'present' }])
+  })
+
+  it("counts the user's own --enable-assets for requires_args while slot #0 grants nothing", () => {
+    const built = build({
+      userArgs: ['--enable-assets'],
+      betaFlags: [],
+      schema,
+      campaign: campaign()
+    })
+    expect(built.args).toContain('--enable-agent')
+    expect(built.beta.campaign.applied).toMatchObject([{ key: KEY, enrolledNow: true }])
+  })
+
+  it("counts Desktop's own --enable-assets for requires_args", () => {
+    const built = build({
+      betaFlags: [],
+      coreCommits: { head: 'e'.repeat(40), ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]]) },
+      schema,
+      campaign: campaign()
+    })
+    expect(built.args).toEqual(expect.arrayContaining(['--enable-assets', '--enable-agent']))
+    expect(built.beta.campaign.applied).toMatchObject([{ key: KEY, enrolledNow: true }])
+  })
+
+  it("keeps slot #0's args when campaign planning throws", () => {
+    const broken = { enrol: true, grants: null, payload: null }
+    const built = build({ schema, campaign: campaign('enrol', broken) })
+    expect(built.args, 'slot #0 survives a campaign failure').toContain('--enable-assets')
+    expect(built.beta.campaign).toEqual({ applied: [], misses: [] })
+  })
+})
 
 describe('buildLaunchArgs core beta injection', () => {
   afterEach(() => {
@@ -1258,6 +1372,13 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.campaigns = { registry: [], answers: new Map() }
+    launchHarness.campaignRecords = {}
+    launchHarness.recordWrites = []
+    launchHarness.recordWriteThrows = false
+    launchHarness.idClass = 'machine_derived'
+    launchHarness.campaignFetches = 0
+    launchHarness.campaignsReject = false
     launchHarness.commits = null
     launchHarness.commitShas = []
     launchHarness.duringResourceAcquire = null
@@ -1313,6 +1434,327 @@ describe('core beta report placement', () => {
     proc.kill = () => true
     return proc
   }
+
+  describe('campaigns', () => {
+    const KEY = 'desktop_core_beta_agent'
+    const agentAnswer = (variant: string): unknown =>
+      parseCampaignAnswer(
+        variant,
+        {
+          grants: [
+            {
+              arg: '--enable-agent',
+              min_core_version: '0.3.60',
+              requires_args: ['--enable-assets'],
+              enrolment: { epoch: 1, epochs: [1] }
+            }
+          ]
+        },
+        Date.now() - 5_000
+      )
+    const serveCampaign = (variant: string): void => {
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, agentAnswer(variant)]])
+      }
+    }
+    const appliedEvent = (): Record<string, unknown> | undefined =>
+      events.filter((e) => e.event === 'comfy.desktop.core_beta.applied').at(-1)?.properties
+
+    const missedEvent = (): Record<string, unknown> | undefined =>
+      events.find((e) => e.event === 'comfy.desktop.core_beta.campaign_missed')?.properties
+
+    const HASHING = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+    const belowFloor = { head: 'e'.repeat(40), ancestry: new Map<string, boolean>() }
+
+    beforeEach(() => {
+      launchHarness.schemaNames = [
+        'enable-assets',
+        'enable-asset-hashing',
+        'enable-agent',
+        'listen',
+        'feature-flag'
+      ]
+      // Assets as production gets it: Desktop's own decision on a core with the floor commit.
+      launchHarness.grants = []
+      launchHarness.commits = {
+        head: 'e'.repeat(40),
+        ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]])
+      }
+    })
+
+    it('enrols an assets-on machine on enrol: arg after slot #0, a record, and the enrolled event', async () => {
+      // A fixed clock, so the lag is exactly the answer's age whatever the wall clock does.
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 12))
+      onTestFinished(() => clock.mockRestore())
+      serveCampaign('enrol')
+      const id = 'campaign-enrol'
+      expect((await handleLaunch(ctxFor(id))).ok).toBe(true)
+      expect(spawnArgs).toEqual(expect.arrayContaining(['--enable-assets', '--enable-agent']))
+      expect(spawnArgs.indexOf('--enable-agent')).toBe(spawnArgs.indexOf('--enable-assets') + 1)
+      expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
+      expect(
+        events.find((e) => e.event === 'comfy.desktop.core_beta.enrolled')?.properties
+      ).toEqual({
+        key: KEY,
+        arg: '--enable-agent',
+        epoch: 1,
+        lag_ms: 5_000
+      })
+      expect(appliedEvent()).toMatchObject({
+        args: ['--enable-agent'],
+        campaign_args: [`${KEY}:--enable-agent:1`]
+      })
+      expect(missedEvent()).toBeUndefined()
+      expect(_runningSessions.get(id)?.coreBetaArgs?.map((view) => view.arg)).toEqual([
+        '--enable-agent'
+      ])
+      expect(peekBetaActivationNotice(id)?.args).toEqual(['--enable-agent'])
+      expect(sent.join('')).toContain('[core-beta] --enable-agent')
+    })
+
+    it.each([
+      ['skip-port', true],
+      ['normal', false]
+    ])('makes no member of a launch cancelled at the %s pre-spawn gate', async (_path, skip) => {
+      serveCampaign('enrol')
+      const id = `campaign-cancelled-${String(skip)}`
+      if (!skip)
+        launchHarness.launchCommand = {
+          cmd: process.execPath,
+          args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+          cwd: installDir,
+          skipPortWait: false,
+          port: 48232
+        }
+      launchHarness.duringResourceAcquire = () => {
+        _operationAborts.get(id)?.abort()
+      }
+      expect(await handleLaunch(ctxFor(id))).toMatchObject({ ok: false, cancelled: true })
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+    })
+
+    it.each([
+      ['skip-port', true],
+      ['normal', false]
+    ])('makes no member on the %s path when the process is never created', async (_path, skip) => {
+      serveCampaign('enrol')
+      launchHarness.spawnFails = true
+      onTestFinished(() => {
+        launchHarness.spawnFails = false
+      })
+      if (!skip) {
+        launchHarness.launchCommand = {
+          cmd: process.execPath,
+          args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+          cwd: installDir,
+          skipPortWait: false,
+          port: 48233
+        }
+        // Never boots, so only the creation error can settle the attempt.
+        launchHarness.waitForPort = () => new Promise<void>(() => {})
+      }
+      await handleLaunch(ctxFor(`campaign-spawn-failed-${String(skip)}`))
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(sent.join(''), 'the decision is still logged').toContain('[core-beta] --enable-agent')
+    })
+
+    it('holds for an enrolled machine on hold, writing nothing new', async () => {
+      serveCampaign('hold')
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-hold'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
+      expect(missedEvent()).toBeUndefined()
+    })
+
+    it('refuses enrolment while assets is off, and reports why', async () => {
+      launchHarness.commits = belowFloor
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-assets-off'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(appliedEvent(), 'nothing applied, so the applied event stays silent').toBeUndefined()
+      expect(missedEvent()).toEqual({
+        idle: [],
+        enrol_refused: [`${KEY}:--enable-agent:requires_args`]
+      })
+    })
+
+    it('idles an enrolled machine while assets is off, keeping its record', async () => {
+      launchHarness.commits = belowFloor
+      serveCampaign('hold')
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-idle'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(missedEvent()).toEqual({
+        idle: [`${KEY}:--enable-agent:requires_args`],
+        enrol_refused: []
+      })
+    })
+
+    it('reports an enrolled machine with no campaign answer as idle', async () => {
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-no-answer'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(missedEvent()).toEqual({
+        idle: [`${KEY}:--enable-agent:no_answer`],
+        enrol_refused: []
+      })
+    })
+
+    it('never enrols a random_fallback launch', async () => {
+      launchHarness.idClass = 'random_fallback'
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-fallback-id'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+    })
+
+    it('leaves a non-member launch exactly as a launch without campaigns', async () => {
+      launchHarness.grants = [HASHING]
+      const commandBeforeLaunchMutatesIt = structuredClone(launchHarness.launchCommand)
+      await handleLaunch(ctxFor('campaign-none'))
+      const without = spawnArgs
+      const withoutApplied = appliedEvent()
+      launchHarness.launchCommand = commandBeforeLaunchMutatesIt
+      serveCampaign('hold')
+      await handleLaunch(ctxFor('campaign-non-member'))
+      const normalise = (args: string[]): string[] =>
+        args.map((arg) => arg.replace('campaign-non-member', 'campaign-none'))
+      expect(normalise(spawnArgs)).toEqual(without)
+      expect(appliedEvent()).toEqual(withoutApplied)
+      expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.applied')).toHaveLength(2)
+    })
+
+    it('applies the arg but counts no enrolment when the record cannot be written', async () => {
+      launchHarness.recordWriteThrows = true
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-write-fails'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent(), 'running, but not counted as active').not.toHaveProperty(
+        'campaign_args'
+      )
+      expect(missedEvent()).toEqual({
+        idle: [],
+        enrol_refused: [`${KEY}:--enable-agent:record_failed`]
+      })
+    })
+
+    it('proves a campaign commit range against the live HEAD', async () => {
+      const head = gitInitComfyUI()
+      launchHarness.commits = null
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([
+          [
+            KEY,
+            parseCampaignAnswer(
+              'enrol',
+              {
+                grants: [
+                  {
+                    arg: '--enable-agent',
+                    commit_ranges: [[head, null]],
+                    enrolment: { epoch: 1, epochs: [1] }
+                  }
+                ]
+              },
+              Date.now()
+            )
+          ]
+        ])
+      }
+      await handleLaunch(ctxFor('campaign-commit-range'))
+      expect(spawnArgs).toContain('--enable-agent')
+    })
+
+    describe('recordCampaignEnrolments', () => {
+      const enrolment = {
+        key: KEY,
+        grant: { arg: '--enable-agent', minCoreVersion: '0.3.60' },
+        epoch: 1,
+        enrolledNow: true,
+        payload: { agent_requirements_override: { 'comfy-agent': '0.2.3' } },
+        fetchedAt: Date.now()
+      }
+
+      it('keeps an unrecorded enrolment in applied, so its pass-through still reaches the override', () => {
+        launchHarness.recordWriteThrows = true
+        const result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        expect(appliedPassThrough(result.applied, '--enable-agent')).toEqual({
+          'comfy-agent': '0.2.3'
+        })
+        expect(result.misses).toEqual([
+          { key: KEY, arg: '--enable-agent', member: false, reason: 'record_failed' }
+        ])
+      })
+
+      it('writes and counts nothing when a concurrent launch already recorded it', () => {
+        launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 7 } } }
+        const result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        expect(launchHarness.recordWrites).toEqual([])
+        expect(reportedEvents(), 'no second enrolled event').not.toContain(
+          'comfy.desktop.core_beta.enrolled'
+        )
+        expect(result).toEqual({ applied: [enrolment], misses: [] })
+      })
+
+      it('survives a telemetry sink that throws', () => {
+        vi.mocked(telemetry.emit).mockImplementation(() => {
+          throw new Error('sink down')
+        })
+        let result: ReturnType<typeof recordCampaignEnrolments> | undefined
+        expect(() => {
+          result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        }).not.toThrow()
+        expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
+        expect(result, 'a recorded enrolment is not record_failed').toEqual({
+          applied: [enrolment],
+          misses: []
+        })
+      })
+    })
+
+    it("keeps slot #0's args when the campaign fetch fails", async () => {
+      launchHarness.grants = [HASHING]
+      launchHarness.campaignsReject = true
+      await handleLaunch(ctxFor('campaign-fetch-fails'))
+      expect(spawnArgs, 'a campaign failure never costs slot #0').toContain(
+        '--enable-asset-hashing'
+      )
+      expect(spawnArgs).not.toContain('--enable-agent')
+    })
+
+    it("keeps slot #0's args when a campaign answer is malformed", async () => {
+      launchHarness.grants = [HASHING]
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, { enrol: true, grants: null, payload: null }]])
+      }
+      await handleLaunch(ctxFor('campaign-malformed'))
+      expect(spawnArgs, 'a campaign failure never costs slot #0').toContain(
+        '--enable-asset-hashing'
+      )
+      expect(spawnArgs).not.toContain('--enable-agent')
+    })
+
+    it('fetches no campaign answer and applies none when beta is off', async () => {
+      launchHarness.betaEnabled = false
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-beta-off'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(launchHarness.campaignFetches, 'an opted-out launch never waits on campaigns').toBe(0)
+    })
+  })
 
   it('reports on a launch that reaches the skip-port spawn', async () => {
     const res = await handleLaunch(ctxFor('harness-skip-port-spawns'))
@@ -2427,6 +2869,46 @@ describe('core beta report placement', () => {
       expect(previewFacts).toEqual(launchFacts)
       expect(preview).toEqual(_runningSessions.get('harness-equivalence')?.coreBetaArgs)
       expect(preview).toEqual([{ arg: '--enable-assets', name: 'Asset browser' }])
+    })
+
+    it("lists a held campaign's arg exactly as the launch then passes it", async () => {
+      settingsModule.set('betaFeaturesEnabled', true)
+      const key = 'desktop_core_beta_agent'
+      launchHarness.schemaNames = ['enable-asset-hashing', 'enable-agent', 'listen', 'feature-flag']
+      launchHarness.grants = [{ arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }]
+      launchHarness.campaigns = {
+        registry: [{ key, args: ['--enable-agent'] }],
+        answers: new Map([
+          [
+            key,
+            parseCampaignAnswer(
+              'hold',
+              {
+                grants: [
+                  {
+                    arg: '--enable-agent',
+                    min_core_version: '0.3.60',
+                    requires_args: ['--enable-asset-hashing'],
+                    enrolment: { epoch: 1, epochs: [1] }
+                  }
+                ]
+              },
+              Date.now()
+            )
+          ]
+        ])
+      }
+      launchHarness.campaignRecords = { [key]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+
+      const preview = await previewCoreBetaArgs(
+        'harness-equivalence',
+        harnessInstall(),
+        launchHarness.launchCommand as LaunchCommand
+      )
+      expect((await handleLaunch(ctxFor('harness-equivalence'))).ok).toBe(true)
+
+      expect(preview.map((view) => view.arg)).toEqual(['--enable-asset-hashing', '--enable-agent'])
+      expect(preview).toEqual(_runningSessions.get('harness-equivalence')?.coreBetaArgs)
     })
   })
 })

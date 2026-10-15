@@ -128,6 +128,18 @@ import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
+import {
+  campaignCandidateGrants,
+  campaignPresentArgs,
+  planCampaignArgs
+} from '../../coreBetaCampaigns'
+import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
+import {
+  getCoreBetaCampaigns,
+  readCampaignRecords,
+  writeCampaignRecord
+} from '../../coreBetaCampaignFlags'
+import { getIdClass } from '../../deviceId'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -177,7 +189,9 @@ export function launchedCoreCommit(
  *  what selection granted that the schema then refused. Every downstream signal
  *  (final args, tap context, telemetry, log records) reads from this one value. */
 export interface CoreBetaLaunch {
+  /** Slot #0's applied grants, then the campaigns'. */
   readonly applied: readonly CoreBetaGrant[]
+  readonly campaign: Pick<CampaignPlan, 'applied' | 'misses'>
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
@@ -192,6 +206,7 @@ export interface CoreBetaLaunch {
 function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
   return {
     applied: [],
+    campaign: { applied: [], misses: [] },
     droppedUnsupported: [],
     logRecords: [],
     coreVersion: null,
@@ -233,6 +248,7 @@ export function buildLaunchArgs(input: {
   coreVersionCurrent: boolean
   coreCommits: CoreCommitState
   betaEnabled: boolean
+  campaign?: Pick<CampaignFacts, 'registry' | 'answers' | 'records' | 'idClass' | 'now'>
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
@@ -250,22 +266,43 @@ export function buildLaunchArgs(input: {
     schema
   })
   for (const line of plan.trace) console.log(line)
+  let campaign: CampaignPlan = { applied: [], misses: [], trace: [] }
+  // Its own try: a campaign failure must never cost slot #0's args.
+  try {
+    if (input.campaign)
+      campaign = planCampaignArgs({
+        ...input.campaign,
+        betaEnabled: input.betaEnabled,
+        presentArgs: campaignPresentArgs(userArgs, plan),
+        core: {
+          semver: coreVersion,
+          exact: input.coreVersionExact,
+          verified: input.coreVersionVerified,
+          current: input.coreVersionCurrent
+        },
+        commits: input.coreCommits,
+        schema
+      })
+  } catch (err) {
+    console.warn('[core-campaign] planning failed; no campaign args this launch:', err)
+  }
+  for (const line of campaign.trace) console.log(line)
+  const applied = [...plan.applied, ...campaign.applied.map((entry) => entry.grant)]
   return {
     args: [
       ...prefixArgs,
       ...desktopFlagArgs,
       ...plan.assetsArgs,
-      ...plan.applied.map((grant) => grant.arg),
+      ...applied.map((grant) => grant.arg),
       ...filtered
     ],
     beta: {
-      applied: plan.applied,
+      applied,
+      campaign: { applied: campaign.applied, misses: campaign.misses },
       droppedUnsupported: plan.droppedUnsupported,
       logRecords: [
         `${plan.assetsRecord}\n`,
-        ...plan.applied.map((grant) =>
-          coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)
-        ),
+        ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)),
         ...plan.withheld.map((line) => `${line}\n`),
         ...plan.droppedUnsupported.map(
           (arg) => `[core-beta] ${arg} withheld: not supported by this core\n`
@@ -275,6 +312,59 @@ export function buildLaunchArgs(input: {
       optedIn: input.betaEnabled
     }
   }
+}
+
+async function loadCampaignInputs(): Promise<
+  | (Awaited<ReturnType<typeof getCoreBetaCampaigns>> & {
+      records: CampaignRecords
+      grants: CoreBetaGrant[]
+    })
+  | null
+> {
+  try {
+    const campaigns = await getCoreBetaCampaigns()
+    const records = readCampaignRecords()
+    const grants = campaignCandidateGrants(
+      campaigns.registry,
+      campaigns.answers,
+      records,
+      Date.now(),
+      getIdClass()
+    )
+    return { ...campaigns, records, grants }
+  } catch (err) {
+    console.warn('[core-campaign] inputs unavailable; no campaign args this launch:', err)
+    return null
+  }
+}
+
+/** `enrolled` fires only once the record is on disk; an unrecorded one stays applied (its arg runs). */
+export function recordCampaignEnrolments(
+  campaign: CoreBetaLaunch['campaign']
+): CoreBetaLaunch['campaign'] {
+  const now = Date.now()
+  const misses = [...campaign.misses]
+  for (const { key, grant, epoch, enrolledNow, fetchedAt } of campaign.applied) {
+    if (!enrolledNow) continue
+    try {
+      if (!writeCampaignRecord(key, grant.arg, epoch, now)) continue
+    } catch (err) {
+      console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
+      misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
+      continue
+    }
+    try {
+      telemetry.emit('comfy.desktop.core_beta.enrolled', {
+        key,
+        arg: grant.arg,
+        epoch,
+        lag_ms: fetchedAt === undefined ? null : now - fetchedAt
+      })
+    } catch {
+      // Reporting must not affect launch.
+    }
+  }
+  return { applied: campaign.applied, misses }
 }
 
 /** Put each record in the on-disk log (bug reports) and the user-visible output. */
@@ -306,14 +396,37 @@ export function emitCoreBetaTelemetry(input: {
   coreCommit: string | null
   coreVersionLabel: string | null
   optedIn: boolean
+  campaign?: CoreBetaLaunch['campaign']
 }): void {
+  const campaign = input.campaign ?? { applied: [], misses: [] }
+  const unrecorded = new Set(
+    campaign.misses
+      .filter(({ reason }) => reason === 'record_failed')
+      .map(({ key, arg }) => `${key}:${arg}`)
+  )
+  const active = campaign.applied.filter(({ key, grant }) => !unrecorded.has(`${key}:${grant.arg}`))
   if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
       core_version: input.coreVersion,
       core_commit: input.coreCommit,
       core_version_label: input.coreVersionLabel,
-      dropped_unsupported: [...input.droppedUnsupported]
+      dropped_unsupported: [...input.droppedUnsupported],
+      // The active count; only on launches a campaign applied something, so others report as before.
+      ...(active.length > 0 && {
+        campaign_args: active.map(({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`)
+      })
+    })
+  }
+  if (campaign.misses.length > 0) {
+    // Flat `key:arg:reason` strings: event properties carry no nested objects.
+    const misses = (member: boolean): string[] =>
+      campaign.misses
+        .filter((miss) => miss.member === member)
+        .map(({ key, arg, reason }) => `${key}:${arg}:${reason}`)
+    telemetry.emit('comfy.desktop.core_beta.campaign_missed', {
+      idle: misses(true),
+      enrol_refused: misses(false)
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
@@ -842,6 +955,7 @@ async function runLaunch(
   // past the report site, so an unlatched report fires once per attempt; a module-global
   // latch would instead silence every launch after the first in the process lifetime.
   let coreBetaReported = false
+  let coreBetaLogged = false
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
@@ -1027,16 +1141,34 @@ async function runLaunch(
     }
   }
 
-  // Called once per launch from each spawn path, as soon as that path has both
-  // destinations: the log records go to the on-disk log and the renderer, the
-  // events to telemetry.
-  function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
-    if (coreBetaReported) return
-    coreBetaReported = true
+  // Once per launch, at each path's final pre-spawn gate, so even a launch whose process can't
+  // be created logs what it decided: to the on-disk log and the renderer.
+  function logCoreBetaRecords(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    if (coreBetaLogged) return
+    coreBetaLogged = true
     emitCoreBetaRecords(coreBeta.logRecords, {
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
+  }
+
+  // Once per launch, when the first child of either spawn path is created: membership, the
+  // notice and the telemetry are only real once a process exists.
+  function reportCoreBetaLaunchOnSpawn(proc: ChildProcess): void {
+    proc.once('spawn', () => {
+      try {
+        reportCoreBetaLaunch()
+      } catch (err) {
+        console.warn('[core-beta] launch report failed:', err)
+      }
+    })
+  }
+
+  function reportCoreBetaLaunch(): void {
+    if (coreBetaReported) return
+    coreBetaReported = true
+    // At spawn, not planning: a launch that stops before its process exists must not make a member.
+    coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
     // Same latch, same reason: a grant is only worth announcing once it is provably on this
     // launch's command line. Queued rather than shown — the host window may still be mid-attach
     // or under the progress takeover, so the title bar drains this when its own gate opens.
@@ -1048,7 +1180,8 @@ async function runLaunch(
         coreVersion: coreBeta.coreVersion,
         coreCommit,
         coreVersionLabel: coreVersionLabel(),
-        optedIn: coreBeta.optedIn
+        optedIn: coreBeta.optedIn,
+        campaign: coreBeta.campaign
       })
     } catch {
       // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
@@ -1268,8 +1401,13 @@ async function runLaunch(
           }
         }
 
-        // Read even when opted out: the assets force-off applies to every install.
-        const betaFlags = await getCoreBetaGrantsAsync()
+        // Read even when opted out: the assets force-off applies to every install. Campaigns
+        // are opted-in only, so an opted-out launch does not wait on their fetch.
+        const [betaFlags, campaigns] = await Promise.all([
+          getCoreBetaGrantsAsync(),
+          betaEnabled ? loadCampaignInputs() : null
+        ])
+        const campaignGrants = campaigns?.grants ?? []
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
@@ -1286,7 +1424,7 @@ async function runLaunch(
           resolveCoreCommitState(
             comfyuiDir,
             checkout,
-            betaEnabled ? commitGrantShas(betaFlags, userArgs) : [],
+            betaEnabled ? commitGrantShas([...betaFlags, ...campaignGrants], userArgs) : [],
             abort.signal
           )
         ])
@@ -1305,7 +1443,16 @@ async function runLaunch(
           coreVersionVerified: core.verified,
           coreVersionCurrent: core.current,
           coreCommits,
-          betaEnabled
+          betaEnabled,
+          ...(campaigns && {
+            campaign: {
+              registry: campaigns.registry,
+              answers: campaigns.answers,
+              records: campaigns.records,
+              idClass: getIdClass(),
+              now: Date.now()
+            }
+          })
         })
         launchCmd.args = built.args
         coreBeta = built.beta
@@ -1509,9 +1656,7 @@ async function runLaunch(
       _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
-    // Past the final gate: this launch is going to spawn, so the grants it applied are now
-    // real. Reporting before the gate attributes grants to launches that never started.
-    reportCoreBetaLaunch(logStream, sendOutput)
+    logCoreBetaRecords(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
@@ -1521,6 +1666,8 @@ async function runLaunch(
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
+        // The grants are real only once the process exists; a failed spawn reports nothing.
+        reportCoreBetaLaunchOnSpawn(p)
         try {
           return {
             proc: p,
@@ -1909,6 +2056,8 @@ async function runLaunch(
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
+    // Latched: retries spawn again, and the grants belong to the launch, not to each attempt.
+    reportCoreBetaLaunchOnSpawn(p)
     // Every (re)spawn is recorded, so a later Desktop can prove this child is ours.
     trackSpawn(p, {
       sessionKey: sessionId,
@@ -1967,9 +2116,7 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
-    // Past the final gate, so this attempt will spawn. Latched: retries re-enter here, and the
-    // grants belong to the launch, not to each attempt at it.
-    reportCoreBetaLaunch(logStream, sendOutput)
+    logCoreBetaRecords(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
