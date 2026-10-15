@@ -800,6 +800,54 @@ describe('installAgentRequirements with a version override', () => {
     )
   })
 
+  it("applies the override on the same launch once core's file has installed its packages", async () => {
+    mockUvPip
+      .mockResolvedValueOnce({
+        code: 0,
+        output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      })
+      .mockResolvedValueOnce({ code: 0, output: INSTALLED })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent', '0.2.3']]) })
+    expect(calls, "core's file, then the override constrained by what it installed").toEqual([
+      { content: CORE_FILE, constraints: null },
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+    ])
+  })
+
+  it("puts core's versions back when the same-launch override fails, and reports it", async () => {
+    mockUvPip
+      .mockResolvedValueOnce({
+        code: 0,
+        output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      })
+      .mockResolvedValueOnce({ code: 0, output: INSTALLED })
+    respond = (call) => ({ code: call.constraints === null ? 0 : 1, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    expect(calls.map((c) => c.constraints !== null)).toEqual([false, true, false])
+  })
+
+  it("does not try the override when core's file fails on a fresh install", async () => {
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+    })
+    respond = () => ({ code: 1, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision, 'not counted toward retiring the override').toMatchObject({
+      decision: 'refused',
+      reason: 'core_first'
+    })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+  })
+
   it('falls back to core file when the override files cannot be written', async () => {
     plan.installPath = path.join(installDir, 'missing')
 

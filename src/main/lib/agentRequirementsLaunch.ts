@@ -55,8 +55,11 @@ const FORCE_STOP_TIMEOUT_MS = 5_000
  *
  * With a version override, the override's listing and install share its first
  * `OVERRIDE_TIMEOUT_MS` and core's own file gets the rest, at least
- * `MIN_FALLBACK_TIMEOUT_MS`. A uv that ignores the stop adds the kill grace and
- * force-stop to each run.
+ * `MIN_FALLBACK_TIMEOUT_MS`. On a fresh install the override waits for core's
+ * file, which gets the whole ceiling, then runs on the same launch with its own
+ * `OVERRIDE_TIMEOUT_MS`, and a failed one gives core's file another
+ * `MIN_FALLBACK_TIMEOUT_MS`: up to 240 s in all. A uv that ignores the stop adds
+ * the kill grace and force-stop to each run.
  */
 const INSTALL_TIMEOUT_MS = 120_000
 
@@ -339,7 +342,9 @@ async function runBoundedInstall(
 /**
  * Install the planned requirements. Bounded and fail-open, never throws. An `override` that
  * validates and passes its check is installed within `OVERRIDE_TIMEOUT_MS`; otherwise core's own
- * file runs in what is left of the ceiling. Returns the decision to report, if any.
+ * file runs in what is left of the ceiling. On a fresh install the override waits for core's file
+ * and then goes in on the same launch, with its own `OVERRIDE_TIMEOUT_MS`. Returns the decision to
+ * report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -376,7 +381,7 @@ export async function installAgentRequirements(
   // A failed override left the row on its terminal status; the fallback is a fresh install.
   if (decision) onStatus?.({ kind: 'installing' })
   const remaining = Math.max(MIN_FALLBACK_TIMEOUT_MS, INSTALL_TIMEOUT_MS - (Date.now() - startedAt))
-  await runBoundedInstall(
+  const coreInstalled = await runBoundedInstall(
     plan,
     plan.reqPath,
     `.launch-agent-reqs-${attemptTag()}.txt`,
@@ -385,7 +390,32 @@ export async function installAgentRequirements(
     signal,
     onStatus
   )
-  return decision
+  if (signal?.aborted || !coreInstalled || decision?.decision !== 'refused') return decision
+  if (decision.reason !== 'core_first') return decision
+  // Core's packages are in now, so the override goes in on this same launch, its constraints
+  // built from what core's file installed. Its own budget starts here: it is a delta on top.
+  const retried = await tryOverride(
+    plan,
+    override,
+    overrideState,
+    runOverride,
+    sendOutput,
+    signal,
+    Date.now()
+  )
+  if (signal?.aborted || retried?.decision !== 'reverted') return retried
+  // The failed override may have moved packages; core's file puts them back.
+  onStatus?.({ kind: 'installing' })
+  await runBoundedInstall(
+    plan,
+    plan.reqPath,
+    `.launch-agent-reqs-${attemptTag()}.txt`,
+    MIN_FALLBACK_TIMEOUT_MS,
+    sendOutput,
+    signal,
+    onStatus
+  )
+  return retried
 }
 
 /** The override's share of the ceiling, so a timed-out override still leaves core's file time. */
