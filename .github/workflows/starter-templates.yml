@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           package-manager-cache: false
-          node-version: 22
+          node-version-file: .nvmrc
       # Checks the tab counts and the one-paid-per-tab rule, and confirms every
       # id still exists upstream.
       - run: node scripts/starter-templates.mjs validate
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           package-manager-cache: false
-          node-version: 22
+          node-version-file: .nvmrc
 
       # Authenticate first. It is the likeliest failure and writes nothing, so
       # a bad key aborts before R2 is mutated and the hosts can diverge.

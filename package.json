@@ -11,7 +11,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Comfy-Org/Comfy-Desktop",
   "engines": {
-    "node": ">=22",
+    "node": ">=26 <27",
     "pnpm": ">=10"
   },
   "packageManager": "pnpm@10.28.1",
