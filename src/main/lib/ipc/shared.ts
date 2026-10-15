@@ -277,8 +277,9 @@ export const RESERVED_ENV_VARS = new Set([
 ])
 
 /** Sources whose ComfyUI and Manager are installed and updated by this app. Portable and git
- *  installs are user-managed, so Manager keeps treating them as plain git checkouts there. */
-const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'desktop', 'comfybuilder'])
+ *  installs are user-managed, so Manager keeps treating them as plain git checkouts there.
+ *  Legacy `desktop` launches its own app, which sets the marker itself. */
+const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {

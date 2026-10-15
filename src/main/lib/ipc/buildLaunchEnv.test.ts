@@ -33,7 +33,7 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
     vi.unstubAllEnvs()
   })
 
-  it.each(['standalone', 'desktop', 'comfybuilder'])(
+  it.each(['standalone', 'comfybuilder'])(
     'sets the app version for desktop-managed source %s',
     (sourceId) => {
       expect(buildLaunchEnv(inst(sourceId)).__COMFYUI_DESKTOP_VERSION__).toBe('2.3.4')
