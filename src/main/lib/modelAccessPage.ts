@@ -25,7 +25,10 @@ const HUGGING_FACE_RESERVED_ROUTES = new Set([
   'support',
   'tasks'
 ])
-const accessWindowsBySender = new WeakMap<WebContents, Map<string, BrowserWindow>>()
+const accessWindowsBySender = new WeakMap<
+  WebContents,
+  WeakMap<Session, Map<string, BrowserWindow>>
+>()
 const securedSessions = new WeakSet<Session>()
 const accessPageContents = new WeakSet<WebContents>()
 
@@ -117,15 +120,22 @@ async function loadAccessPage(accessWindow: BrowserWindow, url: string): Promise
 
 export async function openModelAccessPageWindow(
   sender: WebContents,
-  url: unknown
+  url: unknown,
+  context?: { parent: BrowserWindow; session: Session }
 ): Promise<boolean> {
   const repositoryPath = modelRepositoryPathFromUrl(url)
   if (!repositoryPath || typeof url !== 'string') return false
 
-  const parent = findEntryByComfySender(sender)?.window
+  const parent = context?.parent ?? findEntryByComfySender(sender)?.window
   if (!parent || parent.isDestroyed()) return false
+  const session = context?.session ?? sender.session
 
-  let accessWindows = accessWindowsBySender.get(sender)
+  let sessions = accessWindowsBySender.get(sender)
+  if (!sessions) {
+    sessions = new WeakMap()
+    accessWindowsBySender.set(sender, sessions)
+  }
+  let accessWindows = sessions.get(session)
   const existing = accessWindows?.get(repositoryPath)
   if (existing && !existing.isDestroyed()) {
     existing.focus()
@@ -133,7 +143,7 @@ export async function openModelAccessPageWindow(
   }
   if (!accessWindows) {
     accessWindows = new Map()
-    accessWindowsBySender.set(sender, accessWindows)
+    sessions.set(session, accessWindows)
   }
   accessWindows.delete(repositoryPath)
 
@@ -147,8 +157,7 @@ export async function openModelAccessPageWindow(
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      // Keep provider login and access grants available to subsequent downloads.
-      session: sender.session,
+      session,
       preload: undefined,
       nodeIntegration: false,
       contextIsolation: true,
@@ -158,7 +167,7 @@ export async function openModelAccessPageWindow(
 
   const accessContents = accessWindow.webContents
   accessWindows.set(repositoryPath, accessWindow)
-  secureAccessWindow(accessWindow, sender.session)
+  secureAccessWindow(accessWindow, session)
 
   const destroyWithParent = () => {
     if (!accessWindow.isDestroyed()) accessWindow.destroy()
@@ -168,7 +177,7 @@ export async function openModelAccessPageWindow(
     accessPageContents.delete(accessContents)
     if (accessWindows.get(repositoryPath) === accessWindow) {
       accessWindows.delete(repositoryPath)
-      if (accessWindows.size === 0) accessWindowsBySender.delete(sender)
+      if (accessWindows.size === 0) sessions.delete(session)
     }
     parent.removeListener('closed', destroyWithParent)
   })

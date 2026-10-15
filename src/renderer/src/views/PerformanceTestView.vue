@@ -78,6 +78,11 @@ const {
   displayName: workflowDisplayName,
   download: exampleDownload,
   isForOtherInstallation: isExampleForOtherInstallation,
+  needsModelAccess,
+  isOpeningModelAccess,
+  modelAccessError,
+  openModelAccess,
+  retryDownload: retryExampleDownload,
   openPicker: openExampleWorkflowPicker,
   prepare: prepareExampleWorkflow,
   release: releaseExampleWorkflow,
@@ -713,7 +718,7 @@ watch(performanceTestLogs, async () => {
                     <code v-if="pendingExampleWorkflowLabel">
                       {{ t('performanceTest.preparingExampleWorkflow') }}
                     </code>
-                    <template v-else-if="exampleDownload">
+                    <template v-else-if="exampleDownload && exampleDownload.status !== 'error'">
                       <code>{{ exampleDownload.message }}</code>
                       <span
                         class="performance-test__example-download-bar"
@@ -761,6 +766,31 @@ watch(performanceTestLogs, async () => {
               <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
                 {{ workflowImportError }}
               </p>
+              <div
+                v-if="exampleDownload?.status === 'error'"
+                class="performance-test__model-access"
+              >
+                <template v-if="needsModelAccess">
+                  <p>{{ t('performanceTest.modelAccessHint') }}</p>
+                  <button
+                    class="brand-secondary"
+                    type="button"
+                    :disabled="isOpeningModelAccess"
+                    @click="openModelAccess"
+                  >
+                    {{ t('performanceTest.signInToHuggingFace') }}
+                  </button>
+                </template>
+                <button
+                  class="brand-primary"
+                  type="button"
+                  :disabled="isWorkflowImporting || isExampleForOtherInstallation"
+                  @click="retryExampleDownload"
+                >
+                  {{ t('performanceTest.retryModelDownloads') }}
+                </button>
+                <p v-if="modelAccessError" role="alert">{{ modelAccessError }}</p>
+              </div>
             </section>
 
             <section class="performance-test__column">
@@ -1072,9 +1102,24 @@ watch(performanceTestLogs, async () => {
         :selected-value="selectedExampleWorkflowId"
         :disk-space="exampleDiskSpace"
         :disk-space-loading="false"
+        :model-access-hint="t('performanceTest.modelAccessHint')"
         compact
         @select="selectedExampleWorkflowId = $event.value"
-      />
+      >
+        <template #model-access>
+          <div class="performance-test__model-access">
+            <button
+              class="brand-secondary"
+              type="button"
+              :disabled="isOpeningModelAccess"
+              @click="openModelAccess"
+            >
+              {{ t('performanceTest.signInToHuggingFace') }}
+            </button>
+            <p v-if="modelAccessError" role="alert">{{ modelAccessError }}</p>
+          </div>
+        </template>
+      </TemplatePickerStep>
       <template #footer>
         <button class="brand-secondary" type="button" @click="isExamplePickerOpen = false">
           {{ t('common.cancel') }}
@@ -1095,6 +1140,21 @@ watch(performanceTestLogs, async () => {
 <style scoped>
 .performance-test {
   min-height: 0;
+}
+
+.performance-test__model-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.performance-test__model-access p {
+  width: 100%;
+  color: var(--neutral-300);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .performance-test :deep(.brand-outer-frame),

@@ -101,6 +101,7 @@ describe('performance test example workflows', () => {
       description: 'Live description.',
       recommended: false,
       data: {
+        requiresHuggingFaceAccess: SAMPLE_ID === 'image_flux3_klein_distilled_t2i',
         modality: 'image',
         category: 'Image',
         name: 'Sample Live',

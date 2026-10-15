@@ -189,6 +189,10 @@ const messages = {
       exampleWorkflowsNeedInstall: 'Finish installing this instance to use example workflows.',
       exampleModelsDownload: 'Model download progress',
       exampleModelsFailed: 'Could not download every model required by this workflow.',
+      modelAccessHint: 'Sign in and accept the repository terms, then retry.',
+      signInToHuggingFace: 'Sign in to Hugging Face',
+      retryModelDownloads: 'Retry downloads',
+      modelAccessFailed: 'Could not open Hugging Face. Check your connection and try again.',
       exampleModelsNoSpace: "There is not enough disk space for this workflow's models.",
       cancelExampleDownload: 'Cancel download',
       dropWorkflowHint: 'Drop a workflow .json file in API format here, or click to browse',
@@ -537,6 +541,7 @@ function installMockApi(initial?: {
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     })),
     getPerformanceTestExampleWorkflows: vi.fn(async () => ({ options: [], diskSpace: null })),
+    openPerformanceTestModelAccess: vi.fn(async () => true),
     preparePerformanceTestExampleWorkflow: vi.fn(async () => ({
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
@@ -1428,6 +1433,7 @@ describe('PanelApp', () => {
   const EXAMPLE_PATH = 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_int8.json'
 
   interface ExampleWorkflowApi {
+    openPerformanceTestModelAccess: ReturnType<typeof vi.fn>
     getPerformanceTestExampleWorkflows: ReturnType<typeof vi.fn>
     preparePerformanceTestExampleWorkflow: ReturnType<typeof vi.fn>
     deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
@@ -1548,6 +1554,58 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
     expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('opens Hugging Face for the selected instance and retries a failed gated download', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleWorkflows.mockResolvedValue({
+      options: [
+        {
+          value: 'image_flux3_klein_distilled_t2i',
+          label: 'Flux.3',
+          data: { modality: 'image', requiresHuggingFaceAccess: true }
+        }
+      ],
+      diskSpace: null
+    })
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('.performance-test__model-access button')?.click()
+    await flushPromises()
+    expect(api.openPerformanceTestModelAccess).toHaveBeenCalledWith(
+      'workspace-install',
+      'image_flux3_klein_distilled_t2i'
+    )
+    expect(api.preparePerformanceTestExampleWorkflow).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('.base-modal-footer .brand-primary')?.click()
+    await flushPromises()
+    await emitExampleDownload({ status: 'error', percent: 0, message: 'Download failed' })
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('Flux.3')
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+    api.openPerformanceTestModelAccess.mockResolvedValueOnce(false)
+    await wrapper.get('.performance-test__model-access .brand-secondary').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__model-access [role="alert"]').text()).toContain(
+      'Could not open Hugging Face'
+    )
+    await wrapper.get('.performance-test__model-access .brand-secondary').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await wrapper.get('.performance-test__model-access .brand-primary').trigger('click')
+    await flushPromises()
+    expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenLastCalledWith(
+      'workspace-install',
+      'image_flux3_klein_distilled_t2i'
+    )
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.performance-test__workflow-error').exists()).toBe(false)
   })
 
   it('reports a bundled example workflow by its file name in telemetry', async () => {

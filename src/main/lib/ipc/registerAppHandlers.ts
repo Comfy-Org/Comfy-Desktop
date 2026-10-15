@@ -30,6 +30,7 @@ import {
   _runningSessions
 } from './shared'
 import si from 'systeminformation'
+import { openPerformanceTestModelAccess } from '../performanceTestModelAccess'
 import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import type { InstallationRecord } from '../../installations'
@@ -206,6 +207,16 @@ export function registerAppHandlers(): void {
       const installation = await findExampleWorkflowInstallation(installationId)
       if (!installation) return { options: [], diskSpace: null }
       return getPerformanceTestExampleCatalog(installation.id)
+    }
+  )
+
+  ipcMain.handle(
+    'open-performance-test-model-access',
+    async (event, installationId: string, templateId: string) => {
+      const installation = await findExampleWorkflowInstallation(installationId)
+      return installation
+        ? openPerformanceTestModelAccess(event.sender, installation, templateId)
+        : false
     }
   )
 

@@ -1292,6 +1292,7 @@ export interface ElectronApi {
   getPerformanceTestExampleWorkflows(
     installationId: string
   ): Promise<{ options: FieldOption[]; diskSpace: DiskSpaceInfo | null }>
+  openPerformanceTestModelAccess(installationId: string, templateId: string): Promise<boolean>
   /** Stores the workflow and starts its model download in the background; later
    *  progress arrives through `onPerformanceTestExampleDownload`. */
   preparePerformanceTestExampleWorkflow(

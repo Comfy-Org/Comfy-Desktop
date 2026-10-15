@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WebContents } from 'electron'
+import type { BrowserWindow, Session, WebContents } from 'electron'
 
 type Listener = (...args: unknown[]) => void
 
@@ -157,6 +157,25 @@ describe('openModelAccessPageWindow', () => {
 
     expect(mocks.createBrowserWindow).toHaveBeenCalledTimes(2)
     expect(accessWindow.focus).not.toHaveBeenCalled()
+  })
+
+  it('keeps selected instance sessions separate when a benchmark sender switches instances', async () => {
+    const sender = { session } as unknown as WebContents
+    const first = createSession('first') as unknown as Session
+    const second = createSession('second') as unknown as Session
+    const host = parent as unknown as BrowserWindow
+    await openModelAccessPageWindow(sender, url, { parent: host, session: first })
+    await openModelAccessPageWindow(sender, url, { parent: host, session: second })
+    expect(mocks.createBrowserWindow).toHaveBeenCalledTimes(2)
+    expect(mocks.createBrowserWindow).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        parent: host,
+        webPreferences: expect.objectContaining({ session: second })
+      })
+    )
+    await openModelAccessPageWindow(sender, url, { parent: host, session: first })
+    expect(mocks.createBrowserWindow).toHaveBeenCalledTimes(2)
+    expect(accessWindow.focus).toHaveBeenCalledOnce()
   })
 
   it('destroys the access window when its Comfy host closes', async () => {

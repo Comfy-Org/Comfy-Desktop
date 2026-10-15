@@ -11,6 +11,7 @@
  * non-empty and the picker always renders.
  */
 import { fetchJSON } from '../../lib/fetch'
+import { templateModelAccessUrl } from './templateModelAccess'
 import type { FieldOption } from '../../types/sources'
 import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
@@ -306,6 +307,7 @@ export function toTemplateFieldOption(
       thumbnailUrl: template.thumbnailUrl,
       sizeBytes: template.sizeBytes,
       modelsPresent,
+      requiresHuggingFaceAccess: templateModelAccessUrl(template.id) !== null,
       apiNode: template.apiNode
     }
   }

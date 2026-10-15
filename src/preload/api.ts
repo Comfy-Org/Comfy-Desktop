@@ -32,6 +32,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('import-performance-test-workflow', filePath),
     getPerformanceTestExampleWorkflows: (installationId) =>
       ipcRenderer.invoke('get-performance-test-example-workflows', installationId),
+    openPerformanceTestModelAccess: (installationId, templateId) =>
+      ipcRenderer.invoke('open-performance-test-model-access', installationId, templateId),
     preparePerformanceTestExampleWorkflow: (installationId, templateId) =>
       ipcRenderer.invoke('prepare-performance-test-example-workflow', installationId, templateId),
     deletePerformanceTestWorkflow: (filePath) =>
