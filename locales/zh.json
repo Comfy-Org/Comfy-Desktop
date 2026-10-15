@@ -976,6 +976,8 @@
     "templateModelsDownloaded": "已下载",
     "templateTabsAria": "按类型筛选入门工作流",
     "templateApiBadge": "需要积分",
+    "templateHuggingFaceBadge": "需登录 Hugging Face",
+    "templateHuggingFaceNotice": "这些模型需要 Hugging Face 访问权限。安装完成后，点击缺失模型旁的锁图标，登录并接受仓库的使用条款，然后重试下载。",
     "templateInstall": "安装",
     "templateSkipAndInstall": "跳过并安装",
     "templateSkipAndInstallAria": "跳过入门工作流并安装 ComfyUI",
