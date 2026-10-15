@@ -23,14 +23,14 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 // Match the standalone environment versions
-const PYTHON_VERSION = '3.13.12'
-const PBS_RELEASE = '20260211'
+const PYTHON_VERSION = '3.13.16'
+const PBS_RELEASE = '20261009'
 
 // uv is bundled so adopted-install flows (and any future bootstrap-driven
 // venv ops) have a managed package installer without depending on a system
 // uv or installing one into the user's environment. Pinned; bump together
 // with a new bootstrap-v* release tag.
-const UV_VERSION = '0.11.18'
+const UV_VERSION = '0.13.0'
 
 const PLATFORM_MAP = {
   'win-x64': {

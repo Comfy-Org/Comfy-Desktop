@@ -24,9 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version-file: .nvmrc
       # Shape the app accepts, and every example downloadable from GitHub `main`.
       - run: node scripts/benchmark-templates.mjs validate
