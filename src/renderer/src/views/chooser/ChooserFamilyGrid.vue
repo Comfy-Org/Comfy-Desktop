@@ -113,7 +113,7 @@ function unlockTileSize(el: Element): void {
    * the grid reserves blank tracks across the full width, leaving 1-3 cards
    * stuck at the left edge. Fixed tracks wrap honestly. */
   grid-template-columns: repeat(auto-fit, 280px);
-  justify-content: start;
+  justify-content: safe center;
   gap: 16px;
   align-content: start;
 }
