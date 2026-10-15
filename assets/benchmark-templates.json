@@ -42,6 +42,16 @@
       }
     },
     {
+      "id": "image_flux3_klein_distilled_t2i",
+      "modality": "image",
+      "snapshot": {
+        "title": "Flux.3 Image Klein Distilled: Text to Image",
+        "description": "Generate images from text prompts using the distilled Flux.3 Image Klein model, which runs efficiently in 15 sampling steps with no classifier-free guidance. Just describe what you want and receive one finished image. Ideal for rapid concept art, marketing visuals, and everyday creative ideation where speed matters.",
+        "sizeBytes": 22226455757,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
       "id": "image_ideogram4_t2i_int8",
       "modality": "image",
       "snapshot": {
