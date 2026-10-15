@@ -30,7 +30,7 @@ export async function openPicker(
   await waitForWebContents(app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(app)
   await popup.waitFor(
-    async () => popup.evaluate<boolean>(`typeof window.__comfyTitlePopup?.${bridgeFn} === "function"`),
+    async () => popup.evaluate<boolean>(`typeof window.__comfyTitlePopup?.${bridgeFn} === "function"`, { readOnly: true }),
     { timeout: 10_000, message: 'picker bridge never appeared' },
   )
 }

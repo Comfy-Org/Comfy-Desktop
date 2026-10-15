@@ -116,6 +116,7 @@ test('Import via the toolbar stages a restore target without touching history @l
   // Sanity: empty install starts with zero snapshots.
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+    { readOnly: true },
   )
   expect(initialCount).toBe(0)
 
@@ -158,6 +159,7 @@ test('Import via the toolbar stages a restore target without touching history @l
   // label and trigger, not on the raw count.
   const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+    { readOnly: true },
   )
   expect(snapshots.some((s) => s.label === IMPORTED_LABEL)).toBe(false)
   expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)

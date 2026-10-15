@@ -42,7 +42,8 @@ test.afterAll(async () => {
 
 test('chooser body renders on cold start @windows @macos @linux', async () => {
   await expectChooserVisible(ctx.panel)
-  expect(await ctx.panel.exists('.chooser-tile-new')).toBe(true)
+  // The shell mounts before scope and installation hydration reveal the tiles.
+  await ctx.panel.waitForVisible('.chooser-tile-new')
   expect(
     (
       await ctx.panel.textOf(
@@ -188,6 +189,13 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
 })
 
 test('title-bar tooltip popup is created on demand and hides cleanly @windows @macos @linux', async () => {
+  // Tooltip visibility requires the host to retain native focus.
+  await ctx.app.evaluate(({ app, BrowserWindow, webContents }) => {
+    app.focus({ steal: true })
+    BrowserWindow.getAllWindows()[0]?.focus()
+    webContents.getAllWebContents().find((wc) => wc.getURL().includes('comfyTitleBar.html'))?.focus()
+  })
+  await expect.poll(() => ctx.titleBar.evaluate<boolean>('document.hasFocus()', { readOnly: true })).toBe(true)
   // No webContents for the tooltip popup exists before the first show —
   // unlike titlePopup / systemModal, the tooltip is NOT pre-warmed.
   expect(await findWebContentsId(ctx.app, 'comfyTitleTooltip.html')).toBeNull()

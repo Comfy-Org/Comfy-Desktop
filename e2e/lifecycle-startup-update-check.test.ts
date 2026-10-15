@@ -96,6 +96,7 @@ test('startup pre-warm fills the release cache without any UI gesture @lifecycle
     .poll(async () => {
       const sections = await ctx.panel.evaluate<DetailSection[]>(
         `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+        { readOnly: true },
       )
       const updateSection = sections.find((s) => s.tab === 'update')
       const channelField = updateSection?.fields?.find((f) => f.id === 'updateChannel')
@@ -110,6 +111,7 @@ test('startup pre-warm fills the release cache without any UI gesture @lifecycle
   // (`updateAvailable`) MUST be true once the cache is populated.
   const sections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   const stableCard = sections
     .find((s) => s.tab === 'update')!

@@ -140,6 +140,23 @@ describe('stageModels', () => {
     expect(attempts).toBe(3)
   })
 
+  it('reports a known-incomplete existing file without retrying under the staging lock', async () => {
+    const install = freshInstall()
+    const error =
+      'Close any program using the file, then relaunch this installation to finish model staging.'
+    const jobs = fakeJobs(() => ({ status: 'error', error, code: 'unsafe-existing-file' }))
+    const failure = await stageModels({ models: [model()], installPath: install, jobs }).catch(
+      (err: unknown) => err
+    )
+    expect(jobs.start).toHaveBeenCalledOnce()
+    expect(failure).toMatchObject({
+      kind: 'model-conflict',
+      message: expect.stringContaining(error)
+    })
+    const handle = await jobs.start.mock.results[0]!.value
+    expect(handle.release).toHaveBeenCalledOnce()
+  })
+
   it('fails with the transport error once the retry budget is exhausted', async () => {
     const install = freshInstall()
     const jobs = fakeJobs(() => ({ status: 'error', error: 'HTTP 503' }))
