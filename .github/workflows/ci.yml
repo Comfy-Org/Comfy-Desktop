@@ -68,7 +68,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.18.0
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -108,7 +108,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.18.0
+          node-version-file: .nvmrc
 
       - name: Require a version bump when the contract changes
         env:
@@ -196,7 +196,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.18.0
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
