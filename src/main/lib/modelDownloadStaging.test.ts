@@ -4,11 +4,13 @@ import path from 'path'
 import { PassThrough } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  INSTALL_SCRATCH_SUFFIX,
   LEGACY_META_SUFFIX,
   STAGING_META_SUFFIX,
   STAGING_SUFFIX,
   ensureStagedPlaceholder,
   hasModelExtension,
+  installStagedAtFinal,
   migrateLegacyModelDownloadArtifacts,
   quarantineOrphanStagedBytes,
   readStagedMeta,
@@ -163,6 +165,157 @@ describe('removeStagedArtifacts', () => {
 
   it('is a no-op when nothing is staged', () => {
     expect(() => removeStagedArtifacts(path.join(tmpDir, 'model.safetensors'))).not.toThrow()
+  })
+})
+
+describe('installStagedAtFinal', () => {
+  const staged = (finalPath: string, bytes: string): string => {
+    const partPath = stagingPathFor(finalPath)
+    fs.writeFileSync(partPath, bytes)
+    return partPath
+  }
+
+  it('hard-links the staged bytes onto the free final name and drops the staged name', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    await installStagedAtFinal(partPath, finalPath, 'verified'.length)
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('verified')
+    expect(fs.existsSync(partPath)).toBe(false)
+  })
+
+  it('accepts an identical existing final and removes the staged copy', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    fs.writeFileSync(finalPath, 'verified')
+    await installStagedAtFinal(partPath, finalPath, 'verified'.length)
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('verified')
+    expect(fs.existsSync(partPath)).toBe(false)
+  })
+
+  it('reports a conflict and preserves both files when the final holds different bytes', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    fs.writeFileSync(finalPath, 'different')
+    await expect(installStagedAtFinal(partPath, finalPath, 'verified'.length)).rejects.toThrow(
+      /already exists/
+    )
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('different')
+    expect(fs.readFileSync(partPath, 'utf-8')).toBe('verified')
+  })
+
+  it.each(['EPERM', 'EISDIR'] as const)(
+    'installs via a size-verified copy when link fails with %s (exFAT/FAT32)',
+    async (code) => {
+      const finalPath = path.join(tmpDir, 'model.safetensors')
+      const partPath = staged(finalPath, 'verified bytes')
+      const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error(code), { code })
+      })
+      const openSpy = vi.spyOn(fs, 'openSync')
+      try {
+        await installStagedAtFinal(partPath, finalPath, 'verified bytes'.length)
+        expect(fs.readFileSync(finalPath, 'utf-8')).toBe('verified bytes')
+        // The final name was never claimed with an empty marker, the scratch
+        // copy is gone, and the staged name was dropped.
+        expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
+        expect(fs.existsSync(partPath + INSTALL_SCRATCH_SUFFIX)).toBe(false)
+        expect(fs.existsSync(partPath)).toBe(false)
+      } finally {
+        openSpy.mockRestore()
+        linkSpy.mockRestore()
+      }
+    }
+  )
+
+  it('copy fallback never replaces a different file that appeared at the final name', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    fs.writeFileSync(finalPath, 'not ours')
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+    })
+    try {
+      await expect(
+        installStagedAtFinal(partPath, finalPath, 'verified'.length)
+      ).rejects.toThrow(/already exists/)
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('not ours')
+      expect(fs.readFileSync(partPath, 'utf-8')).toBe('verified')
+      expect(fs.existsSync(partPath + INSTALL_SCRATCH_SUFFIX)).toBe(false)
+    } finally {
+      linkSpy.mockRestore()
+    }
+  })
+
+  it('copy fallback keeps the staged bytes and leaves no scratch when the copy fails', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+    })
+    const copySpy = vi.spyOn(fs.promises, 'copyFile').mockRejectedValue(
+      Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+    )
+    try {
+      await expect(
+        installStagedAtFinal(partPath, finalPath, 'verified'.length)
+      ).rejects.toThrow(/ENOSPC/)
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(partPath, 'utf-8')).toBe('verified')
+      expect(fs.existsSync(partPath + INSTALL_SCRATCH_SUFFIX)).toBe(false)
+    } finally {
+      copySpy.mockRestore()
+      linkSpy.mockRestore()
+    }
+  })
+
+  it('copy fallback fails closed on a short copy of the staged bytes', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+    })
+    // Truncate the scratch copy as it lands, before the size check.
+    const realCopy = fs.promises.copyFile.bind(fs.promises)
+    const copySpy = vi.spyOn(fs.promises, 'copyFile').mockImplementation(
+      (async (from: Parameters<typeof fs.promises.copyFile>[0], to: string) => {
+        await realCopy(from, to)
+        const fh = await fs.promises.open(to, 'r+')
+        try {
+          await fh.truncate(3)
+        } finally {
+          await fh.close()
+        }
+      }) as typeof fs.promises.copyFile
+    )
+    try {
+      await expect(
+        installStagedAtFinal(partPath, finalPath, 'verified'.length)
+      ).rejects.toThrow(/incomplete/)
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(partPath, 'utf-8')).toBe('verified')
+      expect(fs.existsSync(partPath + INSTALL_SCRATCH_SUFFIX)).toBe(false)
+    } finally {
+      copySpy.mockRestore()
+      linkSpy.mockRestore()
+    }
+  })
+
+  it('fails closed on a real link error instead of degrading to the copy fallback', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const partPath = staged(finalPath, 'verified')
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EIO'), { code: 'EIO' })
+    })
+    const copySpy = vi.spyOn(fs.promises, 'copyFile')
+    try {
+      await expect(installStagedAtFinal(partPath, finalPath, 8)).rejects.toThrow(/EIO/)
+      expect(copySpy).not.toHaveBeenCalled()
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(partPath, 'utf-8')).toBe('verified')
+    } finally {
+      copySpy.mockRestore()
+      linkSpy.mockRestore()
+    }
   })
 })
 
@@ -556,6 +709,22 @@ describe('quarantineOrphanStagedBytes', () => {
     }
     expect(fs.readFileSync(orphanPath, 'utf-8')).toBe('quarantined')
     expect(fs.existsSync(orphanPath + '.orphan')).toBe(false)
+  })
+
+  it('falls back to claim+rename when Windows reports an exFAT hard link as EISDIR', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    const orphanPath = stagingPathFor(finalPath)
+    fs.writeFileSync(orphanPath, 'quarantined')
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' })
+    })
+    try {
+      expect(quarantineOrphanStagedBytes(finalPath)).toBe(true)
+      expect(fs.readFileSync(orphanPath + '.orphan', 'utf-8')).toBe('quarantined')
+      expect(fs.existsSync(orphanPath)).toBe(false)
+    } finally {
+      linkSpy.mockRestore()
+    }
   })
 })
 
