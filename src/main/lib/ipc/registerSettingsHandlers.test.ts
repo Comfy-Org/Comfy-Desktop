@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
@@ -17,7 +17,7 @@ vi.mock('./shared', async () => {
   const { lookupEnMessage } = await import('../localeTestHelper')
   return {
     ipcMain: { handle: vi.fn(), on: vi.fn() },
-    nativeTheme: {},
+    nativeTheme: { on: vi.fn() },
     sources: [],
     settings: {
       getAll: () => mockSettings,
@@ -52,7 +52,12 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 // Values mirror src/main/settings.ts; mocked because the real module imports electron.
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
-import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
+import { ipcMain } from './shared'
+import {
+  applySettingSet,
+  buildSettingsSections,
+  registerSettingsHandlers
+} from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
   for (const key of Object.keys(mockSettings)) delete mockSettings[key]
@@ -208,5 +213,63 @@ describe('applySettingSet beta enrolment consent', () => {
 
     expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
     expect(mockSettings.betaFeaturesEnabled).toBe(false)
+  })
+})
+
+describe('set-setting handler', () => {
+  type Handler = (event: unknown, key: string, value: unknown) => void
+  const setSettingHandler = (): Handler => {
+    registerSettingsHandlers()
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === 'set-setting')
+    return call![1] as unknown as Handler
+  }
+  const requestLine = (log: { mock: { calls: unknown[][] } }): string | undefined =>
+    log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('set-setting'))
+
+  beforeEach(() => {
+    resetMockSettings()
+    vi.mocked(ipcMain.handle).mockClear()
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('still writes when the sender was destroyed before dispatch', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const destroyed = {
+      sender: {
+        getURL: () => {
+          throw new Error('Object has been destroyed')
+        }
+      }
+    }
+
+    setSettingHandler()(destroyed, 'theme', 'dark')
+
+    expect(mockSettingsSet).toHaveBeenCalledWith('theme', 'dark')
+    expect(requestLine(log)).toContain('<sender gone>')
+  })
+
+  it('says when the sender has no URL', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    setSettingHandler()({ sender: { getURL: () => '' } }, 'theme', 'dark')
+
+    expect(requestLine(log)).toContain('requested by <no url>')
+  })
+
+  it('names the requesting page without its path', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const sender = {
+      sender: {
+        getURL: () =>
+          'file:///D:/Clients/Acme/resources/app.asar/out/renderer/panel.html?installationId=inst-secret#top'
+      }
+    }
+
+    setSettingHandler()(sender, 'inputDir', '/home/alice/private-in')
+
+    expect(requestLine(log)).toMatch(/requested by panel\.html$/)
+    expect(requestLine(log)).not.toContain('inst-secret')
+    expect(requestLine(log)).not.toContain('private-in')
+    expect(requestLine(log)).not.toContain('Acme')
   })
 })
