@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-const VERIFIED_SYSTEMINFORMATION_VERSION = '5.31.5'
+const VERIFIED_SYSTEMINFORMATION_VERSION = '5.33.15'
 
 const LOCKFILE = path.resolve(__dirname, '..', '..', '..', 'pnpm-lock.yaml')
 
