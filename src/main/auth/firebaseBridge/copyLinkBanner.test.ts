@@ -5,6 +5,7 @@ import {
   buildRemoveCopyLinkBannerScript,
   COPY_LINK_BANNER_ID,
   OPEN_LINK_SENTINEL,
+  START_OVER_SENTINEL,
   type CopyLinkBannerLabels
 } from './copyLinkBanner'
 
@@ -35,6 +36,21 @@ describe('buildCopyLinkBannerScript', () => {
     expect(script).toContain(JSON.stringify(OPEN_LINK_SENTINEL))
     // Copy is in-page only — no console sentinel a remote page could abuse.
     expect(script).not.toContain('__comfyCopyLoginLink')
+  })
+
+  it('renders no Start over button (and no sentinel) without the label', () => {
+    const script = buildCopyLinkBannerScript(url, labels)
+    expect(script).not.toContain(JSON.stringify(START_OVER_SENTINEL))
+    expect(script).not.toContain('bar.appendChild(restart)')
+  })
+
+  it('renders a one-shot Start over button when the label is provided', () => {
+    const script = buildCopyLinkBannerScript(url, { ...labels, startOver: 'Start over' })
+    expect(script).toContain(JSON.stringify(START_OVER_SENTINEL))
+    expect(script).toContain('bar.appendChild(restart)')
+    // Disabled after the first click so a double-click can't mint two codes.
+    expect(script).toContain('restart.disabled=true')
+    expect(() => new Function(script)).not.toThrow()
   })
 
   it('copies in-page with a clipboard primary and execCommand fallback', () => {
