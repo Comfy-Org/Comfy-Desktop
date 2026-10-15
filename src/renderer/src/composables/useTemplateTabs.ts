@@ -32,13 +32,14 @@ function modalityOf(option: FieldOption): Modality | null {
 /**
  * Groups the picker's template options into per-modality tabs and tracks the
  * active one. The "None" sentinel is excluded; only modalities with ≥1 template
- * get a tab. The active tab follows the selected template (so re-entering the
- * step lands on the user's pick) and defaults to the first populated tab.
+ * get a tab. The tab opens on the first selected template (so re-entering the
+ * step lands on the user's pick), else the first populated tab, and then stays
+ * where the user put it: picking or unpicking cards never switches tabs.
  */
 export function useTemplateTabs(
   options: Ref<FieldOption[]>,
   noneValue: Ref<string> | string,
-  selectedValue: Ref<string | null>,
+  selectedValues: Ref<readonly string[]>,
   translate: (key: string) => string
 ) {
   const none = computed(() => (typeof noneValue === 'string' ? noneValue : noneValue.value))
@@ -66,28 +67,24 @@ export function useTemplateTabs(
     }))
   )
 
-  const modalityOfSelected = computed<Modality | null>(() => {
-    const selected = templateCards.value.find((o) => o.value === selectedValue.value)
-    return selected ? modalityOf(selected) : null
-  })
-
   const activeModality = ref<Modality | null>(null)
 
-  /** Keep the active tab valid: prefer the selected template's modality, then
-   *  the current tab if it still exists, then the first populated tab. */
+  /** Keep the active tab valid: keep the current tab while it exists, else
+   *  the first selected template's modality, else the first populated tab. */
   watch(
-    [tabs, modalityOfSelected],
+    tabs,
     () => {
       const available = tabs.value.map((t) => t.modality)
       if (available.length === 0) {
         activeModality.value = null
         return
       }
-      if (modalityOfSelected.value && available.includes(modalityOfSelected.value)) {
-        activeModality.value = modalityOfSelected.value
-      } else if (!activeModality.value || !available.includes(activeModality.value)) {
-        activeModality.value = available[0]!
-      }
+      if (activeModality.value && available.includes(activeModality.value)) return
+      const selectedModality = selectedValues.value
+        .map((value) => templateCards.value.find((o) => o.value === value))
+        .map((card) => (card ? modalityOf(card) : null))
+        .find((modality): modality is Modality => !!modality && available.includes(modality))
+      activeModality.value = selectedModality ?? available[0]!
     },
     { immediate: true }
   )

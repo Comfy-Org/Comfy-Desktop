@@ -229,10 +229,9 @@ export function startExampleModelDownload(
   startTemplateDownloadTask(
     taskId,
     installation,
-    template.id,
+    [{ id: template.id, workflowJson: editorWorkflow }],
     template.sizeBytes,
-    { sendOutput: () => {} },
-    editorWorkflow
+    { sendOutput: () => {} }
   )
   const stopWatching = watchPageGone(page, () => {
     _pageWatches.delete(taskId)

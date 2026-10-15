@@ -288,10 +288,9 @@ describe('performance test example workflows', () => {
       expect(startTemplateDownloadTask).toHaveBeenCalledWith(
         taskId,
         installation,
-        SAMPLE_ID,
+        [{ id: SAMPLE_ID, workflowJson: editorWorkflow }],
         123,
-        { sendOutput: expect.any(Function) },
-        editorWorkflow
+        { sendOutput: expect.any(Function) }
       )
       expect(subscribeTemplateDownload).toHaveBeenCalledWith(taskId, expect.any(Function))
       // The summary reported at subscribe time is returned, not sent.

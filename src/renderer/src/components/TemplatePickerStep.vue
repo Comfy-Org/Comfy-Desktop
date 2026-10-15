@@ -8,7 +8,7 @@ import {
   templateDiskRequiredBytes,
   isTemplateDiskBlocked,
   isApiNodeTemplate,
-  templateDownloadBytes,
+  templatesDownloadBytes,
   templateSizeBytes
 } from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
@@ -20,18 +20,23 @@ import Tooltip from './ui/Tooltip.vue'
  * Starter-template picker — modality tabs (Image / Video / 3D / Audio) over a
  * gallery of image cards, each with a name/task/size info bar below the preview.
  * The disk alert is surfaced to (and rendered by) the host wizard.
+ *
+ * `select` fires with the clicked card; the host owns the selection. With
+ * `multiple`, cards are checkboxes the host toggles (arrow keys only move
+ * focus); otherwise they are radios and arrow keys move the selection.
  */
 const props = withDefaults(
   defineProps<{
     options: FieldOption[]
     /** Value of the "no template" option to hide from the cards, when the list has one. */
     noneValue?: string
-    selectedValue: string | null
+    selectedValues: readonly string[]
+    multiple?: boolean
     diskSpace: DiskSpaceInfo | null
     diskSpaceLoading: boolean
     compact?: boolean
   }>(),
-  { noneValue: '', compact: false }
+  { noneValue: '', multiple: false, compact: false }
 )
 
 const emit = defineEmits<{
@@ -45,13 +50,16 @@ const listRef = ref<HTMLElement | null>(null)
 const { tabs, activeModality, visibleCards, selectTab } = useTemplateTabs(
   toRef(props, 'options'),
   toRef(props, 'noneValue'),
-  toRef(props, 'selectedValue'),
+  toRef(props, 'selectedValues'),
   t
 )
 
-const selectedOption = computed(
-  () => props.options.find((o) => o.value === props.selectedValue) ?? null
+const selectedOptions = computed(() =>
+  props.options.filter((o) => props.selectedValues.includes(o.value))
 )
+function isSelected(option: FieldOption): boolean {
+  return props.selectedValues.includes(option.value)
+}
 
 const thumbFailed = reactive<Record<string, boolean>>({})
 /** Per-card load state, so a card fades its image in (and shows the branded
@@ -99,12 +107,12 @@ function isThumbLoading(option: FieldOption): boolean {
 const diskBlocked = computed(
   () =>
     !props.diskSpaceLoading &&
-    isTemplateDiskBlocked(props.diskSpace, templateDownloadBytes(selectedOption.value))
+    isTemplateDiskBlocked(props.diskSpace, templatesDownloadBytes(selectedOptions.value))
 )
 
 const shownDiskError = computed<string | null>(() => {
   if (!diskBlocked.value || !props.diskSpace) return null
-  const required = templateDiskRequiredBytes(templateDownloadBytes(selectedOption.value))
+  const required = templateDiskRequiredBytes(templatesDownloadBytes(selectedOptions.value))
   return t('diskSpace.templateBlockMessage', {
     required: formatBytesCoarse(required),
     free: formatBytesCoarse(props.diskSpace.free)
@@ -113,12 +121,14 @@ const shownDiskError = computed<string | null>(() => {
 
 function focusRow(index: number): void {
   nextTick(() => {
-    listRef.value?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[index]?.focus()
+    listRef.value?.querySelectorAll<HTMLButtonElement>('button.tps__card')[index]?.focus()
   })
 }
 
 /** Arrow/Home/End navigation, scoped to the active tab's cards. The gallery is a
- *  single horizontal row, so Left/Right and Up/Down both step between cards. */
+ *  single horizontal row, so Left/Right and Up/Down both step between cards.
+ *  Single-select moves the selection along; multi-select only moves focus, so
+ *  Space/Enter (native button activation) toggles the focused card. */
 function onRowKeydown(e: KeyboardEvent, index: number): void {
   const last = visibleCards.value.length - 1
   let nextIndex: number
@@ -132,7 +142,7 @@ function onRowKeydown(e: KeyboardEvent, index: number): void {
   if (nextIndex === index) return
   const next = visibleCards.value[nextIndex]
   if (!next) return
-  emit('select', next)
+  if (!props.multiple) emit('select', next)
   focusRow(nextIndex)
 }
 
@@ -166,17 +176,17 @@ defineExpose({ shownDiskError })
     <div
       ref="listRef"
       class="tps__grid"
-      role="radiogroup"
+      :role="multiple ? 'group' : 'radiogroup'"
       :aria-label="t('standalone.templatePickerTitle')"
     >
       <button
         v-for="(opt, index) in visibleCards"
         :key="opt.value"
         type="button"
-        role="radio"
-        :aria-checked="selectedValue === opt.value"
+        :role="multiple ? 'checkbox' : 'radio'"
+        :aria-checked="isSelected(opt)"
         :title="opt.description || undefined"
-        :class="['tps__card', { 'tps__card--selected': selectedValue === opt.value }]"
+        :class="['tps__card', { 'tps__card--selected': isSelected(opt) }]"
         @click="emit('select', opt)"
         @keydown="onRowKeydown($event, index)"
       >
@@ -197,7 +207,7 @@ defineExpose({ shownDiskError })
             @error="thumbFailed[opt.value] = true"
           />
 
-          <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
+          <span v-if="isSelected(opt)" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
           <span v-if="opt.recommended" class="tps__recommended">

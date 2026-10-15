@@ -5,6 +5,7 @@ import { findSitePackages } from './envPaths'
 import { ALLOWED_EXTENSIONS, stripQueryParams } from '../../lib/downloadFilename'
 import { fetchJSON } from '../../lib/fetch'
 import { RAW_TEMPLATES_BASE } from './curatedTemplates'
+import { templateModelKey } from './templateDownloadCore'
 import type { InstallationRecord } from '../../installations'
 
 /**
@@ -205,7 +206,7 @@ export function resolveTemplateModelsFromJson(json: unknown): TemplateModelDownl
     if (!isAcceptableModelUrl(m.url)) continue
     const safe = sanitizeModelPath(m.directory, m.name)
     if (!safe) continue
-    const key = `${safe.directory}/${safe.filename}`
+    const key = templateModelKey(safe)
     if (seen.has(key)) continue
     seen.add(key)
     result.push({ filename: safe.filename, url: m.url, directory: safe.directory })
