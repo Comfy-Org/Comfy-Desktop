@@ -22,7 +22,6 @@ export type ComfyPanelKey =
   | 'comfy'
   | 'performance-test'
   | 'benchmarks'
-  | 'feedback'
   | 'new-install'
   | 'track'
   | 'load-snapshot'
@@ -31,15 +30,14 @@ export type ComfyPanelKey =
    *  is mounted; survives `_runningSessions` flips during update→relaunch. Not
    *  a title-bar pill — set programmatically. */
   | 'progress'
-  /** Overlay mode (like `'feedback'`): the MCP setup modal mounts over the live
-   *  canvas, which stays visible underneath and dimmed. Set programmatically. */
+  /** Overlay mode: the MCP setup modal mounts over the live canvas, which stays
+   *  visible underneath and dimmed. Set programmatically. */
   | 'mcp-setup'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
   'performance-test',
   'benchmarks',
-  'feedback',
   'new-install',
   'track',
   'load-snapshot',
@@ -56,7 +54,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
 export type BodyMode =
   | 'comfy'
   | 'comfy-lifecycle'
-  | 'feedback'
   | 'chooser'
   | 'performance-test'
   | 'benchmarks'
@@ -296,7 +293,7 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
 /** The panel paints transparent with the live canvas visible underneath. */
 export function isCanvasOverlay(entry: ComfyWindowEntry): boolean {
   const mode = computeBodyMode(entry)
-  return mode === 'feedback' || mode === 'mcp-setup' || (mode === 'comfy' && !!entry.panelModal)
+  return mode === 'mcp-setup' || (mode === 'comfy' && !!entry.panelModal)
 }
 
 /** Which body views `layoutViews` shows. A hidden canvas stays alive but collapsed. */

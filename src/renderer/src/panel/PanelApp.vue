@@ -27,6 +27,7 @@ import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
 import { useAnnouncement } from '../composables/useAnnouncement'
+import { usePanelModal } from '../composables/usePanelModal'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { PAGE_COVERED, PageScope } from '../lib/pageCovered'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
@@ -76,10 +77,11 @@ const modal = useModal()
 // as in-app dialogs above the ProgressModal instead of native OS message boxes.
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
-const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
-const { announcementOpen, closeAnnouncement } = useAnnouncement()
+const panelModal = usePanelModal()
+const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback(panelModal)
+const { announcementOpen, closeAnnouncement } = useAnnouncement(panelModal)
 // Pages and wizards stay mounted under a title-bar modal; dialogs above it stay live.
-const pageCovered = computed(() => announcementOpen.value)
+const pageCovered = computed(() => panelModal.current.value !== null)
 provide(PAGE_COVERED, pageCovered)
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
@@ -383,8 +385,7 @@ watch(
   [activePanel, pageCovered, () => currentOverlay.value?.kind === 'takeover'],
   ([panel, covered, takeover]) => {
     // Mirrors main's `isCanvasOverlay`; file-menu wizards hide the canvas but leave `activePanel`.
-    const isOverlay =
-      panel === 'feedback' || panel === 'mcp-setup' || (panel === 'comfy' && covered && !takeover)
+    const isOverlay = panel === 'mcp-setup' || (panel === 'comfy' && covered && !takeover)
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
