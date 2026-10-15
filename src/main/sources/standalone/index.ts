@@ -46,18 +46,15 @@ const MODELS_PRESENT_BUDGET_MS = 2500
 /**
  * Build a variant card FieldOption from a single R2 bundle release. Shared by
  * the install-wizard variant list (newest bundle per vendor) and the
- * snapshot-load flow (a specific historical bundle). `displayTag`, when set,
- * advertises the upstream version the post-install update lands on instead of
- * the bundle's checked-in ComfyUI version; pass `nightly: true` for the
- * "Latest on GitHub" channel, where the install fast-forwards to master HEAD
- * (a few commits past `displayTag`, the latest stable tag).
+ * snapshot-load flow (a specific historical bundle). `displayVersion`, when
+ * set, advertises what the post-install update lands on instead of the
+ * bundle's checked-in ComfyUI version.
  */
 function buildVariantOption(
   vendorId: string,
   release: R2Variant,
-  displayTag: string | null,
-  gpu: string | undefined,
-  nightly = false
+  displayVersion: string | null,
+  gpu: string | undefined
 ): FieldOption {
   const sizeMB = (release.size / 1048576).toFixed(0)
   const downloadFiles = [
@@ -67,15 +64,11 @@ function buildVariantOption(
       size: release.size
     }
   ]
-  // The description is a fixed-format, non-localized string ("ComfyUI X ·
-  // Python Y · Z MB"), so the nightly marker is a plain literal too.
-  const displayVersion = displayTag
-    ? `${displayTag.replace(/^v/, '')}${nightly ? ' (nightly)' : ''}`
-    : release.comfyui_version
   return {
     value: vendorId,
     label: getVariantLabel(vendorId),
-    description: `ComfyUI ${displayVersion}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
+    // `||`, not `??`: an empty version string falls back to the bundle's too.
+    description: `ComfyUI ${displayVersion || release.comfyui_version}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
     data: {
       variantId: vendorId,
       manifest: {
@@ -464,12 +457,10 @@ export const standalone: SourcePlugin = {
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
-        // `latestStableTag` is the upstream ComfyUI version the post-install
-        // auto-update resolves to. Thread it through so the variant cards show
-        // that (the latest stable tag for 'stable'; the same tag marked as a
-        // nightly for 'latest', which fast-forwards a few commits past it)
-        // rather than the older ComfyUI baked into the standalone bundle
-        // (issues #708, #1068).
+        // `latestStableTag` is the upstream ComfyUI version the 'stable'
+        // post-install auto-update resolves to. Thread it through so the
+        // variant cards show that rather than the older ComfyUI baked into
+        // the standalone bundle (issues #708, #1068).
         const channelData = {
           tag: newestBundle.tag,
           vendorReleases,
@@ -542,16 +533,20 @@ export const standalone: SourcePlugin = {
           if (!release) return null
           // Stable: advertise the upstream tag the user lands on after the
           // post-install auto-update (picked tag wins; otherwise channel
-          // head). Latest: advertise the latest stable tag as a nightly,
-          // since the install fast-forwards to master HEAD (a few commits
-          // past it). Both fall back to the bundled version when the tag is
-          // unresolvable (offline, etc.).
-          const displayTag = isStable
-            ? (pickedComfyTag ?? releaseData.latestStableTag ?? null)
+          // head), falling back to the bundled version when the tag is
+          // unresolvable (offline, etc.). Latest: the install fast-forwards to
+          // master HEAD, which is not a release and can sit on a different
+          // lineage from the newest stable tag (a patch cut on a release
+          // branch never lands on master), so no version number describes it
+          // before install. Name the branch instead. The description is a
+          // fixed-format, non-localized string, so "master" is a literal.
+          const stableTag = pickedComfyTag ?? releaseData.latestStableTag ?? null
+          const displayVersion = isStable
+            ? (stableTag?.replace(/^v/, '') ?? null)
             : isLatest
-              ? (releaseData.latestStableTag ?? null)
+              ? 'master'
               : null
-          return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
+          return buildVariantOption(vendorId, release, displayVersion, gpu)
         })
         .filter((item): item is FieldOption => item != null)
     }
