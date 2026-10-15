@@ -16,8 +16,17 @@ const h = vi.hoisted(() => ({
   schema: null as ComfyArgsSchema | null,
   checkout: { kind: 'not-git' } as CoreCheckout,
   prove: vi.fn(),
-  exempt: vi.fn()
+  exempt: vi.fn(),
+  campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
+  idClass: 'machine_derived',
+  records: {} as Record<string, unknown>
 }))
+
+vi.mock('./coreBetaCampaignFlags', () => ({
+  getCoreBetaCampaigns: async () => h.campaigns,
+  readCampaignRecords: () => h.records
+}))
+vi.mock('./deviceId', () => ({ getIdClass: () => h.idClass }))
 
 vi.mock('./coreBetaGrants', async (importOriginal) => ({
   ...(await importOriginal<typeof CoreBetaGrantsModule>()),
@@ -43,6 +52,8 @@ vi.mock('./git', () => ({
   }
 }))
 
+import { parseCampaignAnswer } from './coreBetaCampaigns'
+import { ASSETS_MIN_CORE_COMMIT } from './coreBetaGrants'
 import {
   PREVIEW_PROOF_BUDGET_MS,
   _resetForTest,
@@ -97,6 +108,9 @@ beforeEach(() => {
   h.checkout = { kind: 'head', commit: HEAD }
   h.prove.mockReset()
   h.exempt.mockReset()
+  h.campaigns = { registry: [], answers: new Map() }
+  h.records = {}
+  h.idClass = 'machine_derived'
   proven({ [SHA_A]: true, [SHA_B]: false })
 })
 
@@ -105,6 +119,164 @@ afterEach(() => {
 })
 
 describe('previewCoreBetaArgs', () => {
+  const CAMPAIGN = 'desktop_core_beta_agent'
+  const serveCampaign = (variant: string): void => {
+    h.campaigns = {
+      registry: [{ key: CAMPAIGN, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          CAMPAIGN,
+          parseCampaignAnswer(
+            variant,
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  requires_args: ['--enable-asset-hashing'],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+  }
+
+  it('lists the arg a fresh enrol draw would get at the next launch', async () => {
+    h.grants = [versionGrant]
+    serveCampaign('enrol')
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-asset-hashing', name: 'Asset hashing' },
+      { arg: '--enable-agent', name: null }
+    ])
+    h.idClass = 'random_fallback'
+    await expect(preview(), 'a fallback id cannot enrol at launch either').resolves.toEqual([
+      { arg: '--enable-asset-hashing', name: 'Asset hashing' }
+    ])
+  })
+
+  it("counts Desktop's own --enable-assets toward a campaign's requires_args", async () => {
+    h.grants = []
+    h.schema = { args: [], knownFlags: new Set([...SCHEMA.knownFlags, 'enable-assets']) }
+    h.campaigns = {
+      registry: [{ key: CAMPAIGN, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          CAMPAIGN,
+          parseCampaignAnswer(
+            'enrol',
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  requires_args: ['--enable-assets'],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+    await expect(preview(), 'the floor is unproven').resolves.toEqual([])
+    proven({ [ASSETS_MIN_CORE_COMMIT]: true })
+    await expect(preview()).resolves.toEqual([{ arg: '--enable-agent', name: null }])
+  })
+
+  it("proves the assets floor apart from the grants' cap, as the launch does", async () => {
+    const bounds = Array.from({ length: 16 }, (_, i) => i.toString(16).repeat(40))
+    const ranges = Array.from({ length: 8 }, (_, i): [string, string] => [
+      i.toString(16).repeat(40),
+      (i + 8).toString(16).repeat(40)
+    ])
+    h.grants = [{ arg: '--enable-asset-hashing', commitRanges: ranges }]
+    h.schema = { args: [], knownFlags: new Set([...SCHEMA.knownFlags, 'enable-assets']) }
+    proven({})
+    await preview()
+    const asked = h.prove.mock.calls.map((call) => call[1])
+    expect(asked).toContain(ASSETS_MIN_CORE_COMMIT)
+    expect(asked, 'all 16 grant bounds still proven').toEqual(expect.arrayContaining(bounds))
+  })
+
+  it('proves a campaign commit range before listing its arg', async () => {
+    h.grants = [versionGrant]
+    h.campaigns = {
+      registry: [{ key: CAMPAIGN, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          CAMPAIGN,
+          parseCampaignAnswer(
+            'enrol',
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  commit_ranges: [[SHA_A, null]],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-asset-hashing', name: 'Asset hashing' },
+      { arg: '--enable-agent', name: null }
+    ])
+    expect(h.prove).toHaveBeenCalledWith(expect.anything(), SHA_A, HEAD)
+  })
+
+  it('lists a held campaign arg when slot #0 grants nothing and the user passes its requirement', async () => {
+    h.grants = []
+    serveCampaign('hold')
+    h.records = { [CAMPAIGN]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+    await expect(preview(launchCmd('--enable-asset-hashing'))).resolves.toEqual([
+      { arg: '--enable-agent', name: null }
+    ])
+  })
+
+  it("lists a held campaign arg after slot #0's, and none for a machine that is not enrolled", async () => {
+    const key = 'desktop_core_beta_agent'
+    h.grants = [versionGrant]
+    h.campaigns = {
+      registry: [{ key, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          key,
+          parseCampaignAnswer(
+            'hold',
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  notice: 'silent',
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-asset-hashing', name: 'Asset hashing' }
+    ])
+    h.records = { [key]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-asset-hashing', name: 'Asset hashing' },
+      { arg: '--enable-agent', name: null }
+    ])
+  })
+
   it('lists every grant the next launch is eligible for, with its feature name', async () => {
     await expect(preview()).resolves.toEqual([
       { arg: '--enable-asset-hashing', name: 'Asset hashing' },
