@@ -79,6 +79,25 @@ export function variantMatchesHostArch(variantId: string): boolean {
   return false
 }
 
+/**
+ * Why the running host has no standalone bundle at all, or null when it has
+ * some. `variantMatchesHostArch` filters an ARM64 Linux app down to nothing,
+ * and an empty option list reads exactly like an R2 outage — so the reason
+ * lives here, next to the filter that creates it, and `validateHardware`
+ * turns it into the same block-and-explain the wizard already gives an Intel
+ * Mac. Delete this carve-out when `linux-*-arm64` bundles ship; the filter
+ * above accepts them with no further change.
+ */
+export function unsupportedHostReason(): string | null {
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return (
+      'ComfyUI does not publish a local runtime for ARM64 Linux yet. ' +
+      'You can still connect this machine to cloud or remote workspaces.'
+    )
+  }
+  return null
+}
+
 /** True when a vendor id targets the running platform, with or without the
  *  `beta-` prefix (`win-nvidia` and `beta-win-nvidia-arm64` on Windows). */
 export function variantMatchesHostPlatform(variantId: string): boolean {
