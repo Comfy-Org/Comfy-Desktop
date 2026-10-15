@@ -58,9 +58,11 @@ shows a preview-only alert. Managed submission displays a simulated handoff.
   preload method the screen calls. A missing method is `undefined`, and product
   code that feature-detects optional methods or catches preload errors silently
   takes its fallback path.
-- Its decorator component installs a fresh fixture and resets shared modal state
-  in its setup. On unmount it resets the modal and passes the fixture to
-  `retireDesktopApi`. The fixture's methods then never settle, including through
+- Use its `withDesktopApi` decorator and spread `desktopApiParameters` into the
+  meta's parameters instead of writing your own. The decorator component installs
+  a fresh fixture and resets shared modal state in its setup. On unmount it
+  resets the modal and retires the fixture, including nested namespaces such as
+  `comfybuilder`. The fixture's methods then never settle, including through
   references a store kept (the auth store keeps `comfybuilder`), so the
   unmounted screen's late async work stops instead of throwing or continuing
   against a fixture no example shows. Calls it makes through `window.api` only
@@ -68,8 +70,8 @@ shows a preview-only alert. Managed submission displays a simulated handoff.
   also clears the fixture's spies, which Storybook keeps for the page's
   lifetime, so their recorded calls do not keep the old fixture alive.
   Storybook re-runs `beforeEach` on toolbar and args changes without
-  remounting, which would swap the fixture under the mounted screen. Keep
-  `test.restoreMocks: false` so those rerenders do not clear the fresh spies'
+  remounting, which would swap the fixture under the mounted screen.
+  `desktopApiParameters` sets `test.restoreMocks: false` so those rerenders do not clear the fresh spies'
   call history.
 - Query `screen` (the document body) for popovers, takeover screens and alerts,
   which teleport outside the story canvas. Use condition-based assertions

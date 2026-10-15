@@ -1,18 +1,20 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
 import { expect, screen, userEvent, waitFor } from 'storybook/test'
-import { defineComponent, h, onUnmounted } from 'vue'
-import { useModal } from '../src/renderer/src/composables/useModal'
 import InstallWizardPreview from './InstallWizardPreview.vue'
-import { createDesktopApi, retireDesktopApi, type InstallScenario } from './desktopApi'
+import {
+  createDesktopApi,
+  desktopApiParameters,
+  withDesktopApi,
+  type InstallScenario
+} from './desktopApi'
 
 const meta = {
   title: 'Screens/Create a New Instance',
   component: InstallWizardPreview,
   tags: ['autodocs'],
   parameters: {
+    ...desktopApiParameters,
     desktopScenario: 'publicBuilds' satisfies InstallScenario,
-    // Each mount creates fresh spies; the default restore would clear their calls on rerender.
-    test: { restoreMocks: false },
     docs: {
       description: {
         component:
@@ -20,24 +22,7 @@ const meta = {
       }
     }
   },
-  decorators: [
-    // Scoped to the Vue mount: toolbar and args rerenders re-run beforeEach without remounting.
-    (story, { parameters }) => {
-      const Story = story()
-      return defineComponent({
-        setup() {
-          const api = createDesktopApi(parameters.desktopScenario)
-          window.api = api
-          useModal().dismiss()
-          onUnmounted(() => {
-            useModal().dismiss()
-            retireDesktopApi(api)
-          })
-          return () => h(Story)
-        }
-      })
-    }
-  ]
+  decorators: [withDesktopApi(({ parameters }) => createDesktopApi(parameters.desktopScenario))]
 } satisfies Meta<typeof InstallWizardPreview>
 
 export default meta
@@ -86,6 +71,12 @@ export const ManagedInstallRequested: Story = {
       await screen.findByText(/Simulated installation requested for preview-install/)
     ).toBeVisible()
     await expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
+    await expect(window.api.comfybuilder.installBuild).toHaveBeenCalledWith({
+      buildId: 'studio-image',
+      artifactId: 'windows-nvidia',
+      releaseVersion: 3,
+      installRoot: 'C:\\ComfyUI-Installs'
+    })
   }
 }
 
@@ -132,6 +123,8 @@ export const InstallError: Story = {
     await waitFor(() =>
       expect(screen.getByText('This build is not compatible with this machine.')).toBeVisible()
     )
+    await expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
+    await expect(screen.queryByText(/Simulated installation requested/)).not.toBeInTheDocument()
   }
 }
 

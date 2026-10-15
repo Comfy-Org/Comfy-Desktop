@@ -1,4 +1,7 @@
+import type { Decorator, StoryContext } from '@storybook/vue3-vite'
 import { fn, isMockFunction } from 'storybook/test'
+import { defineComponent, h, onUnmounted } from 'vue'
+import { useModal } from '../src/renderer/src/composables/useModal'
 import type { AuthStatus, DevPlatformBuild, ElectronApi, Source } from '../src/types/ipc'
 
 export type InstallScenario =
@@ -89,14 +92,42 @@ const never = () => new Promise<never>(() => {})
 
 // Called on unmount. In place, because stores keep what they read at creation
 // (the auth store keeps `comfybuilder`): the screen's late calls never settle
-// rather than resolving against a fixture no example shows.
-export function retireDesktopApi(api: ElectronApi): void {
-  for (const methods of [api, api.comfybuilder] as unknown as Record<string, unknown>[]) {
-    for (const [key, value] of Object.entries(methods)) {
-      // Storybook keeps every spy for the page's lifetime, so drop the calls (and `this` objects) it recorded.
-      if (isMockFunction(value)) value.mockClear()
-      if (typeof value === 'function') methods[key] = /^on[A-Z]/.test(key) ? () => () => {} : never
-    }
+// rather than resolving against a fixture no example shows. Recurses into
+// namespaces such as `comfybuilder`.
+function retireDesktopApi(api: object): void {
+  const methods = api as Record<string, unknown>
+  for (const [key, value] of Object.entries(methods)) {
+    // Storybook keeps every spy for the page's lifetime, so drop the calls (and `this` objects) it recorded.
+    if (isMockFunction(value)) value.mockClear()
+    if (typeof value === 'function') methods[key] = /^on[A-Z]/.test(key) ? () => () => {} : never
+    else if (value && typeof value === 'object') retireDesktopApi(value)
+  }
+}
+
+/** Spread into the meta's parameters: each mount creates fresh spies, and the default restore would clear their calls on rerender. */
+export const desktopApiParameters = { test: { restoreMocks: false } }
+
+/**
+ * Installs a fresh fixture as `window.api` for each Vue mount and retires it on
+ * unmount, resetting shared modal state both times. Scoped to the mount:
+ * toolbar and args rerenders re-run beforeEach without remounting. Pair with
+ * `desktopApiParameters`.
+ */
+export function withDesktopApi(create: (context: StoryContext) => ElectronApi): Decorator {
+  return (story, context) => {
+    const Story = story()
+    return defineComponent({
+      setup() {
+        const api = create(context)
+        window.api = api
+        useModal().dismiss()
+        onUnmounted(() => {
+          useModal().dismiss()
+          retireDesktopApi(api)
+        })
+        return () => h(Story)
+      }
+    })
   }
 }
 
