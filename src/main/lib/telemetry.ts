@@ -483,9 +483,11 @@ export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
  * The version is self-asserted, so a version gate is a compatibility gate, not
  * a trust boundary: never gate anything a user could want withheld on it.
  *
- * Only when consent is `'granted'`: `platform` (`process.platform`: `win32`, `darwin`,
- * `linux`), `comfy_staff` when the account is staff, and `user_tier` (`paid`/`free`) when a
- * tier is known. The flag FETCH
+ * `platform` always (`process.platform`: `win32`, `darwin`, `linux`): like `app_version` it
+ * describes the machine, not the person, so a per-OS condition reaches every install.
+ *
+ * Only when consent is `'granted'`: `comfy_staff` when the account is staff, and `user_tier`
+ * (`paid`/`free`) when a tier is known. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO
  * the client, and a user who declined telemetry still gets the override — but
  * that argument covers the installation-stable key and nothing else. Whether a
@@ -501,10 +503,10 @@ export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
 function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
-  if (consentState === 'granted') {
-    properties['platform'] = process.platform
-    if (flagEvaluationStaff) properties['comfy_staff'] = 'true'
-    if (flagEvaluationUserTier) properties['user_tier'] = flagEvaluationUserTier
+  properties['platform'] = process.platform
+  if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && flagEvaluationUserTier) {
+    properties['user_tier'] = flagEvaluationUserTier
   }
   return properties
 }
@@ -1784,7 +1786,7 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, `app_version`, and — only once consent is `'granted'` — `platform`, `comfy_staff`
+ * key, `app_version`, `platform`, and — only once consent is `'granted'` — `comfy_staff`
  * for staff and `user_tier` when known, via `opsFlagPersonProperties`. Those properties are
  * request-scoped: the SDK puts them in the `/flags` POST body as
  * `person_properties`, where the server evaluates release conditions against

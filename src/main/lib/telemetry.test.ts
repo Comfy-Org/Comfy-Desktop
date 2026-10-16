@@ -710,6 +710,9 @@ describe('telemetry PostHog client options', () => {
   })
 })
 
+/** Sent with every ops-flag evaluation, consent or not: the OS, for per-OS targeting. */
+const PLATFORM = { platform: process.platform }
+
 // Revocation semantics hang off this classification: a `value` (including an explicit
 // `false`) overwrites the persisted treatment, `unreachable` holds it. Collapsing the two
 // lets an offline launch silently revoke, or a disable silently fail to.
@@ -733,9 +736,12 @@ describe('telemetry anonymous flag reads', () => {
       {
         key: 'desktop_core_beta_features',
         distinctId: 'installation-id',
-        // Only the build's version: the request is made pre-consent by design, and this is
-        // where an email would sit if one were ever attached without one.
-        options: { sendFeatureFlagEvents: false, personProperties: { app_version: '0.0.0' } }
+        // Only facts about the build and machine: the request is made pre-consent by design,
+        // and this is where an email would sit if one were ever attached without one.
+        options: {
+          sendFeatureFlagEvents: false,
+          personProperties: { ...PLATFORM, app_version: '0.0.0' }
+        }
       }
     ])
   })
@@ -790,9 +796,6 @@ describe('telemetry anonymous flag reads', () => {
 // Supplying a property on the request is what makes such a condition evaluable — without
 // persisting a person, and without disturbing the distinct id the flag buckets on.
 describe('ops-flag person targeting', () => {
-  /** Sent on every consented evaluation whatever the account: the OS, for per-OS targeting. */
-  const CONSENTED = { platform: process.platform }
-
   /** The `person_properties` on the most recent evaluation request. */
   function lastPersonProperties(): unknown {
     const call = featureFlagResultCalls.at(-1)
@@ -810,7 +813,7 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       comfy_staff: 'true'
     })
@@ -850,7 +853,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('sends no comfy_staff when consent is undecided', async () => {
@@ -861,7 +864,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('sends no comfy_staff when consent is denied', async () => {
@@ -870,7 +873,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('still evaluates the flag without consent, carrying no staff property', async () => {
@@ -883,7 +886,7 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   // `user_tier` lets a rollout weight toward paying users. Same rule as `comfy_staff`: a fact
@@ -895,7 +898,7 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       user_tier: 'paid'
     })
@@ -909,7 +912,7 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       user_tier: 'free'
     })
@@ -922,7 +925,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
@@ -931,7 +934,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
@@ -942,7 +945,7 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       comfy_staff: 'true',
       user_tier: 'paid'
@@ -958,7 +961,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('sends a tier bound before consent once consent is granted', async () => {
@@ -969,7 +972,7 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       user_tier: 'paid'
     })
@@ -980,7 +983,7 @@ describe('ops-flag person targeting', () => {
     telemetry.setFlagEvaluationStaff(true)
     await evaluate()
     expect(lastPersonProperties()).toEqual({
-      ...CONSENTED,
+      ...PLATFORM,
       app_version: '0.0.0',
       comfy_staff: 'true'
     })
@@ -988,7 +991,7 @@ describe('ops-flag person targeting', () => {
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
@@ -999,7 +1002,7 @@ describe('ops-flag person targeting', () => {
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
@@ -1077,8 +1080,8 @@ describe('ops-flag person targeting', () => {
       await evaluate()
 
       expect(lastPersonProperties()).toEqual({
-        app_version: '1.1.4',
-        ...(consent === 'granted' ? CONSENTED : {})
+        ...PLATFORM,
+        app_version: '1.1.4'
       })
     })
 
@@ -1089,7 +1092,7 @@ describe('ops-flag person targeting', () => {
       await evaluate()
 
       expect(lastPersonProperties()).toEqual({
-        ...CONSENTED,
+        ...PLATFORM,
         app_version: '1.1.4',
         comfy_staff: 'true'
       })
@@ -1101,7 +1104,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4-rc.1' })
+      expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '1.1.4-rc.1' })
     })
 
     it('is omitted rather than sent empty when the version is unknown', async () => {
@@ -1110,7 +1113,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({})
+      expect(lastPersonProperties()).toEqual(PLATFORM)
     })
 
     // What the property is for: a payload carrying args older builds reject, gated server-side.
