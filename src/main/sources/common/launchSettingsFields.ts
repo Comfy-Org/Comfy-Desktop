@@ -96,8 +96,7 @@ export interface LaunchSettingsOptions {
 /**
  * Per-install storage toggles + input/output path fields for the picker's Storage tab.
  * `useSharedModels` gates whether the global shared dirs are included in the
- * generated `--extra-model-paths-config` (per-install `modelDirs` always apply,
- * and a governed build gets neither);
+ * generated `--extra-model-paths-config` (per-install `modelDirs` always apply);
  * `useSharedInput` / `useSharedOutput` independently gate `--input-directory` /
  * `--output-directory`, falling back to the per-install fields below (then
  * `<installPath>/{input,output}`) when off. Shared-storage sources only.

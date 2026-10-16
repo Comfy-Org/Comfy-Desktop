@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./oauth', () => ({ signIn: vi.fn(), refresh: vi.fn() }))
+vi.mock('./oauth', () => ({
+  signIn: vi.fn(),
+  refresh: vi.fn(),
+  openAuthorizePage: vi.fn(() => Promise.resolve())
+}))
 vi.mock('./tokenStore', () => ({
   activateWorkspace: vi.fn(),
   clearTokens: vi.fn(),
@@ -18,7 +22,7 @@ vi.mock('./workspaces', () => ({
 }))
 
 import { statusFromAccessToken, workspaceIdOf } from './claims'
-import { refresh, signIn } from './oauth'
+import { openAuthorizePage, refresh, signIn } from './oauth'
 import { CloudSession } from './session'
 import {
   activateWorkspace,
@@ -208,6 +212,39 @@ describe('CloudSession browser auth', () => {
     await expect(Promise.all([first, second])).resolves.toHaveLength(2)
     expect(signIn).toHaveBeenCalledOnce()
     expect(saveTokens).toHaveBeenCalledExactlyOnceWith(tokens)
+  })
+
+  it('reopens the pending sign-in page when login is requested again', async () => {
+    mocked(signIn).mockImplementation(async (options) => {
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+      return new Promise(() => {})
+    })
+    const session = new CloudSession()
+
+    void session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    void session.login()
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(openAuthorizePage).toHaveBeenCalledExactlyOnceWith(
+      'https://cloud.test/authorize?state=s1'
+    )
+  })
+
+  it('does not reopen a sign-in page after logout', async () => {
+    mocked(signIn).mockImplementation(async (options) => {
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+      return new Promise(() => {})
+    })
+    const session = new CloudSession()
+
+    void session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    session.logout()
+    void session.login()
+
+    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
   it('does not persist browser auth that finishes after logout', async () => {
