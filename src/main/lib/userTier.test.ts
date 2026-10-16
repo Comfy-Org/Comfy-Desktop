@@ -79,12 +79,16 @@ describe('userTier ops-flag binding', () => {
     expect(bound).toEqual(['free', 'paid'])
   })
 
-  it('leaves the binding alone when no signed-in user is present', async () => {
-    await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
-    await refreshCloudUserTier(stubContents(null).wc)
+  // A flaky API or a mid-sign-in read must not drop a known tier.
+  it.each([null, { error: 'network' }, { error: 'http_401' }])(
+    'leaves the binding alone when a refresh cannot answer (%j)',
+    async (result) => {
+      await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+      await refreshCloudUserTier(stubContents(result).wc)
 
-    expect(bound).toEqual(['paid'])
-  })
+      expect(bound).toEqual(['paid'])
+    }
+  )
 })
 
 describe('userTier tier_changed telemetry', () => {
