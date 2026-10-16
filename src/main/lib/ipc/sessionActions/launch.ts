@@ -147,6 +147,7 @@ import {
   planCampaignArgs
 } from '../../coreBetaCampaigns'
 import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
+import { frontendRootArgs } from '../../frontendCache'
 import {
   getCoreBetaCampaigns,
   readCampaignRecords,
@@ -1534,8 +1535,12 @@ async function runLaunch(
             }
           })
         })
-        launchCmd.args = built.args
+        const frontend = frontendRootArgs(built.beta.campaign.applied, userArgs, schema)
+        launchCmd.args = [...built.args, ...frontend.args]
         coreBeta = built.beta
+        if (frontend.record !== null) {
+          coreBeta = { ...coreBeta, logRecords: [...coreBeta.logRecords, `${frontend.record}\n`] }
+        }
       } catch {
         // Discovery failed; launch the user's own args without injecting managed flags.
       }
