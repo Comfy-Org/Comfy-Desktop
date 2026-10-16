@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile, spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { killProcTree } from './process'
 import { stripAnsi } from './stderrTail'
 import { scrubAll } from '../../shared/piiScrub'
@@ -47,13 +48,19 @@ export interface UvPipResult {
   output: string
 }
 
+/** Handed the spawned uv so a caller can act on the process itself. Optional and
+ *  purely additive: callers that do not pass one are unaffected, and nothing here
+ *  depends on it. A caller that keeps the handle owns whatever it does with it. */
+export type OnUvSpawn = (proc: ChildProcess) => void
+
 /** Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output. */
 export function runUvPipDetailed(
   uvPath: string,
   args: string[],
   cwd: string,
   sendOutput: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onSpawn?: OnUvSpawn
 ): Promise<UvPipResult> {
   if (signal?.aborted) return Promise.resolve({ code: 1, output: '' })
   return new Promise<UvPipResult>((resolve) => {
@@ -64,6 +71,13 @@ export function runUvPipDetailed(
       detached: process.platform !== 'win32',
       env: uvEnv()
     })
+    if (onSpawn) {
+      try {
+        onSpawn(proc)
+      } catch {
+        // A caller's own bookkeeping must not take down the install.
+      }
+    }
 
     let captured = ''
     const record = (text: string): void => {
@@ -119,7 +133,8 @@ export async function installFilteredRequirementsDetailed(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
-  extraArgs?: string[]
+  extraArgs?: string[],
+  onSpawn?: OnUvSpawn
 ): Promise<UvPipResult> {
   const content = await fs.promises.readFile(reqPath, 'utf-8')
   const filtered = content
@@ -145,7 +160,8 @@ export async function installFilteredRequirementsDetailed(
       ],
       installPath,
       sendOutput,
-      signal
+      signal,
+      onSpawn
     )
   } finally {
     try {

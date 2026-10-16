@@ -112,6 +112,9 @@ const launchHarness = vi.hoisted(() => ({
   recordWriteThrows: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
+  records: null as null | Map<string, Record<string, unknown>>,
+  recordsUpdateThrows: false,
+  recordsUpdateGate: null as null | Promise<void>,
   campaignsReject: false,
   /** Installation records `installations.list` answers with, by id; null = the real store. */
   installRecords: null as null | Record<string, { name: string; sourceId: string }>,
@@ -197,6 +200,17 @@ vi.mock('../shared', async (importOriginal) => {
           return async () => {
             await launchHarness.listGate
             return Object.entries(records).map(([id, r]) => ({ id, ...r }))
+          }
+        }
+        const records = launchHarness.records
+        if (records && key === 'get') return async (id: string) => records.get(id) ?? null
+        if (records && key === 'update') {
+          return async (id: string, data: Record<string, unknown>) => {
+            if (launchHarness.recordsUpdateThrows) throw new Error('EIO')
+            await launchHarness.recordsUpdateGate
+            const next = { ...(records.get(id) ?? { id }), ...data }
+            records.set(id, next)
+            return next
           }
         }
         return Reflect.get(target, key) as unknown
@@ -290,6 +304,29 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   }
 })
 
+/** Stands in for the uv subprocess the agent-requirements step drives, so a launch
+ *  under test installs nothing and a test can choose the outcome. */
+const pipHarness = vi.hoisted(() => ({
+  calls: [] as unknown[][],
+  result: { code: 0, output: '' },
+  respond: null as null | ((args: unknown[]) => { code: number; output: string }),
+  installed: '[]',
+  duringInstall: null as null | (() => void)
+}))
+
+vi.mock('../../pip', async (importOriginal) => {
+  const actual = await importOriginal<typeof PipModule>()
+  return {
+    ...actual,
+    installFilteredRequirementsDetailed: async (...args: unknown[]) => {
+      pipHarness.calls.push(args)
+      pipHarness.duringInstall?.()
+      return pipHarness.respond?.(args) ?? pipHarness.result
+    },
+    runUvPipDetailed: async () => ({ code: 0, output: pipHarness.installed })
+  }
+})
+
 vi.mock('../../coreBetaAncestry', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaAncestryModule>()
   return {
@@ -359,6 +396,7 @@ import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
 import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns'
+import { frontendCacheRoot } from '../../frontendCache'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -382,6 +420,10 @@ import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
+import type * as PipModule from '../../pip'
+import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
+import { getLogDir } from '../../logRotation'
+import en from '../../../../../locales/en.json'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1631,6 +1673,35 @@ describe('core beta report placement', () => {
       expect(normalise(spawnArgs)).toEqual(without)
       expect(appliedEvent()).toEqual(withoutApplied)
       expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.applied')).toHaveLength(2)
+    })
+
+    it('serves the frontend the applied campaign pins, once its build is cached', async () => {
+      const sha256 = 'a'.repeat(64)
+      const build = path.join(frontendCacheRoot(), sha256)
+      fs.mkdirSync(build, { recursive: true })
+      fs.writeFileSync(path.join(build, 'index.html'), '<html></html>')
+      onTestFinished(() => fs.rmSync(build, { recursive: true, force: true }))
+      launchHarness.schemaNames = [...launchHarness.schemaNames, 'front-end-root']
+      const answer = parseCampaignAnswer(
+        'hold',
+        {
+          ...(agentAnswer('hold') as { payload: object }).payload,
+          frontend: {
+            url: 'https://files.pythonhosted.org/packages/x/comfyui_frontend_package-1.53.6-py3-none-any.whl',
+            sha256
+          }
+        },
+        Date.now() - 5_000
+      )
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, answer]])
+      }
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-frontend'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(spawnArgs[spawnArgs.indexOf('--front-end-root') + 1]).toBe(build)
+      expect(sent.join('')).toContain(`served from ${build}`)
     })
 
     it('applies the arg but counts no enrolment when the record cannot be written', async () => {
@@ -3393,6 +3464,662 @@ describe('emitCoreBetaTelemetry', () => {
       'comfy.desktop.core_beta.applied',
       'comfy.desktop.core_beta.opt_state'
     ])
+  })
+})
+
+describe('agent requirements at launch', () => {
+  const AGENT_GRANT: CoreBetaGrant = { arg: '--enable-agent', minCoreVersion: '0.3.80' }
+  let installDir = ''
+  let sent: string[] = []
+  let progress: { phase: string; steps?: { phase: string }[] }[] = []
+  let spawnArgs: string[] = []
+  let spawned = 0
+
+  /** Create a file (and its parents) the way the real install layout has it. */
+  const touch = (target: string): void => {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, '')
+  }
+
+  const agentReqPath = (): string => path.join(installDir, 'ComfyUI', 'agent_requirements.txt')
+
+  const harnessInstall = (): InstallationRecord =>
+    ({
+      id: 'agent-reqs-inst',
+      name: 'Agent Harness',
+      sourceId: 'harness-source',
+      installPath: installDir,
+      version: '0.3.81',
+      comfyVersion: {
+        commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+        baseTag: 'v0.3.81',
+        commitsAhead: 0,
+        baseTagVerified: true
+      }
+    }) as unknown as InstallationRecord
+
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: {
+      sender: {
+        isDestroyed: () => false,
+        send: (channel: string, payload: { text?: string; phase?: string }) => {
+          if (typeof payload?.text === 'string') sent.push(payload.text)
+          if (channel === 'install-progress' && typeof payload?.phase === 'string') {
+            progress.push(payload as { phase: string; steps?: { phase: string }[] })
+          }
+        }
+      }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: harnessInstall(),
+    actionData: {}
+  })
+
+  beforeEach(() => {
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-reqs-launch-'))
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    // The managed pair the shared uv helper targets, plus the file Core ships.
+    touch(getUvPath(installDir))
+    touch(getVenvPythonPath(installDir))
+    fs.writeFileSync(agentReqPath(), 'comfyui-agent==1.0.0\n')
+    sent = []
+    progress = []
+    spawnArgs = []
+    spawned = 0
+    pipHarness.calls = []
+    pipHarness.result = { code: 0, output: '' }
+    pipHarness.duringInstall = null
+    pipHarness.respond = null
+    launchHarness.records = null
+    launchHarness.schemaThrows = false
+    launchHarness.registryThrows = false
+    launchHarness.betaEnabled = true
+    launchHarness.betaEnabledThrows = false
+    launchHarness.schemaNames = ['enable-agent', 'listen', 'feature-flag']
+    launchHarness.grants = []
+    launchHarness.duringResourceAcquire = null
+    launchHarness.spawn = (_cmd: unknown, args: unknown) => {
+      spawned += 1
+      spawnArgs = args as string[]
+      const proc = new EventEmitter() as FakeChild
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      proc.pid = 4243
+      proc.killed = false
+      proc.kill = () => true
+      return proc
+    }
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--enable-agent', '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+    vi.spyOn(telemetry, 'emit').mockImplementation((() => {}) as unknown as typeof telemetry.emit)
+  })
+
+  afterEach(async () => {
+    // The launch log stream opens asynchronously after the spawn: removing the
+    // install dir first fails that open with an ENOENT nothing is listening for.
+    // The file appears exactly when the open lands, so waiting on it is the
+    // teardown's own gate rather than a guess at how long the open takes.
+    if (spawned > 0) {
+      const logFile = path.join(getLogDir(installDir), 'comfyui.log')
+      await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true))
+    }
+    vi.restoreAllMocks()
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  it('installs the requirements when the user typed the flag by hand', async () => {
+    const res = await handleLaunch(ctxFor('agent-reqs-hand-typed'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toHaveLength(1)
+    expect(pipHarness.calls[0]![0]).toBe(agentReqPath())
+    expect(pipHarness.calls[0]![1]).toBe(getUvPath(installDir))
+    expect(pipHarness.calls[0]![2]).toBe(getVenvPythonPath(installDir))
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs the requirements when a beta grant added the flag', async () => {
+    // The grant is the only source of the flag here: the install's own args have none.
+    launchHarness.grants = [AGENT_GRANT]
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-granted'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toHaveLength(1)
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs nothing when the flag never reaches the final args', async () => {
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-flag-absent'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+  })
+
+  it('installs nothing when the running core cannot parse the flag', async () => {
+    // A core predating `--enable-agent` has it filtered out of the final args,
+    // so there is nothing to install for and nothing reaches the spawn either.
+    launchHarness.schemaNames = ['listen', 'feature-flag']
+
+    const res = await handleLaunch(ctxFor('agent-reqs-unsupported-core'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).not.toContain('--enable-agent')
+  })
+
+  it('installs nothing when core ships no agent requirements file', async () => {
+    fs.rmSync(agentReqPath())
+
+    const res = await handleLaunch(ctxFor('agent-reqs-file-absent'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs nothing for an install with no Desktop-managed Python environment', async () => {
+    fs.rmSync(getUvPath(installDir))
+
+    const res = await handleLaunch(ctxFor('agent-reqs-unmanaged-env'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('launches with the flag still set when the install fails', async () => {
+    pipHarness.result = { code: 1, output: 'No solution found\n' }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-install-failed'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-agent')
+    expect(sent.join('')).toContain('exited with code 1')
+  })
+
+  it('publishes the install as a step the renderer can show', async () => {
+    // The renderer drops progress for a phase absent from the steps payload, so
+    // the payload is what makes the step visible at all.
+    await handleLaunch(ctxFor('agent-reqs-step-published'))
+
+    const lastSteps = progress.filter((p) => p.phase === 'steps').at(-1)
+    expect(lastSteps?.steps?.map((s) => s.phase)).toContain('agentRequirements')
+    expect(progress.some((p) => p.phase === 'agentRequirements')).toBe(true)
+  })
+
+  it('cancels the launch without spawning when it is aborted mid-install', async () => {
+    pipHarness.duringInstall = () => _operationAborts.get('agent-reqs-cancelled')?.abort()
+
+    const res = await handleLaunch(ctxFor('agent-reqs-cancelled'))
+
+    expect(res).toEqual({ ok: false, cancelled: true })
+    expect(spawned).toBe(0)
+  })
+
+  describe('with a version override from the agent campaign', () => {
+    const KEY = 'desktop_core_beta_agent'
+    const ID = 'agent-override-inst'
+    const CORE_FILE = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+    const OVERRIDDEN = 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
+    let proc: FakeChild | null = null
+    let spawnCount = 0
+    let sessionFile = ''
+    const settle = async (): Promise<void> => {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve))
+    }
+
+    const serveCampaign = (override: unknown): void => {
+      const answer = parseCampaignAnswer(
+        'enrol',
+        {
+          grants: [
+            {
+              arg: '--enable-agent',
+              min_core_version: '0.3.60',
+              enrolment: { epoch: 1, epochs: [1] }
+            }
+          ],
+          agent_requirements_override: override
+        },
+        Date.now()
+      )
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, answer]])
+      }
+    }
+
+    let installed: string[] = []
+    const overrideEvents = (): Record<string, unknown>[] =>
+      vi
+        .mocked(telemetry.emit)
+        .mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_override')
+        .map(([, props]) => props as Record<string, unknown>)
+    const overrideState = (): unknown => launchHarness.records!.get(ID)?.agentRequirementsOverride
+
+    const launchCommand = (...extra: string[]): Record<string, unknown> => ({
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...extra, '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    })
+
+    const launchAndPrint = async (
+      opts: {
+        lines?: string[]
+        stream?: 'stdout' | 'stderr'
+        handTyped?: boolean
+        portWait?: boolean
+      } = {}
+    ): Promise<void> => {
+      launchHarness.launchCommand = opts.handTyped
+        ? launchCommand('--enable-agent')
+        : launchCommand()
+      if (opts.portWait) {
+        launchHarness.launchCommand = {
+          ...launchHarness.launchCommand,
+          skipPortWait: false,
+          port: 48233
+        }
+        launchHarness.waitForPort = async () => {}
+      }
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+      expect((await handleLaunch(ctx)).ok).toBe(true)
+      for (const line of opts.lines ?? []) {
+        proc![opts.stream ?? 'stderr'].emit('data', Buffer.from(`[INFO] ${line}\n`))
+      }
+      await settle()
+      proc!.emit('exit', 0, null)
+      proc!.emit('close', 0, null)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+    }
+
+    beforeEach(() => {
+      fs.writeFileSync(agentReqPath(), CORE_FILE)
+      launchHarness.schemaNames = ['enable-agent', 'listen', 'feature-flag']
+      launchHarness.campaignRecords = {}
+      launchHarness.recordWrites = []
+      launchHarness.idClass = 'machine_derived'
+      launchHarness.records = new Map([[ID, { id: ID }]])
+      const spawn = launchHarness.spawn!
+      spawnCount = 0
+      launchHarness.spawn = (...args: unknown[]) => {
+        spawnCount++
+        sessionFile = (args[3] as Record<string, string> | undefined)?.__COMFY_CLI_SESSION__ ?? ''
+        proc = spawn(...args) as FakeChild
+        return proc
+      }
+      installed = []
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.2.0' },
+        { name: 'comfy-cli', version: '1.21.0' },
+        { name: 'requests', version: '2.32.0' }
+      ])
+      pipHarness.respond = (args) => {
+        installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
+        return { code: 0, output: '' }
+      }
+    })
+
+    afterEach(() => {
+      launchHarness.campaigns = { registry: [], answers: new Map() }
+      launchHarness.recordWriteThrows = false
+      launchHarness.recordsUpdateThrows = false
+      launchHarness.recordsUpdateGate = null
+      launchHarness.waitForPort = null
+      launchHarness.records = null
+      pipHarness.installed = '[]'
+    })
+
+    it('installs the overridden version the campaign applied, and reports it', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint()
+
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(installed).toEqual([OVERRIDDEN])
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
+      ])
+    })
+
+    it("defers to core file on a fresh install, then applies once core's packages are in", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'refused', reason: 'core_first' })
+      ])
+      expect(overrideState(), 'deferring is not a failure').toBeUndefined()
+
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.2.0' },
+        { name: 'comfy-cli', version: '1.21.0' }
+      ])
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(installed).toEqual([CORE_FILE, OVERRIDDEN])
+      expect(overrideEvents().at(-1)).toEqual(
+        expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
+      )
+    })
+
+    it('applies the override for an enrolment whose record could not be saved', async () => {
+      launchHarness.recordWriteThrows = true
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint()
+
+      expect(spawnArgs, 'the unrecorded enrolment still starts the agent').toContain(
+        '--enable-agent'
+      )
+      expect(installed).toEqual([OVERRIDDEN])
+    })
+
+    it('installs core file unchanged when the campaign carries no override', async () => {
+      serveCampaign(undefined)
+
+      await launchAndPrint()
+
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([])
+    })
+
+    it('ignores the campaign override when the user typed the flag themselves', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({ handTyped: true })
+
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([])
+    })
+
+    it('refuses an invalid override and installs core file', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3 --index-url https://evil.example/simple' })
+
+      await launchAndPrint()
+
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'refused', reason: 'bad_version' })
+      ])
+    })
+
+    it('goes back to core file after two failed starts of the same version', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({ lines: ['[agent-event] health_check_failed reason=crashed'] })
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
+      expect(overrideEvents().at(-1)).toEqual(
+        expect.objectContaining({ decision: 'reverted', reason: 'start_failed', failures: 2 })
+      )
+
+      installed = []
+      await launchAndPrint()
+      expect(installed).toEqual([CORE_FILE])
+    })
+
+    it('goes back to core file through the standalone launch path too', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
+      await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
+
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 2 })
+    })
+
+    it("counts a respawned ComfyUI's agent start on its own", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = { ...launchCommand(), skipPortWait: false, port: 48233 }
+      launchHarness.waitForPort = async () => {}
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+      expect((await handleLaunch(ctx)).ok).toBe(true)
+
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      await settle()
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+
+      fs.writeFileSync(`${sessionFile}.reboot`, '')
+      const first = proc!
+      first.emit('exit', 0, null)
+      first.emit('close', 0, null)
+      await vi.waitFor(() => expect(spawnCount).toBe(2))
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_started duration_ms=1\n'))
+      await settle()
+
+      expect(overrideState(), 'the respawn started fine, so the count resets').toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 0
+      })
+      proc!.emit('exit', 0, null)
+      proc!.emit('close', 0, null)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+    })
+
+    it('counts two outcomes that land at once, one after the other', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = { ...launchCommand(), skipPortWait: false, port: 48233 }
+      launchHarness.waitForPort = async () => {}
+      let release = (): void => {}
+      launchHarness.recordsUpdateGate = new Promise((resolve) => (release = resolve))
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+      expect((await handleLaunch(ctx)).ok).toBe(true)
+
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      fs.writeFileSync(`${sessionFile}.reboot`, '')
+      const first = proc!
+      first.emit('exit', 0, null)
+      first.emit('close', 0, null)
+      await vi.waitFor(() => expect(spawnCount).toBe(2))
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      release()
+      await vi.waitFor(() =>
+        expect(overrideState(), 'neither failure is lost').toEqual({
+          signature: 'comfy-agent==0.2.3',
+          failures: 2
+        })
+      )
+      proc!.emit('exit', 0, null)
+      proc!.emit('close', 0, null)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+    })
+
+    it('stops retrying a version that failed to install twice', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => {
+        installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
+        return { code: (args[8] as string[] | undefined) ? 1 : 0, output: '' }
+      }
+
+      await launchAndPrint()
+      await launchAndPrint()
+      installed = []
+      await launchAndPrint()
+
+      expect(installed, 'no third attempt holds the launch up').toEqual([CORE_FILE])
+      expect(overrideEvents().at(-1)).toEqual(
+        expect.objectContaining({ decision: 'reverted', reason: 'previously_failed' })
+      )
+    })
+
+    it('stops retrying a version whose environment could not be listed twice', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = 'error: no virtual environment found'
+
+      await launchAndPrint()
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason])).toEqual([
+        ['refused', 'check_failed'],
+        ['refused', 'check_failed'],
+        ['reverted', 'check_failed'],
+        ['reverted', 'previously_failed']
+      ])
+    })
+
+    it('reports the fallback, then the latch, on the launch that trips it', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason, e.failures])).toEqual([
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', 2]
+      ])
+    })
+
+    it('watches no agent start for an override that failed to install', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(
+        overrideState(),
+        "core's own agent starting must not reset the failed version's count"
+      ).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+    })
+
+    it('leaves the latch alone when the launch is cancelled during the override', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = launchCommand()
+      pipHarness.duringInstall = () => _operationAborts.get(ID)?.abort()
+      pipHarness.respond = () => ({ code: 1, output: '' })
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+
+      expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
+      await settle()
+      expect(overrideState(), 'a cancel is not a failed install').toBeUndefined()
+      expect(overrideEvents(), 'a cancelled launch reports no decision').toEqual([])
+    })
+
+    it('still launches when an install failure cannot be recorded', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.recordsUpdateThrows = true
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+      const warn = vi.spyOn(console, 'warn')
+
+      await launchAndPrint()
+
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(warn).toHaveBeenCalledWith(
+        'agent requirements override: could not record the outcome:',
+        expect.any(Error)
+      )
+    })
+
+    it('still launches when the outcome cannot be recorded', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.recordsUpdateThrows = true
+      const warn = vi.spyOn(console, 'warn')
+
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=crashed'] })
+
+      expect(warn).toHaveBeenCalledWith(
+        'agent requirements override: could not record the outcome:',
+        expect.any(Error)
+      )
+    })
+
+    it('reads the agent lines core logs to stdout too', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({
+        lines: ['[agent-event] health_check_failed reason=crashed'],
+        stream: 'stdout'
+      })
+
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+    })
+
+    it('does not count an agent that exits during a slow start', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      for (let i = 0; i < 3; i++) {
+        await launchAndPrint({
+          lines: [
+            '[agent-event] agent_starting agent_version=0.2.3',
+            '[agent-event] agent_waiting duration_ms=60000',
+            '[agent-event] agent_exited code=0'
+          ]
+        })
+      }
+
+      expect(overrideState()).toBeUndefined()
+      expect(installed.at(-1)).toBe(OVERRIDDEN)
+    })
+
+    it('counts no start failure against an override that did not go in', async () => {
+      fs.writeFileSync(agentReqPath(), 'comfy-agent>=0.1\ncomfy-cli==1.21.0\n')
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
+
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'refused', reason: 'unsupported_line' })
+      ])
+      expect(overrideState()).toBeUndefined()
+    })
+  })
+})
+
+describe('agent install status strings', () => {
+  // `t()` resolves nothing under vitest (i18n is never initialised and its
+  // locales dir does not exist in the source tree), so the lookup itself cannot
+  // be exercised here. What can break silently is the contract between the
+  // mapper's keys and the locale file, which is what this pins. Cross-locale
+  // parity is covered separately by the locale-coverage suite.
+  const strings = (en as { launch: { agentRequirements?: Record<string, string> } }).launch
+    .agentRequirements
+
+  it('defines every key the mapper asks for', () => {
+    expect(Object.keys(strings ?? {}).sort()).toEqual(['downloading', 'failed', 'installing'])
+  })
+
+  it('gives the download caption both placeholders the mapper passes', () => {
+    expect(strings?.downloading).toContain('{name}')
+    expect(strings?.downloading).toContain('{size}')
   })
 })
 
