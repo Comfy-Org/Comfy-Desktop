@@ -879,6 +879,46 @@ describe('ops-flag person targeting', () => {
     expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
+  // `user_tier` lets a rollout weight toward paying users. Same rule as `comfy_staff`: a fact
+  // about the person, so it rides only on the consented path.
+  it('attaches user_tier once consent is granted', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', user_tier: 'paid' })
+    expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
+  })
+
+  it('sends a known free tier too, so a condition can tell free from unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('free')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', user_tier: 'free' })
+  })
+
+  it('sends no user_tier while the tier is unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setFlagEvaluationUserTier('unknown')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+  })
+
+  it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
+    setupTelemetry({ consent })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+  })
+
   it('stops sending once the install is reclassified, as on sign-out', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)

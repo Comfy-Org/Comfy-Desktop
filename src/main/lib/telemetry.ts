@@ -197,6 +197,7 @@ export function _resetForTest(): void {
   installationIdProperty = null
   consentState = 'undecided'
   flagEvaluationStaff = false
+  flagEvaluationUserTier = null
   flagEvaluationAppVersion = null
   pendingSessionStart = null
   pendingFirstLaunch = null
@@ -427,6 +428,13 @@ let consentState: ConsentState = 'undecided'
 let flagEvaluationStaff = false
 
 /**
+ * The signed-in account's last known Cloud tier (`userTier.ts`), held ONLY to evaluate ops flags,
+ * so a release condition can weight a rollout toward paying users. `null` while the tier is
+ * unknown. Consent-gated exactly like `flagEvaluationStaff`: it is a fact about the person.
+ */
+let flagEvaluationUserTier: 'paid' | 'free' | null = null
+
+/**
  * This build's version, sent with every ops-flag evaluation as `app_version` so
  * a release condition can gate on it with PostHog's semver operators. Set once
  * by `initTelemetry`; `null` until then, and no request goes out before it,
@@ -450,6 +458,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** Bind the cached Cloud tier for ops-flag evaluation; `'unknown'` sends nothing. */
+export function setFlagEvaluationUserTier(tier: 'paid' | 'free' | 'unknown'): void {
+  flagEvaluationUserTier = tier === 'unknown' ? null : tier
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -469,7 +482,8 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * The version is self-asserted, so a version gate is a compatibility gate, not
  * a trust boundary: never gate anything a user could want withheld on it.
  *
- * `comfy_staff` only when consent is `'granted'` AND the account is staff. The flag FETCH
+ * `comfy_staff` only when consent is `'granted'` AND the account is staff, and
+ * `user_tier` (`paid`/`free`) only when consent is `'granted'` AND a tier is known. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO
  * the client, and a user who declined telemetry still gets the override — but
  * that argument covers the installation-stable key and nothing else. Whether a
@@ -486,6 +500,9 @@ function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
   if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && flagEvaluationUserTier) {
+    properties['user_tier'] = flagEvaluationUserTier
+  }
   return properties
 }
 

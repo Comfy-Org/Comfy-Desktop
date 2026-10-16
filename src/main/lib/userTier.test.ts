@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
 }))
 
 const telemetry = await import('./telemetry')
-const { refreshCloudUserTier, getUserTier, _resetForTest, FETCH_TIER_JS } =
+const { refreshCloudUserTier, getUserTier, initUserTier, _resetForTest, FETCH_TIER_JS } =
   await import('./userTier')
 
 /** Stub WebContents whose executeJavaScript resolves to a fixed tier result. */
@@ -21,6 +21,59 @@ function stubContents(result: unknown): { wc: Electron.WebContents } {
     } as unknown as Electron.WebContents
   }
 }
+
+// The ops-flag fetch reads the tier from telemetry, not from this module, so every change to the
+// cache has to be bound there — including the boot read, which is what the boot evaluation sees.
+describe('userTier ops-flag binding', () => {
+  let bound: string[]
+
+  beforeEach(async () => {
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+    await fs.mkdir(userTierDataDir, { recursive: true })
+    _resetForTest()
+    bound = []
+    vi.spyOn(telemetry, 'capture').mockReturnValue(true)
+    vi.spyOn(telemetry, 'setFlagEvaluationUserTier').mockImplementation((tier) => {
+      bound.push(tier)
+    })
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+  })
+
+  it('binds the persisted tier at init', async () => {
+    await fs.writeFile(
+      path.join(userTierDataDir, 'cloud-user-tier.json'),
+      JSON.stringify({ tier: 'paid', ts: 1 })
+    )
+
+    await initUserTier()
+
+    expect(bound).toEqual(['paid'])
+  })
+
+  it('binds unknown at init when nothing is persisted', async () => {
+    await initUserTier()
+
+    expect(bound).toEqual(['unknown'])
+  })
+
+  it('binds each refreshed tier', async () => {
+    await refreshCloudUserTier(stubContents({ tier: 'FREE' }).wc)
+    await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+
+    expect(bound).toEqual(['free', 'paid'])
+  })
+
+  it('leaves the binding alone when no signed-in user is present', async () => {
+    await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+    await refreshCloudUserTier(stubContents(null).wc)
+
+    expect(bound).toEqual(['paid'])
+  })
+})
 
 describe('userTier tier_changed telemetry', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>

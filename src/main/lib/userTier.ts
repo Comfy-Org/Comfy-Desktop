@@ -1,6 +1,7 @@
 /**
  * Cloud user-tier cache. Holds the signed-in customer's subscription tier for billing
- * telemetry and free-tier offer UI.
+ * telemetry, free-tier offer UI, and ops-flag targeting (sent only with consent; see
+ * `telemetry.opsFlagPersonProperties`). Like staff targeting, the flag sees it from the NEXT boot.
  *
  * Sourced from comfy-api `GET /customers/me` (via the cloud webContents' Firebase token) and
  * persisted to `userData/cloud-user-tier.json` so the next launch's first render sees it.
@@ -57,6 +58,7 @@ export function initUserTier(): Promise<void> {
       // first launch, missing file, or corrupt — stay 'unknown'
     }
 
+    telemetry.setFlagEvaluationUserTier(cached)
     console.log('[user-tier] init: persisted=', cached)
   })()
   return initPromise
@@ -86,6 +88,7 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
   if (next === cached) return
   const previous = cached
   cached = next
+  telemetry.setFlagEvaluationUserTier(next)
   // Emit only on a real transition between two known tiers. The first
   // resolution out of `unknown` is hydration, not a change, so it is not a
   // conversion signal. A `free → paid` flip shortly after
