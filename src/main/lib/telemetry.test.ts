@@ -712,6 +712,8 @@ describe('telemetry PostHog client options', () => {
 
 /** Sent with every ops-flag evaluation, consent or not: the OS, for per-OS targeting. */
 const PLATFORM = { platform: process.platform }
+/** What every evaluation from this test build carries when nothing else applies. */
+const BASE_PROPS = { ...PLATFORM, app_version: '0.0.0' }
 
 // Revocation semantics hang off this classification: a `value` (including an explicit
 // `false`) overwrites the persisted treatment, `unreachable` holds it. Collapsing the two
@@ -740,7 +742,7 @@ describe('telemetry anonymous flag reads', () => {
         // and this is where an email would sit if one were ever attached without one.
         options: {
           sendFeatureFlagEvents: false,
-          personProperties: { ...PLATFORM, app_version: '0.0.0' }
+          personProperties: BASE_PROPS
         }
       }
     ])
@@ -845,6 +847,22 @@ describe('ops-flag person targeting', () => {
     expect(captured.map((event) => event.event)).not.toContain('$feature_flag_called')
   })
 
+  it('sends the OS the app is running on, not a fixed value', async () => {
+    // PLATFORM above mirrors the product's own expression, so it would pass a hardcoded OS on
+    // a runner of that OS. Pretend to be another one to pin the value to process.platform.
+    setupTelemetry({ consent: null })
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const other = process.platform === 'win32' ? 'darwin' : 'win32'
+    Object.defineProperty(process, 'platform', { value: other, configurable: true })
+    try {
+      await evaluate()
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+    }
+
+    expect(lastPersonProperties()).toEqual({ platform: other, app_version: '0.0.0' })
+  })
+
   it('sends no comfy_staff for a non-staff install', async () => {
     // Absent rather than `comfy_staff: 'false'`: a `comfy_staff = true` condition does not match
     // a missing property, so it stays off the wire for the majority of users.
@@ -853,7 +871,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is undecided', async () => {
@@ -864,7 +882,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is denied', async () => {
@@ -873,7 +891,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('still evaluates the flag without consent, carrying no staff property', async () => {
@@ -886,7 +904,7 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   // `user_tier` lets a rollout weight toward paying users. Same rule as `comfy_staff`: a fact
@@ -925,7 +943,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
@@ -934,7 +952,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
@@ -961,7 +979,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends a tier bound before consent once consent is granted', async () => {
@@ -991,7 +1009,7 @@ describe('ops-flag person targeting', () => {
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
@@ -1002,7 +1020,7 @@ describe('ops-flag person targeting', () => {
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
