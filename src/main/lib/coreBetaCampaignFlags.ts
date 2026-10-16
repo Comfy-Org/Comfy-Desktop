@@ -44,22 +44,34 @@ export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promi
     payload?: unknown
   }
   const listed = parseCampaignRegistry(value, payload) ?? []
+  startCampaignFlags(listed, opts.distinctId)
+  await Promise.all([registry, ...campaigns.values()].map((flag) => flag.init(opts)))
+  // With nothing saved, the registry just fetched can name campaigns: fetch them on this boot.
+  await Promise.all(startCampaignFlags(await registry.get(), opts.distinctId))
+}
+
+/** Creates and starts a flag for each listed campaign that has none yet, returning their inits.
+ *  Nothing awaits between the check and the set, so concurrent callers never create a key twice. */
+function startCampaignFlags(
+  listed: readonly CampaignRegistryEntry[],
+  distinctId: string
+): Promise<void>[] {
+  const inits: Promise<void>[] = []
   for (const { key } of listed) {
     if (campaigns.has(key)) continue
-    campaigns.set(
+    const flag = makeOpsFlag<CampaignAnswer | null>({
       key,
-      makeOpsFlag<CampaignAnswer | null>({
-        key,
-        fallback: null,
-        parse: parseCampaignAnswer,
-        logLabel: `core-campaign ${key}`,
-        timeoutMs: TIMEOUT_MS,
-        persist: true,
-        persistFile: CAMPAIGN_FLAGS_FILE
-      })
-    )
+      fallback: null,
+      parse: parseCampaignAnswer,
+      logLabel: `core-campaign ${key}`,
+      timeoutMs: TIMEOUT_MS,
+      persist: true,
+      persistFile: CAMPAIGN_FLAGS_FILE
+    })
+    campaigns.set(key, flag)
+    inits.push(flag.init({ distinctId }))
   }
-  await Promise.all([registry, ...campaigns.values()].map((flag) => flag.init(opts)))
+  return inits
 }
 
 /** Slot #0 and the campaigns under ONE id, so they can never draw on different ids. */
@@ -102,6 +114,9 @@ export async function getCoreBetaCampaigns(): Promise<{
   // Beta turned on after a beta-off boot: start the campaigns now, under the boot's id.
   if (!started && bootId !== null) await initCoreBetaCampaigns({ distinctId: bootId })
   const entries = await registry.get()
+  // A registry that arrived after boot (late, or refreshing a saved one) can name a campaign this
+  // session has no flag for: start it now rather than from the next boot.
+  if (bootId !== null) startCampaignFlags(entries, bootId)
   const answers = new Map<string, CampaignAnswer>()
   for (const { key } of entries) {
     const answer = await campaigns.get(key)?.get()
