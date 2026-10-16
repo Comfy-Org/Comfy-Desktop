@@ -22,11 +22,30 @@ vi.mock('electron', () => ({
 
 let mockSystemUuid: string | undefined = 'aabbccdd-eeff-0011-2233-445566778899'
 let mockSystemError: Error | null = null
+// Held past the budget until `answerLateLookup()` (if ever).
+let mockLookupHangs = false
+let answerLateLookup: () => void = () => {}
+const lookupCalls = { system: 0, uuid: 0 }
+
+function mockLookup<T>(value: () => T): Promise<T> {
+  if (mockLookupHangs) {
+    return new Promise((resolve, reject) => {
+      answerLateLookup = () => (mockSystemError ? reject(mockSystemError) : resolve(value()))
+    })
+  }
+  return mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve(value())
+}
 
 vi.mock('systeminformation', () => ({
   default: {
-    system: () =>
-      mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
+    system: () => {
+      lookupCalls.system++
+      return mockLookup(() => ({ uuid: mockSystemUuid }))
+    },
+    uuid: () => {
+      lookupCalls.uuid++
+      return mockLookup(() => ({ hardware: mockSystemUuid ?? '', os: 'os-guid', macs: [] }))
+    }
   }
 }))
 
@@ -55,6 +74,10 @@ describe('deviceId', () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'deviceid-test-'))
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
     mockSystemError = null
+    mockLookupHangs = false
+    answerLateLookup = () => {}
+    lookupCalls.system = 0
+    lookupCalls.uuid = 0
     mockMachineIdFiles = {}
     setPlatform('linux')
     const realReadFileSync = fs.readFileSync
@@ -72,6 +95,7 @@ describe('deviceId', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     setPlatform(originalPlatform)
     try {
@@ -503,6 +527,247 @@ describe('deviceId', () => {
       const id = mod.getDeviceId()
       expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
       expect(mod.getIdClass()).toBe('random_fallback')
+    })
+
+    it('does not persist the random UUID, so the next launch derives the real id', async () => {
+      mod.getDeviceId()
+      expect(fs.existsSync(path.join(testUserData, 'device-id.txt'))).toBe(false)
+
+      vi.resetModules()
+      mod = await import('./deviceId')
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBeNull()
+      expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+    })
+  })
+
+  it('swallows a rejected early lookup that nothing awaits', async () => {
+    mockSystemError = new Error('powershell failed')
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      mod.startMachineIdLookup()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
+  describe('Windows hardware lookup', () => {
+    const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
+
+    beforeEach(() => setPlatform('win32'))
+
+    it('makes a single si.uuid() call, never si.system()', async () => {
+      mod.startMachineIdLookup()
+      mod.startMachineIdLookup()
+      await mod.initDeviceId()
+      expect(lookupCalls).toEqual({ system: 0, uuid: 1 })
+      expect(mod.getIdClass()).toBe('machine_derived')
+      // That si.uuid().hardware equals si.system().uuid on win32 is pinned by
+      // deviceId.dependency.test.ts; this pins the mapping from it to the id.
+      expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
+    })
+
+    it.each<NodeJS.Platform>(['linux', 'darwin'])('keeps si.system() on %s', async (platform) => {
+      setPlatform(platform)
+      await mod.initDeviceId()
+      expect(lookupCalls).toEqual({ system: 1, uuid: 0 })
+    })
+  })
+
+  describe('initDeviceId — lookup misses its budget', () => {
+    const deviceIdFile = (): string => path.join(testUserData, 'device-id.txt')
+
+    async function initTimingOut(): Promise<{ legacyId: string | null }> {
+      vi.useFakeTimers()
+      mockLookupHangs = true
+      const pending = mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(2000)
+      const result = await pending
+      vi.useRealTimers()
+      return result
+    }
+
+    async function nextLaunch(): Promise<void> {
+      mockLookupHangs = false
+      vi.resetModules()
+      mod = await import('./deviceId')
+    }
+
+    it('uses a provisional id it does not persist, and the next launch derives the real one', async () => {
+      setPlatform('win32')
+      const { legacyId } = await initTimingOut()
+      expect(legacyId).toBeNull()
+      expect(mod.getIdClass()).toBe('provisional')
+      const provisional = mod.getDeviceId()
+      expect(provisional).toMatch(/^[0-9a-f]{64}$/)
+      expect(fs.existsSync(deviceIdFile())).toBe(false)
+
+      await nextLaunch()
+      await mod.initDeviceId()
+      const real = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      expect(mod.getDeviceId()).toBe(real)
+      expect(mod.getDeviceId()).not.toBe(provisional)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+    })
+
+    it('keeps reusing a stored id', async () => {
+      setPlatform('win32')
+      const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      fs.writeFileSync(deviceIdFile(), machineDerived)
+      await initTimingOut()
+      expect(mod.getDeviceId()).toBe(machineDerived)
+      expect(mod.getIdClass()).toBe('random_fallback')
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(machineDerived)
+    })
+
+    it('leaves a legacy UUID for a later launch to migrate while the lookup has not answered', async () => {
+      const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+      fs.writeFileSync(deviceIdFile(), legacyUuid)
+      fs.writeFileSync(path.join(testUserData, 'pending-identity-alias.txt'), legacyUuid)
+      const { legacyId } = await initTimingOut()
+      expect(legacyId).toBeNull()
+      expect(mod.getIdClass()).toBe('provisional')
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(legacyUuid)
+
+      // Boot deletes the marker on every launch.
+      fs.rmSync(path.join(testUserData, 'pending-identity-alias.txt'))
+      await nextLaunch()
+      expect((await mod.initDeviceId()).legacyId).toBe(legacyUuid)
+      expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+    })
+
+    it('saves the real id when the lookup answers late, so the next timed-out launch keeps it', async () => {
+      setPlatform('win32')
+      await initTimingOut()
+      expect(mod.getIdClass()).toBe('provisional')
+      answerLateLookup()
+      const real = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real))
+      expect(mod.getDeviceId()).not.toBe(real)
+      expect(lookupCalls).toEqual({ system: 0, uuid: 1 })
+
+      await nextLaunch()
+      await initTimingOut()
+      expect(mod.getDeviceId()).toBe(real)
+    })
+
+    it.each([
+      ['a placeholder', '03000200-0400-0500-0006-000700080009'],
+      ['no', '']
+    ])(
+      'saves this launch id as the stable fallback when the late answer has %s UUID',
+      async (_label, uuid) => {
+        setPlatform('win32')
+        mockSystemUuid = uuid
+        await initTimingOut()
+        const provisional = mod.getDeviceId()
+        answerLateLookup()
+        await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
+
+        await nextLaunch()
+        await initTimingOut()
+        expect(mod.getDeviceId()).toBe(provisional)
+        expect(mod.getIdClass()).toBe('random_fallback')
+      }
+    )
+
+    it('saves the machine-id hash when a late Linux answer has no UUID', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: '0123456789abcdef0123456789abcdef' }
+      await initTimingOut()
+      answerLateLookup()
+      const real = expectedIdFor('0123456789abcdef0123456789abcdef')
+      await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real))
+    })
+
+    it('saves this launch id as the stable fallback when the lookup rejects late', async () => {
+      setPlatform('win32')
+      await initTimingOut()
+      const provisional = mod.getDeviceId()
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      try {
+        mockSystemError = new Error('late failure')
+        answerLateLookup()
+        await vi.waitFor(() => expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional))
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
+      expect(unhandled).not.toHaveBeenCalled()
+    })
+
+    it('saves nothing in a session that ends before the lookup answers or is ruled hung', async () => {
+      setPlatform('win32')
+      await initTimingOut()
+      const first = mod.getDeviceId()
+      await nextLaunch()
+      await initTimingOut()
+      expect(mod.getIdClass()).toBe('provisional')
+      expect(mod.getDeviceId()).not.toBe(first)
+      expect(fs.existsSync(deviceIdFile())).toBe(false)
+    })
+
+    describe('a lookup that hangs', () => {
+      const real = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+
+      async function initHanging(): Promise<void> {
+        setPlatform('win32')
+        vi.useFakeTimers()
+        mockLookupHangs = true
+        const pending = mod.initDeviceId()
+        await vi.advanceTimersByTimeAsync(2000)
+        await pending
+      }
+
+      it('saves this launch id 60 s in, and the next timed-out launch keeps it', async () => {
+        await initHanging()
+        const provisional = mod.getDeviceId()
+        await vi.advanceTimersByTimeAsync(59_999)
+        expect(fs.existsSync(deviceIdFile())).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(provisional)
+        vi.useRealTimers()
+
+        await nextLaunch()
+        await initTimingOut()
+        expect(mod.getDeviceId()).toBe(provisional)
+        expect(mod.getIdClass()).toBe('random_fallback')
+      })
+
+      it('lets a real answer after the hung save overwrite it', async () => {
+        await initHanging()
+        await vi.advanceTimersByTimeAsync(60_000)
+        answerLateLookup()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+      })
+
+      it('does not save the fallback over an answer that came first', async () => {
+        await initHanging()
+        await vi.advanceTimersByTimeAsync(30_000)
+        answerLateLookup()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(real)
+      })
+    })
+
+    it('counts the budget from initDeviceId(), not from the early start', async () => {
+      vi.useFakeTimers()
+      mockLookupHangs = true
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(5000)
+      const pending = mod.initDeviceId()
+      let settled = false
+      void pending.then(() => (settled = true))
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toBe(true)
     })
   })
 })

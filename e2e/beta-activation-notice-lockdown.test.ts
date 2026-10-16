@@ -48,7 +48,7 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 })
 const INSTALL_ID = 'inst-beta-notice-lockdown'
 const INSTALL_NAME = 'Beta Notice Lockdown Fixture'
 let port = 0
-const GRANT_ARG = '--enable-assets'
+const GRANT_ARG = '--enable-asset-hashing'
 const GRANT_MIN_CORE = '0.3.80'
 
 let ctx: AppContext

@@ -52,3 +52,22 @@ export function workspaceIdOf(accessToken: string): string | null {
 export function subjectOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.sub ?? null
 }
+
+/** Who a token belongs to, read from its unverified claims. Identity only:
+ *  never gate access on it (see `statusFromAccessToken`). */
+export interface TokenIdentity {
+  userId: string
+  email?: string
+  workspaceId?: string
+}
+
+/** Null when the token has no `sub`. */
+export function identityOf(accessToken: string): TokenIdentity | null {
+  const claims = decodeJwtPayload(accessToken)
+  if (!claims?.sub) return null
+  return {
+    userId: claims.sub,
+    ...(claims.email ? { email: claims.email } : {}),
+    ...(claims.workspace_id ? { workspaceId: claims.workspace_id } : {})
+  }
+}

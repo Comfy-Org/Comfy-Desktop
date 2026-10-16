@@ -305,7 +305,7 @@ describe('comfybuilder.install wiring', () => {
     )
   })
 
-  it('drops the manager flag of a governed allowlist build even when the release said Yes', async () => {
+  it('keeps the manager flag of a governed allowlist build whose release said Yes', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-'))
     try {
       writePolicy(root, 'allowlist')
@@ -320,18 +320,21 @@ describe('comfybuilder.install wiring', () => {
         fakeTools()
       )
 
+      // The release's answer alone decides; ComfyUI turns the manager off
+      // itself under the signed policy.
       expect(updateInstallation).toHaveBeenCalledWith('i1', {
-        comfybuilderManagerAllowed: false,
-        launchArgs: '--cpu'
+        comfybuilderManagerAllowed: true,
+        launchArgs: '--enable-manager --cpu'
       })
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('drops the manager flag from the policy on disk when the record carries no manager answer', async () => {
-    // A record can lag the archive: an update interrupted before its last
-    // write, or a record from an older Desktop.
+  it('keeps the manager flag of a governed allowlist install whose record carries no manager answer', async () => {
+    // A record can lag the archive (an update interrupted before its last
+    // write, or a record from an older Desktop); the policy on disk no longer
+    // changes the launch args.
     const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-launch-'))
     try {
@@ -345,7 +348,12 @@ describe('comfybuilder.install wiring', () => {
         record({ installPath: root, launchArgs: '--enable-manager --cpu' })
       )
 
-      expect(cmd?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu'])
+      expect(cmd?.args).toEqual([
+        '-s',
+        path.join('ComfyUI', 'main.py'),
+        '--enable-manager',
+        '--cpu'
+      ])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -1003,7 +1011,8 @@ describe('comfybuilder update-comfyui', () => {
 
   /** Update a real install tree from a release with `oldMode`'s policy file
    *  (none when null) to one whose archive carries `newMode`'s, with the
-   *  release manifest saying Yes. Returns the record writes. */
+   *  release manifest's custom-node policy in `newMode` (a blocklist when
+   *  null). Returns the record writes. */
   async function updateAcrossPolicies(
     oldMode: string | null,
     newMode: string | null,
@@ -1028,9 +1037,11 @@ describe('comfybuilder update-comfyui', () => {
         fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
         if (newMode) writePolicy(installPath, newMode)
       })
+      // A release's manifest and its signed policy carry the same rules; the
+      // manifest's is the one Desktop reads.
       vi.mocked(resolveModelManifest).mockResolvedValueOnce({
         models: [],
-        customNodePolicy: { mode: 'blocklist', list: [] }
+        customNodePolicy: { mode: newMode ?? 'blocklist', list: [] }
       } as never)
       const tools = actionTools()
 
