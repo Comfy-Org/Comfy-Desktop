@@ -76,7 +76,7 @@
  *
  *   *Exceptions* invert that split: Datadog is the sink, unconditionally and
  *   independently of the allow-list (which governs Actions only), and the
- *   PostHog copy is opt-in behind `POSTHOG_EXCEPTIONS` because both sinks
+ *   PostHog copy is opt-in behind `COMFY_DESKTOP_POSTHOG_EXCEPTIONS` because both sinks
  *   carry the same scrubbed error and PostHog bills per event.
  *
  * ## A/B experiments
@@ -137,6 +137,7 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
+import type { CloudUserTier } from '../../types/ipc'
 import { recordIpcInvocation } from './e2eOverrides'
 import {
   clearPendingIdentityMerges,
@@ -197,6 +198,7 @@ export function _resetForTest(): void {
   installationIdProperty = null
   consentState = 'undecided'
   flagEvaluationStaff = false
+  flagEvaluationUserTier = null
   flagEvaluationAppVersion = null
   pendingSessionStart = null
   pendingFirstLaunch = null
@@ -206,6 +208,7 @@ export function _resetForTest(): void {
   quarantinedWrites = []
   defaultEventProperties = {}
   initialized = false
+  suppressEmit = false
   drainingForQuit = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
@@ -224,10 +227,54 @@ interface PostHogConfig {
   enabled: boolean
 }
 
-function readPostHogConfig(): PostHogConfig {
-  const apiKey = (process.env['POSTHOG_API_KEY'] || DEFAULT_POSTHOG_API_KEY).trim()
-  const host = (process.env['POSTHOG_HOST'] || DEFAULT_POSTHOG_HOST).trim()
-  const enabled = !isFlagDisabled(process.env['POSTHOG_ENABLED']) && apiKey.length > 0
+function readPostHogConfig(isPackaged: boolean): PostHogConfig {
+  // Generic POSTHOG_* variables are commonly exported by developer tooling and CI. In a
+  // packaged app they belong to the launching shell, not Comfy Desktop; inheriting them can
+  // silently redirect flag reads and event writes to another project (or supply a personal
+  // `phx_` key to the public ingest endpoint). Keep the generic names as a dev convenience,
+  // but require a product-scoped name for intentional packaged overrides.
+  const nonBlank = (...values: Array<string | undefined>): string | undefined =>
+    values.map((value) => value?.trim()).find((value) => Boolean(value))
+  const apiKey =
+    (isPackaged
+      ? nonBlank(process.env['COMFY_DESKTOP_POSTHOG_API_KEY'])
+      : nonBlank(process.env['COMFY_DESKTOP_POSTHOG_API_KEY'], process.env['POSTHOG_API_KEY'])) ??
+    DEFAULT_POSTHOG_API_KEY
+  const host =
+    (isPackaged
+      ? nonBlank(process.env['COMFY_DESKTOP_POSTHOG_HOST'])
+      : nonBlank(process.env['COMFY_DESKTOP_POSTHOG_HOST'], process.env['POSTHOG_HOST'])) ??
+    DEFAULT_POSTHOG_HOST
+  const packagedHostIsSafe = (() => {
+    if (!isPackaged || !process.env['COMFY_DESKTOP_POSTHOG_HOST']?.trim()) return true
+    try {
+      const url = new URL(host)
+      return url.protocol === 'https:' && !url.username && !url.password
+    } catch {
+      return false
+    }
+  })()
+  if (!packagedHostIsSafe) {
+    console.warn('Rejecting unsafe COMFY_DESKTOP_POSTHOG_HOST; PostHog is disabled')
+  }
+  if (
+    isPackaged &&
+    (process.env['POSTHOG_API_KEY']?.trim() || process.env['POSTHOG_HOST']?.trim())
+  ) {
+    console.warn(
+      'Packaged Comfy Desktop ignores generic POSTHOG_API_KEY/POSTHOG_HOST; use COMFY_DESKTOP_POSTHOG_* overrides'
+    )
+  }
+  if (isPackaged && isFlagDisabled(process.env['POSTHOG_ENABLED'])) {
+    console.warn('Packaged Comfy Desktop was disabled by the inherited POSTHOG_ENABLED opt-out')
+  }
+  // The generic switch remains a one-way emergency opt-out in packaged builds for backwards
+  // compatibility. A scoped "1" intentionally cannot override an inherited generic "0".
+  const enabled =
+    !isFlagDisabled(process.env['COMFY_DESKTOP_POSTHOG_ENABLED']) &&
+    !isFlagDisabled(process.env['POSTHOG_ENABLED']) &&
+    packagedHostIsSafe &&
+    apiKey.length > 0
   return { apiKey, host, enabled }
 }
 
@@ -382,6 +429,13 @@ let consentState: ConsentState = 'undecided'
 let flagEvaluationStaff = false
 
 /**
+ * The last Cloud tier seen on this install (`userTier.ts`), held ONLY to evaluate ops flags,
+ * so a release condition can weight a rollout toward paying users. `null` while the tier is
+ * unknown. Consent-gated exactly like `flagEvaluationStaff`: it is a fact about the person.
+ */
+let flagEvaluationUserTier: Exclude<CloudUserTier, 'unknown'> | null = null
+
+/**
  * This build's version, sent with every ops-flag evaluation as `app_version` so
  * a release condition can gate on it with PostHog's semver operators. Set once
  * by `initTelemetry`; `null` until then, and no request goes out before it,
@@ -405,6 +459,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** Bind the cached Cloud tier for ops-flag evaluation; `'unknown'` sends nothing. */
+export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
+  flagEvaluationUserTier = tier === 'unknown' ? null : tier
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -424,7 +483,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * The version is self-asserted, so a version gate is a compatibility gate, not
  * a trust boundary: never gate anything a user could want withheld on it.
  *
- * `comfy_staff` only when consent is `'granted'` AND the account is staff. The flag FETCH
+ * `platform` always (`process.platform`: `win32`, `darwin`, `linux`): like `app_version` it
+ * describes the machine, not the person, so a per-OS condition reaches every install.
+ *
+ * Only when consent is `'granted'`: `comfy_staff` when the account is staff, and `user_tier`
+ * (`paid`/`free`) when a tier is known. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO
  * the client, and a user who declined telemetry still gets the override — but
  * that argument covers the installation-stable key and nothing else. Whether a
@@ -440,7 +503,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
 function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
+  properties['platform'] = process.platform
   if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && flagEvaluationUserTier) {
+    properties['user_tier'] = flagEvaluationUserTier
+  }
   return properties
 }
 
@@ -682,7 +749,7 @@ export function initTelemetry(opts: InitOptions): void {
   // `registerPersonProperties`) bail when `suppressEmit` is set.
   suppressEmit = !opts.isPackaged
 
-  const cfg = readPostHogConfig()
+  const cfg = readPostHogConfig(opts.isPackaged)
   if (!cfg.enabled) return
 
   try {
@@ -696,8 +763,8 @@ export function initTelemetry(opts: InitOptions): void {
       // yields nothing, and the late continuation in `getOpsFlagResult` never fires — so a
       // revocation is silently held forever, the exact failure late persistence exists to end.
       //
-      // This does NOT slow boot. The launch decision is governed by each flag's deadline race
-      // inside `getOpsFlagResult`, which is shorter; the app never waits this long. All a
+      // This does NOT slow boot. A launch waits only on a flag's own, shorter deadline, and only
+      // when nothing is saved; a refresh behind a saved treatment blocks nothing. All a
       // longer flag timeout buys is keeping the ALREADY-ABANDONED background fetch alive long
       // enough for a slow cold answer to be captured and persisted for the NEXT launch.
       //
@@ -1539,11 +1606,11 @@ function captureExceptionWrite(
  * Datadog is the alerting surface for exceptions; PostHog's copy is opt-in.
  *
  * Off by default because the two sinks carry the same scrubbed error and
- * PostHog is billed per event. Set `POSTHOG_EXCEPTIONS=1` to restore it for
+ * PostHog is billed per event. Set `COMFY_DESKTOP_POSTHOG_EXCEPTIONS=1` to restore it for
  * an investigation that wants the error alongside product events.
  */
 function isPostHogExceptionCaptureEnabled(): boolean {
-  return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
+  return isFlagEnabled(process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'])
 }
 
 function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
@@ -1719,8 +1786,8 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, `app_version`, and — only once consent is `'granted'` and the account is
- * staff — `comfy_staff`, via `opsFlagPersonProperties`. Those properties are
+ * key, `app_version`, `platform`, and — only once consent is `'granted'` — `comfy_staff`
+ * for staff and `user_tier` when known, via `opsFlagPersonProperties`. Those properties are
  * request-scoped: the SDK puts them in the `/flags` POST body as
  * `person_properties`, where the server evaluates release conditions against
  * them and nothing is stored. The `distinct_id` remains the installation hash, so

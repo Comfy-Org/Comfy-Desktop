@@ -17,6 +17,7 @@ import {
 } from './shared'
 import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
 import { recordIpcInvocation } from '../e2eOverrides'
+import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle('stop-comfyui', async (_event, installationId?: string) => {
@@ -106,7 +107,7 @@ export function registerSessionHandlers(): void {
 
       const requestedSessionId = actionData?.sessionIdOverride
       const sessionId =
-        actionId === 'launch' && requestedSessionId === `performance-test:${installationId}`
+        actionId === 'launch' && requestedSessionId === performanceTestSessionKey(installationId)
           ? requestedSessionId
           : undefined
       return dispatchSessionAction(

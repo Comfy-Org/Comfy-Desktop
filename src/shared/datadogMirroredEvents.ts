@@ -82,6 +82,11 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // Sign-in failures — alert if a provider's auth bridge breaks (OAuth
   // config drift, IdP outage, loopback-port contention).
   'comfy.desktop.auth.sign_in_failed',
+  // Hosted-view SSO sign-in, one event per stage (requested / completed /
+  // failed). Mirrored whole, like install.phase: the SSO dashboards and
+  // monitors live in Datadog and need requested/completed as the denominator;
+  // monitors filter on `stage:failed` and group by `reason` / `http_status`.
+  'comfy.desktop.auth.host_sign_in',
   // SDK-level volume guards — Datadog should alert if either fires
   // because the call site is misbehaving (loop, missing dedup, etc.)
   // and the SDK had to step in. One emit per process per event-name.

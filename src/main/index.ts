@@ -112,13 +112,20 @@ import {
   hasCompletedFirstLaunch,
   hasPersistedDeviceId,
   initDeviceId,
-  markIdentityMigrationCompleted
+  markIdentityMigrationCompleted,
+  startMachineIdLookup
 } from './lib/deviceId'
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
+import {
+  getCoreBetaCampaigns,
+  initCoreBetaFlags,
+  readCampaignRecords
+} from './lib/coreBetaCampaignFlags'
+import { answeredFrontendPins, syncFrontendCache } from './lib/frontendCache'
+import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
@@ -1332,6 +1339,9 @@ const hostReentryGate = createStartupReentryGate()
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // The hardware-id lookup is slow on cold Windows starts; overlap it with Electron start-up.
+  if (process.platform === 'win32') startMachineIdLookup()
+
   if (app.isPackaged) {
     app.on('second-instance', () => {
       // OS-level "open another instance" attempt - focus an existing
@@ -1523,21 +1533,33 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // NEXT launch; this runs before any view exists, so no outcome is missed.
     initStaffFlagTargeting()
 
+    // Hydrate the persisted cloud user-tier cache (billing telemetry, free-tier offer UI) and
+    // bind it for the ops-flag fetches below, for the same reason as staff targeting. A small
+    // local read; it never rejects. `userTier.ts` refreshes it on every cloud `dom-ready`.
+    await initUserTier()
+
     // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    void initCoreBetaFlags({
-      distinctId: installationId,
-      betaEnabled: settings.peekBetaFeaturesEnabled()
-    })
+    const betaAtBoot = settings.peekBetaFeaturesEnabled()
+    void initCoreBetaFlags({ distinctId: installationId, betaEnabled: betaAtBoot })
+      // A campaign's pinned frontend downloads now, so the first launch it applies to can serve
+      // it; with beta off nothing is pinned and the cache empties.
+      .then(async () =>
+        syncFrontendCache(
+          betaAtBoot
+            ? answeredFrontendPins((await getCoreBetaCampaigns()).answers, readCampaignRecords())
+            : []
+        )
+      )
+      .catch((err: unknown) =>
+        console.warn('[core-campaign] campaign flags or frontend cache upkeep failed:', err)
+      )
 
-    // Hydrate the persisted cloud user-tier cache for billing telemetry and
-    // free-tier offer UI. `userTier.ts` refreshes it on every cloud
-    // webContents `dom-ready` (see `attach.ts`).
-    void initUserTier()
+    void initEmbeddedSessionFlag({ distinctId: installationId })
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)

@@ -22,9 +22,7 @@ import {
   installArtifact,
   buildLaunchSpec,
   launchArgsForManagerAnswer,
-  managerAllowedByGovernance,
   managerAllowedByPolicy,
-  readGovernance,
   venvPython,
   resolveModelManifest,
   normalizeSha256
@@ -73,8 +71,9 @@ const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
 const ACTIVE_CODE_MARKER = '.comfybuilder-active-code'
 const ROLLBACK_FIELD = 'comfybuilderRollback'
 /** Record field: false when the installed release's author turned
- *  ComfyUI-Manager off, or its governance policy is a custom-node allowlist.
- *  Written once the release's environment has landed. */
+ *  ComfyUI-Manager off. A governed ComfyUI, master 3d9b2d5 (#16167), turns
+ *  it off itself under any custom-node policy. Written once the release's
+ *  environment has landed. */
 const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
 
 /** The record fields that carry a release's manager answer: the answer itself
@@ -84,9 +83,7 @@ function managerAnswerFields(
   installation: InstallationRecord,
   manifest: ModelManifest
 ): Record<string, unknown> {
-  const allowed =
-    managerAllowedByPolicy(manifest.customNodePolicy) &&
-    managerAllowedByGovernance(readGovernance(installation.installPath))
+  const allowed = managerAllowedByPolicy(manifest.customNodePolicy)
   return {
     [MANAGER_ALLOWED_FIELD]: allowed,
     launchArgs: launchArgsForManagerAnswer(
@@ -572,10 +569,7 @@ export const comfybuilder: SourcePlugin = {
       ),
       // Records written before this field existed have no answer; they keep
       // launching with the manager flag, as they always did.
-      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false,
-      // From the disk: the record's manager answer can lag the installed
-      // archive (an update interrupted before its last write, an older Desktop).
-      governance: readGovernance(installation.installPath)
+      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
