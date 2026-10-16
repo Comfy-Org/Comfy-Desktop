@@ -7,8 +7,8 @@ import {
   ChevronDown,
   CloudDownload,
   Loader2,
+  Megaphone,
   Menu as MenuIcon,
-  MessageSquarePlus,
   RefreshCw,
   RotateCw,
   ZoomIn
@@ -1059,7 +1059,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
         @click="handleFeedback"
       >
-        <MessageSquarePlus :size="16" />
+        <Megaphone :size="16" />
       </button>
       <!-- Downloads tray. Click opens the title-bar dropdown popup in
            `'downloads'` mode anchored under the button. Distinct
