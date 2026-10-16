@@ -60,6 +60,18 @@ describe('userTier ops-flag binding', () => {
     expect(bound).toEqual(['unknown'])
   })
 
+  // Boot awaits this read before the flag fetches, so a bad file must resolve, not throw.
+  it.each(['{not json', JSON.stringify({ tier: 'gold' })])(
+    'binds unknown at init for an unusable file (%s)',
+    async (contents) => {
+      await fs.writeFile(path.join(userTierDataDir, 'cloud-user-tier.json'), contents)
+
+      await expect(initUserTier()).resolves.toBeUndefined()
+
+      expect(bound).toEqual(['unknown'])
+    }
+  )
+
   it('binds each refreshed tier', async () => {
     await refreshCloudUserTier(stubContents({ tier: 'FREE' }).wc)
     await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)

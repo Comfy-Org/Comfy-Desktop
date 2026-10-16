@@ -790,6 +790,9 @@ describe('telemetry anonymous flag reads', () => {
 // Supplying a property on the request is what makes such a condition evaluable — without
 // persisting a person, and without disturbing the distinct id the flag buckets on.
 describe('ops-flag person targeting', () => {
+  /** What every consented evaluation carries regardless of account: the OS, for per-OS targeting. */
+  const CONSENTED = { platform: process.platform }
+
   /** The `person_properties` on the most recent evaluation request. */
   function lastPersonProperties(): unknown {
     const call = featureFlagResultCalls.at(-1)
@@ -806,7 +809,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', comfy_staff: 'true' })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -843,7 +846,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
   })
 
   it('sends no comfy_staff when consent is undecided', async () => {
@@ -887,7 +890,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', user_tier: 'paid' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', user_tier: 'paid' })
     expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
   })
 
@@ -897,7 +900,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', user_tier: 'free' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', user_tier: 'free' })
   })
 
   it('sends no user_tier while the tier is unknown', async () => {
@@ -907,7 +910,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
   })
 
   it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
@@ -919,26 +922,68 @@ describe('ops-flag person targeting', () => {
     expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
-  it('stops sending once the install is reclassified, as on sign-out', async () => {
+  it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
-    await evaluate()
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    telemetry.setFlagEvaluationUserTier('paid')
 
-    telemetry.setFlagEvaluationStaff(false)
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      comfy_staff: 'true',
+      user_tier: 'paid'
+    })
+  })
+
+  // Consent can change mid-session (Settings), and campaign flags are first fetched mid-session,
+  // so the gate must be read per request, not when the tier is bound.
+  it('drops the consented properties when consent is revoked after binding', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('denied')
+
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
+  it('sends a tier bound before consent once consent is granted', async () => {
+    setupTelemetry({ consent: null })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('granted')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
+  })
+
+  it('stops sending once the install is reclassified, as on sign-out', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+    await evaluate()
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', comfy_staff: 'true' })
+
+    telemetry.setFlagEvaluationStaff(false)
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
+  })
+
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
+    telemetry.setFlagEvaluationUserTier('paid')
 
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0' })
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
@@ -1015,7 +1060,10 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4' })
+      expect(lastPersonProperties()).toEqual({
+        app_version: '1.1.4',
+        ...(consent === 'granted' ? CONSENTED : {})
+      })
     })
 
     it('rides alongside comfy_staff for a consented staff install', async () => {
@@ -1024,7 +1072,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4', comfy_staff: 'true' })
+      expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '1.1.4', comfy_staff: 'true' })
     })
 
     it('is the version initTelemetry was given, verbatim, prerelease included', async () => {

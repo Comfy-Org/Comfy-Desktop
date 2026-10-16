@@ -1,7 +1,11 @@
 /**
  * Cloud user-tier cache. Holds the signed-in customer's subscription tier for billing
  * telemetry, free-tier offer UI, and ops-flag targeting (sent only with consent; see
- * `telemetry.opsFlagPersonProperties`). Like staff targeting, the flag sees it from the NEXT boot.
+ * `telemetry.opsFlagPersonProperties`). Boot-time flag fetches see the persisted tier; a flag first
+ * fetched later in the session (a campaign) sees the current one.
+ *
+ * The tier is per installation, not per account: it is the last tier any Cloud view saw, and it is
+ * kept across sign-out. A flag condition on it is a weighting hint, never an entitlement.
  *
  * Sourced from comfy-api `GET /customers/me` (via the cloud webContents' Firebase token) and
  * persisted to `userData/cloud-user-tier.json` so the next launch's first render sees it.
