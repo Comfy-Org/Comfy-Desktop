@@ -790,7 +790,7 @@ describe('telemetry anonymous flag reads', () => {
 // Supplying a property on the request is what makes such a condition evaluable — without
 // persisting a person, and without disturbing the distinct id the flag buckets on.
 describe('ops-flag person targeting', () => {
-  /** What every consented evaluation carries regardless of account: the OS, for per-OS targeting. */
+  /** Sent on every consented evaluation whatever the account: the OS, for per-OS targeting. */
   const CONSENTED = { platform: process.platform }
 
   /** The `person_properties` on the most recent evaluation request. */
@@ -809,7 +809,11 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -890,7 +894,11 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', user_tier: 'paid' })
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
     expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
   })
 
@@ -900,7 +908,11 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', user_tier: 'free' })
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      user_tier: 'free'
+    })
   })
 
   it('sends no user_tier while the tier is unknown', async () => {
@@ -967,7 +979,11 @@ describe('ops-flag person targeting', () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
     await evaluate()
-    expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...CONSENTED,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
 
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
@@ -1072,7 +1088,11 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ ...CONSENTED, app_version: '1.1.4', comfy_staff: 'true' })
+      expect(lastPersonProperties()).toEqual({
+        ...CONSENTED,
+        app_version: '1.1.4',
+        comfy_staff: 'true'
+      })
     })
 
     it('is the version initTelemetry was given, verbatim, prerelease included', async () => {
