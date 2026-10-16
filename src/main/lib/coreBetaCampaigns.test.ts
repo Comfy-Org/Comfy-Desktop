@@ -188,18 +188,63 @@ describe('campaignCandidateGrants', () => {
     new Map([[KEY, answer(variant, payload)]])
 
   it('lists an enrol draw and a held member, and nothing for a non-member on hold', () => {
-    expect(campaignCandidateGrants(registry, grantOf('enrol'), {})).toHaveLength(1)
-    expect(campaignCandidateGrants(registry, grantOf('hold'), member)).toHaveLength(1)
-    expect(campaignCandidateGrants(registry, grantOf('hold'), {})).toEqual([])
+    expect(
+      campaignCandidateGrants(registry, grantOf('enrol'), {}, NOW, 'machine_derived')
+    ).toHaveLength(1)
+    expect(
+      campaignCandidateGrants(registry, grantOf('hold'), member, NOW, 'machine_derived')
+    ).toHaveLength(1)
+    expect(campaignCandidateGrants(registry, grantOf('hold'), {}, NOW, 'machine_derived')).toEqual(
+      []
+    )
+  })
+
+  it('skips answers the planner would drop as stale, so their commits are never proven', () => {
+    const old = (variant: string, age: number) =>
+      new Map([[KEY, answer(variant, agentPayload(), NOW - age)]])
+    expect(
+      campaignCandidateGrants(
+        registry,
+        old('hold', 8 * 24 * HOUR_MS),
+        member,
+        NOW,
+        'machine_derived'
+      )
+    ).toEqual([])
+    expect(
+      campaignCandidateGrants(registry, old('enrol', 49 * HOUR_MS), {}, NOW, 'machine_derived')
+    ).toEqual([])
+    expect(
+      campaignCandidateGrants(
+        registry,
+        old('hold', 6 * 24 * HOUR_MS),
+        member,
+        NOW,
+        'machine_derived'
+      )
+    ).toHaveLength(1)
+  })
+
+  it('skips an enrol draw an id that does not last could never take, but keeps a member', () => {
+    for (const cls of ['provisional', 'random_fallback', 'placeholder_fallback'] as const) {
+      expect(campaignCandidateGrants(registry, grantOf('enrol'), {}, NOW, cls)).toEqual([])
+      expect(campaignCandidateGrants(registry, grantOf('hold'), member, NOW, cls)).toHaveLength(1)
+    }
   })
 
   it('skips a void record, an unlisted arg and an unlisted key', () => {
     const voided = grantOf('hold', agentPayload({ epoch: 2, epochs: [2] }))
-    expect(campaignCandidateGrants(registry, voided, member)).toEqual([])
+    expect(campaignCandidateGrants(registry, voided, member, NOW, 'machine_derived')).toEqual([])
     expect(
-      campaignCandidateGrants([{ key: KEY, args: ['--enable-assets'] }], grantOf('enrol'), {})
+      campaignCandidateGrants(
+        [{ key: KEY, args: ['--enable-assets'] }],
+        grantOf('enrol'),
+        {},
+        NOW,
+        'machine_derived'
+      )
     ).toEqual([])
-    expect(campaignCandidateGrants([], grantOf('enrol'), {})).toEqual([])
+    expect(campaignCandidateGrants([], grantOf('enrol'), {}, NOW, 'machine_derived')).toEqual([])
   })
 })
 
@@ -233,12 +278,6 @@ describe('planCampaignArgs: enrol', () => {
     ])
   })
 
-  it('counts a user-passed --enable-assets as assets on', () => {
-    expect(args(planCampaignArgs(facts({ presentArgs: ['--enable-assets'] })))).toEqual([
-      '--enable-agent'
-    ])
-  })
-
   it('a payload WITHOUT requires_args enrols an assets-off machine (the gate is the payload)', () => {
     const payload = agentPayload()
     delete (payload as { grants: Array<{ requires_args?: unknown }> }).grants[0]!.requires_args
@@ -248,7 +287,7 @@ describe('planCampaignArgs: enrol', () => {
     expect(args(plan)).toEqual(['--enable-agent'])
   })
 
-  it.each([['random_fallback'], ['placeholder_fallback']] as const)(
+  it.each([['random_fallback'], ['placeholder_fallback'], ['provisional']] as const)(
     'never enrols on a %s id',
     (idClass) => {
       const plan = planCampaignArgs(facts({ idClass }))
@@ -265,6 +304,35 @@ describe('planCampaignArgs: enrol', () => {
       facts({ answers: new Map([[KEY, answer('enrol', agentPayload(), fetchedAt)]]) })
     )
     expect(plan.misses).toMatchObject([{ reason: 'stale_answer' }])
+  })
+
+  it('does not count a required arg the core does not support', () => {
+    const plan = planCampaignArgs(facts({ schema: schemaOf('enable-agent') }))
+    expect(plan.misses).toMatchObject([{ reason: 'requires_args' }])
+  })
+
+  it('reports a stale commit-range answer as stale, not as failing its gates', () => {
+    const ranged = {
+      grants: [
+        {
+          arg: '--enable-agent',
+          commit_ranges: [['a'.repeat(40), null]],
+          enrolment: { epoch: 1, epochs: [1] }
+        }
+      ]
+    }
+    const stale = NOW - ENROL_MAX_AGE_MS - 1
+    const plan = planCampaignArgs(
+      facts({ answers: new Map([[KEY, answer('enrol', ranged, stale)]]) })
+    )
+    expect(plan.misses).toMatchObject([{ reason: 'stale_answer' }])
+    const held = planCampaignArgs(
+      facts({
+        answers: new Map([[KEY, answer('hold', ranged, NOW - 8 * 24 * HOUR_MS)]]),
+        records: member
+      })
+    )
+    expect(held.misses).toMatchObject([{ member: true, reason: 'stale_answer' }])
   })
 
   it('enrols on an answer exactly 48 h old', () => {
@@ -415,6 +483,47 @@ describe('planCampaignArgs: hold', () => {
   })
 })
 
+describe('planCampaignArgs: members with no answer', () => {
+  const noAnswer = [{ key: KEY, arg: '--enable-agent', member: true, reason: 'no_answer' }]
+
+  it.each([
+    ['unlisted from the registry', { registry: [] }],
+    ['listed, but its answer expired or never arrived', { answers: new Map() }],
+    ['killed: the campaign serves false', { answers: new Map([[KEY, answer(false)]]) }],
+    [
+      'the registry no longer lists its arg for the campaign',
+      {
+        registry: [{ key: KEY, args: ['--enable-assets'] }],
+        answers: new Map([[KEY, answer('hold')]])
+      }
+    ],
+    [
+      'the grant was removed from the payload',
+      { answers: new Map([[KEY, answer('hold', { grants: [] })]]) }
+    ]
+  ])('reports an enrolled machine as idle when %s', (_label, overrides) => {
+    const plan = planCampaignArgs(facts({ records: member, ...overrides }))
+    expect(plan.applied).toEqual([])
+    expect(plan.misses).toEqual(noAnswer)
+  })
+
+  it('reports nothing extra for a held member or a voided epoch', () => {
+    expect(
+      planCampaignArgs(facts({ records: member, answers: new Map([[KEY, answer('hold')]]) })).misses
+    ).toEqual([])
+    const voided = answer('hold', agentPayload({ epoch: 2, epochs: [2] }))
+    expect(
+      planCampaignArgs(facts({ records: member, answers: new Map([[KEY, voided]]) })).misses
+    ).toEqual([])
+  })
+
+  it('reports nothing while beta is off', () => {
+    expect(
+      planCampaignArgs(facts({ records: member, registry: [], betaEnabled: false })).misses
+    ).toEqual([])
+  })
+})
+
 describe('planCampaignArgs: isolation', () => {
   it('refuses a grant its registry entry does not list', () => {
     const plan = planCampaignArgs(facts({ registry: [{ key: KEY, args: ['--enable-assets'] }] }))
@@ -429,23 +538,27 @@ describe('planCampaignArgs: isolation', () => {
     expect(plan.applied).toEqual([])
   })
 
-  it('withholds a campaign arg whose opposite slot #0 applied', () => {
+  it('withholds a campaign arg whose opposite is already present', () => {
     const payload = {
       grants: [
-        { arg: '--enable-assets', min_core_version: '0.3.0', enrolment: { epoch: 1, epochs: [1] } }
+        {
+          arg: '--enable-asset-hashing',
+          min_core_version: '0.3.0',
+          enrolment: { epoch: 1, epochs: [1] }
+        }
       ]
     }
     const plan = planCampaignArgs(
       facts({
-        registry: [{ key: KEY, args: ['--enable-assets'] }],
+        registry: [{ key: KEY, args: ['--enable-asset-hashing'] }],
         answers: new Map([[KEY, answer('enrol', payload)]]),
-        presentArgs: ['--disable-assets']
+        presentArgs: ['--disable-asset-hashing']
       })
     )
     expect(plan.misses).toMatchObject([{ reason: 'present' }])
   })
 
-  it('accepts a campaign granting an assets arg (no reservation)', () => {
+  it('refuses a campaign granting --enable-assets: Desktop asks for assets itself', () => {
     const payload = {
       grants: [
         { arg: '--enable-assets', min_core_version: '0.3.0', enrolment: { epoch: 1, epochs: [1] } }
@@ -458,7 +571,7 @@ describe('planCampaignArgs: isolation', () => {
         presentArgs: []
       })
     )
-    expect(args(plan)).toEqual(['--enable-assets'])
+    expect(args(plan)).toEqual([])
   })
 
   it('decides earlier registry entries first: a wave-1 member never enrols into wave 2', () => {

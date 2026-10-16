@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -9,6 +9,9 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
+let idClass = 'machine_derived'
+vi.mock('./deviceId', () => ({ getIdClass: () => idClass }))
+
 let testConfigDir = ''
 vi.mock('./paths', () => ({
   configDir: () => testConfigDir
@@ -16,7 +19,6 @@ vi.mock('./paths', () => ({
 
 import {
   _resetForTest,
-  campaignRecordSaved,
   getCoreBetaCampaigns,
   initCoreBetaCampaigns,
   initCoreBetaFlags,
@@ -44,7 +46,7 @@ const AGENT = {
     }
   ]
 }
-const ASSETS = { flags: [{ arg: '--enable-assets', min_core_version: '0.3.0' }] }
+const HASHING = { flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.0' }] }
 
 type Answer = { kind: 'value'; value: unknown; payload?: unknown } | { kind: 'unreachable' }
 const value = (v: unknown, payload?: unknown): Answer => ({ kind: 'value', value: v, payload })
@@ -68,6 +70,7 @@ function reset(): void {
   _resetForTest()
   resetCoreBetaGrants()
   getOpsFlagResult.mockReset()
+  idClass = 'machine_derived'
 }
 
 beforeEach(() => {
@@ -103,6 +106,56 @@ describe('initCoreBetaFlags', () => {
     for (const call of getOpsFlagResult.mock.calls) expect(call[1]).toBe('machine-hash')
   })
 
+  it('starts the campaigns on first use when beta was turned on after a beta-off boot', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
+    })
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('hold', AGENT) })
+    await initCoreBetaFlags({ distinctId: 'machine-hash', betaEnabled: false })
+    expect(fetchedKeys()).toEqual(['desktop_core_beta_features'])
+    const { answers } = await getCoreBetaCampaigns()
+    expect(answers.get(KEY)?.grants).toHaveLength(1)
+    for (const call of getOpsFlagResult.mock.calls)
+      expect(call[1], 'the boot id').toBe('machine-hash')
+  })
+
+  it('a first-time beta user with no saved registry gets campaigns in the same session', async () => {
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry).toEqual(REGISTRY)
+    expect(answers.get(KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+  })
+
+  it.each([
+    ['provisional', true],
+    ['random_fallback', true],
+    ['placeholder_fallback', true],
+    ['provisional', false],
+    ['random_fallback', false]
+  ])(
+    'reads the saved campaign answers under a %s id (beta on at boot: %s), but neither fetches nor saves any',
+    async (cls, betaEnabled) => {
+      seed('campaign-flags.json', {
+        desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+        [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - DAY_MS }
+      })
+      const before = fs.readFileSync(file('campaign-flags.json'))
+      serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+      idClass = cls
+      await initCoreBetaFlags({ distinctId: 'other-id', betaEnabled })
+      // On a beta-off boot this is the first use after beta is turned on.
+      const { registry, answers } = await getCoreBetaCampaigns()
+      expect(registry).toEqual(REGISTRY)
+      expect(answers.get(KEY), 'a member still holds on the saved answer').toMatchObject({
+        enrol: false,
+        fetchedAt: NOW - DAY_MS
+      })
+      expect(fetchedKeys(), 'slot #0 still fetches').toEqual(['desktop_core_beta_features'])
+      expect(fs.readFileSync(file('campaign-flags.json'))).toEqual(before)
+    }
+  )
+
   it('fetches no campaign flag on a beta-off boot', async () => {
     serve({})
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
@@ -122,46 +175,50 @@ describe('initCoreBetaCampaigns', () => {
     expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
   })
 
-  it('waits 3 s for every campaign flag on a machine that holds nothing', async () => {
+  it('applies saved answers at once and refreshes them in the background', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - DAY_MS }
+    })
+    getOpsFlagResult.mockImplementation(() => new Promise(() => {}))
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    const { answers } = await getCoreBetaCampaigns()
+    expect(answers.get(KEY), 'no wait on the fetch').toMatchObject({ fetchedAt: NOW - DAY_MS })
+    expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
+  })
+
+  it('fetches a key the fresh registry lists for the first time on the same boot', async () => {
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    expect(fetchedKeys()).toEqual(['desktop_campaigns', KEY])
+    expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry).toEqual(REGISTRY)
+    expect(answers.get(KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+  })
+
+  it('a key named by a registry refreshed over a saved one is fetched at the next read', async () => {
+    const NEW_KEY = 'desktop_core_beta_new'
+    const FRESH = [...REGISTRY, { key: NEW_KEY, args: ['--enable-agent'] }]
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
       [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW }
     })
-    serve({})
-    await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(deadlines()).toEqual({ desktop_campaigns: 3000, [KEY]: 3000 })
-  })
-
-  it('waits 5 s for the registry and the campaign this machine is enrolled in', async () => {
-    seed('campaign-flags.json', {
-      desktop_campaigns: {
-        value: true,
-        payload: [...REGISTRY, { key: 'desktop_core_beta_other', args: ['--enable-agent'] }],
-        fetchedAt: NOW
-      }
+    serve({
+      desktop_campaigns: value(true, FRESH),
+      [KEY]: value('hold', AGENT),
+      [NEW_KEY]: value('enrol', AGENT)
     })
-    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
-    serve({})
-    await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(deadlines()).toEqual({
-      desktop_campaigns: 5000,
-      [KEY]: 5000,
-      desktop_core_beta_other: 3000
-    })
-  })
-
-  it('discovers a newly listed key one launch late', async () => {
-    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
-    await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(fetchedKeys()).toEqual(['desktop_campaigns'])
-    expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
-
-    reset()
-    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
-    await initCoreBetaCampaigns({ distinctId: 'id' })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
+    // The saved registry answered the boot; the refresh lands in the background.
+    await new Promise((resolve) => setImmediate(resolve))
     const { registry, answers } = await getCoreBetaCampaigns()
-    expect(registry).toEqual(REGISTRY)
-    expect(answers.get(KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+    expect(registry).toEqual(FRESH)
+    expect(answers.get(NEW_KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+    expect(
+      fetchedKeys().filter((key) => key === NEW_KEY),
+      'started once'
+    ).toHaveLength(1)
   })
 
   it('holds the saved answers on an offline launch, with their saved fetch time', async () => {
@@ -175,14 +232,29 @@ describe('initCoreBetaCampaigns', () => {
     expect(answers.get(KEY)).toMatchObject({ enrol: false, fetchedAt: NOW - 2 * DAY_MS })
   })
 
-  it('drops a campaign answer saved more than 7 days ago (decision 2)', async () => {
+  it('serves an answer saved more than 7 days ago with its age, which the planner drops (decision 2)', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - DAY_MS },
       [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
     })
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW - 9 * DAY_MS)
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
+    const { registry, answers } = await getCoreBetaCampaigns()
+    const plan = planCampaignArgs({
+      registry,
+      answers,
+      records: readCampaignRecords(),
+      betaEnabled: true,
+      presentArgs: ['--enable-assets'],
+      core: { semver: '0.3.61', exact: true, verified: true, current: true },
+      commits: NO_CORE_COMMITS,
+      schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+      idClass: 'machine_derived',
+      now: NOW
+    })
+    expect(plan.applied, 'an 8-day-old answer no longer holds the arg').toEqual([])
+    expect(plan.misses).toMatchObject([{ member: true, reason: 'stale_answer' }])
   })
 
   it.each([[0], [false], ['x'], [null]])(
@@ -195,15 +267,54 @@ describe('initCoreBetaCampaigns', () => {
     }
   )
 
-  it('an expired saved registry lists nothing offline, but still discovers its keys', async () => {
+  it('a member back after more than 7 days idles on a launch that beats the refresh, then holds', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
       [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
     })
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW - 9 * DAY_MS)
+    getOpsFlagResult.mockImplementation(() => new Promise(() => {}))
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    const plan = async () => {
+      const { registry, answers } = await getCoreBetaCampaigns()
+      return planCampaignArgs({
+        registry,
+        answers,
+        records: readCampaignRecords(),
+        betaEnabled: true,
+        presentArgs: ['--enable-assets'],
+        core: { semver: '0.3.61', exact: true, verified: true, current: true },
+        commits: NO_CORE_COMMITS,
+        schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+        idClass: 'machine_derived',
+        now: NOW
+      })
+    }
+    expect((await plan()).misses, 'the first launch reads the 8-day-old answer').toMatchObject([
+      { member: true, reason: 'stale_answer' }
+    ])
+    const late = getOpsFlagResult.mock.calls.find((call) => call[0] === KEY)?.[3] as (
+      result: unknown
+    ) => void
+    late(value('hold', AGENT))
+    expect((await plan()).applied, 'the next launch holds on the refreshed answer').toMatchObject([
+      { key: KEY, enrolledNow: false }
+    ])
+  })
+
+  it('lists and discovers a saved registry of any age, offline', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 30 * DAY_MS },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 30 * DAY_MS }
+    })
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
     expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
-    expect(await getCoreBetaCampaigns()).toEqual({ registry: [], answers: new Map() })
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry).toEqual(REGISTRY)
+    expect(answers.get(KEY), 'its age is for the planner to judge').toMatchObject({
+      fetchedAt: NOW - 30 * DAY_MS
+    })
   })
 
   it('a machine back after more than 7 days gets its campaign answer on the first boot online', async () => {
@@ -218,7 +329,7 @@ describe('initCoreBetaCampaigns', () => {
 
   it('writes a campaign answer that arrives after the deadline to campaign-flags.json only', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     fs.writeFileSync(file('ops-flags.json.bak'), fs.readFileSync(file('ops-flags.json')))
     const before = fs.readFileSync(file('ops-flags.json'))
@@ -260,7 +371,7 @@ describe('initCoreBetaCampaigns', () => {
 describe('two cache files', () => {
   it('writes campaign answers to campaign-flags.json and leaves ops-flags.json byte-identical', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     fs.writeFileSync(file('ops-flags.json.bak'), fs.readFileSync(file('ops-flags.json')))
     const before = fs.readFileSync(file('ops-flags.json'))
@@ -280,13 +391,13 @@ describe('two cache files', () => {
       ['desktop_campaigns', KEY].sort()
     )
     expect(await getCoreBetaGrantsAsync()).toEqual([
-      { arg: '--enable-assets', minCoreVersion: '0.3.0' }
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.0' }
     ])
   })
 
   it('a failing campaign write leaves ops-flags.json to slot #0 alone', async () => {
     seed('ops-flags.json', {
-      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+      desktop_core_beta_features: { value: true, payload: HASHING, fetchedAt: NOW }
     })
     const before = fs.readFileSync(file('ops-flags.json'))
     seed('campaign-flags.json', {
@@ -298,7 +409,7 @@ describe('two cache files', () => {
       return write(target, ...rest)
     })
     serve({
-      desktop_core_beta_features: value(true, ASSETS),
+      desktop_core_beta_features: value(true, HASHING),
       desktop_campaigns: value(true, REGISTRY),
       [KEY]: value('enrol', AGENT)
     })
@@ -336,6 +447,13 @@ describe('enrolment records', () => {
     expect(records[KEY]).toBeUndefined()
   })
 
+  it('does not rewrite a record that already exists for the epoch', () => {
+    expect(writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toBe(true)
+    expect(writeCampaignRecord(KEY, '--enable-agent', 1, NOW + 5)).toBe(false)
+    expect(readCampaignRecords()[KEY]).toEqual({ '--enable-agent': { epoch: 1, enrolledAt: NOW } })
+    expect(writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 6), 'a new epoch writes').toBe(true)
+  })
+
   it('round-trips a record and keeps the other campaigns', () => {
     writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
     writeCampaignRecord('desktop_core_beta_other', '--enable-agent', 3, NOW + 1)
@@ -359,7 +477,6 @@ describe('enrolment records', () => {
     })
     expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow('ENOSPC')
     vi.mocked(safeFile.writeFileSafe).mockRestore()
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(true)
     expect(readCampaignRecords()[KEY]?.['--enable-agent']?.epoch).toBe(1)
   })
 
@@ -372,22 +489,7 @@ describe('enrolment records', () => {
     })
     expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW)).toThrow('EPERM')
     vi.mocked(safeFile.writeFileSafe).mockRestore()
-    expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1), 'the old epoch is no match').toBe(true)
-  })
-
-  it('a record behind an unreadable primary is not saved', () => {
-    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
-    fs.writeFileSync(
-      file('campaign-enrolments.json.bak'),
-      fs.readFileSync(file('campaign-enrolments.json'))
-    )
-    vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({
-      kind: 'data',
-      data: fs.readFileSync(file('campaign-enrolments.json.bak'), 'utf-8'),
-      primaryUnreadable: true
-    } as ReturnType<typeof safeFile.readFileSafe>)
-    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+    expect(readCampaignRecords()[KEY]?.['--enable-agent']?.epoch, 'the old epoch stays').toBe(1)
   })
 
   describe('an unparseable primary next to a valid backup', () => {
@@ -414,16 +516,48 @@ describe('enrolment records', () => {
       ])
     })
 
-    it('enrol: the write is refused and nothing counts, so no second enrolled event', () => {
-      expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 1)).toThrow(
-        /unreadable; not writing/
-      )
-      expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
-      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
-      expect(readJson('campaign-enrolments.json.bak')[KEY]).toEqual({
+    it('the read restores the backup over the garbage, so later writes keep the record', () => {
+      expect(readCampaignRecords()[KEY], 'a member, so no re-enrol').toEqual({
         '--enable-agent': { epoch: 1, enrolledAt: NOW }
       })
+      expect(readJson('campaign-enrolments.json')[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
+      writeCampaignRecord(KEY, '--enable-other', 1, NOW + 1)
+      expect(readCampaignRecords()[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW },
+        '--enable-other': { epoch: 1, enrolledAt: NOW + 1 }
+      })
     })
+
+    it('a restore that fails still reads the backup, and later writes refuse', () => {
+      const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+        throw new Error('EBUSY')
+      })
+      onTestFinished(() => copy.mockRestore())
+      expect(readCampaignRecords()[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
+      expect(() => writeCampaignRecord(KEY, '--enable-other', 1, NOW + 1)).toThrow(
+        /refusing to modify/
+      )
+      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
+    })
+  })
+
+  it('refuses to write over an unparseable primary with no usable backup', () => {
+    fs.writeFileSync(file('campaign-enrolments.json'), 'not json{')
+    fs.writeFileSync(file('campaign-enrolments.json.bak'), 'also not json')
+    expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow(/refusing to modify/)
+    expect(readCampaignRecords()).toEqual({})
+    expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
+  })
+
+  it('a corrupt ops-flags.json still reads as an empty cache and is repaired by the next answer', async () => {
+    fs.writeFileSync(file('ops-flags.json'), 'not json{')
+    serve({ desktop_core_beta_features: value(true, HASHING) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    expect(readJson('ops-flags.json')['desktop_core_beta_features']).toMatchObject({ value: true })
   })
 
   it('reads nothing from a missing or corrupt file', () => {

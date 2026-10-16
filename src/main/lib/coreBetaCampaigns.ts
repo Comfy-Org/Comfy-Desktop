@@ -3,6 +3,8 @@
  * the registry, or serve `false` from a flag that stays ENABLED (a 0% release condition). Never
  * disable or delete a campaign flag or the registry: PostHog omits a disabled flag from `/flags`,
  * which reads as unreachable, so every machine keeps its saved answer for up to seven days.
+ * Retire a finished campaign by voiding its epoch: members go silent. Unlisting, serving `false`
+ * or removing the grant are emergency levers that leave ex-members reporting idle `no_answer`.
  */
 import {
   CORE_BETA_FEATURES_FLAG_KEY,
@@ -10,7 +12,12 @@ import {
   parseCoreBetaGrants,
   selectCoreBetaGrantArgs
 } from './coreBetaGrants'
-import type { CoreBetaGrant, CoreCommitState, CoreVersionState } from './coreBetaGrants'
+import type {
+  CoreBetaGrant,
+  CoreBetaPlan,
+  CoreCommitState,
+  CoreVersionState
+} from './coreBetaGrants'
 import { filterUnsupportedArgs } from './comfy-args'
 import type { ComfyArgsSchema } from './comfy-args'
 import type { IdClass } from './deviceId'
@@ -27,7 +34,7 @@ const CAMPAIGN_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/
 
 export const ENROL_MAX_AGE_MS = 48 * 60 * 60 * 1000
 const ENROL_FUTURE_SKEW_MS = 60 * 60 * 1000
-/** Checked at every launch, unlike `opsFlag`'s boot-only `PERSIST_MAX_AGE_MS`. */
+/** Checked at every launch: `opsFlag` never expires a saved answer, so this is the only bound. */
 export const HOLD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Read by the agent requirements override through `appliedPassThrough`, at #1559's install step. */
@@ -154,17 +161,19 @@ function heldRecord(
 export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
-  records: CampaignRecords
+  records: CampaignRecords,
+  now: number,
+  idClass: IdClass
 ): CoreBetaGrant[] {
   return registry.flatMap(({ key, args }) => {
     const answer = answers.get(key)
     if (!answer) return []
     return answer.grants
-      .filter(
-        (candidate) =>
-          args.includes(candidate.grant.arg) &&
-          (answer.enrol || heldRecord(records, key, candidate) !== undefined)
-      )
+      .filter((candidate) => {
+        if (!args.includes(candidate.grant.arg)) return false
+        const member = heldRecord(records, key, candidate) !== undefined
+        return (member || answer.enrol) && answerRefusal(answer, member, now, idClass) === null
+      })
       .map((candidate) => candidate.grant)
   })
 }
@@ -201,6 +210,7 @@ export type CampaignMissReason =
   | 'id_class'
   /** Enrolled this launch but unrecorded: running, not counted. */
   | 'record_failed'
+  | 'no_answer'
 
 export interface CampaignMiss {
   readonly key: string
@@ -226,12 +236,38 @@ function answerFresh(
   return age <= maxAgeMs && age >= -skewMs
 }
 
+/** Why this answer can't carry a grant for this machine, or `null`; the candidate filter shares it. */
+function answerRefusal(
+  answer: CampaignAnswer,
+  member: boolean,
+  now: number,
+  idClass: IdClass
+): readonly [CampaignMissReason, string] | null {
+  if (member)
+    return answerFresh(answer, now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)
+      ? null
+      : ['stale_answer', 'the answer holding it is older than 7 days']
+  if (!answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS))
+    return ['stale_answer', 'the enrol answer is missing a fetch time or older than 48 h']
+  return idClass === 'machine_derived' ? null : ['id_class', `id class ${idClass}`]
+}
+
+/** What a campaign grant sees as already on the command line: the user's args, Desktop's assets
+ *  decision and slot #0's grants. The launch and the preview both use it. */
+export function campaignPresentArgs(
+  userArgs: readonly string[],
+  slot0: Pick<CoreBetaPlan, 'assetsArgs' | 'applied'>
+): string[] {
+  return [...userArgs, ...slot0.assetsArgs, ...slot0.applied.map((grant) => grant.arg)]
+}
+
 export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   const applied: CampaignApplied[] = []
   const misses: CampaignMiss[] = []
   const trace: string[] = []
   if (!facts.betaEnabled) return { applied, misses, trace }
   const present = new Set(facts.presentArgs)
+  const answered = new Set<string>()
   for (const { key, args } of facts.registry) {
     const answer = facts.answers.get(key)
     if (!answer) continue
@@ -241,6 +277,7 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         trace.push(`[core-campaign] ${key}: ${arg} refused: not listed for this campaign`)
         continue
       }
+      answered.add(`${key}:${arg}`)
       const record = heldRecord(facts.records, key, candidate)
       const member = record !== undefined
       if (!member && !answer.enrol) continue
@@ -254,9 +291,19 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('present', 'already decided by the launch args or an earlier grant')
         continue
       }
-      const missing = candidate.requiresArgs.filter((required) => !present.has(required))
+      // Present AND supported: the schema strips an unsupported user arg from the command line.
+      const missing = candidate.requiresArgs.filter(
+        (required) =>
+          !present.has(required) || filterUnsupportedArgs([required], facts.schema).length === 0
+      )
       if (missing.length > 0) {
         miss('requires_args', `requires ${missing.join(' ')}`)
+        continue
+      }
+      // Before the gates: a stale answer's commit ranges are never proven, so they would fail there.
+      const refusal = answerRefusal(answer, member, facts.now, facts.idClass)
+      if (refusal !== null) {
+        miss(...refusal)
         continue
       }
       const withheld: string[] = []
@@ -277,22 +324,10 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('unsupported', 'not supported by this core')
         continue
       }
-      if (member && !answerFresh(answer, facts.now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)) {
-        miss('stale_answer', 'the answer holding it is older than 7 days')
-        continue
-      }
-      if (!member) {
-        if (!answerFresh(answer, facts.now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)) {
-          miss('stale_answer', 'the enrol answer is missing a fetch time or older than 48 h')
-          continue
-        }
-        if (facts.idClass !== 'machine_derived') {
-          miss('id_class', `id class ${facts.idClass}`)
-          continue
-        }
-      }
       const epoch = record?.epoch ?? candidate.epoch
-      trace.push(`[core-campaign] ${key}: ${arg} ${member ? 'held' : 'enrolled'}, epoch ${epoch}`)
+      trace.push(
+        `[core-campaign] ${key}: ${arg} ${member ? 'held' : 'would enrol at spawn'}, epoch ${epoch}`
+      )
       present.add(arg)
       applied.push({
         key,
@@ -302,6 +337,13 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         payload: answer.payload,
         fetchedAt: answer.fetchedAt
       })
+    }
+  }
+  for (const [key, byArg] of Object.entries(facts.records)) {
+    for (const arg of Object.keys(byArg)) {
+      if (answered.has(`${key}:${arg}`)) continue
+      misses.push({ key, arg, member: true, reason: 'no_answer' })
+      trace.push(`[core-campaign] ${key}: ${arg} idle: no live answer grants it`)
     }
   }
   return { applied, misses, trace }

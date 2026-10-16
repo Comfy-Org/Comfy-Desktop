@@ -14,9 +14,11 @@ import {
   generateCodeVerifier,
   generateState
 } from './pkce'
+import { SignInFailure } from './signInFailure'
 import type { AuthStatus, AuthTokens } from './types'
 
-const DEFAULT_SIGN_IN_TIMEOUT_MS = 120_000
+/** Matches ingest's OAuth request TTL; a first SSO sign-in runs well past 2 min. */
+const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
 
 export interface OAuthOptions {
@@ -28,6 +30,8 @@ export interface OAuthOptions {
   timeoutMs?: number
   /** Pre-select this workspace at consent time. */
   workspaceId?: string
+  /** Receives the authorize URL, so a retry can reopen the same pending flow. */
+  onAuthorizeUrl?: (url: string) => void
 }
 
 interface TokenResponse {
@@ -36,7 +40,9 @@ interface TokenResponse {
   expires_in: number
 }
 
-function resolveConfig(o: OAuthOptions): Required<Omit<OAuthOptions, 'workspaceId'>> {
+function resolveConfig(
+  o: OAuthOptions
+): Required<Omit<OAuthOptions, 'workspaceId' | 'onAuthorizeUrl'>> {
   return {
     authorizeUrl: o.authorizeUrl ?? CLOUD_CONFIG.authorizeUrl,
     tokenUrl: o.tokenUrl ?? CLOUD_CONFIG.tokenUrl,
@@ -68,22 +74,46 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
       signal: controller.signal
+    }).catch((cause: unknown) => {
+      throw new SignInFailure(
+        `OAuth token request failed: ${String(cause)}`,
+        controller.signal.aborted ? 'timeout' : 'network',
+        { cause }
+      )
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')
-      throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
+      throw new SignInFailure(
+        `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
+        'server_error',
+        { httpStatus: resp.status }
+      )
     }
-    const data = (await resp.json()) as Partial<TokenResponse>
+    const data = (await resp.json().catch((cause: unknown) => {
+      throw new SignInFailure(
+        'OAuth token response was not valid JSON',
+        controller.signal.aborted ? 'timeout' : 'server_error',
+        { cause }
+      )
+    })) as Partial<TokenResponse> | null
+    if (typeof data !== 'object' || data === null) {
+      throw new SignInFailure('OAuth token response was not an object', 'server_error')
+    }
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
-      throw new Error('OAuth token response missing access_token')
+      throw new SignInFailure('OAuth token response missing access_token', 'server_error')
     }
     if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
-      throw new Error('OAuth token response missing a valid expires_in')
+      throw new SignInFailure('OAuth token response missing a valid expires_in', 'server_error')
     }
     return data as TokenResponse
   } finally {
     clearTimeout(timer)
   }
+}
+
+/** System browser only (RFC 8252): never an embedded window/webview. */
+export function openAuthorizePage(authorizeUrl: string): Promise<void> {
+  return shell.openExternal(authorizeUrl)
 }
 
 export async function signIn(
@@ -106,7 +136,7 @@ export async function signIn(
       codeChallenge,
       ...(options.workspaceId ? { workspaceId: options.workspaceId } : {})
     })
-    // System browser only (RFC 8252): never an embedded window/webview.
+    options.onAuthorizeUrl?.(authorizeUrl)
     // Never gate the flow on openExternal settling: a wedged shell handler
     // (seen on Windows) can leave that promise pending forever, which would
     // strand the single-flight login and disable sign-in in every window.
@@ -114,7 +144,16 @@ export async function signIn(
     // openExternal rejection (no browser handler) still fails immediately.
     const { code } = await Promise.race([
       listener.waitForCode(),
-      shell.openExternal(authorizeUrl).then(() => listener.waitForCode())
+      openAuthorizePage(authorizeUrl).then(
+        () => listener.waitForCode(),
+        (cause: unknown) => {
+          throw new SignInFailure(
+            cause instanceof Error ? cause.message : String(cause),
+            'browser_unavailable',
+            { cause }
+          )
+        }
+      )
     ])
 
     const r = await requestToken(

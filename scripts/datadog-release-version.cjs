@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { execSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.resolve(__dirname, '..')
+const DATADOG_VERSION_MAX_LENGTH = 192
 
 function readPackageVersion() {
   try {
@@ -23,24 +25,81 @@ function readGitSha() {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2_000
     }).trim()
   } catch {
+    console.warn('Unable to resolve git SHA for Datadog release; using package version only')
     return ''
   }
 }
 
+/** Datadog unified-service tag values must begin with a lowercase or uncased letter and
+ * may only contain those letters, numbers, underscores, minuses, colons, periods, and
+ * forward slashes. Keep release and sourcemap versions identical by normalizing once at
+ * their shared source. Reserve eight characters for the `version:` tag prefix. */
+function normalizeDatadogVersion(value, maxLength = DATADOG_VERSION_MAX_LENGTH) {
+  if (maxLength < 24) throw new Error('Datadog version length budget is too small')
+  const source = String(value || '').trim()
+  if (!source) throw new Error('Datadog release version cannot be empty')
+  const raw = source.toLowerCase()
+
+  // A SemVer build-metadata suffix containing a commit is the same release spelling used by
+  // our self-resolved path. Other lossy changes receive a deterministic hash suffix below.
+  const commitMatch = raw.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
+  const sourceCommitMatch = source.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
+  const commitSuffix = commitMatch ? `-${commitMatch[2].toLowerCase().slice(0, 12)}` : ''
+  const canonical = commitMatch ? `${commitMatch[1]}${commitSuffix}` : raw
+  const normalizationInput = commitMatch ? commitMatch[1] : canonical
+  let normalized = ''
+  let changed = raw !== source || canonical !== raw
+  for (const character of normalizationInput) {
+    const replacement = /^[\p{Ll}\p{Lo}0-9_.:/-]$/u.test(character) ? character : '_'
+    if (replacement !== character) changed = true
+    if (normalized.length < maxLength) normalized += replacement
+  }
+  if (!/^[\p{Ll}\p{Lo}]/u.test(normalized)) {
+    normalized = `v${normalized}`
+    changed = true
+  }
+
+  const truncate = (input, budget) => {
+    let output = ''
+    for (const character of input) {
+      if (output.length + character.length > budget) break
+      output += character
+    }
+    return output
+  }
+  const completeNormalized = `${normalized}${commitSuffix}`
+  const truncated = truncate(completeNormalized, maxLength)
+  if (!changed && truncated === completeNormalized) return truncated
+
+  const hashSource = sourceCommitMatch
+    ? `${sourceCommitMatch[1]}+${sourceCommitMatch[2].toLowerCase().slice(0, 12)}`
+    : source
+  const suffix = `-h${createHash('sha256').update(hashSource).digest('hex').slice(0, 8)}`
+  if (commitSuffix) {
+    return `${truncate(normalized, maxLength - commitSuffix.length - suffix.length)}${commitSuffix}${suffix}`
+  }
+  return `${truncate(normalized, maxLength - suffix.length)}${suffix}`
+}
+
 function resolveDatadogReleaseVersion(env = process.env) {
   const explicitVersion = String(env.VITE_DATADOG_RUM_VERSION || '').trim()
-  if (explicitVersion) return explicitVersion
+  if (explicitVersion) return normalizeDatadogVersion(explicitVersion)
 
-  const packageVersion = String(env.npm_package_version || readPackageVersion()).trim() || '0.0.0'
+  const envPackageVersion = String(env.npm_package_version || '').trim()
+  const packageVersion = envPackageVersion || readPackageVersion()
   const commitSha = String(env.GITHUB_SHA || env.VITE_GIT_SHA || readGitSha()).trim()
 
-  return commitSha ? `${packageVersion}+${commitSha.slice(0, 12)}` : packageVersion
+  if (!commitSha) return normalizeDatadogVersion(packageVersion)
+
+  return normalizeDatadogVersion(`${packageVersion}+${commitSha}`)
 }
 
 module.exports = {
-  resolveDatadogReleaseVersion,
+  normalizeDatadogVersion,
+  resolveDatadogReleaseVersion
 }
 
 if (require.main === module) {
