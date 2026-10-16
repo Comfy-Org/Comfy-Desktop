@@ -137,6 +137,7 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
+import type { CloudUserTier } from '../../types/ipc'
 import { recordIpcInvocation } from './e2eOverrides'
 import {
   clearPendingIdentityMerges,
@@ -197,6 +198,7 @@ export function _resetForTest(): void {
   installationIdProperty = null
   consentState = 'undecided'
   flagEvaluationStaff = false
+  flagEvaluationUserTier = null
   flagEvaluationAppVersion = null
   pendingSessionStart = null
   pendingFirstLaunch = null
@@ -427,6 +429,13 @@ let consentState: ConsentState = 'undecided'
 let flagEvaluationStaff = false
 
 /**
+ * The last Cloud tier seen on this install (`userTier.ts`), held ONLY to evaluate ops flags,
+ * so a release condition can weight a rollout toward paying users. `null` while the tier is
+ * unknown. Consent-gated exactly like `flagEvaluationStaff`: it is a fact about the person.
+ */
+let flagEvaluationUserTier: Exclude<CloudUserTier, 'unknown'> | null = null
+
+/**
  * This build's version, sent with every ops-flag evaluation as `app_version` so
  * a release condition can gate on it with PostHog's semver operators. Set once
  * by `initTelemetry`; `null` until then, and no request goes out before it,
@@ -450,6 +459,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** Bind the cached Cloud tier for ops-flag evaluation; `'unknown'` sends nothing. */
+export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
+  flagEvaluationUserTier = tier === 'unknown' ? null : tier
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -469,7 +483,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * The version is self-asserted, so a version gate is a compatibility gate, not
  * a trust boundary: never gate anything a user could want withheld on it.
  *
- * `comfy_staff` only when consent is `'granted'` AND the account is staff. The flag FETCH
+ * `platform` always (`process.platform`: `win32`, `darwin`, `linux`): like `app_version` it
+ * describes the machine, not the person, so a per-OS condition reaches every install.
+ *
+ * Only when consent is `'granted'`: `comfy_staff` when the account is staff, and `user_tier`
+ * (`paid`/`free`) when a tier is known. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO
  * the client, and a user who declined telemetry still gets the override — but
  * that argument covers the installation-stable key and nothing else. Whether a
@@ -485,7 +503,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
 function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
+  properties['platform'] = process.platform
   if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && flagEvaluationUserTier) {
+    properties['user_tier'] = flagEvaluationUserTier
+  }
   return properties
 }
 
@@ -1764,8 +1786,8 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, `app_version`, and — only once consent is `'granted'` and the account is
- * staff — `comfy_staff`, via `opsFlagPersonProperties`. Those properties are
+ * key, `app_version`, `platform`, and — only once consent is `'granted'` — `comfy_staff`
+ * for staff and `user_tier` when known, via `opsFlagPersonProperties`. Those properties are
  * request-scoped: the SDK puts them in the `/flags` POST body as
  * `person_properties`, where the server evaluates release conditions against
  * them and nothing is stored. The `distinct_id` remains the installation hash, so
