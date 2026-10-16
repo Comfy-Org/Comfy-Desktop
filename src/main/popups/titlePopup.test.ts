@@ -841,12 +841,12 @@ describe('global settings IPC handlers', () => {
     expect(updateField(eventFor(101), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
       ok: true
     })
-    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('inputDir', '/shared/in')
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('inputDir', '/shared/in', true)
   })
 
   it('updates a field for an instance-picker sender', () => {
     expect(updateField(eventFor(102), { fieldId: 'theme', value: 'dark' })).toEqual({ ok: true })
-    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('theme', 'dark')
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('theme', 'dark', true)
   })
 
   it('rejects an unknown sender updating a field', () => {
@@ -886,7 +886,7 @@ describe('global settings IPC handlers', () => {
   it('sets models directories for a settings sender', () => {
     const dirs = ['/a', '/b']
     expect(setModelsDirs(eventFor(101), { dirs })).toEqual({ ok: true })
-    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('modelsDirs', dirs)
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('modelsDirs', dirs, true)
   })
 
   it.each(['/a', undefined])('rejects non-array models directories %j', (dirs) => {
