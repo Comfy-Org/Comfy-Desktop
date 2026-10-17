@@ -857,6 +857,9 @@ onUnmounted(() => {
     :class="{
       'is-mac': isMac,
       'is-light': isLight,
+      // The dashboard window's dark bar is the top of its glass page
+      // (design-system/surfaces.css). Install windows take ComfyUI's colour.
+      'glass-titlebar': isInstallLess && !isLight,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
       'is-consent-lockdown': isConsentLockdown,
