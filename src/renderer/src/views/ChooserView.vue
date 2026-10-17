@@ -10,12 +10,13 @@ import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { RefreshCw, Search } from 'lucide-vue-next'
+import { RefreshCw } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
-import BrandBackground from '../components/BrandBackground.vue'
-import BaseInput from '../components/ui/BaseInput.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import Button from '../design-system/components/Button.vue'
+import SearchInput from '../design-system/components/SearchInput.vue'
+import { providePaletteScope } from '../composables/usePaletteScope'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
@@ -63,6 +64,8 @@ const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
 const dashboardScope = useDashboardScopeStore()
+// The dashboard is in the Void palette's scope; its teleported menus inherit it.
+const paletteScope = providePaletteScope()
 void dashboardScope.initialize()
 
 onMounted(() => {
@@ -163,13 +166,6 @@ async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
-
-// --- Cluster top offset ---
-
-const TILES_PER_ROW = 4
-
-/** Search-independent height reservation for New Instance plus scoped installs. */
-const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TILES_PER_ROW))
 
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
@@ -292,37 +288,43 @@ const gridHandlers = {
 </script>
 
 <template>
-  <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div class="chooser-view chooser-view--workspace" :style="{ '--rows': clusterRows }">
-      <!-- Signed-in account identity, pinned outside the centered content column. -->
-      <div class="chooser-account">
+  <div
+    v-show="props.visible"
+    class="ds-root ds-page relative flex size-full min-h-0 flex-1 overflow-hidden bg-app-background"
+    :class="paletteScope"
+  >
+    <main class="ds-content relative min-w-0 flex-1 overflow-y-auto scrollbar-quiet">
+      <!-- Signed-in account identity, pinned top right outside the content column. -->
+      <div class="chooser-account absolute top-4 right-5">
         <DevPlatformAccountChip />
       </div>
 
-      <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
-      <div class="chooser-toolbar">
-        <div class="chooser-search">
-          <BaseInput
+      <div
+        class="chooser-view mx-auto flex w-full max-w-240 flex-col items-center px-10 pt-20 pb-16"
+      >
+        <h1 class="flex items-center gap-2.5 text-display font-semibold heading-gradient">
+          <!-- The gradient fills text only; the mark keeps a solid colour. -->
+          <ComfyCLogo :size="34" class="text-base-foreground" />{{ t('chooser.wordmark') }}
+        </h1>
+        <div class="chooser-toolbar mt-8 flex w-full max-w-120">
+          <SearchInput
             v-model="searchQuery"
+            class="chooser-search w-full"
             :placeholder="t('chooser.searchPlaceholder')"
-            :aria-label="t('chooser.searchPlaceholder')"
-          >
-            <template #leading><Search :size="16" /></template>
-          </BaseInput>
+            :clear-label="t('common.clear')"
+          />
         </div>
-      </div>
 
-      <div class="chooser-workspace-viewport">
-        <div class="chooser-workspace-bar">
-          <div
-            class="chooser-workspace-controls"
-            :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
-          >
+        <!-- Workspace bar: which workspace, and how many instances in it. -->
+        <div
+          class="chooser-workspace-bar mt-5 flex items-center gap-3 rounded-control border border-border-default bg-secondary-background py-1 pr-3.5 pl-1"
+        >
+          <div class="chooser-workspace-controls flex items-center gap-1">
             <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
-            <button
+            <Button
               v-if="authStore.isSignedIn"
-              type="button"
-              class="chooser-workspace-refresh"
+              variant="ghost"
+              size="icon-sm"
               :disabled="refreshingWorkspace"
               :aria-label="t('devPlatform.workspace.refresh')"
               :title="t('devPlatform.workspace.refresh')"
@@ -331,34 +333,34 @@ const gridHandlers = {
             >
               <RefreshCw
                 :size="13"
-                :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+                :class="{ 'animate-spin motion-reduce:animate-none': refreshingWorkspace }"
               />
-            </button>
+            </Button>
           </div>
-          <div class="chooser-workspace-divider" aria-hidden="true" />
-          <div class="chooser-workspace-count">
-            <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
-            <strong>{{ scopedInstallCount }}</strong>
+          <span class="h-4 w-px bg-border-default" aria-hidden="true" />
+          <div class="chooser-workspace-count flex items-baseline gap-1.5 text-ui">
+            <span class="tracking-wider text-subtle-foreground">{{
+              t('devPlatform.workspace.instanceCountLabel')
+            }}</span>
+            <strong class="font-semibold tabular-nums">{{ scopedInstallCount }}</strong>
           </div>
         </div>
-      </div>
 
-      <div
-        v-if="
-          !dashboardScope.initialized ||
-          (installationStore.loading && installationStore.installations.length === 0)
-        "
-        class="chooser-loading"
-      >
-        {{ t('common.loading') }}
-      </div>
+        <p
+          v-if="
+            !dashboardScope.initialized ||
+            (installationStore.loading && installationStore.installations.length === 0)
+          "
+          class="chooser-loading mt-10 text-ui text-muted-foreground"
+        >
+          {{ t('common.loading') }}
+        </p>
 
-      <div v-else-if="showNoMatches" class="chooser-empty">
-        {{ t('chooser.noMatches') }}
-      </div>
+        <p v-else-if="showNoMatches" class="chooser-empty mt-10 text-ui text-muted-foreground">
+          {{ t('chooser.noMatches') }}
+        </p>
 
-      <div v-else class="chooser-shelves">
-        <section class="chooser-shelf">
+        <div v-else class="mt-10 w-full">
           <ChooserFamilyGrid
             show-new
             :installations="scopedVisibleInstalls"
@@ -368,7 +370,7 @@ const gridHandlers = {
             :is-promoting-to-workspace="isPromotingToWorkspace"
             v-on="gridHandlers"
           />
-        </section>
+        </div>
       </div>
 
       <ContextMenu
@@ -385,362 +387,6 @@ const gridHandlers = {
         @close="dismissWhyCloud"
         @try-cloud="onWhyCloudTryCloud"
       />
-    </div>
-  </BrandBackground>
+    </main>
+  </div>
 </template>
-
-<style scoped>
-@import './chooser/chooser-tiles.css';
-
-.chooser-bg :deep(.brand-inner-frame) {
-  /* Inherit the default justify-content: center from BrandBackground;
-   * chooser-view fills the frame and handles its own centering. */
-  padding: 0;
-}
-
-.chooser-bg :deep(.brand-outer-frame) {
-  padding: 0;
-  background: transparent;
-}
-
-.chooser-bg :deep(.brand-beam--2) {
-  left: anchor(center, clamp(39%, calc(52.5vw - 135px), 44%));
-}
-
-/* Unitless tile-row count from JS (see `clusterRows`). Registered as <integer>
- * so it's a typed number usable in the grid's reserved-height calc() below. */
-@property --rows {
-  syntax: '<integer>';
-  inherits: true;
-  initial-value: 1;
-}
-
-.chooser-view {
-  /* Symmetric top + bottom spacers (both 1fr) center the wordmark-to-grid block
-   * as a group whenever it fits - looks deliberate at any viewport height.
-   * When the (unfiltered) content is taller than the viewport, the
-   * `minmax(0, 1fr)` spacers collapse to 0 and the grid scrolls internally.
-   * Rows: [top spacer] [wordmark] [search] [workspace controls] [grid]
-   * [bottom spacer]. The workspace row is omitted while signed out.
-   *
-   * No-shift guarantee: the grid row reserves its height from the UNFILTERED
-   * `--rows` (see `.chooser-grid` min-height), so typing in search empties
-   * tiles without shrinking the grid box - the centered cluster stays put. */
-  --chooser-pad-y: clamp(12px, 2.5vh, 24px);
-  --chooser-row-gap: clamp(16px, 3.5vh, 32px);
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-rows:
-    minmax(0, 1fr)
-    auto
-    auto
-    minmax(0, auto)
-    minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  width: 100%;
-  max-width: 1280px;
-  padding: var(--chooser-pad-y) 24px;
-  row-gap: var(--chooser-row-gap);
-}
-
-.chooser-view--workspace {
-  grid-template-rows:
-    minmax(0, 1fr)
-    auto
-    auto
-    auto
-    minmax(0, auto)
-    minmax(0, 1fr);
-}
-
-/* Account chip: pinned to the frame's top-right, out of the centered column
- * so it can never collide with the wordmark or the search field. */
-.chooser-account {
-  position: absolute;
-  top: var(--chooser-pad-y);
-  right: 24px;
-  z-index: 2;
-  display: flex;
-  justify-content: flex-end;
-  max-width: min(340px, 45%);
-}
-
-.chooser-wordmark {
-  grid-row: 2;
-  /* `align-self` + `aspect-ratio` keep the SVG from stretching to fill the
-   * grid row (default `align-self: stretch` distorts it). */
-  align-self: center;
-  display: block;
-  width: clamp(120px, 8vw, 180px);
-  height: auto;
-  aspect-ratio: 173 / 48;
-  color: var(--comfy-yellow);
-  flex-shrink: 0;
-  anchor-name: --brand-beam-target;
-}
-
-.chooser-toolbar {
-  grid-row: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 900px;
-  flex-shrink: 0;
-}
-
-.chooser-search {
-  display: flex;
-  flex: 1 1 600px;
-  min-width: 180px;
-}
-
-.chooser-search :deep(.ui-input) {
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--chooser-surface-bg);
-  padding: 8px;
-}
-
-.chooser-search :deep(.ui-input-control) {
-  font-size: 14px;
-  padding-top: 0;
-}
-
-.chooser-loading,
-.chooser-empty {
-  grid-row: 4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-  padding: 24px;
-}
-
-.chooser-view--workspace .chooser-loading,
-.chooser-view--workspace .chooser-empty,
-.chooser-view--workspace .chooser-shelves {
-  grid-row: 5;
-}
-
-/* The scoped install grid's scroll viewport - column, scroll and fade only;
- * tile layout and the FLIP belong to `ChooserFamilyGrid`. */
-.chooser-shelves {
-  grid-row: 4;
-  width: 100%;
-  /* Content box holds exactly 4 tracks (4 x 280 + 3 x 16 = 1168px). */
-  max-width: 1168px;
-  justify-self: center;
-  /* Reserve the unfiltered row height so the cluster doesn't jump while typing
-   * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
-  --tile-h: 178px;
-  min-height: min(
-    100%,
-    calc(var(--rows) * var(--tile-h) + max(0, var(--rows) - 1) * 16px + 2 * var(--chooser-fade))
-  );
-  max-height: 100%;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  /* Vertical padding pushes the first/last rows into the mask fade so they
-   * glide under it rather than clip abruptly. Fluid on height (`--chooser-fade`)
-   * so short viewports reclaim the band for an extra tile row. */
-  --chooser-fade: clamp(12px, 2.5vh, 24px);
-  padding-block: var(--chooser-fade);
-  /* Size container so each shelf below can snap its width to a whole number
-   * of tile columns. */
-  container-type: inline-size;
-}
-
-/* Soft scroll edges, matched to the vertical padding so rows tuck under. */
-@supports (mask-image: linear-gradient(black, black)) {
-  .chooser-shelves {
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0,
-      black var(--chooser-fade),
-      black calc(100% - var(--chooser-fade)),
-      transparent 100%
-    );
-  }
-}
-
-.chooser-shelf {
-  display: flex;
-  flex-direction: column;
-  /* The grid's own row gap, so two stacked grids read as continuous rows. */
-  gap: 16px;
-  /* Snap each shelf to a whole number of 280px tracks (16px gaps) while
-   * keeping partial-width shelves centered as a group. Thresholds are
-   * `cols * 280 + (cols - 1) * 16` against the shelves' content box (the
-   * container defined above). */
-  width: 100%;
-  max-width: 280px;
-  align-self: center;
-  margin: 0;
-}
-@container (width >= 576px) {
-  .chooser-shelf {
-    max-width: 576px;
-  }
-}
-@container (width >= 872px) {
-  .chooser-shelf {
-    max-width: 872px;
-  }
-}
-@container (width >= 1168px) {
-  .chooser-shelf {
-    max-width: 1168px;
-  }
-}
-
-.chooser-workspace-viewport {
-  grid-row: 4;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 1168px;
-  justify-self: center;
-  container-type: inline-size;
-}
-.chooser-workspace-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 280px;
-  margin-inline: auto;
-}
-@container (width >= 576px) {
-  .chooser-workspace-bar {
-    max-width: 576px;
-  }
-}
-@container (width >= 872px) {
-  .chooser-workspace-bar {
-    max-width: 872px;
-  }
-}
-@container (width >= 1168px) {
-  .chooser-workspace-bar {
-    max-width: 1168px;
-  }
-}
-.chooser-workspace-divider {
-  flex: 1 1 auto;
-  min-width: 16px;
-  height: 1px;
-  background: var(--chooser-surface-border);
-}
-.chooser-workspace-controls {
-  --chooser-workspace-refresh-size: 30px;
-  --chooser-workspace-refresh-gap: 8px;
-
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--chooser-workspace-refresh-size);
-  flex: 0 1 290px;
-  align-items: center;
-  gap: var(--chooser-workspace-refresh-gap);
-  min-width: 0;
-}
-.chooser-workspace-controls--no-refresh {
-  grid-template-columns: minmax(0, 1fr);
-  flex-basis: calc(
-    290px - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
-  );
-  gap: 0;
-}
-.chooser-workspace-count {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: baseline;
-  gap: 4px;
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.chooser-workspace-count strong {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-.chooser-workspace-controls :deep(.workspace-selector) {
-  width: 100%;
-  min-width: 0;
-}
-.chooser-workspace-controls :deep(.workspace-selector__face) {
-  --dp-avatar-size: 20px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 180px;
-  padding: 4px 8px;
-}
-.chooser-workspace-controls :deep(.workspace-selector__menu) {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-}
-.chooser-workspace-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--chooser-workspace-refresh-size);
-  height: var(--chooser-workspace-refresh-size);
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.chooser-workspace-refresh:hover:not(:disabled) {
-  border-color: var(--chooser-surface-border-hover);
-  background: var(--chooser-surface-bg-hover);
-  color: var(--neutral-100);
-}
-.chooser-workspace-refresh:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.chooser-workspace-refresh:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-.chooser-workspace-refresh__icon--busy {
-  animation: chooser-workspace-refresh-spin 900ms linear infinite;
-}
-@keyframes chooser-workspace-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (max-width: 640px) {
-  .chooser-workspace-bar {
-    flex-wrap: wrap;
-  }
-
-  .chooser-workspace-divider {
-    display: none;
-  }
-
-  .chooser-workspace-controls {
-    flex-basis: 100%;
-  }
-
-  .chooser-workspace-controls--no-refresh {
-    flex-basis: calc(
-      100% - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
-    );
-  }
-
-  .chooser-workspace-count {
-    width: 100%;
-    justify-content: flex-end;
-  }
-}
-</style>
