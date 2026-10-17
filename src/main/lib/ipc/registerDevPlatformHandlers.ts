@@ -279,9 +279,9 @@ export function registerDevPlatformHandlers(): void {
       promoting.add(installationId)
       try {
         const inst = await installations.get(installationId)
-        if (!inst) return { ok: false, message: 'Instance not found.' }
+        if (!inst) return { ok: false, message: 'Build not found.' }
         if (!isPromotableLocalInstallation(inst)) {
-          return { ok: false, message: 'This instance cannot be promoted to a workspace.' }
+          return { ok: false, message: 'This build cannot be added to a workspace.' }
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
@@ -301,7 +301,7 @@ export function registerDevPlatformHandlers(): void {
           clearVersionCache()
           broadcastAuthChanged(switched)
           if (!switched.signedIn || switched.workspaceId !== workspaceId) {
-            return { ok: false, message: 'Could not activate the instance workspace.' }
+            return { ok: false, message: "Could not activate the build's workspace." }
           }
         }
 
@@ -316,7 +316,7 @@ export function registerDevPlatformHandlers(): void {
           !isPromotableLocalInstallation(current) ||
           current.workspaceId !== inst.workspaceId
         ) {
-          return { ok: false, message: 'The instance changed. Try again.' }
+          return { ok: false, message: 'The build changed. Try again.' }
         }
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
@@ -333,7 +333,7 @@ export function registerDevPlatformHandlers(): void {
           !isPromotableLocalInstallation(latest) ||
           latest.workspaceId !== inst.workspaceId
         ) {
-          return { ok: false, message: 'The instance changed. Try again.' }
+          return { ok: false, message: 'The build changed. Try again.' }
         }
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
@@ -429,7 +429,7 @@ export function registerDevPlatformHandlers(): void {
       const buildId = typeof request.buildId === 'string' ? request.buildId.trim() : ''
       if (!buildId) return { ok: false, message: 'A build is required.' }
       if (request.name !== undefined && typeof request.name !== 'string') {
-        return { ok: false, message: 'Invalid instance name.' }
+        return { ok: false, message: 'Invalid build name.' }
       }
       if (request.installRoot !== undefined && typeof request.installRoot !== 'string') {
         return { ok: false, message: 'Invalid install location.' }

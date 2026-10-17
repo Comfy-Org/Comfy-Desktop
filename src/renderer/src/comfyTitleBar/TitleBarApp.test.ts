@@ -1279,7 +1279,7 @@ describe('TitleBarApp', () => {
 
       expect(bridgeState.showCoachmarkCalls.length).toBe(1)
       const payload = bridgeState.showCoachmarkCalls[0]
-      expect(payload.title).toBe('Switch & manage instances')
+      expect(payload.title).toBe('Switch & manage builds')
       wrapper.unmount()
     })
 

@@ -156,7 +156,7 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
   )
 
   // The hint wins the collision — that part is by design and is not what this pins.
-  expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage instances')
+  expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage builds')
 
   // The notice is queued in main the whole time, waiting for the popup to free up.
   expect(await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`))
