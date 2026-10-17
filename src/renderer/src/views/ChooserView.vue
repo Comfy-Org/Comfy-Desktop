@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
-import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
-import { useModal } from '../composables/useModal'
-import { useCloudGate } from '../composables/useCloudGate'
-import { emitTelemetryAction } from '../lib/telemetry'
+import { useDashboardWorkspace } from '../composables/useDashboardWorkspace'
+import { usePickInstall } from '../composables/usePickInstall'
+import { useCloudTier } from '../composables/useCloudTier'
+import { useWhyCloud } from '../composables/useWhyCloud'
 import { RefreshCw } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
@@ -21,8 +21,7 @@ import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { openInstallManager } from '../lib/openInstallManager'
-import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
+import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
  * Chooser view - recents grid.
@@ -60,13 +59,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
-const sessionStore = useSessionStore()
 const authStore = useAuthStore()
-const modal = useModal()
 const dashboardScope = useDashboardScopeStore()
 // The dashboard is in the Void palette's scope; its teleported menus inherit it.
 const paletteScope = providePaletteScope()
-void dashboardScope.initialize()
 
 onMounted(() => {
   if (installationStore.installations.length === 0) {
@@ -97,56 +93,13 @@ const { searchQuery, activeFilter, visibleInstalls } = useInstallList({
 // doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
-// --- Dashboard scope ---
-
-const selectedWorkspaceModel = computed({
-  get: () => dashboardScope.selectedWorkspaceId,
-  set: dashboardScope.selectWorkspace
-})
-
-/** Server workspace whose Builds belong to the selected dashboard scope. */
-const selectedManagedWorkspaceId = computed(() => {
-  if (!authStore.isSignedIn) return null
-  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
-    return dashboardScope.selectedWorkspaceId
-  }
-  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
-  return authStore.personalWorkspace?.id ?? null
-})
-
-// Warm the selected workspace's Build catalog while the user is still on the
-// dashboard. New Instance can then choose its initial tab without waiting for
-// a network request. A generation guard prevents a slower previous selection
-// from fetching after the user has moved to another workspace.
-let buildPrefetchGeneration = 0
-watch(
-  [() => authStore.isSignedIn, selectedManagedWorkspaceId],
-  async ([signedIn, workspaceId]) => {
-    const generation = ++buildPrefetchGeneration
-    if (!signedIn || !workspaceId) return
-    try {
-      if (authStore.status.workspaceId !== workspaceId) {
-        await authStore.switchWorkspace(workspaceId)
-      }
-      if (
-        generation !== buildPrefetchGeneration ||
-        selectedManagedWorkspaceId.value !== workspaceId
-      )
-        return
-      await authStore.fetchBuilds()
-    } catch {
-      // The wizard retains its normal authorization and retry UI when a
-      // background prefetch cannot complete.
-    }
-  },
-  { immediate: true }
-)
-
-function installationIsInSelectedScope(inst: Installation): boolean {
-  return dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
-    ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
-    : inst.workspaceId === dashboardScope.selectedWorkspaceId
-}
+const {
+  selectedWorkspaceModel,
+  installationIsInSelectedScope,
+  refreshingWorkspace,
+  refreshWorkspace,
+  canPromoteToWorkspace
+} = useDashboardWorkspace()
 
 const scopedVisibleInstalls = computed(() =>
   visibleInstalls.value.filter(installationIsInSelectedScope)
@@ -160,27 +113,10 @@ const showNoMatches = computed(
     (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
 )
 
-const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
-
-async function refreshWorkspace(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.workspace.refresh', {})
-  await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
-}
-
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
 // picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
 // route is retired.
-
-function canPromoteToWorkspace(inst: Installation): boolean {
-  return (
-    authStore.isSignedIn &&
-    Boolean(authStore.status.workspaceId) &&
-    inst.status === 'installed' &&
-    inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath)
-  )
-}
 
 const {
   ctxMenu,
@@ -203,73 +139,10 @@ const {
   canPromoteToWorkspace
 })
 
-async function pickInstall(inst: Installation): Promise<void> {
-  // The instance window owns lifecycle. If a host window already exists for
-  // this install - running, launching, OR crashed (the window stays open on
-  // its lifecycle/error surface) - bring it forward instead of kicking off a
-  // second launch with a dashboard takeover. Restart, stop, and crash details
-  // all live inside that window.
-  if (
-    sessionStore.isRunning(inst.id) ||
-    sessionStore.isLaunching(inst.id) ||
-    sessionStore.errorInstances.has(inst.id)
-  ) {
-    const focused = await window.api.focusComfyWindow(inst.id)
-    // `errorInstances` can be hydrated from the retained crash buffer after
-    // the window was closed, so a focus may find nothing - fall through and
-    // launch normally in that case.
-    if (focused) return
-  }
-  emit('pick', inst)
-}
+const { pickInstall } = usePickInstall((inst) => emit('pick', inst))
+const { showCloudFreeRunsPill, showWhyCloud } = useCloudTier()
+const { whyCloudOpen, openWhyCloud, dismissWhyCloud, onWhyCloudTryCloud } = useWhyCloud()
 
-const cloudGate = useCloudGate({ immediate: false })
-
-const cloudFreeRunsEnabled = ref(false)
-const cloudUserTier = ref<CloudUserTier>('unknown')
-const cloudUserTierResolved = ref(false)
-const showCloudFreeRunsPill = computed(
-  () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
-)
-
-const showWhyCloud = computed(() => cloudUserTierResolved.value && cloudUserTier.value !== 'paid')
-
-const whyCloudOpen = ref(false)
-
-function openWhyCloud(): void {
-  whyCloudOpen.value = true
-  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_opened', {})
-}
-
-function dismissWhyCloud(): void {
-  whyCloudOpen.value = false
-  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'dismiss' })
-}
-
-async function onWhyCloudTryCloud(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'try_cloud' })
-  if (await cloudGate.openCloud()) {
-    whyCloudOpen.value = false
-    return
-  }
-  await modal.alert({
-    title: t('installShowcase.cloudFailedTitle'),
-    message: t('installShowcase.cloudFailedMessage')
-  })
-}
-onMounted(async () => {
-  const [freeRunsResult, userTierResult] = await Promise.allSettled([
-    window.api.getCloudFreeRunsEnabled(),
-    window.api.getCloudUserTier()
-  ])
-  if (freeRunsResult.status === 'fulfilled') {
-    cloudFreeRunsEnabled.value = freeRunsResult.value
-  }
-  if (userTierResult.status === 'fulfilled') {
-    cloudUserTier.value = userTierResult.value
-    cloudUserTierResolved.value = true
-  }
-})
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
