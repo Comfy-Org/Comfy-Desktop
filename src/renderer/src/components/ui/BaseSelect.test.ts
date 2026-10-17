@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { h } from 'vue'
+import type { Component } from 'vue'
 import BaseSelect from './BaseSelect.vue'
+import { providePaletteScope } from '../../composables/usePaletteScope'
 
 const wrappers: VueWrapper[] = []
 const originalInnerHeight = window.innerHeight
@@ -106,4 +109,26 @@ describe('BaseSelect positioning', () => {
     expect(listbox!.style.bottom).toBe('auto')
     expect(listbox!.style.maxHeight).toBe('80px')
   })
+})
+
+it('carries the Void palette onto its teleported listbox only inside a palette scope', async () => {
+  const options = [{ value: 'One', label: 'One' }]
+  const props = { modelValue: 'One', options, ariaLabel: 'Test select' }
+  const Scoped: Component = {
+    setup() {
+      const palette = providePaletteScope()
+      return () => h('div', { class: palette }, [h(BaseSelect, props)])
+    }
+  }
+  const outside = mountSelect(['One'])
+  await outside.get('.ui-select-trigger').trigger('click')
+  await flushPromises()
+  expect(document.querySelector('.ui-select-listbox')?.classList).not.toContain('palette-void')
+  outside.unmount()
+
+  const inside = mount(Scoped, { attachTo: document.body })
+  wrappers.push(inside)
+  await inside.get('.ui-select-trigger').trigger('click')
+  await flushPromises()
+  expect(document.querySelector('.ui-select-listbox')?.classList).toContain('palette-void')
 })
