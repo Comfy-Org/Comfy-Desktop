@@ -12,6 +12,9 @@ import { installPickerSettingsApiShim } from './pickerSettingsApiShim'
 // Telemetry is captured main-side, not here, to avoid minting a new
 // session on every transient popup open.
 document.documentElement.setAttribute('data-theme', 'dark')
+// Everything this renderer draws is in the Void palette's scope
+// (assets/palette-void.css).
+document.documentElement.classList.add('palette-void')
 
 // Must run BEFORE Vue mounts so modules that capture window.api at import
 // time (e.g. useComfyUISettings) see the shim populated.
