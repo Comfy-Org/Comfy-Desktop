@@ -170,7 +170,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
                     ? t('progress.updatedSuccess', 'Updated successfully')
                     : undefined,
                 dashboardLabel: t('progress.successChoiceGoDashboard', 'Go to Dashboard'),
-                openLabel: t('progress.successChoiceOpen', 'Open Instance')
+                openLabel: t('progress.successChoiceOpen', 'Open Build')
               })
             : undefined
           opts.showProgressFromPicker?.({

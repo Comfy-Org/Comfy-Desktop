@@ -362,7 +362,9 @@ function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSe
  * them. Read them with `isRolloutEnabled`.
  */
 export const ROLLOUT_DEFAULTS = {
-  newDashboardEnabled: false
+  // Launched. Kept one release as an escape hatch (`false` brings back the
+  // original dashboard), then removed with ChooserView.
+  newDashboardEnabled: true
 } as const satisfies Partial<Record<keyof KnownSettings, boolean>>
 
 export type RolloutFlag = keyof typeof ROLLOUT_DEFAULTS

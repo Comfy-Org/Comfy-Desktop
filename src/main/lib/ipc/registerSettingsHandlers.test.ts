@@ -115,7 +115,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'warnBeforeRunningMultipleInstances',
-        label: 'Warn before running multiple instances',
+        label: 'Warn before running several builds',
         type: 'boolean',
         value: true
       })

@@ -570,9 +570,9 @@ describe('GlobalSettingsView', () => {
       .findAll('.gs-micro-title .info-tooltip-trigger')
       .map((el) => el.attributes('aria-label') ?? '')
     expect(
-      tooltips.some((text) => text.includes('an instance can add directories just for itself'))
+      tooltips.some((text) => text.includes('a build can add directories just for itself'))
     ).toBe(true)
-    expect(tooltips.some((text) => text.includes('Each instance independently chooses'))).toBe(true)
+    expect(tooltips.some((text) => text.includes('Each build independently chooses'))).toBe(true)
   })
 
   it('Storage tab opens a Shared Directory in the OS file manager when clicked', async () => {

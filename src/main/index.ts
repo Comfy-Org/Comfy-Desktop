@@ -1720,14 +1720,14 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           const choice = await openSystemModalChoiceAsync({
             parent: parentEntry.window,
             spec: {
-              title: 'Switch instance?',
+              title: 'Switch build?',
               message: `Switch to ${targetName}?`,
               details: [
                 {
                   label: 'Heads up',
                   items: [
-                    'Switch stops the current instance and replaces it in this window.',
-                    'Open in new window keeps the current instance running.'
+                    'Switch stops the current build and replaces it in this window.',
+                    'Open in new window keeps the current build running.'
                   ]
                 }
               ],
@@ -2164,8 +2164,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
             spec: {
-              title: 'Restart instance?',
-              message: 'Restart this instance?',
+              title: 'Restart build?',
+              message: 'Restart this build?',
               details: [
                 {
                   label: 'Heads up',

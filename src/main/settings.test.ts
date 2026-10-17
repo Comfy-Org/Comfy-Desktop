@@ -273,15 +273,16 @@ describe('settings unset/default semantics', () => {
 })
 
 describe('rollout flags', () => {
-  it('stay out of settings.json, so a launch can change their default for everyone', () => {
+  it('stay out of settings.json, so a launch reaches everyone who never chose', () => {
     settings.set('onAppClose', 'quit')
     expect(readPersistedSettings()).not.toHaveProperty('newDashboardEnabled')
-    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(false)
+    // Launched: on unless the user turned it off.
+    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(true)
   })
 
   it('follow an explicit user choice', () => {
-    settings.set('newDashboardEnabled', true)
-    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(true)
+    settings.set('newDashboardEnabled', false)
+    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(false)
   })
 })
 

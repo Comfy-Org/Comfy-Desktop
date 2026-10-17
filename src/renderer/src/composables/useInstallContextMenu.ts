@@ -192,11 +192,11 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'promote-to-workspace',
         label: promoting
-          ? t('devPlatform.workspace.promoting', 'Creating...')
-          : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
+          ? t('devPlatform.workspace.promoting', 'Adding...')
+          : t('devPlatform.workspace.promoteToWorkspace', 'Add to workspace'),
         hint: t(
           'devPlatform.workspace.promoteToWorkspaceHint',
-          'Create a Build from this instance in Comfy Developer Platform.'
+          'Make this build available to your workspace in Comfy Developer Platform.'
         ),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
         hintLinkLabel: t('devPlatform.workspace.readMore', 'Read more'),
@@ -327,7 +327,7 @@ export function useInstallContextMenu(
       }
     } else if (id === 'promote-to-workspace') {
       if (isPromotingToWorkspace(inst)) return
-      const title = t('devPlatform.workspace.promoteFailedTitle', 'Could not create build')
+      const title = t('devPlatform.workspace.promoteFailedTitle', 'Could not add to workspace')
       let failureMessage: string | null = null
       setPromotingToWorkspace(inst.id, true)
       try {
