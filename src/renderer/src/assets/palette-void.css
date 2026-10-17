@@ -25,7 +25,10 @@
 
 /* ── 1. Variables ──────────────────────────────────────────────────── */
 :root.palette-void[data-theme='dark'],
-.palette-void {
+.palette-void,
+/* An element that sets data-theme itself (BrandBackground) re-declares the
+ * legacy colours; out-rank that on the same element. */
+.palette-void[data-theme='dark'] {
   /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
   --neutral-950: oklch(0.13 0.004 285);
   --neutral-900: oklch(0.165 0.005 285); /* recessed: wells, terminal */
@@ -371,4 +374,11 @@
 :is(:root.palette-void, .palette-void) .context-menu-separator {
   margin: 4px -4px;
   background: var(--color-border-default);
+}
+
+/* ── 9. Dialogs: the design system's 16px panel ────────────────────── */
+:is(:root.palette-void, .palette-void)
+  :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
+  border-color: var(--color-border-default);
+  border-radius: var(--radius-panel);
 }

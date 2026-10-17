@@ -98,7 +98,7 @@ onUnmounted(() => {
     <Transition name="modal-fade" appear>
       <div
         ref="overlayRef"
-        class="announce-overlay"
+        class="announce-overlay palette-void"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"

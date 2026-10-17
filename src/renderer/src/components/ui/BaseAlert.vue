@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
       <div
         v-if="open"
         ref="dialogRef"
-        class="base-alert-overlay"
+        class="base-alert-overlay palette-void"
         role="alertdialog"
         aria-modal="true"
         :aria-label="dialogAriaLabel"

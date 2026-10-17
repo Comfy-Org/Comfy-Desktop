@@ -224,10 +224,12 @@ onUnmounted(() => {
   />
 
   <Teleport to="body">
+    <!-- Dialogs take the Void palette everywhere, over every screen
+         (assets/palette-void.css): one dialog style. -->
     <div
       v-if="state.visible && !usesBaseAlert"
       ref="overlayRef"
-      class="modal-overlay"
+      class="modal-overlay palette-void"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >

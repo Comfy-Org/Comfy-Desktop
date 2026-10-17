@@ -127,7 +127,7 @@ const sizeClass = computed(() => `is-size-${props.size}`)
       <div
         v-if="open"
         ref="dialogRef"
-        class="base-modal-overlay"
+        class="base-modal-overlay palette-void"
         :class="{ 'base-modal-overlay--blur': blurOverlay }"
         role="dialog"
         aria-modal="true"
