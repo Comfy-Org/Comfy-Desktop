@@ -100,7 +100,22 @@
     "betaNoticeSettings": "Settings",
     "breadcrumbLabel": "Builds and this window's build",
     "openABuild": "Open a build",
-    "switchBuild": "Switch build"
+    "switchBuild": "Switch build",
+    "switcher": {
+      "open": "Open",
+      "recent": "Recently used",
+      "manage": "Manage builds",
+      "current": "Current"
+    },
+    "info": {
+      "status": "Status",
+      "location": "Location",
+      "lastUsed": "Last used",
+      "update": "Update",
+      "settings": "Settings & updates",
+      "openFolder": "Open folder",
+      "closeWindow": "Close window"
+    }
   },
   "comfyUISettings": {
     "title": "Settings",

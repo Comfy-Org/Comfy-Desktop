@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
+import type { TitleBarMenuId } from '../types/ipc'
 
 export type ComfyPanelKey =
   | 'comfy'
@@ -59,6 +60,19 @@ export interface DownloadsTrayState {
   recent: DownloadsTrayEntry[]
 }
 
+/** A title-bar popup opened or closed: its kind and, for a `menu`, which one. */
+export interface TitleMenuEvent {
+  menu: 'menu' | 'downloads' | 'instance-picker'
+  menuId?: TitleBarMenuId
+}
+
+function toTitleMenuEvent(data: unknown): TitleMenuEvent | null {
+  const { menu, menuId } = (data || {}) as { menu?: unknown; menuId?: unknown }
+  if (menu !== 'menu' && menu !== 'downloads' && menu !== 'instance-picker') return null
+  const isMenuId = menuId === 'file' || menuId === 'install-switcher' || menuId === 'install-info'
+  return isMenuId ? { menu, menuId } : { menu }
+}
+
 export interface ComfyTitleBarBridge {
   /** The installation this title bar belongs to. */
   getInstallationId(): string | null
@@ -80,6 +94,11 @@ export interface ComfyTitleBarBridge {
    *  — on macOS the blur-driven dismiss isn't reliable for sibling
    *  WebContentsView clicks. */
   dismissFileMenu(): void
+  /** The breadcrumb's menus: the build switcher (under the chevron) or this
+   *  window's build info card (under its name). Closed by `dismissFileMenu`. */
+  openBuildMenu(menu: 'install-switcher' | 'install-info', anchor: TitleMenuAnchor): void
+  /** The pointer entered or left the open title-bar popup. */
+  onPopupHover(cb: (inside: boolean) => void): () => void
 
   /** Subscribe to panel-active changes coming from main. */
   onPanelChanged(cb: (panel: ComfyPanelKey) => void): () => void
@@ -107,7 +126,7 @@ export interface ComfyTitleBarBridge {
    *  (the blur-driven dismiss handles the close on its own). On
    *  macOS the click event can fire before the dismiss propagates,
    *  so a timestamp-only guard isn't reliable. */
-  onMenuOpened(cb: (info: { menu: 'menu' | 'downloads' | 'instance-picker' }) => void): () => void
+  onMenuOpened(cb: (info: TitleMenuEvent) => void): () => void
   /** Subscribe to title-bar popup close events. Fires when the popup
    *  view (waffle menu, downloads tray, OR instance-picker) closes,
    *  after the user picks an item or dismisses by clicking outside.
@@ -115,7 +134,7 @@ export interface ComfyTitleBarBridge {
    *  same click that dismissed the popup also re-targets the opener
    *  button. The payload carries which kind closed so the per-button
    *  reopen guards stay independent. */
-  onMenuClosed(cb: (info: { menu: 'menu' | 'downloads' | 'instance-picker' }) => void): () => void
+  onMenuClosed(cb: (info: TitleMenuEvent) => void): () => void
   /** Subscribe to first-use takeover step changes. Mode mirrors
    *  `firstUseMode` on the entry — see `FirstUseMode` in
    *  `src/shared/firstUseMode.ts` for the full union. The title bar
@@ -305,6 +324,16 @@ const bridge: ComfyTitleBarBridge = {
   dismissFileMenu: () => {
     ipcRenderer.send('comfy-window:dismiss-title-menu')
   },
+  openBuildMenu: (menu, anchor) => {
+    ipcRenderer.send('comfy-window:open-title-menu', { menu, anchor })
+  },
+  onPopupHover: (cb) => {
+    const handler = (_event: IpcRendererEvent, data: unknown): void => {
+      cb((data as { inside?: unknown } | null)?.inside === true)
+    }
+    ipcRenderer.on('comfy-titlebar:popup-hover', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:popup-hover', handler)
+  },
 
   onPanelChanged: (cb) => {
     const handler = (_event: IpcRendererEvent, panel: unknown): void => {
@@ -351,19 +380,19 @@ const bridge: ComfyTitleBarBridge = {
   },
   onMenuOpened: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {
-      const { menu } = (data || {}) as { menu?: unknown }
       // Forward only the menu kinds the title-bar renderer knows about.
       // Without `'instance-picker'` here the pill's `is-open` state
       // never flips true and the brand-yellow lift doesn't fire.
-      if (menu === 'menu' || menu === 'downloads' || menu === 'instance-picker') cb({ menu })
+      const info = toTitleMenuEvent(data)
+      if (info) cb(info)
     }
     ipcRenderer.on('comfy-titlebar:menu-opened', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:menu-opened', handler)
   },
   onMenuClosed: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {
-      const { menu } = (data || {}) as { menu?: unknown }
-      if (menu === 'menu' || menu === 'downloads' || menu === 'instance-picker') cb({ menu })
+      const info = toTitleMenuEvent(data)
+      if (info) cb(info)
     }
     ipcRenderer.on('comfy-titlebar:menu-closed', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:menu-closed', handler)

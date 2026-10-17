@@ -14,17 +14,15 @@ import { useAppLocale } from '../lib/useAppLocale'
 import type { DetailSection, SnapshotListData } from '../types/ipc'
 import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
 import { isColorLight } from '../lib/colorScheme'
+import type { TitleMenuRow } from '../types/ipc'
 
 // Title-bar dropdown popup shell. Hosts every title-bar dropdown in one
 // reused transparent WebContentsView attached to the host window. Each open
 // arrives as a `comfy-titlepopup:set-config` IPC carrying kind + theme.
 
-interface MenuItem {
-  id?: string
-  label?: string
+/** A menu row: the file menu's, or the breadcrumb menus' (TitleMenuRow). */
+interface MenuItem extends TitleMenuRow {
   labelKey?: string
-  checked?: boolean
-  kind?: 'separator'
 }
 
 interface PickerInstall {
@@ -139,6 +137,7 @@ type PopupConfig =
 interface Bridge {
   activate(id: string): void
   close(): void
+  reportHover(inside: boolean): void
   ready(): void
   notifyRendered(): void
   onConfig(cb: (config: PopupConfig) => void): () => void
@@ -389,7 +388,13 @@ onUnmounted(() => {
     }"
     :style="{ background: themeBg, color: themeText }"
   >
-    <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
+    <MenuView
+      v-if="kind === 'menu'"
+      :items="items"
+      @activate="handleActivate"
+      @mouseenter="bridge?.reportHover(true)"
+      @mouseleave="bridge?.reportHover(false)"
+    />
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
     <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />

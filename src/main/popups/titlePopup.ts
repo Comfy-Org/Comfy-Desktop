@@ -1,6 +1,6 @@
 import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { PopupTheme, TitleBarMenuId, TitleMenuRow, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -53,6 +53,20 @@ import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
+import { CLOUD_ISSUER } from '../cloud/config'
+import { openOrFocusChooserHostWindow } from '../host/registry'
+import { showAllBuildsIn } from '../host/panelView'
+import {
+  INFO_CLOSE,
+  INFO_FOLDER,
+  INFO_SETTINGS,
+  SWITCHER_DASHBOARD,
+  SWITCHER_MANAGE,
+  SWITCHER_OPEN_PREFIX,
+  buildInfoRows,
+  buildSwitcherRows
+} from './buildMenus'
+import type { BuildMenuFacts } from './buildMenus'
 
 /**
  * Title-bar dropdown popups (waffle menu, downloads tray). All title-bar
@@ -63,7 +77,7 @@ import { recordIpcInvocation } from '../lib/e2eOverrides'
  * the Vue title bar.
  */
 
-interface TitlePopupMenuItem {
+interface TitlePopupMenuItem extends TitleMenuRow {
   /** Item id — main routes activation by this. Omitted for separators. */
   id?: string
   /** Visible label. Treated as the English fallback when `labelKey`
@@ -77,8 +91,6 @@ interface TitlePopupMenuItem {
   labelKey?: string
   /** Render a checkmark glyph beside the label when true. */
   checked?: boolean
-  /** Marks a separator row instead of an interactive item. */
-  kind?: 'separator'
 }
 
 /** Kinds that dim the host body with the shared backdrop view — geometry,
@@ -442,6 +454,9 @@ export interface TitlePopupEntry {
   parentEntryId: number
   /** Updated on every open. */
   kind: TitlePopupKind
+  /** Which title-bar menu a `menu` popup shows (`file`, or a breadcrumb
+   *  menu), echoed with menu-opened / menu-closed. Updated on every open. */
+  menuId?: TitleBarMenuId
   /** Updated on every open. */
   titleBarSender: Electron.WebContents
   /** Config queued before the renderer signalled ready — flushed on
@@ -720,18 +735,128 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-/** Mirrors `.item` in comfyTitlePopup/MenuView.vue (the design system's 32px menu row). */
+/** A menu with icons or second lines (the breadcrumb's menus) is wider. */
+const POPUP_RICH_WIDTH = 320
+/** Row heights mirror comfyTitlePopup/MenuView.vue: the design system's 32px
+ *  menu row, 48px with a second line, 28px headings, a 56px card title. */
 const POPUP_ITEM_HEIGHT = 32
+const POPUP_DETAIL_ITEM_HEIGHT = 48
+const POPUP_HEADING_HEIGHT = 28
+const POPUP_TITLE_HEIGHT = 56
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8 // 4px top + 4px bottom on the <ul>
 const POPUP_VBORDER = 2 // 1px top + 1px bottom from the .popup card
+/** Space kept between a menu popup and the window's bottom edge. */
+const POPUP_WINDOW_MARGIN = 8
+
+function rowHeight(item: TitlePopupMenuItem): number {
+  if (item.kind === 'separator') return POPUP_SEPARATOR_HEIGHT
+  if (item.kind === 'heading') return POPUP_HEADING_HEIGHT
+  if (item.kind === 'title') return POPUP_TITLE_HEIGHT
+  return item.detail && item.kind !== 'info' ? POPUP_DETAIL_ITEM_HEIGHT : POPUP_ITEM_HEIGHT
+}
 
 export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number {
-  const content = items.reduce(
-    (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
-    0
-  )
+  const content = items.reduce((sum, item) => sum + rowHeight(item), 0)
   return content + POPUP_VPADDING + POPUP_VBORDER
+}
+
+/** Latest title-bar menu open, so a slower earlier one cannot replace it. */
+let titleMenuRequest = 0
+
+/** A menu's height, cut to the window below its top (it scrolls), and never
+ *  less than one row. */
+function menuHeightWithin(height: number, top: number, parent: BrowserWindow): number {
+  const room = parent.getContentBounds().height - top - POPUP_WINDOW_MARGIN
+  const oneRow = POPUP_ITEM_HEIGHT + POPUP_VPADDING + POPUP_VBORDER
+  return Math.max(oneRow, Math.min(height, room))
+}
+
+export function computePopupWidth(items: readonly TitlePopupMenuItem[]): number {
+  return items.some((item) => item.icon || item.detail) ? POPUP_RICH_WIDTH : POPUP_WIDTH
+}
+
+/** What the breadcrumb menus show about every build, read when one opens. */
+function buildMenuFacts(entry: ComfyWindowEntry, bindings: TitlePopupHostBindings): BuildMenuFacts {
+  const withWindow = new Set<string>()
+  for (const e of comfyWindows.values()) {
+    if (e.installationId && !e.window.isDestroyed()) withWindow.add(e.installationId)
+  }
+  // Like the instance picker, honour the opt-out from seeing Cloud, but keep
+  // the window's own build so its info card still opens.
+  const hideCloud = settings.get('hideCloudFromPicker') === true
+  return {
+    installs: hideCloud
+      ? cachedInstallsForPicker.filter(
+          (i) => i.sourceCategory !== 'cloud' || i.id === entry.installationId
+        )
+      : cachedInstallsForPicker,
+    running: new Set(bindings.getRunningInstallationIds()),
+    launching: new Set(bindings.getLaunchingInstallationIds()),
+    withWindow,
+    currentId: entry.installationId,
+    cloudHost: new URL(CLOUD_ISSUER).host
+  }
+}
+
+/** The rows of a breadcrumb menu, or null when it cannot open here. */
+function breadcrumbMenuRows(
+  menu: 'install-switcher' | 'install-info',
+  entry: ComfyWindowEntry,
+  bindings: TitlePopupHostBindings
+): TitlePopupMenuItem[] | null {
+  if (!settings.isBreadcrumbTitleBarEnabled()) return null
+  const facts = buildMenuFacts(entry, bindings)
+  if (menu === 'install-switcher') return buildSwitcherRows(facts, i18n.t)
+  const inst = facts.installs.find((i) => i.id === entry.installationId)
+  return inst ? buildInfoRows(inst, facts, i18n.t) : null
+}
+
+/** Act on a pick in the build switcher or info card. Returns true when the
+ *  pick moved focus to another window (or popup), so the caller must not hand
+ *  focus back to this window. */
+function activateBreadcrumbPick(
+  parentEntry: ComfyWindowEntry,
+  id: string,
+  bindings: TitlePopupHostBindings
+): boolean {
+  if (id === SWITCHER_DASHBOARD || id === SWITCHER_MANAGE) {
+    if (parentEntry.installationId !== null) {
+      openOrFocusChooserHostWindow()
+      return true
+    }
+    showAllBuildsIn(parentEntry)
+    return false
+  }
+  if (id.startsWith(SWITCHER_OPEN_PREFIX)) {
+    const installationId = id.slice(SWITCHER_OPEN_PREFIX.length)
+    if (installationId === parentEntry.installationId) return false
+    void bindings.openInstallInNewWindow(installationId)
+    return true
+  }
+  const installationId = parentEntry.installationId
+  if (!installationId) return false
+  if (id === INFO_SETTINGS) {
+    // After this menu hides: the picker opens in the same popup view.
+    setTimeout(() =>
+      openInstancePickerForHost(
+        parentEntry,
+        parentEntry.windowKey,
+        bindings,
+        parentEntry.titleBarView.webContents,
+        { x: 0, y: TITLEBAR_HEIGHT },
+        installationId
+      )
+    )
+    return true
+  }
+  if (id === INFO_FOLDER) {
+    const folder = cachedInstallsForPicker.find((i) => i.id === installationId)?.installPath
+    if (folder) void openPathHelper(folder)
+    return false
+  }
+  if (id === INFO_CLOSE) void bindings.confirmAndCloseHostWindow(parentEntry.window)
+  return false
 }
 
 /** Build the file-menu items for a host entry. The waffle/file menu
@@ -1048,7 +1173,10 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     },
     onHide: () => {
       if (!entry.titleBarSender.isDestroyed()) {
-        entry.titleBarSender.send('comfy-titlebar:menu-closed', { menu: entry.kind })
+        entry.titleBarSender.send('comfy-titlebar:menu-closed', {
+          menu: entry.kind,
+          menuId: entry.menuId
+        })
       }
       /** Stamp the per-parent downloads-hide time so the click IPC that
        *  blur-dismissed us can't immediately reopen the popup. */
@@ -1173,7 +1301,10 @@ function showTitlePopupNow(entry: TitlePopupEntry): void {
   // before the blur-driven dismiss propagates back, causing the
   // popup to reopen instead of close on a reclick.
   if (!entry.titleBarSender.isDestroyed()) {
-    entry.titleBarSender.send('comfy-titlebar:menu-opened', { menu: entry.kind })
+    entry.titleBarSender.send('comfy-titlebar:menu-opened', {
+      menu: entry.kind,
+      menuId: entry.menuId
+    })
   }
 }
 
@@ -1398,6 +1529,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   let height = cur.height
+  if (entry.kind === 'menu') height = menuHeightWithin(cur.height, cur.y, parent)
   if (entry.kind === 'downloads') {
     const ceiling = Math.min(
       DOWNLOADS_POPUP_MAX_HEIGHT_PX,
@@ -1417,7 +1549,7 @@ type OpenTitlePopupOpts = {
   theme: { bg: string; text: string }
   titleBarSender: Electron.WebContents
 } & (
-  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[] }
+  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; menuId?: TitleBarMenuId }
   | { kind: typeof POPUP_KIND.downloads }
   | { kind: typeof POPUP_KIND.downloadsFull }
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
@@ -1474,6 +1606,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // overwrite on every open instead of allocating a new context object.
   entry.parentEntryId = opts.parentEntryId
   entry.kind = opts.kind
+  entry.menuId = opts.kind === 'menu' ? opts.menuId : undefined
   entry.titleBarSender = opts.titleBarSender
   // Backdrop kinds own outside-click dismiss via the backdrop view, so skip
   // the blur-driven hide. Menu / downloads have no backdrop and rely on blur.
@@ -1490,8 +1623,9 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   let height: number
   let x: number
   if (opts.kind === 'menu') {
-    width = POPUP_WIDTH
-    height = computePopupHeight(opts.items)
+    width = computePopupWidth(opts.items)
+    // A long build switcher scrolls rather than run off the window.
+    height = menuHeightWithin(computePopupHeight(opts.items), y, opts.parent)
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'downloads') {
     width = DOWNLOADS_POPUP_WIDTH
@@ -2014,7 +2148,14 @@ export function activateTitlePopupMenuItem(
   // focus back from the new target.
   let releaseFocusToParent = true
   const parentEntry = comfyWindows.get(entry.parentEntryId)
-  if (id === 'new-window') {
+  if (id.startsWith('switcher:') || id.startsWith('info:')) {
+    // Only from the breadcrumb menu that is open, and only while it is on.
+    const fromOpenMenu =
+      entry.menuId === (id.startsWith('switcher:') ? 'install-switcher' : 'install-info')
+    if (parentEntry && fromOpenMenu && settings.isBreadcrumbTitleBarEnabled()) {
+      releaseFocusToParent = !activateBreadcrumbPick(parentEntry, id, bindings)
+    }
+  } else if (id === 'new-window') {
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
@@ -2373,6 +2514,14 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 
+  // The pointer entered / left the popup: the title bar keeps the info card
+  // open while it is pointed at.
+  ipcMain.on('comfy-titlepopup:hover', (event, payload: { inside?: unknown }) => {
+    const entry = titlePopupsByWebContents.get(event.sender.id)
+    if (!entry || entry.titleBarSender.isDestroyed()) return
+    entry.titleBarSender.send('comfy-titlebar:popup-hover', { inside: payload?.inside === true })
+  })
+
   ipcMain.on('comfy-titlepopup:close', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
@@ -2573,22 +2722,39 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // host entry and opens the popup anchored under the button.
   ipcMain.on(
     'comfy-window:open-title-menu',
-    (event, payload: { menu?: 'file'; anchor?: { x?: number; y?: number } }) => {
+    async (event, payload: { menu?: TitleBarMenuId; anchor?: { x?: unknown; y?: unknown } }) => {
       const found = findEntryByTitleBarSender(event.sender)
       if (!found) return
       const { id: windowKey, entry } = found
       if (entry.window.isDestroyed()) return
-      // Only the file/waffle menu is openable from the title bar.
-      if (payload?.menu !== 'file') return
+      const request = ++titleMenuRequest
+      const isBuildMenu = payload?.menu === 'install-switcher' || payload?.menu === 'install-info'
+      // A window opened moments ago may not have read the install list yet.
+      if (isBuildMenu && !cachedInstallsResolved) await refreshCachedInstallsForPicker()
+      // A later open asked while this one waited wins.
+      if (request !== titleMenuRequest || entry.window.isDestroyed()) return
+      // The file/waffle menu, or the breadcrumb's switcher and info card.
+      const items =
+        payload?.menu === 'file'
+          ? buildTitlePopupMenuItems(entry)
+          : payload?.menu === 'install-switcher' || payload?.menu === 'install-info'
+            ? breadcrumbMenuRows(payload.menu, entry, bindings)
+            : null
+      if (!items) return
 
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
+      const coordinate = (value: unknown, fallback: number): number =>
+        typeof value === 'number' && Number.isFinite(value)
+          ? Math.max(0, Math.round(value))
+          : fallback
+      const x = coordinate(payload?.anchor?.x, 0)
+      const y = coordinate(payload?.anchor?.y, TITLEBAR_HEIGHT)
 
       openTitlePopup({
         parent: entry.window,
         parentEntryId: windowKey,
         kind: 'menu',
-        items: buildTitlePopupMenuItems(entry),
+        items,
+        menuId: payload.menu,
         anchor: { x, y },
         theme: entry.lastTheme,
         titleBarSender: entry.titleBarView.webContents

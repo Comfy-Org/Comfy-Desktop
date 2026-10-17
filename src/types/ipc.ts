@@ -2132,6 +2132,44 @@ export const POPUP_KIND = {
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
+/** The menus the title bar opens in its menu popup: the file (waffle) menu,
+ *  and the breadcrumb's build switcher and build info card. */
+export type TitleBarMenuId = 'file' | 'install-switcher' | 'install-info'
+
+/** Icons a title-bar menu row can show. */
+export type TitleMenuIcon =
+  | 'builds'
+  | 'local'
+  | 'cloud'
+  | 'remote'
+  | 'settings'
+  | 'folder'
+  | 'version'
+  | 'status'
+  | 'clock'
+  | 'update'
+  | 'close'
+
+/**
+ * A row of a title-bar menu. The file menu uses label + check; the
+ * breadcrumb's build switcher and build info card add an icon, a status dot,
+ * a second line and a trailing note. `heading` labels a section, `title`
+ * heads a card, `info` is a fact (label, value in `meta`): none are actions.
+ */
+export interface TitleMenuRow {
+  id?: string
+  label?: string
+  checked?: boolean
+  kind?: 'separator' | 'heading' | 'title' | 'info'
+  icon?: TitleMenuIcon
+  /** The design system's StatusDot states. */
+  status?: 'running' | 'ready' | 'busy' | 'error' | 'idle'
+  /** Second line, e.g. the build's state. */
+  detail?: string
+  /** Trailing note, e.g. when the build was last used. */
+  meta?: string
+}
+
 /** Resolved popup theme passed in every popup config. */
 export interface PopupTheme {
   bg: string

@@ -3,12 +3,13 @@ import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
 import type { PopupTheme, TerminalRestore } from '../types/ipc'
+import type { TitleMenuRow } from '../types/ipc'
 
 /** Bridge for the title-bar dropdown popup (waffle menu, downloads tray,
  *  instance-picker, global-settings), which share one reused child
  *  WebContentsView per parent window. */
 
-export interface TitlePopupMenuItem {
+export interface TitlePopupMenuItem extends TitleMenuRow {
   id?: string
   /** English fallback when `labelKey` is set; rendered verbatim otherwise. */
   label?: string
@@ -16,7 +17,6 @@ export interface TitlePopupMenuItem {
    *  main-built labels participate in i18n. */
   labelKey?: string
   checked?: boolean
-  kind?: 'separator'
 }
 
 /** Single install row pushed to the picker. MUST stay a superset of
@@ -201,6 +201,9 @@ export interface ComfyTitlePopupBridge {
   /** Renderer applied a config update and the new DOM painted; main waits for
    *  this before showing so no frame of the previous open's content is seen. */
   notifyRendered(): void
+  /** The pointer entered / left the popup, so an info card the title bar
+   *  opened on hover stays while it is pointed at. */
+  reportHover(inside: boolean): void
   /** Config push (one per open). */
   onConfig(cb: (config: TitlePopupConfig) => void): () => void
   onDownloadsChanged(cb: (state: PopupDownloadsState) => void): () => void
@@ -524,6 +527,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   close: () => {
     ipcRenderer.send('comfy-titlepopup:close')
+  },
+  reportHover: (inside) => {
+    ipcRenderer.send('comfy-titlepopup:hover', { inside: inside === true })
   },
   ready: () => {
     ipcRenderer.send('comfy-titlepopup:ready')
