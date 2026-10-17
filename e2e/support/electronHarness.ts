@@ -120,12 +120,14 @@ function buildIsolatedEnv(
   // Application Support ignores our HOME override, so a prior dev session's
   // `firstUseCompleted: true` would persist and wedge cold-start tests.
   // Always send a seed for a known-clean state; caller overrides win on merge.
-  // Suites written for the original dashboard run against it (its escape
-  // hatch); builds-dashboard.test.ts opts into the Builds dashboard.
+  // Suites written for the original dashboard and title bar run against
+  // them (their escape hatches); builds-dashboard.test.ts and
+  // breadcrumb-title-bar.test.ts opt into the new ones.
   const effectiveSeed: Record<string, unknown> = {
     firstUseCompleted: false,
     telemetryEnabled: false,
     newDashboardEnabled: false,
+    breadcrumbTitleBarEnabled: false,
     ...(settingsSeed ?? {})
   }
   env['E2E_SETTINGS_SEED'] = JSON.stringify(effectiveSeed)
