@@ -1865,6 +1865,63 @@
       "label": "构建名称",
       "hint": "双击以重命名",
       "failed": "无法重命名此构建"
+    },
+    "tabs": {
+      "workflows": "工作流",
+      "models": "模型",
+      "nodes": "自定义节点"
+    },
+    "remote": {
+      "title": "此构建运行在另一台电脑上",
+      "description": "它的工作流、模型和输出都保存在那台服务器上。"
+    },
+    "contents": {
+      "signedOutTitle": "登录以查看此构建",
+      "signedOutDescription": "Comfy Cloud 会在你的账户中保存工作流、模型和输出。",
+      "errorTitle": "无法加载此列表"
+    },
+    "loadMore": "加载更多",
+    "sort": {
+      "label": "排序",
+      "lastEdited": "最近编辑",
+      "name": "名称"
+    },
+    "workflows": {
+      "search": "搜索工作流",
+      "noMatches": "没有匹配的工作流",
+      "emptyTitle": "还没有工作流",
+      "emptyDescription": "你在 ComfyUI 中保存的工作流会显示在这里。"
+    },
+    "models": {
+      "search": "搜索模型",
+      "noMatches": "没有匹配项",
+      "empty": "还没有模型",
+      "filter": {
+        "all": "全部",
+        "mine": "我的模型",
+        "public": "公共模型"
+      },
+      "public": "公共"
+    },
+    "retry": "重试",
+    "columns": {
+      "name": "名称",
+      "folder": "文件夹",
+      "modified": "修改时间",
+      "size": "大小",
+      "type": "类型",
+      "version": "版本",
+      "status": "状态",
+      "nodes": "节点"
+    },
+    "loading": "加载中",
+    "nodes": {
+      "search": "搜索节点包",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "noMatches": "没有匹配项",
+      "empty": "没有自定义节点包",
+      "managedNote": "Comfy Cloud 会安装这些节点包并保持最新。"
     }
   },
   "installContents": {
