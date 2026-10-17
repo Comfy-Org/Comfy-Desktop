@@ -101,6 +101,7 @@ import {
 import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHandlers'
 import { localFoldersOf } from './lib/ipc/registerInstallContentsHandlers'
 import { handleMediaRequests, registerMediaScheme } from './lib/mediaProtocol'
+import { applyFirstUseModeFromPanel } from './host/firstUseModeRouting'
 import { getSnapshotListData } from './lib/snapshots'
 import { update as updateInstallation, resolveAutoLaunchInstall } from './installations'
 import { AUTO_LAUNCH_NONE } from './settings'
@@ -841,16 +842,7 @@ ipcMain.on('comfy-window:startup-restore-reveal', (event, payload: { result?: un
 ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }) => {
   const mode = normaliseFirstUseMode(payload?.mode)
   recordIpcInvocation('comfy-window:set-first-use-mode', { mode })
-  for (const entry of comfyWindows.values()) {
-    if (entry.panelView?.webContents === event.sender) {
-      entry.firstUseMode = mode
-      if (!entry.titleBarView.webContents.isDestroyed()) {
-        entry.titleBarView.webContents.send('comfy-titlebar:first-use-mode-changed', mode)
-      }
-      return
-    }
-    return
-  }
+  applyFirstUseModeFromPanel(comfyWindows.values(), event.sender, mode)
 })
 
 /**
