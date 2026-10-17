@@ -154,7 +154,10 @@ overlays = usePanelOverlays({
   loadSnapshotRef,
   quickInstallRef,
   firstUseRef,
-  prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
+  // With builds in their own windows the dashboard never hands itself over.
+  prepareChooserHostHandoff: rollout.breadcrumb
+    ? undefined
+    : (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks
 })
 const {
@@ -234,7 +237,8 @@ const showPanelBody = computed(() => {
 
 chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
-  switchPanel
+  switchPanel,
+  buildsOpenInOwnWindows: rollout.breadcrumb
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 

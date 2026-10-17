@@ -45,6 +45,8 @@ export interface PopupInstancePickerSnapshot {
   /** Raw active-install source category (`null` on a dashboard host); navigation
    *  collapses remote ⇒ cloud. Optional for back-compat with older bundles. */
   currentCategory?: Category | null
+  /** Every build opens in its own window (the breadcrumb title bar is on). */
+  ownWindows?: boolean
   runningInstallationIds: string[]
   /** Selected install in the picker's right pane; defaults to the host's active
    *  install on open. */

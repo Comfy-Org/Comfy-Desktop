@@ -62,6 +62,9 @@ export interface NavInput {
   target: TargetKind
   targetRun: TargetRun
   intent: Intent
+  /** Every build opens in its own window (the breadcrumb title bar): nothing
+   *  replaces the current window's build. */
+  ownWindows?: boolean
 }
 
 /** Canonical, collision-free table key. Only the three table dimensions; class
@@ -212,10 +215,19 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   ]
 ])
 
+/** With builds in their own windows, a switch opens (or focuses) the target's
+ *  own window instead of replacing this window's build. */
+function inOwnWindow(decision: NavDecision): NavDecision {
+  if (decision.verb !== 'switch') return decision
+  return dec({ window: 'new', verb: 'open-new', primaryLabel: decision.primaryLabel })
+}
+
 /** Resolve a decision for a (host, target, intent) tuple. `'new-window'` intent
  *  returns the cell's new-window `secondary`, falling back to the primary. */
+
 export function decideNavigation(input: NavInput): NavDecision {
-  const primary = TABLE.get(cellKey(input.currentView, input.target, input.targetRun)) ?? NO_OP
+  const cell = TABLE.get(cellKey(input.currentView, input.target, input.targetRun)) ?? NO_OP
+  const primary = input.ownWindows ? inOwnWindow(cell) : cell
 
   if (input.intent === 'new-window') {
     const alt = primary.secondary.find((s) => s.window === 'new')

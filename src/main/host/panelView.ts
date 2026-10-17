@@ -2,7 +2,7 @@ import { WebContentsView, ipcMain } from 'electron'
 import path from 'path'
 import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
-import { get as getSetting, isRolloutEnabled } from '../settings'
+import { get as getSetting, isBreadcrumbTitleBarEnabled, isRolloutEnabled } from '../settings'
 import { ROLLOUT_QUERY_PARAM } from '../../shared/rolloutFlags'
 import { TITLEBAR_BG } from '../lib/theme'
 import { TITLEBAR_HEIGHT, titleBarOverlayForTheme } from '../lib/titleBarOverlay'
@@ -99,7 +99,8 @@ export function ensurePanelView(
     panel: initialPanel,
     firstUseCompleted: String(firstUseCompleted),
     // Applies on the next window load, like the other query-seeded prefs.
-    [ROLLOUT_QUERY_PARAM.newDashboard]: String(isRolloutEnabled('newDashboardEnabled'))
+    [ROLLOUT_QUERY_PARAM.newDashboard]: String(isRolloutEnabled('newDashboardEnabled')),
+    [ROLLOUT_QUERY_PARAM.breadcrumb]: String(isBreadcrumbTitleBarEnabled())
   }
   // Propagate the E2E flag via the URL query (the renderer can't read process.env) so the
   // renderer-side test hooks only register when the runner opted in.

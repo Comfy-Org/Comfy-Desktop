@@ -68,6 +68,8 @@ interface PickerSnapshot {
    *  Mirrors `InstancePickerSnapshot` in main; optional for older bundles. */
   currentView?: ViewKind
   currentCategory?: Category | null
+  /** Every build opens in its own window (the breadcrumb title bar is on). */
+  ownWindows?: boolean
   runningInstallationIds: string[]
   /** `startedAt` per running session; changes on a restart the id list cannot show. */
   runningSessionStartedAt?: Record<string, number>
@@ -621,6 +623,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :active-operation="activeOperation"
               :active-installation-id="snapshot.activeInstallationId"
               :current-view="snapshot.currentView ?? 'dashboard'"
+              :own-windows="snapshot.ownWindows === true"
               :current-category="snapshot.currentCategory ?? null"
               class="picker-expanded-body"
               @show-progress="handleSettingsShowProgress"
