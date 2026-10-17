@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, useSlots, watch } from 'vue'
 import { useTooltip, type TooltipAlign, type TooltipSide } from '../../composables/useTooltip'
+import { usePaletteScope } from '../../composables/usePaletteScope'
 
 interface Props {
   text?: string
@@ -21,6 +22,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const slots = useSlots()
+// The bubble is teleported, so it carries the opener's palette itself.
+const paletteScope = usePaletteScope()
 
 const triggerRef = ref<HTMLElement | null>(null)
 const bubbleRef = ref<HTMLElement | null>(null)
@@ -118,7 +121,7 @@ onBeforeUnmount(() => {
         :id="bubbleId"
         ref="bubbleRef"
         class="tooltip-bubble"
-        :class="{ 'tooltip-bubble--interactive': interactive }"
+        :class="[paletteScope, { 'tooltip-bubble--interactive': interactive }]"
         :data-side="resolvedSide"
         :style="bubbleStyle"
         :role="interactive ? 'dialog' : 'tooltip'"
