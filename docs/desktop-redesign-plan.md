@@ -34,7 +34,7 @@ The work is cut into **19 PRs**. Each one has one goal and can be reviewed in on
 | Milestone | What users get | Rollout | PRs |
 | --- | --- | --- | --- |
 | **M1 Design system** | The new design system (tokens, components, gradients). The dashboard and everything it and its menus open are restyled: title bar, app menu, instance picker and Manage, Desktop Settings, downloads, tooltips, dialogs. Performance Tests and Benchmarks get the new palette only. | Lands directly on `main`, inside one release cycle | 5 |
-| **M2 Builds dashboard** | Instances and builds become one concept, **Builds**. A sidebar of builds; **All builds** is the landing page; a page per build with **Workflows**, **Models & nodes** and **Assets** tabs; the workspace switcher at the foot of the sidebar. | Behind `newDashboardEnabled` until its launch PR | 9 |
+| **M2 Builds dashboard** | Instances and builds become one concept, **Builds**. A sidebar of builds; **All builds** is the landing page; a page per build with **Workflows**, **Assets**, **Models** and **Custom nodes** tabs; the workspace switcher at the foot of the sidebar. | Behind `newDashboardEnabled` until its launch PR | 9 |
 | **M3 Breadcrumb title bar** | Every window's title bar becomes a breadcrumb: **Builds › build ⌄**. Hovering the build shows its info card; the chevron switches builds. Each build opens in its own window and the dashboard window stays. | Behind `breadcrumbTitleBarEnabled` until its launch PR (needs M2) | 5 |
 
 ---
@@ -48,7 +48,7 @@ These were agreed before writing this plan. Decisions taken during implementatio
 | D1 | The new **Void** palette reaches only the screens in scope for M1. | The install wizard, first-run takeover and progress screens keep today's colours and shapes. The palette is applied by scope, not by changing the shared variables ([§3.7](#37-legacy-palette-bridge)). |
 | D2 | Performance Tests and Benchmarks get the **palette only** in M1. | They inherit the colours; their own components are not reworked. |
 | D3 | M1 lands **directly**. M2 and M3 are **behind flags**. | M2 and M3 ship dark until their launch PRs. |
-| D4 | The build page has **Workflows**, **Models & nodes** and **Assets** tabs. Activity and Versions are not in M2. | Each tab reads real data. Assets needs a media layer ([§6.4](#64-data-contracts)). |
+| D4 | The build page has **Workflows**, **Assets**, **Models** and **Custom nodes** tabs. Activity and Versions are not in M2. | Each tab reads real data. Assets needs a media layer ([§6.2](#62-data-contracts)). |
 | D5 | "Instance" and "build" become one concept, **Builds**, in **user-facing copy only**. | Code, IPC channels, types (`Installation`, `installationId`) and telemetry names keep the install vocabulary, and new code uses it too (`install-contents:*`, `install-switcher`, `InstallPage.vue`). |
 | D6 | In M3 each build opens in **its own window**; the dashboard window stays. | M3 changes where launches go, not how many views a window has. |
 
@@ -81,11 +81,12 @@ src/renderer/src/design-system/
   tokens.css          Tailwind v4 @theme static: colours, type, radius, shadow, blur, motion
   base.css            .ds-root scope, @layer base defaults, @utility heading-gradient / edge-shine
   surfaces.css        .ds-page (glass page), .glass-titlebar, .ds-content (content panel + glow), .ds-sidebar
-  palette-void.css    everything that only applies under .palette-void (§3.7)
   cn.ts, portal.ts, menu.styles.ts
   components/         one .vue per component + its *.variants.ts
   README.md           rules, and token tables written from tokens.css
 ```
+
+The legacy palette bridge ([§3.7](#37-legacy-palette-bridge)) is not part of the design system: it re-skins legacy screens, so it lives with them in `src/renderer/src/assets/palette-void.css` and goes away with them.
 
 Renames: `.proto-ui` → `.ds-root`, `.proto-shell` → `.ds-page`, `.proto-main` → `.ds-content`, `.proto-sidebar` → `.ds-sidebar`.
 
@@ -212,8 +213,8 @@ Write clean code (Robert C. Martin's *Clean Code*) and be frugal:
 - **Depends on:** nothing.
 - **Changes:**
   - Dependencies and the scoped ESLint override ([§3.3](#33-dependencies)).
-  - `src/renderer/src/design-system/` ([§3.2](#32-where-it-lives)): tokens (`@theme static`), base, surfaces, `palette-void.css` (colours and shared shapes, [§3.7](#37-legacy-palette-bridge)), `cn.ts`, `portal.ts`, `menu.styles.ts`, README, and the M1 components ([§3.5](#35-components)).
-  - `composables/usePaletteScope.ts`.
+  - `src/renderer/src/design-system/` ([§3.2](#32-where-it-lives)): tokens (`@theme static`), base, surfaces, `cn.ts`, `portal.ts`, `menu.styles.ts`, README, and the M1 components ([§3.5](#35-components)).
+  - `assets/palette-void.css` (colours and shared shapes, [§3.7](#37-legacy-palette-bridge)) and `composables/usePaletteScope.ts`.
   - Imported once from `assets/main.css`. Nothing uses the classes yet: no visual change.
 - **Tests:** `cn()` merges the custom scales; component variants render their classes; `Button` forwards `disabled`; `SearchInput` emits `update:modelValue`; `usePaletteScope` returns the class only under a provided scope.
 
@@ -254,16 +255,16 @@ Write clean code (Robert C. Martin's *Clean Code*) and be frugal:
 
 ## 6. Milestone 2: Builds dashboard
 
-**Goal.** Behind `newDashboardEnabled`, replace the dashboard with the prototype's Milestone 2: a sidebar of builds, **All builds** as the landing page, a page per build with **Workflows**, **Models & nodes** and **Assets**, and the workspace switcher at the foot of the sidebar. Launching keeps today's behaviour (M3 changes it).
+**Goal.** Behind `newDashboardEnabled`, replace the dashboard with the prototype's Milestone 2: a sidebar of builds, **All builds** as the landing page, a page per build with **Workflows**, **Assets**, **Models** and **Custom nodes**, and the workspace switcher at the foot of the sidebar. Launching keeps today's behaviour (M3 changes it).
 
 ### 6.1 Architecture
 
 - **One new view.** With the flag on, `PanelApp` mounts `views/dashboard/DashboardView.vue` instead of `ChooserView`. It emits the same `pick`, `show-new-install` and `show-progress` events, so the launch, wizard and progress wiring is reused.
 - **The flag reaches the page synchronously**, through the panel URL query (`panelView.ts`, read by `useLauncherPrefs`).
-- **The flag is not a defaulted key**, because `settings.set()` writes defaults to disk. Main reads it as `get('newDashboardEnabled') ?? NEW_DASHBOARD_DEFAULT`; the launch PR changes the constant.
+- **The flag is not a defaulted key**, because `settings.set()` writes defaults to disk. Its default lives in code, in `ROLLOUT_DEFAULTS` (`settings.ts`), read through `isRolloutEnabled`; the launch PR flips it.
 - **Shared logic is extracted** from `ChooserView` into composables (M2-1), not copied.
 - **Data comes from main** through one IPC domain, `install-contents:*` (`registerInstallContentsHandlers.ts`).
-- **One folder resolver** (M2-2) returns the folders the build's ComfyUI uses, built from launch's own code: the input/output rule moves out of `applyStorageLaunchArgs`; models come from `resolveDownloadContext`; user and custom-node folders follow `--base-directory` / `--user-directory` (adopted installs pin them).
+- **One folder resolver** (M2-2) returns the folders the build's ComfyUI uses, built from launch's own code: the input/output rule moves out of `applyStorageLaunchArgs` into `storageIoDirs`, which launch calls; models come from `resolveDownloadContext`; user and custom-node folders follow the `--base-directory` / `--user-directory` in the source's launch command (adopted installs pin them).
 
 ### 6.2 Data contracts
 
@@ -293,7 +294,7 @@ Signed out of Cloud: an empty state with Log in. Remote builds: a designed empty
 #### M2-2 `refactor(installs): one resolver for an install's folders`
 
 - **Depends on:** nothing.
-- **Changes:** `src/main/lib/installFolders.ts` (`resolveInstallFolders`); `applyStorageLaunchArgs` calls it for input and output. Launch arguments are byte-identical.
+- **Changes:** `src/main/lib/installFolders.ts`: `resolveInstallFolders` (user, workflows, custom nodes, input, output, model roots, extra model paths) and `storageIoDirs`, the input/output rule moved out of `applyStorageLaunchArgs`, which now calls it. Launch arguments are byte-identical.
 - **Tests:** existing launch storage tests unchanged; the resolver for standard, adopted, shared and per-install folders.
 
 #### M2-3 `chore(dashboard): new dashboard shell and sidebar behind newDashboardEnabled`
@@ -322,22 +323,22 @@ Signed out of Cloud: an empty state with Log in. Remote builds: a designed empty
 - **Changes:** the `comfy-media` scheme and handler; `comfy-media:` in the panel CSP; the assets listing; `install-contents:reveal-asset` (`shell.showItemInFolder`, same folder check).
 - **Tests:** traversal and escapes refused; allowed file served with its type; range requests; flag-off refusal; reveal refused outside the folders.
 
-#### M2-7 `chore(dashboard): Workflows and Models & nodes tabs`
+#### M2-7 `chore(dashboard): Workflows, Models and Custom nodes tabs`
 
 - **Depends on:** M2-4, M2-5.
-- **Changes:** `useInstallContents` (paging, search, sort, refresh, stale-response guard); the Workflows tab (search, sort, cards with name, folder and time; Open launches the build); the Models & nodes tab (`SegmentedControl` Models | Custom nodes, counts, search, rows).
+- **Changes:** `useInstallContents` (paging, search, sort, refresh, stale-response guard); the Workflows tab (search, sort, a list with name, folder, time and size; a row starts or opens the build); the Models tab (a `SegmentedControl` filter row with counts, search, rows); the Custom nodes tab (search, rows); `Select`.
 - **Tests:** loading, empty, error and signed-out states; paging; search; stale responses dropped.
 
 #### M2-8 `chore(dashboard): Assets tab`
 
 - **Depends on:** M2-6, M2-7.
-- **Changes:** a `MediaCard` grid served by `comfy-media://`, a type filter, newest first; click reveals a local asset in the file browser; Cloud assets are view-only.
+- **Changes:** a 16:9 `MediaCard` grid served by `comfy-media://`, a type filter, search and sort, newest first; picking an asset opens its details beside the gallery, where a local one can be shown in the file browser; Cloud assets are view-only.
 - **Tests:** states, filter, reveal.
 
 #### M2-9 `feat(dashboard): launch the Builds dashboard`
 
 - **Depends on:** M2-8.
-- **Changes:** `NEW_DASHBOARD_DEFAULT = true`; user-facing copy "instance" → "build" on the in-scope surfaces in en and zh (the wizard, progress and first-run screens keep "instance"); e2e for the new dashboard.
+- **Changes:** `ROLLOUT_DEFAULTS.newDashboardEnabled = true`; user-facing copy "instance" → "build" on every surface in en and zh (decision M2.21), except where "instance" means a running ComfyUI process; e2e for the new dashboard.
 
 ---
 
@@ -349,8 +350,9 @@ Signed out of Cloud: an empty state with Log in. Remote builds: a designed empty
 
 - The flag reaches the title bar (URL query in `loadTitleBarUrl`), the panel (URL query) and the popups (config).
 - Launches reuse existing paths: `performPickerLaunch` (launch guards, no claim, so the build opens in its own window) in the panel; `openInstallInNewWindow` in main. Not `open-install-window`, which opens an empty dashboard.
-- Switcher and info-card rows are composed in main from the install cache and running sessions and sent in the popup config; the picker's rebroadcast is extended to the new kinds.
-- Two new popup kinds, `install-switcher` and `install-info`, rendered with `menu.styles` classes. The info card opens without focus; main closes it on Escape.
+- Switcher and info-card rows are composed in main (`popups/buildMenus.ts`) from the install cache, running sessions and open windows, when the menu opens.
+- Both are rows of the existing title-bar menu popup (`kind: 'menu'`), which gains icons, headings, status dots, second lines and a 320px width; no new popup kinds (decision M3.7). The info card takes focus like any menu, so the popup's Escape closes it; the popup reports pointer enter/leave so the title bar can keep the card open while it is pointed at.
+- With the flag on, a build opened from a build window launches through the dashboard window, so no empty chooser window is left behind (decision M3.8).
 
 ### 7.2 What the centre pill did
 
@@ -373,27 +375,27 @@ Signed out of Cloud: an empty state with Log in. Remote builds: a designed empty
 #### M3-2 `chore(windows): open builds in their own window behind breadcrumbTitleBarEnabled`
 
 - **Depends on:** M2-3.
-- **Changes:** the setting and its propagation; with the flag on, dashboard picks launch through `performPickerLaunch`, `handleShowProgress` skips the claim, and picker picks from a dashboard host go to `openInstallInNewWindow`. The dashboard window never turns into a build or closes itself.
+- **Changes:** the setting and its propagation; with the flag on, dashboard picks launch through `performPickerLaunch` (`useChooserHandoff`) and the panel never hands the dashboard window over, and the navigation matrix (`navDecision.ts`, `ownWindows` in the picker snapshot) turns every picker "switch" into "open or focus its own window". The dashboard window never turns into a build or closes itself.
 - **Tests:** claim and self-close only with the flag off; picker routing both ways.
 
 #### M3-3 `chore(title-bar): breadcrumb layout`
 
 - **Depends on:** M1-2, M3-2.
-- **Changes:** under the flag, `TitleBarApp` is left-aligned: root crumb (**Builds**), **›**, build crumb (build windows), chevron; the app menu moves right; the dashboard window shows **Builds › Open a build ⌄**. The root crumb focuses the dashboard (`comfy-window:focus-dashboard` → `openOrFocusChooserHostWindow`). Pill duties move per [§7.2](#72-what-the-centre-pill-did). Popup plumbing for both new kinds.
+- **Changes:** under the flag, `TitleBarApp` is left-aligned: root crumb (**Builds**), **›**, build crumb (build windows), chevron; the app menu moves right; the dashboard window shows **Builds › Open a build ⌄**. The root crumb focuses the dashboard (`comfy-window:focus-dashboard` → `openOrFocusChooserHostWindow`). Pill duties move per [§7.2](#72-what-the-centre-pill-did).
 - **Tests:** flag off unchanged; flag on renders the crumbs, keeps the update chip, hides the breadcrumb in lockdown.
 
 #### M3-4 `chore(title-bar): build switcher and info card`
 
 - **Depends on:** M3-3.
 - **Changes:**
-  - Switcher (320px): **All builds**, **Open**, **Recently used**, **Manage builds**; each row with location icon, status dot, name, state (Running / Starting… / Not running), last used, **Current**. Picking opens or focuses that build's window.
-  - Info card (hover 350ms in, 250ms out; click opens; Escape closes): status, type, ComfyUI version, location, last used, update; **Settings & updates**, **Open folder** (local), **Close window**.
+  - Switcher (320px): **All builds**, **Open**, **Recently used**, **Manage builds**; each row with build-type icon, status dot, name, state (Running / Starting… / Not running), last used, **Current**. Picking opens or focuses that build's window.
+  - Info card (hover 350ms in, 250ms out; click opens; Escape closes): name and type, status, ComfyUI version, location, last used, update; **Settings & updates**, **Open folder** (local), **Close window**.
 - **Tests:** row composition and order; routing; info-card composition per kind; handshake timing with fake timers.
 
 #### M3-5 `feat(title-bar): launch the breadcrumb title bar`
 
 - **Depends on:** M2-9, M3-1, M3-4.
-- **Changes:** `BREADCRUMB_TITLE_BAR_DEFAULT = true`; copy check in en and zh; e2e.
+- **Changes:** `ROLLOUT_DEFAULTS.breadcrumbTitleBarEnabled = true`; copy check in en and zh; e2e (`breadcrumb-title-bar.test.ts`).
 
 ---
 
