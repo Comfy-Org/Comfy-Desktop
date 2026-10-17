@@ -2074,6 +2074,7 @@ export interface ElectronApi {
         | 'picker-pick-install'
         | 'picker-install-action'
         | 'picker-show-progress'
+        | 'show-all-builds'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>

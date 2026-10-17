@@ -62,6 +62,9 @@ watch(openInstall, (inst) => {
   if (!inst && page.value.kind === 'install') page.value = ALL_BUILDS
 })
 
+/** The title bar's "Builds" crumb, through the panel. */
+defineExpose({ showAllBuilds: () => (page.value = ALL_BUILDS) })
+
 const { canRename, startRename } = provideBuildRename()
 /** Which surface opened the build menu, so its Rename edits the name there. */
 let menuSurface: RenameSurface = 'main'

@@ -35,6 +35,8 @@ interface DeepLinkRouterOpts {
   /** Picker's settings UI fired `show-progress`, forwarded here to the
    *  panel's ProgressModal pipeline. */
   showProgressFromPicker?: (opts: ShowProgressOpts) => void
+  /** The title bar's "Builds" crumb in this (dashboard) window. */
+  showAllBuilds?: () => Promise<void> | void
 }
 
 /** Routes `panel-trigger-overlay` IPCs into the right renderer surface.
@@ -94,6 +96,11 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           } else {
             window.api.openInstancePicker()
           }
+          return
+        }
+        if (payload.kind === 'show-all-builds') {
+          await opts.bootstrapReady
+          await opts.showAllBuilds?.()
           return
         }
         if (payload.kind === 'picker-pick-install') {

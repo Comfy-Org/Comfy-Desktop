@@ -278,6 +278,16 @@ export function sendToPanelDeferred(
   }
 }
 
+/** The breadcrumb's "Builds" in the dashboard window itself: leave a
+ *  full-page tool, then the panel closes any flow on top (asking first when
+ *  that would discard work) and shows All builds. */
+export function showAllBuildsIn(entry: ComfyWindowEntry): void {
+  if (entry.activePanel === 'performance-test' || entry.activePanel === 'benchmarks') {
+    setActivePanel(entry.windowKey, 'comfy')
+  }
+  forwardToPanelRenderer(entry, 'panel-trigger-overlay', { kind: 'show-all-builds' })
+}
+
 /** Forward an IPC to the entry's panel renderer, no-op if absent. */
 function forwardToPanelRenderer(entry: ComfyWindowEntry, channel: string, payload?: unknown): void {
   const pv = entry.panelView
