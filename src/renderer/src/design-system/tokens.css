@@ -1,0 +1,114 @@
+/*
+ * Design system tokens (Tailwind v4 theme): the Void palette, type, radius,
+ * elevation and motion.
+ *
+ * Semantic names follow ComfyUI_frontend's design system (base-foreground,
+ * muted-foreground, secondary-background, border-default...).
+ *
+ * `static`: emit every variable even when no utility uses it. Legacy scoped
+ * CSS reads these as `var(--...)`, which Tailwind cannot see.
+ */
+
+@theme static {
+  /* ── Color: Void ───────────────────────────────────────────
+   * Near-black neutrals with a whisper of the brand's plum side (hue 285,
+   * chroma under 0.008): reads neutral next to the plum and yellow brand,
+   * where a zero-chroma grey drifts toward bronze. */
+  --color-app-background: oklch(0.19 0.003 285); /* glass page; the sidebar sits on it */
+  --color-content-background: oklch(0.14 0.005 285); /* the inset content panel */
+
+  --color-base-foreground: oklch(0.955 0.002 285); /* primary text */
+  --color-muted-foreground: oklch(0.76 0.006 285); /* secondary text */
+  --color-subtle-foreground: oklch(0.6 0.008 285); /* tertiary text, meta */
+
+  /* Lifted cards: page and content stay quiet, cards stand out clearly. */
+  --color-card-background: oklch(0.23 0.008 285);
+  --color-card-background-hover: oklch(0.265 0.009 285);
+  --color-secondary-background: oklch(1 0 0 / 0.06);
+  --color-secondary-background-hover: oklch(1 0 0 / 0.1);
+
+  --color-inverted-background: oklch(0.96 0.002 285); /* primary actions: white accent */
+  --color-inverted-background-hover: oklch(0.995 0 0);
+  --color-inverted-foreground: oklch(0.13 0.004 285);
+
+  --color-border-default: oklch(1 0 0 / 0.08);
+  --color-border-strong: oklch(1 0 0 / 0.14);
+  --color-border-focus: oklch(1 0 0 / 0.45);
+
+  --color-media-overlay: oklch(0 0 0 / 0.55); /* chips on top of imagery */
+
+  --color-status-running: oklch(0.78 0.15 155); /* running, ready */
+  --color-status-warning: oklch(0.82 0.14 85); /* starting, stopping, updating */
+  --color-status-danger: oklch(0.62 0.19 25); /* over a limit, destructive actions */
+
+  /* ── Type ──────────────────────────────────────────────── */
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-heading: 16px;
+  --text-heading--line-height: 24px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-display: 34px;
+  --text-display--line-height: 40px;
+
+  /* ── Size grid ─────────────────────────────────────────────
+   * Every size token (radius, line-height, control height) is a multiple
+   * of 4. Font sizes are the one exception: they set glyph size, and their
+   * line-heights land on the grid.
+   *
+   * ── Radius ────────────────────────────────────────────────
+   * Nesting rule (README): inner radius = outer radius - padding between
+   * them, never below `min`. */
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-min: 4px;
+
+  /* ── Elevation (sampled from the Figma panel component) ── */
+  --shadow-elev:
+    inset 0 1px 0 oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.35), 0 6px 18px oklch(0 0 0 / 0.28);
+  --shadow-elev-hover:
+    inset 0 1px 0 oklch(1 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.35),
+    0 10px 26px oklch(0 0 0 / 0.34);
+  --shadow-popover: inset 0 1px 0 oklch(1 0 0 / 0.07), 0 12px 32px oklch(0 0 0 / 0.45);
+  --shadow-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
+
+  /* ── Motion ────────────────────────────────────────────── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-pop-in: pop-in 160ms var(--ease-out-expo);
+  --animate-fade-in: fade-in 160ms ease-out;
+  /* A live status: a soft ring breathes out of the dot. */
+  --animate-status-pulse: status-pulse 2s ease-out infinite;
+  /* Loading placeholders: a highlight sweeps across. */
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes status-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+}

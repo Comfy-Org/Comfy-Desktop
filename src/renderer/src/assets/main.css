@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import '../design-system/index.css';
+@import './palette-void.css';
 
 /* Inter Font Family — matches ComfyUI frontend design system */
 @font-face {
