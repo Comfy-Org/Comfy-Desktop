@@ -136,6 +136,7 @@ import {
   dropAttachClaimsForWindow,
   findEntryByTitleBarSender,
   findEntryByHostWindow,
+  findPreferredChooserHostWindow,
   forceRevealHostWindow,
   getEntryByInstallationId,
   isChooserHost,
@@ -1621,7 +1622,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     /**
      * Open `installationId` in its OWN window without disturbing the host that
      * opened the picker: focus its existing window, else spawn a fresh chooser
-     * host and launch into it. `allowDuplicate` permits a second window for an
+     * host and launch into it. With builds in their own windows the dashboard
+     * launches it instead (into a window of its own), so no empty chooser host
+     * is left behind. `allowDuplicate` permits a second window for an
      * install that already owns one (cloud-self: two views of one remote
      * session). Fails closed — a window-construction throw is logged, never
      * propagated to the IPC listener.
@@ -1655,7 +1658,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           })
           return
         }
-        const target = findEntryByHostWindow(openChooserHostWindow())
+        const launcher =
+          (settings.isBreadcrumbTitleBarEnabled() && findPreferredChooserHostWindow()) ||
+          openChooserHostWindow()
+        const target = findEntryByHostWindow(launcher)
         if (!target) {
           console.error('openInstallInNewWindow: spawned chooser host not in registry', {
             installationId

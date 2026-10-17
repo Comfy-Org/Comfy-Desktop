@@ -53,6 +53,8 @@ interface UseTitleBarMenusOpts {
   /** Template ref for the centre install pill — used to anchor the
    *  instance-picker popup below the pill. */
   installPillRef: Readonly<ShallowRef<HTMLElement | null>>
+  /** A breadcrumb menu is the open popup (main reports it as `menu` too). */
+  isBuildMenuOpen?: () => boolean
 }
 
 interface TitleBarMenusApi {
@@ -84,13 +86,14 @@ interface TitleBarMenusApi {
  * Tracked per-kind since the buttons are separate. Also owns the "unseen
  * finished" book-keeping for the downloads tray.
  */
+/** Per-menu suppression: the OS dismisses the popup before the click reaches
+ *  the renderer, so a naïve handler would re-pop on the same click. 100ms
+ *  covers the worst-case Windows/Linux retarget gap. */
+export const MENU_REOPEN_GUARD_MS = 100
+
 export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
   const { t } = useI18n()
 
-  /** Per-menu suppression: the OS dismisses the popup before the click reaches
-   *  the renderer, so a naïve handler would re-pop on the same click. 100ms
-   *  covers the worst-case Windows/Linux retarget gap. */
-  const MENU_REOPEN_GUARD_MS = 100
   const menuClosedAt: Record<TitleMenuKind, number> = {
     menu: 0,
     downloads: 0,
@@ -156,7 +159,11 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
   /** True only when the FILE menu (not the picker / downloads) is the open
    *  popup — `isMenuOpen` is set for every kind, so it can't gate the toggle. */
   const isFileMenuOpen = computed(
-    () => isMenuOpen.value && !isDownloadsOpen.value && !isInstancePickerOpen.value
+    () =>
+      isMenuOpen.value &&
+      !isDownloadsOpen.value &&
+      !isInstancePickerOpen.value &&
+      !opts.isBuildMenuOpen?.()
   )
 
   function handleFileMenu(): void {

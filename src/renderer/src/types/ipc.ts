@@ -83,6 +83,9 @@ export type {
   InstallModel,
   InstallNodePack,
   InstallAsset,
+  TitleBarMenuId,
+  TitleMenuIcon,
+  TitleMenuRow,
   ElectronApi
 } from '../../../types/ipc'
 export { REQUIRES_STOPPED } from '../../../types/ipc'

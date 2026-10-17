@@ -17,6 +17,8 @@ import {
 } from 'lucide-vue-next'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
+import { useBuildMenus } from './useBuildMenus'
+import type { BuildMenu } from './useBuildMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
@@ -86,6 +88,10 @@ interface Bridge {
   openFileMenu: (anchor: MenuAnchor) => void
   /** Ask main to dismiss the File menu popup (toggle-close). */
   dismissFileMenu: () => void
+  /** The breadcrumb's build switcher or build info card. */
+  openBuildMenu: (menu: BuildMenu, anchor: MenuAnchor) => void
+  /** The pointer entered or left the open title-bar popup. */
+  onPopupHover: (cb: (inside: boolean) => void) => () => void
   /** Issue #514 — show a hover tooltip in the cached title-bar tooltip
    *  popup. macOS-only path: native HTML `title` tooltips don't appear
    *  reliably for sibling chrome WebContentsViews on macOS, so the
@@ -134,8 +140,8 @@ interface Bridge {
   onZoomChanged: (cb: (level: number) => void) => () => void
   onThemeChanged: (cb: (theme: { bg: string; text: string }) => void) => () => void
   onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
-  onMenuOpened: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
-  onMenuClosed: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
+  onMenuOpened: (cb: (info: { menu: 'menu' | 'downloads'; menuId?: string }) => void) => () => void
+  onMenuClosed: (cb: (info: { menu: 'menu' | 'downloads'; menuId?: string }) => void) => () => void
   /** First-use takeover step pushes from main. Drives the T&C-step
    *  lockdown that hides the waffle menu (the otherwise-always-live
    *  escape hatch) so the user has to either accept consent or close
@@ -523,6 +529,16 @@ const { tooltipAttrs, handleTooltipPointer, hideTip } = useTitleBarTooltip({
 const { isHoverActive } = useTitleBarHoverGate({ hideTip, handleTooltipPointer })
 
 const {
+  openMenu: openBuildMenu,
+  toggleSwitcher,
+  onBuildEnter,
+  onBuildLeave,
+  onBuildClick
+} = useBuildMenus(bridge, () => isMenuOpen.value)
+const buildCrumbRef = useTemplateRef<HTMLElement>('buildCrumb')
+
+const {
+  isMenuOpen,
   isDownloadsOpen,
   isInstancePickerOpen,
   downloadsActiveCount,
@@ -538,7 +554,8 @@ const {
   hideTip,
   fileBtnRef,
   downloadsBtnRef,
-  installPillRef
+  installPillRef,
+  isBuildMenuOpen: () => openBuildMenu.value !== null
 })
 
 // First-instance onboarding coachmark pointing at the centre pill. Shares
@@ -611,6 +628,14 @@ const betaNotice = useBetaActivationNotice({
 function handleInstallPillWithCoachmark(): void {
   void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
   handleInstallPill()
+}
+
+/** The breadcrumb's chevron opens the build switcher; like the pill, it
+ *  retires the onboarding hint that points at it. */
+function handleSwitcherWithCoachmark(): void {
+  void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
+  hideTip()
+  toggleSwitcher(installPillRef.value)
 }
 
 /** Re-raise a card that main hid out from under us. Forgetting alone only unlatches the
@@ -919,14 +944,22 @@ onUnmounted(() => {
           <LayoutGrid :size="15" />{{ t('buildsDashboard.title') }}
         </button>
         <ChevronRight :size="14" class="title-crumb-separator" aria-hidden="true" />
-        <span
+        <button
           v-if="!isInstallLess"
-          class="title-crumb title-crumb--build"
+          ref="buildCrumb"
+          type="button"
+          class="title-menu-button title-crumb title-crumb--build"
+          :class="{ 'is-open': openBuildMenu === 'install-info' }"
+          aria-haspopup="menu"
+          :aria-expanded="openBuildMenu === 'install-info'"
           data-testid="title-crumb-build"
+          @pointerenter="onBuildEnter(buildCrumbRef)"
+          @pointerleave="onBuildLeave"
+          @click="onBuildClick(buildCrumbRef)"
         >
           <component :is="installTypeMeta.icon" :size="15" class="title-install-type-icon" />
           <span class="title-crumb-name">{{ installLabel }}</span>
-        </span>
+        </button>
         <button
           v-if="showInstallUpdatePill"
           type="button"
@@ -940,12 +973,12 @@ onUnmounted(() => {
           ref="installPill"
           type="button"
           class="title-menu-button title-crumb title-crumb--switcher"
-          :class="{ 'is-open': isInstancePickerOpen }"
-          aria-haspopup="dialog"
-          :aria-expanded="isInstancePickerOpen"
+          :class="{ 'is-open': openBuildMenu === 'install-switcher' }"
+          aria-haspopup="menu"
+          :aria-expanded="openBuildMenu === 'install-switcher'"
           :aria-label="isInstallLess ? undefined : t('titleBar.switchBuild')"
           data-testid="title-crumb-switcher"
-          @click="handleInstallPillWithCoachmark"
+          @click="handleSwitcherWithCoachmark"
         >
           <span v-if="isInstallLess">{{ t('titleBar.openABuild') }}</span>
           <ChevronDown :size="13" />
@@ -1338,13 +1371,13 @@ onUnmounted(() => {
     border-color 0.12s;
 }
 .title-bar.is-hover-active .title-menu-button:hover,
-.title-crumb--switcher.is-open {
+.title-crumb.is-open {
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
 }
 .title-bar.is-light.is-hover-active .title-menu-button:hover,
-.title-bar.is-light .title-crumb--switcher.is-open {
+.title-bar.is-light .title-crumb.is-open {
   background: rgba(0, 0, 0, 0.06);
   border-color: rgba(0, 0, 0, 0.18);
 }

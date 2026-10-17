@@ -69,6 +69,7 @@ interface MockBridgeState {
   coachmarkDisplacedCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
   focusDashboardCalls: number
+  buildMenuOpens: string[]
 }
 
 function installMockBridge(
@@ -110,7 +111,8 @@ function installMockBridge(
     coachmarkSettledCallbacks: [],
     coachmarkDisplacedCallbacks: [],
     readyCalls: 0,
-    focusDashboardCalls: 0
+    focusDashboardCalls: 0,
+    buildMenuOpens: []
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
   const bridge = {
@@ -129,6 +131,10 @@ function installMockBridge(
     dismissFileMenu: () => {
       state.fileMenuDismisses += 1
     },
+    openBuildMenu: (menu: string) => {
+      state.buildMenuOpens.push(menu)
+    },
+    onPopupHover: () => () => {},
     onPanelChanged: (cb: (panel: string) => void) => {
       state.panelChangedCallbacks.push(cb)
       return () => {}
@@ -380,6 +386,19 @@ describe('TitleBarApp', () => {
       const wrapper = await mountBreadcrumb()
       await wrapper.get('[data-testid="title-crumb-root"]').trigger('click')
       expect(bridgeState.focusDashboardCalls).toBe(1)
+    })
+
+    it('opens the build switcher from the chevron, not the picker', async () => {
+      const wrapper = await mountBreadcrumb()
+      await wrapper.get('[data-testid="title-crumb-switcher"]').trigger('click')
+      expect(bridgeState.buildMenuOpens).toEqual(['install-switcher'])
+      expect(bridgeState.installPillClicks).toEqual([])
+    })
+
+    it("opens the build's info card from its name", async () => {
+      const wrapper = await mountBreadcrumb()
+      await wrapper.get('[data-testid="title-crumb-build"]').trigger('click')
+      expect(bridgeState.buildMenuOpens).toEqual(['install-info'])
     })
 
     it('hides the breadcrumb during first-use lockdown', async () => {
