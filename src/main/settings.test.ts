@@ -33,6 +33,7 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
+  isRolloutEnabled: (flag: 'newDashboardEnabled') => boolean
   peekBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
@@ -268,6 +269,19 @@ describe('settings unset/default semantics', () => {
     settings.set('pypiMirror', '   ')
     expect(settings.get('pypiMirror')).toBeUndefined()
     expect(readPersistedSettings()).not.toHaveProperty('pypiMirror')
+  })
+})
+
+describe('rollout flags', () => {
+  it('stay out of settings.json, so a launch can change their default for everyone', () => {
+    settings.set('onAppClose', 'quit')
+    expect(readPersistedSettings()).not.toHaveProperty('newDashboardEnabled')
+    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(false)
+  })
+
+  it('follow an explicit user choice', () => {
+    settings.set('newDashboardEnabled', true)
+    expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(true)
   })
 })
 

@@ -78,6 +78,13 @@ vi.mock('../views/ChooserView.vue', () => ({
       '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
   }
 }))
+vi.mock('../views/dashboard/DashboardView.vue', () => ({
+  default: {
+    name: 'DashboardView',
+    emits: ['pick', 'show-new-install', 'show-progress'],
+    template: '<div data-testid="builds-dashboard" />'
+  }
+}))
 vi.mock('../views/InstallWizardModal.vue', () => ({
   default: {
     name: 'InstallWizardModal',
@@ -687,6 +694,22 @@ describe('PanelApp', () => {
     // gating path (where the takeover should mount) override the URL
     // back to one without this param and flip `mockState.settings.firstUseCompleted`.
     window.history.replaceState({}, '', '/?installationId=test-id&firstUseCompleted=true')
+  })
+
+  it("shows today's dashboard while the Builds dashboard flag is off", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="builds-dashboard"]').exists()).toBe(false)
+  })
+
+  it('shows the Builds dashboard when main turns its flag on', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true&newDashboard=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="builds-dashboard"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
   })
 
   it('renders the comfy-lifecycle body by default for install-backed hosts', async () => {

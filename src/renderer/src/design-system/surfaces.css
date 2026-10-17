@@ -94,3 +94,17 @@
     radial-gradient(800px 500px at 90% -10%, oklch(1 0 0 / 0.03), transparent 60%);
   mask-image: linear-gradient(to bottom, black 55%, transparent);
 }
+
+/* ── Sidebar ────────────────────────────────────────────────────────
+ * The dashboard's sidebar (fixed width, set on the aside): labels
+ * truncate; icons, glyphs, counts and avatars keep their size. */
+.ds-sidebar button > :not(.sidebar-label) {
+  flex-shrink: 0;
+}
+.sidebar-label {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -8,6 +8,7 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
+import DashboardView from '../views/dashboard/DashboardView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -21,6 +22,7 @@ import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
+import { readRolloutFlags } from '../../../shared/rolloutFlags'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
@@ -56,6 +58,8 @@ const installationId = params.get('installationId') || ''
 // Main passes the persisted first-use gate synchronously so cold
 // start doesn't wait on IPC before painting chooser vs takeover.
 seedLauncherPrefsFromUrl(window.location.search)
+// Rollout flags, applied on window load (main passes them in the URL).
+const rollout = readRolloutFlags(window.location.search)
 const urlFirstUseCompleted = params.get('firstUseCompleted') === 'true'
 const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
 
@@ -599,7 +603,12 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
+          <DashboardView
+            v-if="rollout.newDashboard"
+            @show-new-install="handleChooserShowNewInstall"
+          />
           <ChooserView
+            v-else
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
             @show-progress="handleShowProgress"
