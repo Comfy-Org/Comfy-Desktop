@@ -257,6 +257,18 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
+  it("opens Comfy Cloud's plan and workspace pages, and nothing else", async () => {
+    await handler('comfybuilder:openCloudPage')({}, 'plan-credits')
+    await handler('comfybuilder:openCloudPage')({}, 'create-workspace')
+    expect(
+      (mocks.openExternal.mock.calls as unknown[][]).map((call) => new URL(String(call[0])).search)
+    ).toEqual(['?settings=plan-credits', '?create_workspace=1'])
+    for (const page of ['https://evil.example', 'toString', 42]) {
+      await expect(handler('comfybuilder:openCloudPage')({}, page)).rejects.toThrow()
+    }
+    expect(mocks.openExternal).toHaveBeenCalledTimes(2)
+  })
+
   it('broadcasts when the builder API invalidates the active token', () => {
     mocks.getAllWindows.mockReturnValue([])
     const panel = registerHostWithPanel(1)

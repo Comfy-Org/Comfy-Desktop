@@ -135,6 +135,9 @@ export interface KnownSettings {
    *  sees a progress window (no clicks). Set to `false` for a fully silent
    *  install. */
   showInstallerUI?: boolean
+  /** Rollout flag for the Builds dashboard (redesign Milestone 2). Read through
+   *  `isRolloutEnabled`, never stored as a default (see `ROLLOUT_DEFAULTS`). */
+  newDashboardEnabled?: boolean
 }
 
 export type Settings = KnownSettings & Record<string, unknown>
@@ -327,6 +330,13 @@ const SETTINGS_SCHEMA = {
       policy: 'value',
       toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null)
     }
+  },
+  newDashboardEnabled: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw) => (typeof raw === 'boolean' ? raw : ROLLOUT_DEFAULTS.newDashboardEnabled)
+    }
   }
 } as const satisfies { [K in keyof KnownSettings]: SettingSchemaEntry<K> }
 
@@ -343,6 +353,23 @@ function isKnownSettingKey(key: string): key is KnownSettingKey {
 
 function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSettingKey {
   return SETTINGS_SCHEMA[key].nullable
+}
+
+/**
+ * Rollout flags for work that ships dark. Their defaults live here in code,
+ * not in `defaults`: `set()` persists `defaults` to disk, which would freeze
+ * today's `false` for every existing user and stop a launch from reaching
+ * them. Read them with `isRolloutEnabled`.
+ */
+export const ROLLOUT_DEFAULTS = {
+  newDashboardEnabled: false
+} as const satisfies Partial<Record<keyof KnownSettings, boolean>>
+
+export type RolloutFlag = keyof typeof ROLLOUT_DEFAULTS
+
+export function isRolloutEnabled(flag: RolloutFlag): boolean {
+  const value = get(flag)
+  return typeof value === 'boolean' ? value : ROLLOUT_DEFAULTS[flag]
 }
 
 export const defaults: SettingsDefaults = {
