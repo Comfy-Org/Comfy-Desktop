@@ -1329,6 +1329,27 @@ export interface InstallNodePack {
   nodeCount?: number
 }
 
+export interface InstallAsset {
+  /** Local: `<category>/<path in that folder>`; Comfy Cloud: the asset id. */
+  id: string
+  name: string
+  mediaType: 'image' | 'video' | 'audio'
+  /** `comfy-media://` URL the dashboard can display. */
+  url: string
+  /** Which folder it lives in: what the build made, or what it was given. */
+  category: 'output' | 'input'
+  size: number
+  /** Epoch ms. */
+  createdAt: number
+  /** Epoch ms. */
+  modifiedAt: number
+  /** A local file the OS file browser can show. */
+  revealable: boolean
+  /** Comfy Cloud only: the file type and content hash it stores. */
+  mimeType?: string
+  hash?: string
+}
+
 // --- IPC API interface ---
 export interface ElectronApi {
   /** Host OS — set synchronously by the preload from `process.platform`.
@@ -1488,6 +1509,15 @@ export interface ElectronApi {
     installationId: string,
     request: InstallContentsRequest
   ): Promise<InstallContentsPage<InstallNodePack>>
+  listInstallAssets(
+    installationId: string,
+    request: InstallContentsRequest
+  ): Promise<InstallContentsPage<InstallAsset>>
+  /** Show a local asset in the OS file browser. */
+  revealInstallAsset(
+    installationId: string,
+    assetId: string
+  ): Promise<{ ok: boolean; message?: string }>
 
   // Interactive console (per-installation shell, shared across windows)
   /** Spawn the install's shell if needed, subscribe this surface, and return

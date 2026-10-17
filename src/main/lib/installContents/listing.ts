@@ -78,16 +78,22 @@ export interface WalkedFile {
  * The files under `root` that `accept` keeps, stopping after reading
  * `maxEntries` entries and not descending past `MAX_WALK_DEPTH`; either limit
  * marks the result truncated. Symlinks are followed, as ComfyUI follows them,
- * and each folder is walked once. A missing or unreadable folder reads as
- * empty.
+ * and each folder is walked once; `stayInside` skips links that lead out of
+ * `root`. A missing or unreadable folder reads as empty.
  */
 export async function walkFiles(
   root: string,
   accept: (fileName: string) => boolean,
-  maxEntries = MAX_LISTED_ENTRIES
+  maxEntries = MAX_LISTED_ENTRIES,
+  stayInside = false
 ): Promise<{ files: WalkedFile[]; truncated: boolean }> {
   const files: WalkedFile[] = []
   const walked = new Set<string>()
+  const realRoot = await fs.promises.realpath(root).catch(() => root)
+  const isInside = (real: string): boolean => {
+    const inside = path.relative(realRoot, real)
+    return !inside.startsWith('..') && !path.isAbsolute(inside)
+  }
   let visited = 0
   let truncated = false
 
@@ -95,7 +101,7 @@ export async function walkFiles(
     let entries: fs.Dirent[]
     try {
       const real = await fs.promises.realpath(dir)
-      if (walked.has(real)) return
+      if (walked.has(real) || (stayInside && !isInside(real))) return
       walked.add(real)
       entries = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch {
@@ -122,6 +128,10 @@ export async function walkFiles(
         continue
       }
       if (!stat.isFile() || !accept(entry.name)) continue
+      if (stayInside && entry.isSymbolicLink()) {
+        const real = await fs.promises.realpath(absolutePath).catch(() => null)
+        if (!real || !isInside(real)) continue
+      }
       files.push({
         relativePath: path.relative(root, absolutePath).split(path.sep).join('/'),
         absolutePath,

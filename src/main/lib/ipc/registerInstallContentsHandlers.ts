@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import * as installations from '../../installations'
 import type { InstallationRecord } from '../../installations'
 import { isRolloutEnabled } from '../../settings'
@@ -9,6 +9,7 @@ import { parseListRequest } from '../installContents/listing'
 import { listCloudWorkflows, listLocalWorkflows } from '../installContents/workflows'
 import { listCloudModels, listLocalModels } from '../installContents/models'
 import { listCloudNodes, listLocalNodes } from '../installContents/nodes'
+import { listCloudAssets, listLocalAssets, localAssetFile } from '../installContents/assets'
 import * as i18n from '../i18n'
 import { sourceMap } from './shared'
 
@@ -37,6 +38,13 @@ const emptyPage: InstallContentsPage<never> = {
 /** The build's folders, decided the way launch decides them. */
 export function foldersOf(inst: InstallationRecord): InstallFolders {
   return resolveInstallFolders(inst, sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null)
+}
+
+/** A local build's folders; null for Comfy Cloud and remote builds, whose
+ *  files are not on this computer. */
+export function localFoldersOf(inst: InstallationRecord): InstallFolders | null {
+  const category = sourceMap[inst.sourceId]?.category
+  return category === 'cloud' || category === 'remote' ? null : foldersOf(inst)
 }
 
 /** The install a dashboard request names, or why the request is refused. */
@@ -76,7 +84,8 @@ async function list<T>(
   }
 }
 
-/** The Builds dashboard's tabs: a build's workflows, models and custom nodes. */
+/** The Builds dashboard's tabs: a build's workflows, models, custom nodes and
+ *  assets, and showing a local asset in the OS file browser. */
 export function registerInstallContentsHandlers(): void {
   ipcMain.handle('install-contents:list-workflows', (_event, installationId, request) =>
     list(installationId, request, {
@@ -92,5 +101,24 @@ export function registerInstallContentsHandlers(): void {
       local: (folders, req) => listLocalNodes(folders.customNodes, req),
       cloud: listCloudNodes
     })
+  )
+  ipcMain.handle('install-contents:list-assets', (_event, installationId, request) =>
+    list(installationId, request, {
+      local: (folders, req) => listLocalAssets(installationId as string, folders, req),
+      cloud: listCloudAssets
+    })
+  )
+  ipcMain.handle(
+    'install-contents:reveal-asset',
+    async (_event, installationId: unknown, assetId: unknown) => {
+      const requested = await requestedInstall(installationId)
+      if ('refusal' in requested) return requested.refusal
+      const folders = localFoldersOf(requested.inst)
+      const file =
+        typeof assetId === 'string' && folders ? await localAssetFile(folders, assetId) : null
+      if (!file) return refused('installContents.assetNotFound')
+      shell.showItemInFolder(file)
+      return { ok: true }
+    }
   )
 }
