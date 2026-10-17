@@ -605,7 +605,9 @@ onUnmounted(() => {
         <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
           <DashboardView
             v-if="rollout.newDashboard"
+            @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
+            @show-progress="handleShowProgress"
           />
           <ChooserView
             v-else
