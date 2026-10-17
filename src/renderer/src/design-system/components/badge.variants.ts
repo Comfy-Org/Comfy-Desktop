@@ -8,7 +8,8 @@ export const badgeVariants = cva({
       default: 'bg-secondary-background text-muted-foreground',
       outline: 'text-base-foreground ring-1 ring-border-strong ring-inset',
       /** On imagery: blurred dark chip. */
-      overlay: 'bg-media-overlay text-base-foreground backdrop-blur-sm'
+      overlay: 'bg-media-overlay text-base-foreground backdrop-blur-sm',
+      danger: 'bg-status-danger/15 text-status-danger'
     },
     size: {
       sm: 'h-5 rounded-full px-2 text-ui',

@@ -56,7 +56,8 @@
     "viewErrorTooltip": "查看错误详情",
     "errorTitle": "错误",
     "searchPlaceholder": "搜索实例",
-    "noMatches": "没有匹配的实例"
+    "noMatches": "没有匹配的实例",
+    "wordmark": "Comfy"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
