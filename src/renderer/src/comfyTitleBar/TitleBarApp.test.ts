@@ -68,6 +68,7 @@ interface MockBridgeState {
   coachmarkSettledCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkDisplacedCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
+  focusDashboardCalls: number
 }
 
 function installMockBridge(
@@ -108,7 +109,8 @@ function installMockBridge(
     coachmarkAutoHiddenCallbacks: [],
     coachmarkSettledCallbacks: [],
     coachmarkDisplacedCallbacks: [],
-    readyCalls: 0
+    readyCalls: 0,
+    focusDashboardCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
   const bridge = {
@@ -117,6 +119,9 @@ function installMockBridge(
     setPanel: (panel: string) => state.setPanelCalls.push(panel),
     openNewWindow: () => {
       state.newWindowCalls += 1
+    },
+    focusDashboard: () => {
+      state.focusDashboardCalls += 1
     },
     openFileMenu: (anchor: { x: number; y: number }) => {
       state.fileMenuAnchors.push(anchor)
@@ -332,6 +337,65 @@ describe('TitleBarApp', () => {
     expect(pill.classes()).toContain('is-install-less')
     expect(wrapper.find('.title-install-caret').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  describe('breadcrumb title bar', () => {
+    afterEach(() => window.history.replaceState({}, '', '/'))
+
+    async function mountBreadcrumb(installationId: string | null = 'test-id') {
+      window.history.replaceState({}, '', '/?breadcrumb=true')
+      bridgeState = installMockBridge({ installationId })
+      vi.resetModules()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      return wrapper
+    }
+
+    it('keeps the centre pill while the flag is off', async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="title-breadcrumb"]').exists()).toBe(false)
+      expect(wrapper.find('.title-install-pill').exists()).toBe(true)
+    })
+
+    it('shows Builds › this build ⌄ in a build window, with the menu on the right', async () => {
+      const wrapper = await mountBreadcrumb()
+      bridgeState.titleChangedCallbacks.forEach((cb) => cb('Studio'))
+      await flushPromises()
+      expect(wrapper.get('[data-testid="title-crumb-build"]').text()).toBe('Studio')
+      expect(wrapper.find('.title-install-pill').exists()).toBe(false)
+      const trailing = wrapper.get('.title-trailing')
+      expect(trailing.find('.title-menu-button--icon[aria-haspopup="menu"]').exists()).toBe(true)
+    })
+
+    it('offers to open a build in the dashboard window', async () => {
+      const wrapper = await mountBreadcrumb(null)
+      expect(wrapper.find('[data-testid="title-crumb-build"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="title-crumb-switcher"]').text()).toBe('Open a build')
+    })
+
+    it('names the build an in-place launch previews in the dashboard window', async () => {
+      const wrapper = await mountBreadcrumb(null)
+      bridgeState.previewModeChangedCallbacks.forEach((cb) => cb(true))
+      bridgeState.titleChangedCallbacks.forEach((cb) => cb('Studio'))
+      await flushPromises()
+      expect(wrapper.get('[data-testid="title-crumb-build"]').text()).toBe('Studio')
+    })
+
+    it('focuses the dashboard from the root crumb', async () => {
+      const wrapper = await mountBreadcrumb()
+      await wrapper.get('[data-testid="title-crumb-root"]').trigger('click')
+      expect(bridgeState.focusDashboardCalls).toBe(1)
+    })
+
+    it('hides the breadcrumb during first-use lockdown', async () => {
+      const wrapper = await mountBreadcrumb()
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="title-breadcrumb"]').exists()).toBe(false)
+    })
   })
 
   it('updates the install pill label when main pushes a title', async () => {

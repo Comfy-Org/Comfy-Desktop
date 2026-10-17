@@ -97,7 +97,10 @@
     "betaNoticeOffTitleNamed": "已关闭 {feature} Beta 功能",
     "betaNoticeOffBodyNamed": "我们已为此构建关闭了 {feature} Beta 功能。你可以在设置中管理 Beta 功能。",
     "betaNoticeDismiss": "知道了",
-    "betaNoticeSettings": "设置"
+    "betaNoticeSettings": "设置",
+    "breadcrumbLabel": "构建与此窗口的构建",
+    "openABuild": "打开构建",
+    "switchBuild": "切换构建"
   },
   "comfyUISettings": {
     "title": "设置",

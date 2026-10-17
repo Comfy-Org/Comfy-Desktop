@@ -278,6 +278,25 @@ export function sendToPanelDeferred(
   }
 }
 
+/** Flows the panel closes itself, asking first when that would discard work. */
+const PANEL_CLOSES: ReadonlySet<ComfyPanelKey> = new Set([
+  'new-install',
+  'track',
+  'load-snapshot',
+  'quick-install',
+  'progress'
+])
+
+/** The breadcrumb's "Builds" in the dashboard window itself: leave any other
+ *  page (a full-page tool, feedback, an announcement), then the panel closes
+ *  any flow on top and shows All builds. */
+export function showAllBuildsIn(entry: ComfyWindowEntry): void {
+  if (entry.activePanel !== 'comfy' && !PANEL_CLOSES.has(entry.activePanel)) {
+    setActivePanel(entry.windowKey, 'comfy')
+  }
+  forwardToPanelRenderer(entry, 'panel-trigger-overlay', { kind: 'show-all-builds' })
+}
+
 /** Forward an IPC to the entry's panel renderer, no-op if absent. */
 function forwardToPanelRenderer(entry: ComfyWindowEntry, channel: string, payload?: unknown): void {
   const pv = entry.panelView
