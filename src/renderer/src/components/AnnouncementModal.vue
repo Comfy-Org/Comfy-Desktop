@@ -3,6 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { providePaletteScope } from '../composables/usePaletteScope'
+
+/** Dialogs take the Void palette on every screen; teleported children too. */
+const paletteScope = providePaletteScope()
 
 /**
  * One-off announcement modal (currently the Comfy API launch).
@@ -99,6 +103,7 @@ onUnmounted(() => {
       <div
         ref="overlayRef"
         class="announce-overlay"
+        :class="paletteScope"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"
