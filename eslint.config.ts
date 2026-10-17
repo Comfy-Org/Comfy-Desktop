@@ -82,5 +82,13 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    // Design-system wrappers leave optional props such as `class` undefined on
+    // purpose; cva's defaultVariants supply the defaults.
+    files: ['./src/renderer/src/design-system/**/*.vue'],
+    rules: {
+      'vue/require-default-prop': 'off'
+    }
   }
 ])

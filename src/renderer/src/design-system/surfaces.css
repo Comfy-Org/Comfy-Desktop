@@ -1,0 +1,97 @@
+/*
+ * The dashboard's surfaces, on the Void palette (tokens.css):
+ *
+ * - The page, where the sidebar sits, is frosted glass.
+ * - The content is a rounded panel inset from it, given depth by light and
+ *   a faint organic gradient instead of an outline.
+ * - A soft glow falls from the top of the content.
+ */
+
+/* ── Glass page ─────────────────────────────────────────────────────
+ * Lighter than the content, as if a blurred wallpaper showed through: a
+ * faint sheen over three soft, near-neutral washes (a hint of warm at the
+ * top left, cool at the bottom), so the glass is continuous behind the
+ * content and in the gap around it. The page's `bg-app-background` is the
+ * base.
+ *
+ * The title bar paints the top of the same glass (`.glass-titlebar`), so
+ * the sheen and the warm wash run on across the seam. Both are laid out in
+ * window coordinates: sizes in vw (the bar and the page are both
+ * window-wide) and positions from the window's top, which sits
+ * `--glass-top` above the page (the bar's height). */
+:root {
+  --glass-base: var(--color-app-background);
+  --glass-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.035), transparent);
+  --glass-warm: radial-gradient(
+    120vw 34vw at 0 var(--glass-y, 0px),
+    oklch(0.27 0.007 310 / 0.5),
+    transparent 70%
+  );
+}
+.ds-page {
+  /* The app's title bar: 36px + its 1px border (TITLEBAR_HEIGHT + 1). */
+  --glass-y: -37px;
+  background-image:
+    var(--glass-sheen), var(--glass-warm),
+    radial-gradient(110% 60% at 10% 100%, oklch(0.26 0.007 245 / 0.5), transparent 75%),
+    radial-gradient(90% 50% at 60% 55%, oklch(0.22 0.003 285 / 0.5), transparent 80%);
+  background-size:
+    100% 19vw,
+    100% 100%,
+    100% 100%,
+    100% 100%;
+  background-position:
+    0 var(--glass-y),
+    0 0,
+    0 0,
+    0 0;
+  background-repeat: no-repeat;
+}
+/* :root + doubled class: beats the bar's own scoped background. */
+:root .glass-titlebar.glass-titlebar {
+  --glass-y: 0px;
+  border-bottom-color: transparent;
+  background-color: var(--glass-base);
+  background-image: var(--glass-sheen), var(--glass-warm);
+  /* Under the (transparent) bottom border too, or it shows as a line. */
+  background-origin: border-box;
+  background-size:
+    100% 19vw,
+    100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* ── Content panel ──────────────────────────────────────────────────
+ * The main scroll container (backgrounds on it stay put as it scrolls).
+ * No outline and no shadow: it sits flat in the glass, a few % brighter
+ * at the top (overhead light) over a faint mesh of plum and teal light.
+ * The mesh is layered, randomly
+ * transformed radial gradients (after
+ * justinjay.wang/methods-for-random-gradients), baked from seed 7.
+ * Doubled class: the scope reset (`.ds-root *`, base.css) would otherwise
+ * drop the margin. */
+.ds-content.ds-content {
+  position: relative;
+  isolation: isolate;
+  margin: 8px;
+  border-radius: var(--radius-panel);
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.035), oklch(1 0 0 / 0.012) 260px, transparent 520px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3CradialGradient id='g0' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.16' fy='0.03' gradientTransform='translate(1.2 -5.7) rotate(176) skewX(8) scale(56 26)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.047'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g1' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.12' fy='0.02' gradientTransform='translate(73.0 8.0) rotate(28) skewX(11) scale(56 20)'%3E%3Cstop stop-color='rgb(70,128,136)' stop-opacity='0.044'/%3E%3Cstop offset='1' stop-color='rgb(70,128,136)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g2' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.13' fy='0.03' gradientTransform='translate(29.6 58.5) rotate(45) skewX(15) scale(40 18)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.039'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g3' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='0.07' fy='0.25' gradientTransform='translate(76.2 -4.8) rotate(164) skewX(2) scale(61 34)'%3E%3Cstop stop-color='rgb(70,128,136)' stop-opacity='0.059'/%3E%3Cstop offset='1' stop-color='rgb(70,128,136)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g4' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='0.16' fy='-0.08' gradientTransform='translate(82.8 -7.2) rotate(31) skewX(-6) scale(51 15)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.037'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23g0)'/%3E%3Crect width='100' height='100' fill='url(%23g1)'/%3E%3Crect width='100' height='100' fill='url(%23g2)'/%3E%3Crect width='100' height='100' fill='url(%23g3)'/%3E%3Crect width='100' height='100' fill='url(%23g4)'/%3E%3C/svg%3E")
+      center / 100% 100% no-repeat,
+    var(--color-content-background);
+}
+
+/* ── Glow: soft light from the top of the content ─────────────────── */
+.ds-content::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: -1;
+  height: 900px;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 560px at 20% -14%, oklch(0.82 0.035 285 / 0.08), transparent 62%),
+    radial-gradient(800px 500px at 90% -10%, oklch(1 0 0 / 0.03), transparent 60%);
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
