@@ -11,6 +11,7 @@ import { listCloudWorkflows } from './workflows'
 import { listCloudModels } from './models'
 import { packsOf } from './nodes'
 import type * as Nodes from './nodes'
+import { listCloudAssets } from './assets'
 
 const fetchMock = vi.fn()
 
@@ -217,5 +218,44 @@ describe('listCloudNodes', () => {
     expect(await listCloudNodes({})).toMatchObject({ ok: false })
     respond(200, {})
     expect(await listCloudNodes({})).toMatchObject({ ok: true, total: 0 })
+  })
+})
+
+describe('listCloudAssets', () => {
+  it('names outputs by file, with the details Cloud stores about them', async () => {
+    respond(200, {
+      assets: [
+        {
+          id: 'a1',
+          name: 'video/clip_00001_.mp4',
+          size: '2048',
+          hash: 'blake3:abc',
+          tags: ['output'],
+          mime_type: 'video/mp4',
+          created_at: '2026-10-01T10:00:00Z',
+          updated_at: '2026-10-02T10:00:00Z'
+        }
+      ],
+      total: 1,
+      has_more: false
+    })
+    const page = await listCloudAssets({})
+    expect(page).toMatchObject({
+      ok: true,
+      items: [
+        {
+          id: 'a1',
+          name: 'clip_00001_.mp4',
+          mediaType: 'video',
+          category: 'output',
+          size: 2048,
+          hash: 'blake3:abc',
+          mimeType: 'video/mp4',
+          createdAt: Date.parse('2026-10-01T10:00:00Z'),
+          modifiedAt: Date.parse('2026-10-02T10:00:00Z'),
+          revealable: false
+        }
+      ]
+    })
   })
 })

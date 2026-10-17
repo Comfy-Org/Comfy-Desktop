@@ -61,6 +61,11 @@ describe('Content-Security-Policy: panel.html', () => {
     // back to its modality glyph.
     expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
   })
+
+  it("allows the Builds dashboard's media protocol for images, video and audio", () => {
+    expect(csp['img-src']).toContain('comfy-media:')
+    expect(csp['media-src']).toContain('comfy-media:')
+  })
 })
 
 describe.each(TELEMETRY_RENDERER_HTMLS)(
