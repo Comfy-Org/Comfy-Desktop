@@ -142,6 +142,8 @@ export interface InstancePickerSnapshot {
   /** Raw `sourceCategory` of the active install (`null` on a dashboard host).
    *  Carried verbatim for copy/telemetry; navigation collapses it via `navClass`. */
   currentCategory: Category | null
+  /** Every build opens in its own window (the breadcrumb title bar is on). */
+  ownWindows: boolean
   runningInstallationIds: string[]
   /** `startedAt` of each running session, keyed by installation id. A restart replaces the session
    *  but can land between two snapshots, leaving the id list unchanged; this is what tells the
@@ -363,6 +365,7 @@ export function buildInstancePickerSnapshot(
     activeInstallationId,
     currentView,
     currentCategory,
+    ownWindows: settings.isBreadcrumbTitleBarEnabled(),
     runningInstallationIds: args.runningInstallationIds,
     runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,

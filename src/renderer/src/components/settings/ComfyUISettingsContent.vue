@@ -93,6 +93,8 @@ interface Props {
    *  navigation decision for the footer CTA + caret. Defaults to a dashboard
    *  host for callers that don't pass it. */
   currentView?: ViewKind
+  /** Every build opens in its own window (the breadcrumb title bar is on). */
+  ownWindows?: boolean
   /** Raw active-install category of the host (`null` on a dashboard host). */
   currentCategory?: Category | null
 }
@@ -105,6 +107,7 @@ const props = withDefaults(defineProps<Props>(), {
   activeOperation: null,
   activeInstallationId: null,
   currentView: 'dashboard',
+  ownWindows: false,
   currentCategory: null,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
@@ -156,7 +159,8 @@ const installation = toRef(props, 'installation')
 const navState = useInstanceNavState(installation, {
   currentView: () => props.currentView,
   currentCategory: () => props.currentCategory,
-  activeInstallationId: () => props.activeInstallationId
+  activeInstallationId: () => props.activeInstallationId,
+  ownWindows: () => props.ownWindows
 })
 const installCta = navState.cta
 const {

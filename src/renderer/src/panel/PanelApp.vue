@@ -132,7 +132,13 @@ const firstUseChain = useFirstUseChain({
   dismissTakeoverDirect: () => overlays.dismissTakeoverDirect(),
   switchPanel: (panel, entrypoint) => overlays.switchPanel(panel, entrypoint),
   handleShowProgress: (showOpts) => overlays.handleShowProgress(showOpts),
-  performChooserLaunch: (inst, onMissing) => chooserHandoff.performChooserLaunch(inst, onMissing),
+  // With builds in their own windows only the first-use flow launches in place.
+  performChooserLaunch: async (inst, onMissing, { inPlace }) => {
+    if (inPlace || !rollout.breadcrumb) return chooserHandoff.performChooserLaunch(inst, onMissing)
+    const outcome = await chooserHandoff.performPickerLaunch(inst)
+    if (outcome === 'missing-action') onMissing?.()
+    return outcome
+  },
   openFirstUseTakeover: (firstUseOpts) => overlays.openFirstUseTakeover(firstUseOpts),
   resetFirstUseSpinner: () => firstUseRef.value?.resetContinue()
 })
@@ -154,7 +160,10 @@ overlays = usePanelOverlays({
   loadSnapshotRef,
   quickInstallRef,
   firstUseRef,
-  prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
+  // With builds in their own windows the dashboard never hands itself over.
+  prepareChooserHostHandoff: rollout.breadcrumb
+    ? undefined
+    : (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks
 })
 const {
@@ -234,7 +243,8 @@ const showPanelBody = computed(() => {
 
 chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
-  switchPanel
+  switchPanel,
+  buildsOpenInOwnWindows: rollout.breadcrumb
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 

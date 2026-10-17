@@ -29,10 +29,13 @@ export interface FirstUseChainOpts {
    *  completion path. */
   dismissTakeoverDirect: () => void
   /** Cloud-branch auto-launch and the post-install auto-launch
-   *  watcher both reuse the chooser's launch pipeline. */
+   *  watcher both reuse the chooser's launch pipeline. `inPlace`: the
+   *  first-use flow launches into this window even when builds otherwise
+   *  open in their own. */
   performChooserLaunch: (
     installation: Installation,
-    onMissingLaunchAction?: () => void
+    onMissingLaunchAction: (() => void) | undefined,
+    launchOpts: { inPlace: boolean }
   ) => Promise<ChooserLaunchOutcome>
   /** Re-opens the FirstUseTakeover from the Configure → Back chain.
    *  Owned by usePanelOverlays. Pass `{ initialStep: 'localBranch' }`
@@ -255,7 +258,9 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       // the takeover so the user lands on the chooser body. The happy
       // path leaves the takeover up; the launch action's `showProgress:
       // true` swaps it for a connect-progress takeover (Tier 3 → Tier 3).
-      const outcome = await opts.performChooserLaunch(cloud, opts.dismissTakeoverDirect)
+      const outcome = await opts.performChooserLaunch(cloud, opts.dismissTakeoverDirect, {
+        inPlace: true
+      })
       // `'launched'` swaps the takeover for the connect-progress
       // takeover automatically; `'missing-action'` already ran the
       // dismiss callback. `'focused-running'` short-circuits launch and
@@ -618,7 +623,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         // Mark the upcoming `show-progress` as the launch leg of the
         // chain. `onShowProgress` consumes the flag and stamps the op.
         pendingChainedLaunch.value = true
-        void opts.performChooserLaunch(inst).finally(() => {
+        void opts.performChooserLaunch(inst, undefined, { inPlace: fromFirstUse }).finally(() => {
           // Defensive: if the launch never reached `handleShowProgress`
           // (missing-action / focused-running outcomes) clear the flag
           // so it can't leak into an unrelated future op.
