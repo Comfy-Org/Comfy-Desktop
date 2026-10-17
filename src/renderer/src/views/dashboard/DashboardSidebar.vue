@@ -2,23 +2,30 @@
 import { useI18n } from 'vue-i18n'
 import { LayoutGrid, Plus } from 'lucide-vue-next'
 import Button from '../../design-system/components/Button.vue'
+import InlineEdit from '../../design-system/components/InlineEdit.vue'
 import LocationIcon from '../../design-system/components/LocationIcon.vue'
 import StatusDot from '../../design-system/components/StatusDot.vue'
 import Tooltip from '../../design-system/components/Tooltip.vue'
 import { cn } from '../../design-system/cn'
 import { useSessionStore } from '../../stores/sessionStore'
+import { injectBuildRename } from './useBuildRename'
 import { ALL_BUILDS, installPage, isSamePage } from './dashboardPage'
 import type { DashboardPage } from './dashboardPage'
 import type { Installation } from '../../types/ipc'
 
 /** The dashboard's sidebar: every build in the selected workspace, with the
- *  workspace and account at its foot (`#foot`). */
+ *  workspace and account at its foot (`#foot`). A build's row renames it on
+ *  double-click and opens its menu on right-click. */
 const { installations } = defineProps<{ installations: Installation[] }>()
 const page = defineModel<DashboardPage>('page', { required: true })
-const emit = defineEmits<{ 'new-build': [] }>()
+const emit = defineEmits<{
+  'new-build': []
+  'open-menu': [event: MouseEvent, installation: Installation]
+}>()
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const { startRename, isRenaming, commitRename, cancelRename } = injectBuildRename()
 
 function rowClass(target: DashboardPage): string {
   return cn(
@@ -65,22 +72,39 @@ function rowClass(target: DashboardPage): string {
         <span class="text-ui text-subtle-foreground tabular-nums">{{ installations.length }}</span>
       </Button>
 
-      <Button
-        v-for="inst in installations"
-        :key="inst.id"
-        variant="ghost"
-        :aria-current="isSamePage(page, installPage(inst.id)) ? 'page' : undefined"
-        :class="rowClass(installPage(inst.id))"
-        :data-testid="`dashboard-sidebar-build-${inst.id}`"
-        @click="page = installPage(inst.id)"
-      >
-        <LocationIcon :kind="inst.sourceCategory === 'cloud' ? 'cloud' : 'local'" :size="16" />
-        <span class="sidebar-label text-left">{{ inst.name }}</span>
-        <template v-if="sessionStore.isRunning(inst.id)">
-          <StatusDot status="running" />
-          <span class="sr-only">{{ t('chooser.statusRunning') }}</span>
-        </template>
-      </Button>
+      <template v-for="inst in installations" :key="inst.id">
+        <!-- A field cannot sit inside a button: the row becomes a plain one. -->
+        <div
+          v-if="isRenaming(inst, 'sidebar')"
+          :class="cn(rowClass(installPage(inst.id)), 'flex items-center rounded-control')"
+        >
+          <LocationIcon :kind="inst.sourceCategory === 'cloud' ? 'cloud' : 'local'" :size="16" />
+          <InlineEdit
+            :value="inst.name"
+            editing
+            :label="t('buildsDashboard.rename.label')"
+            @commit="commitRename(inst, $event)"
+            @cancel="cancelRename"
+          />
+        </div>
+        <Button
+          v-else
+          variant="ghost"
+          :aria-current="isSamePage(page, installPage(inst.id)) ? 'page' : undefined"
+          :class="rowClass(installPage(inst.id))"
+          :data-testid="`dashboard-sidebar-build-${inst.id}`"
+          @click="page = installPage(inst.id)"
+          @dblclick="startRename(inst, 'sidebar')"
+          @contextmenu.prevent="emit('open-menu', $event, inst)"
+        >
+          <LocationIcon :kind="inst.sourceCategory === 'cloud' ? 'cloud' : 'local'" :size="16" />
+          <span class="sidebar-label text-left">{{ inst.name }}</span>
+          <template v-if="sessionStore.isRunning(inst.id)">
+            <StatusDot status="running" />
+            <span class="sr-only">{{ t('chooser.statusRunning') }}</span>
+          </template>
+        </Button>
+      </template>
     </div>
 
     <div class="mt-auto flex flex-col gap-2 pt-3"><slot name="foot" /></div>

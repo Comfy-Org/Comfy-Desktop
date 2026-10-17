@@ -49,6 +49,10 @@ export function useInstallContextMenu(
     /** Dashboard-only gate for the workspace promotion action. Main revalidates
      *  the installation and active workspace before uploading anything. */
     canPromoteToWorkspace?: (inst: Installation) => boolean
+    /** Offers Rename for the builds this returns true for (the dashboard
+     *  renames in place). */
+    canRename?: (inst: Installation) => boolean
+    onRename?: (inst: Installation) => void
   } = {}
 ) {
   const { t } = useI18n()
@@ -125,6 +129,9 @@ export function useInstallContextMenu(
         id: 'manage',
         label: t('chooser.manageInstall')
       })
+      if (opts.onRename && opts.canRename?.(inst)) {
+        items.push({ id: 'rename', label: t('buildsDashboard.rename.action') })
+      }
 
       if (isInstalled(inst) && hasUpdateTag(inst)) {
         items.push({
@@ -280,6 +287,8 @@ export function useInstallContextMenu(
   async function triggerAction(id: string, inst: Installation): Promise<void> {
     if (id === 'manage') {
       opts.onManage?.(inst)
+    } else if (id === 'rename') {
+      opts.onRename?.(inst)
     } else if (id === 'update') {
       // Open the Update tab AND auto-fire the update so the modal runs.
       opts.onManage?.(inst, { initialTab: 'update', autoAction: 'update-comfyui' })
