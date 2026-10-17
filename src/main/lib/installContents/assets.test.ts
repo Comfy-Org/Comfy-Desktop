@@ -45,6 +45,12 @@ describe('listLocalAssets', () => {
     })
   })
 
+  it('keeps one kind of media when filtered', async () => {
+    const page = await listLocalAssets('a', folders, { filter: 'audio' })
+    if (!page.ok) throw new Error(page.message)
+    expect(page.items.map((a) => a.id)).toEqual(['input/voice.wav'])
+  })
+
   it('lists a folder shared by output and input once', async () => {
     const page = await listLocalAssets('a', { output: folders.output, input: folders.output }, {})
     expect(page).toMatchObject({ ok: true, total: 2 })

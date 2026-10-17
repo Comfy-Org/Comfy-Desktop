@@ -49,6 +49,7 @@ The gradient values were tuned visually. Do not change them without design.
 | Navigation | `Tabs`, `SegmentedControl`                                             | `Tabs` switch a page's views; `SegmentedControl` picks a scope or filter, with counts                              |
 | Page       | `PageHeader`, `EmptyState`                                             | A page's title, description and actions; what an empty list says and offers next                                   |
 | Surfaces   | `Card` (`elevated`, `dashed`, `inset`), `Avatar`, `Badge`, `StatusDot` | `StatusDot`: `running` and `ready` (green) and `busy` (amber) pulse; `error` red; `idle` the quietest              |
+| Media      | `MediaCard`                                                            | A 16:9 preview shown whole, a corner chip and a body below, for galleries                                          |
 | Identity   | `LocationIcon`                                                         | The one this-computer / Comfy Cloud mark                                                                           |
 | Lists      | `ListTable`                                                            | Rows with a column header in a card; skeleton rows while loading                                                   |
 | Loading    | `Skeleton`                                                             | Sized like the content it stands in for; the loading region carries `role="status"` and a label                    |

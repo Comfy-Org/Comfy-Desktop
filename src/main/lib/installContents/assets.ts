@@ -12,6 +12,14 @@ const AREAS: MediaArea[] = ['output', 'input']
  *  folder, short of stalling on a huge one. */
 const MAX_WALKED_ASSETS = 50_000
 
+/** Media, of the kind the request's `filter` keeps (any when unset). */
+function isWanted(
+  mediaType: InstallAsset['mediaType'] | undefined,
+  request: InstallContentsRequest
+): mediaType is InstallAsset['mediaType'] {
+  return mediaType !== undefined && (!request.filter || mediaType === request.filter)
+}
+
 /** A local asset's id: its area and path, e.g. `output/ComfyUI_00001_.png`. */
 function assetId(area: MediaArea, relativePath: string): string {
   return `${area}/${relativePath}`
@@ -33,7 +41,7 @@ export async function listLocalAssets(
     seen.add(path.resolve(folders[area]))
     const walked = await walkFiles(
       folders[area],
-      (name) => mediaTypeOf(name) !== undefined,
+      (name) => isWanted(mediaTypeOf(name), request),
       MAX_WALKED_ASSETS - assets.length
     )
     truncated ||= walked.truncated
@@ -110,7 +118,8 @@ export async function listCloudAssets(
     // Cloud names outputs by their sub-folder path (`video/clip_00001_.mp4`).
     const name = path.posix.basename(asset.user_metadata?.filename || asset.name)
     const mediaType = cloudMediaType(asset, name)
-    if (!mediaType) return []
+    // Cloud cannot filter by media kind: a filtered page may come back short.
+    if (!isWanted(mediaType, request)) return []
     const createdAt = Date.parse(asset.created_at ?? '') || 0
     return [
       {

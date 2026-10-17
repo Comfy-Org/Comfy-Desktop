@@ -18,6 +18,7 @@ import Tabs from '../../design-system/components/Tabs.vue'
 import WorkflowsTab from './WorkflowsTab.vue'
 import ModelsTab from './ModelsTab.vue'
 import NodesTab from './NodesTab.vue'
+import AssetsTab from './AssetsTab.vue'
 import InstallBadges from '../../components/InstallBadges.vue'
 import Tooltip from '../../design-system/components/Tooltip.vue'
 import InlineEdit from '../../design-system/components/InlineEdit.vue'
@@ -64,10 +65,11 @@ const buildInfo = computed(() =>
   ).join('\n')
 )
 
-type Tab = 'workflows' | 'models' | 'nodes'
+type Tab = 'workflows' | 'assets' | 'models' | 'nodes'
 const tab = ref<Tab>('workflows')
 const tabs = computed(() => [
   { value: 'workflows' as const, label: t('buildsDashboard.tabs.workflows') },
+  { value: 'assets' as const, label: t('buildsDashboard.tabs.assets') },
   { value: 'models' as const, label: t('buildsDashboard.tabs.models') },
   { value: 'nodes' as const, label: t('buildsDashboard.tabs.nodes') }
 ])
@@ -170,6 +172,7 @@ const canStop = computed(
         :installation="inst"
         @open="emit('launch', $event)"
       />
+      <AssetsTab v-else-if="tab === 'assets'" :installation="inst" />
       <ModelsTab v-else-if="tab === 'models'" :installation="inst" />
       <NodesTab v-else :installation="inst" />
     </Tabs>

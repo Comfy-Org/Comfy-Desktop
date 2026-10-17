@@ -1868,7 +1868,8 @@
     "tabs": {
       "workflows": "Workflows",
       "models": "Models",
-      "nodes": "Custom nodes"
+      "nodes": "Custom nodes",
+      "assets": "Assets"
     },
     "remote": {
       "title": "This build runs on another computer",
@@ -1883,7 +1884,8 @@
     "sort": {
       "label": "Sort",
       "lastEdited": "Last edited",
-      "name": "Name"
+      "name": "Name",
+      "newest": "Newest"
     },
     "workflows": {
       "search": "Search workflows",
@@ -1921,6 +1923,42 @@
       "noMatches": "Nothing matches",
       "empty": "No custom node packs",
       "managedNote": "Comfy Cloud installs these node packs and keeps them up to date."
+    },
+    "assets": {
+      "allTypes": "All types",
+      "images": "Images",
+      "video": "Video",
+      "audio": "Audio",
+      "search": "Search assets",
+      "reveal": "Show in folder",
+      "noMatches": "Nothing matches",
+      "emptyTitle": "No assets yet",
+      "emptyDescription": "Images, video and audio this build makes or uses show up here."
+    },
+    "assetDetail": {
+      "copyName": "Copy name",
+      "copied": "Copied",
+      "previous": "Previous asset",
+      "next": "Next asset",
+      "close": "Close details",
+      "name": "Name",
+      "type": "Type",
+      "category": "Category",
+      "size": "Size",
+      "dimensions": "Dimensions",
+      "duration": "Duration",
+      "created": "Created",
+      "modified": "Modified",
+      "location": "Location",
+      "assetId": "Asset ID",
+      "hash": "Content hash",
+      "output": "Output",
+      "input": "Input",
+      "kind": {
+        "image": "Image",
+        "video": "Video",
+        "audio": "Audio"
+      }
     }
   },
   "installContents": {
