@@ -27,11 +27,13 @@ const RenameScope = defineComponent({
 })
 
 function mountPage(installation: Installation) {
+  // The tabs list contents through main; they have their own tests.
   return mount(TooltipProvider, {
     slots: {
       default: () =>
         h(RenameScope, () => h(InstallPage, { installation, isStoppedActionGated: false }))
-    }
+    },
+    global: { stubs: { WorkflowsTab: true, ModelsTab: true, NodesTab: true } }
   }).findComponent(InstallPage)
 }
 
@@ -57,6 +59,13 @@ describe('InstallPage', () => {
     await running.get('[data-testid="dashboard-stop"]').trigger('click')
     expect(running.emitted('stop')?.[0]).toEqual([local])
     expect(mountPage(cloud).find('[data-testid="dashboard-stop"]').exists()).toBe(false)
+  })
+
+  it('shows a remote build without its contents', () => {
+    const remote = { ...local, sourceCategory: 'remote' } as Installation
+    const wrapper = mountPage(remote)
+    expect(wrapper.text()).toContain('This build runs on another computer')
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
   })
 
   it('goes back to all builds', async () => {

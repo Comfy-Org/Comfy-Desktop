@@ -40,19 +40,19 @@ The gradient values were tuned visually. Do not change them without design.
 
 ## Components
 
-| Pattern    | Component                                                              | Notes                                                                                                 |
-| ---------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Buttons    | `Button`                                                               | `primary` (the one white CTA per surface), `secondary`, `ghost`, `link`                               |
-| Text entry | `SearchInput`, `Input`                                                 | Share `fieldClass`; focus ring on the shell, never the native input                                   |
-| Menus      | `DropdownMenuContent/Item/Label/Separator/SubTrigger/SubContent`       | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                        |
-| Overlays   | `Tooltip`                                                              | Needs a Reka `TooltipProvider` above it                                                               |
-| Navigation | `Tabs`, `SegmentedControl`                                             | `Tabs` switch a page's views; `SegmentedControl` picks a scope or filter, with counts                 |
-| Page       | `PageHeader`, `EmptyState`                                             | A page's title, description and actions; what an empty list says and offers next                      |
-| Surfaces   | `Card` (`elevated`, `dashed`, `inset`), `Avatar`, `Badge`, `StatusDot` | `StatusDot`: `running` and `ready` (green) and `busy` (amber) pulse; `error` red; `idle` the quietest |
-| Identity   | `LocationIcon`                                                         | The one this-computer / Comfy Cloud mark                                                              |
-| Lists      | `ListTable`                                                            | Rows with a column header in a card; skeleton rows while loading                                      |
-| Loading    | `Skeleton`                                                             | Sized like the content it stands in for; the loading region carries `role="status"` and a label       |
-| Renaming   | `InlineEdit`                                                           | Text that becomes a field in its own type style; Enter or blur saves, Escape cancels                  |
+| Pattern    | Component                                                              | Notes                                                                                                              |
+| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Buttons    | `Button`                                                               | `primary` (the one white CTA per surface), `secondary`, `ghost`, `link`                                            |
+| Text entry | `SearchInput`, `Input`, `Select`                                       | Share `fieldClass`; focus ring on the shell, never the native input. `Select` shows its `label` inside the trigger |
+| Menus      | `DropdownMenuContent/Item/Label/Separator/SubTrigger/SubContent`       | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                                     |
+| Overlays   | `Tooltip`                                                              | Needs a Reka `TooltipProvider` above it                                                                            |
+| Navigation | `Tabs`, `SegmentedControl`                                             | `Tabs` switch a page's views; `SegmentedControl` picks a scope or filter, with counts                              |
+| Page       | `PageHeader`, `EmptyState`                                             | A page's title, description and actions; what an empty list says and offers next                                   |
+| Surfaces   | `Card` (`elevated`, `dashed`, `inset`), `Avatar`, `Badge`, `StatusDot` | `StatusDot`: `running` and `ready` (green) and `busy` (amber) pulse; `error` red; `idle` the quietest              |
+| Identity   | `LocationIcon`                                                         | The one this-computer / Comfy Cloud mark                                                                           |
+| Lists      | `ListTable`                                                            | Rows with a column header in a card; skeleton rows while loading                                                   |
+| Loading    | `Skeleton`                                                             | Sized like the content it stands in for; the loading region carries `role="status"` and a label                    |
+| Renaming   | `InlineEdit`                                                           | Text that becomes a field in its own type style; Enter or blur saves, Escape cancels                               |
 
 ## Rules
 

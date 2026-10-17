@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, EllipsisVertical, Play, Square, SquareArrowOutUpRight } from 'lucide-vue-next'
+import {
+  ChevronLeft,
+  EllipsisVertical,
+  Play,
+  Server,
+  Square,
+  SquareArrowOutUpRight
+} from 'lucide-vue-next'
 import Badge from '../../design-system/components/Badge.vue'
 import Button from '../../design-system/components/Button.vue'
 import LocationIcon from '../../design-system/components/LocationIcon.vue'
 import StatusDot from '../../design-system/components/StatusDot.vue'
+import EmptyState from '../../design-system/components/EmptyState.vue'
+import Tabs from '../../design-system/components/Tabs.vue'
+import WorkflowsTab from './WorkflowsTab.vue'
+import ModelsTab from './ModelsTab.vue'
+import NodesTab from './NodesTab.vue'
 import InstallBadges from '../../components/InstallBadges.vue'
 import Tooltip from '../../design-system/components/Tooltip.vue'
 import InlineEdit from '../../design-system/components/InlineEdit.vue'
@@ -51,6 +63,14 @@ const buildInfo = computed(() =>
     t
   ).join('\n')
 )
+
+type Tab = 'workflows' | 'models' | 'nodes'
+const tab = ref<Tab>('workflows')
+const tabs = computed(() => [
+  { value: 'workflows' as const, label: t('buildsDashboard.tabs.workflows') },
+  { value: 'models' as const, label: t('buildsDashboard.tabs.models') },
+  { value: 'nodes' as const, label: t('buildsDashboard.tabs.nodes') }
+])
 
 /** Only a local build has a process here to stop. */
 const canStop = computed(
@@ -136,5 +156,22 @@ const canStop = computed(
         /></Button>
       </div>
     </header>
+
+    <!-- A remote build's files are on its server, not this computer. -->
+    <EmptyState
+      v-if="inst.sourceCategory === 'remote'"
+      :icon="Server"
+      :title="t('buildsDashboard.remote.title')"
+      :description="t('buildsDashboard.remote.description')"
+    />
+    <Tabs v-else v-model="tab" :options="tabs">
+      <WorkflowsTab
+        v-if="tab === 'workflows'"
+        :installation="inst"
+        @open="emit('launch', $event)"
+      />
+      <ModelsTab v-else-if="tab === 'models'" :installation="inst" />
+      <NodesTab v-else :installation="inst" />
+    </Tabs>
   </div>
 </template>
