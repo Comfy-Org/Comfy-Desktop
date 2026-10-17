@@ -10,6 +10,7 @@
 import { BUILDER_BASE_URL } from './config'
 import { CloudSession } from '../cloud'
 import { ComfyBuilderClient } from '../comfybuilder'
+import type { TokenProvider } from '../comfybuilder'
 
 let session: CloudSession | null = null
 let client: ComfyBuilderClient | null = null
@@ -28,12 +29,15 @@ export function getCloudSession(): CloudSession {
  */
 export function getBuilderClient(): ComfyBuilderClient {
   if (!client) {
-    client = new ComfyBuilderClient({
-      baseUrl: BUILDER_BASE_URL,
-      auth: getCloudSession().asTokenProvider(() => unauthorizedHandler?.())
-    })
+    client = new ComfyBuilderClient({ baseUrl: BUILDER_BASE_URL, auth: getCloudTokenProvider() })
   }
   return client
+}
+
+/** The session's tokens for an API call: a 401 invalidates the rejected token
+ *  and is announced to renderer auth stores. */
+export function getCloudTokenProvider(): TokenProvider {
+  return getCloudSession().asTokenProvider(() => unauthorizedHandler?.())
 }
 
 /** Announce an API-driven token invalidation to renderer auth stores. */
