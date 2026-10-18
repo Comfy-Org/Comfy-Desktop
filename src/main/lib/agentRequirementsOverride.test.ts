@@ -595,9 +595,10 @@ describe('the agent package name and extras', () => {
       { name: 'comfy-agentx', version: '1.0' },
       { name: 'comfy-agent-oss', version: '0.2.0' }
     ])
-    expect(installedConstraints(list), 'comfy-agentx is held; the agent is not').toBe(
-      'comfy-agentx==1.0\n'
-    )
+    expect(
+      installedConstraints(list, pins({ 'comfy-agent': '0.2.3' }), 'comfy-agent-oss==0.2.0\n'),
+      'comfy-agentx is held; the agent is not'
+    ).toBe('comfy-agentx==1.0\n')
   })
 
   it('refuses a version or extras with a trailing newline, without relying on a trim', () => {
@@ -630,7 +631,35 @@ describe('the agent package name and extras', () => {
       { name: 'comfy-agent-oss', version: '0.2.0' },
       { name: 'requests', version: '2.32.0' }
     ])
-    expect(installedConstraints(list)).toBe('requests==2.32.0\n')
+    expect(installedConstraints(list, pins({ 'comfy-cli': '1.22.0' }), 'comfy-agent-oss\n')).toBe(
+      'requests==2.32.0\n'
+    )
+  })
+
+  it("frees only the comfy-agent* package core's file lists, not every installed one", () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent-oss', version: '0.2.0' },
+      { name: 'comfy-agent-sdk', version: '1.0' }
+    ])
+    const core = 'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\n'
+    expect(installedConstraints(list, pins({ 'comfy-agent': '0.2.3' }), core)).toBe(
+      'comfy-agent-sdk==1.0\n'
+    )
+    expect(installedConstraints(list), 'no agent file, no comfy-agent* freed').toBe(
+      'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\n'
+    )
+  })
+
+  it('refuses an over-long extra name, or too many extras', () => {
+    expect(parseAgentRequirementsOverride({ [`comfy-agent[${'a'.repeat(64)}]`]: '1.0' }).kind).toBe(
+      'pins'
+    )
+    const nine = Array.from({ length: 9 }, (_, i) => `e${i}`).join(',')
+    for (const key of [`comfy-agent[${'a'.repeat(65)}]`, `comfy-agent[${nine}]`])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'bad_extra'
+      })
   })
 
   it('reads extras from the key, canonicalised and sorted, beside an epoch', () => {

@@ -23,8 +23,9 @@ const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))
 
 /** A payload key: an allowlisted name, optionally with extras (`comfy-agent[go]`). */
 const PAYLOAD_KEY = /^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[([^\]]*)\])?$/
-/** A PEP 508 extra name. */
-const EXTRA = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
+/** A PEP 508 extra name, at most 64 characters, like every other field here bounded. */
+const EXTRA = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/
+const MAX_EXTRAS = 8
 
 const AGENT_KEY = 'comfy-agent'
 /**
@@ -107,7 +108,7 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
 function parseExtras(text: string): string[] | null {
   // Spaces only: a trim would also take a newline or tab, which has no place in the line.
   const extras = text.split(',').map((extra) => extra.replace(/^ +| +$/g, ''))
-  if (!extras.every((extra) => EXTRA.test(extra))) return null
+  if (extras.length > MAX_EXTRAS || !extras.every((extra) => EXTRA.test(extra))) return null
   return [...new Set(extras.map(normalizePackageName))].sort()
 }
 
@@ -216,18 +217,32 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
+/** The name of the first comfy-agent* package core's file lists: the one an agent pin decorates. */
+function agentPackage(coreText: string): string | undefined {
+  return coreText
+    .split(/\r?\n/)
+    .map((line) => line.match(LEADING_NAME)?.[1])
+    .map((name) => name && normalizePackageName(name))
+    .find((name) => !!name && AGENT_LINE.test(name))
+}
+
 /**
- * Pins every installed non-agent package where it is, so an override that moves one falls back.
- * The frontend is held too unless this override pins it.
+ * Pins every installed package where it is, so an override that moves one falls back, except the
+ * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
+ * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
+ * them, since the install also takes core's lines for them and must be able to land on those.
+ * Any other comfy-agent* package is held. The frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
-  pins: OverridePins = new Map()
+  pins: OverridePins = new Map(),
+  coreText = ''
 ): string | null {
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
+  const agent = agentPackage(coreText)
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(pinKey(name))
+    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
