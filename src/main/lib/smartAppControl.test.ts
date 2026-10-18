@@ -128,7 +128,9 @@ describe('readSmartAppControlState', () => {
     } finally {
       if (original !== undefined) process.env.SystemRoot = original
     }
-    expect(String(execFileMock.mock.calls[0]![0])).toMatch(/^C:\\Windows[\\/]System32[\\/]reg\.exe$/)
+    expect(String(execFileMock.mock.calls[0]![0])).toMatch(
+      /^C:\\Windows[\\/]System32[\\/]reg\.exe$/
+    )
   })
 
   it('finds reg.exe under SystemRoot', async () => {
