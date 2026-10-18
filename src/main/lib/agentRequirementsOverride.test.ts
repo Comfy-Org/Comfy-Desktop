@@ -891,6 +891,52 @@ describe('the agent package name and extras', () => {
   })
 })
 
+describe('URL pins against core lines (QA tier)', () => {
+  const MAC = 'sys_platform == "darwin"'
+  const url = (platform: string): string =>
+    `https://github.com/Comfy-Org/ComfyUI-private/releases/download/v2/comfy_agent-0.0.2-${platform}.whl`
+
+  it("replaces all of a package's core lines once, whatever the counts", () => {
+    const core =
+      `comfy-agent @ ${WHEEL} ; ${LINUX}\n` +
+      `comfy-agent @ ${WHEEL} ; ${WIN}\n` +
+      `comfy-agent @ ${WHEEL} ; ${MAC}\n` +
+      'comfy-cli==1.21.0\n'
+    const two = [`${url('linux')} ; ${LINUX}`, `${url('win')} ; ${WIN}`]
+    expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': two }))).toEqual({
+      kind: 'text',
+      text:
+        `comfy-agent @ ${url('linux')} ; ${LINUX}\n` +
+        `comfy-agent @ ${url('win')} ; ${WIN}\n` +
+        'comfy-cli==1.21.0\n'
+    })
+    const four = [...two, `${url('mac')} ; ${MAC}`, `${url('arm')} ; platform_machine == "aarch64"`]
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agent==0.0.1\ncomfy-cli==1.21.0\n',
+        pins({ 'comfy-agent': four })
+      )
+    ).toEqual({
+      kind: 'text',
+      text: four.map((entry) => `comfy-agent @ ${entry}`).join('\n') + '\ncomfy-cli==1.21.0\n'
+    })
+  })
+
+  it('refuses a URL or marker entry with a line break or tab, without relying on a trim', () => {
+    for (const entry of [
+      `${WHEEL}\n`,
+      `${WHEEL} ; ${WIN}\n`,
+      `${WHEEL}\r`,
+      `${WHEEL}\t`,
+      `\n${WHEEL}`
+    ])
+      expect(
+        parseAgentRequirementsOverride({ 'comfy-agent': [entry] }),
+        JSON.stringify(entry)
+      ).toEqual({ kind: 'refused', reason: 'bad_url' })
+  })
+})
+
 describe('extras on a URL pin (QA tier)', () => {
   const lab = 'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/'
   const wheel = `${lab}comfy_agent-0.0.2.dev9123-py3-none-manylinux2014_x86_64.whl`

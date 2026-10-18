@@ -167,7 +167,8 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
 
 /** `url ; marker` or `url`, or null for anything else. */
 function normalizeOverrideUrl(entry: unknown): string | null {
-  if (typeof entry !== 'string') return null
+  // Refused outright rather than trimmed away: a line break or tab has no place in an entry.
+  if (typeof entry !== 'string' || /[\r\n\t]/.test(entry)) return null
   const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
   if (rest.length > 0 || !OVERRIDE_URL.test(url!) || !isAllowedWheelHost(url!)) return null
   if (marker === undefined) return url!
