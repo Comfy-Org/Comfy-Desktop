@@ -91,6 +91,10 @@ describe('getSnapshotListData', () => {
     release.get('commit-0')!()
 
     const { snapshots } = await pending
-    expect(snapshots.map((s) => s.comfyuiVersion)).toEqual(['v-commit-0', 'v-commit-1', 'v-commit-2'])
+    expect(snapshots.map((s) => s.comfyuiVersion)).toEqual([
+      'v-commit-0',
+      'v-commit-1',
+      'v-commit-2'
+    ])
   })
 })
