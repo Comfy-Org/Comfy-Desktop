@@ -69,7 +69,11 @@ import { createAgentTap } from '../../agentTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
-import { buildLaunchPhases, AGENT_REQUIREMENTS_PHASE } from '../../launchPhases'
+import {
+  buildLaunchPhases,
+  AGENT_REQUIREMENTS_PHASE,
+  FRONTEND_RESTORE_PHASE
+} from '../../launchPhases'
 import {
   getTemplateDownloadState,
   formatTemplateSubStatus,
@@ -97,12 +101,15 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import {
   installAgentRequirements,
-  planAgentRequirementsInstall
+  planAgentRequirementsInstall,
+  restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
 import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
 import {
+  FRONTEND_PACKAGE,
   createAgentStartWatcher,
   nextOverrideState,
+  readFrontendPin,
   readOverrideState,
   reportOverrideDecision
 } from '../../agentRequirementsOverride'
@@ -1597,6 +1604,35 @@ async function runLaunch(
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
         void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
       }
+    }
+  }
+
+  // An override that moved the frontend is recorded, and any launch it doesn't apply on (its pin
+  // pulled, refused or reverted, or the agent off) puts ComfyUI's version back: the agent's own
+  // file has no frontend line to do it.
+  const frontendPin = overridePins?.get(FRONTEND_PACKAGE)
+  const recordedFrontend = readFrontendPin(inst)
+  if (typeof frontendPin === 'string') {
+    if (recordedFrontend !== frontendPin) {
+      await installations
+        .update(installationId, { frontendVersionOverride: { version: frontendPin } })
+        .catch(() => {})
+    }
+  } else if (recordedFrontend !== null) {
+    const tracker = await armLaunchTracker()
+    tracker.addLatePhase(FRONTEND_RESTORE_PHASE)
+    sendProgress('frontendRestore', { percent: -1, status: '' })
+    const restored = await restoreCoreFrontend(
+      inst,
+      makeSendOutput(sender, installationId),
+      abort.signal
+    )
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    // Kept on a failed restore, so the next launch tries again.
+    if (restored) {
+      await installations
+        .update(installationId, { frontendVersionOverride: undefined })
+        .catch(() => {})
     }
   }
 

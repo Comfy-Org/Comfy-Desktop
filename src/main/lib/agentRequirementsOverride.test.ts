@@ -4,6 +4,7 @@ import {
   START_FAILURES_TO_REVERT,
   classifyAgentEvent,
   coreFileInstalled,
+  coreFrontendVersion,
   createAgentStartWatcher,
   effectiveAgentRequirements,
   installedConstraints,
@@ -13,6 +14,7 @@ import {
   parseAgentRequirementsOverride,
   pinsOverBareLines,
   compareVersions,
+  readFrontendPin,
   readOverrideState,
   reportOverrideDecision
 } from './agentRequirementsOverride'
@@ -565,5 +567,92 @@ describe('reportOverrideDecision', () => {
     expect(() =>
       reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
     ).not.toThrow()
+  })
+})
+
+describe('the frontend package', () => {
+  const AGENT = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+  const MAIN = 'torch\ncomfyui-frontend-package==1.55.18\ncomfyui-workflow-templates==0.1.2\n'
+
+  it('takes an exact version, and never a URL list', () => {
+    expect(parseAgentRequirementsOverride({ 'comfyui-frontend-package': '1.55.19' })).toEqual({
+      kind: 'pins',
+      pins: pins({ 'comfyui-frontend-package': '1.55.19' })
+    })
+    expect(
+      parseAgentRequirementsOverride({
+        comfyui_frontend_package: ['https://github.com/Comfy-Org/x/releases/download/v1/f.whl']
+      })
+    ).toEqual({ kind: 'refused', reason: 'bad_version' })
+  })
+
+  it("is pinned from ComfyUI's requirements.txt and added to the agent's file", () => {
+    expect(
+      effectiveAgentRequirements(AGENT, pins({ 'comfyui-frontend-package': '1.55.19' }), MAIN)
+    ).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\ncomfyui-frontend-package==1.55.19\n'
+    })
+  })
+
+  it('goes in beside an agent pin', () => {
+    const both = pins({ 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.19' })
+    expect(effectiveAgentRequirements(AGENT, both, MAIN)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\ncomfyui-frontend-package==1.55.19\n'
+    })
+  })
+
+  it("must be newer than ComfyUI's pin, so it retires once ComfyUI catches up", () => {
+    for (const version of ['1.55.18', '1.55.17'])
+      expect(
+        effectiveAgentRequirements(AGENT, pins({ 'comfyui-frontend-package': version }), MAIN)
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it("is refused when ComfyUI's requirements.txt doesn't name it", () => {
+    const frontend = pins({ 'comfyui-frontend-package': '1.55.19' })
+    expect(effectiveAgentRequirements(AGENT, frontend)).toEqual({
+      kind: 'refused',
+      reason: 'not_in_core_file'
+    })
+    expect(effectiveAgentRequirements(AGENT, frontend, 'torch\n')).toEqual({
+      kind: 'refused',
+      reason: 'not_in_core_file'
+    })
+  })
+
+  it("leaves the agent's file alone when only the agent is pinned", () => {
+    expect(effectiveAgentRequirements(AGENT, pins({ 'comfy-agent': '0.2.3' }), MAIN)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
+    })
+  })
+
+  it('is held where it is unless this override pins it', () => {
+    const list = JSON.stringify([
+      { name: 'comfyui-frontend-package', version: '1.55.18' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list)).toBe('comfyui-frontend-package==1.55.18\nrequests==2.32.0\n')
+    expect(installedConstraints(list, pins({ 'comfyui-frontend-package': '1.55.19' }))).toBe(
+      'requests==2.32.0\n'
+    )
+  })
+
+  it("reads ComfyUI's exact pin, or none", () => {
+    expect(coreFrontendVersion(MAIN)).toBe('1.55.18')
+    expect(coreFrontendVersion('comfyui_frontend_package == 1.2.3  # pinned\n')).toBe('1.2.3')
+    expect(coreFrontendVersion('comfyui-frontend-package>=1.0\n')).toBeNull()
+    expect(coreFrontendVersion('comfyui-frontend-package\n')).toBeNull()
+    expect(coreFrontendVersion('torch\n')).toBeNull()
+  })
+
+  it('reads back the recorded version, or none', () => {
+    const record = (frontendVersionOverride: unknown): InstallationRecord =>
+      ({ frontendVersionOverride }) as unknown as InstallationRecord
+    expect(readFrontendPin(record({ version: '1.55.19' }))).toBe('1.55.19')
+    for (const bad of [undefined, null, 'x', { version: 3 }])
+      expect(readFrontendPin(record(bad))).toBeNull()
   })
 })

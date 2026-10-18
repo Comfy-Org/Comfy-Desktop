@@ -4,7 +4,18 @@ import * as telemetry from './telemetry'
 import { createStreamLineBuffer, stripAnsi } from './stderrTail'
 import type { StreamSource } from './stderrTail'
 
-const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries'])
+export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
+
+/**
+ * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
+ * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
+ */
+const OVERRIDABLE = new Set([
+  'comfy-agent',
+  'comfy-cli',
+  'nodejs-wheel-binaries',
+  FRONTEND_PACKAGE
+])
 
 /** PEP 440 public versions only, so no operator, URL, index, option or marker can get through. */
 const EXACT_VERSION =
@@ -65,7 +76,7 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
-    if (Array.isArray(pin)) {
+    if (Array.isArray(pin) && normalized !== FRONTEND_PACKAGE) {
       const urls = pin.map(normalizeOverrideUrl)
       if (urls.length === 0 || urls.includes(null)) return { kind: 'refused', reason: 'bad_url' }
       pins.set(normalized, urls as string[])
@@ -126,14 +137,33 @@ export function overrideSignature(pins: OverridePins): string {
     .join(',')
 }
 
+/**
+ * `mainText` is ComfyUI's `requirements.txt`: a pinned package the agent's file doesn't name is
+ * taken from there under the same rules, and its pinned line appended.
+ */
 export function effectiveAgentRequirements(
   coreText: string,
-  pins: OverridePins
+  pins: OverridePins,
+  mainText = ''
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
   // Per package: whether its lines so far are URL lines, which may repeat (one per platform).
   const seen = new Map<string, boolean>()
   const out: string[] = []
-  for (const text of coreText.split(/\r?\n/)) {
+  const agentNames = new Set(
+    coreText.split(/\r?\n/).flatMap((line) => {
+      const name = line.match(LEADING_NAME)?.[1]
+      return name ? [normalizePackageName(name)] : []
+    })
+  )
+  const fromMain = mainText.split(/\r?\n/).filter((line) => {
+    const name = line.match(LEADING_NAME)?.[1]
+    const normalized = name && normalizePackageName(name)
+    return !!normalized && pins.has(normalized) && !agentNames.has(normalized)
+  })
+  // Before the agent file's trailing newline, so the result still ends in one.
+  const lines = coreText.split(/\r?\n/)
+  const tail = lines.at(-1) === '' ? lines.splice(-1) : []
+  for (const text of [...lines, ...fromMain, ...tail]) {
     const name = text.match(LEADING_NAME)?.[1]
     const normalized = name && normalizePackageName(name)
     const pin = normalized ? pins.get(normalized) : undefined
@@ -190,12 +220,20 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
-/** Pins every installed non-agent package where it is, so an override that moves one falls back. */
-export function installedConstraints(pipListOutput: string): string | null {
+/**
+ * Pins every installed non-agent package where it is, so an override that moves one falls back.
+ * The frontend is held too unless this override pins it.
+ */
+export function installedConstraints(
+  pipListOutput: string,
+  pins: OverridePins = new Map()
+): string | null {
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
+  const free = (name: string): boolean =>
+    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name)
   const lines = installed
-    .filter(({ name }) => !OVERRIDABLE.has(normalizePackageName(name)))
+    .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
   return lines.join('\n') + '\n'
 }
@@ -341,4 +379,22 @@ export function nextOverrideState(
   const base = previous?.signature === signature ? previous.failures : 0
   const failures = outcome === 'started' ? 0 : base + 1
   return { state: { signature, failures }, reverted: failures === START_FAILURES_TO_REVERT }
+}
+
+/** ComfyUI's own `==` frontend version, or null when its `requirements.txt` pins none exactly. */
+export function coreFrontendVersion(mainText: string): string | null {
+  for (const line of mainText.split(/\r?\n/)) {
+    const match = line.match(REQUIREMENT_LINE)
+    if (!match || normalizePackageName(match[1]!) !== FRONTEND_PACKAGE) continue
+    return match[2] !== undefined && EXACT_VERSION.test(match[2]) ? match[2] : null
+  }
+  return null
+}
+
+/** The frontend version an applied override put in, recorded until ComfyUI's is back. */
+export function readFrontendPin(installation: InstallationRecord): string | null {
+  const state = installation.frontendVersionOverride
+  if (!state || typeof state !== 'object') return null
+  const { version } = state as Record<string, unknown>
+  return typeof version === 'string' ? version : null
 }
