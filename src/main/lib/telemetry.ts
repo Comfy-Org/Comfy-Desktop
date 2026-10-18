@@ -138,6 +138,7 @@ import {
 } from './anonymousIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
 import type { CloudUserTier } from '../../types/ipc'
+import type { SmartAppControlState } from './smartAppControl'
 import { recordIpcInvocation } from './e2eOverrides'
 import {
   clearPendingIdentityMerges,
@@ -199,6 +200,7 @@ export function _resetForTest(): void {
   consentState = 'undecided'
   flagEvaluationStaff = false
   flagEvaluationUserTier = null
+  flagEvaluationSacState = null
   flagEvaluationAppVersion = null
   pendingSessionStart = null
   pendingFirstLaunch = null
@@ -343,7 +345,8 @@ export const DEFAULT_EVENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'platform',
   'arch',
   'client',
-  'installation_id'
+  'installation_id',
+  'sac_state'
 ])
 
 /**
@@ -436,6 +439,13 @@ let flagEvaluationStaff = false
 let flagEvaluationUserTier: Exclude<CloudUserTier, 'unknown'> | null = null
 
 /**
+ * Windows Smart App Control state (`smartAppControl.ts`), sent with every ops-flag evaluation as
+ * `sac_state` so a rollout of an unsigned component can exclude machines where SAC would block
+ * it. Not consent-gated: like `platform` it describes the machine. `null` until read.
+ */
+let flagEvaluationSacState: SmartAppControlState | null = null
+
+/**
  * This build's version, sent with every ops-flag evaluation as `app_version` so
  * a release condition can gate on it with PostHog's semver operators. Set once
  * by `initTelemetry`; `null` until then, and no request goes out before it,
@@ -464,6 +474,12 @@ export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
   flagEvaluationUserTier = tier === 'unknown' ? null : tier
 }
 
+/** Bind the Smart App Control state for ops-flag evaluation and as an event property. */
+export function setSmartAppControlState(state: SmartAppControlState): void {
+  flagEvaluationSacState = state
+  defaultEventProperties = { ...defaultEventProperties, sac_state: state }
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -484,7 +500,8 @@ export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
  * a trust boundary: never gate anything a user could want withheld on it.
  *
  * `platform` always (`process.platform`: `win32`, `darwin`, `linux`): like `app_version` it
- * describes the machine, not the person, so a per-OS condition reaches every install.
+ * describes the machine, not the person, so a per-OS condition reaches every install. `sac_state`
+ * likewise, once read (`on`, `evaluation`, `off`, `not_applicable`, `unknown`).
  *
  * Only when consent is `'granted'`: `comfy_staff` when the account is staff, and `user_tier`
  * (`paid`/`free`) when a tier is known. The flag FETCH
@@ -504,6 +521,7 @@ function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
   properties['platform'] = process.platform
+  if (flagEvaluationSacState) properties['sac_state'] = flagEvaluationSacState
   if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
   if (consentState === 'granted' && flagEvaluationUserTier) {
     properties['user_tier'] = flagEvaluationUserTier
@@ -1786,7 +1804,7 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, `app_version`, `platform`, and — only once consent is `'granted'` — `comfy_staff`
+ * key, `app_version`, `platform`, `sac_state` once read, and — only once consent is `'granted'` — `comfy_staff`
  * for staff and `user_tier` when known, via `opsFlagPersonProperties`. Those properties are
  * request-scoped: the SDK puts them in the `/flags` POST body as
  * `person_properties`, where the server evaluates release conditions against

@@ -429,6 +429,26 @@ describe('telemetry.bucketError', () => {
 })
 
 describe('telemetry default event properties', () => {
+  it('carries sac_state on session.started when read before binding, as boot does', () => {
+    setupTelemetry({ bind: null })
+    telemetry.setSmartAppControlState('on')
+    bindTestAnonymous('boot-id')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
+  it('adds sac_state to every capture once read, keeping installation_id', () => {
+    setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
+    captured.length = 0
+
+    telemetry.capture('comfy.desktop.test.event', {})
+
+    expect(captured[0]!.properties).toMatchObject({ sac_state: 'off', platform: process.platform })
+    expect(captured[0]!.properties).toHaveProperty('installation_id')
+  })
+
   it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
     setupTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', bind: 'id' })
     captured.length = 0
@@ -451,6 +471,7 @@ describe('telemetry default event properties', () => {
 
   it('lists every default property in DEFAULT_EVENT_PROPERTY_NAMES', () => {
     setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
     captured.length = 0
     telemetry.capture('any.event')
     const keys = Object.keys(captured[0]!.properties ?? {}).filter((key) => !key.startsWith('$'))
@@ -904,6 +925,28 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  // `sac_state` lets a rollout of an unsigned component exclude machines where Smart App Control
+  // would block it. A fact about the machine, like `platform`, so it is sent with or without consent.
+  it.each(['granted', 'denied', null] as const)(
+    'sends sac_state once read, with consent %s',
+    async (consent) => {
+      setupTelemetry({ consent })
+      telemetry.setSmartAppControlState('on')
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ ...BASE_PROPS, sac_state: 'on' })
+    }
+  )
+
+  it('sends no sac_state before it has been read', async () => {
+    setupTelemetry({ consent: 'granted' })
+
+    await evaluate()
+
     expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
