@@ -152,6 +152,7 @@ export async function previewCoreBetaArgs(
     now: Date.now(),
     betaEnabled: true,
     presentArgs: campaignPresentArgs(split.userArgs, plan),
+    assetsWithheldOnProof: plan.assetsWithheldOnProof,
     core,
     commits,
     schema

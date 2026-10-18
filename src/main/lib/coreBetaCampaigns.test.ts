@@ -398,6 +398,73 @@ describe('planCampaignArgs: enrol', () => {
   })
 })
 
+describe('planCampaignArgs: a campaign-only --enable-assets', () => {
+  const RANGE_SHA = 'c'.repeat(40)
+  const assetsPayload = {
+    grants: [
+      {
+        arg: '--enable-assets',
+        commit_ranges: [[RANGE_SHA, null]],
+        enrolment: { epoch: 1, epochs: [1] }
+      },
+      {
+        arg: '--enable-agent',
+        commit_ranges: [[RANGE_SHA, null]],
+        requires_args: ['--enable-assets'],
+        enrolment: { epoch: 1, epochs: [1] }
+      }
+    ]
+  }
+  const proven = { head: 'b'.repeat(40), ancestry: new Map([[RANGE_SHA, true]]) }
+  const assetsFacts = (overrides: Partial<CampaignFacts> = {}): CampaignFacts =>
+    facts({
+      registry: [{ key: KEY, args: ['--enable-assets', '--enable-agent'] }],
+      answers: new Map([[KEY, answer('enrol', assetsPayload)]]),
+      presentArgs: [],
+      commits: proven,
+      assetsWithheldOnProof: true,
+      ...overrides
+    })
+
+  it('is accepted from a campaign answer', () => {
+    expect(answer('enrol', assetsPayload).grants.map(({ grant }) => grant.arg)).toEqual([
+      '--enable-assets',
+      '--enable-agent'
+    ])
+  })
+
+  it('turns assets on when Desktop withheld them for want of proof, and satisfies requires_args', () => {
+    expect(args(planCampaignArgs(assetsFacts()))).toEqual(['--enable-assets', '--enable-agent'])
+  })
+
+  it.each([
+    ['withheld for another reason', { assetsWithheldOnProof: false }],
+    ['the caller does not say', { assetsWithheldOnProof: undefined }]
+  ])('refuses when %s, and the agent grant that requires it misses too', (_, overrides) => {
+    const plan = planCampaignArgs(assetsFacts(overrides))
+    expect(args(plan)).toEqual([])
+    expect(plan.misses.map(({ arg, reason }) => [arg, reason])).toEqual([
+      ['--enable-assets', 'gates'],
+      ['--enable-agent', 'requires_args']
+    ])
+  })
+
+  it.each([
+    ['Desktop already asked for assets', '--enable-assets'],
+    ['the force-off or the user turned them off', '--disable-assets']
+  ])('refuses when %s', (_, present) => {
+    const plan = planCampaignArgs(assetsFacts({ presentArgs: [present] }))
+    expect(plan.misses.find(({ arg }) => arg === '--enable-assets')?.reason).toBe('present')
+    expect(args(plan)).not.toContain('--enable-assets')
+  })
+
+  it('refuses outside its commit range, and on a core that cannot parse the flag', () => {
+    const outside = { head: 'b'.repeat(40), ancestry: new Map([[RANGE_SHA, false]]) }
+    expect(args(planCampaignArgs(assetsFacts({ commits: outside })))).toEqual([])
+    expect(args(planCampaignArgs(assetsFacts({ schema: schemaOf('enable-agent') })))).toEqual([])
+  })
+})
+
 describe('planCampaignArgs: hold', () => {
   const hold = (overrides: Partial<CampaignFacts> = {}): CampaignFacts =>
     facts({ answers: new Map([[KEY, answer('hold')]]), records: member, ...overrides })
