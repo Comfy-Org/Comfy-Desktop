@@ -28,6 +28,7 @@ import {
   commitGrantShas,
   getCoreBetaGrantsAsync,
   initCoreBetaGrants,
+  parseCampaignBetaGrants,
   parseCoreBetaGrants,
   planCoreBetaArgs,
   selectCoreBetaGrantArgs,
@@ -1247,6 +1248,31 @@ describe('Desktop assets args', () => {
   ])('does not ask when %s', (_, overrides: Partial<CoreBetaFacts>, reason) => {
     expect(planCoreBetaArgs(facts(overrides)).assetsArgs).toEqual([])
     expect(withheld(overrides)).toBe(reason)
+  })
+
+  it.each([
+    ['the floor commit is unresolved', { commits: { head: HEAD, ancestry: new Map() } }, true],
+    ['a git-less release is below the floor', { commits: NO_CORE_COMMITS }, true],
+    [
+      'the core lacks the floor commit',
+      { commits: { head: HEAD, ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, false]]) } },
+      false
+    ],
+    ['assets passed', {}, false],
+    ['the core predates the flag', { schema: schemaOf() }, false],
+    ['the user turned assets off', { userArgs: ['--disable-assets'] }, false],
+    ['a force-off entry is served', { grants: [forceOff] }, false]
+  ])(
+    'leaves assets to a campaign only for want of proof: %s',
+    (_, overrides: Partial<CoreBetaFacts>, open) => {
+      expect(planCoreBetaArgs(facts(overrides)).assetsWithheldOnProof).toBe(open)
+    }
+  )
+
+  it('never accepts --enable-assets as a slot #0 grant, only through a campaign', () => {
+    const payload = { flags: [{ arg: '--enable-assets', min_core_version: '0.0.0' }] }
+    expect(parseCoreBetaGrants(true, payload)).toEqual([])
+    expect(parseCampaignBetaGrants(payload).map((g) => g.arg)).toEqual(['--enable-assets'])
   })
 
   it.each([

@@ -23,7 +23,8 @@ export const CORE_BETA_FEATURES_FLAG_KEY = 'desktop_core_beta_features'
  * by hand (they may, and it wins; see `selectCoreBetaGrantArgs`).
  *
  * `--enable-assets` is not here: Desktop asks for assets itself. `--disable-assets` is, but as the
- * assets force-off rather than a grant (`assetsArgs`).
+ * assets force-off rather than a grant (`assetsArgs`). A campaign may still grant `--enable-assets`
+ * (`CAMPAIGN_ONLY_GRANTABLE_ARGS`).
  *
  * An entry need not exist in Core yet: `--enable-agent` lands here ahead of the Core flag because
  * Desktop reaches users on its own update cadence — the allowlist has to already be installed
@@ -36,6 +37,13 @@ export const CORE_BETA_GRANTABLE_ARGS = [
   '--disable-assets',
   '--enable-agent'
 ] as const
+
+/** Args only a campaign may grant, never slot #0. `--enable-assets` is one so a campaign can turn
+ *  assets on for a Core that has the fixes but cannot prove it, e.g. a shallow checkout whose
+ *  ancestry stops short of the floor commit. The campaign's own commit range is the proof then.
+ *  It applies only when Desktop withheld assets for want of proof (`assetsWithheldOnProof`): the
+ *  remote force-off, a user's `--disable-assets` and an unsupported core still win. */
+export const CAMPAIGN_ONLY_GRANTABLE_ARGS = ['--enable-assets'] as const
 
 /** Desktop passes `--enable-assets` to every Core containing this commit, with no grant and
  *  whatever the beta toggle. */
@@ -194,13 +202,30 @@ export function parseCoreBetaGrants(
   value: FeatureFlagValue | undefined,
   payload: unknown
 ): CoreBetaGrant[] {
+  return parseGrantsAllowing(CORE_BETA_GRANTABLE_ARGS, value, payload)
+}
+
+/** A campaign's grants: slot #0's allowlist plus `CAMPAIGN_ONLY_GRANTABLE_ARGS`. */
+export function parseCampaignBetaGrants(payload: unknown): CoreBetaGrant[] {
+  return parseGrantsAllowing(
+    [...CORE_BETA_GRANTABLE_ARGS, ...CAMPAIGN_ONLY_GRANTABLE_ARGS],
+    true,
+    payload
+  )
+}
+
+function parseGrantsAllowing(
+  allowlist: readonly string[],
+  value: FeatureFlagValue | undefined,
+  payload: unknown
+): CoreBetaGrant[] {
   if (!isEnabled(value) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return []
   }
   const requested = 'flags' in payload ? payload.flags : undefined
   if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return []
 
-  const allowed = new Set(CORE_BETA_GRANTABLE_ARGS)
+  const allowed = new Set<string>(allowlist)
   const flags: CoreBetaGrant[] = []
   for (const candidate of requested) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
@@ -534,6 +559,9 @@ export interface CoreBetaPlan {
   readonly assetsArgs: readonly string[]
   /** Why, for the install's log. */
   readonly assetsRecord: string
+  /** `true` when the only reason assets were withheld is that the floor commit or release is
+   *  unproven (not disproven). Only then may a campaign grant `--enable-assets`. */
+  readonly assetsWithheldOnProof: boolean
 }
 
 const FORCED_OFF = 'forced off remotely'
@@ -566,9 +594,12 @@ export function assetsFloorShas(
   return needed ? [ASSETS_MIN_CORE_COMMIT] : []
 }
 
-function assetsDecision(facts: CoreBetaFacts): Pick<CoreBetaPlan, 'assetsArgs' | 'assetsRecord'> {
+function assetsDecision(
+  facts: CoreBetaFacts
+): Pick<CoreBetaPlan, 'assetsArgs' | 'assetsRecord' | 'assetsWithheldOnProof'> {
   const { grants, userArgs, schema, core, commits } = facts
   let withheld = assetsDecided(grants, userArgs, schema)
+  const decided = withheld === null
   if (
     withheld === null &&
     !releaseAtAssetsFloor(core) &&
@@ -582,10 +613,16 @@ function assetsDecision(facts: CoreBetaFacts): Pick<CoreBetaPlan, 'assetsArgs' |
         : `${where} proves neither ${floor} nor a verified v${ASSETS_MIN_CORE_VERSION}+ release`
   }
   const assetsRecord = `[assets] ${ASSETS_ARG} ${withheld === null ? 'passed' : `withheld: ${withheld}`}`
-  if (withheld === null) return { assetsArgs: [ASSETS_ARG], assetsRecord }
+  if (withheld === null)
+    return { assetsArgs: [ASSETS_ARG], assetsRecord, assetsWithheldOnProof: false }
   // Cores with assets on by default need the force-off itself on the command line.
   const forceOff = withheld === FORCED_OFF && schema.knownFlags.has(ASSETS_FORCE_OFF_ARG.slice(2))
-  return { assetsArgs: forceOff ? [ASSETS_FORCE_OFF_ARG] : [], assetsRecord }
+  return {
+    assetsArgs: forceOff ? [ASSETS_FORCE_OFF_ARG] : [],
+    assetsRecord,
+    // A core proven NOT to contain the floor is never a campaign's to override.
+    assetsWithheldOnProof: decided && commits.ancestry.get(ASSETS_MIN_CORE_COMMIT) !== false
+  }
 }
 
 /** The Core beta decision as a pure function: no I/O and no logging. */

@@ -7,9 +7,10 @@
  * or removing the grant are emergency levers that leave ex-members reporting idle `no_answer`.
  */
 import {
+  CAMPAIGN_ONLY_GRANTABLE_ARGS,
   CORE_BETA_FEATURES_FLAG_KEY,
   oppositeArg,
-  parseCoreBetaGrants,
+  parseCampaignBetaGrants,
   selectCoreBetaGrantArgs
 } from './coreBetaGrants'
 import type {
@@ -95,9 +96,9 @@ export function parseCampaignRegistry(
 }
 
 function parseCampaignGrant(candidate: unknown): CampaignGrant | null {
-  const [grant] = parseCoreBetaGrants(true, { flags: [candidate] })
+  const [grant] = parseCampaignBetaGrants({ flags: [candidate] })
   if (grant === undefined || !isEnableArg(grant.arg)) return null
-  // `parseCoreBetaGrants` accepted it, so it is an object.
+  // `parseCampaignBetaGrants` accepted it, so it is an object.
   const { enrolment, requires_args } = candidate as { enrolment?: unknown; requires_args?: unknown }
   if (!enrolment || typeof enrolment !== 'object') return null
   const { epoch, epochs } = enrolment as { epoch?: unknown; epochs?: unknown }
@@ -185,6 +186,9 @@ export interface CampaignFacts {
   readonly betaEnabled: boolean
   /** The user's own args plus the args slot #0 applied this launch. */
   readonly presentArgs: readonly string[]
+  /** Slot #0's `assetsWithheldOnProof`: a campaign may grant `--enable-assets` only when set.
+   *  Absent counts as `false`, so a caller that does not say never turns assets on. */
+  readonly assetsWithheldOnProof?: boolean
   readonly core: CoreVersionState
   readonly commits: CoreCommitState
   readonly schema: ComfyArgsSchema
@@ -261,6 +265,10 @@ export function campaignPresentArgs(
   return [...userArgs, ...slot0.assetsArgs, ...slot0.applied.map((grant) => grant.arg)]
 }
 
+function isCampaignOnlyArg(arg: string): boolean {
+  return (CAMPAIGN_ONLY_GRANTABLE_ARGS as readonly string[]).includes(arg)
+}
+
 export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   const applied: CampaignApplied[] = []
   const misses: CampaignMiss[] = []
@@ -289,6 +297,10 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
       const opposite = oppositeArg(arg)
       if (present.has(arg) || (opposite !== null && present.has(opposite))) {
         miss('present', 'already decided by the launch args or an earlier grant')
+        continue
+      }
+      if (isCampaignOnlyArg(arg) && facts.assetsWithheldOnProof !== true) {
+        miss('gates', 'Desktop withheld assets for a reason a campaign does not override')
         continue
       }
       // Present AND supported: the schema strips an unsupported user arg from the command line.

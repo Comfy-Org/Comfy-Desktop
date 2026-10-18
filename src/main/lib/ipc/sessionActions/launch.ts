@@ -274,6 +274,7 @@ export function buildLaunchArgs(input: {
         ...input.campaign,
         betaEnabled: input.betaEnabled,
         presentArgs: campaignPresentArgs(userArgs, plan),
+        assetsWithheldOnProof: plan.assetsWithheldOnProof,
         core: {
           semver: coreVersion,
           exact: input.coreVersionExact,
