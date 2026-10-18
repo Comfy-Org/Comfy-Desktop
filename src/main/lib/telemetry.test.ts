@@ -429,6 +429,15 @@ describe('telemetry.bucketError', () => {
 })
 
 describe('telemetry default event properties', () => {
+  it('carries sac_state on session.started when read before binding, as boot does', () => {
+    setupTelemetry({ bind: null })
+    telemetry.setSmartAppControlState('on')
+    bindTestAnonymous('boot-id')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
   it('adds sac_state to every capture once read, keeping installation_id', () => {
     setupTelemetry({ bind: 'id' })
     telemetry.setSmartAppControlState('off')

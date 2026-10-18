@@ -68,6 +68,8 @@ describe('readSmartAppControlState', () => {
 
   beforeEach(() => {
     execFileMock.mockReset()
+    // Fail by default, so a test that should not read fails on its assertion, not a timeout.
+    execFileMock.mockImplementation((_file, _args, _opts, cb) => cb(new Error('unexpected'), '', ''))
     releaseMock.mockReturnValue('10.0.26100')
     setPlatform('win32')
   })
@@ -94,6 +96,26 @@ describe('readSmartAppControlState', () => {
     )
 
     await expect(readSmartAppControlState()).resolves.toBe('unknown')
+  })
+
+  it('is unknown when spawning throws instead of calling back', async () => {
+    execFileMock.mockImplementation(() => {
+      throw new Error('spawn EINVAL')
+    })
+
+    await expect(readSmartAppControlState()).resolves.toBe('unknown')
+  })
+
+  it('finds reg.exe under SystemRoot', async () => {
+    const original = process.env.SystemRoot
+    process.env.SystemRoot = 'D:\\Win'
+    try {
+      await readSmartAppControlState()
+    } finally {
+      if (original === undefined) delete process.env.SystemRoot
+      else process.env.SystemRoot = original
+    }
+    expect(String(execFileMock.mock.calls[0]![0])).toMatch(/^D:\\Win[\\/]System32[\\/]reg\.exe$/)
   })
 
   it.each(['darwin', 'linux'] as const)('is not_applicable on %s without reading', async (p) => {

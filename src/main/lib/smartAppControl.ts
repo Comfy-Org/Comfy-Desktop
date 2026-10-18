@@ -39,11 +39,16 @@ export function readSmartAppControlState(): Promise<SmartAppControlState> {
   if (build < FIRST_SAC_BUILD) return Promise.resolve('not_applicable')
   const regExe = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe')
   return new Promise((resolve) => {
-    execFile(
-      regExe,
-      ['query', POLICY_KEY],
-      { timeout: READ_TIMEOUT_MS, windowsHide: true },
-      (err, stdout) => resolve(err ? 'unknown' : parsePolicyKeyListing(stdout))
-    )
+    try {
+      execFile(
+        regExe,
+        ['query', POLICY_KEY],
+        { timeout: READ_TIMEOUT_MS, windowsHide: true },
+        (err, stdout) => resolve(err ? 'unknown' : parsePolicyKeyListing(stdout))
+      )
+    } catch {
+      // Some spawn failures throw instead of reaching the callback.
+      resolve('unknown')
+    }
   })
 }
