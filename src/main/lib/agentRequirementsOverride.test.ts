@@ -581,6 +581,30 @@ describe('the agent package name and extras', () => {
     ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
   })
 
+  it('does not claim a package whose name only runs on from comfy-agent', () => {
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agentx==1.0\ncomfy-agent-oss==0.2.0\n',
+        pins({ 'comfy-agent': '0.2.3' })
+      )
+    ).toEqual({ kind: 'text', text: 'comfy-agentx==1.0\ncomfy-agent-oss==0.2.3\n' })
+    expect(
+      effectiveAgentRequirements('comfy-agentx==1.0\n', pins({ 'comfy-agent': '0.2.3' }))
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+    const list = JSON.stringify([
+      { name: 'comfy-agentx', version: '1.0' },
+      { name: 'comfy-agent-oss', version: '0.2.0' }
+    ])
+    expect(installedConstraints(list), 'comfy-agentx is held; the agent is not').toBe(
+      'comfy-agentx==1.0\n'
+    )
+  })
+
+  it('refuses a version or extras with a trailing newline, without relying on a trim', () => {
+    for (const raw of [{ 'comfy-agent': '1.0\n' }, { 'comfy-agent[go\n]': '1.0' }])
+      expect(parseAgentRequirementsOverride(raw).kind, JSON.stringify(raw)).toBe('refused')
+  })
+
   it('cannot name the package: only the comfy-agent key selects the agent line', () => {
     for (const key of ['comfy-agent-oss', 'comfy-agentx', 'comfy-agent-oss[go]'])
       expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({

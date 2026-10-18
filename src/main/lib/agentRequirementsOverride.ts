@@ -28,11 +28,12 @@ const EXTRA = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
 
 const AGENT_KEY = 'comfy-agent'
 /**
- * The agent's key decorates the first line of core's file whose name starts with `comfy-agent`,
- * so a renamed agent package (`comfy-agent-oss`) is still found. The name always comes from core's
- * line: a pin supplies the version and extras, never the package.
+ * The agent's key decorates the first line of core's file whose name is `comfy-agent` or starts
+ * with `comfy-agent-`, so a renamed agent package (`comfy-agent-oss`) is still found but an
+ * unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
+ * version and extras, never the package.
  */
-const AGENT_LINE = /^comfy-agent/
+const AGENT_LINE = /^comfy-agent(?:-|$)/
 
 function pinKey(normalized: string): string {
   return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
@@ -104,7 +105,8 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
 
 /** Comma-separated PEP 508 extra names, canonicalised and sorted, or null for anything else. */
 function parseExtras(text: string): string[] | null {
-  const extras = text.split(',').map((extra) => extra.trim())
+  // Spaces only: a trim would also take a newline or tab, which has no place in the line.
+  const extras = text.split(',').map((extra) => extra.replace(/^ +| +$/g, ''))
   if (!extras.every((extra) => EXTRA.test(extra))) return null
   return [...new Set(extras.map(normalizePackageName))].sort()
 }
