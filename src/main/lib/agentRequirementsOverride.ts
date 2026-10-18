@@ -143,15 +143,6 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
-    if (Array.isArray(pin)) {
-      const urls = pin.map(normalizeOverrideUrl)
-      if (urls.length === 0 || urls.includes(null)) return { kind: 'refused', reason: 'bad_url' }
-      pins.set(normalized, urls as string[])
-    } else if (typeof pin !== 'string' || !EXACT_VERSION.test(pin)) {
-      return { kind: 'refused', reason: 'bad_version' }
-    } else {
-      pins.set(normalized, pin)
-    }
     let pin: OverridePin
     if (Array.isArray(version)) {
       const urls = version.map(normalizeOverrideUrl)
