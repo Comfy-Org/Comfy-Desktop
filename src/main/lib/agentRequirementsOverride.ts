@@ -8,7 +8,10 @@ export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
 
 /**
  * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
- * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
+ * published to PyPI can reach the agent cohort before ComfyUI's next pin.
+ *
+ * QA TIER: any of these may also be given as URL entries (`OVERRIDE_URL`), which point a QA
+ * campaign at an unpublished build. Production campaigns pin published exact versions only.
  */
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
 
@@ -17,7 +20,20 @@ const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
+/**
+ * An override's URL entry: a wheel under Comfy-Org on GitHub, so nothing builds at install. Printable ASCII
+ * without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..` (either could leave Comfy-Org once
+ * the URL is normalised).
+ */
+const OVERRIDE_URL =
+  /^https:\/\/github\.com\/Comfy-Org\/(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+/** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
+const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
+/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker. uv reads `url;marker` as one URL. */
+const URL_LINE = new RegExp(
+  LEADING_NAME.source + String.raw`\s*@\s*https:\/\/[^\s;]+(?:\s+;([^#]*))?\s*(?:\s#.*)?$`
+)
 
 export const START_FAILURES_TO_REVERT = 2
 
@@ -25,13 +41,16 @@ export type OverrideRefusal =
   | 'not_object'
   | 'unknown_package'
   | 'bad_version'
+  | 'bad_url'
   | 'not_in_core_file'
   | 'unsupported_line'
   | 'not_newer'
   | 'check_failed'
   | 'core_first'
 
-export type OverridePins = ReadonlyMap<string, string>
+/** An exact version, or the URL entries (`https://…[ ; marker]`, normalised) that replace the package's lines. */
+export type OverridePin = string | readonly string[]
+export type OverridePins = ReadonlyMap<string, OverridePin>
 
 export type ParsedOverride =
   | { kind: 'none' }
@@ -49,18 +68,38 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     return { kind: 'refused', reason: 'not_object' }
   const entries = Object.entries(raw)
   if (entries.length === 0) return { kind: 'none' }
-  const pins = new Map<string, string>()
-  for (const [name, version] of entries) {
+  const pins = new Map<string, OverridePin>()
+  for (const [name, pin] of entries) {
     const normalized = normalizePackageName(name)
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
-    if (typeof version !== 'string' || !EXACT_VERSION.test(version)) {
+    if (Array.isArray(pin)) {
+      const urls = pin.map(normalizeOverrideUrl)
+      if (urls.length === 0 || urls.includes(null)) return { kind: 'refused', reason: 'bad_url' }
+      pins.set(normalized, urls as string[])
+    } else if (typeof pin !== 'string' || !EXACT_VERSION.test(pin)) {
       return { kind: 'refused', reason: 'bad_version' }
+    } else {
+      pins.set(normalized, pin)
     }
-    pins.set(normalized, version)
   }
   return { kind: 'pins', pins }
+}
+
+/** `url ; marker` or `url`, or null for anything else. */
+function normalizeOverrideUrl(entry: unknown): string | null {
+  if (typeof entry !== 'string') return null
+  const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
+  if (rest.length > 0 || !OVERRIDE_URL.test(url!)) return null
+  if (marker === undefined) return url!
+  return MARKER.test(marker) ? `${url} ; ${marker}` : null
+}
+
+/** The requirement lines a pin puts in place of the package's own. */
+function pinLines(name: string, pin: OverridePin): string[] {
+  if (typeof pin === 'string') return [`${name}==${pin}`]
+  return pin.map((entry) => `${name} @ ${entry}`)
 }
 
 const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
@@ -91,7 +130,7 @@ export function compareVersions(a: string, b: string): number {
 
 export function overrideSignature(pins: OverridePins): string {
   return [...pins]
-    .map(([name, version]) => `${name}==${version}`)
+    .flatMap(([name, pin]) => pinLines(name, pin))
     .sort()
     .join(',')
 }
@@ -105,10 +144,11 @@ export function effectiveAgentRequirements(
   pins: OverridePins,
   mainText = ''
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
-  const seen = new Set<string>()
-  const lines = coreText.split(/\r?\n/)
+  // Per package: whether its lines so far are URL lines, which may repeat (one per platform).
+  const seen = new Map<string, boolean>()
+  const out: string[] = []
   const agentNames = new Set(
-    lines.flatMap((line) => {
+    coreText.split(/\r?\n/).flatMap((line) => {
       const name = line.match(LEADING_NAME)?.[1]
       return name ? [normalizePackageName(name)] : []
     })
@@ -119,27 +159,41 @@ export function effectiveAgentRequirements(
     return !!normalized && pins.has(normalized) && !agentNames.has(normalized)
   })
   // Before the agent file's trailing newline, so the result still ends in one.
-  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
-  for (let i = 0; i < lines.length; i++) {
-    const name = lines[i]!.match(LEADING_NAME)?.[1]
-    if (!name) continue
-    const normalized = normalizePackageName(name)
-    const version = pins.get(normalized)
-    if (version === undefined) continue
-    const line = lines[i]!.match(REQUIREMENT_LINE)
+  const lines = coreText.split(/\r?\n/)
+  const tail = lines.at(-1) === '' ? lines.splice(-1) : []
+  for (const text of [...lines, ...fromMain, ...tail]) {
+    const name = text.match(LEADING_NAME)?.[1]
+    const normalized = name && normalizePackageName(name)
+    const pin = normalized ? pins.get(normalized) : undefined
+    if (pin === undefined) {
+      out.push(text)
+      continue
+    }
+    const url = text.match(URL_LINE)
+    const marker = url?.[2]?.trim()
+    const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
-    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || seen.has(normalized)) {
+    if (
+      (!line && !url) ||
+      (marker !== undefined && !MARKER.test(marker)) ||
+      /\\\s*$/.test(text) ||
+      (pinned !== undefined && !EXACT_VERSION.test(pinned)) ||
+      (seen.has(normalized!) && !(url && seen.get(normalized!)))
+    ) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (pinned !== undefined && compareVersions(version, pinned) <= 0) {
+    // An exact pin must be newer than a line core pinned. A URL pin names a build, not a version, so
+    // it goes over any line (QA tier), as an exact pin goes over a bare or URL line: the campaign decides.
+    if (pinned !== undefined && typeof pin === 'string' && compareVersions(pin, pinned) <= 0) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    seen.add(normalized)
-    lines[i] = `${name}==${version}`
+    // An exact pin keeps each URL line's marker, so it lands only where core's file would install.
+    if (url && typeof pin === 'string') out.push(`${name}==${pin}${marker ? ` ; ${marker}` : ''}`)
+    else if (!seen.has(normalized!)) out.push(...pinLines(name!, pin))
+    seen.set(normalized!, !!url)
   }
   if (seen.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
-  return { kind: 'text', text: lines.join('\n') }
+  return { kind: 'text', text: out.join('\n') }
 }
 
 function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
@@ -335,7 +389,8 @@ export function coreFrontendVersion(mainText: string): string | null {
   return null
 }
 
-/** The frontend version an applied override put in, recorded until ComfyUI's is back. */
+/** The frontend pin an applied override put in (a version, or its URL entries), recorded until
+ *  ComfyUI's is back. */
 export function readFrontendPin(installation: InstallationRecord): string | null {
   const state = installation.frontendVersionOverride
   if (!state || typeof state !== 'object') return null
