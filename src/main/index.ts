@@ -119,12 +119,7 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import {
-  getCoreBetaCampaigns,
-  initCoreBetaFlags,
-  readCampaignRecords
-} from './lib/coreBetaCampaignFlags'
-import { answeredFrontendPins, syncFrontendCache } from './lib/frontendCache'
+import { initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
@@ -1552,20 +1547,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    const betaAtBoot = settings.peekBetaFeaturesEnabled()
-    void initCoreBetaFlags({ distinctId: installationId, betaEnabled: betaAtBoot })
-      // A campaign's pinned frontend downloads now, so the first launch it applies to can serve
-      // it; with beta off nothing is pinned and the cache empties.
-      .then(async () =>
-        syncFrontendCache(
-          betaAtBoot
-            ? answeredFrontendPins((await getCoreBetaCampaigns()).answers, readCampaignRecords())
-            : []
-        )
-      )
-      .catch((err: unknown) =>
-        console.warn('[core-campaign] campaign flags or frontend cache upkeep failed:', err)
-      )
+    void initCoreBetaFlags({
+      distinctId: installationId,
+      betaEnabled: settings.peekBetaFeaturesEnabled()
+    })
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
