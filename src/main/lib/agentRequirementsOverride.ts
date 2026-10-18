@@ -8,7 +8,10 @@ export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
 
 /**
  * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
- * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
+ * published to PyPI can reach the agent cohort before ComfyUI's next pin.
+ *
+ * QA TIER: any of these may also be given as URL entries (`OVERRIDE_URL`), which point a QA
+ * campaign at an unpublished build. Production campaigns pin published exact versions only.
  */
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
 
@@ -20,6 +23,33 @@ const EXACT_VERSION =
   /^(?:\d{1,6}!)?\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
+/**
+ * An override's URL entry, as text: an https wheel, so nothing builds at install. Printable ASCII
+ * without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..`. Where it may point is
+ * `isAllowedWheelHost`.
+ */
+const OVERRIDE_URL = /^https:\/\/(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+const TAILNET = 'fennec-typhon.ts.net'
+
+/**
+ * DO NOT MERGE, QA builds only: any path under Comfy-Org on GitHub, or any host on the Comfy tailnet.
+ * Checked on the parsed URL, which must already be in normal form, so a lookalike host, userinfo or
+ * case change can't pass and what is checked is what uv fetches.
+ */
+function isAllowedWheelHost(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.href !== url || parsed.username || parsed.password) return false
+  const host = parsed.hostname
+  if (host === 'github.com') return parsed.port === '' && parsed.pathname.startsWith('/Comfy-Org/')
+  return host === TAILNET || host.endsWith(`.${TAILNET}`)
+}
+/** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
+const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 
 /** A payload key: an allowlisted name, optionally with extras (`comfy-agent[go]`). */
 const PAYLOAD_KEY = /^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[([^\]]*)\])?$/
@@ -39,6 +69,10 @@ function pinKey(normalized: string): string {
   return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
 }
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
+/** `name @ https://… ; marker`, the per-platform wheel form; captures the marker. uv reads `url;marker` as one URL. */
+const URL_LINE = new RegExp(
+  LEADING_NAME.source + String.raw`\s*@\s*https:\/\/[^\s;]+(?:\s+;([^#]*))?\s*(?:\s#.*)?$`
+)
 
 export const START_FAILURES_TO_REVERT = 2
 
@@ -46,6 +80,7 @@ export type OverrideRefusal =
   | 'not_object'
   | 'unknown_package'
   | 'bad_version'
+  | 'bad_url'
   | 'bad_extra'
   | 'not_in_core_file'
   | 'unsupported_line'
@@ -53,17 +88,37 @@ export type OverrideRefusal =
   | 'check_failed'
   | 'core_first'
 
-/** An exact version, or a version with extras (installed as `name[go,x]==version`). */
-export type OverridePin = string | { readonly version: string; readonly extras: readonly string[] }
+/**
+ * An exact version, or the URL entries (`https://…[ ; marker]`, normalised) that replace the
+ * package's lines; either may carry extras (installed as `name[go,x]==version` or `name[go] @ url`).
+ */
+export type OverridePin =
+  | string
+  | readonly string[]
+  | { readonly version: string; readonly extras: readonly string[] }
+  | { readonly urls: readonly string[]; readonly extras: readonly string[] }
 export type OverridePins = ReadonlyMap<string, OverridePin>
 
-export function pinVersion(pin: OverridePin): string {
-  return typeof pin === 'string' ? pin : pin.version
+/** The pin's exact version, or undefined for a URL pin. */
+export function pinVersion(pin: OverridePin): string | undefined {
+  if (typeof pin === 'string') return pin
+  return 'version' in pin ? pin.version : undefined
 }
 
-/** What follows the package name on the installed line: `==1!2.0`, or `[go]==1!2.0`. */
+function pinExtras(pin: OverridePin): string {
+  if (typeof pin === 'string' || Array.isArray(pin)) return ''
+  const { extras } = pin as { extras: readonly string[] }
+  return extras.length ? `[${extras.join(',')}]` : ''
+}
+
+function pinUrls(pin: OverridePin): readonly string[] | undefined {
+  if (Array.isArray(pin)) return pin as readonly string[]
+  return typeof pin === 'object' && 'urls' in pin ? pin.urls : undefined
+}
+
+/** What follows the package name on the installed lines: `==1!2.0`, `[go]==1!2.0`, `[go] @ url`. */
 export function pinSpecifier(pin: OverridePin): string {
-  return typeof pin === 'string' ? `==${pin}` : `[${pin.extras.join(',')}]==${pin.version}`
+  return pinLines('', pin).join(' ')
 }
 
 export type ParsedOverride =
@@ -89,18 +144,42 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
-    if (typeof version !== 'string' || !EXACT_VERSION.test(version)) {
+    let pin: OverridePin
+    if (Array.isArray(version)) {
+      const urls = version.map(normalizeOverrideUrl)
+      if (urls.length === 0 || urls.includes(null)) return { kind: 'refused', reason: 'bad_url' }
+      pin = urls as string[]
+    } else if (typeof version !== 'string' || !EXACT_VERSION.test(version)) {
       return { kind: 'refused', reason: 'bad_version' }
+    } else {
+      pin = version
     }
     if (match![2] === undefined) {
-      pins.set(normalized, version)
+      pins.set(normalized, pin)
       continue
     }
     const extras = parseExtras(match![2])
     if (extras === null) return { kind: 'refused', reason: 'bad_extra' }
-    pins.set(normalized, { version, extras })
+    pins.set(normalized, typeof pin === 'string' ? { version: pin, extras } : { urls: pin, extras })
   }
   return { kind: 'pins', pins }
+}
+
+/** `url ; marker` or `url`, or null for anything else. */
+function normalizeOverrideUrl(entry: unknown): string | null {
+  // Refused outright rather than trimmed away: a line break or tab has no place in an entry.
+  if (typeof entry !== 'string' || /[\r\n\t]/.test(entry)) return null
+  const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
+  if (rest.length > 0 || !OVERRIDE_URL.test(url!) || !isAllowedWheelHost(url!)) return null
+  if (marker === undefined) return url!
+  return MARKER.test(marker) ? `${url} ; ${marker}` : null
+}
+
+/** The requirement lines a pin puts in place of the package's own. */
+function pinLines(name: string, pin: OverridePin): string[] {
+  const urls = pinUrls(pin)
+  if (urls) return urls.map((entry) => `${name}${pinExtras(pin)} @ ${entry}`)
+  return [`${name}${pinExtras(pin)}==${pinVersion(pin)}`]
 }
 
 /** Comma-separated PEP 508 extra names, canonicalised and sorted, or null for anything else. */
@@ -141,7 +220,7 @@ export function compareVersions(a: string, b: string): number {
 
 export function overrideSignature(pins: OverridePins): string {
   return [...pins]
-    .map(([name, pin]) => `${name}${pinSpecifier(pin)}`)
+    .flatMap(([name, pin]) => pinLines(name, pin))
     .sort()
     .join(',')
 }
@@ -155,43 +234,60 @@ export function effectiveAgentRequirements(
   pins: OverridePins,
   mainText = ''
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
-  // Per pin key, the package name of the line it decorates.
-  const matched = new Map<string, string>()
-  const lines = coreText.split(/\r?\n/)
+  // Per pin key: the package name of the line it decorates, and whether its lines so far are URL
+  // lines, which may repeat (one per platform).
+  const matched = new Map<string, { name: string; url: boolean }>()
+  const out: string[] = []
   const keyOf = (line: string): string | undefined => {
     const name = line.match(LEADING_NAME)?.[1]
     return name && pinKey(normalizePackageName(name))
   }
-  const agentKeys = new Set(lines.map(keyOf))
+  const agentKeys = new Set(coreText.split(/\r?\n/).map(keyOf))
   const fromMain = mainText.split(/\r?\n/).filter((line) => {
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
   // Before the agent file's trailing newline, so the result still ends in one.
-  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
-  for (let i = 0; i < lines.length; i++) {
-    const name = lines[i]!.match(LEADING_NAME)?.[1]
-    if (!name) continue
-    const normalized = normalizePackageName(name)
-    const key = pinKey(normalized)
-    const pin = pins.get(key)
-    if (pin === undefined) continue
+  const lines = coreText.split(/\r?\n/)
+  const tail = lines.at(-1) === '' ? lines.splice(-1) : []
+  for (const text of [...lines, ...fromMain, ...tail]) {
+    const name = text.match(LEADING_NAME)?.[1]
+    const normalized = name && normalizePackageName(name)
+    const key = normalized ? pinKey(normalized) : undefined
+    const pin = key ? pins.get(key) : undefined
+    const prior = key ? matched.get(key) : undefined
     // Only the first comfy-agent* package is the agent's; a later, differently named one is left be.
-    if (matched.has(key) && matched.get(key) !== normalized) continue
-    const line = lines[i]!.match(REQUIREMENT_LINE)
+    if (pin === undefined || (prior && prior.name !== normalized)) {
+      out.push(text)
+      continue
+    }
+    const url = text.match(URL_LINE)
+    const marker = url?.[2]?.trim()
+    const line = text.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
-    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || matched.has(key)) {
+    if (
+      (!line && !url) ||
+      (marker !== undefined && !MARKER.test(marker)) ||
+      /\\\s*$/.test(text) ||
+      (pinned !== undefined && !EXACT_VERSION.test(pinned)) ||
+      (prior && !(url && prior.url))
+    ) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
-    // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (pinned !== undefined && compareVersions(pinVersion(pin), pinned) <= 0) {
+    // An exact pin must be newer than a line core pinned. A URL pin names a build, not a version, so
+    // it goes over any line (QA tier), as an exact pin goes over a bare or URL line: the campaign decides.
+    const version = pinVersion(pin)
+    if (pinned !== undefined && version !== undefined && compareVersions(version, pinned) <= 0) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    matched.set(key, normalized)
-    lines[i] = `${name}${pinSpecifier(pin)}`
+    // An exact pin keeps each URL line's marker, so it lands only where core's file would install.
+    if (url && version !== undefined) {
+      out.push(`${name}${pinExtras(pin)}==${version}${marker ? ` ; ${marker}` : ''}`)
+    } else if (!prior) out.push(...pinLines(name!, pin))
+    matched.set(key!, { name: normalized!, url: !!url })
   }
   if (matched.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
-  return { kind: 'text', text: lines.join('\n') }
+  return { kind: 'text', text: out.join('\n') }
 }
 
 function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
@@ -387,7 +483,8 @@ export function coreFrontendVersion(mainText: string): string | null {
   return null
 }
 
-/** The frontend version an applied override put in, recorded until ComfyUI's is back. */
+/** The frontend pin an applied override put in (a version, or its URL entries), recorded until
+ *  ComfyUI's is back. */
 export function readFrontendPin(installation: InstallationRecord): string | null {
   const state = installation.frontendVersionOverride
   if (!state || typeof state !== 'object') return null
