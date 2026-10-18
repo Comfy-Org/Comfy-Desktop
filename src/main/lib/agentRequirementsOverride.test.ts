@@ -117,23 +117,45 @@ describe('parseAgentRequirementsOverride', () => {
       ).toBe('pins')
   })
 
-  it('takes a wheel from the OBL-118 lab wheel directory (QA builds only)', () => {
-    const lab = 'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/'
-    expect(
-      parseAgentRequirementsOverride({
-        'comfy-agent': [`${lab}comfy_agent-0.0.2.dev9123-py3-none-manylinux2014_x86_64.whl`],
-        'comfyui-frontend-package': [
-          `${lab}comfyui_frontend_package-1.57.0.dev1184-py3-none-any.whl`
-        ]
-      }).kind
-    ).toBe('pins')
+  it('takes a wheel from any Comfy-Org path on GitHub or any tailnet host (QA builds only)', () => {
     for (const entry of [
-      'http://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/a.whl',
-      'https://lab-linux-build.fennec-typhon.ts.net/other/a.whl',
-      'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/../../a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/comfy_agent-0.0.2.dev9123-py3-none-any.whl',
+      'https://simon-qa-linux-1.fennec-typhon.ts.net/other/dir/comfyui_frontend_package-1.57.0.dev1184-py3-none-any.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net:8443/a-1.0-py3-none-any.whl',
+      'https://fennec-typhon.ts.net/a-1.0-py3-none-any.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/raw/main/dist/a-1.0-py3-none-any.whl'
+    ])
+      expect(
+        parseAgentRequirementsOverride({
+          'comfy-agent': [entry],
+          'comfyui-frontend-package': [entry]
+        }).kind,
+        entry
+      ).toBe('pins')
+  })
+
+  it('refuses a host or path that only looks like an allowed one', () => {
+    for (const entry of [
+      'https://evil.example/?x=fennec-typhon.ts.net/a.whl',
+      'https://evil.example/fennec-typhon.ts.net/a.whl',
+      'https://evilfennec-typhon.ts.net/a.whl',
+      'https://fennec-typhon.ts.net.evil.example/a.whl',
       'https://lab-linux-build.fennec-typhon.ts.net.evil.example/obl-118/wheels/a.whl',
-      'https://simon-qa-linux-1.fennec-typhon.ts.net/obl-118/wheels/a.whl',
-      `${lab}a.tar.gz`
+      'https://github.com.evil.example/Comfy-Org/a.whl',
+      'https://evil.example/github.com/Comfy-Org/a.whl',
+      'https://github.com@evil.example/Comfy-Org/a.whl',
+      'https://user@github.com/Comfy-Org/a.whl',
+      'https://user:pw@lab-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://GitHub.com/Comfy-Org/a.whl',
+      'https://LAB-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://github.com:8443/Comfy-Org/a.whl',
+      'https://github.com/Comfy-Orgx/a.whl',
+      'https://github.com/comfy-org/a.whl',
+      'https://github.com/someone/Comfy-Org/a.whl',
+      'http://lab-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/a.tar.gz',
+      'https://lab-linux-build.fennec-typhon.ts.net/a/../../b.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/a"b.whl'
     ])
       expect(parseAgentRequirementsOverride({ 'comfy-agent': [entry] }), entry).toEqual({
         kind: 'refused',

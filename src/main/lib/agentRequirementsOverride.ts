@@ -21,13 +21,30 @@ const EXACT_VERSION =
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
 /**
- * An override's URL entry: a wheel under Comfy-Org on GitHub, or (DO NOT MERGE: QA builds only) under
- * the OBL-118 lab wheel directory on the tailnet, so nothing builds at install. Printable ASCII without
- * `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..` (either could leave the prefix once
- * the URL is normalised).
+ * An override's URL entry, as text: an https wheel, so nothing builds at install. Printable ASCII
+ * without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..`. Where it may point is
+ * `isAllowedWheelHost`.
  */
-const OVERRIDE_URL =
-  /^https:\/\/(?:github\.com\/Comfy-Org\/|lab-linux-build\.fennec-typhon\.ts\.net\/obl-118\/wheels\/)(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+const OVERRIDE_URL = /^https:\/\/(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+const TAILNET = 'fennec-typhon.ts.net'
+
+/**
+ * DO NOT MERGE, QA builds only: any path under Comfy-Org on GitHub, or any host on the Comfy tailnet.
+ * Checked on the parsed URL, which must already be in normal form, so a lookalike host, userinfo or
+ * case change can't pass and what is checked is what uv fetches.
+ */
+function isAllowedWheelHost(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.href !== url || parsed.username || parsed.password) return false
+  const host = parsed.hostname
+  if (host === 'github.com') return parsed.port === '' && parsed.pathname.startsWith('/Comfy-Org/')
+  return host === TAILNET || host.endsWith(`.${TAILNET}`)
+}
 /** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
 const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
@@ -92,7 +109,7 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
 function normalizeOverrideUrl(entry: unknown): string | null {
   if (typeof entry !== 'string') return null
   const [url, marker, ...rest] = entry.split(';').map((part) => part.trim())
-  if (rest.length > 0 || !OVERRIDE_URL.test(url!)) return null
+  if (rest.length > 0 || !OVERRIDE_URL.test(url!) || !isAllowedWheelHost(url!)) return null
   if (marker === undefined) return url!
   return MARKER.test(marker) ? `${url} ; ${marker}` : null
 }
