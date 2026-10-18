@@ -99,6 +99,26 @@ const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
 }
 
+/** The agent requirements install. Not one of `PRE_LAUNCH_PHASES`: whether it
+ *  runs is only known once the launch args are final, which is after a torch
+ *  repair may already have armed the tracker and frozen the phase list. It is
+ *  handed to `addLatePhase` instead of being injected here. */
+export const AGENT_REQUIREMENTS_PHASE: LaunchPhaseDef = {
+  phase: 'agentRequirements',
+  match: NEVER,
+  weight: 0.1,
+  streaming: true
+}
+
+/** Putting ComfyUI's frontend version back after an agent override moved it. Added late for
+ *  the same reason as `AGENT_REQUIREMENTS_PHASE`, and only on a launch that restores. */
+export const FRONTEND_RESTORE_PHASE: LaunchPhaseDef = {
+  phase: 'frontendRestore',
+  match: NEVER,
+  weight: 0.05,
+  streaming: true
+}
+
 /** Starter-template model download, shown as the LAST launch step. Synthetic +
  *  streaming: its bytes downloaded in the background since install-begin, and a
  *  500 ms reader in `handleLaunch` feeds the rich substatus from the shared

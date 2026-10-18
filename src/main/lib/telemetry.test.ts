@@ -429,6 +429,26 @@ describe('telemetry.bucketError', () => {
 })
 
 describe('telemetry default event properties', () => {
+  it('carries sac_state on session.started when read before binding, as boot does', () => {
+    setupTelemetry({ bind: null })
+    telemetry.setSmartAppControlState('on')
+    bindTestAnonymous('boot-id')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
+  it('adds sac_state to every capture once read, keeping installation_id', () => {
+    setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
+    captured.length = 0
+
+    telemetry.capture('comfy.desktop.test.event', {})
+
+    expect(captured[0]!.properties).toMatchObject({ sac_state: 'off', platform: process.platform })
+    expect(captured[0]!.properties).toHaveProperty('installation_id')
+  })
+
   it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
     setupTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', bind: 'id' })
     captured.length = 0
@@ -451,6 +471,7 @@ describe('telemetry default event properties', () => {
 
   it('lists every default property in DEFAULT_EVENT_PROPERTY_NAMES', () => {
     setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
     captured.length = 0
     telemetry.capture('any.event')
     const keys = Object.keys(captured[0]!.properties ?? {}).filter((key) => !key.startsWith('$'))
@@ -710,6 +731,11 @@ describe('telemetry PostHog client options', () => {
   })
 })
 
+/** Sent with every ops-flag evaluation, consent or not: the OS, for per-OS targeting. */
+const PLATFORM = { platform: process.platform }
+/** What every evaluation from this test build carries when nothing else applies. */
+const BASE_PROPS = { ...PLATFORM, app_version: '0.0.0' }
+
 // Revocation semantics hang off this classification: a `value` (including an explicit
 // `false`) overwrites the persisted treatment, `unreachable` holds it. Collapsing the two
 // lets an offline launch silently revoke, or a disable silently fail to.
@@ -733,9 +759,12 @@ describe('telemetry anonymous flag reads', () => {
       {
         key: 'desktop_core_beta_features',
         distinctId: 'installation-id',
-        // Only the build's version: the request is made pre-consent by design, and this is
-        // where an email would sit if one were ever attached without one.
-        options: { sendFeatureFlagEvents: false, personProperties: { app_version: '0.0.0' } }
+        // Only facts about the build and machine: the request is made pre-consent by design,
+        // and this is where an email would sit if one were ever attached without one.
+        options: {
+          sendFeatureFlagEvents: false,
+          personProperties: BASE_PROPS
+        }
       }
     ])
   })
@@ -806,7 +835,11 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -835,6 +868,22 @@ describe('ops-flag person targeting', () => {
     expect(captured.map((event) => event.event)).not.toContain('$feature_flag_called')
   })
 
+  it('sends the OS the app is running on, not a fixed value', async () => {
+    // PLATFORM above mirrors the product's own expression, so it would pass a hardcoded OS on
+    // a runner of that OS. Pretend to be another one to pin the value to process.platform.
+    setupTelemetry({ consent: null })
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const other = process.platform === 'win32' ? 'darwin' : 'win32'
+    Object.defineProperty(process, 'platform', { value: other, configurable: true })
+    try {
+      await evaluate()
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+    }
+
+    expect(lastPersonProperties()).toEqual({ platform: other, app_version: '0.0.0' })
+  })
+
   it('sends no comfy_staff for a non-staff install', async () => {
     // Absent rather than `comfy_staff: 'false'`: a `comfy_staff = true` condition does not match
     // a missing property, so it stays off the wire for the majority of users.
@@ -843,7 +892,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is undecided', async () => {
@@ -854,7 +903,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is denied', async () => {
@@ -863,7 +912,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('still evaluates the flag without consent, carrying no staff property', async () => {
@@ -876,29 +925,145 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  // `sac_state` lets a rollout of an unsigned component exclude machines where Smart App Control
+  // would block it. A fact about the machine, like `platform`, so it is sent with or without consent.
+  it.each(['granted', 'denied', null] as const)(
+    'sends sac_state once read, with consent %s',
+    async (consent) => {
+      setupTelemetry({ consent })
+      telemetry.setSmartAppControlState('on')
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ ...BASE_PROPS, sac_state: 'on' })
+    }
+  )
+
+  it('sends no sac_state before it has been read', async () => {
+    setupTelemetry({ consent: 'granted' })
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  // `user_tier` lets a rollout weight toward paying users. Same rule as `comfy_staff`: a fact
+  // about the person, so it rides only on the consented path.
+  it('attaches user_tier once consent is granted', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
+    expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
+  })
+
+  it('sends a known free tier too, so a condition can tell free from unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('free')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'free'
+    })
+  })
+
+  it('sends no user_tier while the tier is unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setFlagEvaluationUserTier('unknown')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
+    setupTelemetry({ consent })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true',
+      user_tier: 'paid'
+    })
+  })
+
+  // Consent can change mid-session (Settings), and campaign flags are first fetched mid-session,
+  // so the gate must be read per request, not when the tier is bound.
+  it('drops the consented properties when consent is revoked after binding', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('denied')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it('sends a tier bound before consent once consent is granted', async () => {
+    setupTelemetry({ consent: null })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('granted')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
   })
 
   it('stops sending once the install is reclassified, as on sign-out', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
     await evaluate()
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
 
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
+    telemetry.setFlagEvaluationUserTier('paid')
 
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
@@ -975,7 +1140,10 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4' })
+      expect(lastPersonProperties()).toEqual({
+        ...PLATFORM,
+        app_version: '1.1.4'
+      })
     })
 
     it('rides alongside comfy_staff for a consented staff install', async () => {
@@ -984,7 +1152,11 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4', comfy_staff: 'true' })
+      expect(lastPersonProperties()).toEqual({
+        ...PLATFORM,
+        app_version: '1.1.4',
+        comfy_staff: 'true'
+      })
     })
 
     it('is the version initTelemetry was given, verbatim, prerelease included', async () => {
@@ -993,7 +1165,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4-rc.1' })
+      expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '1.1.4-rc.1' })
     })
 
     it('is omitted rather than sent empty when the version is unknown', async () => {
@@ -1002,7 +1174,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({})
+      expect(lastPersonProperties()).toEqual(PLATFORM)
     })
 
     // What the property is for: a payload carrying args older builds reject, gated server-side.

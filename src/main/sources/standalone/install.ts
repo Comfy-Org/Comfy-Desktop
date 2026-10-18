@@ -268,7 +268,15 @@ export async function postInstall(
   // 'stable' → check out the latest stable tag; 'latest' → fast-forward
   // to master HEAD. Defaults to 'stable' for installs created before
   // the channel split, where `autoUpdateComfyUI` implicitly meant stable.
-  if (installation.autoUpdateComfyUI && fs.existsSync(path.join(comfyuiDir, '.git'))) {
+  // QA-ONLY (OBL-118 integration build, never merged): the QA environment carries ComfyUI-private,
+  // and a Stable/Latest update would replace it with public ComfyUI. Unit tests keep the update.
+  const qaSkipUpdate = !process.env.VITEST
+  if (qaSkipUpdate) console.log('[qa-obl118] post-install ComfyUI update skipped')
+  if (
+    !qaSkipUpdate &&
+    installation.autoUpdateComfyUI &&
+    fs.existsSync(path.join(comfyuiDir, '.git'))
+  ) {
     if (signal?.aborted) throw new Error('Cancelled')
     const channel: 'stable' | 'latest' =
       (installation.updateChannel as 'stable' | 'latest' | undefined) ?? 'stable'

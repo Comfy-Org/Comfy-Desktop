@@ -119,10 +119,11 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
+import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
   claimAttachHost,
@@ -1336,6 +1337,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 } else {
   // The hardware-id lookup is slow on cold Windows starts; overlap it with Electron start-up.
   if (process.platform === 'win32') startMachineIdLookup()
+  // Also a subprocess on Windows: start it now so it is done by the time boot needs it.
+  const sacStateRead = readSmartAppControlState()
 
   if (app.isPackaged) {
     app.on('second-instance', () => {
@@ -1484,6 +1487,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
+    // Bound before `bindAnonymousId` flushes the session-start event and before any ops flag is
+    // fetched, so both carry `sac_state`. Never rejects.
+    const sacState = await sacStateRead
+    console.info('[sac-state] init: state=', sacState)
+    mainTelemetry.setSmartAppControlState(sacState)
     const anonymousDistinctId = recoverPendingIdentityRotation(
       getInitialAnonymousDistinctId(existingInstallation)
     )
@@ -1528,20 +1536,23 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // NEXT launch; this runs before any view exists, so no outcome is missed.
     initStaffFlagTargeting()
 
+    // Hydrate the persisted cloud user-tier cache (billing telemetry, free-tier offer UI) and
+    // bind it for the ops-flag fetches below, for the same reason as staff targeting. A small
+    // local read; it never rejects. `userTier.ts` refreshes it on every cloud `dom-ready`.
+    await initUserTier()
+
     // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    void initCoreBetaGrants({ distinctId: installationId })
+    void initCoreBetaFlags({
+      distinctId: installationId,
+      betaEnabled: settings.peekBetaFeaturesEnabled()
+    })
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
-
-    // Hydrate the persisted cloud user-tier cache for billing telemetry and
-    // free-tier offer UI. `userTier.ts` refreshes it on every cloud
-    // webContents `dom-ready` (see `attach.ts`).
-    void initUserTier()
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
