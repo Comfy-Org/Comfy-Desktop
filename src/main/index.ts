@@ -128,6 +128,7 @@ import { answeredFrontendPins, syncFrontendCache } from './lib/frontendCache'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
+import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
   claimAttachHost,
@@ -1484,11 +1485,18 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
 
+    // Read in parallel with the device id; bound before `bindAnonymousId` flushes the session-start
+    // event and before any ops flag is fetched, so both carry `sac_state`. Never rejects.
+    const sacStateRead = readSmartAppControlState()
+
     // installation_id is an event/person property, never a PostHog identity.
     const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
+    const sacState = await sacStateRead
+    console.log('[sac-state] init: state=', sacState)
+    mainTelemetry.setSmartAppControlState(sacState)
     const anonymousDistinctId = recoverPendingIdentityRotation(
       getInitialAnonymousDistinctId(existingInstallation)
     )
