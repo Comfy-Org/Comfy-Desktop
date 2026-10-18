@@ -128,6 +128,7 @@ import { answeredFrontendPins, syncFrontendCache } from './lib/frontendCache'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
+import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
   claimAttachHost,
@@ -1341,6 +1342,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 } else {
   // The hardware-id lookup is slow on cold Windows starts; overlap it with Electron start-up.
   if (process.platform === 'win32') startMachineIdLookup()
+  // Also a subprocess on Windows: start it now so it is done by the time boot needs it.
+  const sacStateRead = readSmartAppControlState()
 
   if (app.isPackaged) {
     app.on('second-instance', () => {
@@ -1489,6 +1492,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
+    // Bound before `bindAnonymousId` flushes the session-start event and before any ops flag is
+    // fetched, so both carry `sac_state`. Never rejects.
+    const sacState = await sacStateRead
+    console.info('[sac-state] init: state=', sacState)
+    mainTelemetry.setSmartAppControlState(sacState)
     const anonymousDistinctId = recoverPendingIdentityRotation(
       getInitialAnonymousDistinctId(existingInstallation)
     )
