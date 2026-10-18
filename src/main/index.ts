@@ -1495,7 +1495,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // Bound before `bindAnonymousId` flushes the session-start event and before any ops flag is
     // fetched, so both carry `sac_state`. Never rejects.
     const sacState = await sacStateRead
-    console.log('[sac-state] init: state=', sacState)
+    console.info('[sac-state] init: state=', sacState)
     mainTelemetry.setSmartAppControlState(sacState)
     const anonymousDistinctId = recoverPendingIdentityRotation(
       getInitialAnonymousDistinctId(existingInstallation)

@@ -1804,7 +1804,7 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, `app_version`, `platform`, and — only once consent is `'granted'` — `comfy_staff`
+ * key, `app_version`, `platform`, `sac_state` once read, and — only once consent is `'granted'` — `comfy_staff`
  * for staff and `user_tier` when known, via `opsFlagPersonProperties`. Those properties are
  * request-scoped: the SDK puts them in the `/flags` POST body as
  * `person_properties`, where the server evaluates release conditions against

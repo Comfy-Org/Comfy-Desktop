@@ -89,7 +89,7 @@ describe('readSmartAppControlState', () => {
     const [file, args, opts] = execFileMock.mock.calls[0]!
     expect(String(file).toLowerCase()).toMatch(/system32[\\/]reg\.exe$/)
     expect(args).toEqual(['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI\\Policy'])
-    expect(opts).toMatchObject({ timeout: 2000, windowsHide: true })
+    expect(opts).toMatchObject({ timeout: 1000, windowsHide: true })
   })
 
   it('is unknown when reg.exe fails or times out', async () => {
@@ -106,6 +106,29 @@ describe('readSmartAppControlState', () => {
     })
 
     await expect(readSmartAppControlState()).resolves.toBe('unknown')
+  })
+
+  it('settles as unknown when the child never calls back', async () => {
+    vi.useFakeTimers()
+    try {
+      execFileMock.mockImplementation(() => undefined)
+      const read = readSmartAppControlState()
+      await vi.advanceTimersByTimeAsync(1500)
+      await expect(read).resolves.toBe('unknown')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('falls back to C:\\Windows when SystemRoot is unset', async () => {
+    const original = process.env.SystemRoot
+    delete process.env.SystemRoot
+    try {
+      await readSmartAppControlState()
+    } finally {
+      if (original !== undefined) process.env.SystemRoot = original
+    }
+    expect(String(execFileMock.mock.calls[0]![0])).toMatch(/^C:\\Windows[\\/]System32[\\/]reg\.exe$/)
   })
 
   it('finds reg.exe under SystemRoot', async () => {

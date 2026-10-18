@@ -18,7 +18,9 @@ export type SmartAppControlState = 'on' | 'evaluation' | 'off' | 'not_applicable
 
 const POLICY_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI\\Policy'
 const STATE_VALUE = 'VerifiedAndReputablePolicyState'
-const READ_TIMEOUT_MS = 2000
+const READ_TIMEOUT_MS = 1000
+/** `execFile`'s timeout only sends the kill; this settles the read even if the child lingers. */
+const SETTLE_DEADLINE_MS = READ_TIMEOUT_MS + 500
 const FIRST_SAC_BUILD = 22621
 
 const STATES: Record<number, SmartAppControlState> = { 0: 'off', 1: 'on', 2: 'evaluation' }
@@ -39,15 +41,21 @@ export function readSmartAppControlState(): Promise<SmartAppControlState> {
   if (build < FIRST_SAC_BUILD) return Promise.resolve('not_applicable')
   const regExe = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe')
   return new Promise((resolve) => {
+    const deadline = setTimeout(() => resolve('unknown'), SETTLE_DEADLINE_MS)
+    deadline.unref?.()
     try {
       execFile(
         regExe,
         ['query', POLICY_KEY],
         { timeout: READ_TIMEOUT_MS, windowsHide: true },
-        (err, stdout) => resolve(err ? 'unknown' : parsePolicyKeyListing(stdout))
+        (err, stdout) => {
+          clearTimeout(deadline)
+          resolve(err ? 'unknown' : parsePolicyKeyListing(stdout))
+        }
       )
     } catch {
       // Some spawn failures throw instead of reaching the callback.
+      clearTimeout(deadline)
       resolve('unknown')
     }
   })
