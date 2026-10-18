@@ -238,6 +238,52 @@ describe('pygit2 server', () => {
     expect(servers).toHaveLength(2)
   })
 
+  it('settles queued queries when the breaker disables pygit2', async () => {
+    serveWith(() => 'hang')
+    const launchFailure = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })
+    mockedExecFile.mockImplementation(((
+      _cmd: string,
+      _args: string[],
+      _opts: unknown,
+      cb: (err: Error | null, out: string, errOut: string) => void
+    ) => setImmediate(() => cb(launchFailure, '', ''))) as never)
+
+    const active = findNearestTag('/repo', 'abc')
+    const queued = findNearestTag('/repo', 'def')
+    await vi.waitFor(() => expect(servers[0]?.requests.length).toBe(1))
+    for (let i = 0; i < 3; i++) await fetchTags('/repo')
+    expect(getPygit2Status().status).toBe('disabled')
+
+    expect(await active).toBeUndefined()
+    expect(await queued).toBeUndefined()
+  })
+
+  it('settles queued queries when pygit2 state is reset', async () => {
+    serveWith(() => 'hang')
+    const active = findNearestTag('/repo', 'abc')
+    const queued = findNearestTag('/repo', 'def')
+    await vi.waitFor(() => expect(servers[0]?.requests.length).toBe(1))
+
+    resetPygit2State()
+
+    expect(await active).toBeUndefined()
+    expect(await queued).toBeUndefined()
+  })
+
+  it('sends queued queries to the new server when pygit2 is reconfigured', async () => {
+    serveWith((args) => (args[2] === 'abc' ? 'hang' : { stdout: 'v0.17.0\n' }))
+    oneShotReturns('v0.16.0\n')
+    const active = findNearestTag('/repo', 'abc')
+    const queued = findNearestTag('/repo', 'def')
+    await vi.waitFor(() => expect(servers[0]?.requests.length).toBe(1))
+
+    configurePygit2('/other/python', '/path/to/git_operations.py', { server: true })
+
+    expect(await active, 'the in-flight query reruns in its own process').toBe('v0.16.0')
+    expect(await queued).toBe('v0.17.0')
+    expect(servers[1]!.requests).toEqual([['describe-tags', '/repo', 'def']])
+  })
+
   it('stops the server when pygit2 is reconfigured', async () => {
     serveWith(() => ({ stdout: 'v0.17.0\n' }))
     await findNearestTag('/repo')

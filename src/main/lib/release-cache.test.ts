@@ -3,6 +3,9 @@
 // `vi.importActual('fs')` in the mock factory below would throw.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type * as FsModule from 'fs'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
@@ -72,6 +75,29 @@ describe('isUpdateAvailable', () => {
       installedTag: 'v1.0.0'
     }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
+  })
+
+  it('returns true while an unfinished update marker exists, even at the latest version', () => {
+    const installPath = fs.mkdtempSync(path.join(os.tmpdir(), 'release-cache-marker-'))
+    try {
+      const installation = {
+        installPath,
+        comfyVersion: { commit: 'abc', baseTag: 'v1.0.0', commitsAhead: 0 }
+      }
+      const info: ReleaseCacheEntry = { latestTag: 'v1.0.0', commitSha: 'abc' }
+      expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
+      const marker = path.join(installPath, '.comfyui-op-in-progress.json')
+      for (const [m, expected] of [
+        [{ op: 'update', preHead: 'old', startedAt: 1 }, true],
+        [{ op: 'update', preHead: 'old', startedAt: 1, postHead: 'abc' }, false],
+        [{ op: 'restore', preHead: 'old', startedAt: 1 }, false]
+      ] as const) {
+        fs.writeFileSync(marker, JSON.stringify(m))
+        expect(isUpdateAvailable(installation, 'stable', info)).toBe(expected)
+      }
+    } finally {
+      fs.rmSync(installPath, { recursive: true, force: true })
+    }
   })
 
   it('returns false when no release info is available', () => {

@@ -45,9 +45,9 @@ const INSTALL_NAME = 'Beta Notice Fixture'
  *  to be on the machine, and this repo does not tolerate flaky tests. Passed explicitly in
  *  `launchArgs` so the launcher's port-conflict auto-shift cannot move it afterwards. */
 let port = 0
-/** The grant under test. `--enable-assets` is on the real allowlist and the stub's `--help`
+/** The grant under test. `--enable-asset-hashing` is on the real allowlist and the stub's `--help`
  *  advertises it, so it survives selection AND the schema filter. */
-const GRANT_ARG = '--enable-assets'
+const GRANT_ARG = '--enable-asset-hashing'
 /** Comfortably below the seeded `baseTag`, so the version window opens. */
 const GRANT_MIN_CORE = '0.3.80'
 

@@ -65,4 +65,32 @@ describe('getSnapshotListData', () => {
       entries.map((e) => `v-${e.snapshot.comfyui.commit}`)
     )
   })
+
+  it('runs two lookups at once and places results by index', async () => {
+    const entries = [entry(0), entry(1), entry(2)]
+    mockedListSnapshots.mockResolvedValue(entries as never)
+
+    const release = new Map<string, () => void>()
+    mockedResolveSnapshotVersion.mockImplementation(
+      (_installPath, comfyui) =>
+        new Promise<string>((resolve) =>
+          release.set(comfyui.commit!, () => resolve(`v-${comfyui.commit}`))
+        )
+    )
+
+    const pending = getSnapshotListData('/install')
+
+    // The second lookup starts while the first is still held: they run concurrently.
+    await vi.waitFor(() => expect(release.size).toBe(2))
+    expect([...release.keys()]).toEqual(['commit-0', 'commit-1'])
+
+    // Finishing the second first frees a slot for the third; nothing waits on the first.
+    release.get('commit-1')!()
+    await vi.waitFor(() => expect(release.has('commit-2')).toBe(true))
+    release.get('commit-2')!()
+    release.get('commit-0')!()
+
+    const { snapshots } = await pending
+    expect(snapshots.map((s) => s.comfyuiVersion)).toEqual(['v-commit-0', 'v-commit-1', 'v-commit-2'])
+  })
 })

@@ -109,9 +109,9 @@ test.beforeAll(async () => {
       },
     ],
     opsFlags: opsFlagsGrantSeed({
-      arg: '--enable-assets',
+      arg: '--enable-asset-hashing',
       commitRanges: [[sha.fix!, null]],
-      description: 'Asset library',
+      description: 'Asset hashing',
     }),
   })
   await expectChooserVisible(ctx.panel)

@@ -81,9 +81,9 @@ test.beforeAll(async () => {
       },
     ],
     opsFlags: opsFlagsGrantSeed({
-      arg: '--enable-assets',
+      arg: '--enable-asset-hashing',
       minCoreVersion: '0.3.80',
-      description: 'Asset library',
+      description: 'Asset hashing',
     }),
   })
   await expectChooserVisible(ctx.panel)
@@ -135,8 +135,8 @@ test('shows the grants the next launch is eligible for @linux', async () => {
     `document.querySelector(${JSON.stringify(MENU)}).textContent`,
   )
   expect(text).toContain('Eligible for next launch')
-  expect(text).toContain('--enable-assets')
-  expect(text).toContain('Asset library')
+  expect(text).toContain('--enable-asset-hashing')
+  expect(text).toContain('Asset hashing')
 })
 
 test('turning the beta opt-in off removes the pill on the next open, and on restores it @linux', async () => {
@@ -237,7 +237,7 @@ test("adding the grant's opposite to the startup args removes it @linux", async 
   await popup.evaluate(
     `(() => {
       const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(`--port ${port} --disable-assets`)}
+      input.value = ${JSON.stringify(`--port ${port} --disable-asset-hashing`)}
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })()`,

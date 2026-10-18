@@ -112,13 +112,15 @@ import {
   hasCompletedFirstLaunch,
   hasPersistedDeviceId,
   initDeviceId,
-  markIdentityMigrationCompleted
+  markIdentityMigrationCompleted,
+  startMachineIdLookup
 } from './lib/deviceId'
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
@@ -1332,6 +1334,9 @@ const hostReentryGate = createStartupReentryGate()
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // The hardware-id lookup is slow on cold Windows starts; overlap it with Electron start-up.
+  if (process.platform === 'win32') startMachineIdLookup()
+
   if (app.isPackaged) {
     app.on('second-instance', () => {
       // OS-level "open another instance" attempt - focus an existing
@@ -1530,6 +1535,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCloudFreeRuns({ distinctId: installationId })
 
     void initCoreBetaGrants({ distinctId: installationId })
+
+    void initEmbeddedSessionFlag({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud

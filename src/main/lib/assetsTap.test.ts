@@ -122,11 +122,16 @@ describe('assetsTap', () => {
     installationId: 'inst-1',
     variant: 'desktop',
     release: '1.0.47-rc.1',
-    coreBetaFlags: ['--enable-assets']
+    coreBetaFlags: ['--enable-assets'],
+    sessionKind: 'performance_test' as const
   }
+
+  let consent: ReturnType<typeof telemetry.getConsentState> = 'granted'
 
   beforeEach(() => {
     captured = []
+    consent = 'granted'
+    vi.spyOn(telemetry, 'getConsentState').mockImplementation(() => consent)
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
@@ -275,6 +280,7 @@ describe('assetsTap', () => {
         variant: 'desktop',
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
+        session_kind: 'performance_test',
         root: 'models',
         created: 12
       })
@@ -288,6 +294,7 @@ describe('assetsTap', () => {
         variant: null,
         release: null,
         core_beta_flags: [],
+        session_kind: 'normal',
         hashing_enabled: true
       })
     })
@@ -343,7 +350,8 @@ describe('assetsTap', () => {
         installation_id: 'inst-1',
         variant: 'desktop',
         release: '1.0.47-rc.1',
-        core_beta_flags: ['--enable-assets']
+        core_beta_flags: ['--enable-assets'],
+        session_kind: 'performance_test'
       })
     })
   })
@@ -387,6 +395,62 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ count: 2 })
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('exfiltrate')
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
+    })
+
+    it.each(['denied', 'undecided'] as const)(
+      'does not count what it saw while consent was %s, once consent is granted',
+      (declined) => {
+        consent = declined
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+
+        // Nothing at all leaves the tap for a line seen without consent.
+        expect(captured).toEqual([])
+
+        consent = 'granted'
+        tap.flushSummary()
+
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_events_dropped'
+        )
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted'
+        )
+
+        // The same tap counts again from the grant on: consent is read per line, not at creation.
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+        tap.flushSummary()
+        const counts = Object.fromEntries(
+          captured
+            .filter(
+              (c) =>
+                c.event.endsWith('unknown_events_dropped') ||
+                c.event.endsWith('unknown_enum_values_omitted')
+            )
+            .map((c) => [c.event, c.ctx.count])
+        )
+        expect(counts).toEqual({
+          'comfy.desktop.comfyui.assets.unknown_events_dropped': 1,
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted': 1
+        })
+      }
+    )
+
+    it('spends no rate-cap budget on lines seen without consent', () => {
+      consent = 'denied'
+      const tap = createAssetsTap(baseOpts)
+      for (let i = 0; i < 61; i++) {
+        tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+      }
+
+      consent = 'granted'
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+
+      expect(captured.map((c) => c.event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_started'
+      ])
     })
 
     it('reports omitted enum values as a bare count, never the values', () => {
@@ -934,6 +998,18 @@ describe('assetsTap', () => {
         ])
       )
 
+      it('not by a line seen without consent', () => {
+        consent = 'denied'
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_completed', sixtyFourNames), 'stdout')
+
+        consent = 'granted'
+        tap.ingest(taggedLine('seeder.scan_completed', { zz_count: 7 }), 'stdout')
+
+        expect(captured).toHaveLength(1)
+        expect(captured[0]!.ctx).toMatchObject({ zz_count: 7 })
+      })
+
       it('not by a line rejected after its convention fields', () => {
         const tap = createAssetsTap(baseOpts)
         // `installation_id` sorts last and rejects the whole line.
@@ -1193,13 +1269,21 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
     })
 
-    it('flushes a trailing unterminated line on flushSummary', () => {
+    it('never forwards an unterminated line on flushSummary', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=full', 'stdout')
-      expect(captured).toHaveLength(0)
+      tap.ingest('[assets-event] seeder.scan_completed count=1', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=full', 'stderr')
       tap.flushSummary()
+      expect(captured).toHaveLength(0)
+    })
+
+    it('forwards a value split across chunks whole after a mid-line flushSummary', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed count=1', 'stdout')
+      tap.flushSummary()
+      tap.ingest('2\n', 'stdout')
       expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx).toMatchObject({ phase: 'full' })
+      expect(captured[0]!.ctx).toMatchObject({ count: 12 })
     })
 
     it('drops an oversized unterminated line and keeps the stream working', () => {
@@ -1269,15 +1353,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
     })
 
-    it('contains malformed buffered logfmt hit by flushSummary', () => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=', 'stdout')
-      expect(() => tap.flushSummary()).not.toThrow()
-      expect(captured).toHaveLength(0)
-      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
-      expect(captured).toHaveLength(1)
-    })
-
     it('contains a telemetry.emit failure, in ingest and in flushSummary', () => {
       let calls = 0
       vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
@@ -1290,7 +1365,7 @@ describe('assetsTap', () => {
         tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       ).not.toThrow()
 
-      tap.ingest('[assets-event] seeder.scan_started phase=enrich', 'stdout')
+      tap.ingest(taggedLine('seeder.scan_exploded', {}), 'stdout')
       expect(() => tap.flushSummary()).not.toThrow()
 
       expect(captured).toHaveLength(0)
@@ -1334,16 +1409,6 @@ describe('assetsTap', () => {
         ''
       ].join('\n')
       expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx).toMatchObject({ count: 3 })
-    })
-
-    it('flushes the stderr tail even when the stdout tail throws', () => {
-      withExplodingPhaseLookup()
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=fast', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_completed count=3', 'stderr')
-      expect(() => tap.flushSummary()).not.toThrow()
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ count: 3 })
     })

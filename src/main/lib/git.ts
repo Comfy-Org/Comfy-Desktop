@@ -73,6 +73,8 @@ export function configurePygit2(
     failures: 0,
     server: options.server === true
   }
+  // Queries waiting on the stopped server go to the new configuration.
+  pumpPygit2Server()
 }
 
 export function isPygit2Configured(): boolean {
@@ -96,6 +98,7 @@ export function resetPygit2State(): void {
   _pygit2RepairedDirs.clear()
   stopPygit2Server()
   _serverCrashes = 0
+  pumpPygit2Server()
 }
 
 function disablePygit2(reason: string): void {
@@ -113,6 +116,8 @@ function disablePygit2(reason: string): void {
   })
   _pygit2 = { status: 'disabled', reason }
   stopPygit2Server()
+  // Queries still waiting for the server would otherwise never settle: answer them now.
+  pumpPygit2Server()
 }
 
 const _breakerExempt = new AsyncLocalStorage<true>()
@@ -1229,6 +1234,23 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
         const sha = stdout.trim()
         resolve(sha || undefined)
       }
+    )
+  })
+}
+
+/** Whether tracked files differ from HEAD (untracked files ignored); null if git failed. */
+export function hasTrackedChanges(repoPath: string): Promise<boolean | null> {
+  if (isPygit2Configured()) {
+    return runPygit2(['tracked-changes', repoPath]).then(({ exitCode, stdout }) =>
+      exitCode === 0 ? stdout.trim() !== '' : null
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-c', 'safe.directory=*', 'status', '--porcelain', '--untracked-files=no'],
+      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? null : stdout.trim() !== '')
     )
   })
 }
