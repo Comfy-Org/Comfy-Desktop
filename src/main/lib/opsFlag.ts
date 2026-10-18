@@ -5,9 +5,9 @@
  * analytics collected FROM the user, so they read through `getOpsFlagResult`, which deliberately
  * BYPASSES the consent gate — a user who declined telemetry still gets the override, and
  * pre-consent surfaces can still resolve a value. The evaluation request supplies the
- * installation-stable key, the flag key and this build's `app_version` (plus `comfy_staff` for a
- * consented staff install — see `opsFlagPersonProperties` in telemetry.ts); implicit flag events
- * are disabled.
+ * installation-stable key, the flag key, this build's `app_version` and the OS `platform` (plus
+ * `comfy_staff` and the cached Cloud `user_tier` for a consented install — see
+ * `opsFlagPersonProperties` in telemetry.ts); implicit flag events are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
  * operational override isn't accidentally consent-gated. Fetched once at boot; a `persist` flag
