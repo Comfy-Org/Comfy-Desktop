@@ -25,7 +25,9 @@ import type { FeatureFlagValue } from './telemetry'
 
 // QA-ONLY (OBL-140, never merged): the QA build reads its own registry, so campaigns and override pins
 // pushed to QA testers never touch the production `desktop_campaigns`. Unit tests (VITEST) keep the real key.
-export const CAMPAIGN_REGISTRY_KEY = process.env.VITEST ? 'desktop_campaigns' : 'desktop_campaigns_qa'
+export const CAMPAIGN_REGISTRY_KEY = process.env.VITEST
+  ? 'desktop_campaigns'
+  : 'desktop_campaigns_qa'
 
 const ENROL_VARIANT = 'enrol'
 
