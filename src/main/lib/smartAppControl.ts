@@ -27,8 +27,8 @@ const STATES: Record<number, SmartAppControlState> = { 0: 'off', 1: 'on', 2: 'ev
 export function parsePolicyKeyListing(stdout: string): SmartAppControlState {
   const line = stdout.split(/\r?\n/).find((l) => l.trim().split(/\s+/)[0] === STATE_VALUE)
   if (!line) return 'not_applicable'
-  const match = /REG_DWORD\s+0x([0-9a-f]+)/i.exec(line)
-  return (match && STATES[parseInt(match[1], 16)]) || 'unknown'
+  const hex = /REG_DWORD\s+0x([0-9a-f]+)/i.exec(line)?.[1]
+  return (hex !== undefined && STATES[parseInt(hex, 16)]) || 'unknown'
 }
 
 /** Never rejects: a failed or slow read is `unknown`, so no condition mistakes it for off. */

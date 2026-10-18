@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const execFileMock = vi.hoisted(() => vi.fn())
 const releaseMock = vi.hoisted(() => vi.fn(() => '10.0.26100'))
 vi.mock('child_process', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('child_process')>()),
+  ...((await importOriginal()) as Record<string, unknown>),
   execFile: execFileMock
 }))
 vi.mock('os', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('os')>()),
+  ...((await importOriginal()) as Record<string, unknown>),
   release: releaseMock
 }))
 
