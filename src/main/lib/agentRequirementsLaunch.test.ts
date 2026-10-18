@@ -37,7 +37,8 @@ vi.mock('child_process', async (importOriginal) => {
 import {
   agentInstallStatus,
   installAgentRequirements,
-  planAgentRequirementsInstall
+  planAgentRequirementsInstall,
+  restoreCoreFrontend
 } from './agentRequirementsLaunch'
 import type { AgentInstallStatus } from './agentRequirementsLaunch'
 import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
@@ -736,6 +737,26 @@ describe('installAgentRequirements with a version override', () => {
     ])
   })
 
+  it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    const frontend = { 'comfyui-frontend-package': '1.55.19' }
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, frontend)
+
+    expect(decision).toEqual({
+      decision: 'applied',
+      pins: new Map([['comfyui-frontend-package', '1.55.19']])
+    })
+    expect(calls).toEqual([
+      {
+        content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
+        constraints: 'requests==2.32.0\n'
+      }
+    ])
+  })
+
   it("lists the install's own environment as JSON, from the install dir", async () => {
     await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
@@ -798,6 +819,54 @@ describe('installAgentRequirements with a version override', () => {
     expect(sendOutput.mock.calls.join('')).toContain(
       "refused (core_first); using ComfyUI's versions"
     )
+  })
+
+  it("applies the override on the same launch once core's file has installed its packages", async () => {
+    mockUvPip
+      .mockResolvedValueOnce({
+        code: 0,
+        output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      })
+      .mockResolvedValueOnce({ code: 0, output: INSTALLED })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent', '0.2.3']]) })
+    expect(calls, "core's file, then the override constrained by what it installed").toEqual([
+      { content: CORE_FILE, constraints: null },
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+    ])
+  })
+
+  it("puts core's versions back when the same-launch override fails, and reports it", async () => {
+    mockUvPip
+      .mockResolvedValueOnce({
+        code: 0,
+        output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      })
+      .mockResolvedValueOnce({ code: 0, output: INSTALLED })
+    respond = (call) => ({ code: call.constraints === null ? 0 : 1, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    expect(calls.map((c) => c.constraints !== null)).toEqual([false, true, false])
+  })
+
+  it("does not try the override when core's file fails on a fresh install", async () => {
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+    })
+    respond = () => ({ code: 1, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision, 'not counted toward retiring the override').toMatchObject({
+      decision: 'refused',
+      reason: 'core_first'
+    })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
   })
 
   it('falls back to core file when the override files cannot be written', async () => {
@@ -966,6 +1035,24 @@ describe('installAgentRequirements with a version override', () => {
       expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
       expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
     }
+  })
+
+  it('falls back to core file when an epoch pin cannot be installed', async () => {
+    respond = ({ constraints }) => (constraints ? { code: 1, output: '' } : { code: 0, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, {
+      'comfy-agent': '1!0.2.3'
+    })
+
+    expect(decision).toMatchObject({
+      decision: 'reverted',
+      reason: 'install_failed',
+      pins: new Map([['comfy-agent', '1!0.2.3']])
+    })
+    expect(calls.map((c) => c.content)).toEqual([
+      'comfy-agent==1!0.2.3\ncomfy-cli==1.21.0\n',
+      CORE_FILE
+    ])
   })
 
   it('falls back to core file when the override cannot install without moving another package', async () => {
@@ -1302,5 +1389,61 @@ describe('installAgentRequirements with a version override', () => {
         135_000
       )
     })
+  })
+})
+
+describe('restoreCoreFrontend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-restore-'))
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    mockInstall.mockResolvedValue({ code: 0, output: '' })
+  })
+
+  afterEach(() => {
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  const writeCore = (text: string): void =>
+    fs.writeFileSync(path.join(installDir, 'ComfyUI', 'requirements.txt'), text)
+
+  it("installs ComfyUI's exact frontend pin alone, without dependencies", async () => {
+    const inst = managedInstall()
+    writeCore('torch\ncomfyui-frontend-package==1.55.18\n')
+    let content = ''
+    mockInstall.mockImplementationOnce(async (file) => {
+      content = fs.readFileSync(file, 'utf-8')
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(content).toBe('comfyui-frontend-package==1.55.18\n')
+    expect(mockInstall.mock.calls[0]![8]).toEqual(['--no-deps'])
+    await vi.waitFor(() =>
+      expect(fs.readdirSync(installDir).filter((name) => name.startsWith('.launch'))).toEqual([])
+    )
+  })
+
+  it('keeps the record for the next launch when the install fails', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.55.18\n')
+    mockInstall.mockResolvedValueOnce({ code: 1, output: '' })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+  })
+
+  it('drops the record without installing when there is no exact pin to put back', async () => {
+    const inst = managedInstall()
+    expect(await restoreCoreFrontend(inst, vi.fn()), 'no requirements.txt').toBe(true)
+    writeCore('comfyui-frontend-package>=1.0\n')
+    expect(await restoreCoreFrontend(inst, vi.fn()), 'a range').toBe(true)
+    expect(mockInstall).not.toHaveBeenCalled()
+  })
+
+  it('drops the record for an install with no uv', async () => {
+    writeCore('comfyui-frontend-package==1.55.18\n')
+    const inst = { installPath: installDir } as unknown as InstallationRecord
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).not.toHaveBeenCalled()
   })
 })

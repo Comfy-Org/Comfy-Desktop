@@ -1528,6 +1528,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // NEXT launch; this runs before any view exists, so no outcome is missed.
     initStaffFlagTargeting()
 
+    // Hydrate the persisted cloud user-tier cache (billing telemetry, free-tier offer UI) and
+    // bind it for the ops-flag fetches below, for the same reason as staff targeting. A small
+    // local read; it never rejects. `userTier.ts` refreshes it on every cloud `dom-ready`.
+    await initUserTier()
+
     // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the
     // experiments cache would never have a value to give it. See
@@ -1540,11 +1545,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
-
-    // Hydrate the persisted cloud user-tier cache for billing telemetry and
-    // free-tier offer UI. `userTier.ts` refreshes it on every cloud
-    // webContents `dom-ready` (see `attach.ts`).
-    void initUserTier()
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)

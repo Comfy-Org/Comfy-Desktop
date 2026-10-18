@@ -8,6 +8,8 @@ import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import {
+  FRONTEND_PACKAGE,
+  coreFrontendVersion,
   effectiveAgentRequirements,
   coreFileInstalled,
   installedConstraints,
@@ -28,6 +30,9 @@ const ENABLE_AGENT_ARG = '--enable-agent'
 
 /** Requirements file Core ships beside `main.py` for the agent. */
 const AGENT_REQUIREMENTS = 'agent_requirements.txt'
+
+/** ComfyUI's own requirements, where the frontend is pinned. */
+const CORE_REQUIREMENTS = 'requirements.txt'
 
 let attempts = 0
 
@@ -55,8 +60,11 @@ const FORCE_STOP_TIMEOUT_MS = 5_000
  *
  * With a version override, the override's listing and install share its first
  * `OVERRIDE_TIMEOUT_MS` and core's own file gets the rest, at least
- * `MIN_FALLBACK_TIMEOUT_MS`. A uv that ignores the stop adds the kill grace and
- * force-stop to each run.
+ * `MIN_FALLBACK_TIMEOUT_MS`. On a fresh install the override waits for core's
+ * file, which gets the whole ceiling, then runs on the same launch with its own
+ * `OVERRIDE_TIMEOUT_MS`, and a failed one gives core's file another
+ * `MIN_FALLBACK_TIMEOUT_MS`: up to 240 s in all. A uv that ignores the stop adds
+ * the kill grace and force-stop to each run.
  */
 const INSTALL_TIMEOUT_MS = 120_000
 
@@ -182,6 +190,8 @@ export interface AgentRequirementsInstall {
   uvPath: string
   pythonPath: string
   installPath: string
+  /** Names the install in launch-output warnings; the agent's by default. */
+  label?: string
 }
 
 /**
@@ -241,6 +251,7 @@ async function runBoundedInstall(
   fallbackFollows = false
 ): Promise<boolean> {
   const fallback = "falling back to ComfyUI's versions"
+  const label = plan.label ?? 'agent requirements'
   // uv's own output is the only progress signal available: the download is a
   // single opaque stretch otherwise, and the row would sit on one caption for
   // its whole duration.
@@ -308,11 +319,13 @@ async function runBoundedInstall(
       onStatus?.({ kind: 'failed' })
       await forceStopAgentInstall(uvProc, plan.installPath, tempName)
       sendOutput(
-        `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and ${fallbackFollows ? fallback : 'starting ComfyUI anyway'}\n`
+        `\n⚠ ${label} install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and ${fallbackFollows ? fallback : 'starting ComfyUI anyway'}\n`
       )
     } else if (outcome.kind === 'failed') {
       onStatus?.({ kind: 'failed' })
-      sendOutput(`⚠ ${AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`)
+      sendOutput(
+        `⚠ ${plan.label ?? AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`
+      )
     } else if (outcome.result.code !== 0) {
       onStatus?.({ kind: 'failed' })
       // The exit code decides, not the timer that was racing it: an install
@@ -324,8 +337,8 @@ async function runBoundedInstall(
       // error a second time in the log.
       sendOutput(
         timedOut
-          ? `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s; ${fallbackFollows ? fallback : 'starting ComfyUI without it'}\n`
-          : `\n⚠ agent requirements install exited with code ${outcome.result.code}\n`
+          ? `\n⚠ ${label} install exceeded ${Math.round(timeoutMs / 1000)}s; ${fallbackFollows ? fallback : 'starting ComfyUI without it'}\n`
+          : `\n⚠ ${label} install exited with code ${outcome.result.code}\n`
       )
     }
     return outcome.kind === 'settled' && outcome.result.code === 0
@@ -339,7 +352,9 @@ async function runBoundedInstall(
 /**
  * Install the planned requirements. Bounded and fail-open, never throws. An `override` that
  * validates and passes its check is installed within `OVERRIDE_TIMEOUT_MS`; otherwise core's own
- * file runs in what is left of the ceiling. Returns the decision to report, if any.
+ * file runs in what is left of the ceiling. On a fresh install the override waits for core's file
+ * and then goes in on the same launch, with its own `OVERRIDE_TIMEOUT_MS`. Returns the decision to
+ * report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -376,7 +391,7 @@ export async function installAgentRequirements(
   // A failed override left the row on its terminal status; the fallback is a fresh install.
   if (decision) onStatus?.({ kind: 'installing' })
   const remaining = Math.max(MIN_FALLBACK_TIMEOUT_MS, INSTALL_TIMEOUT_MS - (Date.now() - startedAt))
-  await runBoundedInstall(
+  const coreInstalled = await runBoundedInstall(
     plan,
     plan.reqPath,
     `.launch-agent-reqs-${attemptTag()}.txt`,
@@ -385,7 +400,32 @@ export async function installAgentRequirements(
     signal,
     onStatus
   )
-  return decision
+  if (signal?.aborted || !coreInstalled || decision?.decision !== 'refused') return decision
+  if (decision.reason !== 'core_first') return decision
+  // Core's packages are in now, so the override goes in on this same launch, its constraints
+  // built from what core's file installed. Its own budget starts here: it is a delta on top.
+  const retried = await tryOverride(
+    plan,
+    override,
+    overrideState,
+    runOverride,
+    sendOutput,
+    signal,
+    Date.now()
+  )
+  if (signal?.aborted || retried?.decision !== 'reverted') return retried
+  // The failed override may have moved packages; core's file puts them back.
+  onStatus?.({ kind: 'installing' })
+  await runBoundedInstall(
+    plan,
+    plan.reqPath,
+    `.launch-agent-reqs-${attemptTag()}.txt`,
+    MIN_FALLBACK_TIMEOUT_MS,
+    sendOutput,
+    signal,
+    onStatus
+  )
+  return retried
 }
 
 /** The override's share of the ceiling, so a timed-out override still leaves core's file time. */
@@ -436,7 +476,10 @@ async function tryOverride(
   } catch {
     return refuse(sendOutput, 'check_failed', pins)
   }
-  const effective = effectiveAgentRequirements(coreText, pins)
+  const mainText = await fs.promises
+    .readFile(path.join(path.dirname(plan.reqPath), CORE_REQUIREMENTS), 'utf-8')
+    .catch(() => '')
+  const effective = effectiveAgentRequirements(coreText, pins, mainText)
   if (effective.kind === 'refused') return refuse(sendOutput, effective.reason, pins)
 
   // Per attempt: two sessions of one install can run at once, and must not share these files.
@@ -446,7 +489,7 @@ async function tryOverride(
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     const listed = await listInstalled(plan, signal)
-    const constraints = listed === null ? null : installedConstraints(listed)
+    const constraints = listed === null ? null : installedConstraints(listed, pins)
     if (listed === null || constraints === null) return refuse(sendOutput, 'check_failed', pins)
     // Not counted toward retiring the override: it applies on a later launch, once core's are in.
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
@@ -514,4 +557,56 @@ function revertOnInstall(sendOutput: (text: string) => void, pins: OverridePins)
     `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
   )
   return { decision: 'reverted', reason: 'install_failed', pins }
+}
+
+/** Its own bound: the wheel is about 25 MB, and a launch that runs out of time tries again next. */
+const FRONTEND_RESTORE_TIMEOUT_MS = 60_000
+
+/**
+ * Put ComfyUI's own `comfyui-frontend-package==X` back after an override moved it, with nothing
+ * else installed (`--no-deps`; the package has no dependencies). Runs whether or not the agent
+ * starts, since the launch after a campaign pulls its pin may not enable it. Bounded and fail-open,
+ * never throws; true once ComfyUI's version is in, or when there is nothing to put back (no uv, or
+ * no exact frontend pin in a readable `requirements.txt`), so the record is dropped either way.
+ */
+export async function restoreCoreFrontend(
+  installation: InstallationRecord,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const uvPath = getActiveUvPath(installation)
+  const pythonPath = getActivePythonPath(installation)
+  if (!pythonPath || !fs.existsSync(uvPath)) return true
+  const comfyDir = path.join(installation.installPath, 'ComfyUI')
+  const mainText = await fs.promises
+    .readFile(path.join(comfyDir, CORE_REQUIREMENTS), 'utf-8')
+    .catch(() => '')
+  const version = coreFrontendVersion(mainText)
+  if (version === null) return true
+  const tag = attemptTag()
+  const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
+  try {
+    await fs.promises.writeFile(reqPath, `${FRONTEND_PACKAGE}==${version}\n`, 'utf-8')
+    sendOutput(`\nPutting ComfyUI's ${FRONTEND_PACKAGE}==${version} back…\n`)
+    return await runBoundedInstall(
+      {
+        reqPath,
+        uvPath,
+        pythonPath,
+        installPath: installation.installPath,
+        label: 'frontend restore'
+      },
+      reqPath,
+      `.launch-frontend-restore-${tag}.txt`,
+      FRONTEND_RESTORE_TIMEOUT_MS,
+      sendOutput,
+      signal,
+      undefined,
+      ['--no-deps']
+    )
+  } catch {
+    return false
+  } finally {
+    void fs.promises.unlink(reqPath).catch(() => {})
+  }
 }

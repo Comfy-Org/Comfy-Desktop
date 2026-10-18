@@ -119,12 +119,12 @@ describe('initCoreBetaFlags', () => {
       expect(call[1], 'the boot id').toBe('machine-hash')
   })
 
-  it('a first-time beta user with no saved registry gets campaigns from the next boot', async () => {
+  it('a first-time beta user with no saved registry gets campaigns in the same session', async () => {
     serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
     const { registry, answers } = await getCoreBetaCampaigns()
-    expect(registry, 'the registry itself arrives this session').toEqual(REGISTRY)
-    expect(answers.size, 'its keys are discovered one boot late').toBe(0)
+    expect(registry).toEqual(REGISTRY)
+    expect(answers.get(KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
   })
 
   it.each([
@@ -187,18 +187,38 @@ describe('initCoreBetaCampaigns', () => {
     expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
   })
 
-  it('discovers a newly listed key one launch late', async () => {
+  it('fetches a key the fresh registry lists for the first time on the same boot', async () => {
     serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(fetchedKeys()).toEqual(['desktop_campaigns'])
-    expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
-
-    reset()
-    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
-    await initCoreBetaCampaigns({ distinctId: 'id' })
+    expect(fetchedKeys()).toEqual(['desktop_campaigns', KEY])
+    expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
     const { registry, answers } = await getCoreBetaCampaigns()
     expect(registry).toEqual(REGISTRY)
     expect(answers.get(KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+  })
+
+  it('a key named by a registry refreshed over a saved one is fetched at the next read', async () => {
+    const NEW_KEY = 'desktop_core_beta_new'
+    const FRESH = [...REGISTRY, { key: NEW_KEY, args: ['--enable-agent'] }]
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW }
+    })
+    serve({
+      desktop_campaigns: value(true, FRESH),
+      [KEY]: value('hold', AGENT),
+      [NEW_KEY]: value('enrol', AGENT)
+    })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
+    // The saved registry answered the boot; the refresh lands in the background.
+    await new Promise((resolve) => setImmediate(resolve))
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry).toEqual(FRESH)
+    expect(answers.get(NEW_KEY)).toMatchObject({ enrol: true, fetchedAt: NOW })
+    expect(
+      fetchedKeys().filter((key) => key === NEW_KEY),
+      'started once'
+    ).toHaveLength(1)
   })
 
   it('holds the saved answers on an offline launch, with their saved fetch time', async () => {

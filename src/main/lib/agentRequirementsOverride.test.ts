@@ -4,6 +4,7 @@ import {
   START_FAILURES_TO_REVERT,
   classifyAgentEvent,
   coreFileInstalled,
+  coreFrontendVersion,
   createAgentStartWatcher,
   effectiveAgentRequirements,
   installedConstraints,
@@ -13,6 +14,7 @@ import {
   parseAgentRequirementsOverride,
   pinsOverBareLines,
   compareVersions,
+  readFrontendPin,
   readOverrideState,
   reportOverrideDecision
 } from './agentRequirementsOverride'
@@ -22,7 +24,8 @@ import type { InstallationRecord } from '../installations'
 const pins = (entries: Record<string, OverridePin>): OverridePins =>
   new Map(Object.entries(entries))
 
-const WHEEL = 'https://example.com/comfy_agent-0.0.1.dev120-py3-none-manylinux2014_x86_64.whl'
+const WHEEL =
+  'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/comfy_agent-0.0.1.dev120-py3-none-manylinux2014_x86_64.whl'
 const LINUX = 'sys_platform == "linux" and platform_machine == "x86_64"'
 const WIN = 'sys_platform == "win32"'
 
@@ -38,6 +41,22 @@ describe('parseAgentRequirementsOverride', () => {
   it('accepts pre-release, post and dev segments', () => {
     for (const version of ['1.0.0rc1', '1.0.0a2', '1.0.0.post1', '1.0.0.dev3', '2'])
       expect(parseAgentRequirementsOverride({ 'comfy-agent': version }).kind).toBe('pins')
+  })
+
+  it('accepts an epoch', () => {
+    for (const version of ['1!2.3.4', '0!1.0', '12!0', '1!2.3.4rc1.post2.dev3'])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': version }), version).toEqual({
+        kind: 'pins',
+        pins: pins({ 'comfy-agent': version })
+      })
+  })
+
+  it('refuses a malformed epoch', () => {
+    for (const version of ['!1.0', '1!', '1!!2', 'a!1.0', '1!2!3', '-1!1.0', '1.0!2', '1 !2.0'])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': version }), version).toEqual({
+        kind: 'refused',
+        reason: 'bad_version'
+      })
   })
 
   it('treats an absent or empty field as no override', () => {
@@ -102,7 +121,7 @@ describe('parseAgentRequirementsOverride', () => {
     })
   })
 
-  it('accepts the marker grammar: quotes, comparisons, parentheses, membership lists', () => {
+  it('accepts the marker grammar: quotes, comparisons, parentheses, membership', () => {
     for (const marker of [
       "(sys_platform == 'darwin' or os_name != \"nt\") and python_version >= '3.10'",
       'platform_machine in "x86_64,AMD64"',
@@ -114,19 +133,73 @@ describe('parseAgentRequirementsOverride', () => {
       ).toBe('pins')
   })
 
+  it('takes a wheel from any Comfy-Org path on GitHub or any tailnet host (QA builds only)', () => {
+    for (const entry of [
+      'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/comfy_agent-0.0.2.dev9123-py3-none-any.whl',
+      'https://simon-qa-linux-1.fennec-typhon.ts.net/other/dir/comfyui_frontend_package-1.57.0.dev1184-py3-none-any.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net:8443/a-1.0-py3-none-any.whl',
+      'https://fennec-typhon.ts.net/a-1.0-py3-none-any.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/raw/main/dist/a-1.0-py3-none-any.whl'
+    ])
+      expect(
+        parseAgentRequirementsOverride({
+          'comfy-agent': [entry],
+          'comfyui-frontend-package': [entry]
+        }).kind,
+        entry
+      ).toBe('pins')
+  })
+
+  it('refuses a host or path that only looks like an allowed one', () => {
+    for (const entry of [
+      'https://evil.example/?x=fennec-typhon.ts.net/a.whl',
+      'https://evil.example/fennec-typhon.ts.net/a.whl',
+      'https://evilfennec-typhon.ts.net/a.whl',
+      'https://fennec-typhon.ts.net.evil.example/a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net.evil.example/obl-118/wheels/a.whl',
+      'https://github.com.evil.example/Comfy-Org/a.whl',
+      'https://evil.example/github.com/Comfy-Org/a.whl',
+      'https://github.com@evil.example/Comfy-Org/a.whl',
+      'https://user@github.com/Comfy-Org/a.whl',
+      'https://user:pw@lab-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://GitHub.com/Comfy-Org/a.whl',
+      'https://LAB-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://github.com:8443/Comfy-Org/a.whl',
+      'https://github.com/Comfy-Orgx/a.whl',
+      'https://github.com/comfy-org/a.whl',
+      'https://github.com/someone/Comfy-Org/a.whl',
+      'http://lab-linux-build.fennec-typhon.ts.net/a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/a.tar.gz',
+      'https://lab-linux-build.fennec-typhon.ts.net/a/../../b.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/a"b.whl'
+    ])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': [entry] }), entry).toEqual({
+        kind: 'refused',
+        reason: 'bad_url'
+      })
+  })
+
   it('refuses a URL entry that is not https or could smuggle anything into the file', () => {
     for (const entry of [
       'http://example.com/a.whl',
+      'https://example.com/comfy_agent-0.2.3-py3-none-any.whl',
+      'https://github.com/someone-else/comfy_agent-0.2.3-py3-none-any.whl',
+      'https://github.com/Comfy-Org/../someone-else/a.whl',
+      'https://github.com/Comfy-Org/%2e%2e/someone-else/a.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/comfy_agent-0.2.3.tar.gz',
+      'https://github.com/Comfy-Org/comfy-cli/archive/refs/heads/main.tar.gz?file=a.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a.whl#sha256=ab',
       'file:///tmp/a.whl',
-      'https://example.com/${TOKEN}.whl',
-      'https://example.com/a.whl\\',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/${TOKEN}.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a\\b.whl',
       `${WHEEL} ; sys_platform == "win32" \\`,
-      'https://example.com/a b.whl',
+      'https://github.com/Comfy-Org/ComfyUI-private/releases/download/v1/a b.whl',
       `${WHEEL} ; ${WIN} ; ${LINUX}`,
       `${WHEEL} ; ${WIN} # c`,
       `${WHEEL} ; ${WIN}\n-r extra.txt`,
-      `${WHEEL}\n-rextra.txt`,
-      `${WHEEL}\x85--index-url=https://evil`,
+      `${WHEEL}\n-rx.whl`,
+      `${WHEEL}\r--index-url=https://evil/x.whl`,
+      `${WHEEL}\x85--index-url=https://evil/x.whl`,
       `${WHEEL} ; sys_platform == "linux" --no-deps`,
       `${WHEEL} ; sys_platform == "linux" -C k=v`,
       `${WHEEL} ; sys_platform\t== "win32"`,
@@ -154,6 +227,20 @@ describe('parseAgentRequirementsOverride', () => {
 })
 
 describe('effectiveAgentRequirements', () => {
+  it('honours the newer-than rule across epochs', () => {
+    expect(
+      effectiveAgentRequirements('comfy-agent==9.9\n', pins({ 'comfy-agent': '1!0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==1!0.1\n' })
+    for (const version of ['9.9', '99.0', '1!2.0'])
+      expect(
+        effectiveAgentRequirements('comfy-agent==1!2.0\n', pins({ 'comfy-agent': version })),
+        version
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+    expect(
+      effectiveAgentRequirements('comfy-agent==1!2.0\n', pins({ 'comfy-agent': '1!2.0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==1!2.0.1\n' })
+  })
+
   it('replaces the pinned lines and leaves every other line as core wrote it', () => {
     const core = '# agent\ncomfy-agent==0.2.0\n-r extra.txt\ncomfy-cli==1.21.0  # cli\n'
     expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
@@ -227,31 +314,26 @@ describe('effectiveAgentRequirements', () => {
       kind: 'text',
       text: `comfy-agent==0.0.1 ; ${LINUX}\ncomfy-agent==0.0.1 ; ${WIN}\ncomfy-cli==1.21.0\n`
     })
-    // uv reads `url;marker` with no space as one URL, with no marker.
-    for (const core of [
-      `comfy-agent @ ${WHEEL}\n`,
-      `comfy-agent @ ${WHEEL};sys_platform=="win32"\n`
-    ])
-      expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.0.1' }))).toEqual({
-        kind: 'text',
-        text: 'comfy-agent==0.0.1\n'
-      })
+    expect(
+      effectiveAgentRequirements(`comfy-agent @ ${WHEEL}\n`, pins({ 'comfy-agent': '0.0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==0.0.1\n' })
   })
 
   it("replaces core's URL or bare lines with the override's URL lines, once", () => {
     const override = pins({ 'comfy-agent': [`${WHEEL} ; ${LINUX}`, WHEEL] })
     const expected = `comfy-agent @ ${WHEEL} ; ${LINUX}\ncomfy-agent @ ${WHEEL}\n`
     for (const core of [
-      `comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\ncomfy-agent @ ${WHEEL} ; ${WIN}\n`,
+      `comfy-agent @ ${WHEEL} ; ${LINUX}  # poc\ncomfy-agent @ ${WHEEL} ; ${WIN} \n`,
+      `comfy-agent @ ${WHEEL}  # poc\n`,
       'comfy-agent\n'
     ])
       expect(effectiveAgentRequirements(core, override)).toEqual({ kind: 'text', text: expected })
   })
 
-  it('refuses a URL override over a line core pinned, which it cannot be newer than', () => {
+  it('puts a URL override over a line core pinned, since a build has no version to compare', () => {
     expect(
       effectiveAgentRequirements('comfy-agent==9.0\n', pins({ 'comfy-agent': [WHEEL] }))
-    ).toEqual({ kind: 'refused', reason: 'not_newer' })
+    ).toEqual({ kind: 'text', text: `comfy-agent @ ${WHEEL}\n` })
   })
 
   it('refuses a line core continues onto the next', () => {
@@ -280,7 +362,9 @@ describe('effectiveAgentRequirements', () => {
     for (const core of [
       'comfy-agent @ file:///opt/comfy_agent.whl\n',
       `comfy-agent[extra] @ ${WHEEL}\n`,
-      `comfy-agent @ ${WHEEL} ; ${WIN} --hash=sha256:ab\n`
+      `comfy-agent @ ${WHEEL} ; ${WIN} --hash=sha256:ab\n`,
+      // uv reads `url;marker` as one URL, which it can't install anywhere.
+      `comfy-agent @ ${WHEEL};sys_platform=="win32"\n`
     ])
       expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })), core).toEqual({
         kind: 'refused',
@@ -518,6 +602,15 @@ describe('compareVersions', () => {
     expect(compareVersions('1.0', '1.0.0.0')).toBe(0)
     expect(compareVersions('2', '2.0')).toBe(0)
   })
+
+  it('compares the epoch before anything else, and reads a missing one as 0', () => {
+    expect(compareVersions('1!0.1', '0.9')).toBe(1)
+    expect(compareVersions('1!0.1', '999.0.post9')).toBe(1)
+    expect(compareVersions('2!0', '1!999')).toBe(1)
+    expect(compareVersions('1!0.1.dev1', '0!9.9')).toBe(1)
+    expect(compareVersions('0!1.0', '1.0')).toBe(0)
+    expect(compareVersions('1!1.0', '1!1.0.1')).toBe(-1)
+  })
 })
 
 describe('pinsOverBareLines', () => {
@@ -559,5 +652,323 @@ describe('reportOverrideDecision', () => {
     expect(() =>
       reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
     ).not.toThrow()
+  })
+})
+
+describe('the frontend package', () => {
+  const AGENT = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+  const MAIN = 'torch\ncomfyui-frontend-package==1.55.18\ncomfyui-workflow-templates==0.1.2\n'
+
+  it('takes an exact version, or URL entries on the same terms as the agent', () => {
+    expect(parseAgentRequirementsOverride({ 'comfyui-frontend-package': '1.55.19' })).toEqual({
+      kind: 'pins',
+      pins: pins({ 'comfyui-frontend-package': '1.55.19' })
+    })
+    const wheel = 'https://github.com/Comfy-Org/x/releases/download/v1/f-1.0-py3-none-any.whl'
+    expect(parseAgentRequirementsOverride({ comfyui_frontend_package: [wheel] })).toEqual({
+      kind: 'pins',
+      pins: new Map([['comfyui-frontend-package', [wheel]]])
+    })
+    for (const bad of ['https://example.com/f.whl', 'https://github.com/Comfy-Org/x/f.zip'])
+      expect(parseAgentRequirementsOverride({ comfyui_frontend_package: [bad] })).toEqual({
+        kind: 'refused',
+        reason: 'bad_url'
+      })
+  })
+
+  it("puts a frontend URL over ComfyUI's exact pin, in the agent's file", () => {
+    const wheel = 'https://github.com/Comfy-Org/x/releases/download/v1/f-1.0-py3-none-any.whl'
+    expect(
+      effectiveAgentRequirements(AGENT, new Map([['comfyui-frontend-package', [wheel]]]), MAIN)
+    ).toEqual({
+      kind: 'text',
+      text: `comfy-agent==0.2.0\ncomfy-cli==1.21.0\ncomfyui-frontend-package @ ${wheel}\n`
+    })
+  })
+
+  it("is pinned from ComfyUI's requirements.txt and added to the agent's file", () => {
+    expect(
+      effectiveAgentRequirements(AGENT, pins({ 'comfyui-frontend-package': '1.55.19' }), MAIN)
+    ).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\ncomfyui-frontend-package==1.55.19\n'
+    })
+  })
+
+  it('goes in beside an agent pin', () => {
+    const both = pins({ 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.19' })
+    expect(effectiveAgentRequirements(AGENT, both, MAIN)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\ncomfyui-frontend-package==1.55.19\n'
+    })
+  })
+
+  it("must be newer than ComfyUI's pin, so it retires once ComfyUI catches up", () => {
+    for (const version of ['1.55.18', '1.55.17'])
+      expect(
+        effectiveAgentRequirements(AGENT, pins({ 'comfyui-frontend-package': version }), MAIN)
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it("is refused when ComfyUI's requirements.txt doesn't name it", () => {
+    const frontend = pins({ 'comfyui-frontend-package': '1.55.19' })
+    expect(effectiveAgentRequirements(AGENT, frontend)).toEqual({
+      kind: 'refused',
+      reason: 'not_in_core_file'
+    })
+    expect(effectiveAgentRequirements(AGENT, frontend, 'torch\n')).toEqual({
+      kind: 'refused',
+      reason: 'not_in_core_file'
+    })
+  })
+
+  it("leaves the agent's file alone when only the agent is pinned", () => {
+    expect(effectiveAgentRequirements(AGENT, pins({ 'comfy-agent': '0.2.3' }), MAIN)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
+    })
+  })
+
+  it('is held where it is unless this override pins it', () => {
+    const list = JSON.stringify([
+      { name: 'comfyui-frontend-package', version: '1.55.18' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list)).toBe('comfyui-frontend-package==1.55.18\nrequests==2.32.0\n')
+    expect(installedConstraints(list, pins({ 'comfyui-frontend-package': '1.55.19' }))).toBe(
+      'requests==2.32.0\n'
+    )
+  })
+
+  it("reads ComfyUI's exact pin, or none", () => {
+    expect(coreFrontendVersion(MAIN)).toBe('1.55.18')
+    expect(coreFrontendVersion('comfyui_frontend_package == 1.2.3  # pinned\n')).toBe('1.2.3')
+    expect(coreFrontendVersion('comfyui-frontend-package>=1.0\n')).toBeNull()
+    expect(coreFrontendVersion('comfyui-frontend-package\n')).toBeNull()
+    expect(coreFrontendVersion('torch\n')).toBeNull()
+  })
+
+  it('reads back the recorded version, or none', () => {
+    const record = (frontendVersionOverride: unknown): InstallationRecord =>
+      ({ frontendVersionOverride }) as unknown as InstallationRecord
+    expect(readFrontendPin(record({ version: '1.55.19' }))).toBe('1.55.19')
+    for (const bad of [undefined, null, 'x', { version: 3 }])
+      expect(readFrontendPin(record(bad))).toBeNull()
+  })
+})
+
+describe('the agent package name and extras', () => {
+  it("decorates the first comfy-agent* line, keeping core's name", () => {
+    const core = 'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\ncomfy-cli==1.21.0\n'
+    expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-oss==0.2.3\ncomfy-agent-sdk==1.0\ncomfy-cli==1.21.0\n'
+    })
+    expect(
+      effectiveAgentRequirements('Comfy_Agent_Python\n', pins({ 'comfy-agent': '1!2.0' }))
+    ).toEqual({ kind: 'text', text: 'Comfy_Agent_Python==1!2.0\n' })
+  })
+
+  it('still refuses the same agent package named twice', () => {
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agent-oss==0.1\ncomfy-agent-oss==0.2\n',
+        pins({ 'comfy-agent': '0.3' })
+      )
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('does not claim a package whose name only runs on from comfy-agent', () => {
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agentx==1.0\ncomfy-agent-oss==0.2.0\n',
+        pins({ 'comfy-agent': '0.2.3' })
+      )
+    ).toEqual({ kind: 'text', text: 'comfy-agentx==1.0\ncomfy-agent-oss==0.2.3\n' })
+    expect(
+      effectiveAgentRequirements('comfy-agentx==1.0\n', pins({ 'comfy-agent': '0.2.3' }))
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+    const list = JSON.stringify([
+      { name: 'comfy-agentx', version: '1.0' },
+      { name: 'comfy-agent-oss', version: '0.2.0' }
+    ])
+    expect(installedConstraints(list), 'comfy-agentx is held; the agent is not').toBe(
+      'comfy-agentx==1.0\n'
+    )
+  })
+
+  it('refuses a version or extras with a trailing newline, without relying on a trim', () => {
+    for (const raw of [{ 'comfy-agent': '1.0\n' }, { 'comfy-agent[go\n]': '1.0' }])
+      expect(parseAgentRequirementsOverride(raw).kind, JSON.stringify(raw)).toBe('refused')
+  })
+
+  it('cannot name the package: only the comfy-agent key selects the agent line', () => {
+    for (const key of ['comfy-agent-oss', 'comfy-agentx', 'comfy-agent-oss[go]'])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'unknown_package'
+      })
+  })
+
+  it('keeps comfy-cli and nodejs-wheel-binaries to their exact names', () => {
+    expect(
+      effectiveAgentRequirements('comfy-cli-extra==1.0\n', pins({ 'comfy-cli': '1.22.0' }))
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+    expect(
+      effectiveAgentRequirements(
+        'nodejs-wheel-binaries-x==1.0\n',
+        pins({ 'nodejs-wheel-binaries': '24.0.0' })
+      )
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+  })
+
+  it('lets a renamed agent package move, holding everything else', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent-oss', version: '0.2.0' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list)).toBe('requests==2.32.0\n')
+  })
+
+  it('reads extras from the key, canonicalised and sorted, beside an epoch', () => {
+    expect(
+      parseAgentRequirementsOverride({
+        'comfy-agent[go]': '1!2.0',
+        'Comfy_CLI[NonFree, b]': '1.22.0'
+      })
+    ).toEqual({
+      kind: 'pins',
+      pins: new Map([
+        ['comfy-agent', { version: '1!2.0', extras: ['go'] }],
+        ['comfy-cli', { version: '1.22.0', extras: ['b', 'nonfree'] }]
+      ])
+    })
+  })
+
+  it("installs the extras with the version, under core's name", () => {
+    const parsed = parseAgentRequirementsOverride({
+      'comfy-agent[go]': '1!2.0',
+      'comfy-cli[nonfree]': '1.22.0'
+    })
+    if (parsed.kind !== 'pins') throw new Error('expected pins')
+    expect(
+      effectiveAgentRequirements('comfy-agent-oss==0.2.0\ncomfy-cli==1.21.0\n', parsed.pins)
+    ).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-oss[go]==1!2.0\ncomfy-cli[nonfree]==1.22.0\n'
+    })
+    expect(overrideSignature(parsed.pins)).toBe('comfy-agent[go]==1!2.0,comfy-cli[nonfree]==1.22.0')
+  })
+
+  it('refuses extras that are not PEP 508 extra names', () => {
+    for (const key of [
+      'comfy-agent[]',
+      'comfy-agent[go;x]',
+      'comfy-agent[-go]',
+      'comfy-agent[go-]',
+      'comfy-agent[go,]',
+      'comfy-agent[g o]',
+      'comfy-agent[go==1]',
+      'comfy-agent[go@https://x]',
+      'comfy-agent[$X]'
+    ])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'bad_extra'
+      })
+    for (const key of ['comfy-agent[go]]', 'comfy-agent [go]', 'comfy-agent[go'])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'unknown_package'
+      })
+  })
+
+  it('still refuses a bad version when the extras are fine', () => {
+    expect(parseAgentRequirementsOverride({ 'comfy-agent[go]': '>=1.0' })).toEqual({
+      kind: 'refused',
+      reason: 'bad_version'
+    })
+  })
+})
+
+describe('URL pins against core lines (QA tier)', () => {
+  const MAC = 'sys_platform == "darwin"'
+  const url = (platform: string): string =>
+    `https://github.com/Comfy-Org/ComfyUI-private/releases/download/v2/comfy_agent-0.0.2-${platform}.whl`
+
+  it("replaces all of a package's core lines once, whatever the counts", () => {
+    const core =
+      `comfy-agent @ ${WHEEL} ; ${LINUX}\n` +
+      `comfy-agent @ ${WHEEL} ; ${WIN}\n` +
+      `comfy-agent @ ${WHEEL} ; ${MAC}\n` +
+      'comfy-cli==1.21.0\n'
+    const two = [`${url('linux')} ; ${LINUX}`, `${url('win')} ; ${WIN}`]
+    expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': two }))).toEqual({
+      kind: 'text',
+      text:
+        `comfy-agent @ ${url('linux')} ; ${LINUX}\n` +
+        `comfy-agent @ ${url('win')} ; ${WIN}\n` +
+        'comfy-cli==1.21.0\n'
+    })
+    const four = [...two, `${url('mac')} ; ${MAC}`, `${url('arm')} ; platform_machine == "aarch64"`]
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agent==0.0.1\ncomfy-cli==1.21.0\n',
+        pins({ 'comfy-agent': four })
+      )
+    ).toEqual({
+      kind: 'text',
+      text: four.map((entry) => `comfy-agent @ ${entry}`).join('\n') + '\ncomfy-cli==1.21.0\n'
+    })
+  })
+
+  it('refuses a URL or marker entry with a line break or tab, without relying on a trim', () => {
+    for (const entry of [
+      `${WHEEL}\n`,
+      `${WHEEL} ; ${WIN}\n`,
+      `${WHEEL}\r`,
+      `${WHEEL}\t`,
+      `\n${WHEEL}`
+    ])
+      expect(
+        parseAgentRequirementsOverride({ 'comfy-agent': [entry] }),
+        JSON.stringify(entry)
+      ).toEqual({ kind: 'refused', reason: 'bad_url' })
+  })
+})
+
+describe('extras on a URL pin (QA tier)', () => {
+  const lab = 'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/'
+  const wheel = `${lab}comfy_agent-0.0.2.dev9123-py3-none-manylinux2014_x86_64.whl`
+
+  it('reads extras beside URL entries', () => {
+    expect(
+      parseAgentRequirementsOverride({ 'comfy-agent[go]': [`${wheel} ; sys_platform == "linux"`] })
+    ).toEqual({
+      kind: 'pins',
+      pins: new Map([
+        ['comfy-agent', { urls: [`${wheel} ; sys_platform == "linux"`], extras: ['go'] }]
+      ])
+    })
+  })
+
+  it("installs name[extras] @ url over core's line, under core's name", () => {
+    const parsed = parseAgentRequirementsOverride({ 'comfy-agent[go]': [wheel] })
+    if (parsed.kind !== 'pins') throw new Error('expected pins')
+    expect(effectiveAgentRequirements('comfy-agent-oss==9.0\n', parsed.pins)).toEqual({
+      kind: 'text',
+      text: `comfy-agent-oss[go] @ ${wheel}\n`
+    })
+    expect(overrideSignature(parsed.pins)).toBe(`comfy-agent[go] @ ${wheel}`)
+  })
+
+  it('still refuses a bad URL or bad extras', () => {
+    expect(
+      parseAgentRequirementsOverride({ 'comfy-agent[go]': ['https://example.com/a.whl'] })
+    ).toEqual({ kind: 'refused', reason: 'bad_url' })
+    expect(parseAgentRequirementsOverride({ 'comfy-agent[g;o]': [wheel] })).toEqual({
+      kind: 'refused',
+      reason: 'bad_extra'
+    })
   })
 })

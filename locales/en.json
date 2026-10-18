@@ -503,6 +503,7 @@
       "repair": "Repairing installation…",
       "torchRepair": "Restoring GPU PyTorch…",
       "agentRequirements": "Installing agent requirements…",
+      "frontendRestore": "Restoring the frontend…",
       "securityScan": "Running security scan…",
       "mountLibraries": "Loading libraries…",
       "gpu": "Initializing GPU…",

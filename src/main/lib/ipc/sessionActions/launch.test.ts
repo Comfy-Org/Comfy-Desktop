@@ -112,16 +112,16 @@ const launchHarness = vi.hoisted(() => ({
   recordWriteThrows: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
+  records: null as null | Map<string, Record<string, unknown>>,
+  recordsUpdateThrows: false,
+  recordsUpdateGate: null as null | Promise<void>,
   campaignsReject: false,
   /** Installation records `installations.list` answers with, by id; null = the real store. */
   installRecords: null as null | Record<string, { name: string; sourceId: string }>,
   /** Holds every `installations.list` call until it resolves; null = answer at once. */
   listGate: null as null | Promise<void>,
   /** Stands in for a remote server's URL poll; null = the real one. */
-  waitForUrl: null as null | (() => Promise<void>),
-  records: null as null | Map<string, Record<string, unknown>>,
-  recordsUpdateThrows: false,
-  recordsUpdateGate: null as null | Promise<void>
+  waitForUrl: null as null | (() => Promise<void>)
 }))
 
 vi.mock('../../coreBetaCampaignFlags', () => ({
@@ -304,24 +304,6 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   }
 })
 
-vi.mock('../../coreBetaAncestry', async (importOriginal) => {
-  const actual = await importOriginal<typeof CoreBetaAncestryModule>()
-  return {
-    ...actual,
-    resolveCoreCommitState: (...args: Parameters<typeof actual.resolveCoreCommitState>) => {
-      launchHarness.commitShas.push([...args[2]])
-      const { commits } = launchHarness
-      if (commits === null) return actual.resolveCoreCommitState(...args)
-      // Like the real one, it proves only what this call asked about.
-      const asked = new Set(args[2])
-      return Promise.resolve({
-        head: commits.head,
-        ancestry: new Map([...commits.ancestry].filter(([sha]) => asked.has(sha)))
-      })
-    }
-  }
-})
-
 /** Stands in for the uv subprocess the agent-requirements step drives, so a launch
  *  under test installs nothing and a test can choose the outcome. */
 const pipHarness = vi.hoisted(() => ({
@@ -342,6 +324,24 @@ vi.mock('../../pip', async (importOriginal) => {
       return pipHarness.respond?.(args) ?? pipHarness.result
     },
     runUvPipDetailed: async () => ({ code: 0, output: pipHarness.installed })
+  }
+})
+
+vi.mock('../../coreBetaAncestry', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreBetaAncestryModule>()
+  return {
+    ...actual,
+    resolveCoreCommitState: (...args: Parameters<typeof actual.resolveCoreCommitState>) => {
+      launchHarness.commitShas.push([...args[2]])
+      const { commits } = launchHarness
+      if (commits === null) return actual.resolveCoreCommitState(...args)
+      // Like the real one, it proves only what this call asked about.
+      const asked = new Set(args[2])
+      return Promise.resolve({
+        head: commits.head,
+        ancestry: new Map([...commits.ancestry].filter(([sha]) => asked.has(sha)))
+      })
+    }
   }
 })
 
