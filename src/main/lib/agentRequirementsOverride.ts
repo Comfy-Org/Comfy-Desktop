@@ -10,12 +10,7 @@ export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
  * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
  * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
  */
-const OVERRIDABLE = new Set([
-  'comfy-agent',
-  'comfy-cli',
-  'nodejs-wheel-binaries',
-  FRONTEND_PACKAGE
-])
+const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
 
 /** PEP 440 public versions only, so no operator, URL, index, option or marker can get through. */
 const EXACT_VERSION =
