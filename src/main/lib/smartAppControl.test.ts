@@ -69,7 +69,9 @@ describe('readSmartAppControlState', () => {
   beforeEach(() => {
     execFileMock.mockReset()
     // Fail by default, so a test that should not read fails on its assertion, not a timeout.
-    execFileMock.mockImplementation((_file, _args, _opts, cb) => cb(new Error('unexpected'), '', ''))
+    execFileMock.mockImplementation((_file, _args, _opts, cb) =>
+      cb(new Error('unexpected'), '', '')
+    )
     releaseMock.mockReturnValue('10.0.26100')
     setPlatform('win32')
   })
