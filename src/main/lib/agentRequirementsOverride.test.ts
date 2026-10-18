@@ -117,6 +117,30 @@ describe('parseAgentRequirementsOverride', () => {
       ).toBe('pins')
   })
 
+  it('takes a wheel from the OBL-118 lab wheel directory (QA builds only)', () => {
+    const lab = 'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/'
+    expect(
+      parseAgentRequirementsOverride({
+        'comfy-agent': [`${lab}comfy_agent-0.0.2.dev9123-py3-none-manylinux2014_x86_64.whl`],
+        'comfyui-frontend-package': [
+          `${lab}comfyui_frontend_package-1.57.0.dev1184-py3-none-any.whl`
+        ]
+      }).kind
+    ).toBe('pins')
+    for (const entry of [
+      'http://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/other/a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net/obl-118/wheels/../../a.whl',
+      'https://lab-linux-build.fennec-typhon.ts.net.evil.example/obl-118/wheels/a.whl',
+      'https://simon-qa-linux-1.fennec-typhon.ts.net/obl-118/wheels/a.whl',
+      `${lab}a.tar.gz`
+    ])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': [entry] }), entry).toEqual({
+        kind: 'refused',
+        reason: 'bad_url'
+      })
+  })
+
   it('refuses a URL entry that is not https or could smuggle anything into the file', () => {
     for (const entry of [
       'http://example.com/a.whl',

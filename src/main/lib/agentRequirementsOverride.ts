@@ -21,12 +21,13 @@ const EXACT_VERSION =
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
 /**
- * An override's URL entry: a wheel under Comfy-Org on GitHub, so nothing builds at install. Printable ASCII
- * without `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..` (either could leave Comfy-Org once
+ * An override's URL entry: a wheel under Comfy-Org on GitHub, or (DO NOT MERGE: QA builds only) under
+ * the OBL-118 lab wheel directory on the tailnet, so nothing builds at install. Printable ASCII without
+ * `$` (pip and uv expand `${VAR}`), `;`, `\`, `#`, `?`, `%` or `..` (either could leave the prefix once
  * the URL is normalised).
  */
 const OVERRIDE_URL =
-  /^https:\/\/github\.com\/Comfy-Org\/(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
+  /^https:\/\/(?:github\.com\/Comfy-Org\/|lab-linux-build\.fennec-typhon\.ts\.net\/obl-118\/wheels\/)(?!.*\.\.)[\x21\x22\x26-\x3a\x3c-\x3e\x40-\x5b\x5d-\x7e]+\.whl$/
 /** Marker expressions only: no `-` (so no option), `#`, `;`, `$`, `\`, newline or tab. */
 const MARKER = /^[A-Za-z0-9_.,'" =<>!~()]+$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
