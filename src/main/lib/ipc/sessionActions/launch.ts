@@ -109,6 +109,7 @@ import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
   nextOverrideState,
+  pinSpecifier,
   readFrontendPin,
   readOverrideState,
   reportOverrideDecision
@@ -1612,10 +1613,11 @@ async function runLaunch(
   // file has no frontend line to do it.
   const frontendPin = overridePins?.get(FRONTEND_PACKAGE)
   const recordedFrontend = readFrontendPin(inst)
-  if (typeof frontendPin === 'string') {
-    if (recordedFrontend !== frontendPin) {
+  if (frontendPin !== undefined) {
+    const pinned = typeof frontendPin === 'string' ? frontendPin : pinSpecifier(frontendPin)
+    if (recordedFrontend !== pinned) {
       await installations
-        .update(installationId, { frontendVersionOverride: { version: frontendPin } })
+        .update(installationId, { frontendVersionOverride: { version: pinned } })
         .catch(() => {})
     }
   } else if (recordedFrontend !== null) {

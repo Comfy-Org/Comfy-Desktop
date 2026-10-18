@@ -559,3 +559,113 @@ describe('the frontend package', () => {
       expect(readFrontendPin(record(bad))).toBeNull()
   })
 })
+
+describe('the agent package name and extras', () => {
+  it("decorates the first comfy-agent* line, keeping core's name", () => {
+    const core = 'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\ncomfy-cli==1.21.0\n'
+    expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-oss==0.2.3\ncomfy-agent-sdk==1.0\ncomfy-cli==1.21.0\n'
+    })
+    expect(
+      effectiveAgentRequirements('Comfy_Agent_Python\n', pins({ 'comfy-agent': '1!2.0' }))
+    ).toEqual({ kind: 'text', text: 'Comfy_Agent_Python==1!2.0\n' })
+  })
+
+  it('still refuses the same agent package named twice', () => {
+    expect(
+      effectiveAgentRequirements(
+        'comfy-agent-oss==0.1\ncomfy-agent-oss==0.2\n',
+        pins({ 'comfy-agent': '0.3' })
+      )
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('cannot name the package: only the comfy-agent key selects the agent line', () => {
+    for (const key of ['comfy-agent-oss', 'comfy-agentx', 'comfy-agent-oss[go]'])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'unknown_package'
+      })
+  })
+
+  it('keeps comfy-cli and nodejs-wheel-binaries to their exact names', () => {
+    expect(
+      effectiveAgentRequirements('comfy-cli-extra==1.0\n', pins({ 'comfy-cli': '1.22.0' }))
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+    expect(
+      effectiveAgentRequirements(
+        'nodejs-wheel-binaries-x==1.0\n',
+        pins({ 'nodejs-wheel-binaries': '24.0.0' })
+      )
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+  })
+
+  it('lets a renamed agent package move, holding everything else', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent-oss', version: '0.2.0' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list)).toBe('requests==2.32.0\n')
+  })
+
+  it('reads extras from the key, canonicalised and sorted, beside an epoch', () => {
+    expect(
+      parseAgentRequirementsOverride({
+        'comfy-agent[go]': '1!2.0',
+        'Comfy_CLI[NonFree, b]': '1.22.0'
+      })
+    ).toEqual({
+      kind: 'pins',
+      pins: new Map([
+        ['comfy-agent', { version: '1!2.0', extras: ['go'] }],
+        ['comfy-cli', { version: '1.22.0', extras: ['b', 'nonfree'] }]
+      ])
+    })
+  })
+
+  it("installs the extras with the version, under core's name", () => {
+    const parsed = parseAgentRequirementsOverride({
+      'comfy-agent[go]': '1!2.0',
+      'comfy-cli[nonfree]': '1.22.0'
+    })
+    if (parsed.kind !== 'pins') throw new Error('expected pins')
+    expect(
+      effectiveAgentRequirements('comfy-agent-oss==0.2.0\ncomfy-cli==1.21.0\n', parsed.pins)
+    ).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-oss[go]==1!2.0\ncomfy-cli[nonfree]==1.22.0\n'
+    })
+    expect(overrideSignature(parsed.pins)).toBe('comfy-agent[go]==1!2.0,comfy-cli[nonfree]==1.22.0')
+  })
+
+  it('refuses extras that are not PEP 508 extra names', () => {
+    for (const key of [
+      'comfy-agent[]',
+      'comfy-agent[go;x]',
+      'comfy-agent[-go]',
+      'comfy-agent[go-]',
+      'comfy-agent[go,]',
+      'comfy-agent[g o]',
+      'comfy-agent[go==1]',
+      'comfy-agent[go@https://x]',
+      'comfy-agent[$X]'
+    ])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'bad_extra'
+      })
+    for (const key of ['comfy-agent[go]]', 'comfy-agent [go]', 'comfy-agent[go'])
+      expect(parseAgentRequirementsOverride({ [key]: '1.0' }), key).toEqual({
+        kind: 'refused',
+        reason: 'unknown_package'
+      })
+  })
+
+  it('still refuses a bad version when the extras are fine', () => {
+    expect(parseAgentRequirementsOverride({ 'comfy-agent[go]': '>=1.0' })).toEqual({
+      kind: 'refused',
+      reason: 'bad_version'
+    })
+  })
+})
