@@ -462,6 +462,7 @@ describe('telemetry default event properties', () => {
 
   it('lists every default property in DEFAULT_EVENT_PROPERTY_NAMES', () => {
     setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
     captured.length = 0
     telemetry.capture('any.event')
     const keys = Object.keys(captured[0]!.properties ?? {}).filter((key) => !key.startsWith('$'))

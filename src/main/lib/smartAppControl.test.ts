@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const execFileMock = vi.hoisted(() => vi.fn())
 const releaseMock = vi.hoisted(() => vi.fn(() => '10.0.26100'))
-vi.mock('child_process', () => ({ execFile: execFileMock }))
-vi.mock('os', () => ({ release: releaseMock }))
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
+  execFile: execFileMock
+}))
+vi.mock('os', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('os')>()),
+  release: releaseMock
+}))
 
 import { parsePolicyKeyListing, readSmartAppControlState } from './smartAppControl'
 
