@@ -37,6 +37,22 @@ describe('parseAgentRequirementsOverride', () => {
       expect(parseAgentRequirementsOverride({ 'comfy-agent': version }).kind).toBe('pins')
   })
 
+  it('accepts an epoch', () => {
+    for (const version of ['1!2.3.4', '0!1.0', '12!0', '1!2.3.4rc1.post2.dev3'])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': version }), version).toEqual({
+        kind: 'pins',
+        pins: pins({ 'comfy-agent': version })
+      })
+  })
+
+  it('refuses a malformed epoch', () => {
+    for (const version of ['!1.0', '1!', '1!!2', 'a!1.0', '1!2!3', '-1!1.0', '1.0!2', '1 !2.0'])
+      expect(parseAgentRequirementsOverride({ 'comfy-agent': version }), version).toEqual({
+        kind: 'refused',
+        reason: 'bad_version'
+      })
+  })
+
   it('treats an absent or empty field as no override', () => {
     expect(parseAgentRequirementsOverride(undefined)).toEqual({ kind: 'none' })
     expect(parseAgentRequirementsOverride(null)).toEqual({ kind: 'none' })
@@ -99,6 +115,20 @@ describe('parseAgentRequirementsOverride', () => {
 })
 
 describe('effectiveAgentRequirements', () => {
+  it('honours the newer-than rule across epochs', () => {
+    expect(
+      effectiveAgentRequirements('comfy-agent==9.9\n', pins({ 'comfy-agent': '1!0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==1!0.1\n' })
+    for (const version of ['9.9', '99.0', '1!2.0'])
+      expect(
+        effectiveAgentRequirements('comfy-agent==1!2.0\n', pins({ 'comfy-agent': version })),
+        version
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+    expect(
+      effectiveAgentRequirements('comfy-agent==1!2.0\n', pins({ 'comfy-agent': '1!2.0.1' }))
+    ).toEqual({ kind: 'text', text: 'comfy-agent==1!2.0.1\n' })
+  })
+
   it('replaces the pinned lines and leaves every other line as core wrote it', () => {
     const core = '# agent\ncomfy-agent==0.2.0\n-r extra.txt\ncomfy-cli==1.21.0  # cli\n'
     expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
@@ -389,6 +419,15 @@ describe('compareVersions', () => {
   it('treats trailing zero release segments as equal', () => {
     expect(compareVersions('1.0', '1.0.0.0')).toBe(0)
     expect(compareVersions('2', '2.0')).toBe(0)
+  })
+
+  it('compares the epoch before anything else, and reads a missing one as 0', () => {
+    expect(compareVersions('1!0.1', '0.9')).toBe(1)
+    expect(compareVersions('1!0.1', '999.0.post9')).toBe(1)
+    expect(compareVersions('2!0', '1!999')).toBe(1)
+    expect(compareVersions('1!0.1.dev1', '0!9.9')).toBe(1)
+    expect(compareVersions('0!1.0', '1.0')).toBe(0)
+    expect(compareVersions('1!1.0', '1!1.0.1')).toBe(-1)
   })
 })
 

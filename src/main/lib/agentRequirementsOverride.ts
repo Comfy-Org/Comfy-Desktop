@@ -12,9 +12,12 @@ export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
  */
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
 
-/** PEP 440 public versions only, so no operator, URL, index, option or marker can get through. */
+/**
+ * PEP 440 public versions only, so no operator, URL, index, option or marker can get through. An
+ * optional epoch (`1!2.3.4`) lets a pin sort above every version without one, which is epoch 0.
+ */
 const EXACT_VERSION =
-  /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
+  /^(?:\d{1,6}!)?\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
@@ -63,17 +66,19 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
   return { kind: 'pins', pins }
 }
 
-const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
+const VERSION_PARTS = /^(?:(\d+)!)?([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
 const PRE_RANK = { a: 0, b: 1, rc: 2 } as const
 
 /** PEP 440 order for the versions EXACT_VERSION admits (`packaging`'s comparison key). */
 function versionKey(version: string): number[] {
-  const [, release, pre, preNum, post, dev] = version.match(VERSION_PARTS)!
+  const [, epoch, release, pre, preNum, post, dev] = version.match(VERSION_PARTS)!
   const parts = release!.split('.').map(Number)
   while (parts.length < 4) parts.push(0)
   // A bare X.devN sorts before X's pre-releases; a final release after them.
   const preRank = pre ? PRE_RANK[pre as keyof typeof PRE_RANK] : dev && !post ? -1 : 3
+  // The epoch outranks everything after it: 1!0.1 is newer than 9.9.
   return [
+    epoch === undefined ? 0 : Number(epoch),
     ...parts,
     preRank,
     pre ? Number(preNum) : 0,
