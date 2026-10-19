@@ -108,11 +108,12 @@ describe.runIf(process.platform !== 'win32')('readStartTimes (real processes)', 
     })
     try {
       const pid = child.pid!
-      const first = await readStartTimes([pid, process.pid])
+      // pid 1, not this worker: macOS tokens are whole seconds and the two may share one.
+      const first = await readStartTimes([pid, 1])
       const second = await readStartTimes([pid])
       expect(first?.get(pid)).toBeTruthy()
-      expect(first?.get(process.pid)).toBeTruthy()
-      expect(first?.get(pid)).not.toBe(first?.get(process.pid))
+      expect(first?.get(1)).toBeTruthy()
+      expect(first?.get(pid)).not.toBe(first?.get(1))
       expect(second?.get(pid)).toBe(first?.get(pid))
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
@@ -158,21 +159,40 @@ describe('startTokenToEpochMs', () => {
     expect(startTokenToEpochMs('boot-id:12345', 'linux', null)).toBeNull()
   })
 
-  it('parses macOS lstart text, and rejects junk', () => {
+  it('parses macOS lstart text as UTC, and rejects junk', () => {
     expect(startTokenToEpochMs('Mon Sep 28 10:02:03 2026', 'darwin')).toBe(
-      new Date(2026, 8, 28, 10, 2, 3).getTime()
+      Date.UTC(2026, 8, 28, 10, 2, 3)
+    )
+    expect(startTokenToEpochMs('Tue Sep  1 10:02:03 2026', 'darwin')).toBe(
+      Date.UTC(2026, 8, 1, 10, 2, 3)
     )
     expect(startTokenToEpochMs('not a date', 'darwin')).toBeNull()
     expect(startTokenToEpochMs('abc', 'win32')).toBeNull()
   })
+
+  // CI runs in UTC, where local and UTC parsing agree. Skips Windows: Node there cannot unset TZ.
+  it.runIf(process.platform !== 'win32')('reads macOS lstart text as UTC in any local zone', () => {
+    const saved = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      expect(new Date(2026, 8, 28).getTimezoneOffset()).toBe(420)
+      expect(startTokenToEpochMs('Mon Sep 28 10:02:03 2026', 'darwin')).toBe(
+        Date.UTC(2026, 8, 28, 10, 2, 3)
+      )
+    } finally {
+      if (saved === undefined) delete process.env.TZ
+      else process.env.TZ = saved
+    }
+  })
 })
 
-describe.runIf(process.platform === 'linux')('startTokenToEpochMs (this process)', () => {
+describe.runIf(process.platform !== 'win32')('startTokenToEpochMs (this process)', () => {
   it('puts this process start near what node reports', async () => {
     const token = (await readStartTimes([process.pid]))!.get(process.pid)!
     const expected = Date.now() - process.uptime() * 1000
-    // Both measure the same start, so load does not move this: the slack covers the kernel's
-    // whole-second boot time and node's own startup. A unit mistake would be off by far more.
+    // Both measure the same start, so load does not move this: the slack covers whole-second
+    // resolution (Linux boot time, macOS lstart) and node's own startup. A unit or time-zone
+    // mistake would be off by far more.
     expect(Math.abs(startTokenToEpochMs(token)! - expected)).toBeLessThan(5_000)
   })
 })
