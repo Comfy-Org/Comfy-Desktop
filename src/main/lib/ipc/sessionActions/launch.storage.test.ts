@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import type { InstallationRecord } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 
@@ -43,7 +43,7 @@ vi.mock('../../../settings', () => ({
   }
 }))
 
-import { applyStorageLaunchArgs as applyWithSnapshot } from './launch'
+import { applyStorageLaunchArgs } from './launch'
 import { dataDir } from '../../paths'
 import * as settingsMock from '../../../settings'
 
@@ -71,24 +71,13 @@ function yamlPath(installationId: string): string {
   return path.join(dataDir(), 'instance-model-paths', `${installationId}.yaml`)
 }
 
-/** The launch's one settings read, handed to every `applyStorageLaunchArgs` call below. */
-let snapshot: Parameters<typeof applyWithSnapshot>[3]
-
-function setSnapshot(values: Parameters<typeof applyWithSnapshot>[3]): void {
-  snapshot = values
+/** Desktop's folder settings, as the launch's one settings read hands them over. */
+function storage(
+  modelsDirs: string[] = [],
+  inputDir = globalInput
+): Parameters<typeof applyStorageLaunchArgs>[3] {
+  return { modelsDirs, inputDir, outputDir: globalOutput }
 }
-
-function applyStorageLaunchArgs(
-  inst: InstallationRecord,
-  installationId: string,
-  launchCmd: LaunchCommand
-): ReturnType<typeof applyWithSnapshot> {
-  return applyWithSnapshot(inst, installationId, launchCmd, snapshot)
-}
-
-beforeEach(() => {
-  setSnapshot({ inputDir: globalInput, outputDir: globalOutput, modelsDirs: [] })
-})
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -107,10 +96,9 @@ describe('applyStorageLaunchArgs', () => {
     const inst = makeInstall({ modelDirs: [owned] })
     fs.mkdirSync(path.join(inst.installPath, 'ComfyUI', 'models', 'z-extra'), { recursive: true })
     fs.mkdirSync(path.join(shared, 'a-extra'), { recursive: true })
-    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
-    const state = applyStorageLaunchArgs(inst, 'combined', launchCmd)
+    const state = applyStorageLaunchArgs(inst, 'combined', launchCmd, storage([shared]))
     const target = yamlPath('combined')
     const yaml = fs.readFileSync(target, 'utf8')
 
@@ -125,13 +113,13 @@ describe('applyStorageLaunchArgs', () => {
   it('excludes shared model dirs when shared models are disabled', () => {
     const shared = path.join(root, 'excluded-shared')
     const owned = path.join(root, 'included-owned')
-    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
     applyStorageLaunchArgs(
       makeInstall({ useSharedModels: false, modelDirs: [owned] }),
       'owned',
-      launchCmd
+      launchCmd,
+      storage([shared])
     )
     const yaml = fs.readFileSync(yamlPath('owned'), 'utf8')
 
@@ -140,14 +128,14 @@ describe('applyStorageLaunchArgs', () => {
   })
 
   it('does not write model YAML when shared models are disabled without per-install dirs', () => {
-    setSnapshot({
-      modelsDirs: [path.join(root, 'unused-shared')],
-      inputDir: globalInput,
-      outputDir: globalOutput
-    })
     const launchCmd = makeLaunchCmd()
 
-    const state = applyStorageLaunchArgs(makeInstall({ useSharedModels: false }), 'none', launchCmd)
+    const state = applyStorageLaunchArgs(
+      makeInstall({ useSharedModels: false }),
+      'none',
+      launchCmd,
+      storage([path.join(root, 'unused-shared')])
+    )
 
     expect(launchCmd.args).not.toContain('--extra-model-paths-config')
     expect(state.manageModelFolders).toBe(false)
@@ -157,9 +145,13 @@ describe('applyStorageLaunchArgs', () => {
   it('marks a shared primary model dir as the YAML default', () => {
     const first = path.join(root, 'shared-first')
     const primary = path.join(root, 'shared-primary')
-    setSnapshot({ modelsDirs: [first, primary], inputDir: globalInput, outputDir: globalOutput })
 
-    applyStorageLaunchArgs(makeInstall({ modelDirsPrimary: primary }), 'primary', makeLaunchCmd())
+    applyStorageLaunchArgs(
+      makeInstall({ modelDirsPrimary: primary }),
+      'primary',
+      makeLaunchCmd(),
+      storage([first, primary])
+    )
     const yaml = fs.readFileSync(yamlPath('primary'), 'utf8')
     expect(yaml.match(/^ {2}is_default: true$/gm)).toHaveLength(1)
     const primaryIdx = yaml.indexOf(`base_path: '${path.resolve(primary)}'`)
@@ -172,7 +164,7 @@ describe('applyStorageLaunchArgs', () => {
   it('uses and creates shared input and output dirs by default', () => {
     const launchCmd = makeLaunchCmd()
 
-    applyStorageLaunchArgs(makeInstall(), 'shared-io', launchCmd)
+    applyStorageLaunchArgs(makeInstall(), 'shared-io', launchCmd, storage())
 
     expect(launchCmd.args!.slice(-4)).toEqual([
       '--input-directory',
@@ -190,7 +182,8 @@ describe('applyStorageLaunchArgs', () => {
     applyStorageLaunchArgs(
       makeInstall({ useSharedInput: false, inputDir: ownInput }),
       'own-input',
-      inputCmd
+      inputCmd,
+      storage()
     )
     expect(inputCmd.args!.slice(-4)).toEqual([
       '--input-directory',
@@ -205,7 +198,8 @@ describe('applyStorageLaunchArgs', () => {
     applyStorageLaunchArgs(
       makeInstall({ useSharedOutput: false, outputDir: ownOutput }),
       'own-output',
-      outputCmd
+      outputCmd,
+      storage()
     )
     expect(outputCmd.args!.slice(-4)).toEqual([
       '--input-directory',
@@ -222,7 +216,8 @@ describe('applyStorageLaunchArgs', () => {
     applyStorageLaunchArgs(
       makeInstall({ useSharedInput: false, useSharedOutput: false }),
       'unset-io',
-      launchCmd
+      launchCmd,
+      storage()
     )
 
     expect(launchCmd.args).toEqual(['main.py'])
@@ -242,7 +237,8 @@ describe('applyStorageLaunchArgs', () => {
             outputDir: ownOutput
           }),
           `matrix-${useSharedInput}-${useSharedOutput}`,
-          launchCmd
+          launchCmd,
+          storage()
         )
         expect(launchCmd.args).toEqual([
           'main.py',
@@ -260,7 +256,8 @@ describe('applyStorageLaunchArgs', () => {
     const state = applyStorageLaunchArgs(
       makeInstall({ modelDirs: [path.join(root, 'skipped-models')] }),
       'skipped',
-      launchCmd
+      launchCmd,
+      storage()
     )
 
     expect(launchCmd.args).toEqual(['main.py'])
@@ -271,7 +268,6 @@ describe('applyStorageLaunchArgs', () => {
   it('gives a governed build its shared and per-install model dirs', () => {
     const shared = path.join(root, 'governed-shared')
     fs.mkdirSync(shared, { recursive: true })
-    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const owned = path.join(root, 'governed-owned')
     const launchCmd = makeLaunchCmd()
 
@@ -282,7 +278,7 @@ describe('applyStorageLaunchArgs', () => {
       '{}'
     )
 
-    const state = applyStorageLaunchArgs(inst, 'governed', launchCmd)
+    const state = applyStorageLaunchArgs(inst, 'governed', launchCmd, storage([shared]))
     const target = yamlPath('governed')
     const yaml = fs.readFileSync(target, 'utf8')
 
@@ -316,10 +312,9 @@ describe('applyStorageLaunchArgs', () => {
 
   it('reads the folders from the launch snapshot, never from settings again', () => {
     const shared = path.join(root, 'snapshot-models')
-    setSnapshot({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
-    applyStorageLaunchArgs(makeInstall(), 'snapshot', launchCmd)
+    applyStorageLaunchArgs(makeInstall(), 'snapshot', launchCmd, storage([shared]))
 
     expect(fs.readFileSync(yamlPath('snapshot'), 'utf8')).toContain(
       `base_path: '${path.resolve(shared)}'`
@@ -333,10 +328,9 @@ describe('applyStorageLaunchArgs', () => {
   })
 
   it('falls back to the default input dir when the setting is empty', () => {
-    setSnapshot({ inputDir: '', outputDir: globalOutput, modelsDirs: [] })
     const launchCmd = makeLaunchCmd()
 
-    applyStorageLaunchArgs(makeInstall(), 'default-input', launchCmd)
+    applyStorageLaunchArgs(makeInstall(), 'default-input', launchCmd, storage([], ''))
 
     expect(launchCmd.args).toContain(settingsMock.defaults.inputDir)
     expect(fs.statSync(settingsMock.defaults.inputDir).isDirectory()).toBe(true)
