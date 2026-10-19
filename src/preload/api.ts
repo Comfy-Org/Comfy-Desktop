@@ -110,7 +110,7 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
+    /** Signal that an overlay panel (feedback / announcement) has painted, so main
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>

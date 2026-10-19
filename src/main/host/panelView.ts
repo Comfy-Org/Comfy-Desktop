@@ -184,7 +184,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   }
   // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
   // layoutViews); clear the flag for non-overlay targets so it can't strand.
-  const isOverlay = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+  const isOverlay = mode === 'feedback' || mode === 'announcement'
   entry.pendingOverlayReveal = isOverlay
   // Drop any prior fallback timer so a stale one can't reveal this open early.
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
@@ -212,7 +212,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
 
 /**
  * Warm the install-backed panel in the background right after a chooser-pick
- * in-place attach, so the first Settings/MCP click doesn't build it cold.
+ * in-place attach, so the first Settings click doesn't build it cold.
  *
  * The reset to `'comfy'` MUST precede `ensurePanelView`: the picker drove its
  * launch through a `'progress'` overlay on this host, and without clearing it

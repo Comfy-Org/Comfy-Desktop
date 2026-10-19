@@ -4,7 +4,7 @@ import { onScopeDispose } from 'vue'
  * Idle-time URL warmer: pulls URLs into the HTTP cache while idle so a later
  * element renders/plays without a cold fetch, deferring under `isBusy()` or a
  * metered link. The transport is pluggable via `loader`, so the queue/idle/busy
- * machinery is shared by `useThumbnailPrefetch` and `useMediaPrefetch`.
+ * machinery is reusable beyond `useThumbnailPrefetch`.
  */
 
 /** Starts one warm for `url`, calls `done` when it settles, returns a canceller. */
