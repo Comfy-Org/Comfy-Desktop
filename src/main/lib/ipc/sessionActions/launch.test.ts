@@ -1365,6 +1365,20 @@ describe('core beta report placement', () => {
       expect(spawned).toBe(false)
     })
 
+    it('does not wait for settings for a command with no args (Remote, Cloud)', async () => {
+      launchHarness.launchCommand = { ...launchHarness.launchCommand, args: undefined }
+      let reads = 0
+      launchHarness.readSettled = async () => {
+        reads++
+        return null
+      }
+
+      const res = await handleLaunch(ctxFor('harness-settings-no-args'))
+
+      expect(res).not.toEqual({ ok: false, message: i18nModule.t('errors.settingsUnreadable') })
+      expect(reads).toBe(0)
+    })
+
     it('still launches a command that takes none of the folder arguments', async () => {
       launchHarness.launchCommand = { ...launchHarness.launchCommand, skipSharedPaths: true }
       let reads = 0

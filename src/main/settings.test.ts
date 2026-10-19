@@ -901,7 +901,7 @@ describe('settings.json and its .bak both unreadable', () => {
     }) as typeof fs.promises.readFile)
     // safe-file's own per-read retries block on Atomics.wait; skip those sleeps.
     vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   })
 
   afterEach(() => {
@@ -916,7 +916,9 @@ describe('settings.json and its .bak both unreadable', () => {
     let settled: Record<string, unknown> | null | undefined
     void settings.readSettled().then((value) => (settled = value))
     // 5 s of settled waits plus 5 attempts x 600 ms of safe-file's own read retries.
-    await vi.advanceTimersByTimeAsync(8000)
+    await vi.advanceTimersByTimeAsync(7000)
+    expect(settled).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1000)
 
     expect(settled).toBeNull()
     // Waiting never blocks the main process on safe-file's synchronous lock retries.
@@ -961,6 +963,26 @@ describe('settings.json and its .bak both unreadable', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(settled).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('readSettled never saves over a write made while it was reading', async () => {
+    // A legacy key makes loading normalize, which would save.
+    writeSettings({ maxCachedFiles: 5, modelsDirs: [customModels] })
+    const captured = fs.readFileSync(settingsPath, 'utf-8')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.mocked(fs.promises.readFile).mockImplementationOnce((async () => {
+      await gate
+      return captured
+    }) as unknown as typeof fs.promises.readFile)
+
+    const result = settings.readSettled()
+    settings.set('lastSaveDialogDir', customModels)
+    release()
+
+    expect((await result)?.['modelsDirs']).toEqual([customModels])
+    expect(readPersistedSettings()['lastSaveDialogDir']).toBe(customModels)
   })
 
   it('readSettled serves defaults at once when settings.json does not exist', async () => {

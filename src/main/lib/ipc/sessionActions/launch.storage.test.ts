@@ -74,9 +74,10 @@ function yamlPath(installationId: string): string {
 /** Desktop's folder settings, as the launch's one settings read hands them over. */
 function storage(
   modelsDirs: string[] = [],
-  inputDir = globalInput
+  inputDir = globalInput,
+  outputDir = globalOutput
 ): Parameters<typeof applyStorageLaunchArgs>[3] {
-  return { modelsDirs, inputDir, outputDir: globalOutput }
+  return { modelsDirs, inputDir, outputDir }
 }
 
 afterEach(() => {
@@ -334,5 +335,14 @@ describe('applyStorageLaunchArgs', () => {
 
     expect(launchCmd.args).toContain(settingsMock.defaults.inputDir)
     expect(fs.statSync(settingsMock.defaults.inputDir).isDirectory()).toBe(true)
+  })
+
+  it('falls back to the default output dir when the setting is empty', () => {
+    const launchCmd = makeLaunchCmd()
+
+    applyStorageLaunchArgs(makeInstall(), 'default-output', launchCmd, storage([], globalInput, ''))
+
+    expect(launchCmd.args).toContain(settingsMock.defaults.outputDir)
+    expect(fs.statSync(settingsMock.defaults.outputDir).isDirectory()).toBe(true)
   })
 })

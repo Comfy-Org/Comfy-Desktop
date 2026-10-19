@@ -650,7 +650,8 @@ function loadOutcome(preRead?: SafeReadOutcome): {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result)
+  // A pre-read can predate a save made while it was pending; persisting it would undo that save.
+  if (changed && !unreadable && !preRead) save(result)
   return { settings: result, unreadable }
 }
 
