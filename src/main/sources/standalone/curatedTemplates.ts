@@ -31,9 +31,9 @@ interface CuratedTemplateBase {
 }
 
 /**
- * `recommended` is the auto-selected pick for its modality (at most one each);
+ * `recommended` is the badged pick for its modality (at most one each);
  * `apiNode` runs on API nodes, downloading nothing but spending credits per run.
- * Mutually exclusive by type — the auto-selected pick must never cost money.
+ * Mutually exclusive by type — the recommended pick must never cost money.
  */
 export type CuratedTemplate = CuratedTemplateBase &
   ({ recommended?: true; apiNode?: never } | { apiNode: true; recommended?: never })

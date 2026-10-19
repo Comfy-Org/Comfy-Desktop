@@ -136,7 +136,7 @@ export const standalone: SourcePlugin = {
         type: 'select' as const,
         renderAs: 'cards' as const
       },
-      // POC: optional starter template to auto-open on first launch. Rendered
+      // Optional starter template to auto-open on first launch. Rendered
       // as cards after the variant; always returns options (incl. a "None"
       // skip), so the wizard's field chain completes and Continue enables.
       {
@@ -231,7 +231,7 @@ export const standalone: SourcePlugin = {
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
       ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
-      // POC starter template. `bundledTemplateId` is the durable record of the
+      // Starter template. `bundledTemplateId` is the durable record of the
       // user's pick; `pendingTemplateOpen` is a one-shot flag the first launch
       // consumes (appends `?template=` to the comfy URL, then clears) so the
       // template only auto-opens once — not on every relaunch.
@@ -557,9 +557,8 @@ export const standalone: SourcePlugin = {
     }
 
     if (fieldId === 'bundledTemplate') {
-      // "None" comes first as the skip option; the per-modality recommended
-      // picks carry `recommended` on their own option so the wizard auto-selects
-      // a real template (the lightest "wow"), not the skip.
+      // "None" comes first and is the wizard's default; `recommended` only
+      // badges a card.
       const catalog = await loadTemplateCatalog()
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null

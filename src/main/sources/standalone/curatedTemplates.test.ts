@@ -123,7 +123,7 @@ describe('CURATED_TEMPLATES manifest', () => {
     }
   })
 
-  it('never auto-selects a template that spends credits', () => {
+  it('never recommends a template that spends credits', () => {
     for (const t of CURATED_TEMPLATES) {
       if (t.apiNode) expect(t.recommended, t.id).toBeFalsy()
     }

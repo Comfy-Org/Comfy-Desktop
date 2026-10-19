@@ -63,7 +63,7 @@ export interface InstallationRecord {
   inputDir?: string
   /** Per-install output dir, used only when `useSharedOutput === false`. */
   outputDir?: string
-  /** POC: starter template id the user picked in the install wizard. Durable
+  /** Starter template id the user picked in the install wizard. Durable
    *  record of intent; survives relaunches. */
   bundledTemplateId?: string
   /** Coarse model-download estimate (bytes) for `bundledTemplateId`, frozen from
@@ -480,7 +480,7 @@ export async function markLaunched(
 }
 
 /**
- * POC: consume the one-shot starter-template flag. Clears `pendingTemplateOpen`
+ * Consume the one-shot starter-template flag. Clears `pendingTemplateOpen`
  * so the template only auto-opens on the first launch, not on relaunches.
  * No-op (returns false) when the install is gone or the flag was already clear,
  * so the caller can fire-and-forget. Skips the `'updated'` event to avoid a
