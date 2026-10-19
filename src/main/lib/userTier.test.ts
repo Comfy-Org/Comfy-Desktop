@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
 }))
 
 const telemetry = await import('./telemetry')
-const { refreshCloudUserTier, getUserTier, _resetForTest, FETCH_TIER_JS } =
+const { refreshCloudUserTier, getUserTier, initUserTier, _resetForTest, FETCH_TIER_JS } =
   await import('./userTier')
 
 /** Stub WebContents whose executeJavaScript resolves to a fixed tier result. */
@@ -21,6 +21,75 @@ function stubContents(result: unknown): { wc: Electron.WebContents } {
     } as unknown as Electron.WebContents
   }
 }
+
+// The ops-flag fetch reads the tier from telemetry, not from this module, so every change to the
+// cache has to be bound there — including the boot read, which is what the boot evaluation sees.
+describe('userTier ops-flag binding', () => {
+  let bound: string[]
+
+  beforeEach(async () => {
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+    await fs.mkdir(userTierDataDir, { recursive: true })
+    _resetForTest()
+    bound = []
+    vi.spyOn(telemetry, 'capture').mockReturnValue(true)
+    vi.spyOn(telemetry, 'setFlagEvaluationUserTier').mockImplementation((tier) => {
+      bound.push(tier)
+    })
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+  })
+
+  it('binds the persisted tier at init', async () => {
+    await fs.writeFile(
+      path.join(userTierDataDir, 'cloud-user-tier.json'),
+      JSON.stringify({ tier: 'paid', ts: 1 })
+    )
+
+    await initUserTier()
+
+    expect(bound).toEqual(['paid'])
+  })
+
+  it('binds unknown at init when nothing is persisted', async () => {
+    await initUserTier()
+
+    expect(bound).toEqual(['unknown'])
+  })
+
+  // Boot awaits this read before the flag fetches, so a bad file must resolve, not throw.
+  it.each(['{not json', JSON.stringify({ tier: 'gold' })])(
+    'binds unknown at init for an unusable file (%s)',
+    async (contents) => {
+      await fs.writeFile(path.join(userTierDataDir, 'cloud-user-tier.json'), contents)
+
+      await expect(initUserTier()).resolves.toBeUndefined()
+
+      expect(bound).toEqual(['unknown'])
+    }
+  )
+
+  it('binds each refreshed tier', async () => {
+    await refreshCloudUserTier(stubContents({ tier: 'FREE' }).wc)
+    await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+
+    expect(bound).toEqual(['free', 'paid'])
+  })
+
+  // A flaky API or a mid-sign-in read must not drop a known tier.
+  it.each([null, { error: 'network' }, { error: 'http_401' }])(
+    'leaves the binding alone when a refresh cannot answer (%j)',
+    async (result) => {
+      await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+      await refreshCloudUserTier(stubContents(result).wc)
+
+      expect(bound).toEqual(['paid'])
+    }
+  )
+})
 
 describe('userTier tier_changed telemetry', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
