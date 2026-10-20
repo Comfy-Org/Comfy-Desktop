@@ -14,6 +14,7 @@ vi.mock('./oauth', () => ({ signIn: vi.fn(), refresh: vi.fn(), openAuthorizePage
 import { statusFromAccessToken } from './claims'
 import { refresh, signIn } from './oauth'
 import { CloudSession } from './session'
+import { SignInFailure } from './signInFailure'
 import {
   _resetForTest,
   clearTokens,
@@ -38,10 +39,12 @@ function tokens(workspace: string, refreshToken: string): AuthTokens {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 beforeEach(() => {
@@ -61,6 +64,44 @@ afterEach(() => {
 })
 
 describe('account workspace tokens', () => {
+  it('clears an expired account session when the server requires sign-in', async () => {
+    vi.setSystemTime(Date.now() + 3600000)
+    vi.mocked(refresh).mockRejectedValue(
+      new SignInFailure('expired', 'server_error', { reauthenticationRequired: true })
+    )
+    const onExpired = vi.fn()
+    const session = new CloudSession(onExpired)
+    await expect(session.getAccessToken()).resolves.toBeNull()
+    expect(session.isSignedIn()).toBe(false)
+    expect(onExpired).toHaveBeenCalledOnce()
+    expect(loadAccountCredential()).toBeNull()
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('resumes browser sign-in for an explicit switch after account expiry', async () => {
+    vi.mocked(refresh).mockRejectedValue(
+      new SignInFailure('expired', 'server_error', { reauthenticationRequired: true })
+    )
+    const fresh = tokens('w2', 'replacement-login')
+    vi.mocked(signIn).mockResolvedValue({
+      tokens: fresh,
+      status: statusFromAccessToken(fresh.accessToken)
+    })
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(loadAccountCredential()?.refreshToken).toBe('replacement-login')
+  })
+
+  it('keeps a still-valid access token during a transient refresh failure', async () => {
+    const saved = loadTokens()
+    vi.setSystemTime(Date.now() + 3570000)
+    vi.mocked(refresh).mockRejectedValue(new SignInFailure('offline', 'network'))
+    await expect(new CloudSession().getAccessToken()).resolves.toBe(saved?.accessToken)
+    expect(loadAccountCredential()?.refreshToken).toBe('root-1')
+  })
+
   it('switches to an uncached workspace without browser authorization, then reuses its cache', async () => {
     vi.mocked(refresh).mockResolvedValue(tokens('w2', 'root-2'))
     const session = new CloudSession()
@@ -89,27 +130,34 @@ describe('account workspace tokens', () => {
     expect(loadAccountCredential()?.refreshToken).toBe('root-2')
   })
 
-  it('does not give a pending request credentials from a replacement login', async () => {
-    vi.setSystemTime(Date.now() + 3600000)
-    const started = deferred<void>()
-    const response = deferred<AuthTokens>()
-    vi.mocked(refresh).mockImplementation(() => {
-      started.resolve()
-      return response.promise
-    })
-    const session = new CloudSession()
-    const pending = session.getAccessToken()
-    await started.promise
-    const replacement = tokens('w1', 'replacement-login')
-    vi.mocked(signIn).mockResolvedValue({
-      tokens: replacement,
-      status: statusFromAccessToken(replacement.accessToken)
-    })
-    await session.login()
-    response.resolve(tokens('w1', 'old-successor'))
-    await expect(pending).resolves.toBeNull()
-    expect(loadAccountCredential()?.refreshToken).toBe('replacement-login')
-  })
+  it.each(['success', 'expired'])(
+    'isolates a late %s from a replacement login',
+    async (outcome) => {
+      vi.setSystemTime(Date.now() + 3600000)
+      const started = deferred<void>()
+      const response = deferred<AuthTokens>()
+      vi.mocked(refresh).mockImplementation(() => {
+        started.resolve()
+        return response.promise
+      })
+      const session = new CloudSession()
+      const pending = session.getAccessToken()
+      await started.promise
+      const replacement = tokens('w1', 'replacement-login')
+      vi.mocked(signIn).mockResolvedValue({
+        tokens: replacement,
+        status: statusFromAccessToken(replacement.accessToken)
+      })
+      await session.login()
+      if (outcome === 'success') response.resolve(tokens('w1', 'old-successor'))
+      else
+        response.reject(
+          new SignInFailure('expired', 'server_error', { reauthenticationRequired: true })
+        )
+      await expect(pending).resolves.toBeNull()
+      expect(loadAccountCredential()?.refreshToken).toBe('replacement-login')
+    }
+  )
 
   it('does not return an expired token after rejecting a mismatched account response', async () => {
     vi.setSystemTime(Date.now() + 3600000)

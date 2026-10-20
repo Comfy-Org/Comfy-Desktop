@@ -76,6 +76,8 @@ Cloud #14424 implements this contract. Review it together with the dependent cli
 | Response            | Return a token for exactly the requested workspace and the successor account refresh token. Preserve the approved resource and scopes.                                                       |
 | Unsupported mode    | Return a documented unsupported-mode result. Never silently treat an old workspace grant as account-wide.                                                                                    |
 
+When a refresh error sets `reauthentication_required=true`, Desktop clears that session and updates the UI. An explicit workspace switch can then resume browser sign-in. Workspace refusal and temporary network failures keep the account credential. A still-valid access token remains usable during a temporary refresh failure.
+
 Desktop reads `desktop_account_grants_supported` from `/.well-known/oauth-authorization-server` before starting sign-in. A missing/false field or a missing metadata endpoint keeps legacy behavior. Network failures, server errors, and malformed metadata remain errors.
 
 The flag permits account requests only for client `comfy-desktop` targeting resource `comfy-cloud`. Existing grants remain usable when new issuance is disabled. Unsupported account requests receive `invalid_request`.

@@ -11,15 +11,17 @@ export class SignInFailure extends Error {
   override readonly name = 'SignInFailure'
   readonly reason: SignInFailureReason
   readonly httpStatus: number | undefined
+  readonly reauthenticationRequired: boolean
 
   constructor(
     message: string,
     reason: SignInFailureReason,
-    options: { httpStatus?: number; cause?: unknown } = {}
+    options: { httpStatus?: number; cause?: unknown; reauthenticationRequired?: boolean } = {}
   ) {
     super(message, { cause: options.cause })
     this.reason = reason
     this.httpStatus = options.httpStatus
+    this.reauthenticationRequired = options.reauthenticationRequired ?? false
   }
 }
 

@@ -1,11 +1,15 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
 
 import { get } from 'node:http'
 import { shell } from 'electron'
 import { refresh, signIn } from './oauth'
+
+beforeEach(() => {
+  vi.mocked(shell.openExternal).mockReset()
+})
 
 function stub(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -21,6 +25,22 @@ function stub(status: number, body: unknown): void {
 }
 
 describe('oauth.refresh', () => {
+  it.each([
+    [400, 'invalid_grant', true, true],
+    [400, 'invalid_grant', false, false],
+    [400, 'invalid_grant', 'true', false],
+    [500, 'invalid_grant', true, false],
+    [400, 'invalid_scope', true, false]
+  ] as const)(
+    'reads the reauthentication fact for %s %s %s',
+    async (status, error, required, expected) => {
+      stub(status, { error, reauthentication_required: required })
+      await expect(
+        refresh('root', { workspaceId: 'w1', grantMode: 'account' })
+      ).rejects.toMatchObject({ reauthenticationRequired: expected })
+    }
+  )
+
   afterEach(() => vi.unstubAllGlobals())
 
   it('sends a form-encoded refresh_token grant with client_id and resource', async () => {
@@ -215,43 +235,53 @@ describe('oauth.signIn', () => {
 describe('account OAuth grants', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
-    vi.mocked(shell.openExternal).mockReset()
   })
 
   function accessToken(workspaceId = 'w2'): string {
     return `e30.${Buffer.from(JSON.stringify({ sub: 'user', workspace_id: workspaceId })).toString('base64url')}.sig`
   }
 
-  it('discovers account support and binds code exchange to the requested workspace', async () => {
-    const token = accessToken()
-    const fetchMock = vi.fn(async (url: string) =>
-      Response.json(
-        url.includes('.well-known')
-          ? { desktop_account_grants_supported: true }
-          : { grant_mode: 'account', access_token: token, refresh_token: 'root', expires_in: 3600 }
+  it.each(['', '/staging'])(
+    'discovers account support under issuer path %s and binds the workspace',
+    async (issuerPath) => {
+      const token = accessToken()
+      const fetchMock = vi.fn(async (url: string) =>
+        Response.json(
+          url.includes('.well-known')
+            ? { desktop_account_grants_supported: true }
+            : {
+                grant_mode: 'account',
+                access_token: token,
+                refresh_token: 'root',
+                expires_in: 3600
+              }
+        )
       )
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
-      const url = new URL(authorizeUrl)
-      expect(url.searchParams.get('grant_mode')).toBe('account')
-      expect(url.searchParams.has('workspace_id')).toBe(false)
-      get(
-        `${url.searchParams.get('redirect_uri')}?code=abc&state=${url.searchParams.get('state')}`,
-        (response) => response.resume()
+      vi.stubGlobal('fetch', fetchMock)
+      vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+        const url = new URL(authorizeUrl)
+        expect(url.searchParams.get('grant_mode')).toBe('account')
+        expect(url.searchParams.has('workspace_id')).toBe(false)
+        get(
+          `${url.searchParams.get('redirect_uri')}?code=abc&state=${url.searchParams.get('state')}`,
+          (response) => response.resume()
+        )
+      })
+      const result = await signIn({
+        authorizeUrl: `https://c${issuerPath}/oauth/authorize`,
+        tokenUrl: `https://c${issuerPath}/oauth/token`,
+        clientId: 'comfy-desktop',
+        workspaceId: 'w2'
+      })
+      expect(result.tokens.grantMode).toBe('account')
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        `https://c${issuerPath}/.well-known/oauth-authorization-server`
       )
-    })
-    const result = await signIn({
-      authorizeUrl: 'https://c/oauth/authorize',
-      tokenUrl: 'https://c/oauth/token',
-      clientId: 'comfy-desktop',
-      workspaceId: 'w2'
-    })
-    expect(result.tokens.grantMode).toBe('account')
-    expect(
-      new URLSearchParams(vi.mocked(fetch).mock.calls[1]?.[1]?.body as string).get('workspace_id')
-    ).toBe('w2')
-  })
+      expect(
+        new URLSearchParams(vi.mocked(fetch).mock.calls[1]?.[1]?.body as string).get('workspace_id')
+      ).toBe('w2')
+    }
+  )
 
   it.each([{}, { desktop_account_grants_supported: false }])(
     'keeps legacy authorization without server support %j',
@@ -292,6 +322,18 @@ describe('account OAuth grants', () => {
       expect(shell.openExternal).not.toHaveBeenCalled()
     }
   )
+
+  it.each([0, -1])('rejects an expired account token with lifetime %s', async (expiresIn) => {
+    stub(200, {
+      grant_mode: 'account',
+      access_token: accessToken(),
+      refresh_token: 'root-2',
+      expires_in: expiresIn
+    })
+    await expect(
+      refresh('root', { workspaceId: 'w2', grantMode: 'account' })
+    ).rejects.toMatchObject({ reason: 'server_error' })
+  })
 
   it('rotates the account credential for an explicit workspace', async () => {
     stub(200, {

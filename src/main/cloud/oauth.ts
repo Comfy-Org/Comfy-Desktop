@@ -89,6 +89,23 @@ function toTokens(
   }
 }
 
+function requiresReauthentication(status: number, detail: string): boolean {
+  if (status !== 400) return false
+  try {
+    const error: unknown = JSON.parse(detail)
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'error' in error &&
+      error.error === 'invalid_grant' &&
+      'reauthentication_required' in error &&
+      error.reauthentication_required === true
+    )
+  } catch {
+    return false
+  }
+}
+
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
   // Keep the abort armed until the body is fully read, so a slow/unbounded body
@@ -112,7 +129,10 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       throw new SignInFailure(
         `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
         'server_error',
-        { httpStatus: resp.status }
+        {
+          httpStatus: resp.status,
+          reauthenticationRequired: requiresReauthentication(resp.status, detail)
+        }
       )
     }
     const data = (await resp.json().catch((cause: unknown) => {
@@ -128,7 +148,11 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
       throw new SignInFailure('OAuth token response missing access_token', 'server_error')
     }
-    if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
+    if (
+      typeof data.expires_in !== 'number' ||
+      !Number.isFinite(data.expires_in) ||
+      data.expires_in <= 0
+    ) {
       throw new SignInFailure('OAuth token response missing a valid expires_in', 'server_error')
     }
     if (
@@ -154,7 +178,7 @@ async function accountGrantsSupported(authorizeUrl: string, clientId: string): P
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
   try {
-    const url = new URL('/.well-known/oauth-authorization-server', authorizeUrl)
+    const url = new URL('../.well-known/oauth-authorization-server', authorizeUrl)
     const response = await fetch(url.toString(), { signal: controller.signal })
     if (response.status === 404) return false
     if (!response.ok) {

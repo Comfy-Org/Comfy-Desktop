@@ -101,7 +101,7 @@ function vaultFor(tokens: AuthTokens): TokenVault {
   const key = tokensKey(tokens)
   const subject = subjectOf(tokens.accessToken)
   return {
-    version: VAULT_VERSION,
+    version: 1,
     activeKey: key,
     ...(subject ? { subject } : {}),
     bundles: { [key]: tokens }
@@ -134,8 +134,7 @@ function loadVault(): TokenVault | null {
   try {
     const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath())))
     if (isVault(parsed)) {
-      if (parsed.version === 1) persistVault({ ...parsed, version: VAULT_VERSION })
-      else cachedVault = parsed
+      cachedVault = parsed
       return cachedVault
     }
     if (isTokens(parsed)) {
@@ -160,6 +159,7 @@ export function saveTokens(tokens: AuthTokens): void {
       )
     }
     const vault = vaultFor({ accessToken: tokens.accessToken, expiresAt: tokens.expiresAt })
+    vault.version = VAULT_VERSION
     vault.accountCredential = {
       subject,
       refreshToken: tokens.refreshToken,

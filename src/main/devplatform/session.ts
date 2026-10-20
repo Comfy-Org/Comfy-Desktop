@@ -17,7 +17,7 @@ let unauthorizedHandler: (() => void) | null = null
 
 /** The process-wide CloudSession (auth + workspace), created on first use. */
 export function getCloudSession(): CloudSession {
-  if (!session) session = new CloudSession()
+  if (!session) session = new CloudSession(() => unauthorizedHandler?.())
   return session
 }
 

@@ -105,7 +105,7 @@ describe('workspace token vault', () => {
     }
   )
 
-  it('migrates version-one workspace grants without promoting their authority', () => {
+  it('reads version-one workspace grants without upgrading their format or authority', () => {
     const legacy = tokens('user-1', 'w1')
     fs.writeFileSync(
       path.join(electronState.userData, 'comfy-cloud-auth.bin'),
@@ -118,6 +118,10 @@ describe('workspace token vault', () => {
     )
     expect(loadTokens()).toEqual(legacy)
     expect(loadAccountCredential()).toBeNull()
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'), 'utf-8')
+    ) as { version: number }
+    expect(persisted.version).toBe(1)
   })
 
   it('keeps independent workspace bundles and reactivates either one', () => {
@@ -230,6 +234,6 @@ describe('workspace token vault', () => {
     const persisted = JSON.parse(
       fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'), 'utf-8')
     ) as { version?: number }
-    expect(persisted.version).toBe(2)
+    expect(persisted.version).toBe(1)
   })
 })

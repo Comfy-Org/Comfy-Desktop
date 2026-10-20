@@ -10,6 +10,7 @@ import type { TokenProvider } from '../comfybuilder'
 import { workspaceIdOf } from './claims'
 import type { OAuthOptions } from './oauth'
 import { openAuthorizePage, refresh, signIn } from './oauth'
+import { SignInFailure } from './signInFailure'
 import {
   activateWorkspace,
   clearTokens,
@@ -29,6 +30,8 @@ import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 const REFRESH_SKEW_MS = 60_000
 
 export class CloudSession {
+  constructor(private readonly onSessionExpired?: () => void) {}
+
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
   private accountRefreshQueue: Promise<void> = Promise.resolve()
@@ -72,6 +75,11 @@ export class CloudSession {
     clearTokens()
   }
 
+  private expireSession(): void {
+    this.logout()
+    this.onSessionExpired?.()
+  }
+
   status(): AuthStatus {
     return getAuthStatus()
   }
@@ -101,7 +109,11 @@ export class CloudSession {
         const refreshed = await this.refreshAccountWorkspace(workspaceId)
         if (!refreshed || loadAccountCredential()?.sessionId !== accountCredential.sessionId)
           return null
-      } catch {
+      } catch (error) {
+        if (loadAccountCredential()?.sessionId !== accountCredential.sessionId) return null
+        if (error instanceof SignInFailure && error.reauthenticationRequired) this.expireSession()
+        else if (tokens.expiresAt > Date.now() && loadTokens()?.accessToken === tokens.accessToken)
+          return tokens.accessToken
         return null
       }
     } else {
@@ -199,9 +211,17 @@ export class CloudSession {
         : loadWorkspaceTokens(workspaceId)
     if (loadAccountCredential()) {
       if (!cached || cached.expiresAt - REFRESH_SKEW_MS <= Date.now()) {
-        cached = await this.refreshAccountWorkspace(workspaceId)
+        try {
+          cached = await this.refreshAccountWorkspace(workspaceId)
+        } catch (error) {
+          if (generation !== this.authGeneration) return this.status()
+          if (!(error instanceof SignInFailure) || !error.reauthenticationRequired) throw error
+          this.expireSession()
+          return this.authenticateAtGeneration(this.authGeneration, { workspaceId })
+        }
       }
-      if (generation !== this.authGeneration || !cached) return this.status()
+      if (generation !== this.authGeneration || !cached || cached.expiresAt <= Date.now())
+        return this.status()
       activateWorkspace(workspaceId)
       return this.status()
     }
