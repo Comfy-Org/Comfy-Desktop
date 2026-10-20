@@ -122,7 +122,17 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   'comfy.desktop.comfyui.assets.scanner.walk_failed',
   'comfy.desktop.comfyui.assets.scanner.metadata_failed',
   'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
-  'comfy.desktop.comfyui.assets.seeder.scan_failed'
+  'comfy.desktop.comfyui.assets.seeder.scan_failed',
+  // Local Agent failures from agentTap: a start that died (and the step it
+  // died on), a step past its expected time, a failed health check, the host
+  // giving up or failing to spawn the agent, and the workflow-editing host
+  // failing after start. Monitors group on `step` / `reason` per release.
+  // Startup timing (startup_step, agent_started) stays PostHog-only.
+  'comfy.desktop.comfyui.agent.startup_failed',
+  'comfy.desktop.comfyui.agent.startup_stalled',
+  'comfy.desktop.comfyui.agent.health_check_failed',
+  'comfy.desktop.comfyui.agent.agent_error',
+  'comfy.desktop.comfyui.agent.document_host_degraded'
 ])
 
 export function isDatadogMirroredEvent(eventName: string): boolean {

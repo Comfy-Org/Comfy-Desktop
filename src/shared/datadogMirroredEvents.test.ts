@@ -36,6 +36,19 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent(name)).toBe(mirrored)
   })
 
+  // Local Agent failures page; its startup timing and ready summary do not.
+  it.each([
+    ['comfy.desktop.comfyui.agent.startup_failed', true],
+    ['comfy.desktop.comfyui.agent.startup_stalled', true],
+    ['comfy.desktop.comfyui.agent.health_check_failed', true],
+    ['comfy.desktop.comfyui.agent.agent_error', true],
+    ['comfy.desktop.comfyui.agent.document_host_degraded', true],
+    ['comfy.desktop.comfyui.agent.startup_step', false],
+    ['comfy.desktop.comfyui.agent.agent_started', false]
+  ])('mirrors %s: %s', (name, mirrored) => {
+    expect(isDatadogMirroredEvent(name)).toBe(mirrored)
+  })
+
   it('returns false for unknown event names', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
