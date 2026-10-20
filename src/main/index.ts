@@ -42,6 +42,7 @@ import {
   registerSystemModalIpc
 } from './popups/systemModal'
 import {
+  hideTitlePopupForParent,
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
   openDownloadsTrayForInstall,
@@ -179,7 +180,8 @@ import {
   refreshComfyTabBody,
   registerPanelViewIpc,
   sendToPanelDeferred,
-  setActivePanel
+  setActivePanel,
+  showAllBuildsIn
 } from './host/panelView'
 
 export type { ComfyPanelKey } from './host/registry'
@@ -1117,6 +1119,19 @@ ipcMain.on('comfy-window:click-announcement', (event) => {
  */
 ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
+})
+
+/** The breadcrumb's root crumb: in the dashboard window, back to All builds;
+ *  elsewhere, bring the dashboard window forward, opening one when none is
+ *  left. */
+ipcMain.on('comfy-window:focus-dashboard', (event) => {
+  recordIpcInvocation('comfy-window:focus-dashboard', {})
+  const found = findEntryByTitleBarSender(event.sender)
+  if (!found || found.entry.window.isDestroyed()) return
+  // A picker or settings popup open over the bar closes first.
+  hideTitlePopupForParent(found.entry.window)
+  if (found.entry.installationId === null) showAllBuildsIn(found.entry)
+  else openOrFocusChooserHostWindow()
 })
 
 ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {

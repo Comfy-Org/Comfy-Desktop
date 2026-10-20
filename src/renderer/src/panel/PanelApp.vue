@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -307,9 +307,30 @@ const { triggerAction: triggerInstallAction } = useInstallContextMenu({
   onShowProgress: (showOpts) => handleShowProgress(showOpts)
 })
 
+const dashboardView = useTemplateRef<InstanceType<typeof DashboardView>>('dashboard')
+let showingAllBuilds = false
+
 useDeepLinkRouter({
   installationId,
   bootstrapReady,
+  // The breadcrumb's "Builds": leave any flow on top (asking before
+  // discarding one), then All builds.
+  showAllBuilds: async () => {
+    // A second click while the discard prompt is open is the same request.
+    if (showingAllBuilds) return
+    showingAllBuilds = true
+    try {
+      if (currentOverlay.value !== null) {
+        if (!(await closeOverlay())) return
+        // Hand main's panel back too, or re-opening the same flow is a no-op.
+        window.api.closeCurrentPanel()
+      }
+      await nextTick()
+      dashboardView.value?.showAllBuilds()
+    } finally {
+      showingAllBuilds = false
+    }
+  },
   openOverlay,
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
@@ -615,6 +636,7 @@ onUnmounted(() => {
         <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
           <DashboardView
             v-if="rollout.newDashboard"
+            ref="dashboard"
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
             @show-progress="handleShowProgress"

@@ -5,7 +5,9 @@ import {
   ArrowDownToLine,
   Bell,
   ChevronDown,
+  ChevronRight,
   CloudDownload,
+  LayoutGrid,
   Loader2,
   Menu as MenuIcon,
   MessageSquarePlus,
@@ -22,6 +24,7 @@ import { useCentralPillCoachmark } from './useCentralPillCoachmark'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import { readRolloutFlags } from '../../../shared/rolloutFlags'
 
 const { t, locale } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -77,6 +80,8 @@ interface Bridge {
   isMac: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
   openNewWindow: () => void
+  /** The breadcrumb's root crumb: focus the dashboard window, or open one. */
+  focusDashboard: () => void
   /** Pop the File menu natively (avoids WebContentsView clipping the popup). */
   openFileMenu: (anchor: MenuAnchor) => void
   /** Ask main to dismiss the File menu popup (toggle-close). */
@@ -273,6 +278,14 @@ const showRefreshButton = computed(
     !isFirstUseLockdown.value
 )
 void firstUseMode
+
+/** The breadcrumb title bar (redesign Milestone 3), when main turned it on:
+ *  Builds › this window's build ⌄, with the app menu on the right. First-use
+ *  lockdown keeps the original static bar. */
+const breadcrumbEnabled = readRolloutFlags(window.location.search).breadcrumb
+/** A build is named: this window's, or the one an in-place launch previews. */
+const hasBuild = computed(() => !showBrandMark.value)
+const showBreadcrumb = computed(() => breadcrumbEnabled && !isFirstUseLockdown.value)
 
 const zoomLevel = ref(0)
 const zoomPercent = computed(() => Math.round(Math.pow(1.2, zoomLevel.value) * 100))
@@ -863,6 +876,7 @@ onUnmounted(() => {
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
       'is-consent-lockdown': isConsentLockdown,
+      'is-breadcrumb': showBreadcrumb,
       'is-collapsed-feedback': collapsedFeedback,
       'is-collapsed-update': collapsedUpdate
     }"
@@ -889,36 +903,88 @@ onUnmounted(() => {
          keeps the full menu so the user can open a fresh window,
          settings, feedback, or quit cleanly while an op runs. -->
     <div class="title-cluster">
-      <button
-        v-if="!isConsentLockdown"
-        ref="fileBtn"
-        type="button"
-        class="title-menu-button title-menu-button--icon"
-        aria-haspopup="menu"
-        v-bind="tooltipAttrs(t('titleBar.menu'))"
-        @click="handleFileMenu"
+      <!-- Breadcrumb: the dashboard, then this window's build, then the
+           switcher. The chevron carries the pill's duties (anchor of the
+           picker and the onboarding coachmark). -->
+      <nav
+        v-if="showBreadcrumb"
+        class="title-breadcrumb"
+        :aria-label="t('titleBar.breadcrumbLabel')"
+        data-testid="title-breadcrumb"
       >
-        <MenuIcon :size="18" />
-      </button>
-      <!-- Browser-style refresh for install-backed instances (local +
-           remote/cloud), right of the hamburger. Re-navigates the
-           comfyView via the same reload path as F5/Ctrl+R. -->
-      <button
-        v-if="showRefreshButton"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-refresh-button"
-        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
-        @click="handleRefreshInstance"
-      >
-        <RotateCw :size="16" />
-      </button>
+        <button
+          type="button"
+          class="title-menu-button title-crumb"
+          data-testid="title-crumb-root"
+          @click="bridge?.focusDashboard()"
+        >
+          <LayoutGrid :size="15" />{{ t('buildsDashboard.title') }}
+        </button>
+        <ChevronRight :size="14" class="title-crumb-separator" aria-hidden="true" />
+        <span
+          v-if="hasBuild"
+          class="title-crumb title-crumb--build"
+          data-testid="title-crumb-build"
+        >
+          <component :is="installTypeMeta.icon" :size="15" class="title-install-type-icon" />
+          <span class="title-crumb-name">{{ installLabel }}</span>
+        </span>
+        <button
+          v-if="showInstallUpdatePill"
+          type="button"
+          class="title-install-update-chip"
+          v-bind="tooltipAttrs(installUpdatePillLabel)"
+          @click="handleInstallUpdatePill"
+        >
+          {{ t('titleBar.installUpdateShort') }}
+        </button>
+        <button
+          ref="installPill"
+          type="button"
+          class="title-menu-button title-crumb title-crumb--switcher"
+          :class="{ 'is-open': isInstancePickerOpen }"
+          aria-haspopup="dialog"
+          :aria-expanded="isInstancePickerOpen"
+          :aria-label="hasBuild ? t('titleBar.switchBuild') : undefined"
+          data-testid="title-crumb-switcher"
+          @click="handleInstallPillWithCoachmark"
+        >
+          <span v-if="!hasBuild">{{ t('titleBar.openABuild') }}</span>
+          <ChevronDown :size="13" />
+        </button>
+      </nav>
+      <template v-else>
+        <button
+          v-if="!isConsentLockdown"
+          ref="fileBtn"
+          type="button"
+          class="title-menu-button title-menu-button--icon"
+          aria-haspopup="menu"
+          v-bind="tooltipAttrs(t('titleBar.menu'))"
+          @click="handleFileMenu"
+        >
+          <MenuIcon :size="18" />
+        </button>
+        <!-- Browser-style refresh for install-backed instances (local +
+             remote/cloud), right of the hamburger. Re-navigates the
+             comfyView via the same reload path as F5/Ctrl+R. -->
+        <button
+          v-if="showRefreshButton"
+          type="button"
+          class="title-menu-button title-menu-button--icon title-refresh-button"
+          v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
+          @click="handleRefreshInstance"
+        >
+          <RotateCw :size="16" />
+        </button>
+      </template>
     </div>
 
     <!-- Center: install pill + install-update pill. The downloads tray
          moved to the right trailing cluster alongside the other
          user-action controls; the install-update pill remains here so
          it stays adjacent to the install identity. -->
-    <div class="title-center">
+    <div v-if="!showBreadcrumb" class="title-center">
       <!-- Center identity pill. Install-backed hosts render as a
            button that opens the instance-picker popover (matching the
            rest of the title-bar dropdown buttons — waffle menu +
@@ -1113,6 +1179,29 @@ onUnmounted(() => {
           aria-hidden="true"
         />
       </button>
+      <!-- With the breadcrumb on the left, refresh and the app menu move here. -->
+      <template v-if="showBreadcrumb">
+        <button
+          v-if="showRefreshButton"
+          type="button"
+          class="title-menu-button title-menu-button--icon title-refresh-button"
+          v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
+          @click="handleRefreshInstance"
+        >
+          <RotateCw :size="16" />
+        </button>
+        <button
+          v-if="!isConsentLockdown"
+          ref="fileBtn"
+          type="button"
+          class="title-menu-button title-menu-button--icon"
+          aria-haspopup="menu"
+          v-bind="tooltipAttrs(t('titleBar.menu'))"
+          @click="handleFileMenu"
+        >
+          <MenuIcon :size="18" />
+        </button>
+      </template>
     </div>
   </header>
 </template>
@@ -1164,6 +1253,11 @@ onUnmounted(() => {
 .title-bar.is-mac {
   padding-left: 78px;
 }
+/* The breadcrumb's first crumb is a button: give its hover box room to
+   breathe beside the traffic lights. */
+.title-bar.is-mac.is-breadcrumb {
+  padding-left: 88px;
+}
 /* Traffic lights vanish in macOS fullscreen — reclaim the inset. */
 .title-bar.is-mac.is-fullscreen {
   padding-left: 12px;
@@ -1188,6 +1282,11 @@ onUnmounted(() => {
      the left traffic-light inset is handled below) this centres the
      1fr track at true window centre. */
   min-width: var(--title-trailing-width, 0px);
+}
+/* The breadcrumb is left-aligned: no centring reservation. */
+.title-bar.is-breadcrumb .title-cluster,
+.title-bar.is-breadcrumb:not(.is-mac) .title-cluster {
+  min-width: 0;
 }
 /* Win/Linux: the native window controls reserve 140px on the RIGHT, vs the
    12px base padding on the left. Mirroring only the trailing width centres
@@ -1240,18 +1339,62 @@ onUnmounted(() => {
     opacity 0.12s,
     border-color 0.12s;
 }
-.title-bar.is-hover-active .title-menu-button:hover {
+.title-bar.is-hover-active .title-menu-button:hover,
+.title-crumb--switcher.is-open {
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
 }
-.title-bar.is-light.is-hover-active .title-menu-button:hover {
+.title-bar.is-light.is-hover-active .title-menu-button:hover,
+.title-bar.is-light .title-crumb--switcher.is-open {
   background: rgba(0, 0, 0, 0.06);
   border-color: rgba(0, 0, 0, 0.18);
 }
 .title-menu-button--icon {
   padding: 4px 6px;
   gap: 0;
+}
+/* Breadcrumb crumbs are title-menu buttons; these rules come after theirs. */
+.title-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.title-crumb {
+  height: 28px;
+  padding: 0 8px;
+  gap: 8px;
+  font-size: var(--text-ui);
+  white-space: nowrap;
+}
+.title-crumb--build {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding-right: 2px;
+  color: inherit;
+}
+.title-crumb-name {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.title-crumb-separator {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.title-crumb--switcher {
+  padding: 0 6px;
+}
+.title-crumb:focus {
+  outline: none;
+}
+/* Keyboard focus only, in the bar's own ring colour: focus handed back to
+   the bar after a menu closes must not draw the system ring. */
+.title-crumb:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 .title-feedback-button {
   color: var(--titlebar-icon);

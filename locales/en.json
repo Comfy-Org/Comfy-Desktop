@@ -97,7 +97,10 @@
     "betaNoticeOffTitleNamed": "The {feature} beta is off",
     "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this build. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
-    "betaNoticeSettings": "Settings"
+    "betaNoticeSettings": "Settings",
+    "breadcrumbLabel": "Builds and this window's build",
+    "openABuild": "Open a build",
+    "switchBuild": "Switch build"
   },
   "comfyUISettings": {
     "title": "Settings",

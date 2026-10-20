@@ -70,6 +70,8 @@ export interface ComfyTitleBarBridge {
    *  host window. Always creates a new one — the focus-existing path
    *  lives on the tray entry. */
   openNewWindow(): void
+  /** The breadcrumb's root crumb: focus the dashboard window, or open one. */
+  focusDashboard(): void
   /** Pop the File menu as a native OS menu. Avoids HTML popups that
    *  would be clipped by the title bar's WebContentsView bounds. */
   openFileMenu(anchor: TitleMenuAnchor): void
@@ -293,6 +295,9 @@ const bridge: ComfyTitleBarBridge = {
   },
   openNewWindow: () => {
     ipcRenderer.send('comfy-window:new-chooser-window')
+  },
+  focusDashboard: () => {
+    ipcRenderer.send('comfy-window:focus-dashboard')
   },
   openFileMenu: (anchor) => {
     ipcRenderer.send('comfy-window:open-title-menu', { menu: 'file', anchor })
