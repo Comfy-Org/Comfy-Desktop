@@ -95,9 +95,12 @@ export class CloudSession {
     if (!tokens) return null
     const workspaceId = workspaceIdOf(tokens.accessToken)
     if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now()) return tokens.accessToken
-    if (workspaceId && loadAccountCredential()) {
+    const accountCredential = loadAccountCredential()
+    if (workspaceId && accountCredential) {
       try {
-        await this.refreshAccountWorkspace(workspaceId)
+        const refreshed = await this.refreshAccountWorkspace(workspaceId)
+        if (!refreshed || loadAccountCredential()?.sessionId !== accountCredential.sessionId)
+          return null
       } catch {
         return null
       }

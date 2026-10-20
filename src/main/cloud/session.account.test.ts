@@ -89,6 +89,40 @@ describe('account workspace tokens', () => {
     expect(loadAccountCredential()?.refreshToken).toBe('root-2')
   })
 
+  it('does not give a pending request credentials from a replacement login', async () => {
+    vi.setSystemTime(Date.now() + 3600000)
+    const started = deferred<void>()
+    const response = deferred<AuthTokens>()
+    vi.mocked(refresh).mockImplementation(() => {
+      started.resolve()
+      return response.promise
+    })
+    const session = new CloudSession()
+    const pending = session.getAccessToken()
+    await started.promise
+    const replacement = tokens('w1', 'replacement-login')
+    vi.mocked(signIn).mockResolvedValue({
+      tokens: replacement,
+      status: statusFromAccessToken(replacement.accessToken)
+    })
+    await session.login()
+    response.resolve(tokens('w1', 'old-successor'))
+    await expect(pending).resolves.toBeNull()
+    expect(loadAccountCredential()?.refreshToken).toBe('replacement-login')
+  })
+
+  it('does not return an expired token after rejecting a mismatched account response', async () => {
+    vi.setSystemTime(Date.now() + 3600000)
+    const wrongAccount = tokens('w1', 'wrong-account')
+    const claims = Buffer.from(JSON.stringify({ sub: 'other-user', workspace_id: 'w1' })).toString(
+      'base64url'
+    )
+    wrongAccount.accessToken = `e30.${claims}.sig`
+    vi.mocked(refresh).mockResolvedValue(wrongAccount)
+    await expect(new CloudSession().getAccessToken()).resolves.toBeNull()
+    expect(loadAccountCredential()?.refreshToken).toBe('root-1')
+  })
+
   it('serializes rotating credentials and publishes only the latest workspace choice', async () => {
     const started = deferred<void>()
     const first = deferred<AuthTokens>()

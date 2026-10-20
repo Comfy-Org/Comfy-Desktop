@@ -66,19 +66,19 @@ Extend the existing authorization-code and refresh flow. Keep its external brows
 
 Cloud #14424 implements this contract. Review it together with the dependent clients:
 
-| Operation           | Implemented contract                                                                                                                                       |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start authorization | New Desktop requests `grant_mode=account`. Omitted mode keeps the existing workspace flow. The server permits account mode only for `comfy-desktop`.       |
-| Read consent        | The server returns the effective grant mode. Account mode presents account-wide approval without a workspace picker.                                       |
-| Approve             | The server records explicit approval for the user, client, resource, and approved scopes at account scope. The client cannot promote a workspace approval. |
-| Exchange code       | Return the normal workspace `access_token`, `expires_in`, a rotating account `refresh_token`, and an explicit `grant_mode=account`.                        |
-| Switch or renew     | Use `/oauth/token` with `grant_type=refresh_token` and the requested `workspace_id`. Only a stored account grant permits a different workspace.            |
-| Response            | Return a token for exactly the requested workspace and the successor account refresh token. Preserve the approved resource and scopes.                     |
-| Unsupported mode    | Return a documented unsupported-mode result. Never silently treat an old workspace grant as account-wide.                                                  |
+| Operation           | Implemented contract                                                                                                                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start authorization | New Desktop requests `grant_mode=account`. Omitted mode keeps the existing workspace flow. The server permits account mode only for client `comfy-desktop` targeting resource `comfy-cloud`. |
+| Read consent        | The server returns the effective grant mode. Account mode presents account-wide approval without a workspace picker.                                                                         |
+| Approve             | The server records explicit approval for the user, client, resource, and approved scopes at account scope. The client cannot promote a workspace approval.                                   |
+| Exchange code       | Return the normal workspace `access_token`, `expires_in`, a rotating account `refresh_token`, and an explicit `grant_mode=account`.                                                          |
+| Switch or renew     | Use `/oauth/token` with `grant_type=refresh_token` and the requested `workspace_id`. Only a stored account grant permits a different workspace.                                              |
+| Response            | Return a token for exactly the requested workspace and the successor account refresh token. Preserve the approved resource and scopes.                                                       |
+| Unsupported mode    | Return a documented unsupported-mode result. Never silently treat an old workspace grant as account-wide.                                                                                    |
 
 Desktop reads `desktop_account_grants_supported` from `/.well-known/oauth-authorization-server` before starting sign-in. A missing/false field or a missing metadata endpoint keeps legacy behavior. Network failures, server errors, and malformed metadata remain errors.
 
-The flag permits account requests only for `comfy-desktop` and `comfy-cloud`. Existing grants remain usable when new issuance is disabled. Unsupported account requests receive `invalid_request`.
+The flag permits account requests only for client `comfy-desktop` targeting resource `comfy-cloud`. Existing grants remain usable when new issuance is disabled. Unsupported account requests receive `invalid_request`.
 
 For the initial workspace, use a valid explicit preference, otherwise an accessible personal workspace, otherwise an accessible team workspace in stable order. Apply organization policy during selection. Return an explicit no-accessible-workspace result if none exists. Do not create a workspace as an authentication side effect.
 
@@ -86,7 +86,7 @@ For an explicit switch, a refusal must refer to that target. Never silently subs
 
 ### 2. Implement the account grant in Cloud
 
-Keep workspace grants as the default. Introduce an explicit distinction between account and workspace grants in the existing authorization request, approval, code, and refresh records. Account authority must not depend on a bootstrap workspace ID or a fabricated wildcard workspace.
+Keep workspace grants as the default. Record the requested grant mode on the authorization request. Use an absent workspace ID for account approval, code, and refresh records, with database constraints that restrict this to Desktop and its Cloud resource. Keep explicit grant mode in repository write parameters so a missing workspace never silently expands a workspace grant. Account authority must not depend on a bootstrap workspace ID or a fabricated wildcard workspace.
 
 Use additive migrations. Existing rows remain workspace grants. Add constraints without scanning under a write-blocking lock, validate them in a separate migration, and build the account-consent index concurrently. Generate Ent and OpenAPI output through the repository tools. Report generated files separately in the implementation PR.
 
