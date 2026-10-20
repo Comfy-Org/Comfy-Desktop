@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   enabled: true,
   getAccessToken: vi.fn<() => Promise<string | null>>(),
+  getPartnerNodeToken: vi.fn<() => Promise<string | null>>(),
   entries: [] as unknown[]
 }))
 
@@ -11,7 +12,10 @@ vi.mock('./embeddedSessionFlag', () => ({
   isEmbeddedSessionEnabled: async () => mocks.enabled
 }))
 vi.mock('../devplatform/session', () => ({
-  getCloudSession: () => ({ getAccessToken: mocks.getAccessToken })
+  getCloudSession: () => ({
+    getAccessToken: mocks.getAccessToken,
+    getPartnerNodeToken: mocks.getPartnerNodeToken
+  })
 }))
 vi.mock('../host/registry', () => ({
   get comfyWindows() {
@@ -25,6 +29,7 @@ vi.mock('../host/registry', () => ({
 
 import {
   EMBEDDED_SESSION_CHANNELS,
+  partnerNodeTokenForSender,
   workspaceTokenForSender,
   broadcastEmbeddedSessionChanged,
   stateForSender,
@@ -159,6 +164,22 @@ describe('embeddedSession', () => {
       status: 'disabled'
     })
     expect(switchWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('drops a partner token when its view is destroyed during mint', async () => {
+    const { event, webContents } = view('http://127.0.0.1:8000')
+    const pending = Promise.withResolvers<string | null>()
+    mocks.getPartnerNodeToken.mockReturnValueOnce(pending.promise)
+    const request = partnerNodeTokenForSender(event, 'ws-1')
+    await vi.waitFor(() => expect(mocks.getPartnerNodeToken).toHaveBeenCalledOnce())
+    webContents.isDestroyed = () => true
+    Object.defineProperty(webContents, 'mainFrame', {
+      get: () => {
+        throw new Error('destroyed')
+      }
+    })
+    pending.resolve('partner-token')
+    await expect(request).resolves.toBeNull()
   })
 
   it('refuses an unregistered sender', async () => {

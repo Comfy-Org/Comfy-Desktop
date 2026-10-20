@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: mocks.open }
 }))
 
-import { mintWorkspaceToken, signInAccount } from './accountSession'
+import { mintWorkspaceToken, revokeAccountSession, signInAccount } from './accountSession'
 
 const ROOT = 'comfy-session-secret'
 const CODE = `dls_${'a'.repeat(43)}`
@@ -114,6 +114,32 @@ describe('native account login', () => {
     await result
   })
 
+  it('preserves a mint refusal when cleanup crosses the sign-in deadline', async () => {
+    const expiry = new AbortController()
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(expiry.signal)
+    mocks.fetch
+      .mockResolvedValueOnce(respond({ code: CODE, expires_in: 300, poll_interval: 1 }, 201))
+      .mockResolvedValueOnce(respond({ status: 'complete', session_token: ROOT }))
+      .mockResolvedValueOnce(respond({ code: 'FORBIDDEN' }, 403))
+      .mockImplementationOnce(async () => {
+        expiry.abort(new DOMException('expired', 'TimeoutError'))
+        return respond({ success: true })
+      })
+    const result = expect(
+      signInAccount(vi.fn(), new AbortController().signal)
+    ).rejects.toMatchObject({ reason: 'server_error', httpStatus: 403 })
+    await vi.advanceTimersByTimeAsync(1000)
+    await result
+  })
+
+  it('uses one server request to revoke the account and its partner sessions', async () => {
+    mocks.fetch.mockResolvedValue(respond({ success: true }))
+    await revokeAccountSession(ROOT)
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+    expect(mocks.fetch.mock.calls[0]![0]).toMatch(/\/auth\/session$/)
+    expect(mocks.fetch.mock.calls[0]![1].method).toBe('DELETE')
+  })
+
   it('revokes a handed-off session if the first workspace request fails', async () => {
     mocks.fetch
       .mockResolvedValueOnce(respond({ code: CODE, expires_in: 300, poll_interval: 1 }, 201))
@@ -126,9 +152,8 @@ describe('native account login', () => {
     ).rejects.toMatchObject({ httpStatus: 403 })
     await vi.advanceTimersByTimeAsync(1000)
     await result
-    expect(mocks.fetch.mock.calls[3]![0]).toMatch(/\/auth\/token\/revoke$/)
-    expect(mocks.fetch.mock.calls[4]![0]).toMatch(/\/auth\/session$/)
-    expect(mocks.fetch.mock.calls[4]![1]).toMatchObject({
+    expect(mocks.fetch.mock.calls[3]![0]).toMatch(/\/auth\/session$/)
+    expect(mocks.fetch.mock.calls[3]![1]).toMatchObject({
       method: 'DELETE',
       headers: { Authorization: `Bearer ${ROOT}` }
     })

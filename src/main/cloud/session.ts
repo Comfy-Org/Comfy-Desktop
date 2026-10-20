@@ -85,7 +85,11 @@ export class CloudSession {
     this.clearPendingLogin()
     const sessionToken = loadTokens()?.sessionToken
     clearTokens()
-    if (sessionToken) await revokeAccountSession(sessionToken)
+    if (sessionToken) {
+      await revokeAccountSession(sessionToken).catch(() => {
+        console.warn('Cloud account signed out locally; server revocation failed')
+      })
+    }
   }
 
   status(): AuthStatus {
@@ -200,14 +204,14 @@ export class CloudSession {
           this.invalidateStoredSession()
           return this.status()
         }
-        throw error
+        return this.status()
       }
       if (
         generation === this.authGeneration &&
         loadTokens()?.sessionToken === current.sessionToken
       ) {
         if (workspaceIdOf(tokens.accessToken) !== workspaceId) {
-          throw new SignInFailure('Unexpected workspace in token response', 'server_error')
+          return this.status()
         }
         saveTokens(tokens)
       }
@@ -291,7 +295,7 @@ export class CloudSession {
         .then(
           (token) => {
             if (workspaceIdOf(token.accessToken) !== workspaceId) return null
-            created.expiresAt = token.expiresAt - REFRESH_SKEW_MS
+            created.expiresAt = Math.max(Date.now() + 5_000, token.expiresAt - REFRESH_SKEW_MS)
             return token.accessToken
           },
           () => null

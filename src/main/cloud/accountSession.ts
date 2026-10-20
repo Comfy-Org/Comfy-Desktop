@@ -53,7 +53,12 @@ export async function signInAccount(
       )
     ])
   } catch (error) {
-    if (expiry.aborted && !signal.aborted) {
+    if (
+      expiry.aborted &&
+      !signal.aborted &&
+      error instanceof Error &&
+      (error.name === 'AbortError' || error.name === 'TimeoutError')
+    ) {
       throw new SignInFailure('Sign-in timed out', 'timeout')
     }
     throw error
@@ -185,9 +190,5 @@ export async function mintPartnerNodeToken(
 }
 
 export async function revokeAccountSession(sessionToken: string): Promise<void> {
-  try {
-    await sessionRequest(sessionToken, '/auth/token/revoke', 'POST')
-  } finally {
-    await sessionRequest(sessionToken, '/auth/session', 'DELETE')
-  }
+  await sessionRequest(sessionToken, '/auth/session', 'DELETE')
 }

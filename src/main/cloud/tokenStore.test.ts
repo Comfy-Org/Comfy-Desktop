@@ -81,6 +81,20 @@ describe('workspace token vault', () => {
     }
   )
 
+  it('refuses malformed native credentials without losing saved workspaces', () => {
+    const valid = tokens('user-1', 'w1')
+    saveTokens(valid)
+    expect(() => saveTokens({ ...tokens('user-1', 'w2'), sessionToken: 'bad' })).toThrow()
+    expect(
+      replaceWorkspaceTokens('w1', valid.accessToken, valid.refreshToken, {
+        ...valid,
+        sessionToken: 'bad'
+      })
+    ).toBe(false)
+    _resetForTest()
+    expect(loadTokens()).toEqual(valid)
+  })
+
   it('keeps independent workspace bundles and reactivates either one', () => {
     const workspaceOne = tokens('user-1', 'w1')
     const workspaceTwo = tokens('user-1', 'w2')

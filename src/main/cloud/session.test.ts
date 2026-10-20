@@ -336,8 +336,8 @@ describe('CloudSession workspaces', () => {
     mocked(mintWorkspaceToken).mockRejectedValue(
       new SignInFailure('denied', 'server_error', { httpStatus: 404 })
     )
-    await expect(new CloudSession().switchWorkspace('w2')).rejects.toMatchObject({
-      httpStatus: 404
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1'
     })
     expect(active).toEqual(workspaceOne)
     expect(signInAccount).not.toHaveBeenCalled()
@@ -468,8 +468,8 @@ describe('account session review regressions', () => {
       ...makeTokens('w3'),
       sessionToken: tokens.sessionToken
     })
-    await expect(new CloudSession().switchWorkspace('w2')).rejects.toMatchObject({
-      reason: 'server_error'
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1'
     })
     expect(active).toBe(tokens)
   })
@@ -482,6 +482,15 @@ describe('account session review regressions', () => {
       workspaceId: 'w2'
     })
     expect(signInAccount).not.toHaveBeenCalled()
+  })
+
+  it('reuses a short-lived partner token without reminting on every call', async () => {
+    cache({ ...makeTokens('w1'), sessionToken: 'comfy-session-root' }, true)
+    mocked(mintPartnerNodeToken).mockResolvedValue(makeTokens('w1', Date.now() + 30_000))
+    const session = new CloudSession()
+    await session.getPartnerNodeToken('w1')
+    await session.getPartnerNodeToken('w1')
+    expect(mintPartnerNodeToken).toHaveBeenCalledOnce()
   })
 
   it('shares failed partner requests and backs off before retrying', async () => {
@@ -512,13 +521,13 @@ describe('account session review regressions', () => {
     expect(mintPartnerNodeToken).toHaveBeenCalledWith(fresh.accessToken, 'w1')
   })
 
-  it('waits for server logout and reports a failed revocation', async () => {
+  it('finishes local logout even when server revocation fails', async () => {
     cache({ ...makeTokens('w1'), sessionToken: 'comfy-session-root' }, true)
     const revocation = Promise.withResolvers<void>()
     mocked(revokeAccountSession).mockReturnValueOnce(revocation.promise)
     const logout = new CloudSession().logout()
     expect(active).toBeNull()
-    const result = expect(logout).rejects.toThrow('offline')
+    const result = expect(logout).resolves.toBeUndefined()
     revocation.reject(new Error('offline'))
     await result
   })

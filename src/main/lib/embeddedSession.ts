@@ -61,7 +61,7 @@ function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
 /** The sender is the main frame of a registered comfyView, on its own loopback ComfyUI. */
 export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender): boolean {
   const entry = findEntryByComfySender(sender)
-  if (!entry || !senderFrame) return false
+  if (!entry || !senderFrame || sender.isDestroyed() || senderFrame.detached) return false
   const mainFrame = sender.mainFrame
   if (
     senderFrame.processId !== mainFrame.processId ||

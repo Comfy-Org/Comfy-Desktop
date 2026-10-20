@@ -147,6 +147,7 @@ function loadVault(): TokenVault | null {
 
 /** Save and activate a browser-auth token bundle. A changed account replaces the vault. */
 export function saveTokens(tokens: AuthTokens): void {
+  if (!isTokens(tokens)) throw new Error('Invalid cloud credentials')
   const current = loadVault()
   const nextSubject = subjectOf(tokens.accessToken)
   const accountChanged = current !== null && (!nextSubject || current.subject !== nextSubject)
@@ -204,6 +205,7 @@ export function replaceWorkspaceTokens(
   expectedRefreshToken: string | undefined,
   tokens: AuthTokens
 ): boolean {
+  if (!isTokens(tokens)) return false
   const vault = loadVault()
   if (!vault) return false
   const key = workspaceKey(workspaceId)
