@@ -139,7 +139,8 @@ export interface KnownSettings {
    *  `isRolloutEnabled`, never stored as a default (see `ROLLOUT_DEFAULTS`). */
   newDashboardEnabled?: boolean
   /** Rollout flag for the breadcrumb title bar, where each build opens in its
-   *  own window (redesign Milestone 3). Needs `newDashboardEnabled`. */
+   *  own window (redesign Milestone 3). Needs `newDashboardEnabled`. Read via
+   *  `isBreadcrumbTitleBarEnabled`, never stored as a default. */
   breadcrumbTitleBarEnabled?: boolean
 }
 
@@ -373,10 +374,11 @@ function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSe
  * them. Read them with `isRolloutEnabled`.
  */
 export const ROLLOUT_DEFAULTS = {
-  // Launched. Kept one release as an escape hatch (`false` brings back the
-  // original dashboard), then removed with ChooserView.
+  // Launched. Each is kept one release as an escape hatch (`false` brings
+  // back the original dashboard / title bar), then removed with the code it
+  // replaced.
   newDashboardEnabled: true,
-  breadcrumbTitleBarEnabled: false
+  breadcrumbTitleBarEnabled: true
 } as const satisfies Partial<Record<keyof KnownSettings, boolean>>
 
 export type RolloutFlag = keyof typeof ROLLOUT_DEFAULTS

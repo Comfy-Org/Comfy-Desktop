@@ -287,10 +287,12 @@ describe('rollout flags', () => {
   })
 
   it('turn the breadcrumb title bar on only together with the Builds dashboard', () => {
-    expect(settings.isBreadcrumbTitleBarEnabled()).toBe(false)
-    settings.set('breadcrumbTitleBarEnabled', true)
+    // Launched: on unless the user turned it, or the dashboard, off.
     expect(settings.isBreadcrumbTitleBarEnabled()).toBe(true)
     settings.set('newDashboardEnabled', false)
+    expect(settings.isBreadcrumbTitleBarEnabled()).toBe(false)
+    settings.set('newDashboardEnabled', true)
+    settings.set('breadcrumbTitleBarEnabled', false)
     expect(settings.isBreadcrumbTitleBarEnabled()).toBe(false)
   })
 })

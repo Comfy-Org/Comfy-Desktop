@@ -347,6 +347,12 @@ useDeepLinkRouter({
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
+        // A pick from another window's switcher lands in this dashboard: it
+        // must not silently replace a flow open here (same prompt as Builds).
+        if (rollout.breadcrumb && currentOverlay.value !== null) {
+          if (!(await closeOverlay())) return
+          window.api.closeCurrentPanel()
+        }
         await chooserHandoff.handleChooserPick(inst, {
           isRestart: pickOpts?.isRestart === true
         })
