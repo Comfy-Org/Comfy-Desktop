@@ -23,14 +23,15 @@ interface SelectOption<V extends string> {
 }
 
 /** Option-list select. `label` renders a muted prefix inside the trigger
- *  ("Sort  Last edited") so filter bars need no separate labels. */
+ *  ("Sort  Last edited") so filter bars need no separate labels; without it,
+ *  the selected option names the trigger. */
 const {
   options,
   label,
   class: className
 } = defineProps<{
   options: SelectOption<T>[]
-  label: string
+  label?: string
   class?: HTMLAttributes['class']
 }>()
 const model = defineModel<T>({ required: true })
@@ -48,7 +49,7 @@ const model = defineModel<T>({ required: true })
         )
       "
     >
-      <span class="text-subtle-foreground">{{ label }}</span>
+      <span v-if="label" class="text-subtle-foreground">{{ label }}</span>
       <SelectValue class="truncate" />
       <ChevronDown :size="13" class="ml-auto shrink-0 text-subtle-foreground" />
     </SelectTrigger>
