@@ -446,6 +446,17 @@ describe('agentTap', () => {
     })
   })
 
+  describe('startup step cap', () => {
+    it('holds four full launches an hour', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const tap = createAgentTap(baseOpts)
+      const line = '[agent-event] startup_step step=listen outcome=ok duration_ms=1\n'
+      tap.ingest(line.repeat(241), 'stdout')
+      expect(captured).toHaveLength(240)
+    })
+  })
+
   describe('rate window', () => {
     it('keeps the cap until a full hour has passed', () => {
       vi.useFakeTimers()

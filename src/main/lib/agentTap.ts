@@ -347,6 +347,9 @@ export function parseAgentEventLine(line: string): AgentEvent | null {
 
 // Per-event budget on top of telemetry's own per-minute limit.
 const PER_EVENT_HOURLY_CAP = 60
+// One start writes a startup_step per step (15) on each of up to 4 attempts,
+// so the default cap would hold one launch an hour.
+const LIFECYCLE_HOURLY_CAPS: Readonly<Record<string, number>> = { startup_step: 240 }
 const RATE_WINDOW_MS = 60 * 60_000
 
 export function createAgentTap(opts: AgentTapOptions): {
@@ -399,7 +402,7 @@ export function createAgentTap(opts: AgentTapOptions): {
     const { event, fields } =
       parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed
     const bucket = rateBucket(event)
-    if (bucket.count >= PER_EVENT_HOURLY_CAP) return
+    if (bucket.count >= (LIFECYCLE_HOURLY_CAPS[event] ?? PER_EVENT_HOURLY_CAP)) return
     bucket.count++
     try {
       // Base context merged last so parsed fields can never override it.
