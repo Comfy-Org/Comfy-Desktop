@@ -12,11 +12,33 @@ export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
  */
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
 
-/** PEP 440 public versions only, so no operator, URL, index, option or marker can get through. */
+/**
+ * PEP 440 public versions only, so no operator, URL, index, option or marker can get through. An
+ * optional epoch (`1!2.3.4`) lets a pin sort above every version without one, which is epoch 0.
+ */
 const EXACT_VERSION =
-  /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
+  /^(?:\d{1,6}!)?\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
 const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))?\s*(?:#.*)?$/
+
+/** A payload key: an allowlisted name, optionally with extras (`comfy-agent[go]`). */
+const PAYLOAD_KEY = /^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[([^\]]*)\])?$/
+/** A PEP 508 extra name, at most 64 characters, like every other field here bounded. */
+const EXTRA = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/
+const MAX_EXTRAS = 8
+
+const AGENT_KEY = 'comfy-agent'
+/**
+ * The agent's key decorates the first line of core's file whose name is `comfy-agent` or starts
+ * with `comfy-agent-`, so a renamed agent package (`comfy-agent-oss`) is still found but an
+ * unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
+ * version and extras, never the package.
+ */
+const AGENT_LINE = /^comfy-agent(?:-|$)/
+
+function pinKey(normalized: string): string {
+  return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
+}
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 export const START_FAILURES_TO_REVERT = 2
@@ -25,13 +47,25 @@ export type OverrideRefusal =
   | 'not_object'
   | 'unknown_package'
   | 'bad_version'
+  | 'bad_extra'
   | 'not_in_core_file'
   | 'unsupported_line'
   | 'not_newer'
   | 'check_failed'
   | 'core_first'
 
-export type OverridePins = ReadonlyMap<string, string>
+/** An exact version, or a version with extras (installed as `name[go,x]==version`). */
+export type OverridePin = string | { readonly version: string; readonly extras: readonly string[] }
+export type OverridePins = ReadonlyMap<string, OverridePin>
+
+export function pinVersion(pin: OverridePin): string {
+  return typeof pin === 'string' ? pin : pin.version
+}
+
+/** What follows the package name on the installed line: `==1!2.0`, or `[go]==1!2.0`. */
+export function pinSpecifier(pin: OverridePin): string {
+  return typeof pin === 'string' ? `==${pin}` : `[${pin.extras.join(',')}]==${pin.version}`
+}
 
 export type ParsedOverride =
   | { kind: 'none' }
@@ -49,31 +83,48 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     return { kind: 'refused', reason: 'not_object' }
   const entries = Object.entries(raw)
   if (entries.length === 0) return { kind: 'none' }
-  const pins = new Map<string, string>()
-  for (const [name, version] of entries) {
-    const normalized = normalizePackageName(name)
+  const pins = new Map<string, OverridePin>()
+  for (const [key, version] of entries) {
+    const match = key.match(PAYLOAD_KEY)
+    const normalized = match ? normalizePackageName(match[1]!) : ''
     if (!OVERRIDABLE.has(normalized) || pins.has(normalized)) {
       return { kind: 'refused', reason: 'unknown_package' }
     }
     if (typeof version !== 'string' || !EXACT_VERSION.test(version)) {
       return { kind: 'refused', reason: 'bad_version' }
     }
-    pins.set(normalized, version)
+    if (match![2] === undefined) {
+      pins.set(normalized, version)
+      continue
+    }
+    const extras = parseExtras(match![2])
+    if (extras === null) return { kind: 'refused', reason: 'bad_extra' }
+    pins.set(normalized, { version, extras })
   }
   return { kind: 'pins', pins }
 }
 
-const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
+/** Comma-separated PEP 508 extra names, canonicalised and sorted, or null for anything else. */
+function parseExtras(text: string): string[] | null {
+  // Spaces only: a trim would also take a newline or tab, which has no place in the line.
+  const extras = text.split(',').map((extra) => extra.replace(/^ +| +$/g, ''))
+  if (extras.length > MAX_EXTRAS || !extras.every((extra) => EXTRA.test(extra))) return null
+  return [...new Set(extras.map(normalizePackageName))].sort()
+}
+
+const VERSION_PARTS = /^(?:(\d+)!)?([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
 const PRE_RANK = { a: 0, b: 1, rc: 2 } as const
 
 /** PEP 440 order for the versions EXACT_VERSION admits (`packaging`'s comparison key). */
 function versionKey(version: string): number[] {
-  const [, release, pre, preNum, post, dev] = version.match(VERSION_PARTS)!
+  const [, epoch, release, pre, preNum, post, dev] = version.match(VERSION_PARTS)!
   const parts = release!.split('.').map(Number)
   while (parts.length < 4) parts.push(0)
   // A bare X.devN sorts before X's pre-releases; a final release after them.
   const preRank = pre ? PRE_RANK[pre as keyof typeof PRE_RANK] : dev && !post ? -1 : 3
+  // The epoch outranks everything after it: 1!0.1 is newer than 9.9.
   return [
+    epoch === undefined ? 0 : Number(epoch),
     ...parts,
     preRank,
     pre ? Number(preNum) : 0,
@@ -91,7 +142,7 @@ export function compareVersions(a: string, b: string): number {
 
 export function overrideSignature(pins: OverridePins): string {
   return [...pins]
-    .map(([name, version]) => `${name}==${version}`)
+    .map(([name, pin]) => `${name}${pinSpecifier(pin)}`)
     .sort()
     .join(',')
 }
@@ -105,18 +156,17 @@ export function effectiveAgentRequirements(
   pins: OverridePins,
   mainText = ''
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
-  const seen = new Set<string>()
+  // Per pin key, the package name of the line it decorates.
+  const matched = new Map<string, string>()
   const lines = coreText.split(/\r?\n/)
-  const agentNames = new Set(
-    lines.flatMap((line) => {
-      const name = line.match(LEADING_NAME)?.[1]
-      return name ? [normalizePackageName(name)] : []
-    })
-  )
-  const fromMain = mainText.split(/\r?\n/).filter((line) => {
+  const keyOf = (line: string): string | undefined => {
     const name = line.match(LEADING_NAME)?.[1]
-    const normalized = name && normalizePackageName(name)
-    return !!normalized && pins.has(normalized) && !agentNames.has(normalized)
+    return name && pinKey(normalizePackageName(name))
+  }
+  const agentKeys = new Set(lines.map(keyOf))
+  const fromMain = mainText.split(/\r?\n/).filter((line) => {
+    const key = keyOf(line)
+    return !!key && pins.has(key) && !agentKeys.has(key)
   })
   // Before the agent file's trailing newline, so the result still ends in one.
   lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
@@ -124,21 +174,24 @@ export function effectiveAgentRequirements(
     const name = lines[i]!.match(LEADING_NAME)?.[1]
     if (!name) continue
     const normalized = normalizePackageName(name)
-    const version = pins.get(normalized)
-    if (version === undefined) continue
+    const key = pinKey(normalized)
+    const pin = pins.get(key)
+    if (pin === undefined) continue
+    // Only the first comfy-agent* package is the agent's; a later, differently named one is left be.
+    if (matched.has(key) && matched.get(key) !== normalized) continue
     const line = lines[i]!.match(REQUIREMENT_LINE)
     const pinned = line?.[2]
-    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || seen.has(normalized)) {
+    if (!line || (pinned !== undefined && !EXACT_VERSION.test(pinned)) || matched.has(key)) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
     // A bare line takes any exact pin, older ones included: core's file can't downgrade it, the campaign can.
-    if (pinned !== undefined && compareVersions(version, pinned) <= 0) {
+    if (pinned !== undefined && compareVersions(pinVersion(pin), pinned) <= 0) {
       return { kind: 'refused', reason: 'not_newer' }
     }
-    seen.add(normalized)
-    lines[i] = `${name}==${version}`
+    matched.set(key, normalized)
+    lines[i] = `${name}${pinSpecifier(pin)}`
   }
-  if (seen.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
+  if (matched.size !== pins.size) return { kind: 'refused', reason: 'not_in_core_file' }
   return { kind: 'text', text: lines.join('\n') }
 }
 
@@ -164,18 +217,32 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
+/** The name of the first comfy-agent* package core's file lists: the one an agent pin decorates. */
+function agentPackage(coreText: string): string | undefined {
+  return coreText
+    .split(/\r?\n/)
+    .map((line) => line.match(LEADING_NAME)?.[1])
+    .map((name) => name && normalizePackageName(name))
+    .find((name) => !!name && AGENT_LINE.test(name))
+}
+
 /**
- * Pins every installed non-agent package where it is, so an override that moves one falls back.
- * The frontend is held too unless this override pins it.
+ * Pins every installed package where it is, so an override that moves one falls back, except the
+ * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
+ * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
+ * them, since the install also takes core's lines for them and must be able to land on those.
+ * Any other comfy-agent* package is held. The frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
-  pins: OverridePins = new Map()
+  pins: OverridePins = new Map(),
+  coreText = ''
 ): string | null {
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
+  const agent = agentPackage(coreText)
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name)
+    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
@@ -203,7 +270,7 @@ export function pinsOverBareLines(coreText: string, pins: OverridePins): Overrid
   const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
   return new Map(
     [...pins].filter(([name]) =>
-      bare.some((line) => line && !line[2] && normalizePackageName(line[1]!) === name)
+      bare.some((line) => line && !line[2] && pinKey(normalizePackageName(line[1]!)) === name)
     )
   )
 }

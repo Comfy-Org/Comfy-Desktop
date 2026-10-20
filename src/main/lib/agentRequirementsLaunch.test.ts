@@ -1037,6 +1037,24 @@ describe('installAgentRequirements with a version override', () => {
     }
   })
 
+  it('falls back to core file when an epoch pin cannot be installed', async () => {
+    respond = ({ constraints }) => (constraints ? { code: 1, output: '' } : { code: 0, output: '' })
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, {
+      'comfy-agent': '1!0.2.3'
+    })
+
+    expect(decision).toMatchObject({
+      decision: 'reverted',
+      reason: 'install_failed',
+      pins: new Map([['comfy-agent', '1!0.2.3']])
+    })
+    expect(calls.map((c) => c.content)).toEqual([
+      'comfy-agent==1!0.2.3\ncomfy-cli==1.21.0\n',
+      CORE_FILE
+    ])
+  })
+
   it('falls back to core file when the override cannot install without moving another package', async () => {
     respond = ({ constraints }) => (constraints ? { code: 1, output: '' } : { code: 0, output: '' })
     const statuses: AgentInstallStatus[] = []

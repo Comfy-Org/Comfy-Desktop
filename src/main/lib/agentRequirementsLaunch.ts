@@ -489,7 +489,7 @@ async function tryOverride(
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     const listed = await listInstalled(plan, signal)
-    const constraints = listed === null ? null : installedConstraints(listed, pins)
+    const constraints = listed === null ? null : installedConstraints(listed, pins, coreText)
     if (listed === null || constraints === null) return refuse(sendOutput, 'check_failed', pins)
     // Not counted toward retiring the override: it applies on a later launch, once core's are in.
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
