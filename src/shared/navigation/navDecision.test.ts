@@ -310,3 +310,45 @@ describe('nav/caret i18n keys', () => {
     }
   })
 })
+
+describe('decideNavigation — builds in their own windows (breadcrumb title bar)', () => {
+  const ownWindowInput = (over: Partial<NavInput>): NavInput => ({
+    currentView: 'dashboard',
+    target: 'instance',
+    targetRun: 'stopped',
+    intent: 'primary',
+    ownWindows: true,
+    ...over
+  })
+
+  it('opens a stopped build in its own window instead of turning the dashboard into it', () => {
+    expect(decideNavigation(ownWindowInput({}))).toMatchObject({
+      window: 'new',
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.start
+    })
+  })
+
+  it('opens another build from a build window without replacing it, labelled Open', () => {
+    expect(decideNavigation(ownWindowInput({ currentView: 'instance' }))).toMatchObject({
+      window: 'new',
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.start,
+      secondary: []
+    })
+  })
+
+  it('still focuses a running build and restarts this window’s own build', () => {
+    expect(decideNavigation(ownWindowInput({ targetRun: 'running-elsewhere' })).verb).toBe('focus')
+    expect(
+      decideNavigation(ownWindowInput({ currentView: 'instance', targetRun: 'self' })).verb
+    ).toBe('restart')
+  })
+
+  it('leaves the original matrix alone when the flag is off', () => {
+    expect(decideNavigation(ownWindowInput({ ownWindows: false }))).toMatchObject({
+      window: 'same',
+      verb: 'switch'
+    })
+  })
+})

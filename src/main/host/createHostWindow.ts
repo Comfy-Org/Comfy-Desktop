@@ -21,6 +21,7 @@ import {
   shouldOpenInPopup
 } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
+import { ROLLOUT_QUERY_PARAM } from '../../shared/rolloutFlags'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
@@ -1052,12 +1053,18 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
  */
 export function loadTitleBarUrl(titleBarView: WebContentsView, installationId: string): void {
   const isDev = !!process.env['ELECTRON_RENDERER_URL']
+  // Re-read on every title-bar navigation, so a changed rollout flag applies
+  // on the next one.
+  const query = {
+    installationId,
+    [ROLLOUT_QUERY_PARAM.breadcrumb]: String(settings.isBreadcrumbTitleBarEnabled())
+  }
   const tbLoad = isDev
     ? titleBarView.webContents.loadURL(
-        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/comfyTitleBar.html?installationId=${encodeURIComponent(installationId)}`
+        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/comfyTitleBar.html?${new URLSearchParams(query).toString()}`
       )
     : titleBarView.webContents.loadFile(path.join(__dirname, '../renderer/comfyTitleBar.html'), {
-        query: { installationId }
+        query
       })
   void tbLoad.catch(() => {})
 }

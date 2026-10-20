@@ -10,6 +10,9 @@ export interface ChooserHandoffOpts {
   showProgress: (opts: ShowProgressOpts) => Promise<void>
   /** Surfaces the new-install flow as a takeover above the chooser body. */
   switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
+  /** Every build opens in its own window (the breadcrumb title bar): a pick
+   *  launches without claiming this dashboard window, which stays. */
+  buildsOpenInOwnWindows?: boolean
 }
 
 /** Outcome of `performChooserLaunch()`. `'launched'` auto-swaps a takeover
@@ -119,6 +122,13 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     installation: Installation,
     launchOpts?: { isRestart?: boolean }
   ): Promise<void> {
+    if (opts.buildsOpenInOwnWindows) {
+      const outcome = await performPickerLaunch(installation, {
+        isRestart: launchOpts?.isRestart === true
+      })
+      if (outcome === 'missing-action') await opts.switchPanel('new-install', 'chooser_pick')
+      return
+    }
     // On missing launch action, bounce into the new-install flow in this
     // same host rather than a separate window.
     await performChooserLaunch(

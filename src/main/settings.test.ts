@@ -33,7 +33,8 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
-  isRolloutEnabled: (flag: 'newDashboardEnabled') => boolean
+  isRolloutEnabled: (flag: 'newDashboardEnabled' | 'breadcrumbTitleBarEnabled') => boolean
+  isBreadcrumbTitleBarEnabled: () => boolean
   peekBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
@@ -283,6 +284,14 @@ describe('rollout flags', () => {
   it('follow an explicit user choice', () => {
     settings.set('newDashboardEnabled', false)
     expect(settings.isRolloutEnabled('newDashboardEnabled')).toBe(false)
+  })
+
+  it('turn the breadcrumb title bar on only together with the Builds dashboard', () => {
+    expect(settings.isBreadcrumbTitleBarEnabled()).toBe(false)
+    settings.set('breadcrumbTitleBarEnabled', true)
+    expect(settings.isBreadcrumbTitleBarEnabled()).toBe(true)
+    settings.set('newDashboardEnabled', false)
+    expect(settings.isBreadcrumbTitleBarEnabled()).toBe(false)
   })
 })
 

@@ -37,6 +37,8 @@ export interface InstanceNavStateSources {
   currentCategory: MaybeRefOrGetter<Category | null>
   /** The host's active install id, for the self/elsewhere comparison. */
   activeInstallationId: MaybeRefOrGetter<string | null | undefined>
+  /** Every build opens in its own window (the breadcrumb title bar is on). */
+  ownWindows?: MaybeRefOrGetter<boolean>
 }
 
 export function useInstanceNavState(
@@ -82,7 +84,8 @@ export function useInstanceNavState(
     currentView: toValue(sources.currentView),
     target: targetKind.value,
     targetRun: targetRun.value,
-    intent
+    intent,
+    ownWindows: toValue(sources.ownWindows) === true
   })
 
   return {
