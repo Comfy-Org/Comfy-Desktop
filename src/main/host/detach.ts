@@ -207,10 +207,10 @@ export async function confirmAndCloseAllHostWindows(
     return
   }
   // Use the title-bar pill name, not the verbose OS window title.
-  const titles = instanceWindows.map((e) => e.titleBarText || 'Untitled instance')
-  const details: SystemModalDetailGroup[] = [{ label: 'Open instances', items: titles }]
+  const titles = instanceWindows.map((e) => e.titleBarText || 'Untitled build')
+  const details: SystemModalDetailGroup[] = [{ label: 'Open builds', items: titles }]
   // Surface the EXTRA things a quit tears down. Running sessions are deliberately NOT
-  // re-listed: they already appear under "Open instances".
+  // re-listed: they already appear under "Open builds".
   if (ipc.hasActiveOperations()) {
     try {
       const items = await ipc.getActiveDetails()

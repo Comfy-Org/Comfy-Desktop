@@ -106,7 +106,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('li.item', { timeout: 10_000 })
-  expect(await popup.clickByText('li.item', 'Add Existing Instance')).toBe(true)
+  expect(await popup.clickByText('li.item', 'Add Existing Build')).toBe(true)
 
   await ctx.panel.waitForVisible('[data-testid="track-modal"]', { timeout: 10_000 })
 

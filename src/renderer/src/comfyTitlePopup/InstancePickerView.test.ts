@@ -202,8 +202,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       const input = wrapper.get('.picker-search input')
-      expect(input.attributes('placeholder')).toBe('Search instances')
-      expect(input.attributes('aria-label')).toBe('Search instances')
+      expect(input.attributes('placeholder')).toBe('Search builds')
+      expect(input.attributes('aria-label')).toBe('Search builds')
       expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)
@@ -536,7 +536,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const dialogs = useDialogs()
       expect(dialogs.state.open).toBe(true)
       expect(dialogs.state.kind).toBe('confirm')
-      expect(dialogs.state.confirm.title).toBe('Restart instance?')
+      expect(dialogs.state.confirm.title).toBe('Restart build?')
       expect(bridge.restarts).toEqual([])
       // Accept — bridge fires `confirmed: true` so main skips its system-modal.
       dialogs.confirmPrimary()

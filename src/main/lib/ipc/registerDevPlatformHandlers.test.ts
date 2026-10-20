@@ -552,7 +552,7 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(result).toEqual({
       ok: false,
-      message: 'This instance cannot be promoted to a workspace.'
+      message: 'This build cannot be added to a workspace.'
     })
     expect(mocks.saveSnapshot).not.toHaveBeenCalled()
     expect(mocks.createBuildDraft).not.toHaveBeenCalled()
@@ -622,7 +622,7 @@ describe('registerDevPlatformHandlers', () => {
 
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
-    expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
+    expect(result).toEqual({ ok: false, message: 'The build changed. Try again.' })
     expect(mocks.createBuildDraft).not.toHaveBeenCalled()
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
@@ -658,7 +658,7 @@ describe('registerDevPlatformHandlers', () => {
 
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
-    expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
+    expect(result).toEqual({ ok: false, message: 'The build changed. Try again.' })
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 

@@ -143,8 +143,9 @@ const cardHandlers = {
           @launch="pickInstall"
           @stop="triggerAction('stop', $event)"
         />
+        <!-- Nothing until the first load lands: no false "no builds yet". -->
         <InstallListPage
-          v-else
+          v-else-if="!installationStore.loading || workspaceInstalls.length"
           :installations="workspaceInstalls"
           :show-free-runs-pill="showCloudFreeRunsPill"
           :show-why-cloud="showWhyCloud"
