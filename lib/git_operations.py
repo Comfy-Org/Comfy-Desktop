@@ -10,6 +10,7 @@ Usage: python git_operations.py <subcommand> <repo_path> [args...]
 Subcommands:
   healthcheck
   rev-parse          <repo_path> <ref>
+  tracked-changes    <repo_path>
   describe-tags      <repo_path> [commit]
   tag-list           <repo_path>
   rev-list-count     <repo_path> <tag_or_ref> [commit]
@@ -231,6 +232,13 @@ def cmd_rev_parse(repo_path, ref):
     repo = open_repo(repo_path)
     oid = resolve_ref(repo, ref)
     print(str(oid))
+
+
+def cmd_tracked_changes(repo_path):
+    """Print tracked paths that differ from HEAD (untracked files ignored)."""
+    repo = open_repo(repo_path)
+    for path in repo.status(untracked_files="no"):
+        print(path)
 
 
 HAS_COMMIT_ABSENT = 3
@@ -854,6 +862,7 @@ Usage: python git_operations.py <subcommand> [args...]
 Subcommands:
   healthcheck
   rev-parse          <repo_path> <ref>
+  tracked-changes    <repo_path>
   describe-tags      <repo_path> [commit]
   tag-list           <repo_path>
   rev-list-count     <repo_path> <tag_or_ref> [commit]
@@ -893,6 +902,12 @@ if __name__ == "__main__":
                 print("Usage: git_operations.py rev-parse <repo_path> <ref>", file=sys.stderr)
                 sys.exit(1)
             cmd_rev_parse(sys.argv[2], sys.argv[3])
+
+        elif subcmd == "tracked-changes":
+            if len(sys.argv) < 3:
+                print("Usage: git_operations.py tracked-changes <repo_path>", file=sys.stderr)
+                sys.exit(1)
+            cmd_tracked_changes(sys.argv[2])
 
         elif subcmd == "describe-tags":
             if len(sys.argv) < 3:

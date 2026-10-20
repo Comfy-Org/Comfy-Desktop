@@ -19,3 +19,8 @@ export function parseAssetsStartupFailure(
   const message = rest.slice(0, end < 0 ? rest.length : end + 1).filter(Boolean)
   return { kind: MARKER_RE.exec(lines[at]!)![1]!, message: message.join('\n') }
 }
+
+/** Alembic's refusal when the asset database was migrated by a newer ComfyUI than this one. */
+export function isNewerAssetDbFailure(stderr: string | undefined): boolean {
+  return (stderr ?? '').includes("Can't locate revision identified by")
+}
