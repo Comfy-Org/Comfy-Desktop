@@ -1309,6 +1309,8 @@ export interface InstallWorkflow {
 }
 
 export interface InstallModel {
+  /** Unique within a listing: the file on disk, or Comfy Cloud's asset id. */
+  id: string
   /** File name, or its path inside the type folder. */
   name: string
   /** The model type (the folder ComfyUI reads it from), e.g. `checkpoints`. */

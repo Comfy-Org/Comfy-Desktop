@@ -48,6 +48,7 @@ export async function listLocalModels(
       // Loose files at the root have no type ComfyUI would load them as.
       if (!folder || rest.length === 0) continue
       add(file.fileId, {
+        id: file.fileId,
         name: rest.join('/'),
         folder,
         size: file.size,
@@ -61,6 +62,7 @@ export async function listLocalModels(
     truncated ||= walked.truncated
     for (const file of walked.files) {
       add(file.fileId, {
+        id: file.fileId,
         name: file.relativePath,
         folder: extra.type,
         size: file.size,
@@ -152,8 +154,13 @@ export async function listCloudModels(
   const { assets, total, has_more, next_cursor } = res.data
   const items = assets
     .filter((asset) => filter !== 'public' || asset.is_immutable === true)
-    .filter((asset) => typeof (asset.user_metadata?.filename || asset.name) === 'string')
+    .filter(
+      (asset) =>
+        typeof asset.id === 'string' &&
+        typeof (asset.user_metadata?.filename || asset.name) === 'string'
+    )
     .map((asset) => ({
+      id: asset.id,
       name: asset.user_metadata?.filename || asset.name,
       folder: cloudModelFolder(asset.tags),
       size: Number(asset.size ?? 0),

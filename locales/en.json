@@ -1865,6 +1865,63 @@
       "label": "Build name",
       "hint": "Double-click to rename",
       "failed": "Couldn't rename this build"
+    },
+    "tabs": {
+      "workflows": "Workflows",
+      "models": "Models",
+      "nodes": "Custom nodes"
+    },
+    "remote": {
+      "title": "This build runs on another computer",
+      "description": "Its workflows, models and outputs stay on that server."
+    },
+    "contents": {
+      "signedOutTitle": "Log in to see this build",
+      "signedOutDescription": "Comfy Cloud keeps your workflows, models and outputs in your account.",
+      "errorTitle": "Couldn't load this list"
+    },
+    "loadMore": "Load more",
+    "sort": {
+      "label": "Sort",
+      "lastEdited": "Last edited",
+      "name": "Name"
+    },
+    "workflows": {
+      "search": "Search workflows",
+      "noMatches": "No workflows match",
+      "emptyTitle": "No workflows yet",
+      "emptyDescription": "Workflows you save in ComfyUI show up here."
+    },
+    "models": {
+      "search": "Search models",
+      "noMatches": "Nothing matches",
+      "empty": "No models yet",
+      "filter": {
+        "all": "All",
+        "mine": "My models",
+        "public": "Public models"
+      },
+      "public": "Public"
+    },
+    "retry": "Retry",
+    "columns": {
+      "name": "Name",
+      "folder": "Folder",
+      "modified": "Last modified",
+      "size": "Size",
+      "type": "Type",
+      "version": "Version",
+      "status": "Status",
+      "nodes": "Nodes"
+    },
+    "loading": "Loading",
+    "nodes": {
+      "search": "Search node packs",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "noMatches": "Nothing matches",
+      "empty": "No custom node packs",
+      "managedNote": "Comfy Cloud installs these node packs and keeps them up to date."
     }
   },
   "installContents": {
