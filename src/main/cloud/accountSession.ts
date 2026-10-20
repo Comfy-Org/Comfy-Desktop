@@ -6,7 +6,7 @@ import {
   type DesktopLoginCodeGrant,
   postJson
 } from '../auth/desktopLoginCode/client'
-import { abortable, abortableSleep } from '../auth/firebaseBridge/flowControl'
+import { abortableSleep } from '../auth/firebaseBridge/flowControl'
 import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage } from './oauth'
 import { codeChallengeFromVerifier, generateCodeVerifier } from './pkce'
@@ -36,23 +36,37 @@ export async function signInAccount(
   onAuthorizeUrl(url.href)
   const expiry = AbortSignal.timeout(grant.expires_in * 1000)
   const deadline = AbortSignal.any([signal, expiry])
+  const polling = new AbortController()
   try {
-    return await pollForAccountSession(grant, verifier, url.href, deadline)
+    const account = pollForAccountSession(
+      grant,
+      verifier,
+      AbortSignal.any([deadline, polling.signal])
+    )
+    return await Promise.race([
+      account,
+      openAuthorizePage(url.href).then(
+        () => account,
+        () => {
+          throw new SignInFailure('Could not open the browser', 'browser_unavailable')
+        }
+      )
+    ])
   } catch (error) {
     if (expiry.aborted && !signal.aborted) {
       throw new SignInFailure('Sign-in timed out', 'timeout')
     }
     throw error
+  } finally {
+    polling.abort()
   }
 }
 
 async function pollForAccountSession(
   grant: DesktopLoginCodeGrant,
   verifier: string,
-  url: string,
   deadline: AbortSignal
 ): Promise<AuthTokens> {
-  await abortable(openAuthorizePage(url), deadline)
   while (!deadline.aborted) {
     await abortableSleep(grant.poll_interval * 1000, deadline)
     let response
@@ -103,23 +117,28 @@ async function sessionRequest(
   signal?: AbortSignal
 ): Promise<unknown> {
   const timeout = AbortSignal.timeout(15_000)
-  const response = await net.fetch(`${CLOUD_CONFIG.apiBase}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${sessionToken}`,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'omit',
-    redirect: 'error',
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) })
-  })
-  if (!response.ok) {
-    throw new SignInFailure('Account session request failed', 'server_error', {
-      httpStatus: response.status
+  try {
+    const response = await net.fetch(`${CLOUD_CONFIG.apiBase}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        'Content-Type': 'application/json'
+      },
+      credentials: 'omit',
+      redirect: 'error',
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) })
     })
+    if (!response.ok) {
+      throw new SignInFailure('Account session request failed', 'server_error', {
+        httpStatus: response.status
+      })
+    }
+    return response.status === 204 ? undefined : await response.json()
+  } catch (error) {
+    if (signal?.aborted || error instanceof SignInFailure) throw error
+    throw new SignInFailure('Account session request failed', 'server_error')
   }
-  return response.status === 204 ? undefined : response.json()
 }
 
 export async function mintWorkspaceToken(

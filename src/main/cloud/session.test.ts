@@ -389,7 +389,7 @@ describe('CloudSession workspaces', () => {
     const tokens = { ...makeTokens('w1'), sessionToken: 'comfy-session-root' }
     cache(tokens, true)
     mocked(mintPartnerNodeToken).mockResolvedValue({
-      accessToken: 'partner-token',
+      accessToken: jwt('w1', '-partner'),
       expiresAt: future,
       sessionToken: tokens.sessionToken
     })
@@ -397,8 +397,8 @@ describe('CloudSession workspaces', () => {
     await expect(session.getPartnerNodeToken('w2')).resolves.toBeNull()
     await expect(
       Promise.all([session.getPartnerNodeToken('w1'), session.getPartnerNodeToken('w1')])
-    ).resolves.toEqual(['partner-token', 'partner-token'])
-    await expect(session.getPartnerNodeToken('w1')).resolves.toBe('partner-token')
+    ).resolves.toEqual([jwt('w1', '-partner'), jwt('w1', '-partner')])
+    await expect(session.getPartnerNodeToken('w1')).resolves.toBe(jwt('w1', '-partner'))
     expect(mintPartnerNodeToken).toHaveBeenCalledExactlyOnceWith(tokens.sessionToken, 'w1')
   })
 
@@ -426,5 +426,100 @@ describe('CloudSession workspaces', () => {
       { id: 'user-1', name: 'One' }
     ])
     expect(listWorkspaceMembers).toHaveBeenCalledExactlyOnceWith(tokens.accessToken)
+  })
+})
+
+describe('account session review regressions', () => {
+  it('keeps a new login alive when the old account is rejected', async () => {
+    cache({ ...makeTokens('w1', past), sessionToken: 'comfy-session-old' }, true)
+    const refreshing = Promise.withResolvers<AuthTokens>()
+    const signingIn = Promise.withResolvers<AuthTokens>()
+    mocked(mintWorkspaceToken).mockReturnValue(refreshing.promise)
+    mocked(signInAccount).mockReturnValue(signingIn.promise)
+    const session = new CloudSession()
+    const access = session.getAccessToken()
+    const login = session.login()
+    refreshing.reject(new SignInFailure('revoked', 'server_error', { httpStatus: 401 }))
+    await expect(access).resolves.toBeNull()
+    expect(mocked(signInAccount).mock.calls.at(-1)![1].aborted).toBe(false)
+    signingIn.resolve({ ...makeTokens('w2'), sessionToken: 'comfy-session-new' })
+    await expect(login).resolves.toMatchObject({ workspaceId: 'w2' })
+  })
+
+  it('resolves an aborted login with the current state after logout', async () => {
+    mocked(signInAccount).mockImplementation(
+      (_, signal) =>
+        new Promise((_, reject) => {
+          signal.addEventListener('abort', () =>
+            reject(new DOMException('cancelled', 'AbortError'))
+          )
+        })
+    )
+    const session = new CloudSession()
+    const login = session.login()
+    await session.logout()
+    await expect(login).resolves.toEqual({ signedIn: false })
+  })
+
+  it('rejects a workspace response with a different scope', async () => {
+    const tokens = { ...makeTokens('w1'), sessionToken: 'comfy-session-root' }
+    cache(tokens, true)
+    mocked(mintWorkspaceToken).mockResolvedValue({
+      ...makeTokens('w3'),
+      sessionToken: tokens.sessionToken
+    })
+    await expect(new CloudSession().switchWorkspace('w2')).rejects.toMatchObject({
+      reason: 'server_error'
+    })
+    expect(active).toBe(tokens)
+  })
+
+  it('uses a still-valid legacy token when refresh temporarily fails', async () => {
+    cache(makeTokens('w1'), true)
+    cache(makeTokens('w2', Date.now() + 30_000))
+    mocked(refresh).mockRejectedValue(new Error('offline'))
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+    expect(signInAccount).not.toHaveBeenCalled()
+  })
+
+  it('shares failed partner requests and backs off before retrying', async () => {
+    vi.useFakeTimers()
+    try {
+      cache({ ...makeTokens('w1'), sessionToken: 'comfy-session-root' }, true)
+      mocked(mintPartnerNodeToken).mockRejectedValue(new Error('offline'))
+      const session = new CloudSession()
+      await expect(
+        Promise.all(Array.from({ length: 10 }, () => session.getPartnerNodeToken('w1')))
+      ).resolves.toEqual(Array(10).fill(null))
+      await expect(session.getPartnerNodeToken('w1')).resolves.toBeNull()
+      expect(mintPartnerNodeToken).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(5000)
+      await session.getPartnerNodeToken('w1')
+      expect(mintPartnerNodeToken).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes legacy credentials before requesting a partner token and rejects another scope', async () => {
+    cache(makeTokens('w1', past), true)
+    const fresh = makeTokens('w1', future, '-fresh')
+    mocked(refresh).mockResolvedValue(fresh)
+    mocked(mintPartnerNodeToken).mockResolvedValue(makeTokens('w2'))
+    await expect(new CloudSession().getPartnerNodeToken('w1')).resolves.toBeNull()
+    expect(mintPartnerNodeToken).toHaveBeenCalledWith(fresh.accessToken, 'w1')
+  })
+
+  it('waits for server logout and reports a failed revocation', async () => {
+    cache({ ...makeTokens('w1'), sessionToken: 'comfy-session-root' }, true)
+    const revocation = Promise.withResolvers<void>()
+    mocked(revokeAccountSession).mockReturnValueOnce(revocation.promise)
+    const logout = new CloudSession().logout()
+    expect(active).toBeNull()
+    const result = expect(logout).rejects.toThrow('offline')
+    revocation.reject(new Error('offline'))
+    await result
   })
 })

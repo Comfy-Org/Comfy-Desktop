@@ -35,7 +35,14 @@ const REFRESH_SKEW_MS = 60_000
 export class CloudSession {
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
-  private readonly partnerTokens = new Map<string, Promise<AuthTokens>>()
+  private readonly partnerTokens = new Map<
+    string,
+    {
+      credential: string
+      pending: Promise<string | null>
+      expiresAt: number
+    }
+  >()
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
   private loginAbort: AbortController | null = null
@@ -72,13 +79,13 @@ export class CloudSession {
   }
 
   /** Clear local credentials and request server sign-out. */
-  logout(): void {
+  async logout(): Promise<void> {
     this.authGeneration += 1
     this.partnerTokens.clear()
     this.clearPendingLogin()
     const sessionToken = loadTokens()?.sessionToken
     clearTokens()
-    if (sessionToken) void revokeAccountSession(sessionToken).catch(() => {})
+    if (sessionToken) await revokeAccountSession(sessionToken)
   }
 
   status(): AuthStatus {
@@ -150,9 +157,11 @@ export class CloudSession {
         loadTokens()?.sessionToken === tokens.sessionToken &&
         tokens.sessionToken
       ) {
-        this.logout()
+        this.invalidateStoredSession()
+        return null
       }
-      return null
+      const cached = loadWorkspaceTokens(workspaceId)
+      return cached && cached.expiresAt > Date.now() ? cached : null
     }
   }
 
@@ -188,17 +197,20 @@ export class CloudSession {
           generation === this.authGeneration &&
           loadTokens()?.sessionToken === current.sessionToken
         ) {
-          this.logout()
+          this.invalidateStoredSession()
           return this.status()
         }
         throw error
       }
       if (
         generation === this.authGeneration &&
-        loadTokens()?.sessionToken === current.sessionToken &&
-        workspaceIdOf(tokens.accessToken) === workspaceId
-      )
+        loadTokens()?.sessionToken === current.sessionToken
+      ) {
+        if (workspaceIdOf(tokens.accessToken) !== workspaceId) {
+          throw new SignInFailure('Unexpected workspace in token response', 'server_error')
+        }
         saveTokens(tokens)
+      }
       return this.status()
     }
     let cached =
@@ -223,7 +235,13 @@ export class CloudSession {
     const controller = new AbortController()
     this.loginAbort?.abort()
     this.loginAbort = controller
-    let tokens = await signInAccount(options.onAuthorizeUrl ?? (() => {}), controller.signal)
+    let tokens: AuthTokens
+    try {
+      tokens = await signInAccount(options.onAuthorizeUrl ?? (() => {}), controller.signal)
+    } catch (error) {
+      if (generation !== this.authGeneration) return this.status()
+      throw error
+    }
     if (generation !== this.authGeneration) {
       if (tokens.sessionToken) await revokeAccountSession(tokens.sessionToken).catch(() => {})
       return this.status()
@@ -245,6 +263,7 @@ export class CloudSession {
       }
     } catch (error) {
       if (tokens.sessionToken) await revokeAccountSession(tokens.sessionToken).catch(() => {})
+      if (generation !== this.authGeneration) return this.status()
       throw error
     }
     const previous = loadTokens()?.sessionToken
@@ -257,29 +276,43 @@ export class CloudSession {
   }
 
   async getPartnerNodeToken(workspaceId: string): Promise<string | null> {
-    const tokens = loadTokens()
-    if (!tokens || workspaceIdOf(tokens.accessToken) !== workspaceId) return null
     const generation = this.authGeneration
+    let tokens = loadTokens()
+    if (!tokens || workspaceIdOf(tokens.accessToken) !== workspaceId) return null
+    if (!tokens.sessionToken) {
+      if (!(await this.getAccessToken()) || generation !== this.authGeneration) return null
+      tokens = loadTokens()
+      if (!tokens || workspaceIdOf(tokens.accessToken) !== workspaceId) return null
+    }
     const credential = tokens.sessionToken ?? tokens.accessToken
-    const key = `${workspaceId}\0${credential}`
-    const existing = this.partnerTokens.get(key)
-    if (existing) {
-      const cached = await existing.catch(() => undefined)
-      if (generation !== this.authGeneration) return null
-      if (cached && cached.expiresAt - REFRESH_SKEW_MS > Date.now()) {
-        return cached.accessToken
-      }
-      if (this.partnerTokens.get(key) !== existing) return this.getPartnerNodeToken(workspaceId)
+    let entry = this.partnerTokens.get(workspaceId)
+    if (!entry || entry.credential !== credential || entry.expiresAt <= Date.now()) {
+      const pending = mintPartnerNodeToken(credential, workspaceId)
+        .then(
+          (token) => {
+            if (workspaceIdOf(token.accessToken) !== workspaceId) return null
+            created.expiresAt = token.expiresAt - REFRESH_SKEW_MS
+            return token.accessToken
+          },
+          () => null
+        )
+        .then((token) => {
+          if (!token) created.expiresAt = Date.now() + 5_000
+          return token
+        })
+      const created = { credential, pending, expiresAt: Infinity }
+      entry = created
+      this.partnerTokens.set(workspaceId, entry)
     }
-    const pending = mintPartnerNodeToken(credential, workspaceId)
-    this.partnerTokens.set(key, pending)
-    try {
-      const token = await pending
-      return generation === this.authGeneration ? token.accessToken : null
-    } catch {
-      if (this.partnerTokens.get(key) === pending) this.partnerTokens.delete(key)
-      return null
-    }
+    const token = await entry.pending
+    return generation === this.authGeneration && this.currentWorkspaceId() === workspaceId
+      ? token
+      : null
+  }
+
+  private invalidateStoredSession(): void {
+    this.partnerTokens.clear()
+    clearTokens()
   }
 
   /** Adapter for the comfy-builder client's auth seam. */
@@ -290,7 +323,7 @@ export class CloudSession {
         // A request issued before a newer login may return 401 afterward. Only
         // invalidate the exact token the server rejected, never the new session.
         if (loadTokens()?.accessToken !== rejectedAccessToken) return
-        this.logout()
+        this.invalidateStoredSession()
         onSignedOut?.()
       }
     }

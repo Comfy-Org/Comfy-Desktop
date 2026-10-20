@@ -59,6 +59,27 @@ describe('native account login', () => {
     })
   })
 
+  it('completes login when the browser launch promise never settles', async () => {
+    mocks.open.mockReturnValue(new Promise(() => {}))
+    mocks.fetch
+      .mockResolvedValueOnce(respond({ code: CODE, expires_in: 300, poll_interval: 1 }, 201))
+      .mockResolvedValueOnce(respond({ status: 'complete', session_token: ROOT }))
+      .mockResolvedValueOnce(respond({ token: 'workspace-token', expires_at: EXPIRES }))
+    const login = signInAccount(vi.fn(), new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(login).resolves.toMatchObject({ sessionToken: ROOT })
+  })
+
+  it('stops polling when opening the browser fails', async () => {
+    mocks.open.mockRejectedValue(new Error('browser handler failed'))
+    mocks.fetch.mockResolvedValue(respond({ code: CODE, expires_in: 300, poll_interval: 1 }, 201))
+    await expect(signInAccount(vi.fn(), new AbortController().signal)).rejects.toMatchObject({
+      reason: 'browser_unavailable'
+    })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
+
   it('refuses an older server before opening a Firebase-only handoff', async () => {
     mocks.fetch.mockResolvedValue(
       respond({ code: 'dlc_old', expires_in: 300, poll_interval: 1 }, 201)
@@ -124,6 +145,17 @@ describe('workspace mint', () => {
     expect(mocks.fetch.mock.calls[0]![1]).toMatchObject({
       body: JSON.stringify({ workspace_id: 'w-team' }),
       credentials: 'omit'
+    })
+  })
+
+  it.each([
+    () => Promise.reject(new TypeError('sensitive transport detail')),
+    () => Promise.resolve(new Response('sensitive non-JSON response'))
+  ])('sanitizes transport and JSON failures', async (response) => {
+    mocks.fetch.mockImplementation(response)
+    await expect(mintWorkspaceToken(ROOT)).rejects.toMatchObject({
+      reason: 'server_error',
+      message: 'Account session request failed'
     })
   })
 
