@@ -343,6 +343,16 @@ describe('CloudSession workspaces', () => {
     expect(signInAccount).not.toHaveBeenCalled()
   })
 
+  it('clears a revoked account session when switching workspaces', async () => {
+    cache({ ...makeTokens('w1'), sessionToken: 'comfy-session-root' }, true)
+    mocked(mintWorkspaceToken).mockRejectedValue(
+      new SignInFailure('revoked', 'server_error', { httpStatus: 401 })
+    )
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toEqual({ signedIn: false })
+    expect(clearTokens).toHaveBeenCalledOnce()
+    expect(signInAccount).not.toHaveBeenCalled()
+  })
+
   it('checks membership on each workspace switch without browser auth', async () => {
     const root = 'comfy-session-root'
     cache({ ...makeTokens('w1'), sessionToken: root }, true)

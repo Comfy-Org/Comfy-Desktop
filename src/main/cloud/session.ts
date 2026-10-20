@@ -178,7 +178,21 @@ export class CloudSession {
     const generation = ++this.authGeneration
     const current = loadTokens()
     if (current?.sessionToken) {
-      const tokens = await mintWorkspaceToken(current.sessionToken, workspaceId)
+      let tokens: AuthTokens
+      try {
+        tokens = await mintWorkspaceToken(current.sessionToken, workspaceId)
+      } catch (error) {
+        if (
+          error instanceof SignInFailure &&
+          error.httpStatus === 401 &&
+          generation === this.authGeneration &&
+          loadTokens()?.sessionToken === current.sessionToken
+        ) {
+          this.logout()
+          return this.status()
+        }
+        throw error
+      }
       if (
         generation === this.authGeneration &&
         loadTokens()?.sessionToken === current.sessionToken &&
