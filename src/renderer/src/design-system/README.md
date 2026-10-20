@@ -44,6 +44,7 @@ The gradient values were tuned visually. Do not change them without design.
 | ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Buttons    | `Button`                                                               | `primary` (the one white CTA per surface), `secondary`, `ghost`, `link`                                            |
 | Text entry | `SearchInput`, `Input`, `Select`                                       | Share `fieldClass`; focus ring on the shell, never the native input. `Select` shows its `label` inside the trigger |
+| Choices    | `OptionCards`, `Checkbox`                                              | `OptionCards`: a few rich options as a radio group of cards; `Checkbox` sits in a `<label>`                        |
 | Menus      | `DropdownMenuContent/Item/Label/Separator/SubTrigger/SubContent`       | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                                     |
 | Overlays   | `Tooltip`                                                              | Needs a Reka `TooltipProvider` above it                                                                            |
 | Navigation | `Tabs`, `SegmentedControl`                                             | `Tabs` switch a page's views; `SegmentedControl` picks a scope or filter, with counts                              |

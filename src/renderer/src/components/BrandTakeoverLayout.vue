@@ -4,7 +4,8 @@
 // the top-left logo, and the dialog a11y baseline (role, aria-modal, focus
 // capture/restore). Background visuals live in BrandBackground.vue.
 // Forces dark; light-mode brand parity is deferred.
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ref } from 'vue'
+import { useTakeoverFocus } from '../composables/useTakeoverFocus'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import BrandBackground from './BrandBackground.vue'
 
@@ -19,31 +20,7 @@ withDefaults(
 )
 
 const rootRef = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
-
-function focusFirstInteractive(): void {
-  if (!rootRef.value) return
-  // Honor an explicit opt-in (e.g. a text input that should be ready to type),
-  // otherwise focus the dialog container itself — not the first button. This
-  // keeps focus trapped for keyboard/AT users without painting a focus-visible
-  // ring on a control the user didn't tab to. They Tab from here to reach it.
-  const explicit = rootRef.value.querySelector<HTMLElement>('[autofocus]')
-  ;(explicit ?? rootRef.value).focus()
-}
-
-onMounted(() => {
-  returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  void nextTick(focusFirstInteractive)
-})
-
-onBeforeUnmount(() => {
-  try {
-    returnFocusTo?.focus()
-  } catch {
-    /* trigger element was removed while takeover was open */
-  }
-  returnFocusTo = null
-})
+useTakeoverFocus(rootRef)
 </script>
 
 <template>

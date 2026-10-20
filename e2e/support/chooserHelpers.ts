@@ -108,9 +108,13 @@ export async function openPickerViaTitlePill(
   return popup
 }
 
-/** Wait for any flow takeover to be visible inside the panel body. */
+/** Wait for any flow takeover to be visible inside the panel body: the
+ *  brand layout (`BrandTakeoverLayout`) or the design-system one
+ *  (`TakeoverPage`, e.g. the new-build wizard). */
 export async function expectTakeoverOpen(panel: WebContentsPage): Promise<void> {
-  await panel.waitForVisible('.brand-takeover-root', { timeout: 10_000 })
+  await panel.waitForVisible('.brand-takeover-root, [data-testid="takeover-root"]', {
+    timeout: 10_000,
+  })
 }
 
 /** Dispatch Escape to dismiss the active overlay. */
