@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   on: vi.fn(),
   openModelAccessPageWindow: vi.fn(),
-  showItemInFolder: vi.fn()
+  showItemInFolder: vi.fn(),
+  getDeviceId: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -33,6 +34,10 @@ vi.mock('../comfyDownloadManager', () => ({
 
 vi.mock('../modelAccessPage', () => ({
   openModelAccessPageWindow: mocks.openModelAccessPageWindow
+}))
+
+vi.mock('../deviceId', () => ({
+  getDeviceId: mocks.getDeviceId
 }))
 
 import { registerDownloadHandlers } from './registerDownloadHandlers'
@@ -64,5 +69,28 @@ describe('registerDownloadHandlers model access bridge', () => {
     )
 
     expect(mocks.openModelAccessPageWindow).toHaveBeenCalledWith(sender, url)
+  })
+})
+
+function onHandler(channel: string): (event: { returnValue?: unknown }) => void {
+  const call = mocks.on.mock.calls.find(([name]) => name === channel)
+  expect(call).toBeDefined()
+  return call![1] as (event: { returnValue?: unknown }) => void
+}
+
+describe('registerDownloadHandlers install id bridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    registerDownloadHandlers()
+  })
+
+  it('answers the sync install-id request with getDeviceId()', () => {
+    mocks.getDeviceId.mockReturnValue('install-abc')
+    const event: { returnValue?: unknown } = {}
+
+    onHandler('desktop2-get-install-id')(event)
+
+    expect(event.returnValue).toBe('install-abc')
+    expect(mocks.getDeviceId).toHaveBeenCalledTimes(1)
   })
 })

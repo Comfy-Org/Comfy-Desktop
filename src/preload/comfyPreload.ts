@@ -323,6 +323,7 @@ const Auth: ComfyDesktop2AuthBridge = {
 
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
+  getInstallId: (): string => ipcRenderer.sendSync('desktop2-get-install-id') as string,
   openModelAccessPage: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-open-model-access-page', { url })
   },
