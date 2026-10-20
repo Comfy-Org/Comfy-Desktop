@@ -30,6 +30,7 @@ import {
   saveWorkspaceNames
 } from './tokenStore'
 import type { AuthTokens } from './types'
+import { safeStorage } from 'electron'
 
 function jwt(subject: string, workspaceId: string): string {
   const b64 = (value: unknown): string =>
@@ -62,6 +63,18 @@ describe('workspace token vault', () => {
     clearTokens()
     fs.rmSync(electronState.userData, { recursive: true, force: true })
     _resetForTest()
+  })
+
+  it('does not restore the previous account when encrypting a replacement fails', () => {
+    saveTokens({ ...tokens('user-1', 'w1'), grantMode: 'account' })
+    vi.mocked(safeStorage.encryptString).mockImplementationOnce(() => {
+      throw new Error('encryption unavailable')
+    })
+    saveTokens({ ...tokens('user-2', 'w2'), grantMode: 'account' })
+    expect(loadAccountCredential()?.subject).toBe('user-2')
+    _resetForTest()
+    expect(loadTokens()).toBeNull()
+    expect(loadAccountCredential()).toBeNull()
   })
 
   it('stores one account credential separately and restores it after restart', () => {
@@ -102,6 +115,22 @@ describe('workspace token vault', () => {
       }
       expect(replaceAccountTokens(credential, 'w2', next)).toBe(false)
       expect(loadWorkspaceTokens('w2')).toBeNull()
+    }
+  )
+
+  it.each(['subject', 'refreshToken', 'sessionId'])(
+    'rejects an account vault with an empty %s',
+    (field) => {
+      saveTokens({ ...tokens('user-1', 'w1'), grantMode: 'account' })
+      const file = path.join(electronState.userData, 'comfy-cloud-auth.bin')
+      const vault = JSON.parse(fs.readFileSync(file, 'utf-8')) as {
+        accountCredential: Record<string, string>
+      }
+      vault.accountCredential[field] = ''
+      fs.writeFileSync(file, JSON.stringify(vault))
+      _resetForTest()
+      expect(loadAccountCredential()).toBeNull()
+      expect(loadTokens()).toBeNull()
     }
   )
 

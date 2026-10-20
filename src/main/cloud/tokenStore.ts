@@ -71,8 +71,11 @@ function isVault(v: unknown): v is TokenVault {
     (vault.accountCredential !== undefined &&
       (vault.version !== VAULT_VERSION ||
         typeof vault.accountCredential?.subject !== 'string' ||
+        !vault.accountCredential.subject ||
         typeof vault.accountCredential?.refreshToken !== 'string' ||
-        typeof vault.accountCredential?.sessionId !== 'string')) ||
+        !vault.accountCredential.refreshToken ||
+        typeof vault.accountCredential?.sessionId !== 'string' ||
+        !vault.accountCredential.sessionId)) ||
     typeof vault.activeKey !== 'string' ||
     (vault.subject !== undefined && typeof vault.subject !== 'string') ||
     !vault.bundles ||
@@ -123,8 +126,9 @@ function persistVault(vault: TokenVault): void {
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
   } catch {
-    // A failed persist must not fail the sign-in the user just completed; the
-    // in-memory cache still holds the tokens for this session.
+    // Keep the new session in memory, but never restore the old credential
+    // after restart. If removal also fails, report the persistence failure.
+    fs.rmSync(filePath(), { force: true })
   }
 }
 
@@ -153,7 +157,14 @@ function loadVault(): TokenVault | null {
 export function saveTokens(tokens: AuthTokens): void {
   if (tokens.grantMode === 'account') {
     const subject = subjectOf(tokens.accessToken)
-    if (!subject || !workspaceIdOf(tokens.accessToken) || !tokens.refreshToken) {
+    const workspaceId = workspaceIdOf(tokens.accessToken)
+    if (
+      typeof subject !== 'string' ||
+      !subject ||
+      typeof workspaceId !== 'string' ||
+      !workspaceId ||
+      !tokens.refreshToken
+    ) {
       throw new Error(
         'Account authorization did not include valid account and workspace credentials'
       )

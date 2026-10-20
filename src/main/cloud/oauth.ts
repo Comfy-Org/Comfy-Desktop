@@ -69,12 +69,16 @@ function toTokens(
       'server_error'
     )
   }
+  const subject = subjectOf(r.access_token)
+  const responseWorkspace = workspaceIdOf(r.access_token)
   if (
     account &&
     (!r.refresh_token ||
-      !subjectOf(r.access_token) ||
-      !workspaceIdOf(r.access_token) ||
-      (workspaceId !== undefined && workspaceIdOf(r.access_token) !== workspaceId))
+      typeof subject !== 'string' ||
+      !subject ||
+      typeof responseWorkspace !== 'string' ||
+      !responseWorkspace ||
+      (workspaceId !== undefined && responseWorkspace !== workspaceId))
   ) {
     throw new SignInFailure(
       'OAuth account response has invalid credentials or workspace',
@@ -294,6 +298,9 @@ export async function refresh(
   refreshToken: string,
   options: OAuthOptions = {}
 ): Promise<AuthTokens> {
+  if (options.grantMode === 'account' && !options.workspaceId) {
+    throw new SignInFailure('Account refresh requires a workspace', 'server_error')
+  }
   const cfg = resolveConfig(options)
   const r = await requestToken(
     cfg.tokenUrl,

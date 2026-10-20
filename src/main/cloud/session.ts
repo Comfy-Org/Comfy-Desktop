@@ -127,11 +127,13 @@ export class CloudSession {
   private refreshAccountWorkspace(workspaceId: string): Promise<AuthTokens | null> {
     const credential = loadAccountCredential()
     if (!credential) return Promise.resolve(null)
-    const key = `${credential.sessionId}\0${workspaceId}`
+    const generation = this.authGeneration
+    const key = `${credential.sessionId}\0${workspaceId}\0${generation}`
     const existing = this.accountRefreshes.get(key)
     if (existing) return existing
     const pending = this.accountRefreshQueue
       .then(async () => {
+        if (generation !== this.authGeneration) return null
         const current = loadAccountCredential()
         if (!current || current.sessionId !== credential.sessionId) return null
         const cached = loadWorkspaceTokens(workspaceId)
@@ -220,8 +222,13 @@ export class CloudSession {
           return this.authenticateAtGeneration(this.authGeneration, { workspaceId })
         }
       }
-      if (generation !== this.authGeneration || !cached || cached.expiresAt <= Date.now())
-        return this.status()
+      if (generation !== this.authGeneration) return this.status()
+      if (!cached || cached.expiresAt <= Date.now()) {
+        throw new SignInFailure(
+          'Cloud did not return valid credentials for the selected workspace',
+          'server_error'
+        )
+      }
       activateWorkspace(workspaceId)
       return this.status()
     }

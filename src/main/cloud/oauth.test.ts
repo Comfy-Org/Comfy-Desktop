@@ -233,6 +233,14 @@ describe('oauth.signIn', () => {
 })
 
 describe('account OAuth grants', () => {
+  const options = {
+    authorizeUrl: 'https://c/oauth/authorize',
+    tokenUrl: 'https://c/oauth/token',
+    clientId: 'comfy-desktop',
+    resource: 'https://c/api',
+    timeoutMs: 5000
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -268,6 +276,7 @@ describe('account OAuth grants', () => {
         )
       })
       const result = await signIn({
+        ...options,
         authorizeUrl: `https://c${issuerPath}/oauth/authorize`,
         tokenUrl: `https://c${issuerPath}/oauth/token`,
         clientId: 'comfy-desktop',
@@ -304,13 +313,13 @@ describe('account OAuth grants', () => {
           (response) => response.resume()
         )
       })
-      expect((await signIn()).tokens.grantMode).toBeUndefined()
+      expect((await signIn(options)).tokens.grantMode).toBeUndefined()
     }
   )
 
   it('does not interpret a failed capability request as an unsupported server', async () => {
     stub(503, {})
-    await expect(signIn()).rejects.toMatchObject({ reason: 'server_error' })
+    await expect(signIn(options)).rejects.toMatchObject({ reason: 'server_error' })
     expect(shell.openExternal).not.toHaveBeenCalled()
   })
 
@@ -318,7 +327,7 @@ describe('account OAuth grants', () => {
     'rejects malformed capability metadata %j',
     async (metadata) => {
       stub(200, metadata)
-      await expect(signIn()).rejects.toMatchObject({ reason: 'server_error' })
+      await expect(signIn(options)).rejects.toMatchObject({ reason: 'server_error' })
       expect(shell.openExternal).not.toHaveBeenCalled()
     }
   )
@@ -332,6 +341,38 @@ describe('account OAuth grants', () => {
     })
     await expect(
       refresh('root', { workspaceId: 'w2', grantMode: 'account' })
+    ).rejects.toMatchObject({ reason: 'server_error' })
+  })
+
+  it.each([undefined, ''])(
+    'requires an explicit account refresh workspace (%s)',
+    async (workspaceId) => {
+      stub(200, {
+        grant_mode: 'account',
+        access_token: accessToken(),
+        refresh_token: 'root-2',
+        expires_in: 3600
+      })
+      await expect(refresh('root', { grantMode: 'account', workspaceId })).rejects.toMatchObject({
+        reason: 'server_error'
+      })
+      expect(fetch).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    { sub: 123, workspace_id: 'w2' },
+    { sub: 'user', workspace_id: true }
+  ])('rejects non-string account identity claims %j', async (claims) => {
+    const accessToken = `e30.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`
+    stub(200, {
+      grant_mode: 'account',
+      access_token: accessToken,
+      refresh_token: 'root',
+      expires_in: 3600
+    })
+    await expect(
+      refresh('root', { grantMode: 'account', workspaceId: 'w2' })
     ).rejects.toMatchObject({ reason: 'server_error' })
   })
 

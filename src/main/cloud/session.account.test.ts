@@ -171,6 +171,27 @@ describe('account workspace tokens', () => {
     expect(loadAccountCredential()?.refreshToken).toBe('root-1')
   })
 
+  it('skips a queued switch superseded by a newer workspace choice', async () => {
+    vi.setSystemTime(Date.now() + 3600000)
+    const started = deferred<void>()
+    const first = deferred<AuthTokens>()
+    vi.mocked(refresh).mockImplementationOnce(() => {
+      started.resolve()
+      return first.promise
+    })
+    vi.mocked(refresh).mockResolvedValueOnce(tokens('w3', 'root-3'))
+    const session = new CloudSession()
+    const renewal = session.getAccessToken()
+    await started.promise
+    const obsolete = session.switchWorkspace('w2')
+    const latest = session.switchWorkspace('w3')
+    first.resolve(tokens('w1', 'root-2'))
+    await Promise.all([renewal, obsolete, latest])
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(refresh).toHaveBeenLastCalledWith('root-2', { workspaceId: 'w3', grantMode: 'account' })
+    expect(session.currentWorkspaceId()).toBe('w3')
+  })
+
   it('serializes rotating credentials and publishes only the latest workspace choice', async () => {
     const started = deferred<void>()
     const first = deferred<AuthTokens>()
@@ -225,6 +246,14 @@ describe('account workspace tokens', () => {
       expect(session.currentWorkspaceId()).toBe(action === 'logout' ? null : 'w3')
     }
   )
+
+  it('reports a rejected token response as a failed switch', async () => {
+    vi.mocked(refresh).mockResolvedValue(tokens('wrong-workspace', 'wrong-response'))
+    const session = new CloudSession()
+    await expect(session.switchWorkspace('w2')).rejects.toMatchObject({ reason: 'server_error' })
+    expect(session.currentWorkspaceId()).toBe('w1')
+    expect(loadAccountCredential()?.refreshToken).toBe('root-1')
+  })
 
   it('keeps the current workspace and credential after a denied switch, then permits another target', async () => {
     vi.mocked(refresh).mockRejectedValueOnce(new Error('workspace membership lost'))
