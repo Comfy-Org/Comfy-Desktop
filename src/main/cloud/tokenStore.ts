@@ -4,19 +4,21 @@
  * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
  * unavailable, tokens are kept in memory for the process lifetime only.
  */
+import { randomUUID } from 'node:crypto'
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
-import type { AuthStatus, AuthTokens, Workspace } from './types'
+import type { AccountCredential, AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
-const VAULT_VERSION = 1
+const VAULT_VERSION = 2
 const DEFAULT_WORKSPACE_KEY = 'default'
 
 interface TokenVault {
-  version: typeof VAULT_VERSION
+  version: 1 | typeof VAULT_VERSION
+  accountCredential?: AccountCredential
   activeKey: string
   subject?: string
   bundles: Record<string, AuthTokens>
@@ -65,7 +67,12 @@ function isVault(v: unknown): v is TokenVault {
   if (
     !v ||
     typeof v !== 'object' ||
-    vault.version !== VAULT_VERSION ||
+    (vault.version !== 1 && vault.version !== VAULT_VERSION) ||
+    (vault.accountCredential !== undefined &&
+      (vault.version !== VAULT_VERSION ||
+        typeof vault.accountCredential?.subject !== 'string' ||
+        typeof vault.accountCredential?.refreshToken !== 'string' ||
+        typeof vault.accountCredential?.sessionId !== 'string')) ||
     typeof vault.activeKey !== 'string' ||
     (vault.subject !== undefined && typeof vault.subject !== 'string') ||
     !vault.bundles ||
@@ -127,7 +134,8 @@ function loadVault(): TokenVault | null {
   try {
     const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath())))
     if (isVault(parsed)) {
-      cachedVault = parsed
+      if (parsed.version === 1) persistVault({ ...parsed, version: VAULT_VERSION })
+      else cachedVault = parsed
       return cachedVault
     }
     if (isTokens(parsed)) {
@@ -144,15 +152,62 @@ function loadVault(): TokenVault | null {
 
 /** Save and activate a browser-auth token bundle. A changed account replaces the vault. */
 export function saveTokens(tokens: AuthTokens): void {
+  if (tokens.grantMode === 'account') {
+    const subject = subjectOf(tokens.accessToken)
+    if (!subject || !workspaceIdOf(tokens.accessToken) || !tokens.refreshToken) {
+      throw new Error(
+        'Account authorization did not include valid account and workspace credentials'
+      )
+    }
+    const vault = vaultFor({ accessToken: tokens.accessToken, expiresAt: tokens.expiresAt })
+    vault.accountCredential = {
+      subject,
+      refreshToken: tokens.refreshToken,
+      sessionId: randomUUID()
+    }
+    persistVault(vault)
+    return
+  }
   const current = loadVault()
   const nextSubject = subjectOf(tokens.accessToken)
   const accountChanged = current !== null && (!nextSubject || current.subject !== nextSubject)
-  const vault = accountChanged || !current ? vaultFor(tokens) : current
+  const vault = accountChanged || !current || current.accountCredential ? vaultFor(tokens) : current
   const key = tokensKey(tokens)
   vault.activeKey = key
   vault.bundles[key] = tokens
   if (nextSubject) vault.subject = nextSubject
   persistVault(vault)
+}
+
+export function loadAccountCredential(): AccountCredential | null {
+  return loadVault()?.accountCredential ?? null
+}
+
+export function replaceAccountTokens(
+  expected: AccountCredential,
+  workspaceId: string,
+  tokens: AuthTokens
+): boolean {
+  const vault = loadVault()
+  const credential = vault?.accountCredential
+  if (
+    !vault ||
+    !credential ||
+    credential.sessionId !== expected.sessionId ||
+    credential.refreshToken !== expected.refreshToken ||
+    tokens.grantMode !== 'account' ||
+    !tokens.refreshToken ||
+    subjectOf(tokens.accessToken) !== credential.subject ||
+    workspaceIdOf(tokens.accessToken) !== workspaceId
+  )
+    return false
+  vault.accountCredential = { ...credential, refreshToken: tokens.refreshToken }
+  vault.bundles[workspaceKey(workspaceId)] = {
+    accessToken: tokens.accessToken,
+    expiresAt: tokens.expiresAt
+  }
+  persistVault(vault)
+  return true
 }
 
 /** The active workspace's token bundle. */

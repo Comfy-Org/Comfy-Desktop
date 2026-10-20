@@ -5,7 +5,7 @@
  */
 import { shell } from 'electron'
 
-import { statusFromAccessToken } from './claims'
+import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
 import {
@@ -22,6 +22,7 @@ const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
 
 export interface OAuthOptions {
+  grantMode?: 'account'
   authorizeUrl?: string
   tokenUrl?: string
   clientId?: string
@@ -35,6 +36,7 @@ export interface OAuthOptions {
 }
 
 interface TokenResponse {
+  grant_mode?: 'workspace' | 'account'
   access_token: string
   refresh_token?: string
   expires_in: number
@@ -42,7 +44,7 @@ interface TokenResponse {
 
 function resolveConfig(
   o: OAuthOptions
-): Required<Omit<OAuthOptions, 'workspaceId' | 'onAuthorizeUrl'>> {
+): Required<Omit<OAuthOptions, 'workspaceId' | 'onAuthorizeUrl' | 'grantMode'>> {
   return {
     authorizeUrl: o.authorizeUrl ?? CLOUD_CONFIG.authorizeUrl,
     tokenUrl: o.tokenUrl ?? CLOUD_CONFIG.tokenUrl,
@@ -55,8 +57,32 @@ function resolveConfig(
 
 /** Build tokens, keeping the prior refresh token when the server omits one
  *  (RFC 6749 §6: refresh_token is optional on a refresh grant). */
-function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
+function toTokens(
+  r: TokenResponse,
+  account: boolean,
+  workspaceId?: string,
+  fallbackRefresh?: string
+): AuthTokens {
+  if ((r.grant_mode === 'account') !== account) {
+    throw new SignInFailure(
+      'OAuth response does not match the requested grant mode',
+      'server_error'
+    )
+  }
+  if (
+    account &&
+    (!r.refresh_token ||
+      !subjectOf(r.access_token) ||
+      !workspaceIdOf(r.access_token) ||
+      (workspaceId !== undefined && workspaceIdOf(r.access_token) !== workspaceId))
+  ) {
+    throw new SignInFailure(
+      'OAuth account response has invalid credentials or workspace',
+      'server_error'
+    )
+  }
   return {
+    ...(account ? { grantMode: 'account' as const } : {}),
     accessToken: r.access_token,
     refreshToken: r.refresh_token ?? fallbackRefresh,
     expiresAt: Date.now() + r.expires_in * 1000
@@ -105,7 +131,63 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
     if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
       throw new SignInFailure('OAuth token response missing a valid expires_in', 'server_error')
     }
+    if (
+      (data.grant_mode !== undefined &&
+        data.grant_mode !== 'workspace' &&
+        data.grant_mode !== 'account') ||
+      (data.refresh_token !== undefined &&
+        (typeof data.refresh_token !== 'string' || !data.refresh_token))
+    ) {
+      throw new SignInFailure(
+        'OAuth token response has an invalid grant or refresh token',
+        'server_error'
+      )
+    }
     return data as TokenResponse
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function accountGrantsSupported(authorizeUrl: string, clientId: string): Promise<boolean> {
+  if (clientId !== 'comfy-desktop') return false
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
+  try {
+    const url = new URL('/.well-known/oauth-authorization-server', authorizeUrl)
+    const response = await fetch(url.toString(), { signal: controller.signal })
+    if (response.status === 404) return false
+    if (!response.ok) {
+      throw new SignInFailure('OAuth capability request failed', 'server_error', {
+        httpStatus: response.status
+      })
+    }
+    const data: unknown = await response.json().catch((cause: unknown) => {
+      throw new SignInFailure(
+        'OAuth capability response was not valid JSON',
+        controller.signal.aborted ? 'timeout' : 'server_error',
+        { cause }
+      )
+    })
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      Array.isArray(data) ||
+      ('desktop_account_grants_supported' in data &&
+        typeof data.desktop_account_grants_supported !== 'boolean')
+    ) {
+      throw new SignInFailure('OAuth capability response was invalid', 'server_error')
+    }
+    return (
+      'desktop_account_grants_supported' in data && data.desktop_account_grants_supported === true
+    )
+  } catch (cause) {
+    if (cause instanceof SignInFailure) throw cause
+    throw new SignInFailure(
+      'OAuth capability request failed',
+      controller.signal.aborted ? 'timeout' : 'network',
+      { cause }
+    )
   } finally {
     clearTimeout(timer)
   }
@@ -120,6 +202,7 @@ export async function signIn(
   options: OAuthOptions = {}
 ): Promise<{ tokens: AuthTokens; status: AuthStatus }> {
   const cfg = resolveConfig(options)
+  const account = await accountGrantsSupported(cfg.authorizeUrl, cfg.clientId)
   const codeVerifier = generateCodeVerifier()
   const codeChallenge = codeChallengeFromVerifier(codeVerifier)
   const state = generateState()
@@ -134,7 +217,11 @@ export async function signIn(
       resource: cfg.resource,
       state,
       codeChallenge,
-      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {})
+      ...(account
+        ? { grantMode: 'account' as const }
+        : options.workspaceId
+          ? { workspaceId: options.workspaceId }
+          : {})
     })
     options.onAuthorizeUrl?.(authorizeUrl)
     // Never gate the flow on openExternal settling: a wedged shell handler
@@ -164,10 +251,14 @@ export async function signIn(
         redirect_uri: listener.redirectUri,
         client_id: cfg.clientId,
         code_verifier: codeVerifier,
-        resource: cfg.resource
+        resource: cfg.resource,
+        ...(account && options.workspaceId ? { workspace_id: options.workspaceId } : {})
       })
     )
-    return { tokens: toTokens(r), status: statusFromAccessToken(r.access_token) }
+    return {
+      tokens: toTokens(r, account, options.workspaceId),
+      status: statusFromAccessToken(r.access_token)
+    }
   } finally {
     // Always tear the listener down, even if openExternal or waitForCode threw,
     // so a failed sign-in never leaks a listening socket until the timeout.
@@ -186,8 +277,9 @@ export async function refresh(
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: cfg.clientId,
-      resource: cfg.resource
+      resource: cfg.resource,
+      ...(options.workspaceId ? { workspace_id: options.workspaceId } : {})
     })
   )
-  return toTokens(r, refreshToken)
+  return toTokens(r, options.grantMode === 'account', options.workspaceId, refreshToken)
 }

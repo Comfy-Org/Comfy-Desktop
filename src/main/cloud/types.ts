@@ -9,6 +9,7 @@
 
 /** OAuth tokens held in the (main-process only) token store. */
 export interface AuthTokens {
+  grantMode?: 'account'
   accessToken: string
   refreshToken?: string
   /** Epoch ms when the access token expires. */
@@ -45,4 +46,10 @@ export interface WorkspaceMember {
   role?: string
   joinedAt?: string
   isOriginalOwner?: boolean
+}
+
+export interface AccountCredential {
+  subject: string
+  refreshToken: string
+  sessionId: string
 }

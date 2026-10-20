@@ -21,6 +21,8 @@ import {
   clearTokens,
   getAuthStatus,
   getCachedWorkspaceName,
+  loadAccountCredential,
+  replaceAccountTokens,
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
@@ -60,6 +62,62 @@ describe('workspace token vault', () => {
     clearTokens()
     fs.rmSync(electronState.userData, { recursive: true, force: true })
     _resetForTest()
+  })
+
+  it('stores one account credential separately and restores it after restart', () => {
+    const initial = { ...tokens('user-1', 'w1'), grantMode: 'account' as const }
+    saveTokens(initial)
+    const credential = loadAccountCredential()
+    expect(credential).toMatchObject({ subject: 'user-1', refreshToken: initial.refreshToken })
+    expect(loadTokens()).toEqual({ accessToken: initial.accessToken, expiresAt: initial.expiresAt })
+    _resetForTest()
+    expect(loadAccountCredential()).toEqual(credential)
+    expect(loadTokens()?.refreshToken).toBeUndefined()
+  })
+
+  it('rotates the account credential without activating the target workspace', () => {
+    saveTokens({ ...tokens('user-1', 'w1'), grantMode: 'account' })
+    const credential = loadAccountCredential()!
+    const next = { ...tokens('user-1', 'w2'), grantMode: 'account' as const }
+    expect(replaceAccountTokens(credential, 'w2', next)).toBe(true)
+    expect(loadAccountCredential()?.refreshToken).toBe(next.refreshToken)
+    expect(getAuthStatus().workspaceId).toBe('w1')
+    expect(loadWorkspaceTokens('w2')?.refreshToken).toBeUndefined()
+    expect(replaceAccountTokens(credential, 'w2', next)).toBe(false)
+  })
+
+  it.each(['logout', 'login', 'wrong account', 'wrong workspace'] as const)(
+    'refuses a stale or mismatched account exchange after %s',
+    (reason) => {
+      saveTokens({ ...tokens('user-1', 'w1'), grantMode: 'account' })
+      const credential = loadAccountCredential()!
+      if (reason === 'logout') clearTokens()
+      if (reason === 'login') saveTokens({ ...tokens('user-1', 'w1'), grantMode: 'account' })
+      const next = {
+        ...tokens(
+          reason === 'wrong account' ? 'user-2' : 'user-1',
+          reason === 'wrong workspace' ? 'w3' : 'w2'
+        ),
+        grantMode: 'account' as const
+      }
+      expect(replaceAccountTokens(credential, 'w2', next)).toBe(false)
+      expect(loadWorkspaceTokens('w2')).toBeNull()
+    }
+  )
+
+  it('migrates version-one workspace grants without promoting their authority', () => {
+    const legacy = tokens('user-1', 'w1')
+    fs.writeFileSync(
+      path.join(electronState.userData, 'comfy-cloud-auth.bin'),
+      JSON.stringify({
+        version: 1,
+        subject: 'user-1',
+        activeKey: 'workspace:w1',
+        bundles: { 'workspace:w1': legacy }
+      })
+    )
+    expect(loadTokens()).toEqual(legacy)
+    expect(loadAccountCredential()).toBeNull()
   })
 
   it('keeps independent workspace bundles and reactivates either one', () => {
@@ -172,6 +230,6 @@ describe('workspace token vault', () => {
     const persisted = JSON.parse(
       fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'), 'utf-8')
     ) as { version?: number }
-    expect(persisted.version).toBe(1)
+    expect(persisted.version).toBe(2)
   })
 })

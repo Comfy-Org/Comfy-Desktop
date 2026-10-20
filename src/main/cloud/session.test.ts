@@ -11,6 +11,8 @@ vi.mock('./tokenStore', () => ({
   clearTokens: vi.fn(),
   getAuthStatus: vi.fn(),
   loadTokens: vi.fn(),
+  loadAccountCredential: vi.fn(() => null),
+  replaceAccountTokens: vi.fn(),
   loadWorkspaceTokens: vi.fn(),
   replaceWorkspaceTokens: vi.fn(),
   saveTokens: vi.fn(),

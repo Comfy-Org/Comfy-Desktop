@@ -1,22 +1,26 @@
 # Desktop account login: implementation plan
 
-Status: proposed. This document describes the implementation. It does not change login behavior.
+Status: implemented in three linked draft PRs. These changes are not deployed. Backend issuance stays disabled by default.
+
+- [Desktop integration #1749](https://github.com/Comfy-Org/Comfy-Desktop/pull/1749)
+- [Cloud account grants #14424](https://github.com/Comfy-Org/cloud/pull/14424)
+- [Hosted consent #21402](https://github.com/Comfy-Org/ComfyUI_frontend/pull/21402)
 
 ## Outcome
 
 The user signs in to Comfy Desktop once and can switch between all workspaces they belong to without another approval page.
 
-Keep one account-wide approval for the first release. The approval covers current and future workspace memberships, within the same approved API permissions. The server still checks membership and organization login requirements for every workspace. A later membership change never grants access beyond those checks.
+Keep one account-wide approval per new sign-in for the first release. A valid saved session switches workspaces and renews tokens without another approval. The approval covers current and future workspace memberships, within the same approved API permissions. The server still checks membership and organization login requirements for every workspace. A later membership change never grants access beyond those checks.
 
 Desktop keeps the account credential in its main process. APIs and the trusted local ComfyUI view continue to receive ordinary tokens for one workspace.
 
 ## Is this a backend switch?
 
-Backend work is required. There is no existing switch that supplies the proposed account grant.
+Backend work is required. The original server has no switch that supplies an account grant. Cloud #14424 adds the contract and a disabled-by-default rollout switch, `OAUTH_DESKTOP_ACCOUNT_GRANTS_ENABLED`.
 
-The server already identifies the registered `comfy-desktop` client as `first_party` in the consent response. That field describes the client. It does not change the permission model. Authorization codes, stored approvals, and refresh tokens still require one workspace. Refresh rotation explicitly rejects a workspace change.
+Before this change, the server already identifies the registered `comfy-desktop` client as `first_party` in the consent response. That field describes the client. It does not change the permission model. Authorization codes, stored approvals, and refresh tokens still require one workspace. Refresh rotation explicitly rejects a workspace change.
 
-Ask the backend team to implement and deploy the account-grant contract before enabling it in Desktop. Changing the display classification or hiding the consent page cannot produce this behavior.
+The backend team needs to review and deploy Cloud #14424, apply its migrations, then enable the new flag after the hosted page is deployed and staging checks pass. Changing the display classification or hiding the consent page cannot produce this behavior.
 
 ## Verified starting point
 
@@ -25,15 +29,15 @@ Inspection date: 2026-10-19. These are source snapshots, not claims about deploy
 | Repository       | Inspected revision                         | Relevant behavior                                                                                                      |
 | ---------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | Comfy-Desktop    | `5d4f8f26335fcbbf1d3bc1d78ac13536dcc7254f` | `CloudSession` caches tokens per workspace and starts browser authorization when no usable bundle exists.              |
-| cloud            | `e400ff6dc308228ec7cf48c555a3eb8062e7aa93` | OAuth grants belong to one workspace. The token exchange cannot turn that permission into access to another workspace. |
+| cloud            | `9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7` | OAuth grants belong to one workspace. The token exchange cannot turn that permission into access to another workspace. |
 | platform         | `bb1945608970296a682373a9ce3061f3b2ea9a2f` | The account login remains available while the app requests a token for the selected workspace.                         |
-| ComfyUI_frontend | `d45abe324c75414c2066115473f54ee65271ea7c` | The hosted consent page submits one workspace. The Desktop bridge already supports workspace switches.                 |
+| ComfyUI_frontend | `722a3a57f5e6839fe6279b0d2e53ddaac27a0956` | The hosted consent page submits one workspace. The Desktop bridge already supports workspace switches.                 |
 
 Platform is the reference for separating account login from workspace tokens. Its `services/webSessionTokenSource.ts` requests tokens from an account session. Its `stores/auth.ts` changes the active workspace only after a successful exchange.
 
 Reuse that behavior, without importing Platform's browser cookies, Firebase store, Nuxt proxy, or cross-tab machinery into Electron. The separate Firebase-based Desktop login path is not a complete replacement: the current CloudSession also serves SSO users without a Firebase account.
 
-## Proposed design
+## Implemented design
 
 ```mermaid
 sequenceDiagram
@@ -56,13 +60,13 @@ sequenceDiagram
 
 An account grant is permission to request workspace tokens. It is not a token that every service accepts for every workspace.
 
-### 1. Agree the smallest server contract
+### 1. Extend the existing server contract
 
 Extend the existing authorization-code and refresh flow. Keep its external browser, loopback callback, PKCE proof, registered redirects, scopes, and token format.
 
-The following field names are proposals for backend review, not existing API fields:
+Cloud #14424 implements this contract. Review it together with the dependent clients:
 
-| Operation           | Proposed contract                                                                                                                                          |
+| Operation           | Implemented contract                                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Start authorization | New Desktop requests `grant_mode=account`. Omitted mode keeps the existing workspace flow. The server permits account mode only for `comfy-desktop`.       |
 | Read consent        | The server returns the effective grant mode. Account mode presents account-wide approval without a workspace picker.                                       |
@@ -72,7 +76,9 @@ The following field names are proposals for backend review, not existing API fie
 | Response            | Return a token for exactly the requested workspace and the successor account refresh token. Preserve the approved resource and scopes.                     |
 | Unsupported mode    | Return a documented unsupported-mode result. Never silently treat an old workspace grant as account-wide.                                                  |
 
-The backend owns the final wire names and OpenAPI definitions. Freeze these before the Desktop implementation uses them.
+Desktop reads `desktop_account_grants_supported` from `/.well-known/oauth-authorization-server` before starting sign-in. A missing/false field or a missing metadata endpoint keeps legacy behavior. Network failures, server errors, and malformed metadata remain errors.
+
+The flag permits account requests only for `comfy-desktop` and `comfy-cloud`. Existing grants remain usable when new issuance is disabled. Unsupported account requests receive `invalid_request`.
 
 For the initial workspace, use a valid explicit preference, otherwise an accessible personal workspace, otherwise an accessible team workspace in stable order. Apply organization policy during selection. Return an explicit no-accessible-workspace result if none exists. Do not create a workspace as an authentication side effect.
 
@@ -82,7 +88,7 @@ For an explicit switch, a refusal must refer to that target. Never silently subs
 
 Keep workspace grants as the default. Introduce an explicit distinction between account and workspace grants in the existing authorization request, approval, code, and refresh records. Account authority must not depend on a bootstrap workspace ID or a fabricated wildcard workspace.
 
-Use additive migrations. Existing rows remain workspace grants. Generate Ent and OpenAPI output through the repository tools. Report generated files separately in the implementation PR.
+Use additive migrations. Existing rows remain workspace grants. Add constraints without scanning under a write-blocking lock, validate them in a separate migration, and build the account-consent index concurrently. Generate Ent and OpenAPI output through the repository tools. Report generated files separately in the implementation PR.
 
 At authorization and token issuance:
 
@@ -108,11 +114,11 @@ The view must use the effective grant mode supplied by the server. Do not infer 
 
 For account mode, replace the workspace picker with copy such as: “Allow Comfy Desktop to access workspaces you belong to now or join later.” Preserve the existing permissions detail, identity context, Allow/Cancel actions, and validated redirect.
 
-For later sign-ins with the same approved client/resource/scopes, the server can reuse that approval. Reapproval remains necessary after revocation or an increase in permissions.
+This release retains approval on every new browser authorization. It does not skip approval based on the public Desktop client ID. Saved account credentials avoid further browser authorization during workspace switches and renewal. Automatic approval reuse is outside this change.
 
 Legacy Desktop, CLI, and MCP authorization continues to use the existing workspace page. The account page must not submit a fabricated workspace ID.
 
-Primary files: `src/platform/cloud/oauth/oauthApi.ts`, `OAuthConsentView.vue`, their tests, and affected locale files. Generate API types from the agreed specification where the repository requires it.
+Primary files: `src/platform/cloud/oauth/oauthApi.ts`, `OAuthConsentView.vue`, their tests, and the English locale file. The repository translation pipeline handles other locales. Update only the affected OAuth declarations from the generated API types and validators.
 
 ### 4. Adapt Desktop's existing CloudSession
 
@@ -125,6 +131,8 @@ Keep `login()`, `switchWorkspace(workspaceId)`, `getAccessToken()`, and the publ
 | `src/main/cloud/types.ts`      | Distinguish an account credential from a workspace token bundle.                                                                                                                               |
 | `src/main/cloud/tokenStore.ts` | Add a versioned encrypted account-credential slot. Preserve legacy vault reads and keep workspace access-token caches separate.                                                                |
 | `src/main/cloud/session.ts`    | Reuse valid workspace tokens. Otherwise request one with the account credential. Keep the old authorization path only for legacy/unsupported sessions.                                         |
+
+Vault version 2 stores one account credential and separate workspace access-token caches. Version 1 vaults remain readable without gaining account authority. Each new account login gets a fresh local session ID, including a new login by the same user.
 
 The account credential stays encrypted with `safeStorage`, with the existing memory-only behavior if secure storage is unavailable. It must never enter the renderer, embedded page, logs, or browser storage.
 
@@ -148,7 +156,7 @@ Continue sending only the selected workspace token through `src/main/lib/embedde
 
 For rollback, disable new account-grant issuance and keep serving already issued account grants while a compatible client fix ships. Do not roll the backend back past the schema/reader support and leave users with unreadable grants. If account grants must be revoked, require one explicit sign-in. Never silently widen a legacy grant to compensate.
 
-The backend team must confirm the capability signal and deployment order with the contract. Do not treat arbitrary timeouts or authorization denials as “server does not support this.”
+The backend team owns deployment and enabling `OAUTH_DESKTOP_ACCOUNT_GRANTS_ENABLED`. This PR does not change a running environment. Do not treat arbitrary timeouts or authorization denials as “server does not support this.”
 
 ## Focused validation
 
@@ -167,7 +175,14 @@ Use existing fixtures and suites. Keep time under test control. Use deferred pro
 | Desktop     | Restart restores the encrypted account grant. Legacy vaults remain readable. Account change/sign-out clears all associated credentials. No account credential reaches the bridge.                      |
 | Desktop     | A denied target or temporary error leaves the prior workspace intact. Unsupported servers retain legacy behavior.                                                                                      |
 
-Before implementation PRs are ready:
+Implemented validation:
+
+- Desktop: 110 focused Cloud and embedded-session tests pass, including shuffled execution with zero retries. Full typechecks, lint, and formatting pass.
+- Hosted page: 43 focused tests pass alone and together with shuffled order and zero retries. Normal commit and push hooks pass.
+- Cloud: affected handler/repository packages compile. Pure grant-mode and consent-session tests, formatting, lint, and generation checks pass. Database behavior tests are added. This Mac has no Docker, so database and migration verification relies on CI.
+- Real staging social-login and SSO checks remain required. PR checks are the source for current CI status.
+
+Required checks before these PRs are ready:
 
 - Cloud: use the `cloud` CLI for the affected unit/integration modules, migration validation, `gen check`, formatting, and lint. Preserve the OpenAPI/registered-route invariant if routing changes.
 - Frontend: run focused `pnpm test:unit` suites and checks required for the touched files. Use server-supplied facts, typed errors, existing localization, and current guidance. Avoid repo-wide commands that its `AGENTS.md` forbids for local verification.
@@ -178,7 +193,7 @@ Acceptance: one initial approval. No further consent during valid workspace swit
 
 ## Scope and delivery
 
-Use three dependent implementation PRs: Cloud contract/storage, hosted consent, then Desktop integration. The backend PR can merge disabled before the other two. Keep each PR focused on its own repository and dependency.
+The three dependent implementation PRs cover: Cloud contract/storage, hosted consent, then Desktop integration. The backend PR can merge disabled before the other two. Keep each PR focused on its own repository and dependency.
 
 Platform needs no changes. Rewriting auth around Firebase, copying Platform UI, changing permissions or billing, adding session-management UI, replacing the OAuth library, and modifying unrelated clients are outside scope.
 
@@ -188,14 +203,14 @@ Every implementation PR must separate behavior from test coverage. Report produc
 
 ## Backend handoff
 
-> Can we add an opt-in account grant for `comfy-desktop`, with one account-wide approval and workspace tokens requested through that grant? The current `first_party` label does not enable this. Please confirm the request/response fields, rotation and revocation behavior, capability signal, and staging rollout. We will keep workspace API tokens and current membership/SSO checks, and leave legacy Desktop and MCP grants workspace-bound.
+> The implementation is in Cloud #14424, frontend #21402, and Desktop #1749. Please review the account-grant contract and migrations. Deploy the backend with issuance disabled, deploy the hosted consent page, then enable `OAUTH_DESKTOP_ACCOUNT_GRANTS_ENABLED` in staging. Validate social login and SSO before enabling production. The existing `first_party` classification needs no change.
 
 This handoff is draft text, not a message sent to the backend team.
 
 ## Source references
 
 - [Desktop workspace switching](../src/main/cloud/session.ts), [OAuth transport](../src/main/cloud/oauth.ts), [encrypted storage](../src/main/cloud/tokenStore.ts), and [trusted embedded session](../src/main/lib/embeddedSession.ts).
-- [Cloud client classification](https://github.com/Comfy-Org/cloud/blob/e400ff6dc308228ec7cf48c555a3eb8062e7aa93/services/ingest/server/implementation/oauth_authorize.go#L298-L319), [client schema](https://github.com/Comfy-Org/cloud/blob/e400ff6dc308228ec7cf48c555a3eb8062e7aa93/database/schema/oauth_client.go), and [refresh identity invariant](https://github.com/Comfy-Org/cloud/blob/e400ff6dc308228ec7cf48c555a3eb8062e7aa93/services/ingest/server/implementation/oauth/repository/refresh.go#L706-L724).
-- [Cloud token exchange](https://github.com/Comfy-Org/cloud/blob/e400ff6dc308228ec7cf48c555a3eb8062e7aa93/services/ingest/server/implementation/cloud_jwt.go#L106-L138) and [OAuth token-mint restrictions](https://github.com/Comfy-Org/cloud/blob/e400ff6dc308228ec7cf48c555a3eb8062e7aa93/services/ingest/server/implementation/partner_node_session.go#L460-L484).
+- [Cloud client classification](https://github.com/Comfy-Org/cloud/blob/9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7/services/ingest/server/implementation/oauth_authorize.go), [client schema](https://github.com/Comfy-Org/cloud/blob/9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7/database/schema/oauth_client.go), and [refresh identity invariant](https://github.com/Comfy-Org/cloud/blob/9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7/services/ingest/server/implementation/oauth/repository/refresh.go).
+- [Cloud token exchange](https://github.com/Comfy-Org/cloud/blob/9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7/services/ingest/server/implementation/cloud_jwt.go) and [OAuth token-mint restrictions](https://github.com/Comfy-Org/cloud/blob/9d7e6abb555c8f70be5f9466de9bb81b4e4ba0b7/services/ingest/server/implementation/partner_node_session.go).
 - [Platform account-backed workspace tokens](https://github.com/Comfy-Org/platform/blob/bb1945608970296a682373a9ce3061f3b2ea9a2f/services/webSessionTokenSource.ts), [workspace switching](https://github.com/Comfy-Org/platform/blob/bb1945608970296a682373a9ce3061f3b2ea9a2f/stores/auth.ts#L348-L385), and [Firebase exchange adapter](https://github.com/Comfy-Org/platform/blob/bb1945608970296a682373a9ce3061f3b2ea9a2f/services/accountSession.ts).
-- [Hosted consent view](https://github.com/Comfy-Org/ComfyUI_frontend/blob/d45abe324c75414c2066115473f54ee65271ea7c/src/platform/cloud/oauth/OAuthConsentView.vue) and [consent request](https://github.com/Comfy-Org/ComfyUI_frontend/blob/d45abe324c75414c2066115473f54ee65271ea7c/src/platform/cloud/oauth/oauthApi.ts).
+- [Hosted consent view](https://github.com/Comfy-Org/ComfyUI_frontend/blob/722a3a57f5e6839fe6279b0d2e53ddaac27a0956/src/platform/cloud/oauth/OAuthConsentView.vue) and [consent request](https://github.com/Comfy-Org/ComfyUI_frontend/blob/722a3a57f5e6839fe6279b0d2e53ddaac27a0956/src/platform/cloud/oauth/oauthApi.ts).

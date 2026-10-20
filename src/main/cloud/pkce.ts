@@ -19,6 +19,7 @@ export interface BuildAuthorizeUrlParams {
   codeChallenge: string
   /** Pre-select a workspace at consent time (the switch-workspace path). */
   workspaceId?: string
+  grantMode?: 'account'
 }
 
 export function buildAuthorizeUrl(p: BuildAuthorizeUrlParams): string {
@@ -31,6 +32,7 @@ export function buildAuthorizeUrl(p: BuildAuthorizeUrlParams): string {
   url.searchParams.set('state', p.state)
   url.searchParams.set('code_challenge', p.codeChallenge)
   url.searchParams.set('code_challenge_method', 'S256')
+  if (p.grantMode) url.searchParams.set('grant_mode', p.grantMode)
   if (p.workspaceId) url.searchParams.set('workspace_id', p.workspaceId)
   return url.toString()
 }

@@ -211,3 +211,110 @@ describe('oauth.signIn', () => {
     })
   })
 })
+
+describe('account OAuth grants', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.mocked(shell.openExternal).mockReset()
+  })
+
+  function accessToken(workspaceId = 'w2'): string {
+    return `e30.${Buffer.from(JSON.stringify({ sub: 'user', workspace_id: workspaceId })).toString('base64url')}.sig`
+  }
+
+  it('discovers account support and binds code exchange to the requested workspace', async () => {
+    const token = accessToken()
+    const fetchMock = vi.fn(async (url: string) =>
+      Response.json(
+        url.includes('.well-known')
+          ? { desktop_account_grants_supported: true }
+          : { grant_mode: 'account', access_token: token, refresh_token: 'root', expires_in: 3600 }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const url = new URL(authorizeUrl)
+      expect(url.searchParams.get('grant_mode')).toBe('account')
+      expect(url.searchParams.has('workspace_id')).toBe(false)
+      get(
+        `${url.searchParams.get('redirect_uri')}?code=abc&state=${url.searchParams.get('state')}`,
+        (response) => response.resume()
+      )
+    })
+    const result = await signIn({
+      authorizeUrl: 'https://c/oauth/authorize',
+      tokenUrl: 'https://c/oauth/token',
+      clientId: 'comfy-desktop',
+      workspaceId: 'w2'
+    })
+    expect(result.tokens.grantMode).toBe('account')
+    expect(
+      new URLSearchParams(vi.mocked(fetch).mock.calls[1]?.[1]?.body as string).get('workspace_id')
+    ).toBe('w2')
+  })
+
+  it.each([{}, { desktop_account_grants_supported: false }])(
+    'keeps legacy authorization without server support %j',
+    async (metadata) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          Response.json(
+            url.includes('.well-known')
+              ? metadata
+              : { access_token: accessToken(), refresh_token: 'workspace', expires_in: 3600 }
+          )
+        )
+      )
+      vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+        const url = new URL(authorizeUrl)
+        expect(url.searchParams.has('grant_mode')).toBe(false)
+        get(
+          `${url.searchParams.get('redirect_uri')}?code=abc&state=${url.searchParams.get('state')}`,
+          (response) => response.resume()
+        )
+      })
+      expect((await signIn()).tokens.grantMode).toBeUndefined()
+    }
+  )
+
+  it('does not interpret a failed capability request as an unsupported server', async () => {
+    stub(503, {})
+    await expect(signIn()).rejects.toMatchObject({ reason: 'server_error' })
+    expect(shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([null, [], { desktop_account_grants_supported: 'true' }])(
+    'rejects malformed capability metadata %j',
+    async (metadata) => {
+      stub(200, metadata)
+      await expect(signIn()).rejects.toMatchObject({ reason: 'server_error' })
+      expect(shell.openExternal).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rotates the account credential for an explicit workspace', async () => {
+    stub(200, {
+      grant_mode: 'account',
+      access_token: accessToken(),
+      refresh_token: 'root-2',
+      expires_in: 3600
+    })
+    const result = await refresh('root-1', { workspaceId: 'w2', grantMode: 'account' })
+    expect(result).toMatchObject({ grantMode: 'account', refreshToken: 'root-2' })
+    expect(
+      new URLSearchParams(vi.mocked(fetch).mock.calls[0]?.[1]?.body as string).get('workspace_id')
+    ).toBe('w2')
+  })
+
+  it.each([
+    { grant_mode: 'workspace', refresh_token: 'root-2' },
+    { grant_mode: 'account' },
+    { grant_mode: 'account', refresh_token: 'root-2', workspace: 'w3' }
+  ])('rejects an account refresh with an invalid authority or target %j', async (response) => {
+    stub(200, { ...response, access_token: accessToken(response.workspace), expires_in: 3600 })
+    await expect(
+      refresh('root', { workspaceId: 'w2', grantMode: 'account' })
+    ).rejects.toMatchObject({ reason: 'server_error' })
+  })
+})

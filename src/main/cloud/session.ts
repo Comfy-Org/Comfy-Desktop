@@ -14,6 +14,8 @@ import {
   activateWorkspace,
   clearTokens,
   getAuthStatus,
+  loadAccountCredential,
+  replaceAccountTokens,
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
@@ -29,6 +31,8 @@ const REFRESH_SKEW_MS = 60_000
 export class CloudSession {
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
+  private accountRefreshQueue: Promise<void> = Promise.resolve()
+  private readonly accountRefreshes = new Map<string, Promise<AuthTokens | null>>()
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
 
@@ -89,12 +93,47 @@ export class CloudSession {
   async getAccessToken(): Promise<string | null> {
     const tokens = loadTokens()
     if (!tokens) return null
-    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken)
-      return tokens.accessToken
     const workspaceId = workspaceIdOf(tokens.accessToken)
-    await this.refreshWorkspaceTokens(workspaceId, tokens)
+    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now()) return tokens.accessToken
+    if (workspaceId && loadAccountCredential()) {
+      try {
+        await this.refreshAccountWorkspace(workspaceId)
+      } catch {
+        return null
+      }
+    } else {
+      if (!tokens.refreshToken) return tokens.accessToken
+      await this.refreshWorkspaceTokens(workspaceId, tokens)
+    }
     const active = loadTokens()
     return active && workspaceIdOf(active.accessToken) === workspaceId ? active.accessToken : null
+  }
+
+  private refreshAccountWorkspace(workspaceId: string): Promise<AuthTokens | null> {
+    const credential = loadAccountCredential()
+    if (!credential) return Promise.resolve(null)
+    const key = `${credential.sessionId}\0${workspaceId}`
+    const existing = this.accountRefreshes.get(key)
+    if (existing) return existing
+    const pending = this.accountRefreshQueue
+      .then(async () => {
+        const current = loadAccountCredential()
+        if (!current || current.sessionId !== credential.sessionId) return null
+        const cached = loadWorkspaceTokens(workspaceId)
+        if (cached && cached.expiresAt - REFRESH_SKEW_MS > Date.now()) return cached
+        const rotated = await refresh(current.refreshToken, { workspaceId, grantMode: 'account' })
+        if (!replaceAccountTokens(current, workspaceId, rotated)) return null
+        return loadWorkspaceTokens(workspaceId)
+      })
+      .finally(() => {
+        if (this.accountRefreshes.get(key) === pending) this.accountRefreshes.delete(key)
+      })
+    this.accountRefreshQueue = pending.then(
+      () => {},
+      () => {}
+    )
+    this.accountRefreshes.set(key, pending)
+    return pending
   }
 
   private refreshKey(workspaceId: string | null, refreshToken: string): string {
@@ -155,6 +194,14 @@ export class CloudSession {
       current && workspaceIdOf(current.accessToken) === workspaceId
         ? current
         : loadWorkspaceTokens(workspaceId)
+    if (loadAccountCredential()) {
+      if (!cached || cached.expiresAt - REFRESH_SKEW_MS <= Date.now()) {
+        cached = await this.refreshAccountWorkspace(workspaceId)
+      }
+      if (generation !== this.authGeneration || !cached) return this.status()
+      activateWorkspace(workspaceId)
+      return this.status()
+    }
     if (cached?.refreshToken && cached.expiresAt - REFRESH_SKEW_MS <= Date.now()) {
       cached = await this.refreshWorkspaceTokens(workspaceId, cached)
     }
