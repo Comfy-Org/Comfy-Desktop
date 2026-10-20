@@ -46,6 +46,7 @@ import {
   resolvePickerSelectedInstallId,
   buildTitlePopupMenuItems,
   computePopupHeight,
+  computePopupWidth,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
   parseGlobalSettingsTarget,
@@ -140,6 +141,25 @@ describe('computePopupHeight', () => {
 
   it('handles a single separator', () => {
     expect(computePopupHeight([{ kind: 'separator' }])).toBe(19)
+  })
+
+  it("sizes the breadcrumb menus' rows: 56px title, 28px heading, 48px with a second line", () => {
+    // 56 + 28 + 48 + 32 (an info row keeps one line beside its value) + 10 chrome
+    const h = computePopupHeight([
+      { kind: 'title', label: 'Studio', detail: '~/ComfyUI' },
+      { kind: 'heading', label: 'Open' },
+      { id: 'switcher:open:a', label: 'A', detail: 'Running' },
+      { kind: 'info', label: 'Status', detail: 'x', meta: 'Running' }
+    ])
+    expect(h).toBe(174)
+  })
+})
+
+describe('computePopupWidth', () => {
+  it('keeps the file menu at 220px and widens menus with icons or second lines to 320px', () => {
+    expect(computePopupWidth([{ id: 'a', label: 'A' }, { kind: 'separator' }])).toBe(220)
+    expect(computePopupWidth([{ id: 'a', label: 'A', icon: 'builds' }])).toBe(320)
+    expect(computePopupWidth([{ id: 'a', label: 'A', detail: 'Running' }])).toBe(320)
   })
 })
 
@@ -356,13 +376,16 @@ describe('buildTitlePopupMenuItems', () => {
 })
 
 describe('activateTitlePopupMenuItem', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   // Minimal popup entry: the reset-zoom branch reads `kind` + `parentEntryId`
   // (the latter resolves the host from `comfyWindows`), and the shared
   // `hideTitlePopup` tail reads `view`. An inert closed view makes the
   // dismiss a no-op so the test stays focused on the dispatch.
-  function makePopupEntry(parentEntryId: number) {
+  function makePopupEntry(parentEntryId: number, menuId?: string) {
     return {
       kind: 'menu',
+      menuId,
       parentEntryId,
       view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() }
     } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
@@ -451,6 +474,61 @@ describe('activateTitlePopupMenuItem', () => {
     ).not.toThrow()
     // Let the rejected promise settle so an unhandled rejection would surface.
     await Promise.resolve()
+  })
+
+  it('opens a picked build from the switcher in its own window', () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { openInstallInNewWindow: vi.fn() } as unknown as TitlePopupHostBindings
+
+    vi.spyOn(settings, 'isBreadcrumbTitleBarEnabled').mockReturnValue(true)
+    const switcher = makePopupEntry(host.windowKey, 'install-switcher')
+    activateTitlePopupMenuItem(switcher, 'switcher:open:inst-2', bindings)
+    activateTitlePopupMenuItem(switcher, 'switcher:open:inst-1', bindings)
+    // Only from the switcher that is open: not from another menu.
+    activateTitlePopupMenuItem(
+      makePopupEntry(host.windowKey, 'file'),
+      'switcher:open:inst-3',
+      bindings
+    )
+
+    // Picking this window's own build only closes the menu.
+    expect(bindings.openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('inst-2')
+  })
+
+  it('returns the dashboard window to All builds from the switcher', () => {
+    const host = makeEntry({ installationId: null })
+    const send = vi.fn()
+    host.panelView = {
+      webContents: { isDestroyed: () => false, isLoadingMainFrame: () => false, send }
+    } as unknown as ComfyWindowEntry['panelView']
+    comfyWindows.set(host.windowKey, host)
+
+    vi.spyOn(settings, 'isBreadcrumbTitleBarEnabled').mockReturnValue(true)
+    activateTitlePopupMenuItem(
+      makePopupEntry(host.windowKey, 'install-switcher'),
+      'switcher:dashboard',
+      {} as TitlePopupHostBindings
+    )
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('panel-trigger-overlay', {
+      kind: 'show-all-builds'
+    })
+  })
+
+  it("closes the build's window from its info card", () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { confirmAndCloseHostWindow: vi.fn() } as unknown as TitlePopupHostBindings
+
+    vi.spyOn(settings, 'isBreadcrumbTitleBarEnabled').mockReturnValue(true)
+    activateTitlePopupMenuItem(
+      makePopupEntry(host.windowKey, 'install-info'),
+      'info:close',
+      bindings
+    )
+
+    expect(bindings.confirmAndCloseHostWindow).toHaveBeenCalledExactlyOnceWith(host.window)
   })
 })
 

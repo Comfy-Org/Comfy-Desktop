@@ -100,7 +100,22 @@
     "betaNoticeSettings": "设置",
     "breadcrumbLabel": "构建与此窗口的构建",
     "openABuild": "打开构建",
-    "switchBuild": "切换构建"
+    "switchBuild": "切换构建",
+    "switcher": {
+      "open": "已打开",
+      "recent": "最近使用",
+      "manage": "管理构建",
+      "current": "当前"
+    },
+    "info": {
+      "status": "状态",
+      "location": "位置",
+      "lastUsed": "上次使用",
+      "update": "更新",
+      "settings": "设置与更新",
+      "openFolder": "打开文件夹",
+      "closeWindow": "关闭窗口"
+    }
   },
   "comfyUISettings": {
     "title": "设置",
