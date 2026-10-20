@@ -37,6 +37,7 @@ export class DesktopLoginCodeError extends Error {
 }
 
 export interface CreateDesktopLoginCodeRequest {
+  session_type?: 'account'
   /** Telemetry machine hash; included only when consent is granted. */
   installation_id?: string
   platform: string

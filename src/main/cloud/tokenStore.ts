@@ -1,5 +1,5 @@
 /**
- * OAuth token store (main process only). Tokens are encrypted at rest with
+ * Cloud token store (main process only). Tokens are encrypted at rest with
  * Electron `safeStorage` in `userData/comfy-cloud-auth.bin` and never reach the
  * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
  * unavailable, tokens are kept in memory for the process lifetime only.
@@ -56,7 +56,10 @@ function isTokens(v: unknown): v is AuthTokens {
     !!v &&
     typeof v === 'object' &&
     typeof (v as AuthTokens).accessToken === 'string' &&
-    typeof (v as AuthTokens).expiresAt === 'number'
+    typeof (v as AuthTokens).expiresAt === 'number' &&
+    ((v as AuthTokens).sessionToken === undefined ||
+      (typeof (v as AuthTokens).sessionToken === 'string' &&
+        (v as AuthTokens).sessionToken?.startsWith('comfy-session-') === true))
   )
 }
 
@@ -198,7 +201,7 @@ export function activateWorkspace(workspaceId: string): AuthTokens | null {
 export function replaceWorkspaceTokens(
   workspaceId: string | null,
   expectedAccessToken: string,
-  expectedRefreshToken: string,
+  expectedRefreshToken: string | undefined,
   tokens: AuthTokens
 ): boolean {
   const vault = loadVault()

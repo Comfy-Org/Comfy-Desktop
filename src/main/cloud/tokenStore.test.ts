@@ -62,6 +62,25 @@ describe('workspace token vault', () => {
     _resetForTest()
   })
 
+  it.each([true, false])(
+    'keeps the account credential private with secure storage available=%s',
+    (available) => {
+      electronState.encryptionAvailable = available
+      const account = {
+        ...tokens('user-1', 'w1'),
+        refreshToken: undefined,
+        sessionToken: 'comfy-session-root'
+      }
+      saveTokens(account)
+      expect(loadTokens()).toEqual(account)
+      expect(getAuthStatus()).not.toHaveProperty('sessionToken')
+      _resetForTest()
+      expect(loadTokens()).toEqual(available ? account : null)
+      if (!available)
+        expect(fs.existsSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'))).toBe(false)
+    }
+  )
+
   it('keeps independent workspace bundles and reactivates either one', () => {
     const workspaceOne = tokens('user-1', 'w1')
     const workspaceTwo = tokens('user-1', 'w2')

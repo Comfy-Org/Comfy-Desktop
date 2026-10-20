@@ -2,9 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./oauth', () => ({
-  signIn: vi.fn(),
   refresh: vi.fn(),
   openAuthorizePage: vi.fn(() => Promise.resolve())
+}))
+vi.mock('./accountSession', () => ({
+  signInAccount: vi.fn(),
+  mintWorkspaceToken: vi.fn(),
+  mintPartnerNodeToken: vi.fn(),
+  revokeAccountSession: vi.fn(async () => {})
 }))
 vi.mock('./tokenStore', () => ({
   activateWorkspace: vi.fn(),
@@ -22,7 +27,14 @@ vi.mock('./workspaces', () => ({
 }))
 
 import { statusFromAccessToken, workspaceIdOf } from './claims'
-import { openAuthorizePage, refresh, signIn } from './oauth'
+import { openAuthorizePage, refresh } from './oauth'
+import {
+  signInAccount,
+  mintWorkspaceToken,
+  mintPartnerNodeToken,
+  revokeAccountSession
+} from './accountSession'
+import { SignInFailure } from './signInFailure'
 import { CloudSession } from './session'
 import {
   activateWorkspace,
@@ -196,8 +208,8 @@ describe('CloudSession access tokens', () => {
 
 describe('CloudSession browser auth', () => {
   it('single-flights repeated login requests', async () => {
-    let finishLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
-    mocked(signIn).mockReturnValue(
+    let finishLogin!: (value: Awaited<ReturnType<typeof signInAccount>>) => void
+    mocked(signInAccount).mockReturnValue(
       new Promise((resolve) => {
         finishLogin = resolve
       })
@@ -207,49 +219,49 @@ describe('CloudSession browser auth', () => {
     const first = session.login()
     const second = session.login()
     const tokens = makeTokens('w1')
-    finishLogin({ tokens, status: statusFromAccessToken(tokens.accessToken) })
+    finishLogin(tokens)
 
     await expect(Promise.all([first, second])).resolves.toHaveLength(2)
-    expect(signIn).toHaveBeenCalledOnce()
+    expect(signInAccount).toHaveBeenCalledOnce()
     expect(saveTokens).toHaveBeenCalledExactlyOnceWith(tokens)
   })
 
   it('reopens the pending sign-in page when login is requested again', async () => {
-    mocked(signIn).mockImplementation(async (options) => {
-      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+    mocked(signInAccount).mockImplementation(async (onAuthorizeUrl) => {
+      onAuthorizeUrl('https://cloud.test/authorize?state=s1')
       return new Promise(() => {})
     })
     const session = new CloudSession()
 
     void session.login()
-    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(signInAccount).toHaveBeenCalledOnce())
     void session.login()
 
-    expect(signIn).toHaveBeenCalledOnce()
+    expect(signInAccount).toHaveBeenCalledOnce()
     expect(openAuthorizePage).toHaveBeenCalledExactlyOnceWith(
       'https://cloud.test/authorize?state=s1'
     )
   })
 
   it('does not reopen a sign-in page after logout', async () => {
-    mocked(signIn).mockImplementation(async (options) => {
-      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+    mocked(signInAccount).mockImplementation(async (onAuthorizeUrl) => {
+      onAuthorizeUrl('https://cloud.test/authorize?state=s1')
       return new Promise(() => {})
     })
     const session = new CloudSession()
 
     void session.login()
-    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(signInAccount).toHaveBeenCalledOnce())
     session.logout()
     void session.login()
 
-    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(signInAccount).toHaveBeenCalledTimes(2)
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
   it('does not persist browser auth that finishes after logout', async () => {
-    let finishLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
-    mocked(signIn).mockReturnValue(
+    let finishLogin!: (value: Awaited<ReturnType<typeof signInAccount>>) => void
+    mocked(signInAccount).mockReturnValue(
       new Promise((resolve) => {
         finishLogin = resolve
       })
@@ -259,7 +271,7 @@ describe('CloudSession browser auth', () => {
     const login = session.login()
     session.logout()
     const tokens = makeTokens('w1')
-    finishLogin({ tokens, status: statusFromAccessToken(tokens.accessToken) })
+    finishLogin(tokens)
 
     await expect(login).resolves.toEqual({ signedIn: false })
     expect(saveTokens).not.toHaveBeenCalled()
@@ -279,7 +291,7 @@ describe('CloudSession workspaces', () => {
 
     expect(activateWorkspace).toHaveBeenNthCalledWith(1, 'w2')
     expect(activateWorkspace).toHaveBeenNthCalledWith(2, 'w1')
-    expect(signIn).not.toHaveBeenCalled()
+    expect(signInAccount).not.toHaveBeenCalled()
   })
 
   it('refreshes an expired cached workspace independently before activating it', async () => {
@@ -296,7 +308,7 @@ describe('CloudSession workspaces', () => {
 
     expect(refresh).toHaveBeenCalledExactlyOnceWith(staleTwo.refreshToken)
     expect(activateWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
-    expect(signIn).not.toHaveBeenCalled()
+    expect(signInAccount).not.toHaveBeenCalled()
   })
 
   it('uses browser auth when the active workspace can no longer refresh', async () => {
@@ -304,52 +316,80 @@ describe('CloudSession workspaces', () => {
     const authorized = makeTokens('w1', future, '-authorized')
     cache(stale, true)
     mocked(refresh).mockRejectedValue(new Error('revoked'))
-    mocked(signIn).mockResolvedValue({
-      tokens: authorized,
-      status: statusFromAccessToken(authorized.accessToken)
-    })
+    mocked(signInAccount).mockResolvedValue(authorized)
 
     await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
       workspaceId: 'w1'
     })
 
     expect(refresh).toHaveBeenCalledExactlyOnceWith(stale.refreshToken)
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w1' })
+    expect(signInAccount).toHaveBeenCalledExactlyOnceWith(
+      expect.any(Function),
+      expect.any(AbortSignal)
+    )
     expect(saveTokens).toHaveBeenCalledExactlyOnceWith(authorized)
   })
 
-  it('uses browser auth for an uncached workspace and rejects a different selection', async () => {
-    const workspaceOne = makeTokens('w1')
+  it('keeps the active workspace when the backend refuses another workspace', async () => {
+    const workspaceOne = { ...makeTokens('w1'), sessionToken: 'comfy-session-root' }
     cache(workspaceOne, true)
-    mocked(signIn).mockResolvedValue({
-      tokens: workspaceOne,
-      status: statusFromAccessToken(workspaceOne.accessToken)
+    mocked(mintWorkspaceToken).mockRejectedValue(
+      new SignInFailure('denied', 'server_error', { httpStatus: 404 })
+    )
+    await expect(new CloudSession().switchWorkspace('w2')).rejects.toMatchObject({
+      httpStatus: 404
     })
-
-    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w1'
-    })
-
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
-    expect(saveTokens).not.toHaveBeenCalled()
+    expect(active).toEqual(workspaceOne)
+    expect(signInAccount).not.toHaveBeenCalled()
   })
 
-  it('stores first-time workspace authorization for later silent activation', async () => {
-    const workspaceOne = makeTokens('w1')
-    const workspaceTwo = makeTokens('w2')
-    cache(workspaceOne, true)
-    mocked(signIn).mockResolvedValue({
-      tokens: workspaceTwo,
-      status: statusFromAccessToken(workspaceTwo.accessToken)
+  it('checks membership on each workspace switch without browser auth', async () => {
+    const root = 'comfy-session-root'
+    cache({ ...makeTokens('w1'), sessionToken: root }, true)
+    mocked(mintWorkspaceToken).mockImplementation(async (_, workspaceId) => ({
+      ...makeTokens(workspaceId!),
+      refreshToken: undefined,
+      sessionToken: root
+    }))
+    const session = new CloudSession()
+    for (const workspace of ['w2', 'w1', 'w2']) {
+      await expect(session.switchWorkspace(workspace)).resolves.toMatchObject({
+        workspaceId: workspace
+      })
+      expect(mintWorkspaceToken).toHaveBeenLastCalledWith(root, workspace)
+    }
+    expect(signInAccount).not.toHaveBeenCalled()
+  })
+
+  it('discards a workspace response that arrives after sign-out', async () => {
+    const tokens = { ...makeTokens('w1'), sessionToken: 'comfy-session-root' }
+    cache(tokens, true)
+    const response = Promise.withResolvers<AuthTokens>()
+    mocked(mintWorkspaceToken).mockReturnValue(response.promise)
+    const session = new CloudSession()
+    const switching = session.switchWorkspace('w2')
+    session.logout()
+    response.resolve({ ...makeTokens('w2'), sessionToken: tokens.sessionToken })
+    await expect(switching).resolves.toEqual({ signedIn: false })
+    expect(saveTokens).not.toHaveBeenCalled()
+    expect(revokeAccountSession).toHaveBeenCalledWith(tokens.sessionToken)
+  })
+
+  it('obtains partner-node access only for the active workspace', async () => {
+    const tokens = { ...makeTokens('w1'), sessionToken: 'comfy-session-root' }
+    cache(tokens, true)
+    mocked(mintPartnerNodeToken).mockResolvedValue({
+      accessToken: 'partner-token',
+      expiresAt: future,
+      sessionToken: tokens.sessionToken
     })
     const session = new CloudSession()
-
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
-    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
-
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(saveTokens).toHaveBeenCalledExactlyOnceWith(workspaceTwo)
+    await expect(session.getPartnerNodeToken('w2')).resolves.toBeNull()
+    await expect(
+      Promise.all([session.getPartnerNodeToken('w1'), session.getPartnerNodeToken('w1')])
+    ).resolves.toEqual(['partner-token', 'partner-token'])
+    await expect(session.getPartnerNodeToken('w1')).resolves.toBe('partner-token')
+    expect(mintPartnerNodeToken).toHaveBeenCalledExactlyOnceWith(tokens.sessionToken, 'w1')
   })
 
   it('listWorkspaces and the provider use only the active token', async () => {

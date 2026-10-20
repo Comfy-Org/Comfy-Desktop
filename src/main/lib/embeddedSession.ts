@@ -20,6 +20,7 @@ import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+  getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
@@ -132,4 +133,19 @@ export async function broadcastEmbeddedSessionChanged(): Promise<void> {
     if (contents.isDestroyed() || !servesEntry(entry, contents.getURL())) continue
     contents.send(EMBEDDED_SESSION_CHANNELS.changed, state)
   }
+}
+
+export async function partnerNodeTokenForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown
+): Promise<string | null> {
+  if (
+    typeof workspaceId !== 'string' ||
+    !workspaceId ||
+    !isTrustedSender(event) ||
+    !(await isEmbeddedSessionEnabled())
+  )
+    return null
+  const token = await getCloudSession().getPartnerNodeToken(workspaceId)
+  return isTrustedSender(event) ? token : null
 }
