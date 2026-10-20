@@ -13,7 +13,7 @@
  *
  * Redesign notes (vs. the pre-2.0-Beta lifecycle test):
  * - The new-install takeover is a single Configure screen wrapped in
- *   `BrandTakeoverLayout` (root: `.brand-takeover-root`). No multi-step
+ *   `TakeoverPage` (root: `[data-testid="takeover-root"]`). No multi-step
  *   wizard, no Next button.
  * - Standalone is pre-selected on open. `loadFieldOptions('release')`
  *   picks the recommended option ("Latest Stable") and recursively
@@ -21,7 +21,7 @@
  *   option (CPU on a no-GPU CI runner, NVIDIA on an NVIDIA box, etc.).
  *   So by the time `saveDisabled` flips false, the form is fully
  *   pre-filled — no explicit release / variant picking needed.
- * - The primary CTA is `.brand-primary.config-continue` labelled
+ * - The primary CTA is `.config-continue`, labelled
  *   "Continue" (formerly `button.primary` "Add Install").
  * - `handleSave` emits `show-progress` with `autoLaunchOnFinish: true`,
  *   so the install op chains directly into a launch op under the same
@@ -72,7 +72,7 @@ import { byTestId, TID } from './support/testIds'
 let ctx: AppContext
 
 /** Wait until the config takeover's Continue CTA
- *  (`.brand-primary.config-continue`, bound to `:disabled="!canContinue"`)
+ *  (`.config-continue`, bound to `:disabled="!canContinue"`)
  *  is enabled — i.e. the form is fully filled and settled. */
 async function waitForConfigContinueEnabled(message: string): Promise<void> {
   await ctx.panel.waitFor(
@@ -80,11 +80,57 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
       if (!wc) return false
       return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.brand-primary.config-continue')
+        const btn = document.querySelector('.config-continue')
         return !!btn && !btn.disabled
       })()`) as Promise<boolean>
     })),
     { timeout: 60_000, message },
+  )
+}
+
+/** Pick the option at `index` in a design-system (reka) Select. Reka opens
+ *  and selects on pointer/keyboard events, never on a bare DOM `.click()`,
+ *  so drive it with Enter keydowns (the keyboard path a user can take), then
+ *  wait for the trigger to show the picked option. Options are read from the
+ *  trigger's own listbox (`aria-controls`). Enter toggles a reka Select, so
+ *  it is pressed once, after the trigger is enabled; the waits only read. */
+async function pickNthSelectOption(trigger: string, index: number): Promise<void> {
+  await ctx.panel.waitFor(
+    async () => ctx.panel.evaluate<boolean>(`(() => {
+      const t = document.querySelector(${JSON.stringify(trigger)})
+      return !!t && !t.hasAttribute('data-disabled')
+    })()`),
+    { timeout: 10_000, message: `Select ${trigger} never became enabled` },
+  )
+  await ctx.panel.evaluate(`(() => {
+    const t = document.querySelector(${JSON.stringify(trigger)})
+    if (t.getAttribute('aria-expanded') === 'true') return
+    t.focus()
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  })()`)
+  await ctx.panel.waitFor(
+    async () => ctx.panel.evaluate<boolean>(`(() => {
+      const t = document.querySelector(${JSON.stringify(trigger)})
+      if (!t || t.getAttribute('aria-expanded') !== 'true') return false
+      const listbox = document.getElementById(t.getAttribute('aria-controls') || '')
+      return !!listbox && listbox.querySelectorAll('[role="option"]').length > ${index}
+    })()`),
+    { timeout: 10_000, message: `Select ${trigger} never opened with more than ${index} options` },
+  )
+  const label = await ctx.panel.evaluate<string | null>(`(() => {
+    const t = document.querySelector(${JSON.stringify(trigger)})
+    const listbox = t && document.getElementById(t.getAttribute('aria-controls') || '')
+    const option = listbox?.querySelectorAll('[role="option"]')[${index}]
+    if (!option) return null
+    const text = document.getElementById(option.getAttribute('aria-labelledby') || '')
+    option.focus()
+    option.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    return ((text || option).textContent || '').trim()
+  })()`)
+  expect(label, `option ${index} of ${trigger} was not found`).toBeTruthy()
+  await ctx.panel.waitFor(
+    async () => ((await ctx.panel.textOf(trigger)) ?? '').includes(label!),
+    { timeout: 10_000, message: `Select ${trigger} never showed the picked option "${label}"` },
   )
 }
 
@@ -452,15 +498,14 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // Standalone is pre-selected on open. The release + variant fields
   // live inside the Advanced disclosure but are populated eagerly via
   // `loadFieldOptions('release')` → recursive `loadFieldOptions('variant')`.
-  // `.brand-primary.config-continue` is bound to `:disabled="!canContinue"`,
+  // `.config-continue` is bound to `:disabled="!canContinue"`,
   // so once it goes enabled the form is fully pre-filled (release picked,
   // variant picked, no path issues).
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
 
-  // The Advanced body renders permanently open in the takeover, so the
-  // release BaseSelect + variant rows are interactive without a
-  // disclosure click.
-  await ctx.panel.waitForSelector('#source-fields button[role="combobox"]', {
+  // The source fields render directly in the takeover, so the release
+  // Select + variant cards are interactive without a disclosure click.
+  await ctx.panel.waitForSelector('.config-shell button[role="combobox"]', {
     timeout: 5_000,
   })
 
@@ -472,18 +517,9 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // One release back keeps the requirements delta small; the tag list is
   // sorted newest-first with the newest marked recommended.
   // The select stays disabled until its stable-tag options resolve.
-  await ctx.panel.waitForSelector(
-    '#source-fields button[role="combobox"][aria-label="ComfyUI version"]:not([disabled])',
-    { timeout: 60_000 },
-  )
-  expect(
-    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI version"]'),
-  ).toBe(true)
-  await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
-  expect(
-    await ctx.panel.clickNth('[role="listbox"] [role="option"]', 1),
-    'failed to click the second-newest ComfyUI Version option in BaseSelect listbox',
-  ).toBe(true)
+  const versionSelect = '.config-shell button[role="combobox"][aria-label="ComfyUI version"]'
+  await ctx.panel.waitForSelector(`${versionSelect}:not([disabled])`, { timeout: 60_000 })
+  await pickNthSelectOption(versionSelect, 1)
 
   // Picking a version re-fires `loadFieldOptions('variant')`,
   // which flips `saveDisabled` true until the variant options resolve
@@ -500,9 +536,11 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // pick the form already made.
   if (LIFECYCLE_VARIANT !== 'default') {
     const rowLabel = LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : LIFECYCLE_VARIANT === 'amd' ? 'AMD' : 'CPU'
-    await ctx.panel.waitForSelector('.brand-variant-row', { timeout: 5_000 })
+    // The variant field's cards only: other card lists (templates) stay mounted.
+    const variantCard = '[data-testid="option-cards-variant"] [data-testid="option-card"]'
+    await ctx.panel.waitForSelector(variantCard, { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.brand-variant-row', rowLabel),
+      await ctx.panel.clickByText(variantCard, rowLabel),
       `${rowLabel} variant row clicked`,
     ).toBe(true)
     // Confirm the requested row is the selected one before continuing —
@@ -511,7 +549,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
     await ctx.panel.waitFor(
       async () => ctx.panel.evaluate<boolean>(
         `(() => {
-          const sel = document.querySelector('.brand-variant-row--selected .brand-variant-row__label')
+          const sel = document.querySelector('[data-testid="option-cards-variant"] [data-testid="option-card"][aria-checked="true"] [data-testid="option-card-label"]')
           return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
         })()`,
       ),
@@ -3013,8 +3051,8 @@ test('creates a Remote Connection record pointed at the running local server thr
   await expectTakeoverOpen(ctx.panel)
   await waitForConfigContinueEnabled('Continue never enabled after the wizard opened (standalone pre-fill)')
 
-  // The Advanced body (source method row included) renders permanently
-  // open in the takeover; no disclosure click needed.
+  // The source method row renders directly in the takeover; no
+  // disclosure click needed.
   await ctx.panel.waitForVisible('.config-method-row', { timeout: 10_000 })
   expect(
     await ctx.panel.clickByText('.config-method-row button', 'Remote Connection'),

@@ -216,7 +216,7 @@ test('open-new-install dismisses the popup and mounts the new-install takeover @
     .toBe(false)
 
   // The new-install Tier 3 takeover mounts on the chooser host —
-  // `expectTakeoverOpen` waits for `.brand-takeover-root`, and the
+  // `expectTakeoverOpen` waits for the takeover root, and the
   // wizard's `.config-shell` is the unique fingerprint distinguishing
   // it from any other takeover.
   await expectTakeoverOpen(ctx.panel)

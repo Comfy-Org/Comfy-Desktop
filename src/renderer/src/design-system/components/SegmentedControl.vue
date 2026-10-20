@@ -7,6 +7,8 @@ interface SegmentOption<V extends string> {
   value: V
   label: string
   count?: number
+  /** A test hook for this option (`data-testid`). */
+  testId?: string
 }
 
 /** Single-choice toggle group. `contained` draws a track behind the options
@@ -15,10 +17,12 @@ interface SegmentOption<V extends string> {
 const {
   options,
   variant = 'plain',
+  disabled = false,
   class: className
 } = defineProps<{
   options: SegmentOption<T>[]
   variant?: 'plain' | 'contained'
+  disabled?: boolean
   class?: HTMLAttributes['class']
 }>()
 const model = defineModel<T>({ required: true })
@@ -33,6 +37,7 @@ function onUpdate(value: unknown): void {
   <ToggleGroupRoot
     type="single"
     :model-value="model"
+    :disabled
     :class="
       cn(
         'inline-flex items-center gap-0.5',
@@ -47,7 +52,8 @@ function onUpdate(value: unknown): void {
       v-for="o in options"
       :key="o.value"
       :value="o.value"
-      class="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-control px-2.5 text-ui whitespace-nowrap text-muted-foreground outline-none transition-colors duration-150 hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus data-[state=on]:bg-secondary-background-hover data-[state=on]:text-base-foreground"
+      :data-testid="o.testId"
+      class="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-control px-2.5 text-ui whitespace-nowrap text-muted-foreground outline-none transition-colors duration-150 hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus data-disabled:pointer-events-none data-disabled:opacity-40 data-[state=on]:bg-secondary-background-hover data-[state=on]:text-base-foreground"
     >
       {{ o.label }}
       <span v-if="o.count !== undefined" class="text-subtle-foreground tabular-nums">{{

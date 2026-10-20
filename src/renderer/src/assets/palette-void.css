@@ -1,8 +1,8 @@
 /*
  * The Void palette for legacy screens: the title bar and everything it
- * opens, the dashboard, dialogs, Performance Tests and Benchmarks. Applies
- * only under `.palette-void`, so the install wizard, first-run and progress
- * screens keep today's look.
+ * opens, the dashboard, the new-build flow, dialogs, Performance Tests and
+ * Benchmarks. Applies only under `.palette-void`, so the first-run and
+ * progress screens keep today's look.
  *
  * - On <html> of the title bar, title popup, tooltip and system modal
  *   renderers (everything they draw is in scope).
