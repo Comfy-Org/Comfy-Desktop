@@ -125,6 +125,7 @@ import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
+import { sessionKindOf, type SessionKind } from '../../../shared/performanceTestSession'
 
 // Re-export frequently used imports so handler modules can import from shared
 export {
@@ -272,8 +273,14 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONIOENCODING',
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
-  'CM_USE_PYGIT2'
+  'CM_USE_PYGIT2',
+  '__COMFYUI_DESKTOP_VERSION__'
 ])
+
+/** Sources whose ComfyUI and Manager are installed and updated by this app. Portable and git
+ *  installs are user-managed, so Manager keeps treating them as plain git checkouts there.
+ *  Legacy `desktop` launches its own app, which sets the marker itself. */
+const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -323,6 +330,7 @@ export interface InstanceStartedCallbackInfo {
   bootTimeMs?: number
   portRetries: number
   rebootRetries: number
+  sessionKind: SessionKind
 }
 
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
@@ -421,6 +429,10 @@ export function _endLaunch(installationId: string, launch: ActiveLaunch): void {
 
 export function _hasActiveLaunch(installationId: string): boolean {
   return _activeLaunches.has(installationId)
+}
+
+export function _getActiveLaunchIds(): string[] {
+  return Array.from(_activeLaunches.keys())
 }
 
 /**
@@ -1011,7 +1023,8 @@ export function buildLaunchEnv(
   sessionPath?: string
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
-  return {
+  const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
+  const env: Record<string, string | undefined> = {
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
@@ -1022,6 +1035,11 @@ export function buildLaunchEnv(
     // Cost is one-time handler install; zero overhead on the normal path.
     PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
+    // ComfyUI-Manager's desktop marker, set by legacy Desktop too. Manager then reports the
+    // desktop-win / desktop-mac form factor to the registry, reads the ComfyUI version from
+    // pyproject.toml instead of `git describe`, and leaves its own updates and the
+    // "ComfyUI is outdated" warning to us.
+    ...(desktopManaged ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring
@@ -1031,6 +1049,10 @@ export function buildLaunchEnv(
       ? { CM_USE_PYGIT2: '1' }
       : {})
   }
+  // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
+  // user-managed portable or git install as Desktop-managed.
+  if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  return env
 }
 
 export function checkRebootMarker(sessionPath: string): boolean {
@@ -1115,7 +1137,8 @@ export function _addSession(
       installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
-      rebootRetries: retries?.rebootRetries ?? 0
+      rebootRetries: retries?.rebootRetries ?? 0,
+      sessionKind: sessionKindOf(installationId)
     })
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.

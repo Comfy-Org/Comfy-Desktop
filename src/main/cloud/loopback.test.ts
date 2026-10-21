@@ -79,4 +79,23 @@ describe('loopback listener', () => {
     expect(response.body).toContain('try signing in again')
     await expect(codeP).rejects.toThrow(/access_denied/)
   })
+
+  it.for([
+    { query: 'error=access_denied', reason: 'cancelled' },
+    { query: 'error=server_error', reason: 'idp_error' },
+    { query: '', reason: 'idp_error' }
+  ])('reports a callback with $query as $reason', async ({ query, reason }) => {
+    listener = await startLoopbackListener({ expectedState: 'st', timeoutMs: 5000 })
+    const codeP = listener.waitForCode()
+    await get(`${listener.redirectUri}?state=st&${query}`)
+    await expect(codeP).rejects.toMatchObject({ name: 'SignInFailure', reason })
+  })
+
+  it('reports a callback that never comes as a timeout', async () => {
+    listener = await startLoopbackListener({ expectedState: 'st', timeoutMs: 20 })
+    await expect(listener.waitForCode()).rejects.toMatchObject({
+      name: 'SignInFailure',
+      reason: 'timeout'
+    })
+  })
 })

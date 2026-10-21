@@ -95,6 +95,8 @@ vi.mock('child_process', async (importOriginal) => {
 
 // Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
+import { recoverInterruptedComfyOp } from '../../lib/opMarker'
+import { isUpdateAvailable } from '../../lib/release-cache'
 import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
@@ -477,6 +479,128 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
       )
       expect(marker.backupBranch).toBe('backup_branch_test')
+    })
+  })
+
+  describe('half-updated tree', () => {
+    it('blocks the next launch until an update repairs it', async () => {
+      // The update failed and its restore could not finish (a file held open):
+      // HEAD is back at v0.1.0, but requirements.txt still has v0.2.0's content.
+      spawnState.pythonHandler = () => {
+        fs.writeFileSync(
+          path.join(comfyuiDir, 'requirements.txt'),
+          'torch==2.0\nfoo==2.0\nbar==1.0\n'
+        )
+        return fakeProc({
+          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, `[WRITING_TARGET] ${repoShas.v2Sha}\n`],
+          exitCode: 1
+        })
+      }
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      expect(headSha()).toBe(repoShas.v1Sha)
+
+      await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+        'The last update did not finish'
+      )
+      expect(markerExists()).toBe(true)
+      // The block says "Run Update": the Update tab must offer it even though the
+      // install already reports the channel's latest version.
+      const atLatest = {
+        installPath,
+        comfyVersion: { commit: repoShas.v1Sha, baseTag: 'v0.1.0', commitsAhead: 0 }
+      }
+      const latest = { latestTag: 'v0.1.0', commitSha: repoShas.v1Sha }
+      expect(isUpdateAvailable(atLatest, 'stable', latest)).toBe(true)
+
+      // An Update retried offline fails before writing: the earlier damage must
+      // stay on record, so the launch is still blocked.
+      spawnState.pythonHandler = () =>
+        fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow('Run Update to repair')
+
+      // Running Update again rewrites the tree (the updater hard-resets) and
+      // clears the marker.
+      const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+      spawnState.pythonHandler = (args: string[]) => {
+        execFileSync('git', ['reset', '-q', '--hard'], { cwd: comfyuiDir, stdio: 'pipe' })
+        return succeed(args)
+      }
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(markerExists()).toBe(false)
+      expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
+      expect(isUpdateAvailable(atLatest, 'stable', latest)).toBe(false)
+    })
+  })
+
+  describe('repairing update', () => {
+    it('resyncs dependencies even when HEAD and requirements already match the target', async () => {
+      // Desktop was killed mid-update after HEAD and requirements.txt reached
+      // v0.2.0; the packages are still v0.1.0's.
+      execFileSync('git', ['checkout', '-q', 'v0.2.0', '--detach'], {
+        cwd: comfyuiDir,
+        stdio: 'pipe'
+      })
+      fs.writeFileSync(
+        path.join(installPath, '.comfyui-op-in-progress.json'),
+        JSON.stringify({
+          op: 'update',
+          preHead: repoShas.v1Sha,
+          startedAt: 1,
+          backupBranch: 'backup_before_update'
+        })
+      )
+      // A retry that fails before writing (offline) keeps the original pre-update
+      // commit, so the next launch still rolls back instead of launching v0.2.0
+      // source on v0.1.0 packages.
+      spawnState.pythonHandler = () =>
+        fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`,
+            '[BACKUP_BRANCH] backup_of_mixed_tree\n'
+          ],
+          exitCode: 1
+        })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      const kept = JSON.parse(
+        fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
+      )
+      expect(kept.preHead).toBe(repoShas.v1Sha)
+      // The backup named in the block message stays the one with the user's
+      // pre-update edits, not the retry's backup of the mixed tree.
+      expect(kept.backupBranch).toBe('backup_before_update')
+
+      spawnState.pythonHandler = () =>
+        fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`,
+            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n`
+          ],
+          exitCode: 0
+        })
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
+      // Both requirement files are unchanged, but their packages may be stale.
+      const installed = spawnState.uvCalls.filter((a) => a.includes('install')).flat()
+      expect(installed.some((a) => a.endsWith('.post-install-reqs.txt'))).toBe(true)
+      expect(installed.some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
+      expect(markerExists()).toBe(false)
+    })
+  })
+
+  describe('update that fails before writing', () => {
+    it('clears its marker, so a user edit does not block the next launch', async () => {
+      // A failed fetch: nothing written, but the user had edited a tracked file.
+      fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==1.0\n# mine\n')
+      spawnState.pythonHandler = () =>
+        fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      expect(markerExists()).toBe(false)
+      expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
     })
   })
 

@@ -1,12 +1,14 @@
 /**
  * Which Core beta grants a stopped install's next launch is eligible for, decided by the launch's
- * own `planCoreBetaArgs` over facts read without side effects. Commit ranges are proven against
- * the current HEAD and cached per (HEAD, commit), which never needs invalidating; a relation git
- * cannot prove is not cached, and its grant is not shown.
+ * own `planCoreBetaArgs`. Nothing launches, but reading the enrolments can restore their file
+ * from its backup, and the first read with beta on can start the campaign fetches. Commit ranges
+ * are proven against the current HEAD and cached per (HEAD, commit), which never needs
+ * invalidating; a relation git cannot prove is not cached, and its grant is not shown.
  */
 import { MAX_RESOLVED_SHAS, proveCommitRelation } from './coreBetaAncestry'
 import {
   NO_CORE_COMMITS,
+  assetsFloorShas,
   commitGrantShas,
   getCoreBetaGrantsAsync,
   planCoreBetaArgs,
@@ -14,6 +16,9 @@ import {
 } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
+import { campaignCandidateGrants, campaignPresentArgs, planCampaignArgs } from './coreBetaCampaigns'
+import { getCoreBetaCampaigns, readCampaignRecords } from './coreBetaCampaignFlags'
+import { getIdClass } from './deviceId'
 import { peekComfyArgsSchema } from './comfy-args'
 import { withoutPygit2Breaker } from './git'
 import { peekBetaFeaturesEnabled } from '../settings'
@@ -95,8 +100,16 @@ export async function previewCoreBetaArgs(
   const split = splitLaunchCommand(launchCmd)
   if (!split) return []
   if (!peekBetaFeaturesEnabled()) return []
-  const grants = await getCoreBetaGrantsAsync()
-  if (grants.length === 0) return []
+  const [grants, campaigns] = await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
+  const records = campaigns.answers.size > 0 ? readCampaignRecords() : {}
+  const campaignGrants = campaignCandidateGrants(
+    campaigns.registry,
+    campaigns.answers,
+    records,
+    Date.now(),
+    getIdClass()
+  )
+  if (grants.length === 0 && campaignGrants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.
   const schema = peekComfyArgsSchema(
     split.mainPyAbs,
@@ -105,20 +118,45 @@ export async function previewCoreBetaArgs(
   )
   if (!schema) return []
   const checkout = resolveCoreCheckout(split.comfyuiDir)
-  const commits = await previewCommits(
-    split.comfyuiDir,
-    checkout,
-    commitGrantShas(grants, split.userArgs)
-  )
+  const core = coreVersionState(inst, checkout)
+  // The floor gets its own proof, as at launch, so it never uses up the grants' cap or budget.
+  const [floor, granted] = await Promise.all([
+    previewCommits(
+      split.comfyuiDir,
+      checkout,
+      assetsFloorShas(grants, split.userArgs, schema, core)
+    ),
+    previewCommits(
+      split.comfyuiDir,
+      checkout,
+      commitGrantShas([...grants, ...campaignGrants], split.userArgs)
+    )
+  ])
+  const commits = {
+    head: granted.head ?? floor.head,
+    ancestry: new Map([...granted.ancestry, ...floor.ancestry])
+  }
   const plan = planCoreBetaArgs({
     grants,
     betaEnabled: true,
     userArgs: split.userArgs,
-    core: coreVersionState(inst, checkout),
+    core,
     commits,
     schema
   })
-  return plan.applied.map(toBetaArgView)
+  // Enrolments included; only a launch writes a record.
+  const campaign = planCampaignArgs({
+    ...campaigns,
+    records,
+    idClass: getIdClass(),
+    now: Date.now(),
+    betaEnabled: true,
+    presentArgs: campaignPresentArgs(split.userArgs, plan),
+    core,
+    commits,
+    schema
+  })
+  return [...plan.applied, ...campaign.applied.map((entry) => entry.grant)].map(toBetaArgView)
 }
 
 /** The beta-args pill's answer: the running session's grants, else the next-launch preview.

@@ -9,6 +9,7 @@ import * as telemetry from '../telemetry'
 import * as settings from '../../settings'
 import { buildInstallationDdContext, sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
+import type { SessionKind } from '../../../shared/performanceTestSession'
 
 // Mirror the bridge's large-`_json` ceiling: ship intact or omit + flag
 // `*_truncated`, never slice mid-string. Under PostHog's 1 MB event limit.
@@ -84,6 +85,8 @@ export interface InstanceStartedInfo {
   /** Spawn-retry counts for THIS boot (0 on the remote / skip-port paths). */
   portRetries: number
   rebootRetries: number
+  /** A Performance Test boot or the user's own. */
+  sessionKind: SessionKind
 }
 
 /**
@@ -132,6 +135,7 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       boot_time_ms: info.bootTimeMs ?? null,
       port_retries: info.portRetries,
       reboot_retries: info.rebootRetries,
+      session_kind: info.sessionKind,
       // Top-level so they stay queryable and survive `latest_snapshot_json`
       // truncation (heavy installs are the most likely to truncate).
       custom_nodes_count: latest_snapshot?.customNodes.length ?? null,

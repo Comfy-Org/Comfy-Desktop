@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
+import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
 vi.mock('electron', () => ({
   app: {
@@ -267,7 +268,39 @@ interface SetupTelemetryOptions {
   bind?: string | null
   appVersion?: string
   appEnv?: string
+  isPackaged?: boolean
+  env?: Partial<Record<PostHogEnvName, string | undefined>>
 }
+
+type PostHogEnvName =
+  | 'POSTHOG_API_KEY'
+  | 'POSTHOG_HOST'
+  | 'POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_API_KEY'
+  | 'COMFY_DESKTOP_POSTHOG_HOST'
+  | 'COMFY_DESKTOP_POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+  | 'POSTHOG_EXCEPTIONS'
+
+const postHogEnvNames: PostHogEnvName[] = [
+  'POSTHOG_API_KEY',
+  'POSTHOG_HOST',
+  'POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_API_KEY',
+  'COMFY_DESKTOP_POSTHOG_HOST',
+  'COMFY_DESKTOP_POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_EXCEPTIONS',
+  'POSTHOG_EXCEPTIONS'
+]
+let previousPostHogEnv: Partial<Record<PostHogEnvName, string>> = {}
+
+beforeEach(() => {
+  previousPostHogEnv = Object.fromEntries(
+    postHogEnvNames.flatMap((name) =>
+      process.env[name] === undefined ? [] : [[name, process.env[name]!]]
+    )
+  )
+})
 
 /**
  * Reset module state and the capture buffers, then run the standard boot
@@ -281,21 +314,28 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     consent = 'granted',
     bind = 'test-distinct-id',
     appVersion = '0.0.0',
-    appEnv = 'test'
+    appEnv = 'test',
+    isPackaged = true,
+    env = {}
   } = options
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  process.env['POSTHOG_API_KEY'] = 'test-key'
-  process.env['POSTHOG_ENABLED'] = '1'
+  for (const name of postHogEnvNames) delete process.env[name]
+  process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
+  process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
   // observable keep working; the opt-out default is pinned by its own test.
-  process.env['POSTHOG_EXCEPTIONS'] = '1'
+  process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'] = '1'
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
-  telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged })
   if (consent) telemetry.setConsentState(consent)
   if (bind) bindTestAnonymous(bind)
   telemetry._test_resetVolumeGuards()
@@ -314,9 +354,11 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
-  delete process.env['POSTHOG_API_KEY']
-  delete process.env['POSTHOG_ENABLED']
-  delete process.env['POSTHOG_EXCEPTIONS']
+  for (const name of postHogEnvNames) {
+    const previous = previousPostHogEnv[name]
+    if (previous === undefined) delete process.env[name]
+    else process.env[name] = previous
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -390,6 +432,26 @@ describe('telemetry.bucketError', () => {
 })
 
 describe('telemetry default event properties', () => {
+  it('carries sac_state on session.started when read before binding, as boot does', () => {
+    setupTelemetry({ bind: null })
+    telemetry.setSmartAppControlState('on')
+    bindTestAnonymous('boot-id')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
+  it('adds sac_state to every capture once read, keeping installation_id', () => {
+    setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
+    captured.length = 0
+
+    telemetry.capture('comfy.desktop.test.event', {})
+
+    expect(captured[0]!.properties).toMatchObject({ sac_state: 'off', platform: process.platform })
+    expect(captured[0]!.properties).toHaveProperty('installation_id')
+  })
+
   it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
     setupTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', bind: 'id' })
     captured.length = 0
@@ -412,6 +474,7 @@ describe('telemetry default event properties', () => {
 
   it('lists every default property in DEFAULT_EVENT_PROPERTY_NAMES', () => {
     setupTelemetry({ bind: 'id' })
+    telemetry.setSmartAppControlState('off')
     captured.length = 0
     telemetry.capture('any.event')
     const keys = Object.keys(captured[0]!.properties ?? {}).filter((key) => !key.startsWith('$'))
@@ -535,7 +598,146 @@ describe('telemetry PostHog client options', () => {
 
     expect(constructorOptions()).not.toHaveProperty('requestTimeout')
   })
+
+  it('ignores generic PostHog key and host environment variables in packaged builds', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('uses packaged defaults when the scoped key and host are absent', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: undefined,
+        COMFY_DESKTOP_POSTHOG_HOST: undefined
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('preserves the generic PostHog disable switch in packaged builds', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('accepts product-scoped PostHog overrides in packaged builds', () => {
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('keeps generic PostHog overrides available for unpackaged development', () => {
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'dev-key',
+        POSTHOG_HOST: 'https://dev-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'dev-key',
+      options: { host: 'https://dev-posthog.example' }
+    })
+  })
+
+  it('prefers product-scoped PostHog overrides during unpackaged development', () => {
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'generic-key',
+        POSTHOG_HOST: 'https://generic-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('honors the product-scoped disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('accepts common privacy opt-out spellings', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: 'disabled' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('does not let an unrelated inherited spelling disable telemetry', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: 'unrelated-tool-value' } })
+
+    expect(posthogConstructorCalls).toHaveLength(1)
+  })
+
+  it('preserves the generic disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('falls back from whitespace-only overrides to packaged defaults', () => {
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: '  ',
+        COMFY_DESKTOP_POSTHOG_HOST: '\t'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('rejects a non-HTTPS packaged host override', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_HOST: 'http://posthog.example' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('rejects credentials embedded in a packaged host override', () => {
+    setupTelemetry({
+      env: { COMFY_DESKTOP_POSTHOG_HOST: 'https://user:password@posthog.example' }
+    })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
 })
+
+/** Sent with every ops-flag evaluation, consent or not: the OS, for per-OS targeting. */
+const PLATFORM = { platform: process.platform }
+/** What every evaluation from this test build carries when nothing else applies. */
+const BASE_PROPS = { ...PLATFORM, app_version: '0.0.0' }
 
 // Revocation semantics hang off this classification: a `value` (including an explicit
 // `false`) overwrites the persisted treatment, `unreachable` holds it. Collapsing the two
@@ -560,9 +762,12 @@ describe('telemetry anonymous flag reads', () => {
       {
         key: 'desktop_core_beta_features',
         distinctId: 'installation-id',
-        // Only the build's version: the request is made pre-consent by design, and this is
-        // where an email would sit if one were ever attached without one.
-        options: { sendFeatureFlagEvents: false, personProperties: { app_version: '0.0.0' } }
+        // Only facts about the build and machine: the request is made pre-consent by design,
+        // and this is where an email would sit if one were ever attached without one.
+        options: {
+          sendFeatureFlagEvents: false,
+          personProperties: BASE_PROPS
+        }
       }
     ])
   })
@@ -633,7 +838,11 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -662,6 +871,22 @@ describe('ops-flag person targeting', () => {
     expect(captured.map((event) => event.event)).not.toContain('$feature_flag_called')
   })
 
+  it('sends the OS the app is running on, not a fixed value', async () => {
+    // PLATFORM above mirrors the product's own expression, so it would pass a hardcoded OS on
+    // a runner of that OS. Pretend to be another one to pin the value to process.platform.
+    setupTelemetry({ consent: null })
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const other = process.platform === 'win32' ? 'darwin' : 'win32'
+    Object.defineProperty(process, 'platform', { value: other, configurable: true })
+    try {
+      await evaluate()
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+    }
+
+    expect(lastPersonProperties()).toEqual({ platform: other, app_version: '0.0.0' })
+  })
+
   it('sends no comfy_staff for a non-staff install', async () => {
     // Absent rather than `comfy_staff: 'false'`: a `comfy_staff = true` condition does not match
     // a missing property, so it stays off the wire for the majority of users.
@@ -670,7 +895,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is undecided', async () => {
@@ -681,7 +906,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('sends no comfy_staff when consent is denied', async () => {
@@ -690,7 +915,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('still evaluates the flag without consent, carrying no staff property', async () => {
@@ -703,29 +928,145 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  // `sac_state` lets a rollout of an unsigned component exclude machines where Smart App Control
+  // would block it. A fact about the machine, like `platform`, so it is sent with or without consent.
+  it.each(['granted', 'denied', null] as const)(
+    'sends sac_state once read, with consent %s',
+    async (consent) => {
+      setupTelemetry({ consent })
+      telemetry.setSmartAppControlState('on')
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ ...BASE_PROPS, sac_state: 'on' })
+    }
+  )
+
+  it('sends no sac_state before it has been read', async () => {
+    setupTelemetry({ consent: 'granted' })
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  // `user_tier` lets a rollout weight toward paying users. Same rule as `comfy_staff`: a fact
+  // about the person, so it rides only on the consented path.
+  it('attaches user_tier once consent is granted', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
+    expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
+  })
+
+  it('sends a known free tier too, so a condition can tell free from unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('free')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'free'
+    })
+  })
+
+  it('sends no user_tier while the tier is unknown', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setFlagEvaluationUserTier('unknown')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it.each(['denied', null] as const)('sends no user_tier with consent %s', async (consent) => {
+    setupTelemetry({ consent })
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+    telemetry.setFlagEvaluationUserTier('paid')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true',
+      user_tier: 'paid'
+    })
+  })
+
+  // Consent can change mid-session (Settings), and campaign flags are first fetched mid-session,
+  // so the gate must be read per request, not when the tier is bound.
+  it('drops the consented properties when consent is revoked after binding', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('denied')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it('sends a tier bound before consent once consent is granted', async () => {
+    setupTelemetry({ consent: null })
+    telemetry.setFlagEvaluationUserTier('paid')
+    telemetry.setConsentState('granted')
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      user_tier: 'paid'
+    })
   })
 
   it('stops sending once the install is reclassified, as on sign-out', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
     await evaluate()
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({
+      ...PLATFORM,
+      app_version: '0.0.0',
+      comfy_staff: 'true'
+    })
 
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
+    telemetry.setFlagEvaluationUserTier('paid')
 
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
@@ -802,7 +1143,10 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4' })
+      expect(lastPersonProperties()).toEqual({
+        ...PLATFORM,
+        app_version: '1.1.4'
+      })
     })
 
     it('rides alongside comfy_staff for a consented staff install', async () => {
@@ -811,7 +1155,11 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4', comfy_staff: 'true' })
+      expect(lastPersonProperties()).toEqual({
+        ...PLATFORM,
+        app_version: '1.1.4',
+        comfy_staff: 'true'
+      })
     })
 
     it('is the version initTelemetry was given, verbatim, prerelease included', async () => {
@@ -820,7 +1168,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4-rc.1' })
+      expect(lastPersonProperties()).toEqual({ ...PLATFORM, app_version: '1.1.4-rc.1' })
     })
 
     it('is omitted rather than sent empty when the version is unknown', async () => {
@@ -829,7 +1177,7 @@ describe('ops-flag person targeting', () => {
 
       await evaluate()
 
-      expect(lastPersonProperties()).toEqual({})
+      expect(lastPersonProperties()).toEqual(PLATFORM)
     })
 
     // What the property is for: a payload carrying args older builds reject, gated server-side.
@@ -986,8 +1334,8 @@ describe('telemetry late ops-flag results', () => {
 
   it('does not report late when the client is not initialised', async () => {
     // Given telemetry disabled, so there is no fetch to abandon in the first place
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+    delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
+    delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
     telemetry._resetForTest()
     const late: unknown[] = []
 
@@ -1219,7 +1567,11 @@ describe('late ops-flag results reaching real persistence', () => {
   function seedGrant(): string {
     // Indented on purpose: canonical `JSON.stringify` output cannot tell "never written" from
     // "rewritten identically", and rewriting is the bug under test.
-    const stored = JSON.stringify({ [KEY]: { value: true, payload: null } }, null, 2)
+    const stored = JSON.stringify(
+      { [KEY]: { value: true, payload: null, fetchedAt: Date.now() } },
+      null,
+      2
+    )
     fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
     fs.writeFileSync(flagsFilePath() + '.bak', stored, 'utf-8')
     return stored
@@ -1242,6 +1594,8 @@ describe('late ops-flag results reaching real persistence', () => {
     captured.length = 0
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'installation-id', timeoutMs: 0 })
+    // A saved grant answers `init` at once, so let the 0 ms deadline fire before the test answers.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     return flag
   }
 
@@ -1265,15 +1619,20 @@ describe('late ops-flag results reaching real persistence', () => {
     seedGrant()
     const flag = await launchLosingTheRace()
 
+    const answeredAt = Date.now()
     posthogClientMock.deferred?.resolve({ enabled: false, payload: null })
     await flush()
 
     expect(lateEventOutcome()).toBe('value')
-    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual({
-      [KEY]: { value: false, payload: null }
+    const stored = JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))
+    expect(stored).toEqual({
+      [KEY]: { value: false, payload: null, fetchedAt: expect.any(Number) }
     })
-    // And this launch keeps what the deadline decided — convergence happens on the NEXT one
-    expect(await flag.get()).toBe('granted')
+    // Stamped with the real clock, not carried over or zeroed
+    expect(stored[KEY].fetchedAt).toBeGreaterThanOrEqual(answeredAt)
+    expect(stored[KEY].fetchedAt).toBeLessThanOrEqual(Date.now())
+    // And later reads in this session see it too
+    expect(await flag.get()).toBe('revoked')
   })
 
   it('reports a late MISS without letting it reach the file', async () => {
@@ -2381,8 +2740,8 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     expect(forwardedContext).not.toHaveProperty('error_message')
   })
 
-  it('suppresses the PostHog exception copy unless POSTHOG_EXCEPTIONS opts in', () => {
-    delete process.env['POSTHOG_EXCEPTIONS']
+  it('suppresses the PostHog exception copy unless the product-scoped flag opts in', () => {
+    delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
     const target = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(target.wc)
 

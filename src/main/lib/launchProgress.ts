@@ -73,6 +73,12 @@ export interface LaunchProgressTracker {
   start: () => void
   /** Feed a stdout/stderr chunk. Safe to call with partial lines. */
   ingest: (chunk: string) => void
+  /** Add a phase for work that only became known after the tracker was armed,
+   *  and enter it. The steps payload is re-emitted, without which the renderer
+   *  drops the phase's progress entirely (it ignores a phase absent from the
+   *  payload). Inserted directly after the active phase, so the bar advances
+   *  into a new slot rather than regressing. */
+  addLatePhase: (def: LaunchPhaseDef) => void
   /** Restart per-attempt `onPhaseEnter` observation for a boot retry. The UI
    *  phase index stays monotonic (progress never regresses), but the retried
    *  process re-logs its boot from the top - without this reset those re-hit
@@ -95,7 +101,10 @@ export function createLaunchProgressTracker(opts: {
    *  break progress, so it is swallowed. */
   onPhaseEnter?: (phase: string) => void
 }): LaunchProgressTracker {
-  const { phases, sendProgress, onPhaseEnter } = opts
+  const { sendProgress, onPhaseEnter } = opts
+  // Copied, not aliased: `addLatePhase` splices into this list, and the caller's
+  // array must not change under it.
+  const phases = [...opts.phases]
   const nodeCount = opts.nodeCount && opts.nodeCount > 0 ? opts.nodeCount : 0
 
   // Index of the currently-active phase; -1 until the first milestone.
@@ -252,6 +261,13 @@ export function createLaunchProgressTracker(opts: {
       const lines = pending.split(/\r?\n/)
       pending = lines.pop() ?? ''
       for (const line of lines) handleLine(line)
+    },
+    addLatePhase(def: LaunchPhaseDef): void {
+      const idx = activeIdx + 1
+      phases.splice(idx, 0, { ...def })
+      stepsSent = false
+      emitSteps()
+      enterPhase(idx)
     }
   }
 }

@@ -399,7 +399,8 @@ export function startTokenToEpochMs(
     if (!ticks || linuxBootMs === null) return null
     return linuxBootMs + (Number(ticks) * 1000) / LINUX_CLK_TCK
   }
-  const ms = Date.parse(token)
+  // `readStartTimes` pins `lstart` to UTC; a zone-less date string would parse as local time.
+  const ms = Date.parse(`${token} UTC`)
   return Number.isFinite(ms) ? ms : null
 }
 
