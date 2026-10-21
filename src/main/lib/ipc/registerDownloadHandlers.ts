@@ -17,11 +17,13 @@ import { getDeviceId, getIdClass } from '../deviceId'
 import { openModelAccessPageWindow } from '../modelAccessPage'
 import { isTrustedCloudUrl } from '../trustedCloudUrl'
 
-function isTrustedCloudSender(event: IpcMainEvent): boolean {
+function isTrustedCloudSender({ sender, senderFrame }: IpcMainEvent): boolean {
+  if (findEntryByComfySender(sender)?.sourceCategory !== 'cloud' || !senderFrame) return false
+  const mainFrame = sender.mainFrame
   return (
-    findEntryByComfySender(event.sender)?.sourceCategory === 'cloud' &&
-    event.senderFrame === event.sender.mainFrame &&
-    isTrustedCloudUrl(event.sender.getURL())
+    senderFrame.processId === mainFrame.processId &&
+    senderFrame.routingId === mainFrame.routingId &&
+    isTrustedCloudUrl(senderFrame.url)
   )
 }
 

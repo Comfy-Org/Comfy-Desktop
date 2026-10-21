@@ -84,11 +84,18 @@ function onHandler(channel: string): (event: SyncIpcEvent) => void {
   return call![1] as (event: SyncIpcEvent) => void
 }
 
-function requestInstallId({ url = CLOUD_URL, fromSubframe = false } = {}): unknown {
-  const mainFrame = { name: 'main' }
+type FrameShape = 'main' | 'subframe' | 'missing'
+
+function requestInstallId({ url = CLOUD_URL, frame = 'main' as FrameShape } = {}): unknown {
+  const mainFrame = { processId: 3, routingId: 1, url }
+  const senderFrames = {
+    main: { processId: 3, routingId: 1, url },
+    subframe: { processId: 3, routingId: 2, url },
+    missing: null
+  }
   const event: SyncIpcEvent = {
-    sender: { id: 7, mainFrame, getURL: () => url },
-    senderFrame: fromSubframe ? { name: 'child' } : mainFrame
+    sender: { id: 7, mainFrame },
+    senderFrame: senderFrames[frame]
   }
   onHandler('desktop2-get-install-id')(event)
   return event.returnValue
@@ -129,7 +136,15 @@ describe('registerDownloadHandlers install id bridge', () => {
     mocks.getIdClass.mockReturnValue('machine_derived')
     mocks.getDeviceId.mockReturnValue('install-abc')
 
-    expect(requestInstallId({ fromSubframe: true })).toBeUndefined()
+    expect(requestInstallId({ frame: 'subframe' })).toBeUndefined()
+  })
+
+  it('withholds the id when the sending frame is gone', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+    mocks.getIdClass.mockReturnValue('machine_derived')
+    mocks.getDeviceId.mockReturnValue('install-abc')
+
+    expect(requestInstallId({ frame: 'missing' })).toBeUndefined()
   })
 
   it('withholds the id from an unregistered sender', () => {
