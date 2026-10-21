@@ -74,7 +74,9 @@ describe('registerDownloadHandlers model access bridge', () => {
   })
 })
 
-type SyncIpcEvent = { sender: unknown; returnValue?: unknown }
+type SyncIpcEvent = { sender: unknown; senderFrame: unknown; returnValue?: unknown }
+
+const CLOUD_URL = 'https://cloud.comfy.org/'
 
 function onHandler(channel: string): (event: SyncIpcEvent) => void {
   const call = mocks.on.mock.calls.find(([name]) => name === channel)
@@ -82,8 +84,12 @@ function onHandler(channel: string): (event: SyncIpcEvent) => void {
   return call![1] as (event: SyncIpcEvent) => void
 }
 
-function requestInstallId(): unknown {
-  const event: SyncIpcEvent = { sender: { id: 7 } }
+function requestInstallId({ url = CLOUD_URL, fromSubframe = false } = {}): unknown {
+  const mainFrame = { name: 'main' }
+  const event: SyncIpcEvent = {
+    sender: { id: 7, mainFrame, getURL: () => url },
+    senderFrame: fromSubframe ? { name: 'child' } : mainFrame
+  }
   onHandler('desktop2-get-install-id')(event)
   return event.returnValue
 }
@@ -108,6 +114,22 @@ describe('registerDownloadHandlers install id bridge', () => {
     mocks.getDeviceId.mockReturnValue('install-abc')
 
     expect(requestInstallId()).toBeUndefined()
+  })
+
+  it('withholds the id once a cloud view has navigated off the trusted cloud origin', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+    mocks.getIdClass.mockReturnValue('machine_derived')
+    mocks.getDeviceId.mockReturnValue('install-abc')
+
+    expect(requestInstallId({ url: 'https://example.com/' })).toBeUndefined()
+  })
+
+  it('withholds the id from a subframe of a cloud page', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+    mocks.getIdClass.mockReturnValue('machine_derived')
+    mocks.getDeviceId.mockReturnValue('install-abc')
+
+    expect(requestInstallId({ fromSubframe: true })).toBeUndefined()
   })
 
   it('withholds the id from an unregistered sender', () => {
