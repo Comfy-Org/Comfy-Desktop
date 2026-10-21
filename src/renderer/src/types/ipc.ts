@@ -15,6 +15,7 @@ export type {
   Source,
   SourceField,
   FieldOption,
+  StarterTemplatesSelection,
   DetailSection,
   DetailItem,
   DetailField,

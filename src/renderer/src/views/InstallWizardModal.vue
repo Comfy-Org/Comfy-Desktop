@@ -27,7 +27,9 @@ import {
   isTemplateDiskBlocked,
   minTemplateModelBytes,
   isApiNodeTemplate,
-  templateDownloadBytes,
+  starterTemplatesSelection,
+  templatesDownloadBytes,
+  templatesSizeBytes,
   templateSizeBytes
 } from '../lib/installHelpers'
 import TakeoverBack from '../components/TakeoverBack.vue'
@@ -285,26 +287,28 @@ function installHandoffProps(): Record<string, string | boolean | null> {
 
 const NO_TEMPLATE_VALUE = 'none'
 
-/** The selected starter template option (excludes the "None" sentinel). */
-const selectedTemplate = computed<FieldOption | null>(() => {
-  const sel = selections.value.bundledTemplate
-  return sel && sel.value !== NO_TEMPLATE_VALUE ? sel : null
-})
+/** Starter templates the user ticked, in pick order - on the dedicated picker
+ *  step, or on Configure when that step is gated off. The only template
+ *  selection state: `selections.bundledTemplate` is replaced from it on save. */
+const pickedTemplateIds = ref<string[]>([])
 
-/** True when the selected template carries a non-zero model download. */
-const templateHasModels = computed(() => {
-  const size = selectedTemplate.value?.data?.sizeBytes as number | undefined
-  return typeof size === 'number' && size > 0
-})
+const selectedTemplates = computed<FieldOption[]>(() =>
+  pickedTemplateIds.value.flatMap((id) => templateOptions.value.find((o) => o.value === id) ?? [])
+)
 
-const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
+/** True when any selected template carries a non-zero model download. */
+const templateHasModels = computed(() =>
+  selectedTemplates.value.some((o) => templateSizeBytes(o) > 0)
+)
+
+const templateIsApiNode = computed(() => selectedTemplates.value.some(isApiNodeTemplate))
 
 /** Proactive disk guard - shares `isTemplateDiskBlocked` with TemplatePickerStep
  *  so the alert, the disabled Install button, and the save-time hard block can't
  *  drift. */
 const templateInstallBlocked = computed(() => {
   if (diskSpaceLoading.value) return false
-  return isTemplateDiskBlocked(diskSpace.value, templateDownloadBytes(selectedTemplate.value))
+  return isTemplateDiskBlocked(diskSpace.value, templatesDownloadBytes(selectedTemplates.value))
 })
 
 const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
@@ -366,19 +370,20 @@ const shouldShowPickerStep = computed(
     !diskTooSmallForAnyTemplate.value
 )
 
-function selectTemplate(option: FieldOption): void {
-  const prev = selections.value.bundledTemplate?.value
-  selections.value.bundledTemplate = option
-  // Emit only on real (non-`None`) picks, and only on a value change so
-  // re-clicking the already-selected row doesn't inflate the event count.
-  if (option.value !== NO_TEMPLATE_VALUE && option.value !== prev) {
-    const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
-    emitTelemetryAction('comfy.desktop.template.selected', {
-      template_id: option.value,
-      size_bucket: toSizeBucket(sizeBytes),
-      is_api_node: isApiNodeTemplate(option)
-    })
+/** Tick or untick a picker card; any number of templates across modalities. */
+function toggleTemplate(option: FieldOption): void {
+  const ids = pickedTemplateIds.value
+  if (ids.includes(option.value)) {
+    pickedTemplateIds.value = ids.filter((id) => id !== option.value)
+    return
   }
+  pickedTemplateIds.value = [...ids, option.value]
+  // Emit only when a card is ticked, so unticking doesn't inflate the count.
+  emitTelemetryAction('comfy.desktop.template.selected', {
+    template_id: option.value,
+    size_bucket: toSizeBucket(templateSizeBytes(option)),
+    is_api_node: isApiNodeTemplate(option)
+  })
 }
 
 /** Configure's primary button: advance to the picker step, or install directly
@@ -386,15 +391,15 @@ function selectTemplate(option: FieldOption): void {
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // No template is pre-selected - the "None" sentinel stays put until the
-    // user actively picks a card, so nobody installs a starter workflow (and
-    // its models) they never chose.
+    // No template is pre-selected - nothing is ticked until the user actively
+    // picks cards, so nobody installs a starter workflow (and its models) they
+    // never chose.
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
     emitTelemetryAction('comfy.desktop.template.picker_shown', {
       template_count: templateOptions.value.length,
       has_local_install: hasLocalInstall.value,
-      default_template_id: selections.value.bundledTemplate?.value ?? null
+      default_template_id: pickedTemplateIds.value[0] ?? null
     })
     return
   }
@@ -410,10 +415,12 @@ async function handleTemplateInstall(): Promise<void> {
     nudgeTemplateAlert()
     return
   }
-  const tpl = selectedTemplate.value
+  const picks = selectedTemplates.value
   emitTelemetryAction('comfy.desktop.template.install_confirmed', {
-    template_id: tpl?.value ?? NO_TEMPLATE_VALUE,
-    size_bucket: toSizeBucket((tpl?.data?.sizeBytes as number | undefined) ?? 0),
+    template_id: picks[0]?.value ?? NO_TEMPLATE_VALUE,
+    template_ids: picks.map((o) => o.value).join(','),
+    selected_count: picks.length,
+    size_bucket: toSizeBucket(templatesSizeBytes(picks)),
     has_models: templateHasModels.value,
     is_api_node: templateIsApiNode.value,
     dont_show_again: dontShowTemplatePicker.value
@@ -425,12 +432,11 @@ async function handleTemplateInstall(): Promise<void> {
 /** Picker's "Skip & Install": no template, then install. */
 async function handleTemplateSkip(): Promise<void> {
   emitTelemetryAction('comfy.desktop.template.skipped', {
-    had_template_selected: !!selectedTemplate.value,
-    candidate_template_id: selectedTemplate.value?.value ?? null,
+    had_template_selected: pickedTemplateIds.value.length > 0,
+    candidate_template_id: pickedTemplateIds.value[0] ?? null,
     dont_show_again: dontShowTemplatePicker.value
   })
-  const none = templateOptions.value.find((o) => o.value === NO_TEMPLATE_VALUE)
-  if (none) selections.value.bundledTemplate = none
+  pickedTemplateIds.value = []
   await persistDontShowAgain()
   await handleSave()
 }
@@ -618,6 +624,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   authorizingWorkspace.value = false
   initializing.value = true
   step.value = 'configure'
+  pickedTemplateIds.value = []
   dontShowTemplatePicker.value = false
   // Reset to defaults synchronously so a slow prior-open response can't leave
   // stale gating on this open; the guarded callbacks below then refill them.
@@ -845,6 +852,7 @@ function resetSourceState(source: Source | null): void {
   // A different source can't keep the (standalone-only) picker open.
   step.value = 'configure'
   selections.value = {}
+  pickedTemplateIds.value = []
   fieldOptions.value.clear()
   fieldLoading.value.clear()
   fieldErrors.value.clear()
@@ -928,11 +936,11 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldOptions.value.set(field.id, options)
 
     if (options.length > 0) {
-      // The starter-template field must never default to a `recommended` pick
-      // (e.g. MiniMax) — that pre-selects a workflow, and the models it pulls
-      // in, before the user has chosen anything. It always defaults to the
-      // "None" sentinel (index 0; see `standalone/index.ts`), same as every
-      // other field falls back to index 0 when nothing is `recommended`.
+      // The starter-template field holds the "None" sentinel (index 0; see
+      // `standalone/index.ts`) only to complete the field chain: the real picks
+      // live in `pickedTemplateIds` and replace it on save, so nothing is ever
+      // pre-selected. Every other field falls back to index 0 when nothing is
+      // `recommended`.
       let defaultIndex =
         field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
@@ -1167,10 +1175,19 @@ async function handleSave(): Promise<void> {
 
   // Note: the starter-template model download is gated entirely by the chosen
   // `bundledTemplate` - `buildInstallation` sets `downloadTemplateModels` from
-  // the template id, so "Skip & Install" (template = None) means no download.
+  // the template ids, so "Skip & Install" (nothing ticked) means no download.
   // The renderer doesn't sync a separate consent field.
+  const payload = rawSelections()
+  if (payload.bundledTemplate) {
+    const picks = selectedTemplates.value
+    payload.bundledTemplate = {
+      value: picks[0]?.value ?? NO_TEMPLATE_VALUE,
+      label: picks.map((o) => o.label).join(', '),
+      data: starterTemplatesSelection(picks)
+    }
+  }
 
-  const instData = await window.api.buildInstallation(source.id, rawSelections())
+  const instData = await window.api.buildInstallation(source.id, payload)
   const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
   const name = await window.api.getUniqueName(baseName)
 
@@ -1226,7 +1243,7 @@ async function handleSave(): Promise<void> {
     if (
       !(await checkTemplateDiskOrBlock({
         path: instPath.value,
-        estimatedModelBytes: templateDownloadBytes(selectedTemplate.value),
+        estimatedModelBytes: templatesDownloadBytes(selectedTemplates.value),
         flow: 'wizard',
         alert: modal.alert,
         t
@@ -1277,8 +1294,8 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
  *  outright so the wizard doesn't render a "No options" dropdown. */
 function isHiddenWhenEmpty(field: SourceField): boolean {
   // The starter-template field gets its own dedicated step when the picker is
-  // enabled - hide its Advanced-section card so it isn't shown twice. (When the
-  // picker is gated off, the Advanced card stays as the fallback.)
+  // enabled - hide its inline picker on Configure so it isn't shown twice.
+  // (When the step is gated off, the inline picker stays as the fallback.)
   if (field.id === 'bundledTemplate' && shouldShowPickerStep.value) return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
   const options = fieldOptions.value.get(field.id)
@@ -1503,6 +1520,19 @@ defineExpose({ open })
                       <div v-if="fieldLoading.get(field.id)" class="wizard-loading with-spinner">
                         {{ $t('newInstall.loading') }}
                       </div>
+                      <!-- Starter templates when the picker step is gated off: the
+                           same multi-select picker, inline. -->
+                      <TemplatePickerStep
+                        v-else-if="field.id === 'bundledTemplate' && templateOptions.length > 0"
+                        :options="templateOptions"
+                        :none-value="NO_TEMPLATE_VALUE"
+                        :selected-values="pickedTemplateIds"
+                        multiple
+                        compact
+                        :disk-space="diskSpace"
+                        :disk-space-loading="diskSpaceLoading"
+                        @select="toggleTemplate"
+                      />
                       <BrandVariantList
                         v-else-if="
                           fieldOptions.has(field.id) &&
@@ -1644,10 +1674,11 @@ defineExpose({ open })
             ref="pickerRef"
             :options="templateOptions"
             :none-value="NO_TEMPLATE_VALUE"
-            :selected-value="selections.bundledTemplate?.value ?? null"
+            :selected-values="pickedTemplateIds"
+            multiple
             :disk-space="diskSpace"
             :disk-space-loading="diskSpaceLoading"
-            @select="selectTemplate"
+            @select="toggleTemplate"
           />
         </div>
         <div class="brand-card__footer template-card__footer">

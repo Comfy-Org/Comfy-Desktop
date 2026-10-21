@@ -212,6 +212,15 @@ export interface FieldOption {
   data?: Record<string, unknown>
 }
 
+/** `data` of the `bundledTemplate` selection the install wizard sends to
+ *  `buildInstallation`: every starter template the user ticked, in pick order. */
+export type StarterTemplatesSelection = {
+  templateIds: string[]
+  /** Model bytes still to download for these picks, skipping picks whose models
+   *  are on disk. Coarse: a model shared between picks counts once per pick. */
+  downloadBytes: number
+}
+
 // --- Detail types ---
 export interface DetailSection {
   title?: string

@@ -347,7 +347,8 @@ export function registerInstallationHandlers(): void {
       // launch-span stepper phase; logs stream into the durable ring buffer
       // (appendLog) so the launch span's "View logs" can replay them.
       // Fire-and-forget; torn down via abortTemplateDownload on cancel/close.
-      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
+      // `startTemplateDownload` itself no-ops when the record has no picks.
+      if (inst.downloadTemplateModels && inst.pendingTemplateOpen) {
         const sendTemplateOutput = (text: string): void => {
           try {
             if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })

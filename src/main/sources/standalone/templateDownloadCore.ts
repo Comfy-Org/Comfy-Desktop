@@ -25,6 +25,11 @@ export interface FileProgress {
 
 export type { TemplateDownloadStatus }
 
+/** Identity of a model file on disk, for de-duplicating downloads. */
+export function templateModelKey(model: { directory: string; filename: string }): string {
+  return `${model.directory}/${model.filename}`
+}
+
 export interface TemplateDownloadState {
   status: TemplateDownloadStatus
   /** One entry per required model — the sole mutation target of the hot path. */
