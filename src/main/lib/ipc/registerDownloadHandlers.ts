@@ -12,7 +12,7 @@ import {
   retryDownload,
   startModelDownload
 } from '../comfyDownloadManager'
-import { getDeviceId } from '../deviceId'
+import { getDeviceId, getIdClass } from '../deviceId'
 import { openModelAccessPageWindow } from '../modelAccessPage'
 
 export function registerDownloadHandlers(): void {
@@ -22,10 +22,14 @@ export function registerDownloadHandlers(): void {
   })
 
   // Per-installation id for cloud attribution (sent as X-Comfy-Install-Id by
-  // the hosted frontend). Synchronous so the frontend can read it inline when
-  // building request headers. getDeviceId() is safe post-initDeviceId().
+  // the cloud-hosted frontend). Only cloud pages get it, and only a
+  // machine-derived id: a fallback id changes every launch.
   ipcMain.on('desktop2-get-install-id', (event) => {
-    event.returnValue = getDeviceId()
+    const entry = findEntryByComfySender(event.sender)
+    event.returnValue =
+      entry?.sourceCategory === 'cloud' && getIdClass() === 'machine_derived'
+        ? getDeviceId()
+        : undefined
   })
 
   ipcMain.handle('desktop2-open-model-access-page', (event, payload?: { url?: unknown }) =>

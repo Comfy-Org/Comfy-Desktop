@@ -175,8 +175,9 @@ export interface ComfyDesktop2Bridge {
    *  (`SHA-256(machine_id + salt)`, see main/lib/deviceId). The hosted
    *  frontend sends it to cloud as the `X-Comfy-Install-Id` header so cloud
    *  can attribute requests to a Desktop install. Not an identity/secret.
-   *  Absent on Desktop builds predating it. */
-  getInstallId?(): string
+   *  Undefined outside cloud-hosted pages or when the id is not
+   *  machine-derived. Absent on Desktop builds predating it. */
+  getInstallId?(): string | undefined
   openTerminal?: () => Promise<boolean>
   openMcpSetup?: () => Promise<boolean>
   /** Opens a model provider access page in the hosted frontend's browser session.

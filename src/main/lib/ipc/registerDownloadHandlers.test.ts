@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   on: vi.fn(),
   openModelAccessPageWindow: vi.fn(),
   showItemInFolder: vi.fn(),
-  getDeviceId: vi.fn()
+  getDeviceId: vi.fn(),
+  getIdClass: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -37,7 +38,8 @@ vi.mock('../modelAccessPage', () => ({
 }))
 
 vi.mock('../deviceId', () => ({
-  getDeviceId: mocks.getDeviceId
+  getDeviceId: mocks.getDeviceId,
+  getIdClass: mocks.getIdClass
 }))
 
 import { registerDownloadHandlers } from './registerDownloadHandlers'
@@ -72,10 +74,18 @@ describe('registerDownloadHandlers model access bridge', () => {
   })
 })
 
-function onHandler(channel: string): (event: { returnValue?: unknown }) => void {
+type SyncIpcEvent = { sender: unknown; returnValue?: unknown }
+
+function onHandler(channel: string): (event: SyncIpcEvent) => void {
   const call = mocks.on.mock.calls.find(([name]) => name === channel)
   expect(call).toBeDefined()
-  return call![1] as (event: { returnValue?: unknown }) => void
+  return call![1] as (event: SyncIpcEvent) => void
+}
+
+function requestInstallId(): unknown {
+  const event: SyncIpcEvent = { sender: { id: 7 } }
+  onHandler('desktop2-get-install-id')(event)
+  return event.returnValue
 }
 
 describe('registerDownloadHandlers install id bridge', () => {
@@ -84,13 +94,37 @@ describe('registerDownloadHandlers install id bridge', () => {
     registerDownloadHandlers()
   })
 
-  it('answers the sync install-id request with getDeviceId()', () => {
+  it('answers a cloud page with the machine-derived id', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+    mocks.getIdClass.mockReturnValue('machine_derived')
     mocks.getDeviceId.mockReturnValue('install-abc')
-    const event: { returnValue?: unknown } = {}
 
-    onHandler('desktop2-get-install-id')(event)
-
-    expect(event.returnValue).toBe('install-abc')
-    expect(mocks.getDeviceId).toHaveBeenCalledTimes(1)
+    expect(requestInstallId()).toBe('install-abc')
   })
+
+  it.for(['remote', 'local', null])('withholds the id from a %s page', (sourceCategory) => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory })
+    mocks.getIdClass.mockReturnValue('machine_derived')
+    mocks.getDeviceId.mockReturnValue('install-abc')
+
+    expect(requestInstallId()).toBeUndefined()
+  })
+
+  it('withholds the id from an unregistered sender', () => {
+    mocks.findEntryByComfySender.mockReturnValue(null)
+    mocks.getIdClass.mockReturnValue('machine_derived')
+
+    expect(requestInstallId()).toBeUndefined()
+  })
+
+  it.for(['random_fallback', 'placeholder_fallback'])(
+    'withholds a %s id rather than sending one that changes every launch',
+    (idClass) => {
+      mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+      mocks.getIdClass.mockReturnValue(idClass)
+      mocks.getDeviceId.mockReturnValue('random-per-launch')
+
+      expect(requestInstallId()).toBeUndefined()
+    }
+  )
 })
