@@ -3049,7 +3049,7 @@ describe('Performance Test guardrail', () => {
   let started: InstanceStartedCallbackInfo[] = []
   let installDir = ''
   let bootLogs: unknown[] = []
-  const launches: [string, { abort: AbortController }][] = []
+  const launches: [string, ReturnType<typeof _beginLaunch>][] = []
   // Sessions earlier tests in this file left registered would all count as running here.
   let leftRunning: [string, SessionInfo][] = []
   let leftStopping: string[] = []
