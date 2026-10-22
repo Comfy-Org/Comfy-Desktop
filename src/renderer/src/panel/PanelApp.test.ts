@@ -143,6 +143,7 @@ import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
+import type { PanelModal } from '../../../shared/panelModal'
 
 // Panel scopes (including queued media prefetches) are disposed before
 // happy-dom tears down document by the suite-wide `enableAutoUnmount` in
@@ -311,7 +312,7 @@ interface MockApiState {
    *  with the originating `source`. */
   openFeedbackCallbacks: ((data: { source: 'titlebar' | 'menu' }) => void)[]
   openAnnouncementCallbacks: (() => void)[]
-  dismissPanelModalCallbacks: ((modal: 'announcement') => void)[]
+  dismissPanelModalCallbacks: ((modal: PanelModal) => void)[]
   /** Window-close consult callbacks. Main fires `comfy-window:request-close`
    *  when the user clicks the ✕; tests fire each callback to simulate that. */
   closeRequestCallbacks: ((data: { requestId: string }) => void)[]
@@ -458,10 +459,10 @@ function installMockApi(initial?: {
     setFirstUseMode: vi.fn(),
     closeCurrentPanel: vi.fn(),
     // Main hides the panel, then replies with a dismiss.
-    closePanelModal: vi.fn((modal: 'announcement') => {
+    closePanelModal: vi.fn((modal: PanelModal) => {
       state.dismissPanelModalCallbacks.forEach((cb) => cb(modal))
     }),
-    onDismissPanelModal: vi.fn((cb: (modal: 'announcement') => void) => {
+    onDismissPanelModal: vi.fn((cb: (modal: PanelModal) => void) => {
       state.dismissPanelModalCallbacks.push(cb)
       return () => {}
     }),
@@ -721,7 +722,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
   })
 
-  describe("What's New", () => {
+  describe('title-bar modals', () => {
     beforeEach(() => {
       document.body.classList.remove('panel-overlay-mode')
     })
@@ -821,6 +822,56 @@ describe('PanelApp', () => {
       await flushPromises()
       expect(document.querySelector('.announce-overlay')).toBeNull()
       expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+    })
+
+    it('keeps the page mounted and inert under Feedback', async () => {
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'performance-test' }))
+      await flushPromises()
+      const page = wrapper.get('[data-testid="performance-test"]').element
+
+      mockState.openFeedbackCallbacks.forEach((cb) => cb({ source: 'titlebar' }))
+      await flushPromises()
+      expect(document.querySelector('iframe.feedback-modal-frame')).not.toBeNull()
+      expect(page.closest('[inert]')).not.toBeNull()
+
+      await pressEscape()
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('feedback', 1)
+      expect(window.api.closeCurrentPanel).not.toHaveBeenCalled()
+      expect(document.querySelector('iframe.feedback-modal-frame')).toBeNull()
+      expect(wrapper.get('[data-testid="performance-test"]').element).toBe(page)
+      expect(page.closest('[inert]')).toBeNull()
+    })
+
+    it("swaps What's New for Feedback over the canvas without dropping transparency", async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+      )
+      mountPanel()
+      await flushPromises()
+      await openAnnouncement()
+      const classHistory: string[] = []
+      const observer = new MutationObserver((records) => {
+        for (const r of records) classHistory.push(r.oldValue ?? '')
+      })
+      observer.observe(document.body, { attributeFilter: ['class'], attributeOldValue: true })
+
+      mockState.openFeedbackCallbacks.forEach((cb) => cb({ source: 'titlebar' }))
+      await flushPromises()
+      for (const r of observer.takeRecords()) classHistory.push(r.oldValue ?? '')
+      observer.disconnect()
+
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(document.querySelector('iframe.feedback-modal-frame')).not.toBeNull()
+      expect(classHistory.filter((c) => !c.includes('panel-overlay-mode'))).toEqual([])
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+      expect(window.api.closePanelModal).not.toHaveBeenCalled()
+
+      await pressEscape()
+      expect(document.querySelector('iframe.feedback-modal-frame')).toBeNull()
     })
 
     it('closes and reports the dismissal when main dismisses it for navigation', async () => {

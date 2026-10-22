@@ -23,7 +23,6 @@ export type PanelKey =
   | 'chooser'
   | 'performance-test'
   | 'benchmarks'
-  | 'feedback'
   | 'new-install'
   | 'track'
   | 'load-snapshot'
@@ -44,7 +43,6 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'chooser',
   'performance-test',
   'benchmarks',
-  'feedback',
   'new-install',
   'track',
   'load-snapshot',

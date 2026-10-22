@@ -1058,36 +1058,9 @@ function _broadcastDownloadsToTitleBars(): void {
   }
 }
 
-/**
- * Forward a Send Feedback request to the host's panel renderer.
- * Panel-side (`PanelApp.vue`) fires the `comfy.desktop.feedback.opened`
- * telemetry action and opens the typeform support URL via
- * `openExternal`. The renderer is the natural home because
- * `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
- * helpers live renderer-side. Used by both the file-menu "Send
- * Feedback" entry and the title-bar feedback button.
- *
- * `source` is forwarded into the renderer's telemetry context as
- * `comfy.desktop.feedback.opened` `{ source }` so we can tell which
- * affordance the user reached for.
- *
- * In Comfy instance windows the panelView is constructed lazily on
- * the first non-comfy switch (Settings / Directories / lifecycle), so
- * a feedback click that arrives while the user is still on the
- * ComfyUI body would hit a `null` panelView and silently drop. Mirror
- * the `click-install-update-pill` pattern: ensure the panel exists
- * for the current body mode and defer the send until
- * `did-finish-load` if the bundle is still loading.
- */
+/** Title-bar or file-menu Send Feedback; `source` tags the renderer's telemetry. */
 function triggerOpenFeedback(entryId: number, source: 'titlebar' | 'menu'): void {
-  const parentEntry = comfyWindows.get(entryId)
-  if (!parentEntry || parentEntry.window.isDestroyed()) return
-  // Flip into the 'feedback' overlay panel. navigateToPanel lazily ensures the
-  // panel view, makes it visible over comfyView, and broadcasts `panel-switch`.
-  // The IPC below carries the click `source` for telemetry (titlebar vs. menu).
-  const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'feedback')
-  navigateToPanel(entryId, 'feedback')
-  sendToPanelDeferred(panelView, 'comfy-panel:open-feedback', { source })
+  openPanelModal(entryId, 'feedback', 'comfy-panel:open-feedback', { source })
 }
 
 /** Title-bar Send Feedback button click. Resolves the host entry from
