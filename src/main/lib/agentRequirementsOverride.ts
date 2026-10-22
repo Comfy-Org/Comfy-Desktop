@@ -35,6 +35,11 @@ const AGENT_KEY = 'comfy-agent'
  * version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
+/**
+ * The agent's binary, which its `go`/`go-nonfree` extras pin to the agent's own version: holding
+ * it would make every agent upgrade unsatisfiable on an install that already has it.
+ */
+const AGENT_GO = 'comfy-agent-go'
 
 function pinKey(normalized: string): string {
   return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
@@ -229,9 +234,10 @@ function agentPackage(coreText: string): string | undefined {
 /**
  * Pins every installed package where it is, so an override that moves one falls back, except the
  * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
- * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
- * them, since the install also takes core's lines for them and must be able to land on those.
- * Any other comfy-agent* package is held. The frontend is held too unless this override pins it.
+ * package `coreText` (the agent's file) lists, plus `comfy-agent-go`, which the agent's extras pin
+ * in lockstep. Those are freed whether or not this override pins them, since the install also
+ * takes core's lines for them and must be able to land on those. Any other comfy-agent* package
+ * is held. The frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
@@ -242,7 +248,9 @@ export function installedConstraints(
   if (!installed) return null
   const agent = agentPackage(coreText)
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
+    name === FRONTEND_PACKAGE
+      ? pins.has(name)
+      : OVERRIDABLE.has(name) || name === agent || name === AGENT_GO
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
