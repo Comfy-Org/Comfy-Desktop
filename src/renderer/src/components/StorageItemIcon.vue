@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import { computed } from 'vue'
-import { FolderSymlink } from 'lucide-vue-next'
+import { FolderSymlink } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 
 /** A directory row's folder-style icon. Globally-shared dirs render a distinct

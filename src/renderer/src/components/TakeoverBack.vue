@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Back affordance for binding takeover-modals: a chevron + label that
 // emits `back`, which the host modal wires to its `close` emit.
-import { ChevronLeft } from 'lucide-vue-next'
+import { ChevronLeft } from '@lucide/vue'
 
 defineProps<{
   /** Visible label sat next to the chevron (e.g. "Back to Dashboard"). */

@@ -47,7 +47,7 @@
  * are reset.
  */
 import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
-import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
+import { Check, Copy, FolderInput, Info, Loader2 } from '@lucide/vue'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import ModalShell from '../components/ModalShell.vue'
 import ChoiceCard from '../components/ChoiceCard.vue'

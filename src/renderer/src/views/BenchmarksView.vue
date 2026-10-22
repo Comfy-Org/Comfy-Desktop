@@ -10,7 +10,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../types/ipc'
 import BrandBackground from '../components/BrandBackground.vue'

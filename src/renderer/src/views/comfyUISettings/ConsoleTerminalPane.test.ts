@@ -17,6 +17,7 @@ const fakeTerminal = {
   open: vi.fn(),
   onData: vi.fn(() => ({ dispose: vi.fn() })),
   attachCustomKeyEventHandler: vi.fn(),
+  input: vi.fn(),
   write: vi.fn(),
   resize: vi.fn(),
   reset: vi.fn(),
@@ -42,6 +43,7 @@ function keyHandler(): (e: Partial<KeyboardEvent>) => boolean {
 function keyEvent(over: Partial<KeyboardEvent>): Partial<KeyboardEvent> {
   return {
     type: 'keydown',
+    preventDefault: vi.fn(),
     key: 'a',
     ctrlKey: false,
     shiftKey: false,
@@ -206,6 +208,32 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
     const w = mountPane()
     await flushPromises()
     expect(w.find(`[data-testid="${TID.consoleSessionEnded}"]`).exists()).toBe(true)
+  })
+
+  describe('Alt+arrow navigation', () => {
+    it.each([
+      ['darwin', 'ArrowLeft', '\x1bb'],
+      ['darwin', 'ArrowRight', '\x1bf'],
+      ['win32', 'ArrowLeft', '\x1b[1;5D'],
+      ['linux', 'ArrowUp', '\x1b[1;5A']
+    ] as const)('sends %s %s through xterm input exactly once', async (platform, key, sequence) => {
+      window.api.platform = platform
+      mountPane()
+      await flushPromises()
+
+      const event = keyEvent({ key, altKey: true })
+      expect(keyHandler()(event)).toBe(false)
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+      expect(fakeTerminal.input).toHaveBeenCalledExactlyOnceWith(sequence, true)
+    })
+
+    it('leaves modified Alt+arrow events to xterm', async () => {
+      mountPane()
+      await flushPromises()
+
+      expect(keyHandler()(keyEvent({ key: 'ArrowLeft', altKey: true, shiftKey: true }))).toBe(true)
+      expect(fakeTerminal.input).not.toHaveBeenCalled()
+    })
   })
 
   describe('copy/paste', () => {

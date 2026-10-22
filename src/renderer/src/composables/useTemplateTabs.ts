@@ -1,5 +1,5 @@
 import { computed, ref, watch, type Component, type Ref } from 'vue'
-import { Image as ImageIcon, Video, AudioLines, Box } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, AudioLines, Box } from '@lucide/vue'
 import type { FieldOption } from '../types/ipc'
 
 /** Modality tab order + its glyph. Mirrors the main-process curated manifest's

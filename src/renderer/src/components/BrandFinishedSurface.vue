@@ -5,7 +5,7 @@
 // so the surfaces stay visually identical; keep them in sync.
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Power, ChevronDown } from 'lucide-vue-next'
+import { X, Power, ChevronDown } from '@lucide/vue'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import BrandProgressGlyph from './icons/BrandProgressGlyph.vue'
 import ComfyWordmark from './icons/ComfyWordmark.vue'

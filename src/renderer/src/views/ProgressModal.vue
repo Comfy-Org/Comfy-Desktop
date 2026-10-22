@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, X, TriangleAlert, ChevronDown, ArrowLeft, RefreshCcw } from 'lucide-vue-next'
+import { Check, X, TriangleAlert, ChevronDown, ArrowLeft, RefreshCcw } from '@lucide/vue'
 import { useModal } from '../composables/useModal'
 import {
   useReturnToDashboardConfirm,

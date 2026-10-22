@@ -75,3 +75,25 @@ export function decideTerminalKeyAction(
 
   return 'passthrough'
 }
+
+/** Preserve the Alt+arrow sequences supplied by xterm 5. xterm 6 leaves these
+ * bindings to its embedder; use the same mapping in the console and popout. */
+export function terminalAltArrowSequence(
+  e: TerminalKeyEventLike,
+  platform: TerminalPlatform
+): string | null {
+  if (e.type !== 'keydown' || !e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return null
+
+  switch (e.key) {
+    case 'ArrowLeft':
+      return platform === 'mac' ? '\x1bb' : '\x1b[1;5D'
+    case 'ArrowRight':
+      return platform === 'mac' ? '\x1bf' : '\x1b[1;5C'
+    case 'ArrowUp':
+      return platform === 'mac' ? null : '\x1b[1;5A'
+    case 'ArrowDown':
+      return platform === 'mac' ? null : '\x1b[1;5B'
+    default:
+      return null
+  }
+}

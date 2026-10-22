@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
+import { HardDrive, CircleAlert, RefreshCw } from '@lucide/vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 

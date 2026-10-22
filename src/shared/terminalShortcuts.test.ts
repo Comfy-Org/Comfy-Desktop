@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   decideTerminalKeyAction,
+  terminalAltArrowSequence,
   type TerminalKeyEventLike,
   type TerminalPlatform
 } from './terminalShortcuts'
@@ -86,5 +87,43 @@ describe('decideTerminalKeyAction', () => {
   it('leaves ordinary typing untouched', () => {
     expect(decide({ key: 'a' }, 'windows', true)).toBe('passthrough')
     expect(decide({ key: 'a' }, 'mac', true)).toBe('passthrough')
+  })
+})
+
+describe('terminalAltArrowSequence', () => {
+  it.each([
+    ['mac', 'ArrowLeft', '\x1bb'],
+    ['mac', 'ArrowRight', '\x1bf'],
+    ['windows', 'ArrowLeft', '\x1b[1;5D'],
+    ['windows', 'ArrowRight', '\x1b[1;5C'],
+    ['linux', 'ArrowUp', '\x1b[1;5A'],
+    ['linux', 'ArrowDown', '\x1b[1;5B']
+  ] as const)('preserves %s %s shell navigation', (platform, key, sequence) => {
+    expect(terminalAltArrowSequence(ev({ key, altKey: true }), platform)).toBe(sequence)
+  })
+
+  it('leaves macOS Option+up/down with xterm', () => {
+    expect(terminalAltArrowSequence(ev({ key: 'ArrowUp', altKey: true }), 'mac')).toBeNull()
+    expect(terminalAltArrowSequence(ev({ key: 'ArrowDown', altKey: true }), 'mac')).toBeNull()
+  })
+
+  it.each([
+    { type: 'keyup' },
+    { altKey: false },
+    { ctrlKey: true },
+    { shiftKey: true },
+    { metaKey: true },
+    { key: 'a' }
+  ])('leaves other events and modifiers with xterm: %j', (overrides) => {
+    expect(
+      terminalAltArrowSequence(ev({ key: 'ArrowLeft', altKey: true, ...overrides }), 'windows')
+    ).toBeNull()
+  })
+
+  it('can be embedded into the standalone popout without module dependencies', () => {
+    const embedded = new Function(
+      `return (${terminalAltArrowSequence.toString()})`
+    )() as typeof terminalAltArrowSequence
+    expect(embedded(ev({ key: 'ArrowLeft', altKey: true }), 'mac')).toBe('\x1bb')
   })
 })

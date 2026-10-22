@@ -10,7 +10,7 @@ import {
   // PlayCircle,
   RotateCcw,
   X
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'

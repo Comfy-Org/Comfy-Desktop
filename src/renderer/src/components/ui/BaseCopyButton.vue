@@ -2,7 +2,7 @@
 // Icon button that copies `value` (or `getValue()`) to the clipboard,
 // swapping Copy → Check briefly on success. Use `getValue` for lazy strings.
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { Copy, Check } from 'lucide-vue-next'
+import { Copy, Check } from '@lucide/vue'
 
 interface Props {
   value?: string

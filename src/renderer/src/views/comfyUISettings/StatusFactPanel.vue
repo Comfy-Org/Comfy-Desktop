@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pencil } from 'lucide-vue-next'
+import { Pencil } from '@lucide/vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'

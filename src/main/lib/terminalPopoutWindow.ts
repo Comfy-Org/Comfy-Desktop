@@ -14,6 +14,7 @@ import path from 'path'
 import { readFileSync } from 'fs'
 import { createRequire } from 'module'
 import { COMFY_BG } from './theme'
+import { terminalAltArrowSequence } from '../../shared/terminalShortcuts'
 import * as installations from '../installations'
 
 const require = createRequire(__filename)
@@ -55,6 +56,7 @@ function buildPopoutScript(): string {
       `var s = document.getElementById('__comfyDesktopXtermCssPopout');\n` +
       `if (!s) { s = document.createElement('style'); s.id = '__comfyDesktopXtermCssPopout'; s.textContent = ${JSON.stringify(css)}; (document.head || document.documentElement).appendChild(s); }\n` +
       `})();\n` +
+      `var terminalAltArrowSequence = ${terminalAltArrowSequence.toString()};\n` +
       POPOUT_MAIN_JS +
       `})();\n`
   }
@@ -101,6 +103,13 @@ var term = new XTerm({ convertEol: true, theme: { background: '#171717' } });
 var fitAddon = new FitAddon();
 term.loadAddon(fitAddon);
 term.open(host);
+term.attachCustomKeyEventHandler(function (event) {
+  var sequence = terminalAltArrowSequence(event, ${JSON.stringify(process.platform === 'darwin' ? 'mac' : 'unknown')});
+  if (!sequence) return true;
+  event.preventDefault();
+  term.input(sequence, true);
+  return false;
+});
 
 var state = { disposed: false, exited: false, resizeTimer: 0 };
 

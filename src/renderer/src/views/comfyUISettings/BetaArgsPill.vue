@@ -2,7 +2,7 @@
 import { computed, inject, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener } from '@vueuse/core'
-import { FlaskConical, LoaderCircle } from 'lucide-vue-next'
+import { FlaskConical, LoaderCircle } from '@lucide/vue'
 import BaseMenu, { type BaseMenuItem } from '../../components/ui/BaseMenu.vue'
 import { BETA_FEATURES_FIELD_ID } from '../../comfyTitleBar/useBetaActivationNotice'
 import { useSessionStore } from '../../stores/sessionStore'
