@@ -40,8 +40,8 @@ const AGENT_KEY = 'comfy-agent'
 /**
  * The agent's key decorates the first line of core's file whose name is `comfy-agent` or starts
  * with `comfy-agent-` (other than the Go carrier, `comfy-agent-go`), so a renamed agent package
- * (`comfy-agent-oss`) is still found but an unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
- * version and extras, never the package.
+ * (`comfy-agent-oss`) is still found but an unrelated `comfy-agentx` is not. The name always comes
+ * from core's line: a pin supplies the version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
 
@@ -66,7 +66,6 @@ export type OverrideRefusal =
   | 'not_newer'
   | 'check_failed'
   | 'core_first'
-  | 'conflicting_pins'
 
 /** An exact version, or a version with extras (installed as `name[go,x]==version`). */
 export type OverridePin = string | { readonly version: string; readonly extras: readonly string[] }
@@ -115,15 +114,6 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     if (extras === null) return { kind: 'refused', reason: 'bad_extra' }
     pins.set(normalized, { version, extras })
   }
-  // The agent's extras (`[go-nonfree]`) pin the Go carrier to the agent's own version.
-  const agent = pins.get(AGENT_KEY)
-  const go = pins.get(AGENT_GO)
-  if (
-    typeof agent === 'object' &&
-    go !== undefined &&
-    compareVersions(pinVersion(go), agent.version)
-  )
-    return { kind: 'refused', reason: 'conflicting_pins' }
   return { kind: 'pins', pins }
 }
 
@@ -187,13 +177,13 @@ export function effectiveAgentRequirements(
     return name && pinKey(normalizePackageName(name))
   }
   const agentKeys = new Set(lines.map(keyOf))
-  const fromMain = mainText.split(/\r?\n/).filter((line) => {
+  const appended = mainText.split(/\r?\n/).filter((line) => {
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
-  if (pins.has(AGENT_GO)) fromMain.push(AGENT_GO)
+  if (pins.has(AGENT_GO)) appended.push(AGENT_GO)
   // Before the agent file's trailing newline, so the result still ends in one.
-  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
+  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...appended)
   for (let i = 0; i < lines.length; i++) {
     const name = lines[i]!.match(LEADING_NAME)?.[1]
     if (!name) continue

@@ -807,19 +807,14 @@ describe('installAgentRequirements with a version override', () => {
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
   })
 
-  it('refuses a Go pin its agent pin holds to another version, and installs core file', async () => {
+  it('says nothing about the Go carrier when the override does not install', async () => {
+    respond = ({ constraints }) => ({ code: constraints === null ? 0 : 1, output: '' })
     const sendOutput = vi.fn()
-    const conflicting = { 'comfy-agent[go-nonfree]': '0.2.3', 'comfy-agent-go': '0.2.4' }
-    const decision = await installAgentRequirements(
-      plan,
-      sendOutput,
-      undefined,
-      undefined,
-      conflicting
-    )
+    const old = { 'comfy-agent-go': '0.1.9' }
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined, old)
 
-    expect(decision).toEqual({ decision: 'refused', reason: 'conflicting_pins' })
-    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    expect(calls.at(-1), "core's file follows").toEqual({ content: CORE_FILE, constraints: null })
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
   })
 

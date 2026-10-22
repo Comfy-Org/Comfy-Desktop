@@ -751,25 +751,6 @@ describe('a comfy-agent-go pin', () => {
     })
   })
 
-  it('is refused beside an agent pin whose extras hold it to a different version', () => {
-    expect(
-      parseAgentRequirementsOverride({
-        'comfy-agent[go-nonfree]': '0.1.0rc3',
-        'comfy-agent-go': '0.1.0rc4'
-      })
-    ).toEqual({ kind: 'refused', reason: 'conflicting_pins' })
-    for (const agent of ['comfy-agent', 'comfy-agent[go-nonfree]'])
-      expect(
-        parseAgentRequirementsOverride({ [agent]: '0.1.0rc4', 'comfy-agent-go': '0.1.0rc4' }).kind,
-        `${agent} at the same version`
-      ).toBe('pins')
-    expect(
-      parseAgentRequirementsOverride({ 'comfy-agent': '0.1.0rc3', 'comfy-agent-go': '0.1.0rc4' })
-        .kind,
-      'no extras, so nothing holds the carrier'
-    ).toBe('pins')
-  })
-
   it('goes in as a line of its own, since neither file names it', () => {
     expect(effectiveAgentRequirements(CORE, pins({ 'comfy-agent-go': '0.1.0rc4' }))).toEqual({
       kind: 'text',
@@ -795,6 +776,15 @@ describe('a comfy-agent-go pin', () => {
       effectiveAgentRequirements(listed, pins({ 'comfy-agent-go': '0.1.0rc4' })),
       'a core file naming the carrier is not supported yet, and refuses rather than doubling it'
     ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('frees a renamed agent package listed after comfy-agent-go', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent-oss', version: '0.2.0' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    const core = 'comfy-agent-go==0.1.0\ncomfy-agent-oss==0.2.0\n'
+    expect(installedConstraints(list, new Map(), core)).toBe('requests==2.32.0\n')
   })
 
   it('still holds every unrelated installed package', () => {
