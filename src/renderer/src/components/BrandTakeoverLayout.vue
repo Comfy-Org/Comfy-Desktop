@@ -4,9 +4,10 @@
 // the top-left logo, and the dialog a11y baseline (role, aria-modal, focus
 // capture/restore). Background visuals live in BrandBackground.vue.
 // Forces dark; light-mode brand parity is deferred.
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import BrandBackground from './BrandBackground.vue'
+import { PAGE_COVERED } from '../lib/pageCovered'
 
 withDefaults(
   defineProps<{
@@ -19,6 +20,7 @@ withDefaults(
 )
 
 const rootRef = ref<HTMLElement | null>(null)
+const pageCovered = inject(PAGE_COVERED, ref(false))
 let returnFocusTo: HTMLElement | null = null
 
 function focusFirstInteractive(): void {
@@ -56,6 +58,7 @@ onBeforeUnmount(() => {
       aria-modal="true"
       :aria-label="ariaLabel"
       tabindex="-1"
+      :inert="pageCovered"
     >
       <BrandBackground :vignette="vignette" :scroll-content="scrollContent">
         <div class="brand-logo-row">

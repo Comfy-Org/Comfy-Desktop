@@ -310,6 +310,8 @@ interface MockApiState {
    *  entry; tests can simulate the click by invoking each callback
    *  with the originating `source`. */
   openFeedbackCallbacks: ((data: { source: 'titlebar' | 'menu' }) => void)[]
+  openAnnouncementCallbacks: (() => void)[]
+  dismissPanelModalCallbacks: ((modal: 'announcement') => void)[]
   /** Window-close consult callbacks. Main fires `comfy-window:request-close`
    *  when the user clicks the ✕; tests fire each callback to simulate that. */
   closeRequestCallbacks: ((data: { requestId: string }) => void)[]
@@ -355,6 +357,8 @@ function installMockApi(initial?: {
     performanceTestExampleDownloadCallbacks: [],
     firstUseSkipCallbacks: [],
     openFeedbackCallbacks: [],
+    openAnnouncementCallbacks: [],
+    dismissPanelModalCallbacks: [],
     closeRequestCallbacks: [],
     installations,
     getInstallations: vi.fn(async () => state.installations),
@@ -453,6 +457,15 @@ function installMockApi(initial?: {
     downloadUpdate: state.downloadUpdate,
     setFirstUseMode: vi.fn(),
     closeCurrentPanel: vi.fn(),
+    // Main hides the panel, then replies with a dismiss.
+    closePanelModal: vi.fn((modal: 'announcement') => {
+      state.dismissPanelModalCallbacks.forEach((cb) => cb(modal))
+    }),
+    onDismissPanelModal: vi.fn((cb: (modal: 'announcement') => void) => {
+      state.dismissPanelModalCallbacks.push(cb)
+      return () => {}
+    }),
+    signalOverlayReady: vi.fn(),
     onFirstUseSkip: vi.fn((cb: () => void) => {
       state.firstUseSkipCallbacks.push(cb)
       return () => {}
@@ -461,7 +474,10 @@ function installMockApi(initial?: {
       state.openFeedbackCallbacks.push(cb)
       return () => {}
     }),
-    onOpenAnnouncement: vi.fn(() => () => {}),
+    onOpenAnnouncement: vi.fn((cb: () => void) => {
+      state.openAnnouncementCallbacks.push(cb)
+      return () => {}
+    }),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
@@ -703,6 +719,155 @@ describe('PanelApp', () => {
     mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'not-a-real-panel' }))
     await flushPromises()
     expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+  })
+
+  describe("What's New", () => {
+    beforeEach(() => {
+      document.body.classList.remove('panel-overlay-mode')
+    })
+
+    async function openAnnouncement(): Promise<void> {
+      mockState.openAnnouncementCallbacks.forEach((cb) => cb())
+      await flushPromises()
+      expect(document.querySelector('.announce-overlay'), "What's New opened").not.toBeNull()
+    }
+
+    async function pressEscape(): Promise<void> {
+      ;(document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      )
+      await flushPromises()
+    }
+
+    it.each([
+      { panel: 'chooser', selector: '[data-testid="chooser-view"]' },
+      { panel: 'comfy-lifecycle', selector: '[data-testid="comfy-lifecycle"]' },
+      { panel: 'performance-test', selector: '[data-testid="performance-test"]' },
+      { panel: 'benchmarks', selector: '[data-testid="benchmarks"]' }
+    ])('keeps the $panel page mounted and inert underneath', async ({ panel, selector }) => {
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
+      await flushPromises()
+      const page = wrapper.get(selector).element
+
+      await openAnnouncement()
+      expect(wrapper.get(selector).element).toBe(page)
+      expect(page.closest('[inert]')).not.toBeNull()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+
+      await pressEscape()
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
+      expect(window.api.closeCurrentPanel).not.toHaveBeenCalled()
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(wrapper.get(selector).element).toBe(page)
+      expect(page.closest('[inert]')).toBeNull()
+    })
+
+    it('keeps a file-menu wizard without reopening it', async () => {
+      window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+      await flushPromises()
+      const wizard = wrapper.get('[data-testid="new-install-modal"]').element
+
+      await openAnnouncement()
+      await pressEscape()
+
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(wrapper.get('[data-testid="new-install-modal"]').element).toBe(wizard)
+      expect(installWizardOpen).toHaveBeenCalledOnce()
+    })
+
+    it('stays opaque over a file-menu wizard opened from the running canvas', async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+      )
+      const wrapper = mountPanel()
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+
+      await openAnnouncement()
+
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+      expect(window.api.signalOverlayReady).not.toHaveBeenCalled()
+    })
+
+    it('stays transparent over the running canvas until main has hidden the panel', async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?installationId=test-id&panel=comfy&firstUseCompleted=true'
+      )
+      mountPanel()
+      await flushPromises()
+      vi.mocked(window.api.closePanelModal).mockImplementationOnce(() => {})
+
+      await openAnnouncement()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+      expect(window.api.signalOverlayReady).toHaveBeenCalledOnce()
+
+      await pressEscape()
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
+      expect(document.querySelector('.announce-overlay')).not.toBeNull()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+
+      mockState.dismissPanelModalCallbacks.forEach((cb) => cb('announcement'))
+      await flushPromises()
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+    })
+
+    it('closes and reports the dismissal when main dismisses it for navigation', async () => {
+      mountPanel()
+      await flushPromises()
+      const events = captureTelemetry()
+      await openAnnouncement()
+
+      mockState.dismissPanelModalCallbacks.forEach((cb) => cb('announcement'))
+      await flushPromises()
+
+      expect(document.querySelector('.announce-overlay')).toBeNull()
+      expect(window.api.closePanelModal).not.toHaveBeenCalled()
+      expect(
+        events.filter((e) => e.actionName === 'comfy.desktop.announcement.dismissed')
+      ).toHaveLength(1)
+    })
+
+    it('asks to close once while main is still answering', async () => {
+      mountPanel()
+      await flushPromises()
+      vi.mocked(window.api.closePanelModal).mockImplementation(() => {})
+      await openAnnouncement()
+
+      await pressEscape()
+      await pressEscape()
+      document.querySelector<HTMLElement>('[data-testid="announcement-close"]')?.click()
+
+      expect(window.api.closePanelModal).toHaveBeenCalledExactlyOnceWith('announcement', 1)
+    })
+
+    it('stays closable when the bell reopens it before main answers a close', async () => {
+      mountPanel()
+      await flushPromises()
+      vi.mocked(window.api.closePanelModal).mockImplementation(() => {})
+      await openAnnouncement()
+      await pressEscape()
+
+      // Main sent the reopen first, so it drops that close and keeps the modal.
+      await openAnnouncement()
+      await pressEscape()
+
+      expect(vi.mocked(window.api.closePanelModal).mock.calls).toEqual([
+        ['announcement', 1],
+        ['announcement', 2]
+      ])
+    })
   })
 
   it('refetches the installation when onInstallationsChanged fires', async () => {

@@ -375,13 +375,15 @@ describe('activateTitlePopupMenuItem', () => {
       comfyWindows.set(host.windowKey, host)
       const bindings = {
         openChooserHostWindow: vi.fn(),
-        setActivePanel: vi.fn()
+        setActivePanel: vi.fn(),
+        navigateToPanel: vi.fn()
       } as unknown as TitlePopupHostBindings
 
       activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'performance-test', bindings)
 
       expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('performance-test')
       expect(bindings.setActivePanel).not.toHaveBeenCalled()
+      expect(bindings.navigateToPanel).not.toHaveBeenCalled()
     }
   )
 
@@ -392,13 +394,15 @@ describe('activateTitlePopupMenuItem', () => {
       comfyWindows.set(host.windowKey, host)
       const bindings = {
         openChooserHostWindow: vi.fn(),
-        setActivePanel: vi.fn()
+        setActivePanel: vi.fn(),
+        navigateToPanel: vi.fn()
       } as unknown as TitlePopupHostBindings
 
       activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'benchmarks', bindings)
 
       expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('benchmarks')
       expect(bindings.setActivePanel).not.toHaveBeenCalled()
+      expect(bindings.navigateToPanel).not.toHaveBeenCalled()
     }
   )
 
