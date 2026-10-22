@@ -469,6 +469,7 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** Whether an ops-flag evaluation started now would send `comfy_staff` for this classification. */
 export function sendsStaffProperty(isStaff: boolean): boolean {
   return consentState === 'granted' && isStaff
 }
