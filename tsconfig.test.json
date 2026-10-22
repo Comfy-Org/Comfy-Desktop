@@ -15,10 +15,9 @@
     "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
     "jsx": "preserve",
-    "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["src/renderer/src/*"],
-      "@locales/*": ["locales/*"]
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@locales/*": ["./locales/*"]
     },
     "types": ["vitest/globals"]
   },
