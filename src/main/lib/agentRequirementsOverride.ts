@@ -35,10 +35,6 @@ const AGENT_KEY = 'comfy-agent'
  * version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
-/**
- * The agent's binary, which its `go`/`go-nonfree` extras pin to the agent's own version: holding
- * it would make every agent upgrade unsatisfiable on an install that already has it.
- */
 const AGENT_GO = 'comfy-agent-go'
 
 function pinKey(normalized: string): string {
