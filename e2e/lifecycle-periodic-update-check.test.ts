@@ -51,6 +51,7 @@ interface DetailSection {
 async function getStableLatestVersion(): Promise<string | undefined> {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   return sections
     .find((s) => s.tab === 'update')

@@ -128,6 +128,7 @@ test.afterAll(async () => {
 async function getChannelField(installationId: string): Promise<DetailField> {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(installationId)})`,
+    { readOnly: true },
   )
   const updateSection = sections.find((s) => s.tab === 'update')
   expect(updateSection, 'no update section in detail sections').toBeDefined()
@@ -150,6 +151,7 @@ test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer rele
     popup.waitFor(
       () => popup.evaluate<boolean>(
         `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`,
+        { readOnly: true },
       ),
       { timeout: 30_000, message },
     )
@@ -206,6 +208,7 @@ test('cross-channel fetch populates the latest channel card too @lifecycle', asy
   // the current channel.
   const sections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   const updateSection = sections.find((s) => s.tab === 'update')!
   const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
@@ -313,6 +316,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
   // same staled entries.
   const staleSections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`,
+    { readOnly: true },
   )
   const staleUpdateSection = staleSections.find((s) => s.tab === 'update')!
   const staleChannelField = staleUpdateSection.fields!.find((f) => f.id === 'updateChannel')!
@@ -352,6 +356,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
     .poll(async () => {
       const sections = await ctx.panel.evaluate<DetailSection[]>(
         `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`,
+        { readOnly: true },
       )
       const updateSection = sections.find((s) => s.tab === 'update')!
       const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!

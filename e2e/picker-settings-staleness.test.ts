@@ -106,6 +106,7 @@ test('right pane clears stale sections when switching install A → B @windows @
   await popup.waitFor(
     async () => (await popup.evaluate<string | null>(
       `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`,
+      { readOnly: true },
     )) === INSTALL_A_ID,
     { timeout: 10_000, message: 'right pane never settled on Install A' },
   )
@@ -128,6 +129,7 @@ test('right pane clears stale sections when switching install A → B @windows @
           const loading = document.querySelector('${byTestId(TID.pickerSettingsLoading)}')
           return { sectionsId, loadingVisible: !!loading }
         })()`,
+        { readOnly: true },
       )
       return state.loadingVisible || state.sectionsId === INSTALL_B_ID
     },
@@ -142,6 +144,7 @@ test('right pane clears stale sections when switching install A → B @windows @
   await popup.waitFor(
     async () => (await popup.evaluate<string | null>(
       `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`,
+      { readOnly: true },
     )) === INSTALL_B_ID,
     { timeout: 15_000, message: 'right pane never settled on Install B after switch' },
   )

@@ -156,6 +156,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
 
   const installs = await ctx.panel.evaluate<Installation[]>(
     `window.api.getInstallations()`,
+    { readOnly: true },
   )
   const tracked = installs.find((i) => i.name === TRACKED_NAME)
   expect(tracked, 'tracked install not present in get-installations result').toBeDefined()

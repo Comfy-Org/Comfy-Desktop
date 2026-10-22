@@ -59,6 +59,7 @@ test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle'
   await ctx.panel.waitFor(
     async () => ctx.panel.evaluate<boolean>(
       `!document.querySelector('[data-testid="first-use-continue"]').disabled`,
+      { readOnly: true },
     ),
     { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' },
   )

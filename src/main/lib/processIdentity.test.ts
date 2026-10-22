@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import {
   descendantsOf,
@@ -115,6 +116,14 @@ describe.runIf(process.platform !== 'win32')('readStartTimes (real processes)', 
       expect(first?.get(1)).toBeTruthy()
       expect(first?.get(pid)).not.toBe(first?.get(1))
       expect(second?.get(pid)).toBe(first?.get(pid))
+      if (process.platform === 'linux') {
+        const bootId = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()
+        for (const livePid of [pid, 1]) {
+          expect(first?.get(livePid)).toBe(
+            parseLinuxStat(await readFile(`/proc/${livePid}/stat`, 'utf8'), bootId)
+          )
+        }
+      }
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
       await exited
