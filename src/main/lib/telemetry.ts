@@ -1818,12 +1818,13 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * property on the request is what makes such a condition evaluable at all. The
  * same holds for `app_version`: it is what lets a grant be version-gated.
  *
- * This is the ONLY evaluation. An earlier design added a second, authenticated
- * one once a cloud view resolved auth; it could not work, because the
+ * One authoritative evaluation at a time. An earlier design added a second,
+ * authenticated one beside the boot evaluation; it could not work, because the
  * anonymous boot evaluation of a person-targeted flag answers an explicit
  * `false` — not a miss — which `init` treats as authoritative and writes over
- * the persisted grant. Keeping one authoritative evaluation is what lets the
- * revocation contract in `opsFlag.ts` stand unchanged.
+ * the persisted grant. A mid-session `refresh` (`opsFlag.ts`) instead REPLACES
+ * the boot answer, under the same id and with the properties the next boot will
+ * send, which keeps the revocation contract in `opsFlag.ts` unchanged.
  *
  * Classifies every outcome as exactly one `OpsFlagFetchResult`:
  *   - `value` — the server answered. A disabled flag is a value of `false`,

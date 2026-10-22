@@ -1,4 +1,4 @@
-import { initCoreBetaGrants } from './coreBetaGrants'
+import { initCoreBetaGrants, refreshCoreBetaGrants } from './coreBetaGrants'
 import { getIdClass } from './deviceId'
 import {
   CAMPAIGN_REGISTRY_KEY,
@@ -89,6 +89,26 @@ export async function initCoreBetaFlags(opts: {
     initCoreBetaGrants({ distinctId }),
     opts.betaEnabled && !savedOnly ? initCoreBetaCampaigns({ distinctId }) : undefined
   ])
+}
+
+/**
+ * Re-evaluate slot #0 and the campaigns under the boot's id, because a person property the boot
+ * evaluation sent has changed (`staffFlagTargeting.ts`: a staff sign-in or sign-out). The next
+ * ComfyUI launch reads the new answers; one already running keeps the args it started with.
+ *
+ * Same id, same rules as boot: a launch that cannot enrol (`savedOnly`) fetches nothing, and
+ * campaigns not started this session (beta off) are left to start lazily, which fetches with the
+ * current properties anyway. An unreachable server keeps every current answer.
+ */
+export async function refreshCoreBetaFlags(): Promise<void> {
+  if (bootId === null || savedOnly) return
+  const distinctId = bootId
+  await Promise.all([
+    refreshCoreBetaGrants(),
+    ...(started ? [registry, ...campaigns.values()].map((flag) => flag.refresh()) : [])
+  ])
+  // The refreshed registry can name a campaign this session has no flag for yet.
+  if (started) await Promise.all(startCampaignFlags(await registry.get(), distinctId))
 }
 
 function readSavedCampaigns(): {

@@ -648,4 +648,6 @@ export const initCoreBetaGrants = flag.init
 
 export const getCoreBetaGrantsAsync = flag.get
 
+export const refreshCoreBetaGrants = flag.refresh
+
 export const _resetForTest = flag._resetForTest

@@ -1,8 +1,9 @@
 // Classifying the signed-in account for ops-flag person targeting, and carrying that
 // classification to the next launch.
 //
-// The boot flag evaluation is the only authoritative one, so what matters here is that the
-// stored answer is bound BEFORE it and that the stored answer is a boolean and nothing else.
+// The stored answer must be bound BEFORE the boot flag evaluation, and must be a boolean and
+// nothing else. A change to what that evaluation sent re-evaluates in-session (see the
+// "applying a change without a restart" block).
 // Whether the property may leave the process is telemetry's gate (`telemetry.test.ts`).
 //
 // The classification is driven by the reconciled identity, so the consensus is what these tests
@@ -21,8 +22,10 @@ vi.mock('./paths', () => ({
 }))
 
 const setFlagEvaluationStaff = vi.fn()
+let consentState = 'granted'
 vi.mock('./telemetry', () => ({
-  setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff)
+  setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff),
+  getConsentState: () => consentState
 }))
 
 const identity = vi.hoisted(() => {
@@ -158,6 +161,7 @@ function nextLaunchBinding(): boolean {
 beforeEach(() => {
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'staff-targeting-'))
   setFlagEvaluationStaff.mockClear()
+  consentState = 'granted'
   pageReads = 0
   _resetForTest()
   identity.reset()
@@ -522,8 +526,8 @@ describe('classification driven by the identity consensus', () => {
   })
 
   it('does not target the launch it runs on', async () => {
-    // The accepted cost, pinned: the boot evaluation has already gone out by the time the
-    // consensus resolves, and this deliberately does not try to redo it.
+    // The boot binding is what was on disk. Re-evaluating this launch is the injected
+    // `onFlagPropertiesChange`'s job, pinned in its own block below.
     expect(nextLaunchBinding()).toBe(false)
 
     await consensusSignedIn([stubContents(true)])
@@ -631,6 +635,68 @@ describe('classification driven by the identity consensus', () => {
 
 // The three limitations #1550 shipped with, each of which is the same root cause: a classification
 // read from one view's page rather than from the state every view contributes to.
+describe('applying a change without a restart', () => {
+  // `onFlagPropertiesChange` is what re-runs the Core beta flag evaluation (index.ts wires it to
+  // `refreshCoreBetaFlags`), so a staff tester is targeted on the next ComfyUI launch rather than
+  // the next Desktop start. It must fire exactly when the `comfy_staff` property SENT would change.
+  const onFlagPropertiesChange = vi.fn()
+  beforeEach(() => {
+    onFlagPropertiesChange.mockClear()
+  })
+
+  it('re-evaluates after a staff sign-in with consent', async () => {
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(true)])
+
+    expect(onFlagPropertiesChange).toHaveBeenCalledTimes(1)
+    // Written first, so the re-evaluation and the next boot target the same answer.
+    expect(storedFile()).toMatchObject({ staff: true })
+  })
+
+  it('does not re-evaluate without consent, since the property is not sent', async () => {
+    for (const state of ['undecided', 'denied']) {
+      _resetForTest()
+      consentState = state
+      initStaffFlagTargeting({ onFlagPropertiesChange })
+
+      await consensusSignedIn([stubContents(true)])
+    }
+
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('does not re-evaluate after a non-staff sign-in', async () => {
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(false)])
+
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('does not re-evaluate a staff launch that booted already targeted', async () => {
+    fs.writeFileSync(persistFilePath(), JSON.stringify({ staff: true }), 'utf-8')
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(true)])
+    // Every navigation revalidates the same account; none of those is a change.
+    await consensusUnresolved('pending')
+    await consensusSignedIn([stubContents(true)])
+
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('re-evaluates again on a staff sign-out, withdrawing staff targeting for the next launch', async () => {
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+    await consensusSignedIn([stubContents(true)])
+
+    await consensusSignedOut()
+
+    expect(onFlagPropertiesChange).toHaveBeenCalledTimes(2)
+    expect(storedFile()).toMatchObject({ staff: false })
+  })
+})
+
 describe('what reading a single view got wrong', () => {
   beforeEach(() => {
     initStaffFlagTargeting()

@@ -919,3 +919,85 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     expect(await flag.get()).toBeNull()
   })
 })
+
+describe('makeOpsFlag refresh', () => {
+  // A mid-session re-evaluation because a person property changed (a staff sign-in). It REPLACES
+  // the boot answer rather than sitting beside it, so it must win over a boot fetch still in
+  // flight and must never degrade what the session holds when the server is unreachable.
+  function makePersistedFlag() {
+    return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
+      key: 'test-flag',
+      fallback: 'normal',
+      parse: (value) =>
+        value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
+      persist: true
+    })
+  }
+  const stored = () =>
+    JSON.parse(fs.readFileSync(path.join(testConfigDir, 'ops-flags.json'), 'utf-8'))['test-flag']
+
+  it('does nothing before init', async () => {
+    const flag = makePersistedFlag()
+    await flag.refresh()
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+  })
+
+  it('re-fetches under the boot id and applies and persists the new answer', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'boot-id', timeoutMs: 1234 })
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('disabled'))
+
+    await flag.refresh()
+
+    expect(getOpsFlagResult.mock.calls[1]?.slice(0, 3)).toEqual(['test-flag', 'boot-id', 1234])
+    expect(await flag.get()).toBe('disabled')
+    expect(stored()).toMatchObject({ value: 'disabled' })
+  })
+
+  it('keeps the current answer, and the file, when the refresh is unreachable', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('degraded'))
+    await flag.init({ distinctId: 'id' })
+    const before = stored()
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+
+    await flag.refresh()
+
+    expect(await flag.get()).toBe('degraded')
+    expect(stored()).toEqual(before)
+  })
+
+  it('makes get() wait for an in-flight refresh rather than answer the boot value', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let answer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+
+    void flag.refresh()
+    const read = flag.get()
+    answer(flagResult('disabled'))
+
+    expect(await read).toBe('disabled')
+  })
+
+  it('does not let a slower boot answer land over the refresh', async () => {
+    // The boot fetch went out WITHOUT the property the refresh adds, so its answer is the stale
+    // one even when it arrives second — in band or late.
+    const flag = makePersistedFlag()
+    let bootAnswer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (bootAnswer = resolve)))
+    void flag.init({ distinctId: 'id' })
+    const bootLate = lateCallback()!
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('disabled'))
+    await flag.refresh()
+
+    bootAnswer(flagResult('normal'))
+    bootLate(flagResult('normal'))
+    await settle()
+
+    expect(await flag.get()).toBe('disabled')
+    expect(stored()).toMatchObject({ value: 'disabled' })
+  })
+})

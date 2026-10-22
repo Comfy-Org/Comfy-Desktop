@@ -72,14 +72,24 @@
  * desktop-driven sign-in. That is long after the boot flag fetch has answered.
  *
  * So the classification is made whenever the consensus resolves, and read back at the NEXT boot,
- * before the flag fetch. `userTier.ts` solves the same problem the same way. The consequence is
- * that a staff member's first launch after signing in is not targeted; the one after it is.
+ * before the flag fetch. `userTier.ts` solves the same problem the same way.
  *
- * A second, authenticated evaluation was tried instead of persisting anything, and does not
- * work: the anonymous boot evaluation of a person-targeted flag answers an explicit `false`, not
- * a miss, and `init` treats that as authoritative and overwrites whatever the later evaluation
- * persisted. Deep review caught it. One authoritative evaluation per launch is what keeps
- * `opsFlag.ts`'s revocation contract intact, so the identity has to be ready BEFORE it.
+ * ## Applying a change without a restart
+ *
+ * When a classification changes the `comfy_staff` property this process actually SENDS (staff,
+ * with consent granted), `onFlagPropertiesChange` re-runs the evaluation under the same id
+ * (`refreshCoreBetaFlags`), so the next ComfyUI launch is targeted without restarting Desktop. An
+ * instance already running keeps its args until it is restarted. A sign-out of a staff account
+ * re-evaluates the same way, so a grant held only through staff targeting is withdrawn for the
+ * next launch rather than the next boot — the same answer the next boot would give.
+ *
+ * This is a REPLACEMENT of the boot evaluation, not a second one beside it. An earlier design
+ * kept the boot answer and added an authenticated evaluation that persisted separately; the
+ * anonymous boot evaluation answers an explicit `false`, not a miss, and overwrote it at every
+ * launch. Here the refresh uses the same id and properties the next boot will send (the
+ * classification is on disk first), and a boot fetch still in flight cannot land over it
+ * (`opsFlag.ts`, `fetchSeq`). An unreachable server keeps the current answers; the next boot
+ * evaluates with the stored classification as before.
  *
  * ## Consent
  *
@@ -153,6 +163,17 @@ let answeredGeneration: number | null = null
 
 let unobserveConsensus: (() => void) | null = null
 
+/** Whether the last flag evaluation went out with `comfy_staff`, so a refresh runs only when the
+ *  property sent would actually differ. */
+let evaluatedAsStaff = false
+
+let onFlagPropertiesChange: (() => void) | null = null
+
+/** What an evaluation started now would send: the classification, and only with consent. */
+function sendsStaff(isStaff: boolean): boolean {
+  return isStaff && telemetry.getConsentState() === 'granted'
+}
+
 /** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
  *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
  *  `getAll` are unbounded and a hostile page can replace either with a promise that never
@@ -177,9 +198,13 @@ const MAX_PAGE_USER_ID_CHARS = 256
  * file that may hold `true`, and the unchanged-classification check would then suppress the
  * write that a genuine sign-out needs to make.
  */
-export function initStaffFlagTargeting(): void {
+export function initStaffFlagTargeting(
+  opts: { onFlagPropertiesChange?: () => void } = {}
+): void {
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
+  evaluatedAsStaff = sendsStaff(cached === true)
+  onFlagPropertiesChange = opts.onFlagPropertiesChange ?? null
   // Subscribed here rather than at module load so the wiring is explicit and ordered: this runs
   // before any view exists, so no outcome can be missed, and a second call cannot double-subscribe.
   unobserveConsensus ??= observeFirebaseIdentityConsensus(onIdentityConsensus)
@@ -468,12 +493,20 @@ export const CLASSIFY_STAFF_JS = `(async () => {
 /**
  * Bind a classification and carry it to the next launch.
  *
- * The one place a classification reaches telemetry or the disk. Bound immediately even though
- * this launch's flag fetch has long since gone out: a flag initialised later in the session (or
- * re-read in a test) should see the current answer, and it costs nothing.
+ * The one place a classification reaches telemetry or the disk. Bound immediately, then
+ * re-evaluated if the property sent changed — see "Applying a change without a restart".
  */
 function applyClassification(isStaff: boolean): void {
   telemetry.setFlagEvaluationStaff(isStaff)
+  persistClassification(isStaff)
+  // After the write, so the re-evaluation and the next boot are targeted on the same answer.
+  if (sendsStaff(isStaff) !== evaluatedAsStaff) {
+    evaluatedAsStaff = sendsStaff(isStaff)
+    onFlagPropertiesChange?.()
+  }
+}
+
+function persistClassification(isStaff: boolean): void {
   if (isStaff === cached) return
   try {
     writeFileSafe(persistFilePath(), JSON.stringify({ staff: isStaff, ts: Date.now() }))
@@ -483,7 +516,7 @@ function applyClassification(isStaff: boolean): void {
     // every later attempt at the same classification — so the next launch would read the stale
     // value even once the filesystem recovered.
     cached = isStaff
-    console.log('[staff-targeting] classified: staff=', isStaff, '→ next launch')
+    console.log('[staff-targeting] classified: staff=', isStaff)
   } catch (err) {
     console.log('[staff-targeting] store skipped:', err)
   }
@@ -676,4 +709,6 @@ export function _resetForTest(): void {
   answeredGeneration = null
   unobserveConsensus?.()
   unobserveConsensus = null
+  evaluatedAsStaff = false
+  onFlagPropertiesChange = null
 }
