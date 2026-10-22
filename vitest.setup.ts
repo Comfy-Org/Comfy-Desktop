@@ -62,9 +62,9 @@ console.warn = (...args: unknown[]): void => {
  * even though every test passed.
  *
  * This runs BEFORE each file's own `afterEach` - see `sequence.hooks` in
- * `vitest.config.ts`, which is pinned to 'list' for exactly that reason, so
- * unmount hooks never observe an environment their file has already
- * dismantled. Individual files must not call `enableAutoUnmount` themselves;
- * @vue/test-utils throws on a second call.
+ * `vitest.unit.config.ts` and the root `vitest.config.ts`, both pinned to 'list'
+ * for exactly that reason, so unmount hooks never observe an environment their
+ * file has already dismantled. Individual files must not call
+ * `enableAutoUnmount` themselves; @vue/test-utils throws on a second call.
  */
 enableAutoUnmount(afterEach)
