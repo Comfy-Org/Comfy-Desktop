@@ -517,12 +517,17 @@ export function setSmartAppControlState(state: SmartAppControlState): void {
  * form is equivalent for targeting and puts nothing on the wire for the
  * overwhelming majority of users.
  */
+/** Whether an ops-flag evaluation started now would send `comfy_staff` for this classification. */
+export function sendsStaffProperty(isStaff: boolean): boolean {
+  return consentState === 'granted' && isStaff
+}
+
 function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
   properties['platform'] = process.platform
   if (flagEvaluationSacState) properties['sac_state'] = flagEvaluationSacState
-  if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (sendsStaffProperty(flagEvaluationStaff)) properties['comfy_staff'] = 'true'
   if (consentState === 'granted' && flagEvaluationUserTier) {
     properties['user_tier'] = flagEvaluationUserTier
   }

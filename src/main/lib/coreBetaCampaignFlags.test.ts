@@ -598,16 +598,34 @@ describe('refreshCoreBetaFlags', () => {
     expect(readJson('campaign-flags.json')).toEqual(before)
   })
 
-  it('fetches nothing before boot, or under an id that cannot enrol', async () => {
+  it('fetches nothing before boot', async () => {
     await refreshCoreBetaFlags()
     expect(getOpsFlagResult).not.toHaveBeenCalled()
+  })
 
+  it('refreshes only slot #0 under an id that cannot enrol, as boot does', async () => {
     serve({})
     idClass = 'provisional'
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
     getOpsFlagResult.mockClear()
+
     await refreshCoreBetaFlags()
-    expect(getOpsFlagResult).not.toHaveBeenCalled()
+
+    expect(fetchedKeys()).toEqual(['desktop_core_beta_features'])
+  })
+
+  it('keeps slot #0 grants when the refresh is unreachable', async () => {
+    serve({ desktop_core_beta_features: value(true, HASHING) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    const before = await getCoreBetaGrantsAsync()
+    expect(before).toHaveLength(1)
+    serve({})
+
+    await refreshCoreBetaFlags()
+
+    expect(await getCoreBetaGrantsAsync(), 'parseCoreBetaGrants(undefined) is [], a cut').toEqual(
+      before
+    )
   })
 
   it('leaves campaigns a beta-off boot never started to start on first use', async () => {

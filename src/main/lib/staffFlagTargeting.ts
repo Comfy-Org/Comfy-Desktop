@@ -167,10 +167,6 @@ let lastEvaluationSentStaff = false
 
 let onFlagPropertiesChange: (() => void) | null = null
 
-function sendsStaff(isStaff: boolean): boolean {
-  return isStaff && telemetry.getConsentState() === 'granted'
-}
-
 /** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
  *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
  *  `getAll` are unbounded and a hostile page can replace either with a promise that never
@@ -198,7 +194,7 @@ const MAX_PAGE_USER_ID_CHARS = 256
 export function initStaffFlagTargeting(opts: { onFlagPropertiesChange?: () => void } = {}): void {
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
-  lastEvaluationSentStaff = sendsStaff(cached === true)
+  lastEvaluationSentStaff = telemetry.sendsStaffProperty(cached === true)
   onFlagPropertiesChange = opts.onFlagPropertiesChange ?? null
   // Subscribed here rather than at module load so the wiring is explicit and ordered: this runs
   // before any view exists, so no outcome can be missed, and a second call cannot double-subscribe.
@@ -494,9 +490,9 @@ export const CLASSIFY_STAFF_JS = `(async () => {
 function applyClassification(isStaff: boolean): void {
   telemetry.setFlagEvaluationStaff(isStaff)
   persistClassification(isStaff)
-  // After the write, so the re-evaluation and the next boot are targeted on the same answer.
-  if (sendsStaff(isStaff) !== lastEvaluationSentStaff) {
-    lastEvaluationSentStaff = sendsStaff(isStaff)
+  // After the write, so the re-evaluation and the next boot normally target the same answer.
+  if (telemetry.sendsStaffProperty(isStaff) !== lastEvaluationSentStaff) {
+    lastEvaluationSentStaff = telemetry.sendsStaffProperty(isStaff)
     onFlagPropertiesChange?.()
   }
 }

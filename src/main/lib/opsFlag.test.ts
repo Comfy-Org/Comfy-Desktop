@@ -49,6 +49,16 @@ function makeTestFlag() {
   })
 }
 
+function makePersistedFlag() {
+  return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
+    key: 'test-flag',
+    fallback: 'normal',
+    parse: (value) =>
+      value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
+    persist: true
+  })
+}
+
 /** Pinned clock, so a written entry's `fetchedAt` stamp compares exactly. */
 const NOW = Date.UTC(2026, 9, 5)
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -196,16 +206,6 @@ describe('makeOpsFlag persistence', () => {
 
   function readFlagsFile(): string {
     return fs.readFileSync(flagsFilePath(), 'utf-8')
-  }
-
-  function makePersistedFlag() {
-    return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
-      key: 'test-flag',
-      fallback: 'normal',
-      parse: (value) =>
-        value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
-      persist: true
-    })
   }
 
   it('uses the persisted value when the fetch resolves undefined', async () => {
@@ -921,15 +921,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
 })
 
 describe('makeOpsFlag refresh', () => {
-  function makePersistedFlag() {
-    return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
-      key: 'test-flag',
-      fallback: 'normal',
-      parse: (value) =>
-        value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
-      persist: true
-    })
-  }
   const stored = () =>
     JSON.parse(fs.readFileSync(path.join(testConfigDir, 'ops-flags.json'), 'utf-8'))['test-flag']
 
@@ -963,6 +954,37 @@ describe('makeOpsFlag refresh', () => {
 
     expect(await flag.get()).toBe('degraded')
     expect(stored()).toEqual(before)
+  })
+
+  it('keeps the answer even for a flag whose parse fails closed on no value', async () => {
+    const flag = makeOpsFlag<string[]>({
+      key: 'test-flag',
+      fallback: [],
+      parse: (value, payload) => (value === true && Array.isArray(payload) ? payload : []),
+      persist: true
+    })
+    getOpsFlagResult.mockResolvedValueOnce(flagResult(true, ['--enable-x']))
+    await flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+
+    await flag.refresh()
+
+    expect(await flag.get(), 'an offline refresh must not parse "no answer" into a cut').toEqual([
+      '--enable-x'
+    ])
+  })
+
+  it("applies and persists the refresh's own late answer", async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+    await flag.refresh()
+
+    lateCallback()!(flagResult('disabled'))
+
+    expect(await flag.get()).toBe('disabled')
+    expect(stored()).toMatchObject({ value: 'disabled' })
   })
 
   it('makes get() wait for an in-flight refresh rather than answer the boot value', async () => {

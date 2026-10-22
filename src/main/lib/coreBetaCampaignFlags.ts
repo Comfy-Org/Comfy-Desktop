@@ -93,14 +93,11 @@ export async function initCoreBetaFlags(opts: {
 
 /** For a mid-session staff change (`staffFlagTargeting.ts`); a ComfyUI already running keeps its args. */
 export async function refreshCoreBetaFlags(): Promise<void> {
-  if (bootId === null || savedOnly) return
-  const distinctId = bootId
+  if (bootId === null) return
   await Promise.all([
     refreshCoreBetaGrants(),
     ...(started ? [registry, ...campaigns.values()].map((flag) => flag.refresh()) : [])
   ])
-  // The refreshed registry can name a campaign this session has no flag for yet.
-  if (started) await Promise.all(startCampaignFlags(await registry.get(), distinctId))
 }
 
 function readSavedCampaigns(): {

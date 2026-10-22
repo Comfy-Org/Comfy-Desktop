@@ -296,12 +296,11 @@ export function makeOpsFlag<T>(opts: {
 
   function fetchAndApply(
     fetchOpts: { distinctId: string; timeoutMs?: number },
-    saved: T | undefined,
-    isRefresh: boolean
+    fallbackOnUnreachable: boolean,
+    tag: 'init' | 'refresh'
   ): Promise<void> {
     const generationAtInit = generation
     const seq = ++fetchSeq
-    const tag = isRefresh ? 'refresh' : 'init'
     return mainTelemetry
       .getOpsFlagResult(
         key,
@@ -320,7 +319,7 @@ export function makeOpsFlag<T>(opts: {
         if (result.kind === 'unreachable') {
           // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
           // it here could undo a late value that landed first.
-          const parsed = saved === undefined && !isRefresh ? parse(undefined, undefined) : undefined
+          const parsed = fallbackOnUnreachable ? parse(undefined, undefined) : undefined
           if (parsed !== undefined) cached = parsed
         } else {
           const parsed = parse(result.value, result.payload, Date.now())
@@ -360,19 +359,15 @@ export function makeOpsFlag<T>(opts: {
       initOpts = bootOpts
       const saved = readPersisted()
       if (saved !== undefined) cached = saved
-      const fetched = fetchAndApply(bootOpts, saved, false)
+      const fetched = fetchAndApply(bootOpts, saved === undefined, 'init')
       // A saved treatment answers now; the fetch above only refreshes it.
       initPromise = saved !== undefined ? Promise.resolve() : fetched
       return initPromise
     },
     refresh() {
       if (!initOpts) return Promise.resolve()
-      const refreshed = fetchAndApply(initOpts, undefined, true)
-      refreshPromise = refreshed
-      void refreshed.then(() => {
-        if (refreshPromise === refreshed) refreshPromise = null
-      })
-      return refreshed
+      refreshPromise = fetchAndApply(initOpts, false, 'refresh')
+      return refreshPromise
     },
     async get() {
       if (initPromise) {

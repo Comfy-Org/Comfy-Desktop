@@ -25,7 +25,7 @@ const setFlagEvaluationStaff = vi.fn()
 let consentState = 'granted'
 vi.mock('./telemetry', () => ({
   setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff),
-  getConsentState: () => consentState
+  sendsStaffProperty: (isStaff: boolean) => consentState === 'granted' && isStaff
 }))
 
 const identity = vi.hoisted(() => {
@@ -525,14 +525,6 @@ describe('classification driven by the identity consensus', () => {
     expect(nextLaunchBinding()).toBe(true)
   })
 
-  it('does not target the launch it runs on', async () => {
-    expect(nextLaunchBinding()).toBe(false)
-
-    await consensusSignedIn([stubContents(true)])
-
-    expect(storedFile()).toMatchObject({ staff: true })
-  })
-
   it('leaves a non-staff account untargeted, and writes nothing to say so', async () => {
     // An absent file already means "not staff", so the overwhelmingly common case costs no disk
     // write at all. The write that matters is the one that REVOKES, covered below.
@@ -631,24 +623,29 @@ describe('classification driven by the identity consensus', () => {
   })
 })
 
-// The three limitations #1550 shipped with, each of which is the same root cause: a classification
-// read from one view's page rather than from the state every view contributes to.
 describe('applying a change without a restart', () => {
   const onFlagPropertiesChange = vi.fn()
   beforeEach(() => {
     onFlagPropertiesChange.mockClear()
   })
 
-  it('re-evaluates after a staff sign-in with consent', async () => {
-    initStaffFlagTargeting({ onFlagPropertiesChange })
+  it('re-evaluates after a staff sign-in with consent, once the property is bound and stored', async () => {
+    const atCallback: { bound?: unknown; stored?: unknown } = {}
+    initStaffFlagTargeting({
+      onFlagPropertiesChange: () => {
+        atCallback.bound = setFlagEvaluationStaff.mock.calls.at(-1)?.[0]
+        atCallback.stored = storedFile()
+        onFlagPropertiesChange()
+      }
+    })
 
     await consensusSignedIn([stubContents(true)])
 
     expect(onFlagPropertiesChange).toHaveBeenCalledTimes(1)
-    expect(
-      storedFile(),
-      'written first, so the re-evaluation and the next boot target the same answer'
-    ).toMatchObject({ staff: true })
+    expect(atCallback.bound, 'the refresh reads the bound property synchronously').toBe(true)
+    expect(atCallback.stored, 'the next boot is targeted on the same answer').toMatchObject({
+      staff: true
+    })
   })
 
   it('does not re-evaluate without consent, since the property is not sent', async () => {
@@ -656,8 +653,11 @@ describe('applying a change without a restart', () => {
       _resetForTest()
       consentState = state
       initStaffFlagTargeting({ onFlagPropertiesChange })
+      const readsBefore = pageReads
 
       await consensusSignedIn([stubContents(true)])
+
+      expect(pageReads, `classified under ${state}`).toBe(readsBefore + 1)
     }
 
     expect(onFlagPropertiesChange).not.toHaveBeenCalled()
@@ -668,6 +668,7 @@ describe('applying a change without a restart', () => {
 
     await consensusSignedIn([stubContents(false)])
 
+    expect(pageReads, 'classified').toBe(1)
     expect(onFlagPropertiesChange).not.toHaveBeenCalled()
   })
 
@@ -679,6 +680,7 @@ describe('applying a change without a restart', () => {
     await consensusUnresolved('pending')
     await consensusSignedIn([stubContents(true)])
 
+    expect(pageReads, 'classified, then revalidated').toBe(2)
     expect(onFlagPropertiesChange).not.toHaveBeenCalled()
   })
 
@@ -693,6 +695,8 @@ describe('applying a change without a restart', () => {
   })
 })
 
+// The three limitations #1550 shipped with, each of which is the same root cause: a classification
+// read from one view's page rather than from the state every view contributes to.
 describe('what reading a single view got wrong', () => {
   beforeEach(() => {
     initStaffFlagTargeting()
