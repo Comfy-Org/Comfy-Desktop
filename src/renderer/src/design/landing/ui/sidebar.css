@@ -1,0 +1,14 @@
+/*
+ * The launcher's sidebar (fixed width, set on the aside): labels truncate;
+ * icons, glyphs, counts and avatars keep their size.
+ */
+.proto-sidebar button > :not(.sidebar-label) {
+  flex-shrink: 0;
+}
+.sidebar-label {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

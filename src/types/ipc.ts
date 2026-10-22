@@ -1487,6 +1487,25 @@ export interface ElectronApi {
     initialTab?: 'config' | 'status' | 'update' | 'snapshots' | 'storage' | 'console'
     autoAction?: string | null
   }): void
+  /** Design prototype: the user's real workflows for one environment
+   *  (installation id): Cloud via the signed-in session, local from disk. */
+  designListWorkflows(
+    installationId: string
+  ): Promise<
+    | { ok: true; workflows: { path: string; modified: number; size: number }[] }
+    | { ok: false; reason: 'signed-out' | 'not-found' | 'error'; message?: string }
+  >
+  /** Design prototype: show a build in this launcher window (its own
+   *  ComfyUI view under the title bar), or Home with null. The build must be
+   *  running. */
+  designShowBuild(
+    installationId: string | null
+  ): Promise<{ ok: true } | { ok: false; reason: 'not-running' | 'not-found' }>
+  /** Design prototype: close a build's tab (removes its view). */
+  designCloseBuild(installationId: string): Promise<void>
+  /** Design prototype: a pick in the title bar's "+" menu (the id after
+   *  `design:`: an installation id, or `manage`). */
+  onDesignMenuPick(callback: (id: string) => void): Unsubscribe
   /** Push the first-use takeover's current step to main so it can
    *  (a) cache the value on the host entry for
    *  `buildTitlePopupMenuItems` to read synchronously and (b)
@@ -2009,6 +2028,41 @@ export const POPUP_KIND = {
 } as const
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+/** Design prototype: a row in a title-bar popup the launcher page builds
+ *  (its build switcher, a build's info card). Beyond the file menu's label
+ *  + check it can carry an icon, a status dot, a second line and a trailing
+ *  note. Non-interactive kinds: `heading` labels a section, `title` heads a
+ *  card (label + detail), `info` is a fact (icon, label, value in `meta`).
+ *  Ids are `design:…` so a pick can't trigger a real menu action. */
+export interface DesignMenuItem {
+  id?: string
+  label?: string
+  checked?: boolean
+  kind?: 'separator' | 'heading' | 'title' | 'info'
+  icon?:
+    | 'home'
+    | 'local'
+    | 'cloud'
+    | 'settings'
+    | 'window'
+    | 'folder'
+    | 'version'
+    | 'status'
+    | 'clock'
+    | 'source'
+    | 'update'
+    | 'close'
+  status?: 'open' | 'running' | 'starting' | 'stopped' | 'error'
+  /** Second line, e.g. how long switching to it takes. */
+  detail?: string
+  /** Trailing note, e.g. when it was last used. */
+  meta?: string
+  /** A second action on the row (an icon button on hover), e.g. "open in a
+   *  new window": its id (`design:…`) and label. */
+  altId?: string
+  altLabel?: string
+}
 
 /** Resolved popup theme passed in every popup config. */
 export interface PopupTheme {

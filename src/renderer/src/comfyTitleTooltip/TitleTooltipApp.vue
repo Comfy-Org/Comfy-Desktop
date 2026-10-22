@@ -63,10 +63,11 @@ const cmBeakFraction = ref<number>(0.5)
  *  A centre rather than a left edge, so it stays correct at whatever width the card actually
  *  renders — `translateX(-50%)` offsets by half of the real card, not half of an assumed one. */
 const cmCardCentre = ref<number | null>(null)
-const themeBg = ref<string>('#211927')
-const themeText = ref<string>('#ffffff')
-const themeBorder = ref<string>('#38303d')
-const themeAccent = ref<string>('#e3ff3c')
+// Until main's config arrives: the Void tooltip (main/popups/titleTooltip.ts).
+const themeBg = ref<string>('#f1f1f3')
+const themeText = ref<string>('#070709')
+const themeBorder = ref<string>('#f1f1f3')
+const themeAccent = ref<string>('#f1f1f3')
 const coachmarkBorder = 'rgba(255, 255, 255, 0.22)'
 /** Token of the latest config, echoed in every render-ack so main can discard
  *  stale acks. */

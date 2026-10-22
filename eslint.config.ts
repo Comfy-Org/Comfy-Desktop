@@ -82,5 +82,14 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    // Landing design prototype follows ComfyUI_frontend's Reka wrapper style:
+    // Vue 3.5 reactive props destructuring supplies defaults, which this
+    // rule cannot see.
+    files: ['./src/renderer/src/design/**/*.vue'],
+    rules: {
+      'vue/require-default-prop': 'off'
+    }
   }
 ])

@@ -14,9 +14,10 @@ export const COMFY_BG_LIGHT = '#f5f5f5'
 /** Default dark background for comfy windows (used at creation time before theme is known). */
 export const COMFY_BG = '#171717'
 
-/** Title bar background. Must stay in sync with `--titlebar-bg` in `src/renderer/src/assets/main.css`
- *  so the OS window-controls overlay matches the Vue `.title-bar` on every window. */
-export const TITLEBAR_BG = '#211927'
+/** Title bar background: the launcher's glass base, oklch(0.19 0.003 285) (`--glass-base` in
+ *  `src/renderer/src/design/landing/ui/surfaces.css`), so the OS window-controls overlay
+ *  matches the launcher's glass title bar. Install windows repaint it from ComfyUI's theme. */
+export const TITLEBAR_BG = '#141415'
 
 /** Window-control symbol color (`#dddddd` on dark backgrounds, `#333333` on light) chosen by the
  *  perceived luminance of `bg` so the min/max/close glyphs stay legible against any reported

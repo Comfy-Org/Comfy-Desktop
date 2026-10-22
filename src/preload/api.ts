@@ -126,6 +126,19 @@ export function buildElectronApi(): ElectronApi {
         initialTab: opts?.initialTab ?? null,
         autoAction: opts?.autoAction ?? null
       }),
+    designListWorkflows: (installationId) =>
+      ipcRenderer.invoke('comfy-design:list-workflows', installationId),
+    designShowBuild: (installationId) =>
+      ipcRenderer.invoke('comfy-design:show-build', installationId),
+    designCloseBuild: (installationId) =>
+      ipcRenderer.invoke('comfy-design:close-build', installationId),
+    onDesignMenuPick: (callback) => {
+      const handler = (_event: IpcRendererEvent, id: unknown): void => {
+        if (typeof id === 'string') callback(id)
+      }
+      ipcRenderer.on('comfy-design:menu-pick', handler)
+      return () => ipcRenderer.removeListener('comfy-design:menu-pick', handler)
+    },
     setFirstUseMode: (mode) => ipcRenderer.send('comfy-window:set-first-use-mode', { mode }),
     onFirstUseSkip: (callback) => {
       const handler = (): void => callback()

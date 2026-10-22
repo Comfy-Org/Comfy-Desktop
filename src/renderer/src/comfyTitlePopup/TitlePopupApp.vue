@@ -139,6 +139,7 @@ type PopupConfig =
 interface Bridge {
   activate(id: string): void
   close(): void
+  reportHover(inside: boolean): void
   ready(): void
   notifyRendered(): void
   onConfig(cb: (config: PopupConfig) => void): () => void
@@ -389,7 +390,13 @@ onUnmounted(() => {
     }"
     :style="{ background: themeBg, color: themeText }"
   >
-    <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
+    <MenuView
+      v-if="kind === 'menu'"
+      :items="items"
+      @activate="handleActivate"
+      @mouseenter="bridge?.reportHover(true)"
+      @mouseleave="bridge?.reportHover(false)"
+    />
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
     <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />

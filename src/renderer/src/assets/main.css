@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Landing design prototype tokens (src/renderer/src/design/landing). */
+@import '../design/landing/ui/tokens.css';
 
 /* Inter Font Family — matches ComfyUI frontend design system */
 @font-face {

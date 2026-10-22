@@ -8,6 +8,7 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
+import LandingPrototypes from '../design/landing/LandingPrototypes.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -599,11 +600,20 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
-          <ChooserView
+          <!-- Design prototypes: wraps the shipping chooser behind a switcher. -->
+          <LandingPrototypes
+            :installations="installationStore.installations"
+            :is-running="sessionStore.isRunning"
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
-            @show-progress="handleShowProgress"
-          />
+            @fetch-installations="installationStore.fetchInstallations()"
+          >
+            <ChooserView
+              @pick="handleChooserPick"
+              @show-new-install="handleChooserShowNewInstall"
+              @show-progress="handleShowProgress"
+            />
+          </LandingPrototypes>
         </div>
 
         <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">

@@ -1,0 +1,177 @@
+/*
+ * Landing prototype design tokens (Tailwind v4 theme).
+ *
+ * Semantic names follow ComfyUI_frontend's design system
+ * (base-foreground, muted-foreground, secondary-background, border-default…)
+ * so components can move across with minimal renaming. Values are the
+ * prototype's warm-neutral, monochrome palette.
+ *
+ * Imported from assets/main.css so Tailwind generates the utilities.
+ */
+
+@import './surfaces.css';
+@import './sidebar.css';
+
+@theme {
+  /* ── Color: Void ───────────────────────────────────────────
+   * Near-black neutrals with a whisper of the brand's plum side (hue 285,
+   * chroma under 0.008): reads neutral next to the plum and yellow brand,
+   * where a zero-chroma grey drifts toward bronze. */
+  --color-app-background: oklch(0.19 0.003 285); /* glass page; the sidebar sits on it */
+  --color-titlebar-background: oklch(0.145 0.003 285);
+  --color-content-background: oklch(0.14 0.005 285); /* the inset content panel */
+
+  --color-base-foreground: oklch(0.955 0.002 285); /* primary text */
+  --color-muted-foreground: oklch(0.76 0.006 285); /* secondary text */
+  --color-subtle-foreground: oklch(0.6 0.008 285); /* tertiary text, meta */
+
+  /* Lifted cards: page and content stay quiet, cards stand out clearly. */
+  --color-card-background: oklch(0.23 0.008 285);
+  --color-card-background-hover: oklch(0.265 0.009 285);
+  --color-secondary-background: oklch(1 0 0 / 0.06);
+  --color-secondary-background-hover: oklch(1 0 0 / 0.1);
+
+  --color-inverted-background: oklch(0.96 0.002 285); /* primary actions: white accent */
+  --color-inverted-background-hover: oklch(0.995 0 0);
+  --color-inverted-foreground: oklch(0.13 0.004 285);
+
+  --color-border-default: oklch(1 0 0 / 0.08);
+  --color-border-strong: oklch(1 0 0 / 0.14);
+  --color-border-focus: oklch(1 0 0 / 0.45);
+
+  --color-media-overlay: oklch(0 0 0 / 0.55); /* chips on top of imagery */
+
+  --color-status-running: oklch(0.78 0.15 155); /* running */
+  --color-status-danger: oklch(0.62 0.19 25); /* over a limit, destructive actions */
+
+  /* ── Type ──────────────────────────────────────────────── */
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-heading: 16px;
+  --text-heading--line-height: 24px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-display: 34px;
+  --text-display--line-height: 40px;
+
+  /* ── Size grid ─────────────────────────────────────────────
+   * Every size token (radius, line-height, control height) is a multiple
+   * of 4. Font sizes are the one exception: they set glyph size, and their
+   * line-heights land on the grid.
+   *
+   * ── Radius ────────────────────────────────────────────────
+   * Nesting rule: inner radius = outer radius - padding between them,
+   * never below `min`. panel 16 /p8→ card 8; card 12 /p4→ media 8;
+   * menu 12 /p4→ item 8; media 8 /inset 4→ chip 4. */
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-min: 4px;
+
+  /* ── Elevation (sampled from the Figma panel component) ── */
+  --shadow-elev:
+    inset 0 1px 0 oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.35), 0 6px 18px oklch(0 0 0 / 0.28);
+  --shadow-elev-hover:
+    inset 0 1px 0 oklch(1 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.35),
+    0 10px 26px oklch(0 0 0 / 0.34);
+  --shadow-popover: inset 0 1px 0 oklch(1 0 0 / 0.07), 0 12px 32px oklch(0 0 0 / 0.45);
+  --shadow-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
+
+  --blur-glass: 28px;
+
+  /* ── Motion ────────────────────────────────────────────── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-pop-in: pop-in 160ms var(--ease-out-expo);
+  --animate-fade-in: fade-in 160ms ease-out;
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/*
+ * Prototype scope. The shipping renderer's main.css styles bare elements
+ * (`* { margin; padding }`, `button {}`, `input[type=text] {}`, `label {}`)
+ * outside any cascade layer, so those rules beat every Tailwind utility.
+ * Inside `.proto-ui` we hand those properties back to the layered cascade
+ * (preflight + utilities). Interactive elements in the prototype are styled
+ * with utilities only - never scoped CSS on button/input/select/label.
+ */
+.proto-ui,
+.proto-ui *,
+.proto-ui *::before,
+.proto-ui *::after {
+  margin: revert-layer;
+  padding: revert-layer;
+}
+.proto-ui.proto-ui.proto-ui :is(button, input, select, textarea, label) {
+  width: revert-layer;
+  margin: revert-layer;
+  padding: revert-layer;
+  border: revert-layer;
+  border-radius: revert-layer;
+  background: revert-layer;
+  color: revert-layer;
+  font-size: revert-layer;
+  outline: revert-layer;
+  cursor: revert-layer;
+}
+
+@layer base {
+  .proto-ui {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: var(--text-body);
+    line-height: 1.4;
+    color: var(--color-base-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+  .proto-ui button:not(:disabled),
+  .proto-ui [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Display headings: soft top-down fade, shared by greeting and hero titles. */
+@utility heading-gradient {
+  background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Card edge: no full outline. A hairline of light along the top edge that
+ * fades down the sides, like a highlight catching a raised surface. Keeps
+ * the 1px border (transparent) so sizes don't change; the ring is drawn
+ * inside it, so overflow-hidden cards keep it. --shine sets its strength. */
+@utility edge-shine {
+  border-color: transparent;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      180deg,
+      oklch(1 0 0 / var(--shine, 0.14)),
+      oklch(1 0 0 / calc(var(--shine, 0.14) * 0.25)) 45%,
+      oklch(1 0 0 / 0.015) 100%
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    transition: opacity 200ms;
+  }
+}

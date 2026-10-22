@@ -58,9 +58,10 @@ export interface CoachmarkConfig {
   configToken: string
 }
 
-/** Hardcoded mirror of the brand tokens; the popup renderer has no app stylesheet. */
+/** Hardcoded mirror of the chrome's Void tokens (assets/chrome-void.css); the popup renderer
+ *  has no app stylesheet. Card surface, hairline border, white accent. */
 function resolveCoachmarkTheme(): CoachmarkTheme {
-  return { bg: '#211927', text: '#ffffff', border: '#38303d', accent: '#e3ff3c' }
+  return { bg: '#1c1c21', text: '#f1f1f3', border: '#2d2d31', accent: '#f1f1f3' }
 }
 
 export function buildCoachmarkConfig(opts: {

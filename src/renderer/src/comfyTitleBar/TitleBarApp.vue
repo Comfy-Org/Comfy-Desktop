@@ -11,6 +11,7 @@ import {
   MessageSquarePlus,
   RefreshCw,
   RotateCw,
+  SlidersHorizontal,
   ZoomIn
 } from 'lucide-vue-next'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
@@ -22,6 +23,13 @@ import { useCentralPillCoachmark } from './useCentralPillCoachmark'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import TitleBarBreadcrumb from '../design/landing/parts/nav/TitleBarBreadcrumb.vue'
+import type { DesignMenuItem } from '../types/ipc'
+import {
+  sendTitleBarCommand,
+  usePublishedTitleBar,
+  type TitleBarCommand
+} from '../design/landing/titleBarBridge'
 
 const { t, locale } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -77,8 +85,11 @@ interface Bridge {
   isMac: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
   openNewWindow: () => void
+  /** Design prototype: bring the launcher (dashboard) window forward. */
+  designGoHome: () => void
   /** Pop the File menu natively (avoids WebContentsView clipping the popup). */
   openFileMenu: (anchor: MenuAnchor) => void
+  openDesignMenu: (anchor: MenuAnchor, items: DesignMenuItem[]) => void
   /** Ask main to dismiss the File menu popup (toggle-close). */
   dismissFileMenu: () => void
   /** Issue #514 — show a hover tooltip in the cached title-bar tooltip
@@ -131,6 +142,7 @@ interface Bridge {
   onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
   onMenuOpened: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
   onMenuClosed: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
+  onPopupHover: (cb: (inside: boolean) => void) => () => void
   /** First-use takeover step pushes from main. Drives the T&C-step
    *  lockdown that hides the waffle menu (the otherwise-always-live
    *  escape hatch) so the user has to either accept consent or close
@@ -240,6 +252,214 @@ const activePanel = ref<ComfyPanelKey>('comfy')
  */
 const installationId = ref(bridge?.getInstallationId() ?? '')
 const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
+
+/** The launcher page's title-bar state (milestone, Home, the build in
+ *  front, the builds, the Prototype switches), once the page has published
+ *  it (design/landing/titleBarBridge.ts). Every window reads it: the same
+ *  origin shares localStorage. */
+const launcherTabs = usePublishedTitleBar()
+const isLauncherBar = computed(() => isInstallLess.value && launcherTabs.value !== null)
+/** The design prototype's roadmap milestone (0 = Desktop as it ships). */
+const designMilestone = computed(() => launcherTabs.value?.milestone ?? 0)
+/** Milestone 3 on: a breadcrumb instead of the centre pill, in the launcher
+ *  and in each build's own window. */
+const breadcrumbBar = computed(() => launcherTabs.value !== null && designMilestone.value >= 3)
+/** What the breadcrumb shows: the launcher's state, or - in a build's own
+ *  window - that build in front. */
+const crumbState = computed(() => {
+  const state = launcherTabs.value
+  if (!state || isInstallLess.value) return state
+  return {
+    ...state,
+    home: false,
+    menuOpen: false,
+    front: {
+      id: installationId.value,
+      name: installLabel.value,
+      kind: sourceCategory.value === 'cloud' ? ('cloud' as const) : ('local' as const)
+    }
+  }
+})
+const SEPARATOR = { kind: 'separator' as const }
+type LauncherBuild = NonNullable<typeof launcherTabs.value>['builds'][number]
+/** How long switching to a build takes, by its state. */
+const BUILD_SPEED: Record<LauncherBuild['status'], (b: LauncherBuild) => string> = {
+  open: () => 'Loaded · switches instantly',
+  running: () => 'Running · opens in a few seconds',
+  starting: () => 'Starting…',
+  error: () => "Couldn't start · try again",
+  stopped: (b) =>
+    b.kind === 'cloud' ? 'Connects in a few seconds' : 'Not running · about 30 s to start'
+}
+/** A build's row: its state and switch time, when it was last used, and -
+ *  once builds open in the same window (Milestone 7) - "open in a new
+ *  window" on hover. */
+function buildRow(b: LauncherBuild, current: boolean): DesignMenuItem {
+  return {
+    id: `design:${b.id}`,
+    label: b.name,
+    icon: b.kind,
+    status: b.status,
+    detail: BUILD_SPEED[b.status](b),
+    meta: current ? 'Current' : b.lastUsed === 'Running now' ? undefined : b.lastUsed,
+    checked: current,
+    ...(designMilestone.value >= 7
+      ? { altId: `design:window:${b.id}`, altLabel: 'Open in a new window' }
+      : {})
+  }
+}
+/** Breadcrumb clicks: in the launcher they go to its page; in a build's
+ *  window the root goes to the launcher. The build switcher and info card
+ *  open here, as title-bar popups (they show over ComfyUI). Picks come back
+ *  as `design:<id>` (main routes them to the launcher's page, titleBar.ts
+ *  openFromMenu). */
+function onLauncherCommand(cmd: TitleBarCommand): void {
+  if (cmd.type === 'info') return onBuildInfo(cmd)
+  if (cmd.type === 'home' && !isInstallLess.value) return bridge?.designGoHome()
+  if (cmd.type !== 'switcher') return sendTitleBarCommand(cmd)
+  const state = crumbState.value
+  if (!state) return
+  const open = state.builds.filter((b) => b.open || b.id === state.front?.id)
+  const recent = state.builds.filter((b) => !open.includes(b))
+  const items: DesignMenuItem[] = [
+    {
+      id: 'design:home',
+      label: state.milestone >= 4 ? 'Home' : 'All builds',
+      icon: 'home',
+      checked: state.home
+    },
+    ...(open.length ? [{ kind: 'heading' as const, label: 'Open' }] : []),
+    ...open.map((b) => buildRow(b, b.id === state.front?.id)),
+    ...(recent.length ? [{ kind: 'heading' as const, label: 'Recently used' }] : []),
+    ...recent.map((b) => buildRow(b, false)),
+    SEPARATOR,
+    { id: 'design:manage', label: 'Manage builds', icon: 'settings' }
+  ]
+  handleDesignMenu({ x: Math.round(cmd.left), y: Math.round(cmd.bottom) }, items)
+}
+const STATUS_TEXT: Record<LauncherBuild['status'], string> = {
+  open: 'Loaded here',
+  running: 'Running',
+  starting: 'Starting…',
+  error: "Couldn't start",
+  stopped: 'Not running'
+}
+/** The build in front's info card: what it is, its state, and what a
+ *  ComfyUI user does with it next. In its own window, closing closes the
+ *  window. */
+function buildInfoItems(b: LauncherBuild): DesignMenuItem[] {
+  const inOwnWindow = !isInstallLess.value
+  const facts: DesignMenuItem[] = [
+    {
+      kind: 'info',
+      icon: 'status',
+      label: 'Status',
+      meta: STATUS_TEXT[b.status],
+      status: b.status
+    },
+    { kind: 'info', icon: 'source', label: 'Type', meta: b.source },
+    ...(b.version
+      ? [{ kind: 'info' as const, icon: 'version' as const, label: 'ComfyUI', meta: b.version }]
+      : []),
+    ...(b.location
+      ? [
+          {
+            kind: 'info' as const,
+            icon: b.kind === 'cloud' ? ('cloud' as const) : ('folder' as const),
+            label: 'Location',
+            meta: b.location
+          }
+        ]
+      : []),
+    { kind: 'info', icon: 'clock', label: 'Last used', meta: b.lastUsed },
+    ...(b.update
+      ? [{ kind: 'info' as const, icon: 'update' as const, label: 'Update', meta: b.update }]
+      : [])
+  ]
+  return [
+    {
+      kind: 'title',
+      label: b.name,
+      icon: b.kind,
+      status: b.status,
+      detail: b.kind === 'cloud' ? 'Runs on Comfy Cloud GPUs' : 'Runs on this computer'
+    },
+    SEPARATOR,
+    ...facts,
+    SEPARATOR,
+    ...(!inOwnWindow && designMilestone.value >= 7
+      ? [{ id: `design:window:${b.id}`, label: 'Open in a new window', icon: 'window' as const }]
+      : []),
+    ...(b.kind === 'local' && b.location
+      ? [{ id: `design:folder:${b.id}`, label: 'Open folder', icon: 'folder' as const }]
+      : []),
+    { id: `design:settings:${b.id}`, label: 'Settings & updates', icon: 'settings' },
+    inOwnWindow
+      ? { id: 'design:exit', label: 'Close window', icon: 'close' }
+      : { id: `design:close:${b.id}`, label: 'Close build', icon: 'close' }
+  ]
+}
+/** The info card opens on hovering the build's name and stays while the
+ *  pointer is on the name or the card (the popup reports its hover). */
+const INFO_OPEN_DELAY_MS = 350
+const INFO_CLOSE_DELAY_MS = 250
+let infoOpen = false
+let onName = false
+let onCard = false
+let infoOpenTimer: ReturnType<typeof setTimeout> | undefined
+let infoCloseTimer: ReturnType<typeof setTimeout> | undefined
+function showBuildInfo(anchor: { left: number; bottom: number }): void {
+  const state = crumbState.value
+  const build = state?.builds.find((b) => b.id === state.front?.id)
+  if (!build) return
+  bridge?.openDesignMenu(
+    { x: Math.round(anchor.left), y: Math.round(anchor.bottom) },
+    buildInfoItems(build)
+  )
+  infoOpen = true
+}
+function closeBuildInfoSoon(): void {
+  clearTimeout(infoCloseTimer)
+  infoCloseTimer = setTimeout(() => {
+    if (infoOpen && !onName && !onCard) bridge?.dismissFileMenu()
+  }, INFO_CLOSE_DELAY_MS)
+}
+function onBuildInfo(cmd: Extract<TitleBarCommand, { type: 'info' }>): void {
+  clearTimeout(infoOpenTimer)
+  if (cmd.phase === 'leave') {
+    onName = false
+    return closeBuildInfoSoon()
+  }
+  onName = true
+  clearTimeout(infoCloseTimer)
+  if (cmd.phase === 'click') return showBuildInfo(cmd)
+  if (!infoOpen) infoOpenTimer = setTimeout(() => showBuildInfo(cmd), INFO_OPEN_DELAY_MS)
+}
+bridge?.onPopupHover?.((inside) => {
+  onCard = inside
+  if (inside) clearTimeout(infoCloseTimer)
+  else closeBuildInfoSoon()
+})
+bridge?.onMenuClosed(({ menu }) => {
+  if (menu === 'menu') infoOpen = onCard = false
+})
+/** The Prototype menu: the milestones, then the scenario switches; current
+ *  values checked. */
+function openPrototypeMenu(e: MouseEvent): void {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const groups = launcherTabs.value?.options ?? []
+  handleDesignMenu(
+    { x: Math.round(r.left), y: Math.round(r.bottom) },
+    groups.flatMap((g, i) => [
+      ...(i ? [SEPARATOR] : []),
+      ...g.options.map((o) => ({
+        id: `design:proto:${g.key}:${o.value}`,
+        label: g.key === 'milestone' ? o.label : `${g.label}: ${o.label}`,
+        checked: o.value === g.value
+      }))
+    ])
+  )
+}
 
 const {
   installLabel,
@@ -520,6 +740,7 @@ const {
   downloadsTrayLabel,
   downloadsStartedAt,
   handleFileMenu,
+  handleDesignMenu,
   handleDownloadsTray,
   handleInstallPill
 } = useTitleBarMenus({
@@ -857,6 +1078,11 @@ onUnmounted(() => {
     :class="{
       'is-mac': isMac,
       'is-light': isLight,
+      /* The launcher (no ComfyUI install): the top of its glass page
+       * (design/landing/ui/surfaces.css), continuing across the seam. */
+      'glass-titlebar': isInstallLess && !isLight && designMilestone >= 1,
+      /* The breadcrumb takes the left (no centre pill). */
+      'is-launcher': breadcrumbBar,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
       'is-consent-lockdown': isConsentLockdown,
@@ -886,8 +1112,16 @@ onUnmounted(() => {
          keeps the full menu so the user can open a fresh window,
          settings, feedback, or quit cleanly while an op runs. -->
     <div class="title-cluster">
+      <!-- Design prototype, Milestone 3 on: the breadcrumb (Home › build ⌄),
+           in the launcher and in each build's window. The app menu moves to
+           the right. -->
+      <TitleBarBreadcrumb
+        v-if="breadcrumbBar && crumbState && !isConsentLockdown"
+        :state="crumbState"
+        @command="onLauncherCommand"
+      />
       <button
-        v-if="!isConsentLockdown"
+        v-if="!isConsentLockdown && !breadcrumbBar"
         ref="fileBtn"
         type="button"
         class="title-menu-button title-menu-button--icon"
@@ -915,7 +1149,7 @@ onUnmounted(() => {
          moved to the right trailing cluster alongside the other
          user-action controls; the install-update pill remains here so
          it stays adjacent to the install identity. -->
-    <div class="title-center">
+    <div v-if="!breadcrumbBar" class="title-center">
       <!-- Center identity pill. Install-backed hosts render as a
            button that opens the instance-picker popover (matching the
            rest of the title-bar dropdown buttons — waffle menu +
@@ -1110,6 +1344,31 @@ onUnmounted(() => {
           aria-hidden="true"
         />
       </button>
+      <!-- Launcher: the design prototype's milestones and scenario, at every
+           milestone (Milestone 0 is Desktop as it ships, plus this). -->
+      <button
+        v-if="!isConsentLockdown && isLauncherBar"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        aria-haspopup="menu"
+        aria-label="Prototype"
+        v-bind="tooltipAttrs('Prototype')"
+        @click="openPrototypeMenu"
+      >
+        <SlidersHorizontal :size="16" />
+      </button>
+      <!-- With the breadcrumb, the app menu sits last, at the right. -->
+      <button
+        v-if="!isConsentLockdown && breadcrumbBar"
+        ref="fileBtn"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        aria-haspopup="menu"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
+        @click="handleFileMenu"
+      >
+        <MenuIcon :size="18" />
+      </button>
     </div>
   </header>
 </template>
@@ -1245,6 +1504,14 @@ onUnmounted(() => {
 .title-bar.is-light.is-hover-active .title-menu-button:hover {
   background: rgba(0, 0, 0, 0.06);
   border-color: rgba(0, 0, 0, 0.18);
+}
+/* Launcher: no centre pill - the tabs take the left and the free space. */
+.title-bar.is-launcher {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.title-bar.is-launcher .title-cluster,
+.title-bar.is-launcher:not(.is-mac) .title-cluster {
+  min-width: 0;
 }
 .title-menu-button--icon {
   padding: 4px 6px;

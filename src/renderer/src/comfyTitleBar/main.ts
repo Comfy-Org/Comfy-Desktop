@@ -1,5 +1,7 @@
 // Same font + design tokens as the other renderers, for visual consistency.
 import '../assets/main.css'
+import '../assets/chrome-void.css'
+import { followChromeDesign } from '../design/landing/chromeTheme'
 import { loadProprietaryFonts } from '../assets/proprietaryFonts'
 
 import { createApp } from 'vue'
@@ -15,6 +17,9 @@ initializeRendererBootstrap('title-bar')
 // Default to dark before mount so design tokens resolve immediately; only matters for
 // the brief moment before main's first theme push.
 document.documentElement.setAttribute('data-theme', 'dark')
+// The new design system's skin for the window chrome, from Milestone 1 of
+// the design prototype (assets/chrome-void.css).
+followChromeDesign()
 
 // webContents are isolated JS contexts, so each renderer needs its own vue-i18n
 // instance; the shared factory keeps them on the same en catalog.

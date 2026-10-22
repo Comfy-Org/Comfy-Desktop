@@ -1,3 +1,4 @@
+import { registerDesignHandlers } from './registerDesignHandlers'
 import {
   fs,
   app,
@@ -323,5 +324,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCrashHandlers()
   registerTelemetryHandlers()
   registerDevPlatformHandlers()
+  registerDesignHandlers()
   return startupRecovery.then(() => undefined)
 }

@@ -1,4 +1,6 @@
 import '../assets/main.css'
+import '../assets/chrome-void.css'
+import { followChromeDesign } from '../design/landing/chromeTheme'
 import { loadProprietaryFonts } from '../assets/proprietaryFonts'
 
 import { createApp } from 'vue'
@@ -12,6 +14,9 @@ import { installPickerSettingsApiShim } from './pickerSettingsApiShim'
 // Telemetry is captured main-side, not here, to avoid minting a new
 // session on every transient popup open.
 document.documentElement.setAttribute('data-theme', 'dark')
+// The new design system's skin for the window chrome, from Milestone 1 of
+// the design prototype (assets/chrome-void.css).
+followChromeDesign()
 
 // Must run BEFORE Vue mounts so modules that capture window.api at import
 // time (e.g. useComfyUISettings) see the shim populated.

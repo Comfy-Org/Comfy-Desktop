@@ -55,10 +55,10 @@ export function getTitleTooltipForParent(parentId: number): TitleTooltipPopupEnt
   return titleTooltipPopupsByParent.get(parentId)
 }
 
-/** Hardcoded mirror of the `--tooltip-*` tokens so the title-bar tooltip matches the
- *  in-renderer bubbles. Theme-agnostic until light brand parity ships. */
+/** Hardcoded mirror of the chrome's `--tooltip-*` tokens (assets/chrome-void.css): Void's
+ *  inverted tooltip, white with near-black text. Theme-agnostic until light brand parity ships. */
 function resolveTooltipTheme(): { bg: string; text: string; border: string } {
-  return { bg: '#211927', text: '#ffffff', border: '#38303d' }
+  return { bg: '#f1f1f3', text: '#070709', border: '#f1f1f3' }
 }
 
 /** Create (or reuse) a title-tooltip popup view for *parent*. */

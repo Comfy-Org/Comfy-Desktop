@@ -199,6 +199,9 @@ export interface ComfyTitlePopupBridge {
   /** Renderer applied a config update and the new DOM painted; main waits for
    *  this before showing so no frame of the previous open's content is seen. */
   notifyRendered(): void
+  /** Design prototype: the pointer entered / left the popup, so a card the
+   *  title bar opened on hover stays while it's pointed at. */
+  reportHover(inside: boolean): void
   /** Config push (one per open). */
   onConfig(cb: (config: TitlePopupConfig) => void): () => void
   onDownloadsChanged(cb: (state: PopupDownloadsState) => void): () => void
@@ -522,6 +525,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   close: () => {
     ipcRenderer.send('comfy-titlepopup:close')
+  },
+  reportHover: (inside) => {
+    ipcRenderer.send('comfy-titlepopup:hover', { inside: inside === true })
   },
   ready: () => {
     ipcRenderer.send('comfy-titlepopup:ready')

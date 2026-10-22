@@ -118,8 +118,8 @@ function makeEntry(
 }
 
 describe('computePopupHeight', () => {
-  it('counts items at 28px and separators at 9px plus the 10px chrome budget', () => {
-    // 1 item + 1 sep + 1 item + 1 sep + 1 item = 28+9+28+9+28 = 102 + 10 chrome = 112
+  it('counts items at 32px and separators at 9px plus the 10px chrome budget', () => {
+    // 1 item + 1 sep + 1 item + 1 sep + 1 item = 32+9+32+9+32 = 114 + 10 chrome = 124
     const h = computePopupHeight([
       { id: 'a', label: 'A' },
       { kind: 'separator' },
@@ -127,7 +127,7 @@ describe('computePopupHeight', () => {
       { kind: 'separator' },
       { id: 'c', label: 'C' }
     ])
-    expect(h).toBe(112)
+    expect(h).toBe(124)
   })
 
   it('returns chrome-only height for an empty item list', () => {
@@ -135,7 +135,7 @@ describe('computePopupHeight', () => {
   })
 
   it('handles a single item', () => {
-    expect(computePopupHeight([{ id: 'a', label: 'A' }])).toBe(38)
+    expect(computePopupHeight([{ id: 'a', label: 'A' }])).toBe(42)
   })
 
   it('handles a single separator', () => {

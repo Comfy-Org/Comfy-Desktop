@@ -9,6 +9,7 @@ import {
   type ShallowRef
 } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { DesignMenuItem } from '../types/ipc'
 
 interface MenuAnchor {
   x: number
@@ -33,6 +34,8 @@ type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
 
 interface TitleBarMenusBridge {
   openFileMenu: (anchor: MenuAnchor) => void
+  /** Design prototype: the launcher's "+" menu of builds. */
+  openDesignMenu: (anchor: MenuAnchor, items: DesignMenuItem[]) => void
   dismissFileMenu: () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
   clickInstallPill: (anchor: MenuAnchor) => void
@@ -72,6 +75,8 @@ interface TitleBarMenusApi {
   /** `isMenuOpen` scoped to the instance-picker; drives the pill's pressed state. */
   isInstancePickerOpen: Ref<boolean>
   handleFileMenu: () => void
+  /** Design prototype: toggle the launcher's "+" menu under `anchor`. */
+  handleDesignMenu: (anchor: MenuAnchor, items: DesignMenuItem[]) => void
   handleDownloadsTray: () => void
   handleInstallPill: () => void
 }
@@ -170,6 +175,17 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     opts.bridge?.openFileMenu(anchorBelow(opts.fileBtnRef.value))
   }
 
+  function handleDesignMenu(anchor: MenuAnchor, items: DesignMenuItem[]): void {
+    opts.hideTip()
+    // Same toggle + reopen guard as the file menu (both are 'menu' popups).
+    if (isFileMenuOpen.value) {
+      opts.bridge?.dismissFileMenu()
+      return
+    }
+    if (Date.now() - menuClosedAt.menu < MENU_REOPEN_GUARD_MS) return
+    opts.bridge?.openDesignMenu(anchor, items)
+  }
+
   function handleDownloadsTray(): void {
     opts.hideTip()
     // Toggle + reopen suppression live in main; the renderer just dispatches.
@@ -260,6 +276,7 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     downloadsTrayLabel,
     downloadsStartedAt,
     handleFileMenu,
+    handleDesignMenu,
     handleDownloadsTray,
     handleInstallPill
   }

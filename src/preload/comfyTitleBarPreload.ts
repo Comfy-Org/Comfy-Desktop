@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
+import type { DesignMenuItem } from '../types/ipc'
 
 export type ComfyPanelKey =
   | 'comfy'
@@ -70,9 +71,14 @@ export interface ComfyTitleBarBridge {
    *  host window. Always creates a new one — the focus-existing path
    *  lives on the tray entry. */
   openNewWindow(): void
+  /** Design prototype: bring the launcher (dashboard) window forward, or
+   *  open one. */
+  designGoHome(): void
   /** Pop the File menu as a native OS menu. Avoids HTML popups that
    *  would be clipped by the title bar's WebContentsView bounds. */
   openFileMenu(anchor: TitleMenuAnchor): void
+  /** Design prototype: the "+" menu of builds to open (ids `design:…`). */
+  openDesignMenu(anchor: TitleMenuAnchor, items: DesignMenuItem[]): void
   /** Ask main to dismiss the File menu popup. Used to toggle the menu
    *  closed when the user reclicks the menu button while it is open
    *  — on macOS the blur-driven dismiss isn't reliable for sibling
@@ -114,6 +120,8 @@ export interface ComfyTitleBarBridge {
    *  button. The payload carries which kind closed so the per-button
    *  reopen guards stay independent. */
   onMenuClosed(cb: (info: { menu: 'menu' | 'downloads' | 'instance-picker' }) => void): () => void
+  /** Design prototype: the pointer entered / left the open popup. */
+  onPopupHover(cb: (inside: boolean) => void): () => void
   /** Subscribe to first-use takeover step changes. Mode mirrors
    *  `firstUseMode` on the entry — see `FirstUseMode` in
    *  `src/shared/firstUseMode.ts` for the full union. The title bar
@@ -294,8 +302,14 @@ const bridge: ComfyTitleBarBridge = {
   openNewWindow: () => {
     ipcRenderer.send('comfy-window:new-chooser-window')
   },
+  designGoHome: () => {
+    ipcRenderer.send('comfy-design:go-home')
+  },
   openFileMenu: (anchor) => {
     ipcRenderer.send('comfy-window:open-title-menu', { menu: 'file', anchor })
+  },
+  openDesignMenu: (anchor, items) => {
+    ipcRenderer.send('comfy-window:open-title-menu', { menu: 'design-builds', anchor, items })
   },
   dismissFileMenu: () => {
     ipcRenderer.send('comfy-window:dismiss-title-menu')
@@ -362,6 +376,12 @@ const bridge: ComfyTitleBarBridge = {
     }
     ipcRenderer.on('comfy-titlebar:menu-closed', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:menu-closed', handler)
+  },
+  onPopupHover: (cb) => {
+    const handler = (_event: IpcRendererEvent, data: unknown): void =>
+      cb((data as { inside?: unknown } | null)?.inside === true)
+    ipcRenderer.on('comfy-titlebar:popup-hover', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:popup-hover', handler)
   },
   onFirstUseModeChanged: (cb) => {
     const handler = (_event: IpcRendererEvent, mode: unknown): void => {

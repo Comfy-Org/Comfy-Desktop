@@ -1,6 +1,6 @@
 import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { DesignMenuItem, PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -77,8 +77,17 @@ interface TitlePopupMenuItem {
   labelKey?: string
   /** Render a checkmark glyph beside the label when true. */
   checked?: boolean
-  /** Marks a separator row instead of an interactive item. */
-  kind?: 'separator'
+  /** Marks a separator row instead of an interactive item; `heading`,
+   *  `title` and `info` are the design prototype's non-interactive rows. */
+  kind?: DesignMenuItem['kind']
+  /** Design prototype rows (DesignMenuItem): icon, status, second line,
+   *  trailing note. */
+  icon?: DesignMenuItem['icon']
+  status?: DesignMenuItem['status']
+  detail?: string
+  meta?: string
+  altId?: string
+  altLabel?: string
 }
 
 /** Kinds that dim the host body with the shared backdrop view — geometry,
@@ -606,14 +615,14 @@ const popupBackdropsByWebContents = new Map<number, number /* parentId */>()
 /** Inline HTML loaded into the backdrop view. Fixed `position: fixed`
  *  scrim — translucent dim over the host body with a 14px backdrop
  *  blur so the underlying chrome reads as a frosted-glass background
- *  behind the centred-card popup. Scrim color (`#211927`) matches the
- *  app's neutral-800; opacity is low (40%) so the blur is the dominant
+ *  behind the centred-card popup. Scrim color (`#0a0a0b`) matches the
+ *  chrome's title bar (Void); opacity is low (40%) so the blur is the dominant
  *  effect, not the dim. A click anywhere fires the dismiss IPC; main
  *  routes it through to hide the picker / global-settings popup. */
 const POPUP_BACKDROP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none}
-  .scrim{position:fixed;inset:0;width:100%;height:100%;background:rgba(33,25,39,0.4);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);cursor:default}
+  .scrim{position:fixed;inset:0;width:100%;height:100%;background:rgba(10,10,11,0.4);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);cursor:default}
 </style></head><body>
 <div class="scrim" id="s"></div>
 <script>
@@ -717,14 +726,144 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-const POPUP_ITEM_HEIGHT = 28
+/** A menu with design-prototype rows (icons, second lines) is wider. */
+const POPUP_RICH_WIDTH = 320
+const POPUP_DETAIL_ITEM_HEIGHT = 48
+const POPUP_HEADING_HEIGHT = 28
+const POPUP_TITLE_HEIGHT = 56
+/** Must match the menu row in the chrome skin (renderer/src/assets/chrome-void.css). */
+const POPUP_ITEM_HEIGHT = 32
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8 // 4px top + 4px bottom on the <ul>
 const POPUP_VBORDER = 2 // 1px top + 1px bottom from the .popup card
 
+/** The launcher (dashboard) window: install-less, with its page. */
+function designLauncher(): ComfyWindowEntry | undefined {
+  for (const e of comfyWindows.values())
+    if (!e.installationId && e.panelView && !e.window.isDestroyed()) return e
+  return undefined
+}
+
+/** Bring the launcher window forward and tell its page; with none open,
+ *  open a fresh dashboard (its page starts on Home). */
+function designToLauncher(pick: string, bindings: TitlePopupHostBindings): void {
+  const launcher = designLauncher()
+  if (!launcher) return bindings.openChooserHostWindow()
+  if (pick === 'home') {
+    launcher.window.show()
+    launcher.window.focus()
+  }
+  launcher.panelView?.webContents.send('comfy-design:menu-pick', pick)
+}
+
+/**
+ * A pick in a design-prototype menu. In the launcher its page handles it;
+ * in a build's own window (Breadcrumb milestones) that window's settings and
+ * closing happen here, the rest goes to the launcher, which owns the
+ * prototype. True when focus moved to another window.
+ */
+function routeDesignPick(
+  parent: ComfyWindowEntry,
+  pick: string,
+  bindings: TitlePopupHostBindings
+): boolean {
+  if (!parent.installationId) {
+    parent.panelView?.webContents.send('comfy-design:menu-pick', pick)
+    return false
+  }
+  if (pick.startsWith('settings:')) {
+    // After this menu hides (the picker opens in the same popup view).
+    const installationId = parent.installationId
+    setTimeout(() =>
+      openInstancePickerForHost(
+        parent,
+        parent.windowKey,
+        bindings,
+        parent.titleBarView.webContents,
+        { x: 0, y: TITLEBAR_HEIGHT },
+        installationId
+      )
+    )
+    return true
+  }
+  if (pick === 'exit') {
+    void bindings.confirmAndCloseHostWindow(parent.window)
+    return false
+  }
+  designToLauncher(pick, bindings)
+  return pick === 'home'
+}
+
+const DESIGN_ICONS = [
+  'home',
+  'local',
+  'cloud',
+  'settings',
+  'window',
+  'folder',
+  'version',
+  'status',
+  'clock',
+  'source',
+  'update',
+  'close'
+] as const
+const DESIGN_STATUSES = ['open', 'running', 'starting', 'stopped', 'error'] as const
+const textOrUndefined = (v: unknown): string | undefined =>
+  typeof v === 'string' && v ? v : undefined
+
+/** The design prototype's menu items (DesignMenuItem), as sent by the title
+ *  bar: only `design:`-prefixed ids, so a pick can't trigger a real menu
+ *  action; headings carry a label only. */
+function designMenuItems(raw: unknown): TitlePopupMenuItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((r): TitlePopupMenuItem[] => {
+    const item = r as Partial<DesignMenuItem> | null
+    if (item?.kind === 'separator') return [{ kind: 'separator' }]
+    if (typeof item?.label !== 'string') return []
+    if (item.kind === 'heading') return [{ kind: 'heading', label: item.label }]
+    if (item.kind === 'title' || item.kind === 'info')
+      return [
+        {
+          kind: item.kind,
+          label: item.label,
+          icon: DESIGN_ICONS.find((i) => i === item.icon),
+          status: DESIGN_STATUSES.find((s) => s === item.status),
+          detail: textOrUndefined(item.detail),
+          meta: textOrUndefined(item.meta)
+        }
+      ]
+    if (typeof item.id !== 'string' || !item.id.startsWith('design:')) return []
+    return [
+      {
+        id: item.id,
+        label: item.label,
+        checked: item.checked === true,
+        icon: DESIGN_ICONS.find((i) => i === item.icon),
+        status: DESIGN_STATUSES.find((s) => s === item.status),
+        detail: textOrUndefined(item.detail),
+        meta: textOrUndefined(item.meta),
+        ...(typeof item.altId === 'string' && item.altId.startsWith('design:')
+          ? { altId: item.altId, altLabel: textOrUndefined(item.altLabel) }
+          : {})
+      }
+    ]
+  })
+}
+
 export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number {
   const content = items.reduce(
-    (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
+    (sum, item) =>
+      sum +
+      (item.kind === 'separator'
+        ? POPUP_SEPARATOR_HEIGHT
+        : item.kind === 'heading'
+          ? POPUP_HEADING_HEIGHT
+          : item.kind === 'title'
+            ? POPUP_TITLE_HEIGHT
+            : item.detail
+              ? POPUP_DETAIL_ITEM_HEIGHT
+              : POPUP_ITEM_HEIGHT),
     0
   )
   return content + POPUP_VPADDING + POPUP_VBORDER
@@ -1486,7 +1625,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   let height: number
   let x: number
   if (opts.kind === 'menu') {
-    width = POPUP_WIDTH
+    width = opts.items.some((i) => i.icon || i.detail) ? POPUP_RICH_WIDTH : POPUP_WIDTH
     height = computePopupHeight(opts.items)
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'downloads') {
@@ -2010,7 +2149,10 @@ export function activateTitlePopupMenuItem(
   // focus back from the new target.
   let releaseFocusToParent = true
   const parentEntry = comfyWindows.get(entry.parentEntryId)
-  if (id === 'new-window') {
+  if (id.startsWith('design:')) {
+    // Design prototype: the launcher page acts on the pick.
+    if (parentEntry) releaseFocusToParent = !routeDesignPick(parentEntry, id.slice(7), bindings)
+  } else if (id === 'new-window') {
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
@@ -2369,6 +2511,16 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 
+  // Design prototype: a build window's breadcrumb root goes to the launcher.
+  ipcMain.on('comfy-design:go-home', () => designToLauncher('home', bindings))
+
+  // Design prototype: pointer over the popup, for the title bar's hover card.
+  ipcMain.on('comfy-titlepopup:hover', (event, payload: { inside?: unknown }) => {
+    const entry = titlePopupsByWebContents.get(event.sender.id)
+    if (!entry || entry.titleBarSender.isDestroyed()) return
+    entry.titleBarSender.send('comfy-titlebar:popup-hover', { inside: payload?.inside === true })
+  })
+
   ipcMain.on('comfy-titlepopup:close', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
@@ -2569,13 +2721,21 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // host entry and opens the popup anchored under the button.
   ipcMain.on(
     'comfy-window:open-title-menu',
-    (event, payload: { menu?: 'file'; anchor?: { x?: number; y?: number } }) => {
+    (
+      event,
+      payload: {
+        menu?: 'file' | 'design-builds'
+        anchor?: { x?: number; y?: number }
+        items?: unknown
+      }
+    ) => {
       const found = findEntryByTitleBarSender(event.sender)
       if (!found) return
       const { id: windowKey, entry } = found
       if (entry.window.isDestroyed()) return
-      // Only the file/waffle menu is openable from the title bar.
-      if (payload?.menu !== 'file') return
+      // The file/waffle menu, or the design prototype's "+" menu (its items
+      // come from the title bar: the builds the launcher page published).
+      if (payload?.menu !== 'file' && payload?.menu !== 'design-builds') return
 
       const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
       const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
@@ -2584,7 +2744,10 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         parent: entry.window,
         parentEntryId: windowKey,
         kind: 'menu',
-        items: buildTitlePopupMenuItems(entry),
+        items:
+          payload.menu === 'file'
+            ? buildTitlePopupMenuItems(entry)
+            : designMenuItems(payload.items),
         anchor: { x, y },
         theme: entry.lastTheme,
         titleBarSender: entry.titleBarView.webContents
