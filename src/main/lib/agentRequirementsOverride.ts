@@ -45,7 +45,6 @@ const AGENT_KEY = 'comfy-agent'
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
 
-/** `comfy-agent-go` is the agent's Go carrier, never the agent itself. */
 function isAgentLine(normalized: string): boolean {
   return normalized !== AGENT_GO && AGENT_LINE.test(normalized)
 }
@@ -182,7 +181,6 @@ export function effectiveAgentRequirements(
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
-  // Neither file names the Go carrier: its pin goes in as a line of its own, decorated below.
   if (
     pins.has(AGENT_GO) &&
     !agentKeys.has(AGENT_GO) &&
