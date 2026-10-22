@@ -655,12 +655,15 @@ describe('the agent package name and extras', () => {
       { name: 'comfy-agent', version: '0.1.0rc2' },
       { name: 'comfy_agent_go', version: '0.1.0rc2' },
       { name: 'comfy-agent-sdk', version: '1.0' },
+      { name: 'comfy-agent-gox', version: '1.0' },
       { name: 'requests', version: '2.32.0' }
     ])
+    const held = 'comfy-agent-sdk==1.0\ncomfy-agent-gox==1.0\nrequests==2.32.0\n'
     const parsed = parseAgentRequirementsOverride({ 'comfy-agent[go-nonfree]': '0.1.0rc3' })
     if (parsed.kind !== 'pins') throw new Error(parsed.kind)
-    expect(installedConstraints(list, parsed.pins, 'comfy-agent==0.0.0.dev0\n')).toBe(
-      'comfy-agent-sdk==1.0\nrequests==2.32.0\n'
+    expect(installedConstraints(list, parsed.pins, 'comfy-agent==0.0.0.dev0\n')).toBe(held)
+    expect(installedConstraints(list, new Map(), 'comfy-agent==0.0.0.dev0\n'), 'unpinned').toBe(
+      held
     )
   })
 
