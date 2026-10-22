@@ -974,21 +974,24 @@ describe('makeOpsFlag refresh', () => {
     ])
   })
 
-  it('keeps a boot answer still in flight when the refresh is unreachable', async () => {
+  it('drops an older answer even when the refresh that superseded it is unreachable', async () => {
     const flag = makePersistedFlag()
-    let bootAnswer!: (v: unknown) => void
-    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (bootAnswer = resolve)))
-    void flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let staffAnswer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (staffAnswer = resolve)))
+    void flag.refresh()
+    const staffLate = lateCallback()!
     getOpsFlagResult.mockResolvedValueOnce(unreachable())
     await flag.refresh()
 
-    bootAnswer(flagResult('disabled'))
+    staffAnswer(flagResult('disabled'))
+    staffLate(flagResult('disabled'))
     await settle()
 
-    expect(await flag.get(), 'no newer answer was applied, so the boot one is not stale').toBe(
-      'disabled'
-    )
-    expect(stored()).toMatchObject({ value: 'disabled' })
+    const why = 'a staff answer arriving after a failed sign-out refresh is stale'
+    expect(await flag.get(), why).toBe('normal')
+    expect(stored(), why).toMatchObject({ value: 'normal' })
   })
 
   it("applies and persists the refresh's own late answer", async () => {

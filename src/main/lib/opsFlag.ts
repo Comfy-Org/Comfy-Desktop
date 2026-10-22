@@ -203,8 +203,8 @@ export interface OpsFlag<T> {
   get(): Promise<T>
   /** Re-run the evaluation under the id `init` used, because a person property it sends has
    *  changed mid-session (a staff sign-in). Authoritative exactly as the boot fetch is: a value
-   *  replaces `cached` and is persisted; `unreachable` changes nothing. Once it has a value, a
-   *  slower boot answer cannot land over it. `get()` waits for it, each refresh bounded by the
+   *  replaces `cached` and is persisted; `unreachable` changes nothing. Any fetch still in flight
+   *  is superseded, since it carried the old properties. `get()` waits for it, each refresh bounded by the
    *  flag's deadline (a refresh started while one is awaited extends the wait). A no-op before
    *  `init`. Never rejects. */
   refresh(): Promise<void>
@@ -257,10 +257,9 @@ export function makeOpsFlag<T>(opts: {
    *  deadline can still settle long after the launch (or the test) that started it moved on;
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
-  /** Older answers than the last APPLIED one are stale; not the last started, so an unreachable
-   *  refresh does not discard the boot answer still in flight. */
+  /** Only the latest-started fetch may apply: an older one went out with superseded person
+   *  properties, even when the newer one turns out unreachable. */
   let fetchSeq = 0
-  let appliedSeq = 0
   let initOpts: { distinctId: string; timeoutMs?: number } | null = null
   let refreshPromise: Promise<void> | null = null
 
@@ -284,8 +283,7 @@ export function makeOpsFlag<T>(opts: {
    *  single persisting flag. Across two overlapping launches the loser of a race re-fetches on
    *  the next launch anyway. */
   function persistLate(generationAtInit: number, seq: number, result: OpsFlagValueResult): void {
-    if (generationAtInit !== generation || seq < appliedSeq) return
-    appliedSeq = seq
+    if (generationAtInit !== generation || seq !== fetchSeq) return
     const parsed = parse(result.value, result.payload, Date.now())
     if (parsed !== undefined) cached = parsed
     if (logLabel) console.log(`[${logLabel}] late: fetched=`, result.value)
@@ -319,14 +317,13 @@ export function makeOpsFlag<T>(opts: {
       .then((result) => {
         // A refresh runs detached, so it can outlive a `_resetForTest`.
         if (generationAtInit !== generation) return
-        if (seq < appliedSeq) return
+        if (seq !== fetchSeq) return
         if (result.kind === 'unreachable') {
           // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
           // it here could undo a late value that landed first.
           const parsed = fallbackOnUnreachable ? parse(undefined, undefined) : undefined
           if (parsed !== undefined) cached = parsed
         } else {
-          appliedSeq = seq
           const parsed = parse(result.value, result.payload, Date.now())
           if (parsed !== undefined) cached = parsed
           if (persist) {
@@ -394,7 +391,6 @@ export function makeOpsFlag<T>(opts: {
       initPromise = null
       initOpts = null
       refreshPromise = null
-      appliedSeq = 0
       // Strands any fetch still in flight, so a late result from the previous test cannot
       // write into the next one's config dir.
       generation += 1
