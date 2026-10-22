@@ -231,13 +231,17 @@ function parseInstalled(pipListOutput: string): { name: string; version: string 
   return packages
 }
 
-/** The name of the first comfy-agent* package core's file lists: the one an agent pin decorates. */
-function agentPackage(coreText: string): string | undefined {
-  return coreText
-    .split(/\r?\n/)
-    .map((line) => line.match(LEADING_NAME)?.[1])
-    .map((name) => name && normalizePackageName(name))
-    .find((name) => !!name && isAgentLine(name))
+/**
+ * The name and `==` version of the first comfy-agent* package core's file lists: the one an agent
+ * pin decorates.
+ */
+function agentPackage(coreText: string): { name: string; version?: string } | undefined {
+  for (const line of coreText.split(/\r?\n/)) {
+    const name = line.match(LEADING_NAME)?.[1]
+    if (name && isAgentLine(normalizePackageName(name)))
+      return { name: normalizePackageName(name), version: line.match(REQUIREMENT_LINE)?.[2] }
+  }
+  return undefined
 }
 
 /**
@@ -256,7 +260,7 @@ export function installedConstraints(
 ): string | null {
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
-  const agent = agentPackage(coreText)
+  const agent = agentPackage(coreText)?.name
   const free = (name: string): boolean =>
     name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
@@ -310,15 +314,12 @@ export function agentGoBehindAgent(
   const go = pins.get(AGENT_GO)
   if (go === undefined) return null
   const agentPin = pins.get(AGENT_KEY)
-  const name = agentPackage(coreText) ?? AGENT_KEY
-  const coreLine = coreText
-    .split(/\r?\n/)
-    .map((line) => line.match(REQUIREMENT_LINE))
-    .find((line) => line && normalizePackageName(line[1]!) === name)
+  const core = agentPackage(coreText)
+  const name = core?.name ?? AGENT_KEY
   const agent =
     agentPin !== undefined
       ? pinVersion(agentPin)
-      : (coreLine?.[2] ??
+      : (core?.version ??
         parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version)
   // An installed version can carry a local label (`+cu`) this comparison does not order.
   if (agent === undefined || !EXACT_VERSION.test(agent)) return null
