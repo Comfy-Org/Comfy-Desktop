@@ -34,8 +34,8 @@ function opaquePanelBg(): string {
 /** Full-screen bodies that hide the comfy view, so the panel must paint opaque
  *  during load rather than compositing the (hidden) canvas through. `comfy-
  *  lifecycle` is included so the 1-2s `stopping` window shows the spinner over
- *  an opaque surface instead of black. Overlay modes (downloads / MCP setup)
- *  deliberately stay transparent. */
+ *  an opaque surface instead of black. A modal over the canvas deliberately
+ *  stays transparent. */
 function isOpaqueBodyMode(mode: BodyMode): boolean {
   return (
     mode === 'chooser' ||

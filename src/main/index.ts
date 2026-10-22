@@ -1741,6 +1741,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       setActivePanel,
       navigateToPanel,
       triggerOpenFeedback,
+      openPanelModal,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
