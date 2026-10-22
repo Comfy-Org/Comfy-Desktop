@@ -163,7 +163,7 @@ let answeredGeneration: number | null = null
 
 let unobserveConsensus: (() => void) | null = null
 
-let evaluatedAsStaff = false
+let lastEvaluationSentStaff = false
 
 let onFlagPropertiesChange: (() => void) | null = null
 
@@ -200,7 +200,7 @@ export function initStaffFlagTargeting(
 ): void {
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
-  evaluatedAsStaff = sendsStaff(cached === true)
+  lastEvaluationSentStaff = sendsStaff(cached === true)
   onFlagPropertiesChange = opts.onFlagPropertiesChange ?? null
   // Subscribed here rather than at module load so the wiring is explicit and ordered: this runs
   // before any view exists, so no outcome can be missed, and a second call cannot double-subscribe.
@@ -497,8 +497,8 @@ function applyClassification(isStaff: boolean): void {
   telemetry.setFlagEvaluationStaff(isStaff)
   persistClassification(isStaff)
   // After the write, so the re-evaluation and the next boot are targeted on the same answer.
-  if (sendsStaff(isStaff) !== evaluatedAsStaff) {
-    evaluatedAsStaff = sendsStaff(isStaff)
+  if (sendsStaff(isStaff) !== lastEvaluationSentStaff) {
+    lastEvaluationSentStaff = sendsStaff(isStaff)
     onFlagPropertiesChange?.()
   }
 }
@@ -706,6 +706,6 @@ export function _resetForTest(): void {
   answeredGeneration = null
   unobserveConsensus?.()
   unobserveConsensus = null
-  evaluatedAsStaff = false
+  lastEvaluationSentStaff = false
   onFlagPropertiesChange = null
 }

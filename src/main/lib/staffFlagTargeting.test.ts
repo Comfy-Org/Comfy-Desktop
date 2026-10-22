@@ -645,7 +645,10 @@ describe('applying a change without a restart', () => {
     await consensusSignedIn([stubContents(true)])
 
     expect(onFlagPropertiesChange).toHaveBeenCalledTimes(1)
-    expect(storedFile()).toMatchObject({ staff: true })
+    expect(
+      storedFile(),
+      'written first, so the re-evaluation and the next boot target the same answer'
+    ).toMatchObject({ staff: true })
   })
 
   it('does not re-evaluate without consent, since the property is not sent', async () => {

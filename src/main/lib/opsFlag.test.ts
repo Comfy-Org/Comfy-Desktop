@@ -992,7 +992,8 @@ describe('makeOpsFlag refresh', () => {
     bootLate(flagResult('normal'))
     await settle()
 
-    expect(await flag.get()).toBe('disabled')
-    expect(stored()).toMatchObject({ value: 'disabled' })
+    const why = 'the boot fetch went out without the refreshed property, so its answer is stale'
+    expect(await flag.get(), why).toBe('disabled')
+    expect(stored(), why).toMatchObject({ value: 'disabled' })
   })
 })
