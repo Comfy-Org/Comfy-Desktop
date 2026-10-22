@@ -258,8 +258,8 @@ function agentPackage(coreText: string): string | undefined {
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
  * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
- * holding it would block every agent upgrade. Any other comfy-agent* package is held, and so is
- * the agent itself under a Go pin alone. The frontend is held too unless this override pins it.
+ * holding it would block every agent upgrade. Any other comfy-agent* package is held. The
+ * frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
@@ -269,11 +269,8 @@ export function installedConstraints(
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
   const agent = agentPackage(coreText)
-  const held = new Set(holdsAgent(pins) ? [agent, AGENT_KEY] : [])
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE
-      ? pins.has(name)
-      : !held.has(name) && (OVERRIDABLE.has(name) || name === agent)
+    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)

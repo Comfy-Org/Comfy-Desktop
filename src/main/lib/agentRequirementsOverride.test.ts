@@ -758,18 +758,16 @@ describe('a comfy-agent-go pin', () => {
     })
   })
 
-  it("alone, never takes the agent down to core's placeholder", () => {
-    const placeholder = 'comfy-agent==0.0.0.dev0\n'
-    const list = JSON.stringify([
-      { name: 'comfy-agent', version: '0.1.0rc2' },
-      { name: 'comfy-agent-go', version: '0.1.0rc2' }
-    ])
+  it("alone, never takes the agent to core's line, a placeholder or a renamed package", () => {
     const go = pins({ 'comfy-agent-go': '0.1.0rc3' })
-    expect(effectiveAgentRequirements(placeholder, go)).toEqual({
+    expect(effectiveAgentRequirements('comfy-agent==0.0.0.dev0\n', go)).toEqual({
       kind: 'text',
       text: 'comfy-agent-go==0.1.0rc3\n'
     })
-    expect(installedConstraints(list, go, placeholder)).toBe('comfy-agent==0.1.0rc2\n')
+    expect(effectiveAgentRequirements('comfy-agent-oss==0.2.0\ncomfy-cli==1.23.0\n', go)).toEqual({
+      kind: 'text',
+      text: 'comfy-cli==1.23.0\ncomfy-agent-go==0.1.0rc3\n'
+    })
   })
 
   it("sits beside an agent pin, which still decorates core's agent line", () => {
@@ -801,7 +799,7 @@ describe('a comfy-agent-go pin', () => {
     expect(installedConstraints(list, new Map(), core)).toBe('requests==2.32.0\n')
   })
 
-  it('alone, holds the agent and every unrelated installed package', () => {
+  it('still holds every unrelated installed package', () => {
     const list = JSON.stringify([
       { name: 'comfy-agent', version: '0.1.0rc3' },
       { name: 'comfy-agent-go', version: '0.1.0rc3' },
@@ -809,7 +807,7 @@ describe('a comfy-agent-go pin', () => {
       { name: 'requests', version: '2.32.0' }
     ])
     expect(installedConstraints(list, pins({ 'comfy-agent-go': '0.1.0rc4' }), CORE)).toBe(
-      'comfy-agent==0.1.0rc3\ncomfyui-frontend-package==1.55.18\nrequests==2.32.0\n'
+      'comfyui-frontend-package==1.55.18\nrequests==2.32.0\n'
     )
   })
 

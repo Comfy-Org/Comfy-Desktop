@@ -488,8 +488,9 @@ async function tryOverride(
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
   const overridePath = path.join(plan.installPath, `.launch-agent-reqs-override-${tag}-src.txt`)
   const constraintsPath = path.join(plan.installPath, constraintsName)
+  let listed: string | null
   try {
-    const listed = await listInstalled(plan, signal)
+    listed = await listInstalled(plan, signal)
     const constraints = listed === null ? null : installedConstraints(listed, pins, coreText)
     if (listed === null || constraints === null) return refuse(sendOutput, 'check_failed', pins)
     // Not counted toward retiring the override: it applies on a later launch, once core's are in.
@@ -505,18 +506,18 @@ async function tryOverride(
     ])
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed) return revertOnInstall(sendOutput, pins)
-    const behind = agentGoBehindAgent(pins, coreText, listed)
-    if (behind)
-      sendOutput(
-        `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
-      )
-    return { decision: 'applied', pins }
   } catch {
     return revertOnInstall(sendOutput, pins)
   } finally {
     void fs.promises.unlink(overridePath).catch(() => {})
     void fs.promises.unlink(constraintsPath).catch(() => {})
   }
+  const behind = agentGoBehindAgent(pins, coreText, listed)
+  if (behind)
+    sendOutput(
+      `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
+    )
+  return { decision: 'applied', pins }
 }
 
 /** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
