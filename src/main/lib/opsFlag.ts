@@ -257,9 +257,8 @@ export function makeOpsFlag<T>(opts: {
    *  deadline can still settle long after the launch (or the test) that started it moved on;
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
-  /** An answer older than one already applied is stale: a boot answer arriving after a refresh's.
-   *  Compared against the last APPLIED fetch, not the last started, so a refresh that comes back
-   *  unreachable does not throw away the boot answer still in flight. */
+  /** Older answers than the last APPLIED one are stale; not the last started, so an unreachable
+   *  refresh does not discard the boot answer still in flight. */
   let fetchSeq = 0
   let appliedSeq = 0
   let initOpts: { distinctId: string; timeoutMs?: number } | null = null
