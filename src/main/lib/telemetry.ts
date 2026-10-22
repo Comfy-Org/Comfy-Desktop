@@ -118,8 +118,7 @@ export type FeatureFlagValue = string | boolean
 
 /** Every outcome of an ops-flag fetch, classified. See `getOpsFlagResult`. */
 export type OpsFlagFetchResult =
-  | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
-  | { kind: 'unreachable' }
+  { kind: 'value'; value: FeatureFlagValue; payload: unknown } | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,

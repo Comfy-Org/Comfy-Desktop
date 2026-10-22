@@ -148,9 +148,7 @@ export function coreGateVersion(inst: InstallationRecord): Omit<CoreVersionState
  * Resolved by the caller — {@link coreRecordCurrent} stays free of filesystem access.
  */
 export type CoreCheckout =
-  | { kind: 'not-git' }
-  | { kind: 'head'; commit: string }
-  | { kind: 'unreadable' }
+  { kind: 'not-git' } | { kind: 'head'; commit: string } | { kind: 'unreadable' }
 
 /**
  * Whether the record still describes the checkout being launched.

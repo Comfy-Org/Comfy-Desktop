@@ -186,8 +186,7 @@ export async function install(
     ) => emitInstallPhase(installation, phase, status, info ?? {})
   }
   const files = installation.downloadFiles as
-    | Array<{ url: string; filename: string; size: number }>
-    | undefined
+    Array<{ url: string; filename: string; size: number }> | undefined
   if (files && files.length > 0) {
     const cacheDir = `${installation.releaseTag as string}_${installation.variant as string}`
     await downloadAndExtractMulti(files, installation.installPath, cacheDir, installerCtx)

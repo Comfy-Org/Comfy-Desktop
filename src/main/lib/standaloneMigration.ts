@@ -72,8 +72,7 @@ export interface SharedMigrationInput {
 }
 
 export type StandaloneTargetSelection =
-  | { mode: 'auto' }
-  | { mode: 'selected'; release: FieldOption; variant: FieldOption }
+  { mode: 'auto' } | { mode: 'selected'; release: FieldOption; variant: FieldOption }
 
 /**
  * Emit the standard migration step list for the progress UI.

@@ -1,11 +1,6 @@
 /** Why a browser sign-in failed, as a code safe to report: never the IdP's or server's text. */
 export type SignInFailureReason =
-  | 'cancelled'
-  | 'timeout'
-  | 'idp_error'
-  | 'server_error'
-  | 'network'
-  | 'browser_unavailable'
+  'cancelled' | 'timeout' | 'idp_error' | 'server_error' | 'network' | 'browser_unavailable'
 
 export class SignInFailure extends Error {
   override readonly name = 'SignInFailure'

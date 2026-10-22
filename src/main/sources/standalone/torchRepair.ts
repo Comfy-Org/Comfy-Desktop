@@ -238,8 +238,7 @@ export async function repairTorch(
     const files = verifiedBundle
       ? [verifiedBundle]
       : (installation.downloadFiles as
-          | Array<{ url: string; filename: string; size: number }>
-          | undefined)
+          Array<{ url: string; filename: string; size: number }> | undefined)
     const releaseTag =
       verifiedBundle && verifiedTag ? verifiedTag : (installation.releaseTag as string | undefined)
     const variant = installation.variant as string | undefined

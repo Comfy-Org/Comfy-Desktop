@@ -19,11 +19,7 @@ export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
 const DEFAULT_TIMEOUT_MS = 30_000
 
 export type ComfyBuilderErrorKind =
-  | 'unauthorized'
-  | 'forbidden'
-  | 'not-found'
-  | 'network'
-  | 'server'
+  'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'server'
 
 export class ComfyBuilderApiError extends Error {
   override name = 'ComfyBuilderApiError'

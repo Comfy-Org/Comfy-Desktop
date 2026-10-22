@@ -90,8 +90,7 @@ const posthogClientMock = vi.hoisted(() => ({
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
-    | { enabled: boolean; variant?: string; payload?: unknown }
-    | undefined,
+    { enabled: boolean; variant?: string; payload?: unknown } | undefined,
   /** `hang` never settles, so only the caller's timeout can win the race. `defer` hands the
    *  test the settle functions instead, so an outcome can be staged AFTER the deadline has
    *  already answered — the only way to exercise the late-result path. */

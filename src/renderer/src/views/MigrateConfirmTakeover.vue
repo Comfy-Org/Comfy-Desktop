@@ -27,8 +27,7 @@ const dialogRef = ref<HTMLElement | null>(null)
 let returnFocusTo: HTMLElement | null = null
 
 let resolver:
-  | ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void)
-  | null = null
+  ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void) | null = null
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && isOpen.value) commit(false)

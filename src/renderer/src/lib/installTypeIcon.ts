@@ -5,12 +5,7 @@ import { isBuildSource } from '../devplatform/buildState'
 /** Stable UX-side install-type key. Callers switch on this for styling /
  *  analytics rather than the raw `sourceCategory` from the source plugins. */
 export type InstallTypeKey =
-  | 'standalone'
-  | 'cloud'
-  | 'legacyDesktop'
-  | 'remote'
-  | 'build'
-  | 'unknown'
+  'standalone' | 'cloud' | 'legacyDesktop' | 'remote' | 'build' | 'unknown'
 
 export interface InstallTypeIconMeta {
   key: InstallTypeKey

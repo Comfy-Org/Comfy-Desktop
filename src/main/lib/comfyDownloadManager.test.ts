@@ -398,8 +398,7 @@ describe('asset download retries', () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=hash.mp4'
     let willDownload:
-      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
-      | undefined
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
@@ -419,8 +418,7 @@ describe('asset download retries', () => {
 
     function createItem(contentDisposition: string | null) {
       let done:
-        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
-        | undefined
+        ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],
@@ -484,8 +482,7 @@ describe('asset download retries', () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=same-tick.png'
     let willDownload:
-      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
-      | undefined
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
@@ -515,8 +512,7 @@ describe('asset download retries', () => {
       expect(session.downloadURL).toHaveBeenCalledTimes(1)
 
       let done:
-        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
-        | undefined
+        ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],
@@ -633,8 +629,7 @@ describe('asset download retries', () => {
 
   function makeAssetHarness() {
     let willDownload:
-      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
-      | undefined
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
@@ -655,8 +650,7 @@ describe('asset download retries', () => {
 
     function createItem(itemUrl: string, contentDisposition: string | null = null) {
       let done:
-        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
-        | undefined
+        ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [itemUrl],
@@ -1161,8 +1155,7 @@ describe('asset download retries', () => {
     const urlA = 'https://remote.example/api/view?filename=a-video.mp4'
     const urlB = 'https://remote.example/api/view?filename=b-video.mp4'
     let willDownload:
-      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
-      | undefined
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
@@ -1182,8 +1175,7 @@ describe('asset download retries', () => {
 
     function createItem(url: string) {
       let done:
-        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
-        | undefined
+        ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],

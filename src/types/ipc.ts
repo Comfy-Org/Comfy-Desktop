@@ -770,12 +770,7 @@ export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'in
 
 // --- Model download types ---
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   /** Stable per-job identifier assigned by main. Control APIs accept it in

@@ -119,8 +119,7 @@ const terminalTemplateInputDownloadsById = new Map<string, ComfyTemplateInputAss
 const templateInputProgressCallbacks = new Set<TemplateInputProgressCallback>()
 const MAX_BUFFERED_TERMINAL_DOWNLOADS = 50
 let templateInputProgressHandler:
-  | ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void)
-  | undefined
+  ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void) | undefined
 
 function templateInputReferenceKey({ templateId, assetId }: ComfyTemplateInputReference): string {
   return `${templateId}\u0000${assetId}`
