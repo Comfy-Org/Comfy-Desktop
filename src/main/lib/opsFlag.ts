@@ -280,11 +280,7 @@ export function makeOpsFlag<T>(opts: {
    *  campaign flags sharing `campaign-flags.json` cannot interleave, and `ops-flags.json` has a
    *  single persisting flag. Across two overlapping launches the loser of a race re-fetches on
    *  the next launch anyway. */
-  function persistLate(
-    generationAtInit: number,
-    seq: number,
-    result: OpsFlagValueResult
-  ): void {
+  function persistLate(generationAtInit: number, seq: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation || seq !== fetchSeq) return
     const parsed = parse(result.value, result.payload, Date.now())
     if (parsed !== undefined) cached = parsed

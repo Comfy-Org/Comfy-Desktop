@@ -195,9 +195,7 @@ const MAX_PAGE_USER_ID_CHARS = 256
  * file that may hold `true`, and the unchanged-classification check would then suppress the
  * write that a genuine sign-out needs to make.
  */
-export function initStaffFlagTargeting(
-  opts: { onFlagPropertiesChange?: () => void } = {}
-): void {
+export function initStaffFlagTargeting(opts: { onFlagPropertiesChange?: () => void } = {}): void {
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
   lastEvaluationSentStaff = sendsStaff(cached === true)
