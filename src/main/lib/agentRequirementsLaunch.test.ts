@@ -807,6 +807,27 @@ describe('installAgentRequirements with a version override', () => {
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
   })
 
+  it("applies a Go pin on the same launch once core's file is in, and warns once it is", async () => {
+    mockUvPip
+      .mockResolvedValueOnce({
+        code: 0,
+        output: JSON.stringify([{ name: 'requests', version: '2.32.0' }])
+      })
+      .mockResolvedValueOnce({ code: 0, output: INSTALLED })
+    const sendOutput = vi.fn()
+    const old = { 'comfy-agent-go': '0.1.9' }
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined, old)
+
+    expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent-go', '0.1.9']]) })
+    expect(calls).toEqual([
+      { content: CORE_FILE, constraints: null },
+      { content: `${CORE_FILE}comfy-agent-go==0.1.9\n`, constraints: 'requests==2.32.0\n' }
+    ])
+    expect(sendOutput.mock.calls.join('')).toContain(
+      '⚠ comfy-agent-go 0.1.9 is older than comfy-agent 0.2.0; the agent will run its bundled agent'
+    )
+  })
+
   it('says nothing about the Go carrier when the override does not install', async () => {
     respond = ({ constraints }) => ({ code: constraints === null ? 0 : 1, output: '' })
     const sendOutput = vi.fn()
