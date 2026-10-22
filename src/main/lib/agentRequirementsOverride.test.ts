@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as telemetry from './telemetry'
 import {
   START_FAILURES_TO_REVERT,
+  agentGoBehindAgent,
   classifyAgentEvent,
   coreFileInstalled,
   coreFrontendVersion,
@@ -196,7 +197,7 @@ describe('effectiveAgentRequirements', () => {
     })
   })
 
-  it('never adds a package core does not list', () => {
+  it('adds no package core does not list but comfy-agent-go', () => {
     expect(
       effectiveAgentRequirements('comfy-agent==0.2.0\n', pins({ 'comfy-cli': '1.0' }))
     ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
@@ -736,6 +737,88 @@ describe('the agent package name and extras', () => {
     expect(parseAgentRequirementsOverride({ 'comfy-agent[go]': '>=1.0' })).toEqual({
       kind: 'refused',
       reason: 'bad_version'
+    })
+  })
+})
+
+describe('a comfy-agent-go pin', () => {
+  const CORE = 'comfy-agent==0.1.0rc3\ncomfy-cli==1.23.0\n'
+
+  it('is accepted on its own key, not taken for the agent', () => {
+    expect(parseAgentRequirementsOverride({ comfy_agent_go: '0.1.0rc4' })).toEqual({
+      kind: 'pins',
+      pins: new Map([['comfy-agent-go', '0.1.0rc4']])
+    })
+  })
+
+  it('goes in as a line of its own, since neither file names it', () => {
+    expect(effectiveAgentRequirements(CORE, pins({ 'comfy-agent-go': '0.1.0rc4' }))).toEqual({
+      kind: 'text',
+      text: `${CORE}comfy-agent-go==0.1.0rc4\n`
+    })
+  })
+
+  it("sits beside an agent pin, which still decorates core's agent line", () => {
+    const both = pins({ 'comfy-agent': '0.1.0rc4', 'comfy-agent-go': '0.1.0rc4' })
+    expect(effectiveAgentRequirements(CORE, both)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.1.0rc4\ncomfy-cli==1.23.0\ncomfy-agent-go==0.1.0rc4\n'
+    })
+  })
+
+  it("decorates core's own comfy-agent-go line if it ever names one, never the agent's", () => {
+    const listed = 'comfy-agent-go==0.1.0rc3\ncomfy-agent==0.1.0rc3\n'
+    expect(effectiveAgentRequirements(listed, pins({ 'comfy-agent': '0.1.0rc4' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-go==0.1.0rc3\ncomfy-agent==0.1.0rc4\n'
+    })
+    expect(effectiveAgentRequirements(listed, pins({ 'comfy-agent-go': '0.1.0rc4' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-go==0.1.0rc4\ncomfy-agent==0.1.0rc3\n'
+    })
+  })
+
+  it('still holds every unrelated installed package', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent', version: '0.1.0rc3' },
+      { name: 'comfy-agent-go', version: '0.1.0rc3' },
+      { name: 'comfyui-frontend-package', version: '1.55.18' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list, pins({ 'comfy-agent-go': '0.1.0rc4' }), CORE)).toBe(
+      'comfyui-frontend-package==1.55.18\nrequests==2.32.0\n'
+    )
+  })
+
+  it("is one core's file can't take back, unless it pins the line", () => {
+    const go = pins({ 'comfy-agent-go': '0.1.0rc4' })
+    expect(pinsOverBareLines(CORE, go)).toEqual(go)
+    expect(pinsOverBareLines('comfy-agent-go\n', go)).toEqual(go)
+    expect(pinsOverBareLines('comfy-agent-go==0.1.0rc3\n', go)).toEqual(new Map())
+  })
+
+  describe('older than the agent', () => {
+    const list = JSON.stringify([{ name: 'comfy_agent', version: '0.1.0rc3' }])
+
+    it('is flagged against the installed agent', () => {
+      expect(agentGoBehindAgent(pins({ 'comfy-agent-go': '0.1.0rc2' }), CORE, list)).toEqual({
+        go: '0.1.0rc2',
+        agent: '0.1.0rc3'
+      })
+    })
+
+    it("is flagged against the agent pin, over what's installed", () => {
+      const both = pins({ 'comfy-agent': '0.1.0rc5', 'comfy-agent-go': '0.1.0rc4' })
+      expect(agentGoBehindAgent(both, CORE, list)).toEqual({ go: '0.1.0rc4', agent: '0.1.0rc5' })
+    })
+
+    it('is not flagged at or above the agent, or with no agent to compare', () => {
+      for (const go of ['0.1.0rc3', '0.1.0'])
+        expect(agentGoBehindAgent(pins({ 'comfy-agent-go': go }), CORE, list), go).toBeNull()
+      expect(agentGoBehindAgent(pins({ 'comfy-agent-go': '0.1.0rc2' }), CORE, '[]')).toBeNull()
+      const local = JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc3+local' }])
+      expect(agentGoBehindAgent(pins({ 'comfy-agent-go': '0.1.0rc2' }), CORE, local)).toBeNull()
+      expect(agentGoBehindAgent(pins({ 'comfy-agent': '0.1.0rc3' }), CORE, list)).toBeNull()
     })
   })
 })

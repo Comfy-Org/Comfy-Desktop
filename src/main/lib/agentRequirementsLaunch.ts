@@ -9,6 +9,7 @@ import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import {
   FRONTEND_PACKAGE,
+  agentGoBehindAgent,
   coreFrontendVersion,
   effectiveAgentRequirements,
   coreFileInstalled,
@@ -496,6 +497,11 @@ async function tryOverride(
     await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
+    const behind = agentGoBehindAgent(pins, coreText, listed)
+    if (behind)
+      sendOutput(
+        `⚠ comfy-agent-go ${behind.go} is older than comfy-agent ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
+      )
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
     const budget = Math.max(0, OVERRIDE_TIMEOUT_MS - (Date.now() - startedAt))
     const installed = await run(overridePath, `.launch-agent-reqs-override-${tag}.txt`, budget, [

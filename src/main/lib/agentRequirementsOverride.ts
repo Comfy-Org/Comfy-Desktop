@@ -6,11 +6,20 @@ import type { StreamSource } from './stderrTail'
 
 export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
 
+const AGENT_GO = 'comfy-agent-go'
+
 /**
  * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
- * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
+ * published to PyPI can reach the agent cohort before ComfyUI's next pin. `comfy-agent-go` is in
+ * neither file, so its pin is added as a line of its own. Exact versions only.
  */
-const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
+const OVERRIDABLE = new Set([
+  'comfy-agent',
+  'comfy-cli',
+  'nodejs-wheel-binaries',
+  FRONTEND_PACKAGE,
+  AGENT_GO
+])
 
 /**
  * PEP 440 public versions only, so no operator, URL, index, option or marker can get through. An
@@ -35,10 +44,14 @@ const AGENT_KEY = 'comfy-agent'
  * version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
-const AGENT_GO = 'comfy-agent-go'
+
+/** `comfy-agent-go` is the agent's Go carrier, never the agent itself. */
+function isAgentLine(normalized: string): boolean {
+  return normalized !== AGENT_GO && AGENT_LINE.test(normalized)
+}
 
 function pinKey(normalized: string): string {
-  return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
+  return isAgentLine(normalized) ? AGENT_KEY : normalized
 }
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
@@ -169,6 +182,13 @@ export function effectiveAgentRequirements(
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
+  // Neither file names the Go carrier: its pin goes in as a line of its own, decorated below.
+  if (
+    pins.has(AGENT_GO) &&
+    !agentKeys.has(AGENT_GO) &&
+    !fromMain.some((l) => keyOf(l) === AGENT_GO)
+  )
+    fromMain.push(AGENT_GO)
   // Before the agent file's trailing newline, so the result still ends in one.
   lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
   for (let i = 0; i < lines.length; i++) {
@@ -224,7 +244,7 @@ function agentPackage(coreText: string): string | undefined {
     .split(/\r?\n/)
     .map((line) => line.match(LEADING_NAME)?.[1])
     .map((name) => name && normalizePackageName(name))
-    .find((name) => !!name && AGENT_LINE.test(name))
+    .find((name) => !!name && isAgentLine(name))
 }
 
 /**
@@ -270,14 +290,46 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 
-/** The pins over lines core left unversioned: core's file can't take those back. */
+/**
+ * The pins over lines core left unversioned, or over no line at all (an added `comfy-agent-go`):
+ * core's file can't take those back.
+ */
 export function pinsOverBareLines(coreText: string, pins: OverridePins): OverridePins {
-  const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
-  return new Map(
-    [...pins].filter(([name]) =>
-      bare.some((line) => line && !line[2] && pinKey(normalizePackageName(line[1]!)) === name)
+  const lines = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
+  const keyed = (name: string): RegExpMatchArray[] =>
+    lines.filter(
+      (line): line is RegExpMatchArray => !!line && pinKey(normalizePackageName(line[1]!)) === name
     )
+  return new Map(
+    [...pins].filter(([name]) => {
+      const matched = keyed(name)
+      return matched.length === 0 ? name === AGENT_GO : matched.some((line) => !line[2])
+    })
   )
+}
+
+/**
+ * The agent runs its Go carrier only when the carrier is at least its own version, and otherwise
+ * falls back to its bundled agent without saying so. Returns both versions when a `comfy-agent-go`
+ * pin is older than the agent this override leaves installed (its pin, or else what is installed),
+ * so the launch can say why the Go agent will not run.
+ */
+export function agentGoBehindAgent(
+  pins: OverridePins,
+  coreText: string,
+  pipListOutput: string
+): { go: string; agent: string } | null {
+  const go = pins.get(AGENT_GO)
+  if (go === undefined) return null
+  const agentPin = pins.get(AGENT_KEY)
+  const name = agentPackage(coreText) ?? AGENT_KEY
+  const agent =
+    agentPin !== undefined
+      ? pinVersion(agentPin)
+      : parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version
+  // An installed version can carry a local label (`+cu`) this comparison does not order.
+  if (agent === undefined || !EXACT_VERSION.test(agent)) return null
+  return compareVersions(pinVersion(go), agent) < 0 ? { go: pinVersion(go), agent } : null
 }
 
 export interface AgentOverrideState {
