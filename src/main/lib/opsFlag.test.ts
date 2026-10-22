@@ -921,9 +921,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
 })
 
 describe('makeOpsFlag refresh', () => {
-  // A mid-session re-evaluation because a person property changed (a staff sign-in). It REPLACES
-  // the boot answer rather than sitting beside it, so it must win over a boot fetch still in
-  // flight and must never degrade what the session holds when the server is unreachable.
   function makePersistedFlag() {
     return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
       key: 'test-flag',
@@ -983,8 +980,6 @@ describe('makeOpsFlag refresh', () => {
   })
 
   it('does not let a slower boot answer land over the refresh', async () => {
-    // The boot fetch went out WITHOUT the property the refresh adds, so its answer is the stale
-    // one even when it arrives second — in band or late.
     const flag = makePersistedFlag()
     let bootAnswer!: (v: unknown) => void
     getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (bootAnswer = resolve)))

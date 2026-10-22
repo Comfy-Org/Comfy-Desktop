@@ -526,8 +526,6 @@ describe('classification driven by the identity consensus', () => {
   })
 
   it('does not target the launch it runs on', async () => {
-    // The boot binding is what was on disk. Re-evaluating this launch is the injected
-    // `onFlagPropertiesChange`'s job, pinned in its own block below.
     expect(nextLaunchBinding()).toBe(false)
 
     await consensusSignedIn([stubContents(true)])
@@ -636,9 +634,6 @@ describe('classification driven by the identity consensus', () => {
 // The three limitations #1550 shipped with, each of which is the same root cause: a classification
 // read from one view's page rather than from the state every view contributes to.
 describe('applying a change without a restart', () => {
-  // `onFlagPropertiesChange` is what re-runs the Core beta flag evaluation (index.ts wires it to
-  // `refreshCoreBetaFlags`), so a staff tester is targeted on the next ComfyUI launch rather than
-  // the next Desktop start. It must fire exactly when the `comfy_staff` property SENT would change.
   const onFlagPropertiesChange = vi.fn()
   beforeEach(() => {
     onFlagPropertiesChange.mockClear()
@@ -650,7 +645,6 @@ describe('applying a change without a restart', () => {
     await consensusSignedIn([stubContents(true)])
 
     expect(onFlagPropertiesChange).toHaveBeenCalledTimes(1)
-    // Written first, so the re-evaluation and the next boot target the same answer.
     expect(storedFile()).toMatchObject({ staff: true })
   })
 
@@ -679,7 +673,6 @@ describe('applying a change without a restart', () => {
     initStaffFlagTargeting({ onFlagPropertiesChange })
 
     await consensusSignedIn([stubContents(true)])
-    // Every navigation revalidates the same account; none of those is a change.
     await consensusUnresolved('pending')
     await consensusSignedIn([stubContents(true)])
 

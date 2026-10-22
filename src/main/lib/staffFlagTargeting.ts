@@ -163,13 +163,10 @@ let answeredGeneration: number | null = null
 
 let unobserveConsensus: (() => void) | null = null
 
-/** Whether the last flag evaluation went out with `comfy_staff`, so a refresh runs only when the
- *  property sent would actually differ. */
 let evaluatedAsStaff = false
 
 let onFlagPropertiesChange: (() => void) | null = null
 
-/** What an evaluation started now would send: the classification, and only with consent. */
 function sendsStaff(isStaff: boolean): boolean {
   return isStaff && telemetry.getConsentState() === 'granted'
 }

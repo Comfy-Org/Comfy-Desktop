@@ -1529,11 +1529,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
 
-    // Bind the stored staff classification BEFORE any ops flag is fetched, so the
-    // boot evaluation is targeted on it. Also subscribes to the identity consensus,
-    // which reclassifies on sign-in/out and re-evaluates the Core beta flags when the
-    // property sent changes — see `staffFlagTargeting.ts`. This runs before any view
-    // exists, so no outcome is missed.
+    // Before any ops flag is fetched, so the boot evaluation is targeted on the stored classification.
     initStaffFlagTargeting({ onFlagPropertiesChange: () => void refreshCoreBetaFlags() })
 
     // Hydrate the persisted cloud user-tier cache (billing telemetry, free-tier offer UI) and

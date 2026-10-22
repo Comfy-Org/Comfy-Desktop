@@ -256,9 +256,7 @@ export function makeOpsFlag<T>(opts: {
    *  deadline can still settle long after the launch (or the test) that started it moved on;
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
-  /** Bumped by every fetch `init` or `refresh` starts. Only the latest may apply or persist an
-   *  answer: the boot fetch went out without the property a refresh exists to add, so its answer
-   *  arriving second would undo the refresh. */
+  /** Only the latest-started fetch may apply: a boot answer arriving after a refresh is stale. */
   let fetchSeq = 0
   let initOpts: { distinctId: string; timeoutMs?: number } | null = null
   let refreshPromise: Promise<void> | null = null
@@ -300,8 +298,6 @@ export function makeOpsFlag<T>(opts: {
     }
   }
 
-  /** One evaluation. `saved` is what `init` read from disk; a refresh passes `undefined` and
-   *  `isRefresh`, so its `unreachable` leaves `cached` exactly as it was. */
   function fetchAndApply(
     fetchOpts: { distinctId: string; timeoutMs?: number },
     saved: T | undefined,
@@ -324,12 +320,10 @@ export function makeOpsFlag<T>(opts: {
       .then((result) => {
         // A refresh runs detached, so it can outlive a `_resetForTest`.
         if (generationAtInit !== generation) return
-        // A later fetch was started, and its answer is the one that counts.
         if (seq !== fetchSeq) return
         if (result.kind === 'unreachable') {
           // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
-          // it here could undo a late value that landed first. A refresh never falls back: an
-          // unreachable server keeps what this session already holds.
+          // it here could undo a late value that landed first.
           const parsed = saved === undefined && !isRefresh ? parse(undefined, undefined) : undefined
           if (parsed !== undefined) cached = parsed
         } else {
@@ -392,8 +386,6 @@ export function makeOpsFlag<T>(opts: {
           /* keep cached */
         }
       }
-      // A launch right after a staff sign-in must see the re-evaluation, not race it to the
-      // boot answer. Bounded by the flag's deadline; never rejects.
       if (refreshPromise) await refreshPromise
       return cached
     },

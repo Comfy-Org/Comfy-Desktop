@@ -569,8 +569,6 @@ describe('enrolment records', () => {
 })
 
 describe('refreshCoreBetaFlags', () => {
-  // Called when a staff sign-in changes what the evaluation sends (staffFlagTargeting.ts), so the
-  // next ComfyUI launch is targeted without restarting Desktop.
   it('re-evaluates slot #0 and the campaigns under the boot id, and the next launch reads it', async () => {
     serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value(false) })
     await initCoreBetaFlags({ distinctId: 'machine-hash', betaEnabled: true })
