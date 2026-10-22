@@ -651,6 +651,7 @@ describe('applying a change without a restart', () => {
   it('does not re-evaluate without consent, since the property is not sent', async () => {
     for (const state of ['undecided', 'denied']) {
       _resetForTest()
+      fs.rmSync(persistFilePath(), { force: true })
       consentState = state
       initStaffFlagTargeting({ onFlagPropertiesChange })
       const readsBefore = pageReads
@@ -661,6 +662,19 @@ describe('applying a change without a restart', () => {
     }
 
     expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('still re-evaluates when the classification write fails, from the bound answer', async () => {
+    fs.mkdirSync(persistFilePath() + '.tmp', { recursive: true })
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(true)])
+
+    expect(fs.existsSync(persistFilePath()), 'the write did fail').toBe(false)
+    expect(
+      onFlagPropertiesChange,
+      'this launch is targeted; the write is retried later'
+    ).toHaveBeenCalledTimes(1)
   })
 
   it('does not re-evaluate after a non-staff sign-in', async () => {

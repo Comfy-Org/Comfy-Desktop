@@ -469,6 +469,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** Whether an ops-flag evaluation started now would send `comfy_staff` for this classification. */
+export function sendsStaffProperty(isStaff: boolean): boolean {
+  return consentState === 'granted' && isStaff
+}
+
 /** Bind the cached Cloud tier for ops-flag evaluation; `'unknown'` sends nothing. */
 export function setFlagEvaluationUserTier(tier: CloudUserTier): void {
   flagEvaluationUserTier = tier === 'unknown' ? null : tier
@@ -517,11 +522,6 @@ export function setSmartAppControlState(state: SmartAppControlState): void {
  * form is equivalent for targeting and puts nothing on the wire for the
  * overwhelming majority of users.
  */
-/** Whether an ops-flag evaluation started now would send `comfy_staff` for this classification. */
-export function sendsStaffProperty(isStaff: boolean): boolean {
-  return consentState === 'granted' && isStaff
-}
-
 function opsFlagPersonProperties(): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion

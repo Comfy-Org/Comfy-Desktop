@@ -377,7 +377,11 @@ export function makeOpsFlag<T>(opts: {
           /* keep cached */
         }
       }
-      if (refreshPromise) await refreshPromise
+      // A refresh superseded while awaited discards its answer, so wait for its replacement too.
+      for (let awaited = refreshPromise; awaited; awaited = refreshPromise) {
+        await awaited
+        if (awaited === refreshPromise) break
+      }
       return cached
     },
     _resetForTest() {

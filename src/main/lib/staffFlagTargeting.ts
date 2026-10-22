@@ -104,6 +104,9 @@
  * grant already held rather than merely declining a new one. That follows from consent being a
  * real gate, and is documented rather than worked around — exempting held grants would mean
  * keeping a targeting decision alive for someone who has withdrawn consent to be targeted.
+ *
+ * A consent change alone does not re-evaluate mid-session: it is picked up at the next
+ * classification (every page load), or at the next boot.
  */
 import path from 'path'
 import type { WebContents } from 'electron'

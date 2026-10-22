@@ -996,9 +996,32 @@ describe('makeOpsFlag refresh', () => {
 
     void flag.refresh()
     const read = flag.get()
+    await settle()
     answer(flagResult('disabled'))
 
     expect(await read).toBe('disabled')
+  })
+
+  it('makes a waiting get() follow a refresh that supersedes the one it awaited', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let answerFirst!: (v: unknown) => void
+    let answerSecond!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)))
+
+    void flag.refresh()
+    const read = flag.get()
+    await settle()
+    void flag.refresh()
+    answerFirst(flagResult('degraded'))
+    await settle()
+    answerSecond(flagResult('disabled'))
+
+    expect(await read, 'the first answer was superseded, not the boot one restored').toBe(
+      'disabled'
+    )
   })
 
   it('does not let a slower boot answer land over the refresh', async () => {
