@@ -764,9 +764,30 @@ describe('installAgentRequirements with a version override', () => {
 
     expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent-go', '0.2.3']]) })
     expect(calls).toEqual([
-      { content: `${CORE_FILE}comfy-agent-go==0.2.3\n`, constraints: 'requests==2.32.0\n' }
+      {
+        content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
+        constraints: 'comfy-agent==0.2.0\nrequests==2.32.0\n'
+      }
     ])
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
+  })
+
+  it("keeps a working agent when a Go pin alone meets core's placeholder agent line", async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent==0.0.0.dev0\n')
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([
+        { name: 'comfy-agent', version: '0.1.0rc2' },
+        { name: 'comfy-agent-go', version: '0.1.0rc2' }
+      ])
+    })
+    const go = { 'comfy-agent-go': '0.1.0rc3' }
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, go)
+
+    expect(decision).toMatchObject({ decision: 'applied' })
+    expect(calls).toEqual([
+      { content: 'comfy-agent-go==0.1.0rc3\n', constraints: 'comfy-agent==0.1.0rc2\n' }
+    ])
   })
 
   it('installs a comfy-agent-go pin together with an agent pin', async () => {
@@ -788,7 +809,7 @@ describe('installAgentRequirements with a version override', () => {
     const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined, old)
 
     expect(decision).toMatchObject({ decision: 'applied' })
-    expect(calls[0]!.content).toBe(`${CORE_FILE}comfy-agent-go==0.1.9\n`)
+    expect(calls[0]!.content).toBe('comfy-cli==1.21.0\ncomfy-agent-go==0.1.9\n')
     expect(sendOutput.mock.calls.join('')).toContain(
       '⚠ comfy-agent-go 0.1.9 is older than comfy-agent 0.2.0; the agent will run its bundled agent, not the Go one'
     )
@@ -821,7 +842,10 @@ describe('installAgentRequirements with a version override', () => {
     expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent-go', '0.1.9']]) })
     expect(calls).toEqual([
       { content: CORE_FILE, constraints: null },
-      { content: `${CORE_FILE}comfy-agent-go==0.1.9\n`, constraints: 'requests==2.32.0\n' }
+      {
+        content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.1.9\n',
+        constraints: 'comfy-agent==0.2.0\nrequests==2.32.0\n'
+      }
     ])
     expect(sendOutput.mock.calls.join('')).toContain(
       '⚠ comfy-agent-go 0.1.9 is older than comfy-agent 0.2.0; the agent will run its bundled agent'

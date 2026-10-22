@@ -49,6 +49,14 @@ function isAgentLine(normalized: string): boolean {
   return normalized !== AGENT_GO && AGENT_LINE.test(normalized)
 }
 
+/**
+ * A Go pin without an agent pin leaves the installed agent where it is: core's agent line can be a
+ * placeholder (`0.0.0.dev0`) that would replace a working agent.
+ */
+function holdsAgent(pins: OverridePins): boolean {
+  return pins.has(AGENT_GO) && !pins.has(AGENT_KEY)
+}
+
 function pinKey(normalized: string): string {
   return isAgentLine(normalized) ? AGENT_KEY : normalized
 }
@@ -171,7 +179,11 @@ export function effectiveAgentRequirements(
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
   // Per pin key, the package name of the line it decorates.
   const matched = new Map<string, string>()
-  const lines = coreText.split(/\r?\n/)
+  const held = holdsAgent(pins) ? agentPackage(coreText) : undefined
+  const lines = coreText.split(/\r?\n/).filter((line) => {
+    const name = line.match(LEADING_NAME)?.[1]
+    return !name || normalizePackageName(name) !== held
+  })
   const keyOf = (line: string): string | undefined => {
     const name = line.match(LEADING_NAME)?.[1]
     return name && pinKey(normalizePackageName(name))
@@ -246,8 +258,8 @@ function agentPackage(coreText: string): string | undefined {
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
  * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
- * holding it would block every agent upgrade. Any other comfy-agent* package is held. The
- * frontend is held too unless this override pins it.
+ * holding it would block every agent upgrade. Any other comfy-agent* package is held, and so is
+ * the agent itself under a Go pin alone. The frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
@@ -257,8 +269,11 @@ export function installedConstraints(
   const installed = parseInstalled(pipListOutput)
   if (!installed) return null
   const agent = agentPackage(coreText)
+  const held = new Set(holdsAgent(pins) ? [agent, AGENT_KEY] : [])
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
+    name === FRONTEND_PACKAGE
+      ? pins.has(name)
+      : !held.has(name) && (OVERRIDABLE.has(name) || name === agent)
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
@@ -299,8 +314,8 @@ export function pinsOverBareLines(coreText: string, pins: OverridePins): Overrid
 /**
  * The agent runs its Go carrier only when the carrier is at least its own version, and otherwise
  * falls back to its bundled agent, saying so only in its own output. Returns the agent's package
- * and both versions when a `comfy-agent-go` pin is older than the agent this override installs:
- * its pin, else core's exact version, else what is installed now (core's line is bare).
+ * and both versions when a `comfy-agent-go` pin is older than the agent this override leaves: its
+ * pin, else the installed one, which a Go pin alone holds where it is.
  */
 export function agentGoBehindAgent(
   pins: OverridePins,
@@ -311,15 +326,10 @@ export function agentGoBehindAgent(
   if (go === undefined) return null
   const agentPin = pins.get(AGENT_KEY)
   const name = agentPackage(coreText) ?? AGENT_KEY
-  const coreLine = coreText
-    .split(/\r?\n/)
-    .map((line) => line.match(REQUIREMENT_LINE))
-    .find((line) => line && normalizePackageName(line[1]!) === name)
   const agent =
     agentPin !== undefined
       ? pinVersion(agentPin)
-      : (coreLine?.[2] ??
-        parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version)
+      : parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version
   // An installed version can carry a local label (`+cu`) this comparison does not order.
   if (agent === undefined || !EXACT_VERSION.test(agent)) return null
   return compareVersions(pinVersion(go), agent) < 0 ? { name, go: pinVersion(go), agent } : null
