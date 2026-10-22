@@ -974,6 +974,23 @@ describe('makeOpsFlag refresh', () => {
     ])
   })
 
+  it('keeps a boot answer still in flight when the refresh is unreachable', async () => {
+    const flag = makePersistedFlag()
+    let bootAnswer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (bootAnswer = resolve)))
+    void flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+    await flag.refresh()
+
+    bootAnswer(flagResult('disabled'))
+    await settle()
+
+    expect(await flag.get(), 'no newer answer was applied, so the boot one is not stale').toBe(
+      'disabled'
+    )
+    expect(stored()).toMatchObject({ value: 'disabled' })
+  })
+
   it("applies and persists the refresh's own late answer", async () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))

@@ -198,7 +198,7 @@ export function initStaffFlagTargeting(opts: { onFlagPropertiesChange?: () => vo
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
   lastEvaluationSentStaff = telemetry.sendsStaffProperty(cached === true)
-  onFlagPropertiesChange = opts.onFlagPropertiesChange ?? null
+  onFlagPropertiesChange ??= opts.onFlagPropertiesChange ?? null
   // Subscribed here rather than at module load so the wiring is explicit and ordered: this runs
   // before any view exists, so no outcome can be missed, and a second call cannot double-subscribe.
   unobserveConsensus ??= observeFirebaseIdentityConsensus(onIdentityConsensus)
@@ -494,8 +494,9 @@ function applyClassification(isStaff: boolean): void {
   telemetry.setFlagEvaluationStaff(isStaff)
   persistClassification(isStaff)
   // After the write, so the re-evaluation and the next boot normally target the same answer.
-  if (telemetry.sendsStaffProperty(isStaff) !== lastEvaluationSentStaff) {
-    lastEvaluationSentStaff = telemetry.sendsStaffProperty(isStaff)
+  const sendsStaff = telemetry.sendsStaffProperty(isStaff)
+  if (sendsStaff !== lastEvaluationSentStaff) {
+    lastEvaluationSentStaff = sendsStaff
     onFlagPropertiesChange?.()
   }
 }
