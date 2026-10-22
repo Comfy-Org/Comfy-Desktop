@@ -794,6 +794,35 @@ describe('installAgentRequirements with a version override', () => {
     )
   })
 
+  it('says nothing about the Go carrier when the override waits for core on a fresh install', async () => {
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])
+    })
+    const sendOutput = vi.fn()
+    const old = { 'comfy-agent-go': '0.1.9' }
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined, old)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'core_first' })
+    expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
+  })
+
+  it('refuses a Go pin its agent pin holds to another version, and installs core file', async () => {
+    const sendOutput = vi.fn()
+    const conflicting = { 'comfy-agent[go-nonfree]': '0.2.3', 'comfy-agent-go': '0.2.4' }
+    const decision = await installAgentRequirements(
+      plan,
+      sendOutput,
+      undefined,
+      undefined,
+      conflicting
+    )
+
+    expect(decision).toEqual({ decision: 'refused', reason: 'conflicting_pins' })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
+  })
+
   it("lists the install's own environment as JSON, from the install dir", async () => {
     await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 

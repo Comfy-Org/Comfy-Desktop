@@ -500,7 +500,7 @@ async function tryOverride(
     const behind = agentGoBehindAgent(pins, coreText, listed)
     if (behind)
       sendOutput(
-        `⚠ comfy-agent-go ${behind.go} is older than comfy-agent ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
+        `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
       )
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
     const budget = Math.max(0, OVERRIDE_TIMEOUT_MS - (Date.now() - startedAt))

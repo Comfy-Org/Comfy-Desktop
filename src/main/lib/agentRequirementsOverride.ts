@@ -39,8 +39,8 @@ const MAX_EXTRAS = 8
 const AGENT_KEY = 'comfy-agent'
 /**
  * The agent's key decorates the first line of core's file whose name is `comfy-agent` or starts
- * with `comfy-agent-`, so a renamed agent package (`comfy-agent-oss`) is still found but an
- * unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
+ * with `comfy-agent-` (other than the Go carrier, `comfy-agent-go`), so a renamed agent package
+ * (`comfy-agent-oss`) is still found but an unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
  * version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
@@ -66,6 +66,7 @@ export type OverrideRefusal =
   | 'not_newer'
   | 'check_failed'
   | 'core_first'
+  | 'conflicting_pins'
 
 /** An exact version, or a version with extras (installed as `name[go,x]==version`). */
 export type OverridePin = string | { readonly version: string; readonly extras: readonly string[] }
@@ -114,6 +115,15 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     if (extras === null) return { kind: 'refused', reason: 'bad_extra' }
     pins.set(normalized, { version, extras })
   }
+  // The agent's extras (`[go-nonfree]`) pin the Go carrier to the agent's own version.
+  const agent = pins.get(AGENT_KEY)
+  const go = pins.get(AGENT_GO)
+  if (
+    typeof agent === 'object' &&
+    go !== undefined &&
+    compareVersions(pinVersion(go), agent.version)
+  )
+    return { kind: 'refused', reason: 'conflicting_pins' }
   return { kind: 'pins', pins }
 }
 
@@ -181,12 +191,7 @@ export function effectiveAgentRequirements(
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
-  if (
-    pins.has(AGENT_GO) &&
-    !agentKeys.has(AGENT_GO) &&
-    !fromMain.some((l) => keyOf(l) === AGENT_GO)
-  )
-    fromMain.push(AGENT_GO)
+  if (pins.has(AGENT_GO)) fromMain.push(AGENT_GO)
   // Before the agent file's trailing newline, so the result still ends in one.
   lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
   for (let i = 0; i < lines.length; i++) {
@@ -250,7 +255,7 @@ function agentPackage(coreText: string): string | undefined {
  * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
- * `comfy-agent-go` is freed too: the agent's extras pin it to the agent's exact version, so
+ * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
  * holding it would block every agent upgrade. Any other comfy-agent* package is held. The
  * frontend is held too unless this override pins it.
  */
@@ -263,9 +268,7 @@ export function installedConstraints(
   if (!installed) return null
   const agent = agentPackage(coreText)
   const free = (name: string): boolean =>
-    name === FRONTEND_PACKAGE
-      ? pins.has(name)
-      : OVERRIDABLE.has(name) || name === agent || name === AGENT_GO
+    name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
     .map(({ name, version }) => `${name}==${version}`)
@@ -293,41 +296,43 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
  * core's file can't take those back.
  */
 export function pinsOverBareLines(coreText: string, pins: OverridePins): OverridePins {
-  const lines = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
-  const keyed = (name: string): RegExpMatchArray[] =>
-    lines.filter(
-      (line): line is RegExpMatchArray => !!line && pinKey(normalizePackageName(line[1]!)) === name
-    )
+  const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
   return new Map(
-    [...pins].filter(([name]) => {
-      const matched = keyed(name)
-      return matched.length === 0 ? name === AGENT_GO : matched.some((line) => !line[2])
-    })
+    [...pins].filter(
+      ([name]) =>
+        name === AGENT_GO ||
+        bare.some((line) => line && !line[2] && pinKey(normalizePackageName(line[1]!)) === name)
+    )
   )
 }
 
 /**
  * The agent runs its Go carrier only when the carrier is at least its own version, and otherwise
- * falls back to its bundled agent without saying so. Returns both versions when a `comfy-agent-go`
- * pin is older than the agent this override leaves installed (its pin, or else what is installed),
- * so the launch can say why the Go agent will not run.
+ * falls back to its bundled agent, saying so only in its own output. Returns the agent's package
+ * and both versions when a `comfy-agent-go` pin is older than the agent this override installs:
+ * its pin, else core's exact version, else what is installed now (core's line is bare).
  */
 export function agentGoBehindAgent(
   pins: OverridePins,
   coreText: string,
   pipListOutput: string
-): { go: string; agent: string } | null {
+): { name: string; go: string; agent: string } | null {
   const go = pins.get(AGENT_GO)
   if (go === undefined) return null
   const agentPin = pins.get(AGENT_KEY)
   const name = agentPackage(coreText) ?? AGENT_KEY
+  const coreLine = coreText
+    .split(/\r?\n/)
+    .map((line) => line.match(REQUIREMENT_LINE))
+    .find((line) => line && normalizePackageName(line[1]!) === name)
   const agent =
     agentPin !== undefined
       ? pinVersion(agentPin)
-      : parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version
+      : (coreLine?.[2] ??
+        parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version)
   // An installed version can carry a local label (`+cu`) this comparison does not order.
   if (agent === undefined || !EXACT_VERSION.test(agent)) return null
-  return compareVersions(pinVersion(go), agent) < 0 ? { go: pinVersion(go), agent } : null
+  return compareVersions(pinVersion(go), agent) < 0 ? { name, go: pinVersion(go), agent } : null
 }
 
 export interface AgentOverrideState {
