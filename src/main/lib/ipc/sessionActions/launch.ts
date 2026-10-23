@@ -1571,13 +1571,18 @@ async function runLaunch(
   // watched for how the agent's start went, so a version that keeps failing goes back to core's.
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
+  // Started once this launch's own uv work (the install below and any frontend restore after it)
+  // is done, and on a cancel before that too, so nothing the launch handed back is dropped.
+  const handedBack: { request?: PrefetchRequest } = {}
+  const startHandedBack = (): void => {
+    if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
+  }
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
     // A background download holds uv's lock on the environment: the launch goes first, and hands
-    // back whatever it still needs once it is done (the wheels already fetched stay cached).
+    // back whatever it still needs (the wheels already fetched stay cached).
     const releasePrefetch = await holdAgentPrefetch(agentRequirements.installPath)
-    const handedBack: { request?: PrefetchRequest } = {}
     let overrideDecision: Awaited<ReturnType<typeof installAgentRequirements>>
     try {
       overrideDecision = await installAgentRequirements(
@@ -1603,8 +1608,10 @@ async function runLaunch(
     } finally {
       releasePrefetch()
     }
-    if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (abort.signal.aborted) {
+      startHandedBack()
+      return { ok: false, cancelled: true }
+    }
     if (overrideDecision) {
       reportOverrideDecision(
         installationId,
@@ -1642,7 +1649,10 @@ async function runLaunch(
       makeSendOutput(sender, installationId),
       abort.signal
     )
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (abort.signal.aborted) {
+      startHandedBack()
+      return { ok: false, cancelled: true }
+    }
     // Kept on a failed restore, so the next launch tries again.
     if (restored) {
       await installations
@@ -1650,6 +1660,7 @@ async function runLaunch(
         .catch(() => {})
     }
   }
+  startHandedBack()
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)

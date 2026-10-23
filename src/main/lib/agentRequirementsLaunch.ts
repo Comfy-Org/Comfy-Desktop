@@ -426,21 +426,23 @@ export async function installAgentRequirements(
     const startedAt = Date.now()
     const fetched = await fetchForLaunch(plan, reqPath, extraArgs, onlineLeft, sendOutput, signal)
     onlineLeft -= Date.now() - startedAt
-    if (fetched.kind === 'failed') return { ...fetched.run, online: true }
+    const fromCache = (): Promise<BoundedResult> =>
+      runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, sendOutput, signal, {
+        extraArgs: [OFFLINE, ...extraArgs]
+      })
+    if (fetched.kind === 'failed') {
+      // uv writes the scratch target only after the wheels are in its cache, and on a slow disk
+      // that writing alone can outlast the budget: the cache may already hold everything.
+      const late =
+        fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
+      const retried = late ? await fromCache() : null
+      return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
+    }
     if (fetched.kind !== 'fetched') {
       const cacheMiss = NO_SOLUTION.test(stripAnsi(cached.output))
       return { ...cached, online: !cacheMiss }
     }
-    const installed = await runBoundedInstall(
-      plan,
-      reqPath,
-      tempName,
-      OFFLINE_TIMEOUT_MS,
-      sendOutput,
-      signal,
-      { extraArgs: [OFFLINE, ...extraArgs] }
-    )
-    return { ...installed, online: true }
+    return { ...(await fromCache()), online: true }
   }
   let overrideStep: PrefetchStep | undefined
   let signature = 'core'
@@ -979,7 +981,17 @@ async function fetchForLaunch(
   output: (text: string) => void,
   signal: AbortSignal | undefined
 ): Promise<StepResult> {
-  const tag = `.launch-agent-fetch-${attemptTag()}`
+  const prefix = '.launch-agent-fetch-'
+  const tag = `${prefix}${attemptTag()}`
+  // What a crash left behind: the target dir can be large, and an hour is long past any live try.
+  const staleBefore = Date.now() - 60 * 60_000
+  const present = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
+  for (const name of present.filter((entry) => entry.startsWith(prefix))) {
+    const at = path.join(plan.installPath, name)
+    const { mtimeMs } = await fs.promises.lstat(at).catch(() => ({ mtimeMs: Infinity }))
+    if (mtimeMs >= staleBefore) continue
+    await fs.promises.rm(at, { recursive: true, force: true }).catch(() => {})
+  }
   const stop = new AbortController()
   const onAbort = (): void => stop.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
@@ -1005,7 +1017,7 @@ async function fetchForLaunch(
     const names = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
     await Promise.all(
       names
-        .filter((name) => name.startsWith(tag))
+        .filter((name) => name === tag || name.startsWith(`${tag}-`))
         .map((name) =>
           fs.promises.rm(path.join(plan.installPath, name), { recursive: true, force: true })
         )

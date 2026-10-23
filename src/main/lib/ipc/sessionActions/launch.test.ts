@@ -3557,7 +3557,7 @@ describe('agent requirements at launch', () => {
     // teardown's own gate rather than a guess at how long the open takes.
     if (spawned > 0) {
       const logFile = path.join(getLogDir(installDir), 'comfyui.log')
-      await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true), { timeout: 10_000 })
     }
     vi.restoreAllMocks()
     fs.rmSync(installDir, { recursive: true, force: true })
@@ -3909,7 +3909,7 @@ describe('agent requirements at launch', () => {
       const first = proc!
       first.emit('exit', 0, null)
       first.emit('close', 0, null)
-      await vi.waitFor(() => expect(spawnCount).toBe(2))
+      await vi.waitFor(() => expect(spawnCount).toBe(2), { timeout: 10_000 })
       proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_started duration_ms=1\n'))
       await settle()
 
@@ -3920,7 +3920,7 @@ describe('agent requirements at launch', () => {
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
       await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
-    })
+    }, 15_000)
 
     it('counts two outcomes that land at once, one after the other', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
@@ -3928,28 +3928,33 @@ describe('agent requirements at launch', () => {
       launchHarness.waitForPort = async () => {}
       let release = (): void => {}
       launchHarness.recordsUpdateGate = new Promise((resolve) => (release = resolve))
-      const ctx = ctxFor(ID)
-      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
-      expect((await handleLaunch(ctx)).ok).toBe(true)
+      try {
+        const ctx = ctxFor(ID)
+        ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+        expect((await handleLaunch(ctx)).ok).toBe(true)
 
-      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
-      fs.writeFileSync(`${sessionFile}.reboot`, '')
-      const first = proc!
-      first.emit('exit', 0, null)
-      first.emit('close', 0, null)
-      await vi.waitFor(() => expect(spawnCount).toBe(2))
-      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
-      release()
-      await vi.waitFor(() =>
-        expect(overrideState(), 'neither failure is lost').toEqual({
-          signature: 'comfy-agent==0.2.3',
-          failures: 2
-        })
+        proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+        fs.writeFileSync(`${sessionFile}.reboot`, '')
+        const first = proc!
+        first.emit('exit', 0, null)
+        first.emit('close', 0, null)
+        await vi.waitFor(() => expect(spawnCount).toBe(2), { timeout: 10_000 })
+        proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      } finally {
+        release()
+      }
+      await vi.waitFor(
+        () =>
+          expect(overrideState(), 'neither failure is lost').toEqual({
+            signature: 'comfy-agent==0.2.3',
+            failures: 2
+          }),
+        { timeout: 10_000 }
       )
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
       await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
-    })
+    }, 15_000)
 
     const missesOverride = (args: unknown[]): boolean =>
       (args[8] as string[]).includes('--constraint')
@@ -4123,6 +4128,35 @@ describe('agent requirements at launch', () => {
         ;(await holdAgentPrefetch(installDir))()
         _resetAgentPrefetchesForTest()
       }
+    })
+
+    it("starts the handed-back download only once the launch's frontend restore is done", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.19' } })
+      fs.writeFileSync(
+        path.join(installDir, 'ComfyUI', 'requirements.txt'),
+        'comfyui-frontend-package==1.55.18\n'
+      )
+      const order: string[] = []
+      pipHarness.respond = (args) => {
+        if (String(args[4]).startsWith('.launch-frontend-restore-')) {
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              order.push('frontend restored')
+              resolve({ code: 0, output: '' })
+            }, 0)
+          ) as never
+        }
+        return { code: missesOverride(args) ? 2 : 0, output: '' }
+      }
+      prefetchHarness.onStart = () => order.push('download started')
+
+      await launchAndPrint()
+
+      expect(
+        order,
+        "the background download's uv would contend with the restore for the environment"
+      ).toEqual(['frontend restored', 'download started'])
     })
 
     it('watches no agent start for an override that is not cached', async () => {

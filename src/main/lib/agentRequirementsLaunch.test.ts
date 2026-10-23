@@ -252,6 +252,66 @@ describe('installAgentRequirements', () => {
     expect(fetch![10], 'a launch waits on this, so it downloads in parallel').toBeUndefined()
   })
 
+  it('sweeps what a crashed attempt left an hour ago, and leaves a younger attempt alone', async () => {
+    const old = path.join(dir, '.launch-agent-fetch-1-7')
+    const young = path.join(dir, '.launch-agent-fetch-1-8')
+    for (const target of [old, young]) {
+      fs.mkdirSync(path.join(target, 'comfy_agent'), { recursive: true })
+      fs.writeFileSync(`${target}-src.txt`, 'comfy-agent==0.2.0\n')
+    }
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60_000)
+    fs.utimesSync(old, twoHoursAgo, twoHoursAgo)
+    fs.utimesSync(`${old}-src.txt`, twoHoursAgo, twoHoursAgo)
+    online(async () => ({ code: 0, output: '' }))
+
+    await installAgentRequirements(plan, vi.fn())
+
+    expect(fs.existsSync(old), 'the stale target dir is gone').toBe(false)
+    expect(fs.existsSync(`${old}-src.txt`)).toBe(false)
+    expect(fs.existsSync(young), 'a live attempt may still own it').toBe(true)
+    expect(fs.existsSync(`${young}-src.txt`)).toBe(true)
+  })
+
+  it('clears only its own scratch files, not those of a concurrent attempt whose tag it prefixes', async () => {
+    let miss = true
+    const resolving: { tag: string; finish: () => void }[] = []
+    mockInstall.mockImplementation(async (...args) => {
+      if ((args[8] as string[]).includes('--offline')) return { code: miss ? 1 : 0, output: '' }
+      const tag = /^(\.launch-agent-fetch-\d+-\d+)-/.exec(String(args[4]))![1]!
+      return new Promise((resolve) =>
+        resolving.push({ tag, finish: () => resolve({ code: 0, output: '' }) })
+      )
+    })
+    const attempt = (tag: string): number => Number(tag.slice(tag.lastIndexOf('-') + 1))
+    const own = (tag: string): string[] =>
+      fs.readdirSync(dir).filter((name) => name === tag || name.startsWith(`${tag}-`))
+
+    const first = installAgentRequirements(plan, vi.fn())
+    await vi.waitFor(() => expect(resolving).toHaveLength(1))
+    const n = attempt(resolving[0]!.tag)
+    miss = false
+    for (let used = n; used < n * 10 - 2; used++) await installAgentRequirements(plan, vi.fn())
+    miss = true
+    const second = installAgentRequirements(plan, vi.fn())
+    await vi.waitFor(() => expect(resolving).toHaveLength(2))
+    const secondTag = resolving[1]!.tag
+    expect(secondTag, 'the second tag extends the first').toBe(`${resolving[0]!.tag}0`)
+    fs.mkdirSync(path.join(dir, secondTag))
+    const secondFiles = own(secondTag)
+
+    resolving[0]!.finish()
+    await first
+
+    expect(own(resolving[0]!.tag), 'the first attempt cleared its own').toEqual([])
+    expect(own(secondTag), 'and left the running one its files and --target dir').toEqual(
+      secondFiles
+    )
+    expect(secondFiles).toEqual(expect.arrayContaining([secondTag, `${secondTag}-src.txt`]))
+    resolving[1]!.finish()
+    await second
+    expect(own(secondTag)).toEqual([])
+  })
+
   it('reports a failed install and resolves so the launch continues', async () => {
     online(async () => ({ code: 2, output: 'No solution found\n' }))
     const sendOutput = vi.fn()
@@ -2017,6 +2077,63 @@ describe('installAgentRequirements with a version override', () => {
         ).toEqual([])
       }
     )
+
+    const fetchTimesOut = (stuck: '--dry-run' | '--target', cachedAfter: boolean) => {
+      const retries: string[][] = []
+      let stopped = false
+      mockInstall.mockImplementation(async (_file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[]
+        if (extraArgs.includes('--offline')) {
+          if (stopped && extraArgs.includes('--constraint')) retries.push(extraArgs)
+          return { code: stopped && cachedAfter ? 0 : 1, output: '' }
+        }
+        if (!extraArgs.includes(stuck)) return { code: 0, output: ' + comfy-agent==0.2.3\n' }
+        waiting++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            waiting--
+            stopped = true
+            resolve({ code: 1, output: '' })
+          })
+        )
+      })
+      return retries
+    }
+
+    it('installs from the cache on the same launch when the download ran out while uv was still writing it', async () => {
+      const retries = fetchTimesOut('--target', true)
+
+      const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
+
+      expect(retries, 'the override is tried from the cache once more').toHaveLength(1)
+      expect(decision).toMatchObject({ decision: 'applied', install: { outcome: 'exited' } })
+    })
+
+    it('defers a download that ran out when the cache still misses, reporting the timeout', async () => {
+      const retries = fetchTimesOut('--target', false)
+      const onDeferred = vi.fn()
+
+      const decision = await settle(
+        installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+      )
+
+      expect(retries).toHaveLength(1)
+      expect(
+        decision,
+        "the download's own timeout is what is reported, not the retry's cache miss"
+      ).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out' } })
+      expect(onDeferred).toHaveBeenCalledTimes(1)
+    })
+
+    it('tries the cache no more after a resolve that ran out, which fetched nothing', async () => {
+      const retries = fetchTimesOut('--dry-run', true)
+
+      const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
+
+      expect(retries, 'a resolve stopped at the budget fetched nothing to install').toEqual([])
+      expect(decision).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out' } })
+    })
 
     it('gives up on a package listing that never answers, and refuses', async () => {
       const startedAt = Date.now()
