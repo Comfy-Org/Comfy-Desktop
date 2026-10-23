@@ -860,7 +860,6 @@ interface RunningPrefetch {
 }
 
 const prefetches = new Map<string, RunningPrefetch>()
-/** Preparing a download ahead of a launch, whose `uv pip list` runs before any download does. */
 const preparing = new Map<string, { stop: AbortController; done: Promise<unknown> }>()
 const held = new Map<string, number>()
 /** Aborted on quit: nothing starts after, and preparation ahead of a launch stops too. */
@@ -1099,7 +1098,6 @@ async function fetchForLaunch(
   }
 }
 
-/** Remove what `owns` picks from the install dir, all at once. Never throws. */
 async function removeScratch(
   installPath: string,
   owns: (name: string, at: string) => boolean | Promise<boolean>

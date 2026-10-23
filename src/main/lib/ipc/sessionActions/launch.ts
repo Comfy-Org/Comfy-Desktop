@@ -1591,8 +1591,6 @@ async function runLaunch(
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
-    // The launch's hold already stopped this install's background download; what the launch still
-    // needs is handed back once it is done (the wheels already fetched stay cached).
     await reapOrphanedAgentUv(agentRequirements.installPath)
     const overrideDecision = await installAgentRequirements(
       agentRequirements,
