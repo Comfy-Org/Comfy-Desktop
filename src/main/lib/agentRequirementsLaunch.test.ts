@@ -16,7 +16,6 @@ vi.mock('./pip', () => ({
 
 /** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
-/** How long a `taskkill` takes to return, in fake-timer ms; 0 answers at once. */
 const exec = { delayMs: 0 }
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
@@ -2108,7 +2107,6 @@ describe('prefetchAgentRequirements', () => {
   })
 
   it('waits for a uv that ignores the stop to be hard-stopped, for removing the install', async () => {
-    // As on Windows, where the hard stop is a taskkill that takes time to return.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
     Object.defineProperty(process, 'platform', { value: 'win32' })
@@ -2130,7 +2128,6 @@ describe('prefetchAgentRequirements', () => {
         return release
       })
       await vi.advanceTimersByTimeAsync(10_000)
-      // Real I/O (the run's cleanup) settles on real ticks, which faked timers don't drive.
       for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
       expect(execCalls, 'the grace ran out, so uv is hard-stopped').toContainEqual({
         cmd: 'taskkill',

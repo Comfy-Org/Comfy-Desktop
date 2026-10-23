@@ -181,7 +181,6 @@ describe('handleCopy (ComfyBuilder install)', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true })
   })
 
-  /** A sender that writes each copy progress percent into the hold log, to order it there. */
   const loggingSender = (): Electron.WebContents =>
     ({
       isDestroyed: () => false,
