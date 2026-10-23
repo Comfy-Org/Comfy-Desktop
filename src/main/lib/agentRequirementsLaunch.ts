@@ -983,7 +983,6 @@ async function fetchForLaunch(
 ): Promise<StepResult> {
   const prefix = '.launch-agent-fetch-'
   const tag = `${prefix}${attemptTag()}`
-  // What a crash left behind: the target dir can be large, and an hour is long past any live try.
   const staleBefore = Date.now() - 60 * 60_000
   const present = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
   for (const name of present.filter((entry) => entry.startsWith(prefix))) {
