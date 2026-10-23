@@ -682,13 +682,12 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
  */
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
   const consensus = getFirebaseIdentityConsensus()
-  // A resolved sign-out is the observer's to DECIDE — it is a fact about every view, and one view
+  // An observed sign-out is the observer's to DECIDE — it is a fact about every view, and one view
   // reaching dom-ready says nothing about the others. But re-applying a decision already taken is
   // a write retry, not a decision, and the revocation write is the one with no other retry path:
   // `publishConsensus` is change-only so `signed_out` is not re-delivered while it stands, and a
   // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
   // — silently reversing the revocation this module exists to make.
-  // A held `signed_out` (nothing observed) must not be turned into a write here.
   if (consensus.status === 'signed_out') {
     if (consensus.observed) applyClassification(false)
     return
