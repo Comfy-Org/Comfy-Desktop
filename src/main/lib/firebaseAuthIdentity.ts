@@ -18,7 +18,7 @@ interface Reporter {
   pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
-  /** Per origin: loopback bindings are keyed by origin, so another install's partition reports. */
+  /** Where this view was last seen signed in; storage is per origin, and a view can navigate. */
   signedInOrigin: string | null
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
@@ -105,8 +105,10 @@ export type FirebaseIdentityConsensus =
   | { status: 'unknown' }
   /** At least one contributor is mid-resolution. */
   | { status: 'pending' }
-  /** Every contributor resolved, and none is signed in. */
-  | { status: 'signed_out' }
+  /** Every contributor resolved, and none is signed in. `observed` when this process accepted a
+   *  sign-out from a view it saw signed in since the last `signed_in`; without it this may be a
+   *  page that never held an account, which a consumer that PERSISTS must not read as a sign-out. */
+  | { status: 'signed_out'; observed: boolean }
   /** Contributors resolved to different accounts, or to a mix of signed in and signed out. */
   | { status: 'conflicted' }
   /** Every contributor resolved to this one account. */
@@ -115,7 +117,9 @@ export type FirebaseIdentityConsensus =
 const reporters = new Map<WebContents, Reporter>()
 const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
 let consensus: FirebaseIdentityConsensus = { status: 'unknown' }
-let signOutObserved = false
+/** An accepted sign-out from a view seen signed in, kept past that view's lifetime until a
+ *  sign-in supersedes it, so a view closing before the consensus resolves cannot erase it. */
+let signOutWitnessed = false
 const consensusObservers = new Set<(consensus: FirebaseIdentityConsensus) => void>()
 let requestedUserId: string | null = null
 let anonymousEpochIsUnmergeable = false
@@ -130,6 +134,9 @@ function sameConsensus(
   second: FirebaseIdentityConsensus
 ): boolean {
   if (first.status !== second.status) return false
+  if (first.status === 'signed_out') {
+    return first.observed === (second as { observed: boolean }).observed
+  }
   return first.status !== 'signed_in' || first.userId === (second as { userId: string }).userId
 }
 
@@ -163,15 +170,6 @@ function publishConsensus(next: FirebaseIdentityConsensus): void {
 /** The current reconciled identity outcome across every contributing view. */
 export function getFirebaseIdentityConsensus(): FirebaseIdentityConsensus {
   return consensus
-}
-
-/**
- * Whether the current `signed_out` includes a contributor seen signed in at its current origin,
- * or a main-verified sign-in. `signed_out` alone also covers a page that never held an account,
- * which is not a sign-out for anything PERSISTED. Set in the `reconcile()` that publishes it.
- */
-export function isFirebaseSignOutObserved(): boolean {
-  return consensus.status === 'signed_out' && signOutObserved
 }
 
 /** Observe reconciled identity outcomes. Fires on change only; returns an unsubscribe. */
@@ -425,7 +423,6 @@ export function bindMainVerifiedFirebaseUser(
 
 function reconcile(): void {
   let expiredPendingContributors = 0
-  let observedSignedInContributor = false
   const activeReporterStates: ComfyDesktop2FirebaseAuthState[] = []
   for (const [webContents, reporter] of reporters) {
     if (webContents.isDestroyed() || !reporter.active) continue
@@ -434,12 +431,6 @@ function reconcile(): void {
     } else if (reporter.pendingExpired) {
       expiredPendingContributors += 1
       continue
-    }
-    if (
-      reporter.signedInOrigin !== null &&
-      reporter.signedInOrigin === originOf(webContents.getURL())
-    ) {
-      observedSignedInContributor = true
     }
     activeReporterStates.push(reporter.state)
   }
@@ -514,10 +505,7 @@ function reconcile(): void {
     // binding even when this process has not bound a UID yet.
     detachToAnonymousIdentity()
     clearUnmergeableEpoch()
-    // A contributing main-verified state is a sign-in main itself saw on that view.
-    signOutObserved =
-      observedSignedInContributor || mainCandidates.some(({ contributes }) => contributes)
-    publishConsensus({ status: 'signed_out' })
+    publishConsensus({ status: 'signed_out', observed: signOutWitnessed })
     return
   }
 
@@ -537,6 +525,7 @@ function reconcile(): void {
 
   clearPendingConsensusDeadline()
   requestedUserId = userId
+  signOutWitnessed = false
   publishConsensus({ status: 'signed_in', userId })
   const confirmedMainStates = mainCandidates.filter(({ webContents, state, contributes }) => {
     if (state.userId !== userId) return false
@@ -804,6 +793,7 @@ export function reportFirebaseAuthState(
     if (userMismatch || state.status === 'signed_out') {
       mainVerifiedState.rendererMayReaffirm = false
     }
+    if (state.status === 'signed_out') signOutWitnessed = true
     if (userMismatch) requestAnonymousIdentity()
     reconcile()
     return
@@ -818,6 +808,10 @@ export function reportFirebaseAuthState(
   // the bound user or revoke local authorization.
   const acceptReport = (): void => {
     if (acceptedState.status === 'signed_in') reporter.signedInOrigin = currentOrigin
+    if (acceptedState.status === 'signed_out' && reporter.signedInOrigin === currentOrigin) {
+      signOutWitnessed = true
+      reporter.signedInOrigin = null
+    }
     if (localUserMismatch) requestAnonymousIdentity()
     revokeAcceptedLocalAuthorization(
       webContents,
@@ -869,7 +863,7 @@ export function _resetForTest(): void {
   reporters.clear()
   mainVerifiedStates.clear()
   consensus = { status: 'unknown' }
-  signOutObserved = false
+  signOutWitnessed = false
   consensusObservers.clear()
   clearPendingConsensusDeadline()
   requestedUserId = null

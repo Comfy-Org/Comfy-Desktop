@@ -29,30 +29,25 @@ vi.mock('./telemetry', () => ({
 }))
 
 const identity = vi.hoisted(() => {
-  let current: { status: string; userId?: string } = { status: 'unknown' }
-  let signOutObserved = false
+  let current: { status: string; userId?: string; observed?: boolean } = { status: 'unknown' }
   const observers = new Set<(consensus: unknown) => void>()
   const views = new Map<string, Electron.WebContents[]>()
   return {
     current: () => current,
-    signOutObserved: () => current.status === 'signed_out' && signOutObserved,
     observers,
     views,
     /** Stand in for `reconcile()` publishing an outcome. Always dispatches: change-only delivery
      *  is the identity engine's contract and is pinned in its own suite. */
     publish(
-      next: { status: string; userId?: string },
-      holders: Electron.WebContents[] = [],
-      observed = false
+      next: { status: string; userId?: string; observed?: boolean },
+      holders: Electron.WebContents[] = []
     ) {
       current = next
-      signOutObserved = observed
       if (next.status === 'signed_in' && next.userId) views.set(next.userId, holders)
       for (const observe of [...observers]) observe(next)
     },
     reset() {
       current = { status: 'unknown' }
-      signOutObserved = false
       observers.clear()
       views.clear()
     }
@@ -61,7 +56,6 @@ const identity = vi.hoisted(() => {
 
 vi.mock('./firebaseAuthIdentity', () => ({
   getFirebaseIdentityConsensus: () => identity.current(),
-  isFirebaseSignOutObserved: () => identity.signOutObserved(),
   observeFirebaseIdentityConsensus: (observe: (consensus: unknown) => void) => {
     identity.observers.add(observe)
     return () => identity.observers.delete(observe)
@@ -134,12 +128,12 @@ async function consensusSignedIn(
 }
 
 async function consensusSignedOut(): Promise<void> {
-  identity.publish({ status: 'signed_out' }, [], true)
+  identity.publish({ status: 'signed_out', observed: true })
   await settle()
 }
 
 async function consensusNeverSignedIn(): Promise<void> {
-  identity.publish({ status: 'signed_out' }, [], false)
+  identity.publish({ status: 'signed_out', observed: false })
   await settle()
 }
 
@@ -934,6 +928,16 @@ describe('a page that never held an account', () => {
 
   it('does not turn a held sign-out into a write on the dom-ready retry path', async () => {
     await consensusSignedIn([stubContents(true)])
+    await consensusNeverSignedIn()
+
+    await refreshStaffFlagTargeting(stubContents(false))
+
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('does not write a held sign-out on the retry path after a restart', async () => {
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
     await consensusNeverSignedIn()
 
     await refreshStaffFlagTargeting(stubContents(false))

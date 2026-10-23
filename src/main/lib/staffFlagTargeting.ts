@@ -40,7 +40,7 @@
  *   - **`signed_in`** — ask a view the consensus counts as holding that account, and accept its
  *     answer only if the page agrees it classified that same UID.
  *   - **`signed_out`** — store `false`, but only for an OBSERVED sign-out: a contributor this
- *     process saw signed in now reports signed out (`isFirebaseSignOutObserved`). A page that
+ *     process saw signed in reported signed out (the consensus's `observed`). A page that
  *     never held an account also resolves to `signed_out` — a new install's own partition served
  *     on a port whose loopback binding another install created — and that is not evidence that
  *     anybody signed out. It holds, so opening an unsigned instance no longer revokes a staff
@@ -117,7 +117,6 @@ import path from 'path'
 import type { WebContents } from 'electron'
 import {
   getFirebaseIdentityConsensus,
-  isFirebaseSignOutObserved,
   observeFirebaseIdentityConsensus,
   viewsReportingFirebaseUser,
   type FirebaseIdentityConsensus
@@ -631,7 +630,7 @@ async function classifyAgreedAccount(userId: string, generation: number): Promis
 function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   classificationGeneration += 1
   if (consensus.status === 'signed_out') {
-    if (!isFirebaseSignOutObserved()) {
+    if (!consensus.observed) {
       console.log('[staff-targeting] hold: signed out, but no sign-out was observed')
       return
     }
