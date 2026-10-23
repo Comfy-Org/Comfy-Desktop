@@ -1406,9 +1406,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 })
 
-// `signed_out` covers two different things: an account signing out, and a page that never held
-// one. Telemetry treats both alike; a consumer that PERSISTS a fact about the account must not
-// (opening a new install whose page was never signed in revoked a staff grant).
 describe('firebaseAuthIdentity observed sign-out', () => {
   const localOrigin = 'http://127.0.0.1:8188'
 
@@ -1446,9 +1443,6 @@ describe('firebaseAuthIdentity observed sign-out', () => {
   })
 
   it('does not count a page that never held an account', () => {
-    // The repro: another install's sign-in left a loopback binding for this origin, so a new
-    // install served on the same port is a trusted reporter, and its own empty partition reports
-    // signed out.
     verifiedLocalUsers.set(localOrigin, 'F')
     const fresh = new FakeWebContents(`${localOrigin}/`)
     activate(fresh)
@@ -1476,7 +1470,6 @@ describe('firebaseAuthIdentity observed sign-out', () => {
   })
 
   it('does not count a sign-in seen at a different origin of the same view', () => {
-    // Storage is per origin: a cloud sign-in says nothing about the local page this view moved to.
     verifiedLocalUsers.set(localOrigin, 'F')
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)

@@ -18,10 +18,7 @@ interface Reporter {
   pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
-  /** The origin this view was last seen signed in at, so a later `signed_out` from it can be told
-   *  apart from a page that never held an account. Per view AND origin because that is the unit
-   *  of storage: a loopback binding is keyed by origin alone, so a different install's partition
-   *  served on the same port is authorized to report, and its empty store reports `signed_out`. */
+  /** Per origin: loopback bindings are keyed by origin, so another install's partition reports. */
   signedInOrigin: string | null
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
@@ -169,13 +166,9 @@ export function getFirebaseIdentityConsensus(): FirebaseIdentityConsensus {
 }
 
 /**
- * Whether the current `signed_out` includes an account this process SAW sign out: a contributor
- * that reported signed in at its current origin earlier in its life, or a main-verified sign-in.
- *
- * `signed_out` alone also covers a page that never held an account. That is right for telemetry,
- * which only stops attributing events, and wrong for anything PERSISTED: opening a new install
- * whose page was never signed in is not a sign-out. Set by the same `reconcile()` that publishes
- * the outcome, so an observer reading it during dispatch sees the matching value.
+ * Whether the current `signed_out` includes a contributor seen signed in at its current origin,
+ * or a main-verified sign-in. `signed_out` alone also covers a page that never held an account,
+ * which is not a sign-out for anything PERSISTED. Set in the `reconcile()` that publishes it.
  */
 export function isFirebaseSignOutObserved(): boolean {
   return consensus.status === 'signed_out' && signOutObserved

@@ -30,8 +30,6 @@ vi.mock('./telemetry', () => ({
 
 const identity = vi.hoisted(() => {
   let current: { status: string; userId?: string } = { status: 'unknown' }
-  /** Whether the current `signed_out` is a sign-out the engine saw, rather than a page that never
-   *  held an account. */
   let signOutObserved = false
   const observers = new Set<(consensus: unknown) => void>()
   const views = new Map<string, Electron.WebContents[]>()
@@ -135,14 +133,11 @@ async function consensusSignedIn(
   await settle()
 }
 
-/** Every contributor resolved and none is signed in, and an account was SEEN signing out. */
 async function consensusSignedOut(): Promise<void> {
   identity.publish({ status: 'signed_out' }, [], true)
   await settle()
 }
 
-/** Every contributor resolved and none is signed in, but none was ever seen signed in: a page
- *  that never held an account, such as a new install's own partition. */
 async function consensusNeverSignedIn(): Promise<void> {
   identity.publish({ status: 'signed_out' }, [], false)
   await settle()
@@ -912,8 +907,6 @@ describe('retrying a write that did not land', () => {
   })
 })
 
-// A staff user who opened a new install whose page was never signed in lost staff
-// targeting on the next launch. That page's empty store is a `signed_out`, but not a sign-out.
 describe('a page that never held an account', () => {
   beforeEach(() => {
     initStaffFlagTargeting()

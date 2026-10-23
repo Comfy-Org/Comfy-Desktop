@@ -632,13 +632,10 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   classificationGeneration += 1
   if (consensus.status === 'signed_out') {
     if (!isFirebaseSignOutObserved()) {
-      // No contributor was ever seen signed in: a fresh page, not a sign-out. Hold.
       console.log('[staff-targeting] hold: signed out, but no sign-out was observed')
       return
     }
-    // An account this process saw signed in has signed out. This is what lets a machine that
-    // changes hands stop presenting as staff — and, with the boot evaluation authoritative, what
-    // lets the server take a grant back normally.
+    // An observed sign-out is what lets a machine that changes hands stop presenting as staff.
     classifiedUserId = null
     classifiedStaff = false
     applyClassification(false)
