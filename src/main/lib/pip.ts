@@ -196,7 +196,6 @@ export async function installFilteredRequirements(
   return result.code
 }
 
-/** The canonical PyPI index: always the `--index-url`, which uv asks after every mirror. */
 export const PYPI_INDEX_URL = 'https://pypi.org/simple/'
 
 /** Additional PyPI mirror URLs for regions with restricted access (e.g. China). */

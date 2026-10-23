@@ -44,8 +44,6 @@ describe('getPipIndexArgs', () => {
     expect(getPipIndexArgs('   ')).toEqual(getPipIndexArgs())
   })
 
-  // uv asks every --extra-index-url, in order, before --index-url. A mirror passed as --index-url
-  // is therefore asked after pypi.org, and an unreachable pypi.org fails the install outright.
   const argv = (extras: string[]): string[] => [
     '--index-url',
     PYPI_INDEX_URL,
