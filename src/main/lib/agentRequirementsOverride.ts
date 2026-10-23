@@ -362,7 +362,7 @@ export interface InstallReport {
 }
 
 export type OverrideDecision =
-  | { decision: 'applied'; pins: OverridePins; install?: InstallReport }
+  | { decision: 'applied'; pins: OverridePins }
   | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
   /** Not in uv's cache yet: a background download fetches it for a later launch. Never counted. */
   | { decision: 'deferred'; reason: 'not_cached'; pins: OverridePins; install?: InstallReport }

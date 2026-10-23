@@ -17,6 +17,7 @@ vi.mock('./pip', () => ({
 
 /** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
+const execAnswered: string[] = []
 const slowTaskkill = { ms: 0 }
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
@@ -29,7 +30,10 @@ vi.mock('child_process', async (importOriginal) => {
     ) => {
       execCalls.push({ cmd, args })
       const discovery = cmd === 'pgrep' || cmd === 'powershell.exe'
-      const answer = (): void => cb(null, discovery ? '4242\n' : '', '')
+      const answer = (): void => {
+        execAnswered.push(cmd)
+        cb(null, discovery ? '4242\n' : '', '')
+      }
       if (slowTaskkill.ms > 0) setTimeout(answer, slowTaskkill.ms)
       else answer()
       return {}
@@ -623,7 +627,7 @@ describe('installAgentRequirements handing over to the background download', () 
     vi.spyOn(fs.promises, 'readFile').mockImplementation((async (
       ...args: Parameters<typeof read>
     ) => {
-      abort.abort()
+      if (args[0] === plan.reqPath && mockInstall.mock.calls.length >= 2) abort.abort()
       return read(...args)
     }) as typeof read)
     const onDeferred = vi.fn()
@@ -634,6 +638,10 @@ describe('installAgentRequirements handing over to the background download', () 
       vi.mocked(fs.promises.readFile).mockRestore()
     }
 
+    expect(
+      mockInstall,
+      'the network try ran, so the launch reached its deferral'
+    ).toHaveBeenCalledTimes(2)
     expect(onDeferred).not.toHaveBeenCalled()
   })
 })
@@ -868,7 +876,7 @@ describe('installAgentRequirements with a version override', () => {
 
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
-    expect(decision).toMatchObject({ decision: 'applied', install: { outcome: 'exited' } })
+    expect(decision).toMatchObject({ decision: 'applied' })
     expect(offlineTries, 'the override, and no core file after an applied one').toBe(1)
     expect(calls, 'nothing went to the network').toEqual([])
   })
@@ -2052,7 +2060,7 @@ describe('installAgentRequirements with a version override', () => {
       expect(
         decision,
         'a 60 s install from the cache outlasts the 20 s network budget but not its own 120 s bound'
-      ).toMatchObject({ decision: 'applied', install: { outcome: 'exited', budgetMs: 120_000 } })
+      ).toMatchObject({ decision: 'applied' })
     })
 
     it.each([
@@ -2116,13 +2124,52 @@ describe('installAgentRequirements with a version override', () => {
       return retries
     }
 
+    it("bounds the cache retry after a download ran out at 30 s, deferring when another install's download holds the cache", async () => {
+      const startedAt = Date.now()
+      let stoppedAt = 0
+      const retryStopped: number[] = []
+      mockInstall.mockImplementation(async (_file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[]
+        const hang = (onStop: () => void) => {
+          waiting++
+          return new Promise<{ code: number; output: string }>((resolve) =>
+            signal.addEventListener('abort', () => {
+              waiting--
+              onStop()
+              resolve({ code: 1, output: '' })
+            })
+          )
+        }
+        if (extraArgs.includes('--offline')) {
+          if (stoppedAt === 0 || !extraArgs.includes('--constraint')) return { code: 1, output: '' }
+          return hang(() => retryStopped.push(Date.now() - stoppedAt))
+        }
+        if (!extraArgs.includes('--target')) return { code: 0, output: ' + comfy-agent==0.2.3\n' }
+        return hang(() => (stoppedAt = Date.now()))
+      })
+      const onDeferred = vi.fn()
+
+      const decision = await settle(
+        installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+      )
+
+      expect(stoppedAt - startedAt, 'the download ran out at the network budget').toBe(20_000)
+      expect(retryStopped, 'not the 120 s an install from the cache gets').toEqual([30_000])
+      expect(
+        decision,
+        "a retry stuck behind uv's cache lock defers like a cache miss, with the download's timeout"
+      ).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out', budgetMs: 20_000 } })
+      expect(onDeferred).toHaveBeenCalledTimes(1)
+    })
+
     it('installs from the cache on the same launch when the download ran out while uv was still writing it', async () => {
       const retries = fetchTimesOut('--target', true)
 
       const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
 
       expect(retries, 'the override is tried from the cache once more').toHaveLength(1)
-      expect(decision).toMatchObject({ decision: 'applied', install: { outcome: 'exited' } })
+      expect(decision).toMatchObject({ decision: 'applied' })
     })
 
     it('defers a download that ran out when the cache still misses, reporting the timeout', async () => {
@@ -2290,10 +2337,6 @@ describe('uvErrorTail', () => {
     expect(uvErrorTail('Resolved 3 packages in 20ms\nInstalled 3 packages', '/inst')).toBeNull()
   })
 })
-
-async function settleRealIo(): Promise<void> {
-  for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
-}
 
 describe('prefetchAgentRequirements', () => {
   let dir = ''
@@ -2501,6 +2544,7 @@ describe('prefetchAgentRequirements', () => {
     slowTaskkill.ms = 1_000
     try {
       execCalls.length = 0
+      execAnswered.length = 0
       mockInstall.mockImplementation(
         (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
           args[9]?.(Object.assign(new EventEmitter(), { pid: 4545 }) as never)
@@ -2510,9 +2554,9 @@ describe('prefetchAgentRequirements', () => {
       prefetchAgentRequirements(request(), vi.fn())
       await vi.waitFor(() => expect(mockInstall).toHaveBeenCalled())
 
-      let held = false
+      let heldBeforeTaskkillReturned: boolean | undefined
       const hold = holdAgentPrefetch(dir).then((release) => {
-        held = true
+        heldBeforeTaskkillReturned = !execAnswered.includes('taskkill')
         return release
       })
       await vi.advanceTimersByTimeAsync(10_000)
@@ -2522,11 +2566,11 @@ describe('prefetchAgentRequirements', () => {
           args: ['/F', '/T', '/PID', '4545']
         })
       )
-      await settleRealIo()
-      expect(held, 'the removal waits until the hard stop has returned').toBe(false)
       await vi.advanceTimersByTimeAsync(1_000)
       ;(await hold)()
-      expect(held).toBe(true)
+      expect(heldBeforeTaskkillReturned, 'the removal waits until the hard stop has returned').toBe(
+        false
+      )
     } finally {
       slowTaskkill.ms = 0
       Object.defineProperty(process, 'platform', platform)
@@ -2572,51 +2616,33 @@ describe('prefetchAgentRequirements', () => {
     expect(prefetchAgentRequirements(request(), vi.fn())).toBe(false)
   })
 
-  it('runs a different request after the running one, and drops one it replaced', async () => {
-    let release = (): void => {}
-    mockInstall.mockImplementationOnce(
-      () => new Promise((resolve) => (release = () => resolve({ code: 0, output: '' })))
-    )
-    const first = vi.fn()
-    const replaced = vi.fn()
-    const last = vi.fn()
-
-    expect(prefetchAgentRequirements(request(), first)).toBe(true)
-    expect(prefetchAgentRequirements({ ...request(), signature: 'core' }, replaced)).toBe(true)
-    expect(prefetchAgentRequirements({ ...request(), signature: 'comfy-agent==0.2.4' }, last)).toBe(
-      true
-    )
-    expect(replaced, 'a newer different request replaces it').toHaveBeenCalledWith(null)
-    await vi.waitFor(() => expect(mockInstall).toHaveBeenCalled())
-    release()
-
-    await vi.waitFor(() => expect(last).toHaveBeenCalled())
-    expect(first, 'the running one ends on its own').toHaveBeenCalledTimes(1)
-    expect(last, 'then the newest request runs in full').toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'completed' })
-    )
-  })
-
-  it("cuts short a download ahead of a launch that the launch's own request supersedes", async () => {
-    let eagerSignal: AbortSignal | undefined
+  it('refuses a different request while one runs, and settles it at once so no caller waits', async () => {
     mockInstall.mockImplementationOnce(async (...args) => {
-      eagerSignal = args[6] as AbortSignal
+      const uvSignal = args[6] as AbortSignal
       return new Promise((resolve) =>
-        eagerSignal!.addEventListener('abort', () => resolve({ code: 1, output: '' }), {
-          once: true
-        })
+        uvSignal.addEventListener('abort', () => resolve({ code: 1, output: '' }), { once: true })
       )
     })
-    const eager = vi.fn()
-    const launch = vi.fn()
-    prefetchAgentRequirements({ ...request(), eager: true, signature: 'wave-2' }, eager)
-    await vi.waitFor(() => expect(eagerSignal).toBeDefined())
+    const running = vi.fn()
+    expect(prefetchAgentRequirements(request(), running)).toBe(true)
+    await vi.waitFor(() => expect(mockInstall).toHaveBeenCalled())
+    const refused = vi.fn()
 
-    expect(prefetchAgentRequirements({ ...request(), signature: 'wave-1' }, launch)).toBe(true)
+    expect(prefetchAgentRequirements({ ...request(), signature: 'core' }, refused)).toBe(false)
 
-    expect(eagerSignal!.aborted).toBe(true)
-    await vi.waitFor(() => expect(launch).toHaveBeenCalled())
-    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'completed' }))
+    expect(
+      refused,
+      'settled at once: the startup pass waits on it before the next install'
+    ).toHaveBeenCalledWith(null)
+    const again = vi.fn()
+    expect(
+      prefetchAgentRequirements(request(), again),
+      'the same request joins the running one'
+    ).toBe(false)
+    expect(again).not.toHaveBeenCalled()
+    expect(running, 'the running download is left alone').not.toHaveBeenCalled()
+    stopAgentPrefetches()
+    await vi.waitFor(() => expect(running).toHaveBeenCalled())
   })
 
   it('reports, rather than hangs, when uv cannot even say its version', async () => {
@@ -2808,6 +2834,34 @@ describe('prepareAgentPrefetch', () => {
       signature: 'comfy-agent==0.1.0rc3',
       eager: true
     })
+  })
+
+  it("holds a removal until a preparation's uv listing has exited, and prepares nothing then", async () => {
+    let exited = false
+    mockUvPip.mockImplementationOnce(
+      (...args) =>
+        new Promise((resolve) =>
+          args[4]!.addEventListener(
+            'abort',
+            () =>
+              setTimeout(() => {
+                exited = true
+                resolve({ code: 1, output: '' })
+              }, 20),
+            { once: true }
+          )
+        )
+    )
+    const prepared = prepareAgentPrefetch(plan, { 'comfy-agent': '0.1.0rc3' }, null)
+    await vi.waitFor(() => expect(mockUvPip).toHaveBeenCalled())
+
+    const release = await holdAgentPrefetch(dir)
+
+    expect(exited, 'a delete must not go on with uv still running from inside the install').toBe(
+      true
+    )
+    expect(await prepared, 'what was cut short is not downloaded').toBeNull()
+    release()
   })
 
   it('prepares core file first when its packages are not in yet, as a launch installs them', async () => {

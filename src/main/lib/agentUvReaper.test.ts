@@ -60,12 +60,17 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   let fakeUv = ''
   const children: ChildProcess[] = []
 
-  const start = async (command: string, args: string[], name: string): Promise<number> => {
+  const start = async (
+    command: string,
+    args: string[],
+    name: string
+  ): Promise<{ pid: number; startedAt: number }> => {
+    const startedAt = Date.now()
     const child = spawn(command, args, { detached: true, stdio: 'ignore' })
     children.push(child)
     const pid = child.pid!
     await vi.waitFor(() => expect(path.basename(comm(pid))).toBe(name), { timeout: 10_000 })
-    return pid
+    return { pid, startedAt }
   }
 
   const record = (pid: number, startedAt = Date.now()): string => {
@@ -92,8 +97,8 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   })
 
   it('kills the process group of a uv a killed Desktop left running, and removes its record', async () => {
-    const pid = await start(fakeUv, [], 'uv')
-    const file = record(pid)
+    const { pid, startedAt } = await start(fakeUv, [], 'uv')
+    const file = record(pid, startedAt)
 
     await reapOrphanedAgentUv(dir)
 
@@ -105,9 +110,9 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     ['a process that is not uv', 'sleep', 0],
     ['a uv that started at another time, so its pid was reused', 'uv', -60_000]
   ])('leaves %s alone, and removes only the record', async (_label, name, skew) => {
-    const pid =
+    const { pid, startedAt } =
       name === 'uv' ? await start(fakeUv, [], 'uv') : await start('sleep', ['60'], 'sleep')
-    const file = record(pid, Date.now() + skew)
+    const file = record(pid, startedAt + skew)
 
     await reapOrphanedAgentUv(dir)
 

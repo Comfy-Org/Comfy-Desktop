@@ -984,9 +984,11 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   // launching marker exists. The finally is the single teardown-complete
   // signal: `cancelLaunching` awaits it before letting a restart relaunch.
   const launch = _beginLaunch(sessionId)
+  const prefetchHold = { release: (): void => {} }
   try {
-    return await runLaunch(ctx, launch.abort)
+    return await runLaunch(ctx, launch.abort, prefetchHold)
   } finally {
+    prefetchHold.release()
     if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
     _endLaunch(sessionId, launch)
   }
@@ -994,7 +996,8 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
 
 async function runLaunch(
   { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
-  abort: AbortController
+  abort: AbortController,
+  prefetchHold: { release: () => void }
 ): Promise<ActionResult> {
   let inst = instArg
   const sessionId = runtimeSessionId ?? installationId
@@ -1037,6 +1040,11 @@ async function runLaunch(
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
+  // A background download's uv contends with the launch's own uv work on the environment (repair,
+  // the agent's install, a frontend restore): held off until the launch is past them.
+  if (typeof inst.installPath === 'string') {
+    prefetchHold.release = await holdAgentPrefetch(inst.installPath)
+  }
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(sessionId)
   // The startup model-download pass (migrate legacy final-path partials,
@@ -1573,43 +1581,39 @@ async function runLaunch(
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
   // Started once this launch's own uv work (the install below and any frontend restore after it)
-  // is done, and on a cancel before that too, so nothing the launch handed back is dropped.
+  // is done, and on a cancel before that too, so nothing the launch handed back is dropped. The
+  // hold goes first: while it stands, a download for this install is refused.
   const handedBack: { request?: PrefetchRequest } = {}
   const startHandedBack = (): void => {
+    prefetchHold.release()
     if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
   }
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
-    // A background download holds uv's lock on the environment: the launch goes first, and hands
-    // back whatever it still needs (the wheels already fetched stay cached).
-    const releasePrefetch = await holdAgentPrefetch(agentRequirements.installPath)
+    // The launch's hold already stopped this install's background download; what the launch still
+    // needs is handed back once it is done (the wheels already fetched stay cached).
     await reapOrphanedAgentUv(agentRequirements.installPath)
-    let overrideDecision: Awaited<ReturnType<typeof installAgentRequirements>>
-    try {
-      overrideDecision = await installAgentRequirements(
-        agentRequirements,
-        makeSendOutput(sender, installationId),
-        abort.signal,
-        // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
-        appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
-        readOverrideState(inst),
-        (request, deferral) => {
-          // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
-          sendProgress('agentRequirements', {
-            percent: -1,
-            status: i18n.t(
-              deferral === 'agent'
-                ? 'launch.agentRequirements.deferred'
-                : 'launch.agentRequirements.deferredUpdate'
-            )
-          })
-          handedBack.request = request
-        }
-      )
-    } finally {
-      releasePrefetch()
-    }
+    const overrideDecision = await installAgentRequirements(
+      agentRequirements,
+      makeSendOutput(sender, installationId),
+      abort.signal,
+      // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
+      appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
+      readOverrideState(inst),
+      (request, deferral) => {
+        // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: i18n.t(
+            deferral === 'agent'
+              ? 'launch.agentRequirements.deferred'
+              : 'launch.agentRequirements.deferredUpdate'
+          )
+        })
+        handedBack.request = request
+      }
+    )
     if (abort.signal.aborted) {
       startHandedBack()
       return { ok: false, cancelled: true }

@@ -4162,6 +4162,88 @@ describe('agent requirements at launch', () => {
       ).toEqual(['frontend restored', 'download started'])
     })
 
+    it('holds the background download off through a frontend restore on a launch without the agent', async () => {
+      launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.19' } })
+      fs.writeFileSync(
+        path.join(installDir, 'ComfyUI', 'requirements.txt'),
+        'comfyui-frontend-package==1.55.18\n'
+      )
+      const order: string[] = []
+      let refusedDuringRestore: boolean | undefined
+      const background: PrefetchRequest = {
+        plan: {
+          reqPath: agentReqPath(),
+          uvPath: getUvPath(installDir),
+          pythonPath: getVenvPythonPath(installDir),
+          installPath: installDir
+        },
+        steps: [{ text: CORE_FILE }],
+        signature: 'core',
+        eager: true
+      }
+      pipHarness.respond = (args) => {
+        if (String(args[4]).startsWith('.agent-prefetch-')) {
+          const signal = args[6] as AbortSignal
+          if (signal.aborted) return { code: 1, output: '' }
+          return new Promise((resolve) =>
+            signal.addEventListener('abort', () => {
+              order.push('background stopped')
+              resolve({ code: 1, output: '' })
+            })
+          ) as never
+        }
+        if (String(args[4]).startsWith('.launch-frontend-restore-')) {
+          order.push('frontend restore')
+          refusedDuringRestore = !prefetchAgentRequirements(background, () => {})
+        }
+        return { code: 0, output: '' }
+      }
+      try {
+        expect(prefetchAgentRequirements(background, () => {})).toBe(true)
+        await vi.waitFor(() => expect(pipHarness.calls).toHaveLength(1))
+
+        await launchAndPrint()
+
+        expect(order, "the restore's uv works on the same environment").toEqual([
+          'background stopped',
+          'frontend restore'
+        ])
+        expect(refusedDuringRestore, 'and none starts while it runs').toBe(true)
+      } finally {
+        stopAgentPrefetches()
+        ;(await holdAgentPrefetch(installDir))()
+        _resetAgentPrefetchesForTest()
+      }
+    })
+
+    it('still hands a deferred override back when the launch is cancelled during core file', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = launchCommand()
+      let overrideMissed = false
+      pipHarness.respond = (args) => {
+        if (missesOverride(args)) {
+          overrideMissed ||= (args[8] as string[]).includes('--dry-run')
+          return { code: 2, output: '' }
+        }
+        if (overrideMissed) _operationAborts.get(ID)?.abort()
+        return { code: 0, output: '' }
+      }
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+
+      expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
+      expect(overrideMissed, 'the cancel came after the override was deferred').toBe(true)
+      expect(
+        prefetchHarness.requests,
+        'what the launch handed back is not dropped with it'
+      ).toEqual([
+        {
+          installationId: ID,
+          request: expect.objectContaining({ signature: 'comfy-agent==0.2.3' })
+        }
+      ])
+    })
+
     it('still hands the download back when the launch is cancelled during the frontend restore', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       launchHarness.launchCommand = launchCommand()

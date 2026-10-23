@@ -395,6 +395,10 @@ const ONLINE_BUDGET_MS = 20_000
  *  launch's install was before it moved downloads to the background. */
 const OFFLINE_TIMEOUT_MS = 120_000
 
+/** The cache-only retry after a download ran out: another install's download can hold uv's cache
+ *  lock, so the retry must not wait out the whole install bound behind it. */
+const LATE_RETRY_TIMEOUT_MS = 30_000
+
 /** One download at a time: a stopped uv keeps every wheel it finished, where in parallel a slow
  *  link finishes none of the large ones and every attempt starts over. */
 const SERIAL_DOWNLOADS = { UV_CONCURRENT_DOWNLOADS: '1' }
@@ -422,7 +426,7 @@ interface CachedResult extends BoundedResult {
 type CachedRun = (
   reqPath: string,
   tempName: string,
-  extraArgs?: string[],
+  constraints?: { name: string; text: string },
   network?: boolean
 ) => Promise<CachedResult>
 
@@ -472,7 +476,8 @@ export async function installAgentRequirements(
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
-  const run: CachedRun = async (reqPath, tempName, extraArgs = [], network = true) => {
+  const run: CachedRun = async (reqPath, tempName, constraints, network = true) => {
+    const extraArgs = constraints ? ['--constraint', constraints.name] : []
     // Quiet: a cache miss is the expected case on a cold cache; the network try speaks for it.
     const cached = await runBoundedInstall(
       plan,
@@ -487,10 +492,17 @@ export async function installAgentRequirements(
       return { ...cached, online: false }
     }
     const startedAt = Date.now()
-    const fetched = await fetchForLaunch(plan, reqPath, extraArgs, onlineLeft, sendOutput, signal)
+    const fetched = await fetchForLaunch(
+      plan,
+      reqPath,
+      constraints?.text,
+      onlineLeft,
+      sendOutput,
+      signal
+    )
     onlineLeft -= Date.now() - startedAt
-    const fromCache = (): Promise<BoundedResult> =>
-      runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, sendOutput, signal, {
+    const fromCache = (timeoutMs = OFFLINE_TIMEOUT_MS): Promise<BoundedResult> =>
+      runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, {
         extraArgs: [OFFLINE, ...extraArgs]
       })
     if (fetched.kind === 'failed') {
@@ -498,7 +510,7 @@ export async function installAgentRequirements(
       // that writing alone can outlast the budget: the cache may already hold everything.
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
-      const retried = late ? await fromCache() : null
+      const retried = late ? await fromCache(LATE_RETRY_TIMEOUT_MS) : null
       return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
     }
     if (fetched.kind !== 'fetched') {
@@ -564,7 +576,7 @@ export async function installAgentRequirements(
   if (retried?.decision === 'deferred') await defer(false)
   if (retried?.decision === 'deferred' || retried?.decision === 'reverted') {
     // A failed install may have moved packages; core's file puts them back from the cache.
-    await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, [], false)
+    await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
 }
@@ -608,7 +620,6 @@ async function tryOverride(
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
   const overridePath = path.join(plan.installPath, `.launch-agent-reqs-override-${tag}-src.txt`)
   const constraintsPath = path.join(plan.installPath, constraintsName)
-  let install: InstallReport
   try {
     // Not counted toward retiring the override: it applies on a later launch, once core's are in.
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
@@ -616,17 +627,16 @@ async function tryOverride(
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
-    const installed = await run(overridePath, `.launch-agent-reqs-override-${tag}.txt`, [
-      '--constraint',
-      constraintsName
-    ])
+    const installed = await run(overridePath, `.launch-agent-reqs-override-${tag}.txt`, {
+      name: constraintsName,
+      text: constraints
+    })
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
       return cannotDownload(installed)
         ? revertOnInstall(sendOutput, pins, installed.report)
         : deferOverride(sendOutput, pins, installed.report)
     }
-    install = installed.report
   } catch {
     return revertOnInstall(sendOutput, pins)
   } finally {
@@ -638,15 +648,17 @@ async function tryOverride(
     sendOutput(
       `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
     )
-  return { decision: 'applied', pins, install }
+  return { decision: 'applied', pins }
 }
 
 /** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
 const LIST_TIMEOUT_MS = 30_000
 
+/** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive. */
 async function listInstalled(
   plan: AgentRequirementsInstall,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  untilExit = false
 ): Promise<string | null> {
   if (signal?.aborted) return null
   const stop = new AbortController()
@@ -664,7 +676,7 @@ async function listInstalled(
       () => {},
       stop.signal
     ).then((result) => (result.code === 0 ? result.output : null))
-    return await Promise.race([listed, stopped])
+    return await (untilExit ? listed : Promise.race([listed, stopped]))
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onStop)
@@ -687,7 +699,8 @@ type PreparedOverride =
 async function prepareOverride(
   plan: AgentRequirementsInstall,
   pins: OverridePins,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  untilExit = false
 ): Promise<PreparedOverride> {
   let coreText: string
   try {
@@ -700,7 +713,7 @@ async function prepareOverride(
     .catch(() => '')
   const effective = effectiveAgentRequirements(coreText, pins, mainText)
   if (effective.kind === 'refused') return effective
-  const listed = await listInstalled(plan, signal)
+  const listed = await listInstalled(plan, signal, untilExit)
   const constraints = listed === null ? null : installedConstraints(listed, pins, coreText)
   if (listed === null || constraints === null) return { kind: 'refused', reason: 'check_failed' }
   return { kind: 'ready', coreText, text: effective.text, constraints, listed }
@@ -716,10 +729,32 @@ export async function prepareAgentPrefetch(
   raw: unknown,
   state: AgentOverrideState | null
 ): Promise<PrefetchRequest | null> {
+  const key = plan.installPath
+  if (quit.signal.aborted || held.has(key)) return null
+  const stop = new AbortController()
+  const onQuit = (): void => stop.abort()
+  quit.signal.addEventListener('abort', onQuit, { once: true })
+  const done = preparePrefetch(plan, raw, state, stop.signal)
+  preparing.set(key, { stop, done })
+  try {
+    const request = await done
+    return stop.signal.aborted ? null : request
+  } finally {
+    quit.signal.removeEventListener('abort', onQuit)
+    preparing.delete(key)
+  }
+}
+
+async function preparePrefetch(
+  plan: AgentRequirementsInstall,
+  raw: unknown,
+  state: AgentOverrideState | null,
+  signal: AbortSignal
+): Promise<PrefetchRequest | null> {
   try {
     const parsed = parseAgentRequirementsOverride(raw)
     if (parsed.kind === 'pins' && !isRevertedFor(state, parsed.pins)) {
-      const ready = await prepareOverride(plan, parsed.pins, quit.signal)
+      const ready = await prepareOverride(plan, parsed.pins, signal, true)
       if (ready.kind === 'ready') {
         const { coreText, text, constraints, listed } = ready
         const core = coreFileInstalled(coreText, listed) ? [] : [{ text: coreText }]
@@ -822,12 +857,11 @@ interface RunningPrefetch {
   stop: AbortController
   done: Promise<void>
   signature: string
-  eager: boolean
-  /** A different request that came in meanwhile, started once this one ends. */
-  next?: { request: PrefetchRequest; onDone: (report: PrefetchReport | null) => void }
 }
 
 const prefetches = new Map<string, RunningPrefetch>()
+/** Preparing a download ahead of a launch, whose `uv pip list` runs before any download does. */
+const preparing = new Map<string, { stop: AbortController; done: Promise<unknown> }>()
 const held = new Map<string, number>()
 /** Aborted on quit: nothing starts after, and preparation ahead of a launch stops too. */
 let quit = new AbortController()
@@ -837,10 +871,9 @@ let quit = new AbortController()
  * runs from: resolve against it (`--dry-run`), then install exactly the missing pins into a scratch
  * target, deleted after. The next launch's cache-only install takes them from there.
  *
- * One runs per install. The same request again is dropped (false); a different one waits for the
- * running one and then starts, cutting short a running download ahead of a launch that a launch's
- * own request supersedes. False after quit or while the install is being removed. `onDone` gets
- * nothing for a run that did nothing (everything cached, or replaced while waiting). Never throws.
+ * One runs per install: another request while it runs is refused (false), and a different one
+ * gets `onDone(null)` at once, so no caller waits on it. False after quit or while the install is
+ * held. `onDone` gets nothing for a run that did nothing (everything cached). Never throws.
  */
 export function prefetchAgentRequirements(
   request: PrefetchRequest,
@@ -850,25 +883,17 @@ export function prefetchAgentRequirements(
   if (quit.signal.aborted || held.has(key)) return false
   const running = prefetches.get(key)
   if (running) {
-    if (running.signature === request.signature) return false
-    running.next?.onDone(null)
-    running.next = { request, onDone }
-    if (running.eager && !request.eager) running.stop.abort()
-    return true
+    if (running.signature !== request.signature) onDone(null)
+    return false
   }
   const entry: RunningPrefetch = {
     stop: new AbortController(),
     done: Promise.resolve(),
-    signature: request.signature,
-    eager: request.eager === true
+    signature: request.signature
   }
   entry.done = runPrefetch(request, entry.stop.signal)
     .then(onDone, () => onDone(null))
-    .finally(() => {
-      prefetches.delete(key)
-      const next = entry.next
-      if (next && !prefetchAgentRequirements(next.request, next.onDone)) next.onDone(null)
-    })
+    .finally(() => prefetches.delete(key))
   prefetches.set(key, entry)
   return true
 }
@@ -884,18 +909,18 @@ export function agentPrefetchesStopped(): boolean {
 }
 
 /**
- * For removing an install, whose uv runs from inside it (which on Windows blocks the delete):
- * stops its download and waits for uv to exit, and starts none for it until `release` is called.
+ * For foreground work on an install's environment (a launch, an update, a copy, a delete), which a
+ * background uv would contend with or hold open (on Windows, blocking a delete or a rename): stops
+ * its download and any preparation for one, waits for uv to exit, and starts none for it until
+ * `release` is called.
  */
 export async function holdAgentPrefetch(installPath: string): Promise<() => void> {
   held.set(installPath, (held.get(installPath) ?? 0) + 1)
+  const preparation = preparing.get(installPath)
+  preparation?.stop.abort()
   const running = prefetches.get(installPath)
-  if (running) {
-    running.next?.onDone(null)
-    running.next = undefined
-    running.stop.abort()
-    await running.done
-  }
+  running?.stop.abort()
+  await Promise.all([preparation?.done, running?.done])
   let released = false
   return () => {
     if (released) return
@@ -1038,7 +1063,7 @@ const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
 async function fetchForLaunch(
   plan: AgentRequirementsInstall,
   reqPath: string,
-  extraArgs: string[],
+  constraints: string | undefined,
   budgetMs: number,
   output: (text: string) => void,
   signal: AbortSignal | undefined
@@ -1047,26 +1072,18 @@ async function fetchForLaunch(
   const tag = `${prefix}${attemptTag()}`
   const staleBefore = Date.now() - 60 * 60_000
   // Not awaited: deleting a large leftover tree must not spend the download's budget.
-  void (async () => {
-    const present = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
-    for (const name of present.filter((entry) => entry.startsWith(prefix))) {
-      const at = path.join(plan.installPath, name)
-      const { mtimeMs } = await fs.promises.lstat(at).catch(() => ({ mtimeMs: Infinity }))
-      if (mtimeMs >= staleBefore) continue
-      await fs.promises.rm(at, { recursive: true, force: true }).catch(() => {})
-    }
-  })()
+  void removeScratch(
+    plan.installPath,
+    async (name, at) =>
+      name.startsWith(prefix) &&
+      (await fs.promises.lstat(at).catch(() => ({ mtimeMs: Infinity }))).mtimeMs < staleBefore
+  )
   const stop = new AbortController()
   const onAbort = (): void => stop.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
   const deadline = Date.now() + budgetMs
   try {
-    const at = extraArgs.indexOf('--constraint')
     const text = await fs.promises.readFile(reqPath, 'utf-8')
-    const constraints =
-      at === -1
-        ? undefined
-        : await fs.promises.readFile(path.join(plan.installPath, extraArgs[at + 1]!), 'utf-8')
     return await fetchStep(plan, { text, constraints }, tag, {
       eager: false,
       signal: stop.signal,
@@ -1078,28 +1095,26 @@ async function fetchForLaunch(
     return { kind: 'nothing' }
   } finally {
     signal?.removeEventListener('abort', onAbort)
-    const names = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
-    await Promise.all(
-      names
-        .filter((name) => name === tag || name.startsWith(`${tag}-`))
-        .map((name) =>
-          fs.promises.rm(path.join(plan.installPath, name), { recursive: true, force: true })
-        )
-    ).catch(() => {})
+    await removeScratch(plan.installPath, (name) => name === tag || name.startsWith(`${tag}-`))
   }
 }
 
-async function removePrefetchFiles(installPath: string): Promise<void> {
+/** Remove what `owns` picks from the install dir, all at once. Never throws. */
+async function removeScratch(
+  installPath: string,
+  owns: (name: string, at: string) => boolean | Promise<boolean>
+): Promise<void> {
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
   await Promise.all(
-    names
-      .filter((name) => name.startsWith(PREFETCH_PREFIX))
-      .map((name) =>
-        fs.promises
-          .rm(path.join(installPath, name), { recursive: true, force: true })
-          .catch(() => {})
-      )
-  )
+    names.map(async (name) => {
+      const at = path.join(installPath, name)
+      if (await owns(name, at)) await fs.promises.rm(at, { recursive: true, force: true })
+    })
+  ).catch(() => {})
+}
+
+function removePrefetchFiles(installPath: string): Promise<void> {
+  return removeScratch(installPath, (name) => name.startsWith(PREFETCH_PREFIX))
 }
 
 async function readUvVersion(

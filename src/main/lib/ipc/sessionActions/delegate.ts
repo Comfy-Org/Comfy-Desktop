@@ -1,6 +1,7 @@
 import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
+import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
 
 export async function handleDelegateToSource(
   { event, installationId, inst, actionData }: ActionContext,
@@ -39,6 +40,10 @@ export async function handleDelegateToSource(
       console.warn('Failed to append action failure to app log:', logErr)
     }
   }
+  // An update, a snapshot restore or a PyTorch change works on the environment a background
+  // download's uv holds open (renaming `.venv` fails under it on Windows): it goes first.
+  const releasePrefetch =
+    typeof inst.installPath === 'string' ? await holdAgentPrefetch(inst.installPath) : () => {}
   try {
     const result = await source.handleAction(actionId, inst, actionData, {
       update,
@@ -55,6 +60,7 @@ export async function handleDelegateToSource(
     logFailure((err as Error).message)
     return { ok: false, message: (err as Error).message }
   } finally {
+    releasePrefetch()
     _operationAborts.delete(installationId)
   }
 }
