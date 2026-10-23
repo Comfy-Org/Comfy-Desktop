@@ -1332,7 +1332,8 @@
     },
     "viewLogs": "查看日志",
     "agentRequirements": {
-      "deferred": "正在后台下载智能体；下次启动时生效"
+      "deferred": "正在后台下载智能体；下次启动时生效",
+      "deferredUpdate": "正在后台下载新版智能体；下次启动时生效"
     }
   },
   "devPlatform": {

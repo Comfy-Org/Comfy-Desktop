@@ -363,24 +363,35 @@ type CachedRun = (
   network?: boolean
 ) => Promise<CachedResult>
 
-/** uv's exit code for requirements it proved unsatisfiable; network and other errors exit 2. */
-const UV_UNSATISFIABLE = 1
+/** uv's words for a resolve it proved impossible, in every version Desktop ships (0.11, 0.13). */
+const NO_SOLUTION = /No solution found when resolving/
+/** uv's words for a download or index that failed: a later download can fix those. Exit codes
+ *  can't tell them apart: uv 0.11 exits 1 for a download cut short, as for no solution. */
+const DOWNLOAD_FAILED =
+  /Failed to (?:download|fetch)|error sending request|Request failed|timed out|connect|dns error|certificate|HTTP status/i
 
-/** A failure no download can fix: with the network to hand, uv proved there is no solution. */
-function unsatisfiable(result: CachedResult): boolean {
+/**
+ * A failure no download can fix, from a try that had the network: uv proved there is no solution,
+ * or failed on something it names that is not a download (a permission error, a locked file). A
+ * cache-only try proves nothing, since a cache miss reads as no solution.
+ */
+function cannotDownload(result: CachedResult): boolean {
+  if (!result.online || result.report.outcome !== 'exited') return false
+  const output = stripAnsi(result.output)
   return (
-    result.online &&
-    result.report.outcome === 'exited' &&
-    result.report.exitCode === UV_UNSATISFIABLE
+    NO_SOLUTION.test(output) || (result.report.errorTail !== null && !DOWNLOAD_FAILED.test(output))
   )
 }
+
+/** Whether the agent itself waits on the download, or only an override's newer version does. */
+export type Deferral = 'agent' | 'update'
 
 /**
  * Install the planned requirements. Bounded and fail-open, never throws. An `override` that
  * validates and passes its check goes in first; otherwise, or when it is not downloaded in time,
  * core's own file. On a fresh install the override waits for core's file and then goes in on the
  * same launch. What does not download in time is handed to `onDeferred` for a background download;
- * requirements uv proves unsatisfiable are not. Returns the decision to report, if any.
+ * a failure no download can fix is not. Returns the decision to report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -388,7 +399,7 @@ export async function installAgentRequirements(
   signal?: AbortSignal,
   override?: unknown,
   overrideState: AgentOverrideState | null = null,
-  onDeferred?: (request: PrefetchRequest) => void
+  onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
@@ -437,8 +448,14 @@ export async function installAgentRequirements(
       ...(coreText === null ? [] : [{ text: coreText }]),
       ...(overrideStep ? [overrideStep] : [])
     ]
-    sendOutput('Downloading the agent in the background; it starts on the next launch\n')
-    onDeferred({ plan, steps, signature })
+    // Core's file in means the agent starts now, on core's versions: only the override waits.
+    const deferral: Deferral = coreMissing ? 'agent' : 'update'
+    sendOutput(
+      deferral === 'agent'
+        ? 'Downloading the agent in the background; it starts on the next launch\n'
+        : "Downloading the agent's newer version in the background; it applies on the next launch\n"
+    )
+    onDeferred({ plan, steps, signature }, deferral)
   }
   const decision = await tryOverride(
     plan,
@@ -454,7 +471,7 @@ export async function installAgentRequirements(
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
   if (!core.ok) {
-    if (!unsatisfiable(core)) await defer(true)
+    if (!cannotDownload(core)) await defer(true)
     return decision
   }
   if (decision?.decision !== 'refused' || decision.reason !== 'core_first') return decision
@@ -523,7 +540,7 @@ async function tryOverride(
     ])
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
-      return unsatisfiable(installed)
+      return cannotDownload(installed)
         ? revertOnInstall(sendOutput, pins, installed.report)
         : deferOverride(sendOutput, pins, installed.report)
     }
@@ -621,7 +638,7 @@ export async function prepareAgentPrefetch(
   try {
     const parsed = parseAgentRequirementsOverride(raw)
     if (parsed.kind === 'pins' && !isRevertedFor(state, parsed.pins)) {
-      const ready = await prepareOverride(plan, parsed.pins, undefined)
+      const ready = await prepareOverride(plan, parsed.pins, quit.signal)
       if (ready.kind === 'ready') {
         const { coreText, text, constraints, listed } = ready
         const core = coreFileInstalled(coreText, listed) ? [] : [{ text: coreText }]
@@ -720,41 +737,95 @@ const PREFETCH_TIMEOUT_MS = 30 * 60_000
 
 const PREFETCH_PREFIX = '.agent-prefetch-'
 
+interface RunningPrefetch {
+  stop: AbortController
+  done: Promise<void>
+  signature: string
+  eager: boolean
+  /** A different request that came in meanwhile, started once this one ends. */
+  next?: { request: PrefetchRequest; onDone: (report: PrefetchReport | null) => void }
+}
+
 /** One background download per install, so a relaunch while it runs does not start another. */
-const prefetches = new Map<string, { stop: AbortController; done: Promise<void> }>()
+const prefetches = new Map<string, RunningPrefetch>()
+/** Installs being removed: nothing starts for them until the removal lets go. */
+const held = new Map<string, number>()
+/** Aborted on quit: nothing starts after, and preparation ahead of a launch stops too. */
+let quit = new AbortController()
 
 /**
  * Fetch what a launch could not install into uv's cache without touching the environment ComfyUI
  * runs from: resolve against it (`--dry-run`), then install exactly the missing pins into a scratch
- * target, deleted after. The next launch's cache-only install takes them from there. False when one
- * is already running for this install. `onDone` gets nothing for an eager run that had nothing to
- * do. Never throws.
+ * target, deleted after. The next launch's cache-only install takes them from there.
+ *
+ * One runs per install. The same request again is dropped (false); a different one waits for the
+ * running one and then starts, cutting short a running download ahead of a launch that a launch's
+ * own request supersedes. False after quit or while the install is being removed. `onDone` gets
+ * nothing for a run that did nothing (everything cached, or replaced while waiting). Never throws.
  */
 export function prefetchAgentRequirements(
   request: PrefetchRequest,
   onDone: (report: PrefetchReport | null) => void
 ): boolean {
   const key = request.plan.installPath
-  if (prefetches.has(key)) return false
-  const stop = new AbortController()
-  const done = runPrefetch(request, stop.signal)
-    .then(onDone)
-    .catch(() => {})
-    .finally(() => prefetches.delete(key))
-  prefetches.set(key, { stop, done })
+  if (quit.signal.aborted || held.has(key)) return false
+  const running = prefetches.get(key)
+  if (running) {
+    if (running.signature === request.signature) return false
+    running.next?.onDone(null)
+    running.next = { request, onDone }
+    if (running.eager && !request.eager) running.stop.abort()
+    return true
+  }
+  const entry: RunningPrefetch = {
+    stop: new AbortController(),
+    done: Promise.resolve(),
+    signature: request.signature,
+    eager: request.eager === true
+  }
+  entry.done = runPrefetch(request, entry.stop.signal)
+    .then(onDone, () => onDone(null))
+    .finally(() => {
+      prefetches.delete(key)
+      const next = entry.next
+      if (next && !prefetchAgentRequirements(next.request, next.onDone)) next.onDone(null)
+    })
+  prefetches.set(key, entry)
   return true
 }
 
 /** For quit: on POSIX uv leads its own process group, so it would outlive Desktop. */
 export function stopAgentPrefetches(): void {
+  quit.abort()
   for (const { stop } of prefetches.values()) stop.abort()
 }
 
-/** For removing an install: its uv runs from inside it, which on Windows blocks the delete. */
-export async function stopAgentPrefetch(installPath: string): Promise<void> {
+/** Stopped by quit: what a pass ahead of a launch checks between installs. */
+export function agentPrefetchesStopped(): boolean {
+  return quit.signal.aborted
+}
+
+/**
+ * For removing an install, whose uv runs from inside it (which on Windows blocks the delete):
+ * stops its download and waits for uv to exit, and starts none for it until `release` is called.
+ */
+export async function holdAgentPrefetch(installPath: string): Promise<() => void> {
+  held.set(installPath, (held.get(installPath) ?? 0) + 1)
   const running = prefetches.get(installPath)
-  running?.stop.abort()
-  await running?.done
+  if (running) {
+    running.next?.onDone(null)
+    running.next = undefined
+    running.stop.abort()
+    await running.done
+  }
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const count = (held.get(installPath) ?? 1) - 1
+    if (count > 0) held.set(installPath, count)
+    else held.delete(installPath)
+  }
 }
 
 /** uv names only the large wheels as they download; the counts cover those. */
@@ -769,7 +840,7 @@ async function runPrefetch(
 ): Promise<PrefetchReport | null> {
   const { plan } = request
   const startedAt = Date.now()
-  const uvVersion = await readUvVersion(plan, signal)
+  let uvVersion: string | null = null
   const fetches: BoundedResult[] = []
   const lines = (pattern: RegExp): number =>
     fetches.flatMap((run) => run.output.split(/\r?\n/)).filter((line) => pattern.test(line)).length
@@ -784,6 +855,7 @@ async function runPrefetch(
     uvVersion
   })
   try {
+    uvVersion = await readUvVersion(plan, signal)
     await removePrefetchFiles(plan.installPath)
     let cachedSteps = 0
     for (const [index, step] of request.steps.entries()) {
@@ -895,4 +967,11 @@ async function readUvVersion(
     signal
   )
   return code === 0 ? (output.match(/^uv (\S+)/m)?.[1] ?? null) : null
+}
+
+/** Tests only: a fresh registry, as after a restart. */
+export function _resetAgentPrefetchesForTest(): void {
+  quit = new AbortController()
+  held.clear()
+  prefetches.clear()
 }

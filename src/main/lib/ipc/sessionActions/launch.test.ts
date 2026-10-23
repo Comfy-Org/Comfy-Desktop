@@ -3949,9 +3949,14 @@ describe('agent requirements at launch', () => {
     it('hands a cache miss of the override to the background download, for this install', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = () => ({ code: 2, output: '' })
+      vi.spyOn(i18nModule, 't').mockImplementation(((key: string) => key) as never)
 
       await launchAndPrint()
 
+      expect(
+        progress.filter((p) => p.phase === 'agentRequirements').at(-1),
+        "core's agent runs now; only the newer version waits"
+      ).toMatchObject({ status: 'launch.agentRequirements.deferredUpdate' })
       expect(prefetchHarness.requests).toEqual([
         {
           installationId: ID,
@@ -4145,7 +4150,7 @@ describe('agent install status strings', () => {
     .agentRequirements
 
   it('defines every key the mapper asks for', () => {
-    expect(Object.keys(strings ?? {}).sort()).toEqual(['deferred'])
+    expect(Object.keys(strings ?? {}).sort()).toEqual(['deferred', 'deferredUpdate'])
   })
 })
 

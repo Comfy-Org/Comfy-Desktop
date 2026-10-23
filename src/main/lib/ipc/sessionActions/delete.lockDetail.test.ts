@@ -23,9 +23,10 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../agentRequirementsLaunch', () => ({
-  stopAgentPrefetch: vi.fn(async (installPath: string) => {
+  holdAgentPrefetch: vi.fn(async (installPath: string) => {
     await new Promise((resolve) => setTimeout(resolve, 5))
-    h.order.push(`stopped ${installPath}`)
+    h.order.push(`held ${installPath}`)
+    return () => h.order.push(`released ${installPath}`)
   })
 }))
 
@@ -175,11 +176,15 @@ describe('handleDelete lock detail', () => {
     return errorDetails(sent)
   }
 
-  it("stops the install's background download, and waits for it, before deleting", async () => {
+  it("stops the install's background download, waits for it, and holds new ones off while deleting", async () => {
     h.order.length = 0
     await runDelete({ ok: true, processes: [] })
 
-    expect(h.order).toEqual([`stopped ${installPath}`, `deleting ${installPath}`])
+    expect(h.order).toEqual([
+      `held ${installPath}`,
+      `deleting ${installPath}`,
+      `released ${installPath}`
+    ])
   })
 
   it('names the holding processes when the probe determined them', async () => {

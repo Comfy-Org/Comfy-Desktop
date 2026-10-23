@@ -1579,11 +1579,15 @@ async function runLaunch(
       // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
       readOverrideState(inst),
-      (request) => {
-        // Terminal: the row keeps it, so a launch going on without the agent says it is on its way.
+      (request, deferral) => {
+        // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
         sendProgress('agentRequirements', {
           percent: -1,
-          status: i18n.t('launch.agentRequirements.deferred')
+          status: i18n.t(
+            deferral === 'agent'
+              ? 'launch.agentRequirements.deferred'
+              : 'launch.agentRequirements.deferredUpdate'
+          )
         })
         void startAgentPrefetch(installationId, request)
       }

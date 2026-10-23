@@ -11,6 +11,8 @@ const harness = vi.hoisted(() => ({
   /** Each started download, ended by calling `finish`. */
   runs: [] as { request: unknown; finish: (report: unknown) => void; done?: boolean }[],
   busy: false,
+  stopped: false,
+  unprepared: new Set<string>(),
   plannable: new Set<string>()
 }))
 
@@ -35,16 +37,20 @@ vi.mock('./coreBetaCampaignFlags', () => ({
 vi.mock('./deviceId', () => ({ getIdClass: () => harness.idClass }))
 
 vi.mock('./agentRequirementsLaunch', () => ({
+  agentPrefetchesStopped: () => harness.stopped,
   planAgentRequirementsInstall: (inst: { installPath: string }, args: string[]) =>
     harness.plannable.has(inst.installPath) && args.includes('--enable-agent')
       ? { installPath: inst.installPath }
       : null,
-  prepareAgentPrefetch: async (plan: { installPath: string }, raw: unknown, state: unknown) => ({
-    plan,
-    steps: [{ text: JSON.stringify({ raw, state }) }],
-    signature: raw ? 'comfy-agent==0.1.0rc3' : 'core',
-    eager: true
-  }),
+  prepareAgentPrefetch: async (plan: { installPath: string }, raw: unknown, state: unknown) =>
+    harness.unprepared.has(plan.installPath)
+      ? null
+      : {
+          plan,
+          steps: [{ text: JSON.stringify({ raw, state }) }],
+          signature: raw ? 'comfy-agent==0.1.0rc3' : 'core',
+          eager: true
+        },
   prefetchAgentRequirements: (request: unknown, onDone: (report: unknown) => void) => {
     if (harness.busy) return false
     harness.runs.push({ request, finish: onDone })
@@ -104,6 +110,8 @@ beforeEach(() => {
   harness.idClass = 'machine_derived'
   harness.runs = []
   harness.busy = false
+  harness.stopped = false
+  harness.unprepared = new Set()
   harness.plannable = new Set()
 })
 
@@ -242,6 +250,32 @@ describe('prefetchEnrolledAgents', () => {
     ])
   })
 
+  it('skips an install it could not prepare a download for, and goes on', async () => {
+    harness.answers = new Map([['agent', ENROL]])
+    harness.unprepared = new Set(['/a'])
+
+    const done = prefetchEnrolledAgents()
+    await finishNext(null)
+    await done
+
+    expect(harness.runs.map((run) => (run.request as { plan: unknown }).plan)).toEqual([
+      { installPath: '/b' }
+    ])
+  })
+
+  it('starts nothing more once Desktop is quitting', async () => {
+    harness.answers = new Map([['agent', ENROL]])
+
+    const done = prefetchEnrolledAgents()
+    await vi.waitFor(() => expect(harness.runs).toHaveLength(1))
+    harness.stopped = true
+    harness.runs[0]!.done = true
+    harness.runs[0]!.finish(null)
+    await done
+
+    expect(harness.runs, 'the second install is never started').toHaveLength(1)
+  })
+
   it("downloads core file's packages for an answer with no override", async () => {
     harness.answers = new Map([['agent', { ...ENROL, payload: {} }]])
     harness.plannable = new Set(['/a'])
@@ -263,7 +297,7 @@ describe('prefetchEnrolledAgents', () => {
       () =>
         (harness.answers = new Map([
           [
-            'assets',
+            'agent',
             { ...ENROL, grants: [{ ...ENROL.grants[0], grant: { arg: '--enable-assets' } }] }
           ]
         ]))

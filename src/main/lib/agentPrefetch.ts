@@ -1,6 +1,7 @@
 import * as installations from '../installations'
 import * as settings from '../settings'
 import {
+  agentPrefetchesStopped,
   planAgentRequirementsInstall,
   prefetchAgentRequirements,
   prepareAgentPrefetch
@@ -64,6 +65,7 @@ export async function prefetchEnrolledAgents(): Promise<void> {
     const enrolled = enrolledAgentOverride(await getCoreBetaCampaigns(), Date.now(), getIdClass())
     if (!enrolled) return
     for (const inst of await installations.list()) {
+      if (agentPrefetchesStopped()) return
       const plan = planAgentRequirementsInstall(inst, ['--enable-agent'])
       if (!plan) continue
       const request = await prepareAgentPrefetch(plan, enrolled.override, readOverrideState(inst))

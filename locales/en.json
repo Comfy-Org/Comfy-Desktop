@@ -1332,7 +1332,8 @@
     },
     "viewLogs": "View logs",
     "agentRequirements": {
-      "deferred": "Downloading the agent in the background; it starts next launch"
+      "deferred": "Downloading the agent in the background; it starts next launch",
+      "deferredUpdate": "Downloading a newer agent in the background; it applies next launch"
     }
   },
   "devPlatform": {
