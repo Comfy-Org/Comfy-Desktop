@@ -1478,6 +1478,51 @@ describe('installAgentRequirements with a version override', () => {
       ).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
     })
 
+    it("defers a download failure whose cause comes after 500 characters of uv's error", async () => {
+      respond = ({ constraints }) =>
+        constraints
+          ? {
+              code: 1,
+              output: `error: Failed to build \`comfy-agent\`\n${'  ╰─▶ backend frame\n'.repeat(40)}  ╰─▶ Connection refused (os error 111)\n`
+            }
+          : { code: 0, output: '' }
+
+      expect(
+        await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE),
+        "the telemetry tail is cut at 500 characters; the decision reads all of uv's error"
+      ).toMatchObject({ decision: 'deferred' })
+    })
+
+    it.each(['connecting', 'reconnect', 'disconnected', 'connections'])(
+      'defers a failure uv describes as %s',
+      async (word) => {
+        respond = ({ constraints }) =>
+          constraints
+            ? { code: 2, output: `error: the index went away while ${word}\n` }
+            : { code: 0, output: '' }
+
+        expect(await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)).toMatchObject({
+          decision: 'deferred'
+        })
+      }
+    )
+
+    it('retires a local failure on a path that names a package like connectorx', async () => {
+      respond = ({ constraints }) =>
+        constraints
+          ? {
+              code: 2,
+              output:
+                'error: failed to remove file `site-packages/connectorx/x.pyd`: Access is denied. (os error 5)\n'
+            }
+          : { code: 0, output: '' }
+
+      expect(await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)).toMatchObject({
+        decision: 'reverted',
+        reason: 'install_failed'
+      })
+    })
+
     it('retires an override that fails on something no download fixes', async () => {
       respond = ({ constraints }) =>
         constraints

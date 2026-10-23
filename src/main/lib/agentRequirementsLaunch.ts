@@ -126,10 +126,8 @@ export interface BoundedResult {
 /** Only uv's error, from its first `error:` or `×` line, with local paths and URLs scrubbed: a
  *  custom index's URL would name it, and the index kind is reported on its own. */
 export function uvErrorTail(output: string, installPath: string): string | null {
-  const lines = stripAnsi(output).split(/\r?\n/)
-  const start = lines.findIndex((line) => /^error:|^\s*×/.test(line))
-  if (start === -1) return null
-  let text = lines.slice(start).join('\n').trim()
+  let text = uvErrorSection(output)
+  if (text === null) return null
   for (const [local, label] of [
     [installPath, '<install>'],
     [os.homedir(), '~']
@@ -368,7 +366,14 @@ const NO_SOLUTION = /No solution found when resolving/
 /** uv's words for a download or index that failed: a later download can fix those. Exit codes
  *  can't tell them apart: uv 0.11 exits 1 for a download cut short, as for no solution. */
 const DOWNLOAD_FAILED =
-  /Failed to (?:download|fetch)|error sending request|Request failed|\btimed out\b|\bconnect(?:ion|ed)?\b|dns error|certificate|HTTP status/i
+  /Failed to (?:download|fetch)|error sending request|Request failed|\btimed out\b|\b(?:re|dis)?connect(?:s|ed|ing|ion|ions)?\b|dns error|certificate|HTTP status/i
+
+/** uv's error, from its first `error:` or `×` line: whole, for deciding what failed. */
+function uvErrorSection(output: string): string | null {
+  const lines = stripAnsi(output).split(/\r?\n/)
+  const start = lines.findIndex((line) => /^error:|^\s*×/.test(line))
+  return start === -1 ? null : lines.slice(start).join('\n').trim()
+}
 
 /**
  * A failure no download can fix, from a try that had the network: uv proved there is no solution,
@@ -377,9 +382,9 @@ const DOWNLOAD_FAILED =
  */
 function cannotDownload(result: CachedResult): boolean {
   if (!result.online || result.report.outcome !== 'exited') return false
-  const tail = result.report.errorTail
+  const error = uvErrorSection(result.output)
   return (
-    NO_SOLUTION.test(stripAnsi(result.output)) || (tail !== null && !DOWNLOAD_FAILED.test(tail))
+    NO_SOLUTION.test(stripAnsi(result.output)) || (error !== null && !DOWNLOAD_FAILED.test(error))
   )
 }
 
