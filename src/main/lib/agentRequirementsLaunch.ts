@@ -93,21 +93,83 @@ async function forceStopAgentInstall(
     if (process.platform === 'win32') {
       await runBounded('taskkill', ['/F', '/T', '/PID', String(pid)])
     } else {
-      // Negated pid: the helper spawns detached, so uv leads its own process
-      // group and the group is the tree. Falls back to the bare pid when the
-      // group is already gone.
-      try {
-        process.kill(-pid, 'SIGKILL')
-      } catch {
-        try {
-          process.kill(pid, 'SIGKILL')
-        } catch {}
-      }
+      killGroup(pid)
     }
   }
   try {
     await fs.promises.unlink(path.join(installPath, tempName))
   } catch {}
+}
+
+/** Negated pid: the helper spawns detached, so uv leads its own process group and the group is
+ *  the tree. Falls back to the bare pid when the group is already gone. */
+function killGroup(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
+  }
+}
+
+const UV_RECORD_PREFIX = '.agent-uv-'
+const runningOwnUv = new Set<number>()
+
+/** On POSIX a detached uv outlives a Desktop that is killed: leave a note the next start can
+ *  find it by. (Windows ties uv to Desktop's job object.) */
+function recordUv(proc: ChildProcess, installPath: string): void {
+  const pid = proc.pid
+  if (process.platform === 'win32' || !pid) return
+  const record = path.join(installPath, `${UV_RECORD_PREFIX}${pid}.json`)
+  runningOwnUv.add(pid)
+  try {
+    fs.writeFileSync(record, JSON.stringify({ pid, startedAt: Date.now() }))
+  } catch {}
+  proc.once('close', () => {
+    runningOwnUv.delete(pid)
+    fs.promises.rm(record, { force: true }).catch(() => {})
+  })
+}
+
+/** Whether `pid` is still the uv a record names: pids recycle, so the name and start time must
+ *  match too (`ps` reports the start to the second). */
+function isRecordedUv(pid: number, startedAt: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const options = { timeout: FORCE_STOP_TIMEOUT_MS, env: { ...process.env, LC_ALL: 'C' } }
+    execFile('ps', ['-p', String(pid), '-o', 'lstart=,comm='], options, (err, stdout) => {
+      const match = /^\s*(\S+ \S+ +\d+ [\d:]+ \d+) +(.+?)\s*$/.exec(String(stdout))
+      if (err || !match) return resolve(false)
+      const started = Date.parse(match[1]!)
+      resolve(path.basename(match[2]!) === 'uv' && Math.abs(started - startedAt) < 5_000)
+    })
+  })
+}
+
+/**
+ * Stop a uv a killed Desktop left running from `installPath`: it holds the environment's lock,
+ * so a launch would wait on it, and it writes into files a new start clears. Skips the uv this
+ * process runs; a record whose process is gone, or is not that uv, is just removed. Never throws.
+ */
+export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
+  if (process.platform === 'win32') return
+  const names = await fs.promises.readdir(installPath).catch((): string[] => [])
+  for (const name of names.filter((entry) => entry.startsWith(UV_RECORD_PREFIX))) {
+    const record = path.join(installPath, name)
+    try {
+      const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
+      const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
+      if (valid && runningOwnUv.has(pid)) continue
+      if (valid && (await isRecordedUv(pid, startedAt))) {
+        killGroup(pid)
+        for (const until = Date.now() + FORCE_STOP_TIMEOUT_MS; Date.now() < until; ) {
+          process.kill(pid, 0)
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+      }
+    } catch {}
+    await fs.promises.rm(record, { force: true }).catch(() => {})
+  }
 }
 
 /** Which way the bounded wait ended: uv exited, it threw, or the launch stopped
@@ -260,6 +322,7 @@ async function runBoundedInstall(
     extraArgs,
     (proc) => {
       uvProc = proc
+      recordUv(proc, plan.installPath)
     },
     env
   ).then(
@@ -863,7 +926,6 @@ async function runPrefetch(
     outcome,
     exitCode: run?.report.exitCode ?? null,
     elapsedMs: Date.now() - startedAt,
-    budgetMs: PREFETCH_TIMEOUT_MS,
     downloadsStarted: lines(UV_DOWNLOADING_LINE),
     downloadsFinished: lines(UV_DOWNLOADED_LINE),
     errorTail: run?.report.errorTail ?? null,

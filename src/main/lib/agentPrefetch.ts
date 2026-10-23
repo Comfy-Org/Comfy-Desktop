@@ -4,22 +4,17 @@ import {
   agentPrefetchesStopped,
   planAgentRequirementsInstall,
   prefetchAgentRequirements,
-  prepareAgentPrefetch
+  prepareAgentPrefetch,
+  reapOrphanedAgentUv
 } from './agentRequirementsLaunch'
 import type { PrefetchRequest } from './agentRequirementsLaunch'
-import {
-  indexKind,
-  nextPrefetchAttempt,
-  readOverrideState,
-  readPrefetchState,
-  reportAgentPrefetch
-} from './agentRequirementsOverride'
+import { indexKind, readOverrideState, reportAgentPrefetch } from './agentRequirementsOverride'
 import { getCoreBetaCampaigns } from './coreBetaCampaignFlags'
 import { enrolledAgentOverride } from './coreBetaCampaigns'
 import { getIdClass } from './deviceId'
 
 /**
- * Start a background download of the agent's packages, counting its attempt per signature.
+ * Start a background download of the agent's packages.
  * Resolves once it is done, or at once when one is already running for the install. Never throws.
  */
 export async function startAgentPrefetch(
@@ -27,24 +22,13 @@ export async function startAgentPrefetch(
   request: PrefetchRequest
 ): Promise<void> {
   try {
-    const attempt = nextPrefetchAttempt(
-      readPrefetchState(await installations.get(installationId)),
-      request.signature
-    )
     const index = indexKind(settings.getMirrorConfig())
     await new Promise<void>((resolve) => {
       const started = prefetchAgentRequirements(request, (report) => {
         resolve()
         // An eager run that found everything cached did nothing worth counting.
         if (!report) return
-        reportAgentPrefetch(installationId, request.signature, attempt, index, report)
-        void installations
-          .update(installationId, {
-            agentPrefetch: { signature: request.signature, attempts: attempt }
-          })
-          .catch((err: unknown) => {
-            console.warn('agent requirements: could not record the background download:', err)
-          })
+        reportAgentPrefetch(installationId, request.signature, index, report)
       })
       if (!started) resolve()
     })
@@ -69,6 +53,7 @@ export async function prefetchEnrolledAgents(): Promise<void> {
       try {
         const plan = planAgentRequirementsInstall(inst, ['--enable-agent'])
         if (!plan) continue
+        await reapOrphanedAgentUv(plan.installPath)
         const request = await prepareAgentPrefetch(plan, enrolled.override, readOverrideState(inst))
         if (request) await startAgentPrefetch(inst.id, request)
       } catch (err) {

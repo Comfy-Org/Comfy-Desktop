@@ -144,10 +144,13 @@ vi.mock('../../deviceId', async (importOriginal) => ({
   getIdClass: () => launchHarness.idClass
 }))
 
+const sessionPaths = vi.hoisted(() => ({ made: 0 }))
+
 vi.mock('../shared', async (importOriginal) => {
   const actual = await importOriginal<typeof SharedModule>()
   return {
     ...actual,
+    createSessionPath: () => `${actual.createSessionPath()}-${process.pid}-${++sessionPaths.made}`,
     sourceMap: {
       ...actual.sourceMap,
       'harness-source': {
@@ -4188,6 +4191,27 @@ describe('agent requirements at launch', () => {
         }
       ])
     })
+
+    it.skipIf(process.platform === 'win32')(
+      'clears what a killed Desktop left running in this install before its own install',
+      async () => {
+        serveCampaign({ 'comfy-agent': '0.2.3' })
+        const record = path.join(installDir, `.agent-uv-${2 ** 22 + 1}.json`)
+        fs.writeFileSync(record, JSON.stringify({ pid: 2 ** 22 + 1, startedAt: Date.now() }))
+        const seenAtInstall: boolean[] = []
+        pipHarness.respond = () => {
+          seenAtInstall.push(fs.existsSync(record))
+          return { code: 0, output: '' }
+        }
+
+        await launchAndPrint()
+
+        expect(
+          seenAtInstall[0],
+          'the reaper ran first: an orphan would hold the lock this install waits on'
+        ).toBe(false)
+      }
+    )
 
     it('watches no agent start for an override that is not cached', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })

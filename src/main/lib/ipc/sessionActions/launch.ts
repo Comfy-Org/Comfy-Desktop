@@ -103,6 +103,7 @@ import {
   installAgentRequirements,
   holdAgentPrefetch,
   planAgentRequirementsInstall,
+  reapOrphanedAgentUv,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
 import type { PrefetchRequest } from '../../agentRequirementsLaunch'
@@ -1583,6 +1584,7 @@ async function runLaunch(
     // A background download holds uv's lock on the environment: the launch goes first, and hands
     // back whatever it still needs (the wheels already fetched stay cached).
     const releasePrefetch = await holdAgentPrefetch(agentRequirements.installPath)
+    await reapOrphanedAgentUv(agentRequirements.installPath)
     let overrideDecision: Awaited<ReturnType<typeof installAgentRequirements>>
     try {
       overrideDecision = await installAgentRequirements(

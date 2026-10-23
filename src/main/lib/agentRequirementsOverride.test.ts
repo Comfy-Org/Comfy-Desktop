@@ -16,10 +16,8 @@ import {
   pinsOverBareLines,
   compareVersions,
   indexKind,
-  nextPrefetchAttempt,
   readFrontendPin,
   readOverrideState,
-  readPrefetchState,
   reportOverrideDecision
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
@@ -918,25 +916,5 @@ describe('indexKind', () => {
       indexKind({ pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true })
     ).toBe('custom')
     expect(indexKind({ pypiMirror: '  ' }), 'a blank mirror setting is no mirror').toBe('pypi')
-  })
-})
-
-describe('background download attempts', () => {
-  it('counts per signature, from 1', () => {
-    expect(nextPrefetchAttempt(null, 'core')).toBe(1)
-    expect(nextPrefetchAttempt({ signature: 'core', attempts: 2 }, 'core')).toBe(3)
-    expect(nextPrefetchAttempt({ signature: 'core', attempts: 2 }, 'comfy-agent==0.2.3')).toBe(1)
-  })
-
-  it('reads only a well-formed record', () => {
-    const record = (agentPrefetch: unknown) => ({ agentPrefetch }) as unknown as InstallationRecord
-
-    expect(readPrefetchState(record({ signature: 'core', attempts: 2 }))).toEqual({
-      signature: 'core',
-      attempts: 2
-    })
-    expect(readPrefetchState(record({ signature: 'core' }))).toBeNull()
-    expect(readPrefetchState(record('core'))).toBeNull()
-    expect(readPrefetchState(null)).toBeNull()
   })
 })

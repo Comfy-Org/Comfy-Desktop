@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   records: new Map<string, Record<string, unknown>>(),
-  updateThrows: false,
   betaEnabled: true,
   mirrors: { pypiMirror: undefined as string | undefined, useChineseMirrors: false },
   answers: new Map<string, unknown>(),
@@ -13,14 +12,14 @@ const harness = vi.hoisted(() => ({
   stopped: false,
   unprepared: new Set<string>(),
   unpreparable: new Set<string>(),
-  plannable: new Set<string>()
+  plannable: new Set<string>(),
+  order: [] as string[]
 }))
 
 vi.mock('../installations', () => ({
   get: async (id: string) => harness.records.get(id) ?? null,
   list: async () => [...harness.records.values()],
   update: async (id: string, data: Record<string, unknown>) => {
-    if (harness.updateThrows) throw new Error('EIO')
     harness.records.set(id, { ...harness.records.get(id), ...data })
   }
 }))
@@ -57,8 +56,12 @@ vi.mock('./agentRequirementsLaunch', async (importOriginal) => {
             eager: true
           }
     },
+    reapOrphanedAgentUv: async (installPath: string) => {
+      harness.order.push(`reap ${installPath}`)
+    },
     prefetchAgentRequirements: (request: unknown, onDone: (report: unknown) => void) => {
       if (harness.busy) return false
+      harness.order.push(`download ${(request as PrefetchRequest).plan.installPath}`)
       harness.runs.push({ request, finish: onDone })
       return true
     }
@@ -74,7 +77,6 @@ const REPORT = {
   outcome: 'download_failed',
   exitCode: 2,
   elapsedMs: 5,
-  budgetMs: 1_800_000,
   downloadsStarted: 2,
   downloadsFinished: 1,
   errorTail: 'error: Failed to download',
@@ -109,7 +111,6 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.spyOn(telemetry, 'emit').mockImplementation((() => {}) as unknown as typeof telemetry.emit)
   harness.records = new Map([['a', { id: 'a', installPath: '/a' }]])
-  harness.updateThrows = false
   harness.betaEnabled = true
   harness.mirrors = { pypiMirror: undefined, useChineseMirrors: false }
   harness.answers = new Map()
@@ -121,44 +122,30 @@ beforeEach(() => {
   harness.unprepared = new Set()
   harness.unpreparable = new Set()
   harness.plannable = new Set()
+  harness.order = []
 })
 
 describe('startAgentPrefetch', () => {
-  it('reports each download with its attempt, counted per signature', async () => {
-    for (const signature of ['core', 'core', 'comfy-agent==0.1.0rc3']) {
-      const done = startAgentPrefetch('a', request(signature))
-      await vi.waitFor(() => expect(harness.runs).toHaveLength(prefetchEvents().length + 1))
-      harness.runs.at(-1)!.finish(REPORT)
-      await done
-      await vi.waitFor(() =>
-        expect(harness.records.get('a')?.agentPrefetch).toMatchObject({ signature })
-      )
-    }
+  it("reports each download's outcome", async () => {
+    const done = startAgentPrefetch('a', request('core'))
+    await finishNext(REPORT)
+    await done
 
-    expect(prefetchEvents().map((e) => [e.target, e.pins, e.attempt])).toEqual([
-      ['core', null, 1],
-      ['core', null, 2],
-      ['override', 'comfy-agent==0.1.0rc3', 1]
+    expect(prefetchEvents()).toEqual([
+      {
+        installation_id: 'a',
+        target: 'core',
+        pins: null,
+        install_outcome: 'download_failed',
+        exit_code: 2,
+        elapsed_ms: 5,
+        downloads_started: 2,
+        downloads_finished: 1,
+        error_tail: 'error: Failed to download',
+        index: 'pypi',
+        uv_version: '0.13.4'
+      }
     ])
-    expect(prefetchEvents()[1]).toEqual({
-      installation_id: 'a',
-      target: 'core',
-      pins: null,
-      install_outcome: 'download_failed',
-      exit_code: 2,
-      elapsed_ms: 5,
-      budget_ms: 1_800_000,
-      attempt: 2,
-      downloads_started: 2,
-      downloads_finished: 1,
-      error_tail: 'error: Failed to download',
-      index: 'pypi',
-      uv_version: '0.13.4'
-    })
-    expect(harness.records.get('a')?.agentPrefetch).toEqual({
-      signature: 'comfy-agent==0.1.0rc3',
-      attempts: 1
-    })
   })
 
   it('names the kind of index, never its URL', async () => {
@@ -170,38 +157,21 @@ describe('startAgentPrefetch', () => {
     expect(prefetchEvents()[0]).toMatchObject({ index: 'custom' })
   })
 
-  it('counts and reports nothing for an eager run that found everything cached', async () => {
+  it('reports nothing for an eager run that found everything cached', async () => {
     const done = startAgentPrefetch('a', request('core'))
     await finishNext(null)
     await done
 
     expect(prefetchEvents()).toEqual([])
-    expect(harness.records.get('a')?.agentPrefetch).toBeUndefined()
   })
 
-  it('resolves at once, counting nothing, when one is already running', async () => {
+  it('resolves at once, reporting nothing, when one is already running', async () => {
     harness.busy = true
 
     await startAgentPrefetch('a', request('core'))
 
-    expect(harness.records.get('a')?.agentPrefetch).toBeUndefined()
-  })
-
-  it('says so when the attempt cannot be recorded, and still reports it', async () => {
-    harness.updateThrows = true
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const done = startAgentPrefetch('a', request('core'))
-    await finishNext(REPORT)
-    await done
-
-    expect(prefetchEvents()).toHaveLength(1)
-    await vi.waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'agent requirements: could not record the background download:',
-        expect.any(Error)
-      )
-    )
+    expect(harness.runs).toEqual([])
+    expect(prefetchEvents()).toEqual([])
   })
 })
 
@@ -286,6 +256,20 @@ describe('prefetchEnrolledAgents', () => {
       harness.runs.map((run) => (run.request as { plan: unknown }).plan),
       'an entry with no local install has nothing to download into'
     ).toEqual([{ installPath: '/a' }])
+  })
+
+  it("stops what a killed Desktop left running in each install before that install's download", async () => {
+    harness.answers = new Map([['agent', ENROL]])
+
+    const done = prefetchEnrolledAgents()
+    await finishNext(null)
+    await finishNext(null)
+    await done
+
+    expect(
+      harness.order,
+      "a download's start clears its scratch files, which an orphaned uv may still be using"
+    ).toEqual(['reap /a', 'download /a', 'reap /b', 'download /b'])
   })
 
   it('skips an install whose preparation throws, and goes on to the next', async () => {

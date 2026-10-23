@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -653,7 +654,7 @@ describe('force-stopping an abandoned install', () => {
       (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
         if ((args[8] as string[]).includes('--offline'))
           return Promise.resolve({ code: 1, output: '' })
-        args[9]?.({ pid } as never)
+        args[9]?.(Object.assign(new EventEmitter(), { pid }) as never)
         return new Promise<never>(() => {})
       }
     )
@@ -768,7 +769,7 @@ describe('force-stopping an abandoned install', () => {
     try {
       mockInstall.mockImplementationOnce(
         (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
-          args[9]?.({ pid: 4242 } as never)
+          args[9]?.(Object.assign(new EventEmitter(), { pid: 4242 }) as never)
           return Promise.resolve({ code: 0, output: '' })
         }
       )
@@ -2390,8 +2391,7 @@ describe('prefetchAgentRequirements', () => {
       downloadsStarted: 2,
       downloadsFinished: 2,
       errorTail: null,
-      uvVersion: '0.13.4',
-      budgetMs: 30 * 60_000
+      uvVersion: '0.13.4'
     })
   })
 
@@ -2503,7 +2503,7 @@ describe('prefetchAgentRequirements', () => {
       execCalls.length = 0
       mockInstall.mockImplementation(
         (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
-          args[9]?.({ pid: 4545 } as never)
+          args[9]?.(Object.assign(new EventEmitter(), { pid: 4545 }) as never)
           return new Promise<never>(() => {})
         }
       )

@@ -512,39 +512,15 @@ export interface PrefetchReport {
     | 'cancelled'
   exitCode: number | null
   elapsedMs: number
-  budgetMs: number
   downloadsStarted: number
   downloadsFinished: number
   errorTail: string | null
   uvVersion: string | null
 }
 
-export interface AgentPrefetchState {
-  signature: string
-  attempts: number
-}
-
-export function readPrefetchState(
-  installation: InstallationRecord | null | undefined
-): AgentPrefetchState | null {
-  const state = installation?.agentPrefetch
-  if (!state || typeof state !== 'object') return null
-  const { signature, attempts } = state as Record<string, unknown>
-  if (typeof signature !== 'string' || typeof attempts !== 'number') return null
-  return { signature, attempts }
-}
-
-export function nextPrefetchAttempt(
-  previous: AgentPrefetchState | null,
-  signature: string
-): number {
-  return previous?.signature === signature ? previous.attempts + 1 : 1
-}
-
 export function reportAgentPrefetch(
   installationId: string,
   signature: string,
-  attempt: number,
   index: IndexKind,
   r: PrefetchReport
 ): void {
@@ -556,8 +532,6 @@ export function reportAgentPrefetch(
       install_outcome: r.outcome,
       exit_code: r.exitCode,
       elapsed_ms: r.elapsedMs,
-      budget_ms: r.budgetMs,
-      attempt,
       downloads_started: r.downloadsStarted,
       downloads_finished: r.downloadsFinished,
       error_tail: r.errorTail,
