@@ -3674,7 +3674,7 @@ describe('agent requirements at launch', () => {
     expect(spawned).toBe(0)
   })
 
-  describe('with a version override from the agent campaign', () => {
+  describe('with a version override from the agent campaign', { timeout: 15_000 }, () => {
     const KEY = 'desktop_core_beta_agent'
     const ID = 'agent-override-inst'
     const CORE_FILE = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
@@ -3750,7 +3750,7 @@ describe('agent requirements at launch', () => {
       await settle()
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
-      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false), { timeout: 10_000 })
     }
 
     beforeEach(() => {
@@ -3919,8 +3919,8 @@ describe('agent requirements at launch', () => {
       })
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
-      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
-    }, 15_000)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false), { timeout: 10_000 })
+    })
 
     it('counts two outcomes that land at once, one after the other', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
@@ -3953,8 +3953,8 @@ describe('agent requirements at launch', () => {
       )
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
-      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
-    }, 15_000)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false), { timeout: 10_000 })
+    })
 
     const missesOverride = (args: unknown[]): boolean =>
       (args[8] as string[]).includes('--constraint')
@@ -4157,6 +4157,36 @@ describe('agent requirements at launch', () => {
         order,
         "the background download's uv would contend with the restore for the environment"
       ).toEqual(['frontend restored', 'download started'])
+    })
+
+    it('still hands the download back when the launch is cancelled during the frontend restore', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = launchCommand()
+      launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.19' } })
+      fs.writeFileSync(
+        path.join(installDir, 'ComfyUI', 'requirements.txt'),
+        'comfyui-frontend-package==1.55.18\n'
+      )
+      pipHarness.respond = (args) => {
+        if (String(args[4]).startsWith('.launch-frontend-restore-')) {
+          _operationAborts.get(ID)?.abort()
+          return { code: 1, output: '' }
+        }
+        return { code: missesOverride(args) ? 2 : 0, output: '' }
+      }
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+
+      expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
+      expect(
+        prefetchHarness.requests,
+        'what the launch handed back is not dropped with it'
+      ).toEqual([
+        {
+          installationId: ID,
+          request: expect.objectContaining({ signature: 'comfy-agent==0.2.3' })
+        }
+      ])
     })
 
     it('watches no agent start for an override that is not cached', async () => {

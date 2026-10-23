@@ -263,14 +263,28 @@ describe('installAgentRequirements', () => {
     fs.utimesSync(old, twoHoursAgo, twoHoursAgo)
     fs.utimesSync(`${old}-src.txt`, twoHoursAgo, twoHoursAgo)
     online(async () => ({ code: 0, output: '' }))
-
-    await installAgentRequirements(plan, vi.fn())
+    const lstat = vi.spyOn(fs.promises, 'lstat')
+    const rm = vi.spyOn(fs.promises, 'rm')
+    try {
+      await installAgentRequirements(plan, vi.fn())
+      const seeded = [old, `${old}-src.txt`, young, `${young}-src.txt`]
+      await vi.waitFor(
+        () => expect(lstat.mock.calls.map(([at]) => at)).toEqual(expect.arrayContaining(seeded)),
+        { timeout: 10_000 }
+      )
+      await Promise.allSettled(lstat.mock.results.map(({ value }) => value))
+      await new Promise((resolve) => setImmediate(resolve))
+      await Promise.allSettled(rm.mock.results.map(({ value }) => value))
+    } finally {
+      lstat.mockRestore()
+      rm.mockRestore()
+    }
 
     expect(fs.existsSync(old), 'the stale target dir is gone').toBe(false)
     expect(fs.existsSync(`${old}-src.txt`)).toBe(false)
     expect(fs.existsSync(young), 'a live attempt may still own it').toBe(true)
     expect(fs.existsSync(`${young}-src.txt`)).toBe(true)
-  })
+  }, 15_000)
 
   it('clears only its own scratch files, not those of a concurrent attempt whose tag it prefixes', async () => {
     let miss = true

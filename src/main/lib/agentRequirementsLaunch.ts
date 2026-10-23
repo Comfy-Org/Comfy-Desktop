@@ -984,13 +984,16 @@ async function fetchForLaunch(
   const prefix = '.launch-agent-fetch-'
   const tag = `${prefix}${attemptTag()}`
   const staleBefore = Date.now() - 60 * 60_000
-  const present = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
-  for (const name of present.filter((entry) => entry.startsWith(prefix))) {
-    const at = path.join(plan.installPath, name)
-    const { mtimeMs } = await fs.promises.lstat(at).catch(() => ({ mtimeMs: Infinity }))
-    if (mtimeMs >= staleBefore) continue
-    await fs.promises.rm(at, { recursive: true, force: true }).catch(() => {})
-  }
+  // Not awaited: deleting a large leftover tree must not spend the download's budget.
+  void (async () => {
+    const present = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
+    for (const name of present.filter((entry) => entry.startsWith(prefix))) {
+      const at = path.join(plan.installPath, name)
+      const { mtimeMs } = await fs.promises.lstat(at).catch(() => ({ mtimeMs: Infinity }))
+      if (mtimeMs >= staleBefore) continue
+      await fs.promises.rm(at, { recursive: true, force: true }).catch(() => {})
+    }
+  })()
   const stop = new AbortController()
   const onAbort = (): void => stop.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
