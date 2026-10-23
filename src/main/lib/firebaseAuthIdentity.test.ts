@@ -1450,7 +1450,10 @@ describe('firebaseAuthIdentity observed sign-out', () => {
     reportFirebaseAuthState(fresh.asWebContents(), { status: 'signed_out' })
 
     expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
-    expect(isFirebaseSignOutObserved()).toBe(false)
+    expect(
+      isFirebaseSignOutObserved(),
+      "another install's binding makes this empty partition a trusted reporter, not a sign-out"
+    ).toBe(false)
   })
 
   it('does not carry an observation from a closed view to a new one on the same origin', () => {
