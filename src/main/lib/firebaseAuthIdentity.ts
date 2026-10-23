@@ -524,8 +524,7 @@ function reconcile(): void {
 
   clearPendingConsensusDeadline()
   requestedUserId = userId
-  // An expired contributor may hold an accepted sign-out in a retained frame; only an agreement
-  // that includes every view supersedes it.
+  // An expired view may hold an accepted sign-out in a retained frame, so it must agree too.
   if (expiredPendingContributors === 0) signOutWitnessed = false
   publishConsensus({ status: 'signed_in', userId })
   const confirmedMainStates = mainCandidates.filter(({ webContents, state, contributes }) => {
