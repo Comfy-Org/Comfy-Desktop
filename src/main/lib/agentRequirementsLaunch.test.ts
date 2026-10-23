@@ -16,7 +16,7 @@ vi.mock('./pip', () => ({
 
 /** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
-const exec = { delayMs: 0 }
+const slowTaskkill = { ms: 0 }
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
   const execFile = vi.fn(
@@ -29,7 +29,7 @@ vi.mock('child_process', async (importOriginal) => {
       execCalls.push({ cmd, args })
       const discovery = cmd === 'pgrep' || cmd === 'powershell.exe'
       const answer = (): void => cb(null, discovery ? '4242\n' : '', '')
-      if (exec.delayMs > 0) setTimeout(answer, exec.delayMs)
+      if (slowTaskkill.ms > 0) setTimeout(answer, slowTaskkill.ms)
       else answer()
       return {}
     }
@@ -1906,6 +1906,10 @@ describe('uvErrorTail', () => {
   })
 })
 
+async function settleRealIo(): Promise<void> {
+  for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
+}
+
 describe('prefetchAgentRequirements', () => {
   let dir = ''
   let plan: PrefetchRequest['plan']
@@ -2106,11 +2110,11 @@ describe('prefetchAgentRequirements', () => {
     expect(report).toMatchObject({ outcome: 'resolve_failed' })
   })
 
-  it('waits for a uv that ignores the stop to be hard-stopped, for removing the install', async () => {
+  it('waits for a uv that ignores the stop to be hard-stopped, for removing the install, through a slow Windows taskkill', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
     Object.defineProperty(process, 'platform', { value: 'win32' })
-    exec.delayMs = 1_000
+    slowTaskkill.ms = 1_000
     try {
       execCalls.length = 0
       mockInstall.mockImplementation(
@@ -2128,7 +2132,7 @@ describe('prefetchAgentRequirements', () => {
         return release
       })
       await vi.advanceTimersByTimeAsync(10_000)
-      for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
+      await settleRealIo()
       expect(execCalls, 'the grace ran out, so uv is hard-stopped').toContainEqual({
         cmd: 'taskkill',
         args: ['/F', '/T', '/PID', '4545']
@@ -2138,7 +2142,7 @@ describe('prefetchAgentRequirements', () => {
       ;(await hold)()
       expect(held).toBe(true)
     } finally {
-      exec.delayMs = 0
+      slowTaskkill.ms = 0
       Object.defineProperty(process, 'platform', platform)
       vi.useRealTimers()
     }
