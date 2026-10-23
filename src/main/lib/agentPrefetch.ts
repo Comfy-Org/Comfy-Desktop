@@ -72,7 +72,10 @@ export async function prefetchEnrolledAgents(): Promise<void> {
         const request = await prepareAgentPrefetch(plan, enrolled.override, readOverrideState(inst))
         if (request) await startAgentPrefetch(inst.id, request)
       } catch (err) {
-        console.warn(`agent requirements: could not download ahead of a launch for ${inst.id}:`, err)
+        console.warn(
+          `agent requirements: could not download ahead of a launch for ${inst.id}:`,
+          err
+        )
       }
     }
   } catch (err) {
