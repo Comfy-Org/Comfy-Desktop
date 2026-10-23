@@ -189,7 +189,6 @@ describe('installAgentRequirements', () => {
     mockInstall.mockResolvedValue({ code: 0, output: '' })
   })
 
-  /** The cache misses at once, so what a test sets up is the network try, the one that streams. */
   const online = (
     impl: (...args: Parameters<typeof installFilteredRequirementsDetailed>) => unknown
   ) =>
@@ -280,7 +279,6 @@ describe('installAgentRequirements', () => {
       let uvSignal: AbortSignal | undefined
       online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
         uvSignal = args[6]
-        // Resolve only once something aborts uv, the way the real helper does.
         return new Promise((resolve) => {
           uvSignal!.addEventListener('abort', () => resolve({ code: 1, output: '' }), {
             once: true
@@ -486,7 +484,6 @@ describe('installAgentRequirements handing over to the background download', () 
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  /** The cache misses; the network try exits with `code`. */
   const networkExits = (code: number, output = ''): void => {
     mockInstall.mockImplementation(async (...args) =>
       (args[8] as string[]).includes('--offline') ? { code: 1, output: '' } : { code, output }
@@ -556,7 +553,6 @@ describe('force-stopping an abandoned install', () => {
   const deliverThenHang = (pid: number): void => {
     mockInstall.mockImplementation(
       (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
-        // The cache misses at once; the network try is the one that hangs.
         if ((args[8] as string[]).includes('--offline'))
           return Promise.resolve({ code: 1, output: '' })
         args[9]?.({ pid } as never)
@@ -712,8 +708,6 @@ describe('installAgentRequirements with a version override', () => {
     code: number
     output: string
   }
-  /** Whether uv's cache holds everything. Cache-only tries are not in `calls`: what they would
-   *  install is what the network try then installs. */
   let cached = false
   let offlineTries = 0
 
@@ -1536,7 +1530,6 @@ describe('installAgentRequirements with a version override', () => {
             ? { code: 1, output: '' }
             : { code: 1, output: 'error: No solution found when resolving dependencies\n' }
         }
-        // Core file misses the cache every time and goes in only from the network.
         return { code: offline ? 1 : 0, output: '' }
       })
 
@@ -1568,7 +1561,6 @@ describe('installAgentRequirements with a version override', () => {
       mockInstall.mockImplementation(async (_file, ...rest) => {
         const extraArgs = rest[7] as string[]
         tries.push(extraArgs)
-        // Core file misses the cache once, then goes in; the override never does.
         const override = extraArgs.includes('--constraint')
         return { code: override || tries.length === 1 ? 2 : 0, output: '' }
       })
@@ -1587,7 +1579,6 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it('defers, never retires, an override whose cache-only try failed with no network left', async () => {
-      // Exit 1 from a cache-only try is a miss, not a proof: uv never saw the index.
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
       try {
         mockUvPip
@@ -1600,7 +1591,6 @@ describe('installAgentRequirements with a version override', () => {
           const extraArgs = rest[7] as string[]
           if (extraArgs.includes('--offline'))
             return { code: 1, output: 'error: No solution found\n' }
-          // Core file goes in, but only just after the whole budget.
           return new Promise((resolve) =>
             setTimeout(() => resolve({ code: 0, output: '' }), 20_005)
           )
@@ -1630,7 +1620,6 @@ describe('installAgentRequirements with a version override', () => {
           const signal = rest[5] as AbortSignal
           const startedAt = Date.now()
           if (extraArgs.includes('--constraint')) {
-            // The override's try fails after 5 s, leaving 15 s for core file's.
             return new Promise((resolve) =>
               setTimeout(() => resolve({ code: 2, output: '' }), 5_000)
             )
@@ -1712,7 +1701,6 @@ describe('installAgentRequirements with a version override', () => {
 
     let waiting = 0
 
-    /** The cache misses at once; every network try hangs until it is stopped. */
     const hangUntilAborted = (startedAt: number) =>
       mockInstall.mockImplementation(async (file, ...rest) => {
         const signal = rest[5] as AbortSignal
@@ -1911,7 +1899,6 @@ describe('prefetchAgentRequirements', () => {
   let plan: PrefetchRequest['plan']
   type Call = { content: string; extraArgs: string[]; env: Record<string, string> | undefined }
   let calls: Call[] = []
-  /** What each uv run answers, by its kind. */
   let resolveAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
 
@@ -2250,7 +2237,6 @@ describe('prefetchAgentRequirements', () => {
   })
 
   describe('ahead of a launch', () => {
-    /** The cache-only resolve answers with `cachedOutput`; everything else as above. */
     const answerCacheOnly = (cachedOutput: { code: number; output: string }): void => {
       const original = mockInstall.getMockImplementation()!
       mockInstall.mockImplementation(async (file, ...rest) =>
@@ -2266,7 +2252,6 @@ describe('prefetchAgentRequirements', () => {
     })
 
     it('fetches when the cache knows the packages but holds no wheels for them', async () => {
-      // A resolve from the cache passes on metadata an earlier resolve left there.
       answerCacheOnly({ code: 0, output: 'Would download 2 packages\nWould install 2 packages\n' })
 
       expect(await finish({ ...request(), eager: true })).toMatchObject({ outcome: 'completed' })
@@ -2278,7 +2263,6 @@ describe('prefetchAgentRequirements', () => {
       const original = mockInstall.getMockImplementation()!
       mockInstall.mockImplementation(async (file, ...rest) => {
         if (!(rest[7] as string[]).includes('--offline')) return original(file, ...rest)
-        // Core's step is all cached; the override's still has wheels to fetch.
         return cacheOnly++ === 0
           ? { code: 0, output: 'Would install 1 package\n' }
           : { code: 0, output: 'Would download 2 packages\n' }
@@ -2303,7 +2287,6 @@ describe('prefetchAgentRequirements', () => {
           const extraArgs = rest[7] as string[]
           const signal = rest[5] as AbortSignal
           if (extraArgs.includes('--target')) {
-            // The first step's fetch takes 10 minutes.
             return new Promise((resolve) =>
               setTimeout(() => resolve({ code: 0, output: '' }), 10 * 60_000)
             )

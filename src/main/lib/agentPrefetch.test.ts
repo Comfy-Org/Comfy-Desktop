@@ -8,7 +8,6 @@ const harness = vi.hoisted(() => ({
   answers: new Map<string, unknown>(),
   registry: [] as { key: string; args: string[] }[],
   idClass: 'machine_derived',
-  /** Each started download, ended by calling `finish`. */
   runs: [] as { request: unknown; finish: (report: unknown) => void; done?: boolean }[],
   busy: false,
   stopped: false,
@@ -90,7 +89,6 @@ const prefetchEvents = (): Record<string, unknown>[] =>
     .mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_prefetch')
     .map(([, props]) => props as Record<string, unknown>)
 
-/** Wait for the first download that is still running, then end it with `report`. */
 async function finishNext(report: unknown): Promise<void> {
   await vi.waitFor(() => expect(harness.runs.some((run) => !run.done)).toBe(true))
   const run = harness.runs.find((candidate) => !candidate.done)!

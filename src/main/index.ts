@@ -1545,7 +1545,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    // Once the answers are in, the agent's packages download ahead of the launch that enrols.
     void initCoreBetaFlags({
       distinctId: installationId,
       betaEnabled: settings.peekBetaFeaturesEnabled()

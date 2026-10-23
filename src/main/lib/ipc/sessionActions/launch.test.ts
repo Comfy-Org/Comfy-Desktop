@@ -327,13 +327,11 @@ vi.mock('../../pip', async (importOriginal) => {
   }
 })
 
-/** The background downloads a launch hands over; `agentPrefetch.test.ts` covers what they do. */
 const prefetchHarness = vi.hoisted(() => ({
   requests: [] as { installationId: string; request: unknown }[]
 }))
 
 vi.mock('../../agentPrefetch', () => ({
-  // Never settles, like a download on a slow link: a launch that waited on it would never finish.
   startAgentPrefetch: (installationId: string, request: unknown) => {
     prefetchHarness.requests.push({ installationId, request })
     return new Promise(() => {})

@@ -85,7 +85,6 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
-/** Order of the agent background-download hold against the copy, observed through the real one. */
 const holdLog = vi.hoisted(() => [] as string[])
 vi.mock('../../agentRequirementsLaunch', async (importOriginal) => {
   const actual = await importOriginal<typeof AgentRequirementsLaunchModule>()

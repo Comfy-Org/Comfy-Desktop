@@ -353,13 +353,11 @@ export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePi
   )
 }
 
-/** How a launch's offline install of the override went, for telemetry. */
 export interface InstallReport {
   outcome: 'exited' | 'timed_out' | 'abandoned' | 'spawn_error' | 'cancelled'
   exitCode: number | null
   elapsedMs: number
   budgetMs: number
-  /** uv's error, scrubbed of local paths, at most 500 characters. */
   errorTail: string | null
 }
 
@@ -372,7 +370,6 @@ export type OverrideDecision =
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
-      /** For an install uv proved unsatisfiable. */
       install?: InstallReport
       failures?: number
       /** The reverted pins core's file can't take back, whether or not they went in. */
@@ -503,7 +500,6 @@ export function readFrontendPin(installation: InstallationRecord): string | null
   return typeof version === 'string' ? version : null
 }
 
-/** How a background download of the agent's packages ended. */
 export interface PrefetchReport {
   outcome:
     | 'completed'
@@ -538,7 +534,6 @@ export function readPrefetchState(
   return { signature, attempts }
 }
 
-/** The attempt a new background download for `signature` is: counted per signature, from 1. */
 export function nextPrefetchAttempt(
   previous: AgentPrefetchState | null,
   signature: string

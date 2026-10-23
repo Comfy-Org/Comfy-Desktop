@@ -117,7 +117,6 @@ type InstallOutcome =
   | { kind: 'failed'; error: unknown }
   | { kind: 'abandoned' }
 
-/** One bounded uv run: whether it installed, how it ended, and what uv printed. */
 export interface BoundedResult {
   ok: boolean
   report: InstallReport
@@ -339,8 +338,6 @@ const SERIAL_DOWNLOADS = { UV_CONCURRENT_DOWNLOADS: '1' }
 
 const OFFLINE = '--offline'
 
-/** What a launch could not install from uv's cache, for the background download to fetch. */
-/** One requirement text to fetch, with the constraints the launch would install it under. */
 export interface PrefetchStep {
   text: string
   constraints?: string
@@ -350,14 +347,12 @@ export interface PrefetchRequest {
   plan: AgentRequirementsInstall
   /** In order: core's own file first when it is not in yet, since a launch installs it first. */
   steps: PrefetchStep[]
-  /** `core`, or the override's signature: attempts are counted per signature. */
   signature: string
   /** Ahead of any launch: skipped, unreported, when the cache already holds everything. */
   eager?: boolean
 }
 
 interface CachedResult extends BoundedResult {
-  /** Whether the network was tried, so a failure is the network try's own. */
   online: boolean
 }
 
@@ -388,7 +383,6 @@ function cannotDownload(result: CachedResult): boolean {
   )
 }
 
-/** Whether the agent itself waits on the download, or only an override's newer version does. */
 export type Deferral = 'agent' | 'update'
 
 /**
@@ -607,7 +601,6 @@ type PreparedOverride =
   | { kind: 'refused'; reason: OverrideRefusal }
   | { kind: 'ready'; coreText: string; text: string; constraints: string; listed: string }
 
-/** The override's requirement text and the constraints that hold everything else in place. */
 async function prepareOverride(
   plan: AgentRequirementsInstall,
   pins: OverridePins,
@@ -751,9 +744,7 @@ interface RunningPrefetch {
   next?: { request: PrefetchRequest; onDone: (report: PrefetchReport | null) => void }
 }
 
-/** One background download per install, so a relaunch while it runs does not start another. */
 const prefetches = new Map<string, RunningPrefetch>()
-/** Installs being removed: nothing starts for them until the removal lets go. */
 const held = new Map<string, number>()
 /** Aborted on quit: nothing starts after, and preparation ahead of a launch stops too. */
 let quit = new AbortController()
@@ -805,7 +796,6 @@ export function stopAgentPrefetches(): void {
   for (const { stop } of prefetches.values()) stop.abort()
 }
 
-/** Stopped by quit: what a pass ahead of a launch checks between installs. */
 export function agentPrefetchesStopped(): boolean {
   return quit.signal.aborted
 }
@@ -879,7 +869,6 @@ async function runPrefetch(
         return done(outcome === 'exited' ? exited : outcome, fetched.run)
       }
     }
-    // An eager run that found every step cached did nothing worth reporting.
     if (cachedSteps === request.steps.length) return null
     return done(fetches.length ? 'completed' : 'nothing_missing', fetches.at(-1))
   } catch {
@@ -895,7 +884,6 @@ type StepResult =
   | { kind: 'fetched'; run: BoundedResult }
   | { kind: 'failed'; stage: 'resolve' | 'fetch'; run: BoundedResult }
 
-/** Resolve one step against the environment, then fetch exactly the missing pins. */
 async function fetchStep(
   plan: AgentRequirementsInstall,
   step: PrefetchStep,
@@ -974,7 +962,6 @@ async function readUvVersion(
   return code === 0 ? (output.match(/^uv (\S+)/m)?.[1] ?? null) : null
 }
 
-/** Tests only: a fresh registry, as after a restart. */
 export function _resetAgentPrefetchesForTest(): void {
   quit = new AbortController()
   held.clear()
