@@ -1038,6 +1038,9 @@ export function buildLaunchEnv(
     // pyproject.toml instead of `git describe`, and leaves its own updates and the
     // "ComfyUI is outdated" warning to us.
     ...(desktopManaged ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() } : {}),
+    // The Desktop binary, which the agent can run as Node (ELECTRON_RUN_AS_NODE) instead of
+    // shipping its own; only an install this app manages is given it.
+    ...(desktopManaged ? { COMFYUI_DESKTOP_EXE: process.execPath } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring
@@ -1049,7 +1052,10 @@ export function buildLaunchEnv(
   }
   // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
   // user-managed portable or git install as Desktop-managed.
-  if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  if (!desktopManaged) {
+    delete env.__COMFYUI_DESKTOP_VERSION__
+    delete env.COMFYUI_DESKTOP_EXE
+  }
   return env
 }
 

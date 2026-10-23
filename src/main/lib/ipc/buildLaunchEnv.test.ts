@@ -28,6 +28,27 @@ function inst(sourceId: string, envVars?: Record<string, string>): InstallationR
   } as InstallationRecord
 }
 
+describe('buildLaunchEnv COMFYUI_DESKTOP_EXE', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('names the Desktop binary to a desktop-managed install only, whatever the user or parent set', () => {
+    vi.stubEnv('COMFYUI_DESKTOP_EXE', '/inherited/exe')
+    const override = { COMFYUI_DESKTOP_EXE: '/user/exe' }
+    for (const sourceId of ['standalone', 'comfybuilder']) {
+      expect(buildLaunchEnv(inst(sourceId, override)).COMFYUI_DESKTOP_EXE, sourceId).toBe(
+        process.execPath
+      )
+    }
+    for (const sourceId of ['portable', 'git']) {
+      expect(buildLaunchEnv(inst(sourceId, override)), sourceId).not.toHaveProperty(
+        'COMFYUI_DESKTOP_EXE'
+      )
+    }
+  })
+})
+
 describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
