@@ -688,11 +688,9 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
   // `publishConsensus` is change-only so `signed_out` is not re-delivered while it stands, and a
   // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
   // — silently reversing the revocation this module exists to make.
-  //
-  // Only a sign-out the observer actually applied — it leaves no account with a `false`
-  // classification. A held `signed_out` (nothing observed) must not be turned into a write here.
+  // A held `signed_out` (nothing observed) must not be turned into a write here.
   if (consensus.status === 'signed_out') {
-    if (classifiedUserId === null && classifiedStaff === false) applyClassification(false)
+    if (consensus.observed) applyClassification(false)
     return
   }
   if (consensus.status !== 'signed_in') return
