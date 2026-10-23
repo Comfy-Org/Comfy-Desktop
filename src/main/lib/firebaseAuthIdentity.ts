@@ -18,6 +18,11 @@ interface Reporter {
   pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
+  /** The origin this view was last seen signed in at, so a later `signed_out` from it can be told
+   *  apart from a page that never held an account. Per view AND origin because that is the unit
+   *  of storage: a loopback binding is keyed by origin alone, so a different install's partition
+   *  served on the same port is authorized to report, and its empty store reports `signed_out`. */
+  signedInOrigin: string | null
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
   provisionalFailureTerminals: Map<string, number>
@@ -113,6 +118,7 @@ export type FirebaseIdentityConsensus =
 const reporters = new Map<WebContents, Reporter>()
 const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
 let consensus: FirebaseIdentityConsensus = { status: 'unknown' }
+let signOutObserved = false
 const consensusObservers = new Set<(consensus: FirebaseIdentityConsensus) => void>()
 let requestedUserId: string | null = null
 let anonymousEpochIsUnmergeable = false
@@ -160,6 +166,19 @@ function publishConsensus(next: FirebaseIdentityConsensus): void {
 /** The current reconciled identity outcome across every contributing view. */
 export function getFirebaseIdentityConsensus(): FirebaseIdentityConsensus {
   return consensus
+}
+
+/**
+ * Whether the current `signed_out` includes an account this process SAW sign out: a contributor
+ * that reported signed in at its current origin earlier in its life, or a main-verified sign-in.
+ *
+ * `signed_out` alone also covers a page that never held an account. That is right for telemetry,
+ * which only stops attributing events, and wrong for anything PERSISTED: opening a new install
+ * whose page was never signed in is not a sign-out. Set by the same `reconcile()` that publishes
+ * the outcome, so an observer reading it during dispatch sees the matching value.
+ */
+export function isFirebaseSignOutObserved(): boolean {
+  return consensus.status === 'signed_out' && signOutObserved
 }
 
 /** Observe reconciled identity outcomes. Fires on change only; returns an unsubscribe. */
@@ -388,11 +407,13 @@ export function bindMainVerifiedFirebaseUser(
     }
     reporter.localReportingAuthorized = true
     reporter.localExpectedUserId = normalizedUserId
+    reporter.signedInOrigin = origin
     reporter.active = true
     reporter.state = { status: 'pending' }
     staleSnapshotUnlessAffirming(reporter.recoverableState)
     staleSnapshotUnlessAffirming(reporter.committedCandidate)
   } else if (isTrustedCloudUrl(source.getURL())) {
+    reporter.signedInOrigin = origin
     if (reporter.state.status !== 'signed_in' || reporter.state.userId !== normalizedUserId) {
       reporter.state = { status: 'pending' }
     }
@@ -411,6 +432,7 @@ export function bindMainVerifiedFirebaseUser(
 
 function reconcile(): void {
   let expiredPendingContributors = 0
+  let observedSignedInContributor = false
   const activeReporterStates: ComfyDesktop2FirebaseAuthState[] = []
   for (const [webContents, reporter] of reporters) {
     if (webContents.isDestroyed() || !reporter.active) continue
@@ -419,6 +441,12 @@ function reconcile(): void {
     } else if (reporter.pendingExpired) {
       expiredPendingContributors += 1
       continue
+    }
+    if (
+      reporter.signedInOrigin !== null &&
+      reporter.signedInOrigin === originOf(webContents.getURL())
+    ) {
+      observedSignedInContributor = true
     }
     activeReporterStates.push(reporter.state)
   }
@@ -493,6 +521,9 @@ function reconcile(): void {
     // binding even when this process has not bound a UID yet.
     detachToAnonymousIdentity()
     clearUnmergeableEpoch()
+    // A contributing main-verified state is a sign-in main itself saw on that view.
+    signOutObserved =
+      observedSignedInContributor || mainCandidates.some(({ contributes }) => contributes)
     publishConsensus({ status: 'signed_out' })
     return
   }
@@ -599,6 +630,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
     pendingExpired: false,
     localReportingAuthorized: false,
     localExpectedUserId: null,
+    signedInOrigin: null,
     awaitingCommittedFrame: true,
     mainFrameNavigationsInFlight: 0,
     provisionalFailureTerminals: new Map(),
@@ -792,6 +824,7 @@ export function reportFirebaseAuthState(
   // from a replaced document matches no accepted slot and must not detach
   // the bound user or revoke local authorization.
   const acceptReport = (): void => {
+    if (acceptedState.status === 'signed_in') reporter.signedInOrigin = currentOrigin
     if (localUserMismatch) requestAnonymousIdentity()
     revokeAcceptedLocalAuthorization(
       webContents,
@@ -843,6 +876,7 @@ export function _resetForTest(): void {
   reporters.clear()
   mainVerifiedStates.clear()
   consensus = { status: 'unknown' }
+  signOutObserved = false
   consensusObservers.clear()
   clearPendingConsensusDeadline()
   requestedUserId = null

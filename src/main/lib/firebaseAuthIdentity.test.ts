@@ -48,6 +48,7 @@ import {
   bindMainVerifiedFirebaseUser,
   deactivateFirebaseAuthReporter,
   getFirebaseIdentityConsensus,
+  isFirebaseSignOutObserved,
   observeFirebaseIdentityConsensus,
   PENDING_CONSENSUS_DEADLINE_MS,
   reportFirebaseAuthState as recordFirebaseAuthState,
@@ -1402,5 +1403,102 @@ describe('firebaseAuthIdentity published consensus', () => {
     holder.destroy()
 
     expect(viewsReportingFirebaseUser('F')).toEqual([])
+  })
+})
+
+// `signed_out` covers two different things: an account signing out, and a page that never held
+// one. Telemetry treats both alike; a consumer that PERSISTS a fact about the account must not
+// (opening a new install whose page was never signed in revoked a staff grant).
+describe('firebaseAuthIdentity observed sign-out', () => {
+  const localOrigin = 'http://127.0.0.1:8188'
+
+  beforeEach(() => {
+    _resetForTest()
+    vi.clearAllMocks()
+    telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(true)
+    telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(false)
+    telemetry.isFirebaseConsensusPending.mockReturnValue(true)
+    telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
+    verifiedLocalUsers.clear()
+    verifiedLocalPersistence.succeeds = true
+  })
+
+  it('counts a view that was signed in and then signed out', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(true)
+  })
+
+  it('counts a sign-out after a main-verified sign-in on a local page', () => {
+    const reporter = new FakeWebContents(`${localOrigin}/`)
+    activate(reporter)
+    bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(true)
+  })
+
+  it('does not count a page that never held an account', () => {
+    // The repro: another install's sign-in left a loopback binding for this origin, so a new
+    // install served on the same port is a trusted reporter, and its own empty partition reports
+    // signed out.
+    verifiedLocalUsers.set(localOrigin, 'F')
+    const fresh = new FakeWebContents(`${localOrigin}/`)
+    activate(fresh)
+
+    reportFirebaseAuthState(fresh.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(false)
+  })
+
+  it('does not carry an observation from a closed view to a new one on the same origin', () => {
+    const signedIn = new FakeWebContents(`${localOrigin}/`)
+    activate(signedIn)
+    bindMainVerifiedFirebaseUser('F', {}, signedIn.asWebContents())
+    reportFirebaseAuthState(signedIn.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_in', userId: 'F' })
+    signedIn.destroy()
+
+    const fresh = new FakeWebContents(`${localOrigin}/`)
+    activate(fresh)
+    reportFirebaseAuthState(fresh.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(false)
+  })
+
+  it('does not count a sign-in seen at a different origin of the same view', () => {
+    // Storage is per origin: a cloud sign-in says nothing about the local page this view moved to.
+    verifiedLocalUsers.set(localOrigin, 'F')
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    reporter.navigate(`${localOrigin}/`)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(false)
+  })
+
+  it('is false for any outcome other than signed out', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+    expect(isFirebaseSignOutObserved()).toBe(true)
+
+    reporter.destroy()
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'unknown' })
+    expect(isFirebaseSignOutObserved()).toBe(false)
   })
 })

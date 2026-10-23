@@ -39,8 +39,13 @@
  *
  *   - **`signed_in`** — ask a view the consensus counts as holding that account, and accept its
  *     answer only if the page agrees it classified that same UID.
- *   - **`signed_out`** — store `false`. Every contributor resolved and none is signed in, which
- *     is the one state that is real evidence of a sign-out.
+ *   - **`signed_out`** — store `false`, but only for an OBSERVED sign-out: a contributor this
+ *     process saw signed in now reports signed out (`isFirebaseSignOutObserved`). A page that
+ *     never held an account also resolves to `signed_out` — a new install's own partition served
+ *     on a port whose loopback binding another install created — and that is not evidence that
+ *     anybody signed out. It holds, so opening an unsigned instance no longer revokes a staff
+ *     grant on the next launch. The cost is that a staff classification survives until an
+ *     observed sign-out or a sign-in to another account reclassifies it.
  *   - **`pending` / `conflicted` / `unknown`** — hold. A view mid-resolution, two views disagreeing
  *     about which account is signed in, and no view able to say at all are all *absence* of an
  *     answer. Writing one anyway is how a wrong classification outlives the session that caused
@@ -112,6 +117,7 @@ import path from 'path'
 import type { WebContents } from 'electron'
 import {
   getFirebaseIdentityConsensus,
+  isFirebaseSignOutObserved,
   observeFirebaseIdentityConsensus,
   viewsReportingFirebaseUser,
   type FirebaseIdentityConsensus
@@ -625,9 +631,14 @@ async function classifyAgreedAccount(userId: string, generation: number): Promis
 function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   classificationGeneration += 1
   if (consensus.status === 'signed_out') {
-    // Every contributor resolved and none is signed in. This is what lets a machine that changes
-    // hands stop presenting as staff — and, with the boot evaluation authoritative, what lets the
-    // server take a grant back normally.
+    if (!isFirebaseSignOutObserved()) {
+      // No contributor was ever seen signed in: a fresh page, not a sign-out. Hold.
+      console.log('[staff-targeting] hold: signed out, but no sign-out was observed')
+      return
+    }
+    // An account this process saw signed in has signed out. This is what lets a machine that
+    // changes hands stop presenting as staff — and, with the boot evaluation authoritative, what
+    // lets the server take a grant back normally.
     classifiedUserId = null
     classifiedStaff = false
     applyClassification(false)
@@ -681,8 +692,11 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
   // `publishConsensus` is change-only so `signed_out` is not re-delivered while it stands, and a
   // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
   // — silently reversing the revocation this module exists to make.
+  //
+  // Only a sign-out the observer actually applied — it leaves no account with a `false`
+  // classification. A held `signed_out` (nothing observed) must not be turned into a write here.
   if (consensus.status === 'signed_out') {
-    applyClassification(false)
+    if (classifiedUserId === null && classifiedStaff === false) applyClassification(false)
     return
   }
   if (consensus.status !== 'signed_in') return
