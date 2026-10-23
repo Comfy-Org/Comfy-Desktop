@@ -1332,9 +1332,7 @@
     },
     "viewLogs": "View logs",
     "agentRequirements": {
-      "downloading": "Downloading {name} ({size})",
-      "installing": "Installing…",
-      "failed": "Agent install failed; continuing without it"
+      "deferred": "Downloading the agent in the background; it starts next launch"
     }
   },
   "devPlatform": {

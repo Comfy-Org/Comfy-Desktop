@@ -105,9 +105,11 @@ import {
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
 import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
+import { startAgentPrefetch } from '../../agentPrefetch'
 import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
+  indexKind,
   nextOverrideState,
   pinSpecifier,
   readFrontendPin,
@@ -453,19 +455,11 @@ export function emitCoreBetaTelemetry(input: {
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
 }
 
-/** Launch-row text for the agent install. uv already formats the size, so it is
- *  passed through rather than re-rendered. */
+/** Launch-row text for the agent install. */
 export function agentInstallStatusText(status: AgentInstallStatus): string {
   switch (status.kind) {
-    case 'downloading':
-      return i18n.t('launch.agentRequirements.downloading', {
-        name: status.name,
-        size: status.size
-      })
-    case 'installing':
-      return i18n.t('launch.agentRequirements.installing')
-    case 'failed':
-      return i18n.t('launch.agentRequirements.failed')
+    case 'deferred':
+      return i18n.t('launch.agentRequirements.deferred')
   }
 }
 
@@ -1598,13 +1592,19 @@ async function runLaunch(
         }),
       // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
-      readOverrideState(inst)
+      readOverrideState(inst),
+      (request) => void startAgentPrefetch(installationId, request)
     )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (overrideDecision) {
-      reportOverrideDecision(installationId, overrideDecision)
+      reportOverrideDecision(
+        installationId,
+        overrideDecision,
+        indexKind(settings.getMirrorConfig())
+      )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
       // Counted like a failed start, so a version that cannot install stops costing launch time.
+      // A deferred one cost none: it is downloading in the background.
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
         void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)

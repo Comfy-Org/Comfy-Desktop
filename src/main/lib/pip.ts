@@ -60,7 +60,8 @@ export function runUvPipDetailed(
   cwd: string,
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
-  onSpawn?: OnUvSpawn
+  onSpawn?: OnUvSpawn,
+  extraEnv?: Record<string, string>
 ): Promise<UvPipResult> {
   if (signal?.aborted) return Promise.resolve({ code: 1, output: '' })
   return new Promise<UvPipResult>((resolve) => {
@@ -69,7 +70,7 @@ export function runUvPipDetailed(
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       detached: process.platform !== 'win32',
-      env: uvEnv()
+      env: { ...uvEnv(), ...extraEnv }
     })
     if (onSpawn) {
       try {
@@ -134,7 +135,8 @@ export async function installFilteredRequirementsDetailed(
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
   extraArgs?: string[],
-  onSpawn?: OnUvSpawn
+  onSpawn?: OnUvSpawn,
+  extraEnv?: Record<string, string>
 ): Promise<UvPipResult> {
   const content = await fs.promises.readFile(reqPath, 'utf-8')
   const filtered = content
@@ -161,7 +163,8 @@ export async function installFilteredRequirementsDetailed(
       installPath,
       sendOutput,
       signal,
-      onSpawn
+      onSpawn,
+      extraEnv
     )
   } finally {
     try {

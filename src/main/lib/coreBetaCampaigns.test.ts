@@ -3,6 +3,7 @@ import {
   ENROL_MAX_AGE_MS,
   HOLD_MAX_AGE_MS,
   appliedPassThrough,
+  enrolledAgentOverride,
   campaignCandidateGrants,
   parseCampaignAnswer,
   parseCampaignRecords,
@@ -625,5 +626,31 @@ describe('appliedPassThrough', () => {
     const payload: CampaignAnswer = { ...answer('enrol'), payload: { grants: [] } }
     const plan = planCampaignArgs(facts({ answers: new Map([[KEY, payload]]) }))
     expect(appliedPassThrough(plan.applied, '--enable-agent')).toBeUndefined()
+  })
+})
+
+describe('enrolledAgentOverride', () => {
+  it('returns the override an enrolling answer for the agent carries', () => {
+    expect(enrolledAgentOverride(new Map([[KEY, answer('enrol')]]))).toEqual({
+      override: { 'comfy-agent': '0.2.3' }
+    })
+  })
+
+  it('names no override for an enrolling answer that carries none', () => {
+    const payload: CampaignAnswer = { ...answer('enrol'), payload: { grants: [] } }
+    expect(enrolledAgentOverride(new Map([[KEY, payload]]))).toEqual({ override: undefined })
+  })
+
+  it('is null when no answer enrols into the agent', () => {
+    expect(enrolledAgentOverride(new Map([[KEY, answer('hold')]]))).toBeNull()
+    expect(enrolledAgentOverride(new Map())).toBeNull()
+    const assets: CampaignAnswer = {
+      ...answer('enrol'),
+      grants: answer('enrol').grants.map((g) => ({
+        ...g,
+        grant: { ...g.grant, arg: '--enable-assets' }
+      }))
+    }
+    expect(enrolledAgentOverride(new Map([[KEY, assets]]))).toBeNull()
   })
 })

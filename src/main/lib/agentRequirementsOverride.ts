@@ -353,9 +353,21 @@ export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePi
   )
 }
 
+/** How a launch's offline install of the override went, for telemetry. */
+export interface InstallReport {
+  outcome: 'exited' | 'timed_out' | 'abandoned' | 'spawn_error' | 'cancelled'
+  exitCode: number | null
+  elapsedMs: number
+  budgetMs: number
+  /** uv's error, scrubbed of local paths, at most 500 characters. */
+  errorTail: string | null
+}
+
 export type OverrideDecision =
-  | { decision: 'applied'; pins: OverridePins }
+  | { decision: 'applied'; pins: OverridePins; install?: InstallReport }
   | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
+  /** Not in uv's cache yet: a background download fetches it for a later launch. Never counted. */
+  | { decision: 'deferred'; reason: 'not_cached'; pins: OverridePins; install?: InstallReport }
   | {
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
@@ -365,9 +377,25 @@ export type OverrideDecision =
       staysInstalled?: OverridePins
     }
 
-export function reportOverrideDecision(installationId: string, d: OverrideDecision): void {
+/** Which index uv was pointed at, never the URL itself. */
+export type IndexKind = 'pypi' | 'cn_mirror' | 'custom'
+
+export function indexKind(mirrors: {
+  pypiMirror?: string
+  useChineseMirrors?: boolean
+}): IndexKind {
+  if (mirrors.pypiMirror?.trim()) return 'custom'
+  return mirrors.useChineseMirrors ? 'cn_mirror' : 'pypi'
+}
+
+export function reportOverrideDecision(
+  installationId: string,
+  d: OverrideDecision,
+  index: IndexKind | null = null
+): void {
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
+    const install = 'install' in d ? d.install : undefined
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
@@ -375,7 +403,13 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
-        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
+        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null,
+      install_outcome: install?.outcome ?? null,
+      exit_code: install?.exitCode ?? null,
+      elapsed_ms: install?.elapsedMs ?? null,
+      budget_ms: install?.budgetMs ?? null,
+      error_tail: install?.errorTail ?? null,
+      index
     })
   } catch {
     // Telemetry must never reach the launch.
@@ -465,4 +499,75 @@ export function readFrontendPin(installation: InstallationRecord): string | null
   if (!state || typeof state !== 'object') return null
   const { version } = state as Record<string, unknown>
   return typeof version === 'string' ? version : null
+}
+
+/** How a background download of the agent's packages ended. */
+export interface PrefetchReport {
+  outcome:
+    | 'completed'
+    | 'nothing_missing'
+    | 'resolve_failed'
+    | 'download_failed'
+    | 'timed_out'
+    | 'abandoned'
+    | 'spawn_error'
+    | 'cancelled'
+  exitCode: number | null
+  elapsedMs: number
+  budgetMs: number
+  downloadsStarted: number
+  downloadsFinished: number
+  errorTail: string | null
+  uvVersion: string | null
+}
+
+export interface AgentPrefetchState {
+  signature: string
+  attempts: number
+}
+
+export function readPrefetchState(
+  installation: InstallationRecord | null | undefined
+): AgentPrefetchState | null {
+  const state = installation?.agentPrefetch
+  if (!state || typeof state !== 'object') return null
+  const { signature, attempts } = state as Record<string, unknown>
+  if (typeof signature !== 'string' || typeof attempts !== 'number') return null
+  return { signature, attempts }
+}
+
+/** The attempt a new background download for `signature` is: counted per signature, from 1. */
+export function nextPrefetchAttempt(
+  previous: AgentPrefetchState | null,
+  signature: string
+): number {
+  return previous?.signature === signature ? previous.attempts + 1 : 1
+}
+
+export function reportAgentPrefetch(
+  installationId: string,
+  signature: string,
+  attempt: number,
+  index: IndexKind,
+  r: PrefetchReport
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_prefetch', {
+      installation_id: installationId,
+      target: signature === 'core' ? 'core' : 'override',
+      pins: signature === 'core' ? null : signature,
+      install_outcome: r.outcome,
+      exit_code: r.exitCode,
+      elapsed_ms: r.elapsedMs,
+      budget_ms: r.budgetMs,
+      attempt,
+      downloads_started: r.downloadsStarted,
+      downloads_finished: r.downloadsFinished,
+      error_tail: r.errorTail,
+      index,
+      uv_version: r.uvVersion
+    })
+  } catch {
+    // Telemetry must never reach the launch.
+  }
 }
