@@ -48,6 +48,17 @@ describe('buildLaunchEnv COMFYUI_DESKTOP_EXE', () => {
     }
   })
 
+  it.each(['portable', 'git'])(
+    'drops inherited Desktop markers in any casing for user-managed source %s',
+    (sourceId) => {
+      vi.stubEnv('ComfyUI_Desktop_Exe', '/inherited/exe')
+      vi.stubEnv('__ComfyUI_Desktop_Version__', '1.0.0')
+      const keys = Object.keys(buildLaunchEnv(inst(sourceId))).map((key) => key.toUpperCase())
+      expect(keys).not.toContain('COMFYUI_DESKTOP_EXE')
+      expect(keys).not.toContain('__COMFYUI_DESKTOP_VERSION__')
+    }
+  )
+
   it('is not one an install can save as its own env var', () => {
     expect(sanitizeEnvVars({ COMFYUI_DESKTOP_EXE: '/user/exe', OTHER: '1' })).toEqual({
       OTHER: '1'

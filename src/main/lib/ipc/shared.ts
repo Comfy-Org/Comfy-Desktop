@@ -1054,8 +1054,12 @@ export function buildLaunchEnv(
   // Inherited markers (e.g. the app itself started from a ComfyUI shell) must not tag a
   // user-managed portable or git install as Desktop-managed, or hand it the Desktop binary.
   if (!desktopManaged) {
-    delete env.__COMFYUI_DESKTOP_VERSION__
-    delete env.COMFYUI_DESKTOP_EXE
+    // Any casing: Windows reads env names case-insensitively, and a spread keeps the parent's.
+    for (const key of Object.keys(env)) {
+      const upper = key.toUpperCase()
+      if (upper === '__COMFYUI_DESKTOP_VERSION__' || upper === 'COMFYUI_DESKTOP_EXE')
+        delete env[key]
+    }
   }
   return env
 }
