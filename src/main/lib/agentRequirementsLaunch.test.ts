@@ -1604,7 +1604,10 @@ describe('installAgentRequirements with a version override', () => {
           await vi.advanceTimersToNextTimerAsync()
         }
 
-        expect(await pending).toMatchObject({ decision: 'deferred', reason: 'not_cached' })
+        expect(
+          await pending,
+          'exit 1 from a cache-only try is a miss, not a proof: uv never saw the index'
+        ).toMatchObject({ decision: 'deferred', reason: 'not_cached' })
       } finally {
         vi.useRealTimers()
       }
@@ -2254,7 +2257,10 @@ describe('prefetchAgentRequirements', () => {
     it('fetches when the cache knows the packages but holds no wheels for them', async () => {
       answerCacheOnly({ code: 0, output: 'Would download 2 packages\nWould install 2 packages\n' })
 
-      expect(await finish({ ...request(), eager: true })).toMatchObject({ outcome: 'completed' })
+      expect(
+        await finish({ ...request(), eager: true }),
+        'a resolve from the cache passes on metadata an earlier resolve left there'
+      ).toMatchObject({ outcome: 'completed' })
       expect(calls.at(-1)!.extraArgs).toContain('--target')
     })
 
