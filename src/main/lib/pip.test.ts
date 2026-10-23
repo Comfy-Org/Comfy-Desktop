@@ -17,21 +17,6 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, spawn, default: { ...actual, spawn } }
 })
 
-/** Extract --index-url value from args. */
-function getIndexUrl(args: string[]): string | undefined {
-  const i = args.indexOf('--index-url')
-  return i >= 0 ? args[i + 1] : undefined
-}
-
-/** Extract all --extra-index-url values from args. */
-function getExtras(args: string[]): string[] {
-  const extras: string[] = []
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--extra-index-url') extras.push(args[i + 1]!)
-  }
-  return extras
-}
-
 describe('getPipIndexArgs', () => {
   const MIRROR = 'https://custom.mirror.example/simple/'
 
