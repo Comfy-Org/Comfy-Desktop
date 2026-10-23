@@ -428,7 +428,8 @@ export async function installAgentRequirements(
     onlineLeft -= Date.now() - startedAt
     if (fetched.kind === 'failed') return { ...fetched.run, online: true }
     if (fetched.kind !== 'fetched') {
-      return { ...cached, online: !NO_SOLUTION.test(stripAnsi(cached.output)) }
+      const cacheMiss = NO_SOLUTION.test(stripAnsi(cached.output))
+      return { ...cached, online: !cacheMiss }
     }
     const installed = await runBoundedInstall(
       plan,
