@@ -1481,6 +1481,7 @@ describe('firebaseAuthIdentity observed sign-out', () => {
     reportFirebaseAuthState(restored.asWebContents(), { status: 'signed_out' })
 
     expect(published.at(-1)).toEqual({ status: 'signed_out', observed: true })
+    expect(verifiedLocalUsers.has(localOrigin)).toBe(false)
   })
 
   it('observes a sign-out reported by the retained document during a navigation', () => {
@@ -1501,23 +1502,27 @@ describe('firebaseAuthIdentity observed sign-out', () => {
     reportFirebaseAuthState(fresh.asWebContents(), { status: 'signed_out' })
 
     expect(published.at(-1)).toEqual({ status: 'signed_out', observed: false })
-  })
-
-  it('keeps the port binding when a page that never held an account reports signed out', () => {
-    const fresh = freshViewOnBoundPort()
-
-    reportFirebaseAuthState(fresh.asWebContents(), { status: 'signed_out' })
-
     expect(verifiedLocalUsers.get(localOrigin)).toBe('F')
   })
 
-  it('clears the port binding on an observed sign-out', () => {
-    const restored = freshViewOnBoundPort()
-    reportFirebaseAuthState(restored.asWebContents(), { status: 'signed_in', userId: 'F' })
+  it('rejects a different account from a page kept trusted after an unobserved sign-out', () => {
+    const held = freshViewOnBoundPort()
+    reportFirebaseAuthState(held.asWebContents(), { status: 'signed_out' })
 
-    reportFirebaseAuthState(restored.asWebContents(), { status: 'signed_out' })
+    reportFirebaseAuthState(held.asWebContents(), { status: 'signed_in', userId: 'G' })
 
+    expect(getFirebaseIdentityConsensus()).not.toEqual({ status: 'signed_in', userId: 'G' })
     expect(verifiedLocalUsers.has(localOrigin)).toBe(false)
+  })
+
+  it('observes a later sign-out by the bound account on a page kept trusted', () => {
+    const held = freshViewOnBoundPort()
+    reportFirebaseAuthState(held.asWebContents(), { status: 'signed_out' })
+    reportFirebaseAuthState(held.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    reportFirebaseAuthState(held.asWebContents(), { status: 'signed_out' })
+
+    expect(published.at(-1)).toEqual({ status: 'signed_out', observed: true })
   })
 
   it('observes a sign-out on the restored page in the launch after an unsigned page held', () => {
