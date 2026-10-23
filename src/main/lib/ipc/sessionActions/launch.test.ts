@@ -328,12 +328,14 @@ vi.mock('../../pip', async (importOriginal) => {
 })
 
 const prefetchHarness = vi.hoisted(() => ({
-  requests: [] as { installationId: string; request: unknown }[]
+  requests: [] as { installationId: string; request: unknown }[],
+  onStart: null as null | ((request: unknown) => void)
 }))
 
 vi.mock('../../agentPrefetch', () => ({
   startAgentPrefetch: (installationId: string, request: unknown) => {
     prefetchHarness.requests.push({ installationId, request })
+    prefetchHarness.onStart?.(request)
     return new Promise(() => {})
   }
 }))
@@ -432,6 +434,13 @@ import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PipModule from '../../pip'
 import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
+import {
+  _resetAgentPrefetchesForTest,
+  holdAgentPrefetch,
+  prefetchAgentRequirements,
+  stopAgentPrefetches
+} from '../../agentRequirementsLaunch'
+import type { PrefetchRequest } from '../../agentRequirementsLaunch'
 import { getLogDir } from '../../logRotation'
 import en from '../../../../../locales/en.json'
 
@@ -3509,6 +3518,7 @@ describe('agent requirements at launch', () => {
     spawned = 0
     pipHarness.calls = []
     prefetchHarness.requests = []
+    prefetchHarness.onStart = null
     pipHarness.result = { code: 0, output: '' }
     pipHarness.duringInstall = null
     pipHarness.respond = null
@@ -4041,10 +4051,15 @@ describe('agent requirements at launch', () => {
         output: missesOverride(args) ? 'error: Failed to download `comfy-agent`\n' : ''
       })
 
-      await launchAndPrint()
-      await launchAndPrint()
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        await launchAndPrint()
+        await launchAndPrint()
+      } finally {
+        vi.useRealTimers()
+      }
 
-      expect(overrideEvents()).toEqual(
+      expect(overrideEvents(), 'a frozen clock leaves each network try the whole budget').toEqual(
         Array(2).fill(
           expect.objectContaining({
             decision: 'deferred',
@@ -4058,6 +4073,56 @@ describe('agent requirements at launch', () => {
           })
         )
       )
+    })
+
+    it("stops the install's background download before its own uv, and hands the miss back after", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      const order: string[] = []
+      pipHarness.respond = (args) => {
+        if (String(args[4]).startsWith('.agent-prefetch-')) {
+          const signal = args[6] as AbortSignal
+          if (signal.aborted) return { code: 1, output: '' }
+          return new Promise((resolve) =>
+            signal.addEventListener('abort', () => {
+              order.push('background stopped')
+              resolve({ code: 1, output: '' })
+            })
+          ) as never
+        }
+        order.push('launch uv')
+        return { code: missesOverride(args) ? 2 : 0, output: '' }
+      }
+      const accepted: boolean[] = []
+      prefetchHarness.onStart = (request) =>
+        accepted.push(prefetchAgentRequirements(request as PrefetchRequest, () => {}))
+      const background: PrefetchRequest = {
+        plan: {
+          reqPath: agentReqPath(),
+          uvPath: getUvPath(installDir),
+          pythonPath: getVenvPythonPath(installDir),
+          installPath: installDir
+        },
+        steps: [{ text: CORE_FILE }],
+        signature: 'core',
+        eager: true
+      }
+      try {
+        expect(prefetchAgentRequirements(background, () => {})).toBe(true)
+        await vi.waitFor(() => expect(pipHarness.calls).toHaveLength(1))
+
+        await launchAndPrint()
+
+        expect(order[0], 'the download lets go of the environment first').toBe('background stopped')
+        expect(order.slice(1).length, 'then the launch installs').toBeGreaterThan(0)
+        expect(
+          accepted,
+          "the miss is handed over once the launch's own hold is gone, so it is not dropped"
+        ).toEqual([true])
+      } finally {
+        stopAgentPrefetches()
+        ;(await holdAgentPrefetch(installDir))()
+        _resetAgentPrefetchesForTest()
+      }
     })
 
     it('watches no agent start for an override that is not cached', async () => {

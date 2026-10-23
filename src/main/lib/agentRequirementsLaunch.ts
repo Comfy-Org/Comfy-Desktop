@@ -169,6 +169,8 @@ export function planAgentRequirementsInstall(
   args: readonly string[]
 ): AgentRequirementsInstall | null {
   if (!args.includes(ENABLE_AGENT_ARG)) return null
+  // A Comfy Cloud or remote entry has no local install.
+  if (typeof installation.installPath !== 'string') return null
   const reqPath = path.join(installation.installPath, 'ComfyUI', AGENT_REQUIREMENTS)
   if (!fs.existsSync(reqPath)) return null
   const uvPath = getActiveUvPath(installation)
@@ -317,11 +319,12 @@ interface RunOptions {
 
 /**
  * How long a launch waits on downloading the agent's packages, shared by every download on the
- * launch. Each install tries uv's cache first, then the network for what is left of this; what
- * does not land inside it goes to `prefetchAgentRequirements`, which no one waits on, and the
- * agent starts on the launch after it lands. About a Windows ComfyUI boot (median 24 s), and
- * above the 13 s the whole agent payload took on a fast link, so a fast link still gets the agent
- * on the launch that enables it.
+ * launch. Each install tries uv's cache first; what is missing is then downloaded into the cache,
+ * in parallel and outside the environment, for what is left of this, and installed from the
+ * cache. Only the download is held to this: stopping uv part-way through an install would leave
+ * the environment half-changed. What does not land in time goes to `prefetchAgentRequirements`,
+ * which no one waits on, and the agent starts on the launch after it lands. About a Windows
+ * ComfyUI boot (median 24 s), and above the 13 s the whole agent payload took on a fast link.
  */
 const ONLINE_BUDGET_MS = 20_000
 
@@ -421,17 +424,25 @@ export async function installAgentRequirements(
     if (cached.ok || signal?.aborted || !network || onlineLeft <= 0) {
       return { ...cached, online: false }
     }
-    const online = await runBoundedInstall(
+    const startedAt = Date.now()
+    const fetched = await fetchForLaunch(plan, reqPath, extraArgs, onlineLeft, sendOutput, signal)
+    onlineLeft -= Date.now() - startedAt
+    if (fetched.kind === 'failed') return { ...fetched.run, online: true }
+    // Nothing fetched: a cache-only "no solution" is still only a cache miss, so it proves nothing;
+    // any other cache-only failure stands, since the network was there.
+    if (fetched.kind !== 'fetched') {
+      return { ...cached, online: !NO_SOLUTION.test(stripAnsi(cached.output)) }
+    }
+    const installed = await runBoundedInstall(
       plan,
       reqPath,
       tempName,
-      onlineLeft,
+      OFFLINE_TIMEOUT_MS,
       sendOutput,
       signal,
-      { extraArgs, env: SERIAL_DOWNLOADS }
+      { extraArgs: [OFFLINE, ...extraArgs] }
     )
-    onlineLeft -= online.report.elapsedMs
-    return { ...online, online: true }
+    return { ...installed, online: true }
   }
   let overrideStep: PrefetchStep | undefined
   let signature = 'core'
@@ -452,8 +463,12 @@ export async function installAgentRequirements(
       ...(coreText === null ? [] : [{ text: coreText }]),
       ...(overrideStep ? [overrideStep] : [])
     ]
-    // Core's file in means the agent starts now, on core's versions: only the override waits.
-    const deferral: Deferral = coreMissing ? 'agent' : 'update'
+    // Core's file in means the agent starts now, on core's versions, and only the override waits:
+    // unless core pins only the placeholder, which is no agent at all.
+    const placeholder = PLACEHOLDER_AGENT.test(
+      coreText ?? (await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => ''))
+    )
+    const deferral: Deferral = coreMissing || placeholder ? 'agent' : 'update'
     sendOutput(
       deferral === 'agent'
         ? 'Downloading the agent in the background; it starts on the next launch\n'
@@ -893,7 +908,19 @@ async function fetchStep(
   plan: AgentRequirementsInstall,
   step: PrefetchStep,
   tag: string,
-  { eager, signal, left }: { eager: boolean; signal: AbortSignal; left: () => number }
+  {
+    eager,
+    signal,
+    left,
+    serial = true,
+    output = () => {}
+  }: {
+    eager: boolean
+    signal: AbortSignal
+    left: () => number
+    serial?: boolean
+    output?: (text: string) => void
+  }
 ): Promise<StepResult> {
   const srcPath = path.join(plan.installPath, `${tag}-src.txt`)
   const pinsPath = path.join(plan.installPath, `${tag}-pins.txt`)
@@ -910,7 +937,7 @@ async function fetchStep(
     constraintArgs.push('--constraint', constraintsName)
   }
   const dryRun = (extra: string[]): Promise<BoundedResult> =>
-    runBoundedInstall(plan, srcPath, `${tag}-src-filtered.txt`, left(), () => {}, signal, {
+    runBoundedInstall(plan, srcPath, `${tag}-src-filtered.txt`, left(), output, signal, {
       extraArgs: [...extra, '--dry-run', ...constraintArgs]
     })
   // From the cache alone: a resolve passes on cached metadata, so only "Would download" says a
@@ -931,13 +958,62 @@ async function fetchStep(
     pinsPath,
     `${tag}-pins-filtered.txt`,
     left(),
-    () => {},
+    output,
     signal,
-    { extraArgs: ['--no-deps', '--target', tag], env: SERIAL_DOWNLOADS }
+    { extraArgs: ['--no-deps', '--target', tag], ...(serial ? { env: SERIAL_DOWNLOADS } : {}) }
   )
   return fetched.ok
     ? { kind: 'fetched', run: fetched }
     : { kind: 'failed', stage: 'fetch', run: fetched }
+}
+
+/** core's agent line pins only the placeholder release: no agent runs on it. */
+const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
+
+/**
+ * A launch's network try: download what `reqPath` is missing into uv's cache, in parallel and into
+ * a scratch target, so stopping it at the budget leaves the environment as it was. Never throws.
+ */
+async function fetchForLaunch(
+  plan: AgentRequirementsInstall,
+  reqPath: string,
+  extraArgs: string[],
+  budgetMs: number,
+  output: (text: string) => void,
+  signal: AbortSignal | undefined
+): Promise<StepResult> {
+  const tag = `.launch-agent-fetch-${attemptTag()}`
+  const stop = new AbortController()
+  const onAbort = (): void => stop.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
+  const deadline = Date.now() + budgetMs
+  try {
+    const at = extraArgs.indexOf('--constraint')
+    const text = await fs.promises.readFile(reqPath, 'utf-8')
+    const constraints =
+      at === -1
+        ? undefined
+        : await fs.promises.readFile(path.join(plan.installPath, extraArgs[at + 1]!), 'utf-8')
+    return await fetchStep(plan, { text, constraints }, tag, {
+      eager: false,
+      signal: stop.signal,
+      left: () => Math.max(0, deadline - Date.now()),
+      serial: false,
+      output
+    })
+  } catch {
+    return { kind: 'nothing' }
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    const names = await fs.promises.readdir(plan.installPath).catch((): string[] => [])
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith(tag))
+        .map((name) =>
+          fs.promises.rm(path.join(plan.installPath, name), { recursive: true, force: true })
+        )
+    ).catch(() => {})
+  }
 }
 
 async function removePrefetchFiles(installPath: string): Promise<void> {

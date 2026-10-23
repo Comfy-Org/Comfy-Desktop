@@ -101,9 +101,11 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import {
   installAgentRequirements,
+  holdAgentPrefetch,
   planAgentRequirementsInstall,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
+import type { PrefetchRequest } from '../../agentRequirementsLaunch'
 import { startAgentPrefetch } from '../../agentPrefetch'
 import {
   FRONTEND_PACKAGE,
@@ -1572,26 +1574,36 @@ async function runLaunch(
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
-    const overrideDecision = await installAgentRequirements(
-      agentRequirements,
-      makeSendOutput(sender, installationId),
-      abort.signal,
-      // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
-      appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
-      readOverrideState(inst),
-      (request, deferral) => {
-        // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
-        sendProgress('agentRequirements', {
-          percent: -1,
-          status: i18n.t(
-            deferral === 'agent'
-              ? 'launch.agentRequirements.deferred'
-              : 'launch.agentRequirements.deferredUpdate'
-          )
-        })
-        void startAgentPrefetch(installationId, request)
-      }
-    )
+    // A background download holds uv's lock on the environment: the launch goes first, and hands
+    // back whatever it still needs once it is done (the wheels already fetched stay cached).
+    const releasePrefetch = await holdAgentPrefetch(agentRequirements.installPath)
+    const handedBack: { request?: PrefetchRequest } = {}
+    let overrideDecision: Awaited<ReturnType<typeof installAgentRequirements>>
+    try {
+      overrideDecision = await installAgentRequirements(
+        agentRequirements,
+        makeSendOutput(sender, installationId),
+        abort.signal,
+        // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
+        appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
+        readOverrideState(inst),
+        (request, deferral) => {
+          // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
+          sendProgress('agentRequirements', {
+            percent: -1,
+            status: i18n.t(
+              deferral === 'agent'
+                ? 'launch.agentRequirements.deferred'
+                : 'launch.agentRequirements.deferredUpdate'
+            )
+          })
+          handedBack.request = request
+        }
+      )
+    } finally {
+      releasePrefetch()
+    }
+    if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (overrideDecision) {
       reportOverrideDecision(

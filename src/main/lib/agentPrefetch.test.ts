@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   busy: false,
   stopped: false,
   unprepared: new Set<string>(),
+  unpreparable: new Set<string>(),
   plannable: new Set<string>()
 }))
 
@@ -35,31 +36,39 @@ vi.mock('./coreBetaCampaignFlags', () => ({
 
 vi.mock('./deviceId', () => ({ getIdClass: () => harness.idClass }))
 
-vi.mock('./agentRequirementsLaunch', () => ({
-  agentPrefetchesStopped: () => harness.stopped,
-  planAgentRequirementsInstall: (inst: { installPath: string }, args: string[]) =>
-    harness.plannable.has(inst.installPath) && args.includes('--enable-agent')
-      ? { installPath: inst.installPath }
-      : null,
-  prepareAgentPrefetch: async (plan: { installPath: string }, raw: unknown, state: unknown) =>
-    harness.unprepared.has(plan.installPath)
-      ? null
-      : {
-          plan,
-          steps: [{ text: JSON.stringify({ raw, state }) }],
-          signature: raw ? 'comfy-agent==0.1.0rc3' : 'core',
-          eager: true
-        },
-  prefetchAgentRequirements: (request: unknown, onDone: (report: unknown) => void) => {
-    if (harness.busy) return false
-    harness.runs.push({ request, finish: onDone })
-    return true
+vi.mock('./agentRequirementsLaunch', async (importOriginal) => {
+  const actual = await importOriginal<typeof AgentRequirementsLaunchModule>()
+  return {
+    agentPrefetchesStopped: () => harness.stopped,
+    planAgentRequirementsInstall: (inst: { installPath?: string }, args: string[]) =>
+      typeof inst.installPath !== 'string'
+        ? actual.planAgentRequirementsInstall(inst as never, args)
+        : harness.plannable.has(inst.installPath) && args.includes('--enable-agent')
+          ? { installPath: inst.installPath }
+          : null,
+    prepareAgentPrefetch: async (plan: { installPath: string }, raw: unknown, state: unknown) => {
+      if (harness.unpreparable.has(plan.installPath)) throw new Error('EACCES')
+      return harness.unprepared.has(plan.installPath)
+        ? null
+        : {
+            plan,
+            steps: [{ text: JSON.stringify({ raw, state }) }],
+            signature: raw ? 'comfy-agent==0.1.0rc3' : 'core',
+            eager: true
+          }
+    },
+    prefetchAgentRequirements: (request: unknown, onDone: (report: unknown) => void) => {
+      if (harness.busy) return false
+      harness.runs.push({ request, finish: onDone })
+      return true
+    }
   }
-}))
+})
 
 import * as telemetry from './telemetry'
 import { prefetchEnrolledAgents, startAgentPrefetch } from './agentPrefetch'
 import type { PrefetchRequest } from './agentRequirementsLaunch'
+import type * as AgentRequirementsLaunchModule from './agentRequirementsLaunch'
 
 const REPORT = {
   outcome: 'download_failed',
@@ -110,6 +119,7 @@ beforeEach(() => {
   harness.busy = false
   harness.stopped = false
   harness.unprepared = new Set()
+  harness.unpreparable = new Set()
   harness.plannable = new Set()
 })
 
@@ -259,6 +269,38 @@ describe('prefetchEnrolledAgents', () => {
     expect(harness.runs.map((run) => (run.request as { plan: unknown }).plan)).toEqual([
       { installPath: '/b' }
     ])
+  })
+
+  it('skips a Cloud entry listed first, and still downloads for the local install after it', async () => {
+    harness.answers = new Map([['agent', ENROL]])
+    harness.records = new Map([
+      ['cloud', { id: 'cloud', sourceId: 'cloud' }],
+      ['a', { id: 'a', installPath: '/a' }]
+    ])
+
+    const done = prefetchEnrolledAgents()
+    await finishNext(null)
+    await done
+
+    expect(
+      harness.runs.map((run) => (run.request as { plan: unknown }).plan),
+      'an entry with no local install has nothing to download into'
+    ).toEqual([{ installPath: '/a' }])
+  })
+
+  it('skips an install whose preparation throws, and goes on to the next', async () => {
+    harness.answers = new Map([['agent', ENROL]])
+    harness.unpreparable = new Set(['/a'])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const done = prefetchEnrolledAgents()
+    await finishNext(null)
+    await done
+
+    expect(harness.runs.map((run) => (run.request as { plan: unknown }).plan)).toEqual([
+      { installPath: '/b' }
+    ])
+    expect(warn.mock.calls.flat().join(' '), 'the skip names the install').toContain(' for a:')
   })
 
   it('starts nothing more once Desktop is quitting', async () => {
