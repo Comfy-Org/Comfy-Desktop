@@ -1462,6 +1462,22 @@ describe('installAgentRequirements with a version override', () => {
       })
     })
 
+    it('retires a local failure even when uv mentioned a connection before it', async () => {
+      respond = ({ constraints }) =>
+        constraints
+          ? {
+              code: 2,
+              output:
+                'Resolved 61 packages, reusing the connection pool\nerror: failed to remove file `x.pyd`: Access is denied. (os error 5)\n'
+            }
+          : { code: 0, output: '' }
+
+      expect(
+        await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE),
+        "only uv's error decides, not lines it printed before it"
+      ).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    })
+
     it('retires an override that fails on something no download fixes', async () => {
       respond = ({ constraints }) =>
         constraints
@@ -2132,11 +2148,13 @@ describe('prefetchAgentRequirements', () => {
         return release
       })
       await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() =>
+        expect(execCalls, 'the grace ran out, so uv is hard-stopped').toContainEqual({
+          cmd: 'taskkill',
+          args: ['/F', '/T', '/PID', '4545']
+        })
+      )
       await settleRealIo()
-      expect(execCalls, 'the grace ran out, so uv is hard-stopped').toContainEqual({
-        cmd: 'taskkill',
-        args: ['/F', '/T', '/PID', '4545']
-      })
       expect(held, 'the removal waits until the hard stop has returned').toBe(false)
       await vi.advanceTimersByTimeAsync(1_000)
       ;(await hold)()

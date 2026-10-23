@@ -209,7 +209,9 @@ describe('handleCopy (ComfyBuilder install)', () => {
     ])
   })
 
-  it('releases the hold when the copy fails', async () => {
+  const chmodCanDenyRead = process.platform !== 'win32' && process.getuid?.() !== 0
+
+  it.runIf(chmodCanDenyRead)('releases the hold when the copy fails', async () => {
     holdLog.length = 0
     const unreadable = path.join(srcRoot, 'ComfyUI', 'unreadable.bin')
     fs.writeFileSync(unreadable, 'x')

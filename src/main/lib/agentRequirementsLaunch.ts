@@ -368,7 +368,7 @@ const NO_SOLUTION = /No solution found when resolving/
 /** uv's words for a download or index that failed: a later download can fix those. Exit codes
  *  can't tell them apart: uv 0.11 exits 1 for a download cut short, as for no solution. */
 const DOWNLOAD_FAILED =
-  /Failed to (?:download|fetch)|error sending request|Request failed|timed out|connect|dns error|certificate|HTTP status/i
+  /Failed to (?:download|fetch)|error sending request|Request failed|\btimed out\b|\bconnect(?:ion|ed)?\b|dns error|certificate|HTTP status/i
 
 /**
  * A failure no download can fix, from a try that had the network: uv proved there is no solution,
@@ -377,9 +377,9 @@ const DOWNLOAD_FAILED =
  */
 function cannotDownload(result: CachedResult): boolean {
   if (!result.online || result.report.outcome !== 'exited') return false
-  const output = stripAnsi(result.output)
+  const tail = result.report.errorTail
   return (
-    NO_SOLUTION.test(output) || (result.report.errorTail !== null && !DOWNLOAD_FAILED.test(output))
+    NO_SOLUTION.test(stripAnsi(result.output)) || (tail !== null && !DOWNLOAD_FAILED.test(tail))
   )
 }
 
