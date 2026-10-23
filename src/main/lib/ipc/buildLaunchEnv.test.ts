@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
 }))
 
 import type { InstallationRecord } from '../../installations'
-import { buildLaunchEnv } from './shared'
+import { buildLaunchEnv, sanitizeEnvVars } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -46,6 +46,12 @@ describe('buildLaunchEnv COMFYUI_DESKTOP_EXE', () => {
         'COMFYUI_DESKTOP_EXE'
       )
     }
+  })
+
+  it('is not one an install can save as its own env var', () => {
+    expect(sanitizeEnvVars({ COMFYUI_DESKTOP_EXE: '/user/exe', OTHER: '1' })).toEqual({
+      OTHER: '1'
+    })
   })
 })
 
