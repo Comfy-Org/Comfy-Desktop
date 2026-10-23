@@ -15,6 +15,7 @@ import {
 } from './agentRequirementsOverride'
 import { getCoreBetaCampaigns } from './coreBetaCampaignFlags'
 import { enrolledAgentOverride } from './coreBetaCampaigns'
+import { getIdClass } from './deviceId'
 
 /**
  * Start a background download of the agent's packages, counting its attempt per signature.
@@ -52,15 +53,15 @@ export async function startAgentPrefetch(
 }
 
 /**
- * Ahead of any launch: fetch the agent's packages for every install a campaign answer would enrol
- * into the agent, one install at a time, so a link of any speed usually has them cached by the
+ * Ahead of any launch: fetch the agent's packages for every install once a campaign answer would
+ * enrol this machine into the agent, one install at a time, so a link of any speed usually has them cached by the
  * launch that enables it. Every managed install that ships the agent's file is fetched for: which
  * of them the answer's version range admits is only settled at launch. Never throws.
  */
 export async function prefetchEnrolledAgents(): Promise<void> {
   try {
     if (!settings.peekBetaFeaturesEnabled()) return
-    const enrolled = enrolledAgentOverride((await getCoreBetaCampaigns()).answers)
+    const enrolled = enrolledAgentOverride(await getCoreBetaCampaigns(), Date.now(), getIdClass())
     if (!enrolled) return
     for (const inst of await installations.list()) {
       const plan = planAgentRequirementsInstall(inst, ['--enable-agent'])

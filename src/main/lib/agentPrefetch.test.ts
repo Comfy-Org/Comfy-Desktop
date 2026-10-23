@@ -6,6 +6,8 @@ const harness = vi.hoisted(() => ({
   betaEnabled: true,
   mirrors: { pypiMirror: undefined as string | undefined, useChineseMirrors: false },
   answers: new Map<string, unknown>(),
+  registry: [] as { key: string; args: string[] }[],
+  idClass: 'machine_derived',
   /** Each started download, ended by calling `finish`. */
   runs: [] as { request: unknown; finish: (report: unknown) => void; done?: boolean }[],
   busy: false,
@@ -27,8 +29,10 @@ vi.mock('../settings', () => ({
 }))
 
 vi.mock('./coreBetaCampaignFlags', () => ({
-  getCoreBetaCampaigns: async () => ({ registry: [], answers: harness.answers })
+  getCoreBetaCampaigns: async () => ({ registry: harness.registry, answers: harness.answers })
 }))
+
+vi.mock('./deviceId', () => ({ getIdClass: () => harness.idClass }))
 
 vi.mock('./agentRequirementsLaunch', () => ({
   planAgentRequirementsInstall: (inst: { installPath: string }, args: string[]) =>
@@ -37,7 +41,7 @@ vi.mock('./agentRequirementsLaunch', () => ({
       : null,
   prepareAgentPrefetch: async (plan: { installPath: string }, raw: unknown, state: unknown) => ({
     plan,
-    text: JSON.stringify({ raw, state }),
+    steps: [{ text: JSON.stringify({ raw, state }) }],
     signature: raw ? 'comfy-agent==0.1.0rc3' : 'core',
     eager: true
   }),
@@ -70,7 +74,7 @@ const request = (signature: string): PrefetchRequest => ({
     pythonPath: '/py',
     installPath: '/i'
   },
-  text: 'comfy-agent==0.1.0rc3\n',
+  steps: [{ text: 'comfy-agent==0.1.0rc3\n' }],
   signature
 })
 
@@ -96,6 +100,8 @@ beforeEach(() => {
   harness.betaEnabled = true
   harness.mirrors = { pypiMirror: undefined, useChineseMirrors: false }
   harness.answers = new Map()
+  harness.registry = [{ key: 'agent', args: ['--enable-agent'] }]
+  harness.idClass = 'machine_derived'
   harness.runs = []
   harness.busy = false
   harness.plannable = new Set()
@@ -186,6 +192,7 @@ describe('startAgentPrefetch', () => {
 describe('prefetchEnrolledAgents', () => {
   const ENROL = {
     enrol: true,
+    fetchedAt: Date.now(),
     grants: [{ grant: { arg: '--enable-agent' }, epoch: 1, epochs: [1], requiresArgs: [] }],
     payload: { agent_requirements_override: { 'comfy-agent': '0.1.0rc3' } }
   }
@@ -217,16 +224,20 @@ describe('prefetchEnrolledAgents', () => {
     expect(harness.runs.map((run) => run.request)).toEqual([
       {
         plan: { installPath: '/a' },
-        text: JSON.stringify({ raw: { 'comfy-agent': '0.1.0rc3' }, state: null }),
+        steps: [{ text: JSON.stringify({ raw: { 'comfy-agent': '0.1.0rc3' }, state: null }) }],
         signature: 'comfy-agent==0.1.0rc3',
         eager: true
       },
       expect.objectContaining({
         plan: { installPath: '/b' },
-        text: JSON.stringify({
-          raw: { 'comfy-agent': '0.1.0rc3' },
-          state: { signature: 's', failures: 1 }
-        })
+        steps: [
+          {
+            text: JSON.stringify({
+              raw: { 'comfy-agent': '0.1.0rc3' },
+              state: { signature: 's', failures: 1 }
+            })
+          }
+        ]
       })
     ])
   })
@@ -256,6 +267,27 @@ describe('prefetchEnrolledAgents', () => {
             { ...ENROL, grants: [{ ...ENROL.grants[0], grant: { arg: '--enable-assets' } }] }
           ]
         ]))
+    ],
+    [
+      'this machine could not enrol',
+      () => {
+        harness.answers = new Map([['agent', ENROL]])
+        harness.idClass = 'random_fallback'
+      }
+    ],
+    [
+      'the enrolling answer is too old to enrol',
+      () =>
+        (harness.answers = new Map([
+          ['agent', { ...ENROL, fetchedAt: Date.now() - 49 * 3_600_000 }]
+        ]))
+    ],
+    [
+      'the campaign does not list the agent',
+      () => {
+        harness.answers = new Map([['agent', ENROL]])
+        harness.registry = [{ key: 'agent', args: ['--enable-assets'] }]
+      }
     ],
     [
       'beta features are off',

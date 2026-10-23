@@ -333,8 +333,10 @@ const prefetchHarness = vi.hoisted(() => ({
 }))
 
 vi.mock('../../agentPrefetch', () => ({
-  startAgentPrefetch: async (installationId: string, request: unknown) => {
+  // Never settles, like a download on a slow link: a launch that waited on it would never finish.
+  startAgentPrefetch: (installationId: string, request: unknown) => {
     prefetchHarness.requests.push({ installationId, request })
+    return new Promise(() => {})
   }
 }))
 
@@ -3628,17 +3630,17 @@ describe('agent requirements at launch', () => {
   })
 
   it('launches with the flag still set, and downloads in the background, when the cache misses', async () => {
-    pipHarness.result = { code: 1, output: 'No solution found\n' }
+    pipHarness.result = { code: 2, output: 'error: Failed to fetch\n' }
     vi.spyOn(i18nModule, 't').mockImplementation(((key: string) => key) as never)
 
     const res = await handleLaunch(ctxFor('agent-reqs-install-failed'))
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain('--enable-agent')
-    expect(sent.join('')).toContain('exited with code 1')
+    expect(sent.join('')).toContain('exited with code 2')
     expect(sent.join('')).toContain('Downloading the agent in the background')
     expect(prefetchHarness.requests.map((r) => r.request)).toEqual([
-      expect.objectContaining({ text: 'comfyui-agent==1.0.0\n', signature: 'core' })
+      expect.objectContaining({ steps: [{ text: 'comfyui-agent==1.0.0\n' }], signature: 'core' })
     ])
     expect(progress.filter((p) => p.phase === 'agentRequirements').at(-1)).toMatchObject({
       status: 'launch.agentRequirements.deferred'
@@ -3946,7 +3948,7 @@ describe('agent requirements at launch', () => {
 
     it('hands a cache miss of the override to the background download, for this install', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
-      pipHarness.respond = () => ({ code: 1, output: '' })
+      pipHarness.respond = () => ({ code: 2, output: '' })
 
       await launchAndPrint()
 
@@ -3954,8 +3956,7 @@ describe('agent requirements at launch', () => {
         {
           installationId: ID,
           request: expect.objectContaining({
-            text: OVERRIDDEN,
-            constraints: 'requests==2.32.0\n',
+            steps: [{ text: OVERRIDDEN, constraints: 'requests==2.32.0\n' }],
             signature: 'comfy-agent==0.2.3'
           })
         }
@@ -3966,7 +3967,7 @@ describe('agent requirements at launch', () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => {
         installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
-        return { code: missesOverride(args) ? 1 : 0, output: '' }
+        return { code: missesOverride(args) ? 2 : 0, output: '' }
       }
 
       await launchAndPrint()
@@ -3981,9 +3982,37 @@ describe('agent requirements at launch', () => {
       expect(overrideState()).toBeUndefined()
       expect(prefetchHarness.requests.map((r) => r.request)).toEqual(
         Array(3).fill(
-          expect.objectContaining({ text: OVERRIDDEN, signature: 'comfy-agent==0.2.3' })
+          expect.objectContaining({
+            steps: [expect.objectContaining({ text: OVERRIDDEN })],
+            signature: 'comfy-agent==0.2.3'
+          })
         )
       )
+    })
+
+    it('retires a version uv proves unsatisfiable on two launches, as before', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => ({
+        code: missesOverride(args) ? 1 : 0,
+        output: missesOverride(args) ? 'error: No solution found when resolving dependencies\n' : ''
+      })
+
+      await launchAndPrint()
+      await launchAndPrint()
+      installed = []
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason, e.failures])).toEqual([
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', 2],
+        ['reverted', 'previously_failed', null]
+      ])
+      expect(overrideEvents()[0]).toMatchObject({
+        exit_code: 1,
+        error_tail: 'error: No solution found when resolving dependencies'
+      })
+      expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
     })
 
     it('stops retrying a version whose environment could not be listed twice', async () => {
@@ -4005,8 +4034,8 @@ describe('agent requirements at launch', () => {
     it("reports each deferral with uv's outcome, and never a latch", async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => ({
-        code: missesOverride(args) ? 1 : 0,
-        output: missesOverride(args) ? 'error: No solution found when resolving dependencies\n' : ''
+        code: missesOverride(args) ? 2 : 0,
+        output: missesOverride(args) ? 'error: Failed to download `comfy-agent`\n' : ''
       })
 
       await launchAndPrint()
@@ -4019,9 +4048,9 @@ describe('agent requirements at launch', () => {
             reason: 'not_cached',
             failures: null,
             install_outcome: 'exited',
-            exit_code: 1,
+            exit_code: 2,
             budget_ms: 20_000,
-            error_tail: 'error: No solution found when resolving dependencies',
+            error_tail: 'error: Failed to download `comfy-agent`',
             index: 'pypi'
           })
         )
@@ -4030,7 +4059,7 @@ describe('agent requirements at launch', () => {
 
     it('watches no agent start for an override that is not cached', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
-      pipHarness.respond = (args) => ({ code: missesOverride(args) ? 1 : 0, output: '' })
+      pipHarness.respond = (args) => ({ code: missesOverride(args) ? 2 : 0, output: '' })
 
       await launchAndPrint({ lines: ['[agent-event] agent_error reason=crashed'] })
 

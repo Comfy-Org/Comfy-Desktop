@@ -13,6 +13,7 @@ import {
 } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { withAbortableSessionAction } from './withAbortable'
+import { stopAgentPrefetch } from '../../agentRequirementsLaunch'
 
 /** Best-effort removal of an install's per-instance model-paths YAML, which
  *  lives under dataDir() rather than inside the install directory. */
@@ -99,6 +100,7 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
 
   return withAbortableSessionAction(ctx, async (signal) => {
     try {
+      await stopAgentPrefetch(inst.installPath)
       await deleteDir(
         inst.installPath,
         (p) => {

@@ -372,6 +372,8 @@ export type OverrideDecision =
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
+      /** For an install uv proved unsatisfiable. */
+      install?: InstallReport
       failures?: number
       /** The reverted pins core's file can't take back, whether or not they went in. */
       staysInstalled?: OverridePins

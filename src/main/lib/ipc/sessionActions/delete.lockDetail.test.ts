@@ -18,7 +18,15 @@ const installationsStore = new Map<string, InstallationRecord>()
 const h = vi.hoisted(() => ({
   userDataDir: { value: '' },
   lockedPath: { value: '' },
-  probeResult: { value: null as LockProbeResult | null }
+  probeResult: { value: null as LockProbeResult | null },
+  order: [] as string[]
+}))
+
+vi.mock('../../agentRequirementsLaunch', () => ({
+  stopAgentPrefetch: vi.fn(async (installPath: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    h.order.push(`stopped ${installPath}`)
+  })
 }))
 
 vi.mock('electron', () => ({
@@ -83,7 +91,8 @@ vi.mock('../../../lib/pip', () => ({
 // platforms, so stand in for it. `shared` re-exports from here, which is what
 // `delete.ts` imports.
 vi.mock('../../delete', () => ({
-  deleteDir: vi.fn(async () => {
+  deleteDir: vi.fn(async (dir: string) => {
+    h.order.push(`deleting ${dir}`)
     throw Object.assign(new Error('EBUSY: resource busy or locked'), {
       code: 'EBUSY',
       path: h.lockedPath.value
@@ -165,6 +174,13 @@ describe('handleDelete lock detail', () => {
     await Promise.resolve()
     return errorDetails(sent)
   }
+
+  it("stops the install's background download, and waits for it, before deleting", async () => {
+    h.order.length = 0
+    await runDelete({ ok: true, processes: [] })
+
+    expect(h.order).toEqual([`stopped ${installPath}`, `deleting ${installPath}`])
+  })
 
   it('names the holding processes when the probe determined them', async () => {
     const details = await runDelete({

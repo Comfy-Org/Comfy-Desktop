@@ -350,16 +350,24 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
 }
 
 /**
- * The agent override an enrolling answer carries, for fetching the agent's packages ahead of the
- * launch that enrols; `undefined` inside when it carries none. Null when no answer enrols into
- * `--enable-agent`. Opaque here: the override module validates the value.
+ * The agent override an answer that would enrol this machine carries, for fetching the agent's
+ * packages ahead of the launch that enrols: the campaign must list `--enable-agent`, and the
+ * answer pass the freshness and id-class checks a launch's enrolment makes. `undefined` inside when
+ * it carries none; null when no answer qualifies. Opaque here: the override module validates it.
  */
 export function enrolledAgentOverride(
-  answers: ReadonlyMap<string, CampaignAnswer>
+  campaigns: {
+    registry: readonly CampaignRegistryEntry[]
+    answers: ReadonlyMap<string, CampaignAnswer>
+  },
+  now: number,
+  idClass: IdClass
 ): { override: unknown } | null {
-  for (const answer of answers.values()) {
-    if (!answer.enrol || !answer.grants.some(({ grant }) => grant.arg === '--enable-agent'))
-      continue
+  for (const { key, args } of campaigns.registry) {
+    const answer = campaigns.answers.get(key)
+    if (!answer?.enrol || !args.includes('--enable-agent')) continue
+    if (!answer.grants.some(({ grant }) => grant.arg === '--enable-agent')) continue
+    if (answerRefusal(answer, false, now, idClass)) continue
     const payload = answer.payload
     return {
       override:

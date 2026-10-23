@@ -104,7 +104,6 @@ import {
   planAgentRequirementsInstall,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
-import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
 import { startAgentPrefetch } from '../../agentPrefetch'
 import {
   FRONTEND_PACKAGE,
@@ -453,14 +452,6 @@ export function emitCoreBetaTelemetry(input: {
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
-}
-
-/** Launch-row text for the agent install. */
-export function agentInstallStatusText(status: AgentInstallStatus): string {
-  switch (status.kind) {
-    case 'deferred':
-      return i18n.t('launch.agentRequirements.deferred')
-  }
 }
 
 const overrideRecording = new Map<string, Promise<void>>()
@@ -1585,15 +1576,17 @@ async function runLaunch(
       agentRequirements,
       makeSendOutput(sender, installationId),
       abort.signal,
-      (status) =>
-        sendProgress('agentRequirements', {
-          percent: -1,
-          status: agentInstallStatusText(status)
-        }),
       // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
       readOverrideState(inst),
-      (request) => void startAgentPrefetch(installationId, request)
+      (request) => {
+        // Terminal: the row keeps it, so a launch going on without the agent says it is on its way.
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: i18n.t('launch.agentRequirements.deferred')
+        })
+        void startAgentPrefetch(installationId, request)
+      }
     )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (overrideDecision) {

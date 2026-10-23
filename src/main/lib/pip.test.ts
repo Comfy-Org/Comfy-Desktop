@@ -273,6 +273,28 @@ describe('runUvPipDetailed onSpawn', () => {
     vi.clearAllMocks()
   })
 
+  it("passes a caller's extra environment to uv, over the uv environment", async () => {
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+
+    const running = runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      undefined,
+      {
+        UV_CONCURRENT_DOWNLOADS: '1'
+      }
+    )
+    proc.emit('close', 0)
+    await running
+
+    const env = (spawnMock.mock.calls[0]![2] as { env: Record<string, string> }).env
+    expect(env).toMatchObject({ UV_CONCURRENT_DOWNLOADS: '1', NO_COLOR: '1' })
+  })
+
   it('hands the caller the process it spawned', async () => {
     const proc = fakeUv()
     spawnMock.mockReturnValueOnce(proc as never)
