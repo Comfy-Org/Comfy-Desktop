@@ -230,11 +230,10 @@ function revokeAcceptedLocalAuthorization(
   webContents: WebContents,
   reporter: Reporter,
   origin: string | null,
-  state: ComfyDesktop2FirebaseAuthState,
+  observedSignOut: boolean,
   userMismatch: boolean
 ): void {
-  if (!origin || !isLoopbackOrigin(origin) || (state.status !== 'signed_out' && !userMismatch))
-    return
+  if (!origin || !isLoopbackOrigin(origin) || (!observedSignOut && !userMismatch)) return
   clearVerifiedLocalFirebaseUser(origin)
   reporter.localReportingAuthorized = false
   reporter.localExpectedUserId = null
@@ -807,7 +806,9 @@ export function reportFirebaseAuthState(
   // the bound user or revoke local authorization.
   const acceptReport = (): void => {
     if (acceptedState.status === 'signed_in') reporter.signedInOrigin = currentOrigin
-    if (acceptedState.status === 'signed_out' && reporter.signedInOrigin === currentOrigin) {
+    const observedSignOut =
+      acceptedState.status === 'signed_out' && reporter.signedInOrigin === currentOrigin
+    if (observedSignOut) {
       signOutWitnessed = true
       reporter.signedInOrigin = null
     }
@@ -816,7 +817,7 @@ export function reportFirebaseAuthState(
       webContents,
       reporter,
       currentOrigin,
-      acceptedState,
+      observedSignOut,
       localUserMismatch
     )
   }
