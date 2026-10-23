@@ -46,22 +46,26 @@ describe('getPipIndexArgs', () => {
 
   // uv asks every --extra-index-url, in order, before --index-url. A mirror passed as --index-url
   // is therefore asked after pypi.org, and an unreachable pypi.org fails the install outright.
+  const argv = (extras: string[]): string[] => [
+    '--index-url',
+    PYPI_INDEX_URL,
+    ...extras.flatMap((url) => ['--extra-index-url', url])
+  ]
+
   it('puts a configured mirror ahead of pypi.org, as the first index uv asks', () => {
-    const args = getPipIndexArgs(MIRROR)
-    expect(getExtras(args)).toEqual([MIRROR])
-    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getPipIndexArgs(MIRROR)).toEqual(argv([MIRROR]))
+  })
+
+  it('passes a padded mirror to uv trimmed', () => {
+    expect(getPipIndexArgs(`  ${MIRROR}  `)).toEqual(argv([MIRROR]))
   })
 
   it('puts the Chinese mirrors ahead of pypi.org, in their order', () => {
-    const args = getPipIndexArgs(undefined, true)
-    expect(getExtras(args)).toEqual(PYPI_MIRROR_URLS)
-    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getPipIndexArgs(undefined, true)).toEqual(argv(PYPI_MIRROR_URLS))
   })
 
   it('asks a configured mirror before the Chinese mirrors, and pypi.org last', () => {
-    const args = getPipIndexArgs(MIRROR, true)
-    expect(getExtras(args)).toEqual([MIRROR, ...PYPI_MIRROR_URLS])
-    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getPipIndexArgs(MIRROR, true)).toEqual(argv([MIRROR, ...PYPI_MIRROR_URLS]))
   })
 
   it('leaves the Chinese mirrors out when they are off', () => {
@@ -86,11 +90,12 @@ describe('getPipIndexArgs', () => {
   })
 
   it('names a Chinese mirror once when it is also the configured mirror, keeping it first', () => {
-    const mirror = PYPI_MIRROR_URLS[1]!
-    expect(getExtras(getPipIndexArgs(mirror, true))).toEqual([
-      mirror,
-      ...PYPI_MIRROR_URLS.filter((url) => url !== mirror)
-    ])
+    const chinese = PYPI_MIRROR_URLS[1]!
+    for (const mirror of [chinese, chinese.replace(/\/$/, '')]) {
+      expect(getPipIndexArgs(mirror, true), 'with or without its slash').toEqual(
+        argv([mirror, ...PYPI_MIRROR_URLS.filter((url) => url !== chinese)])
+      )
+    }
   })
 
   it('adds no --index-strategy: a mirror that lacks a package falls through to the next index', () => {
