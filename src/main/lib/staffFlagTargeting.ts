@@ -45,7 +45,7 @@
  *     on a port whose loopback binding another install created — and that is not evidence that
  *     anybody signed out. It holds, so opening an unsigned instance no longer revokes a staff
  *     grant on the next launch. The cost is that a staff classification survives until an
- *     observed sign-out or a sign-in to another account reclassifies it.
+ *     observed sign-out or a later sign-in reclassifies it.
  *   - **`pending` / `conflicted` / `unknown`** — hold. A view mid-resolution, two views disagreeing
  *     about which account is signed in, and no view able to say at all are all *absence* of an
  *     answer. Writing one anyway is how a wrong classification outlives the session that caused

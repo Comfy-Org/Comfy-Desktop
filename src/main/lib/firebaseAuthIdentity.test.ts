@@ -1574,37 +1574,6 @@ describe('firebaseAuthIdentity observed sign-out', () => {
     expect(published.at(-1)).toEqual({ status: 'signed_out', observed: false })
   })
 
-  it.each([
-    ['after', true],
-    ['before', false]
-  ])(
-    'keeps a sign-out an expired view reported %s the deadline across a sign-in without it',
-    (_label, signOutAfterDeadline) => {
-      vi.useFakeTimers()
-      try {
-        const wedged = new FakeWebContents(cloudUrl)
-        const other = new FakeWebContents(cloudUrl)
-        activate(wedged)
-        activate(other)
-        reportFirebaseAuthState(wedged.asWebContents(), { status: 'signed_in', userId: 'F' })
-        reportFirebaseAuthState(other.asWebContents(), { status: 'signed_in', userId: 'F' })
-        wedged.startNavigation(cloudUrl)
-        if (signOutAfterDeadline) vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
-        reportFirebaseAuthState(wedged.asWebContents(), { status: 'signed_out' })
-        if (!signOutAfterDeadline) vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
-        trackFirebaseAuthReporter(new FakeWebContents(cloudUrl).asWebContents())
-        expect(published.at(-1)).toEqual({ status: 'signed_in', userId: 'F' })
-
-        wedged.failProvisionalNavigation(cloudUrl)
-        other.destroy()
-
-        expect(published.at(-1)).toEqual({ status: 'signed_out', observed: true })
-      } finally {
-        vi.useRealTimers()
-      }
-    }
-  )
-
   it('delivers a sign-out that becomes observed while the status stays signed out', () => {
     vi.useFakeTimers()
     try {

@@ -29,7 +29,7 @@ vi.mock('./telemetry', () => ({
 }))
 
 const identity = vi.hoisted(() => {
-  let current: { status: string; userId?: string; observed?: boolean } = { status: 'unknown' }
+  let current: FirebaseIdentityConsensus = { status: 'unknown' }
   const observers = new Set<(consensus: unknown) => void>()
   const views = new Map<string, Electron.WebContents[]>()
   return {
@@ -38,12 +38,9 @@ const identity = vi.hoisted(() => {
     views,
     /** Stand in for `reconcile()` publishing an outcome. Always dispatches: change-only delivery
      *  is the identity engine's contract and is pinned in its own suite. */
-    publish(
-      next: { status: string; userId?: string; observed?: boolean },
-      holders: Electron.WebContents[] = []
-    ) {
+    publish(next: FirebaseIdentityConsensus, holders: Electron.WebContents[] = []) {
       current = next
-      if (next.status === 'signed_in' && next.userId) views.set(next.userId, holders)
+      if (next.status === 'signed_in') views.set(next.userId, holders)
       for (const observe of [...observers]) observe(next)
     },
     reset() {
