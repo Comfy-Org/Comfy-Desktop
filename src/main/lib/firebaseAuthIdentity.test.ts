@@ -1427,7 +1427,6 @@ describe('firebaseAuthIdentity observed sign-out', () => {
     unobserve()
   })
 
-  /** A new install's view on a port another install's sign-in left a loopback binding for. */
   function freshViewOnBoundPort(): FakeWebContents {
     verifiedLocalUsers.set(localOrigin, 'F')
     const fresh = new FakeWebContents(`${localOrigin}/`)

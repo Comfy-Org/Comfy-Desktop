@@ -107,7 +107,7 @@ export type FirebaseIdentityConsensus =
   | { status: 'pending' }
   /** Every contributor resolved, and none is signed in. `observed` when this process accepted a
    *  sign-out from a view it saw signed in since the last `signed_in`; without it this may be a
-   *  page that never held an account, which a consumer that PERSISTS must not read as a sign-out. */
+   *  page that never held an account, which a consumer that PERSISTS must not treat as one. */
   | { status: 'signed_out'; observed: boolean }
   /** Contributors resolved to different accounts, or to a mix of signed in and signed out. */
   | { status: 'conflicted' }
@@ -117,8 +117,7 @@ export type FirebaseIdentityConsensus =
 const reporters = new Map<WebContents, Reporter>()
 const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
 let consensus: FirebaseIdentityConsensus = { status: 'unknown' }
-/** An accepted sign-out from a view seen signed in, kept past that view's lifetime until a
- *  sign-in supersedes it, so a view closing before the consensus resolves cannot erase it. */
+/** Outlives the view that signed out, so closing it before consensus resolves can't erase it. */
 let signOutWitnessed = false
 const consensusObservers = new Set<(consensus: FirebaseIdentityConsensus) => void>()
 let requestedUserId: string | null = null
