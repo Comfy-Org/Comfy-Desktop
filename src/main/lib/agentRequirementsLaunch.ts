@@ -169,7 +169,6 @@ export function planAgentRequirementsInstall(
   args: readonly string[]
 ): AgentRequirementsInstall | null {
   if (!args.includes(ENABLE_AGENT_ARG)) return null
-  // A Comfy Cloud or remote entry has no local install.
   if (typeof installation.installPath !== 'string') return null
   const reqPath = path.join(installation.installPath, 'ComfyUI', AGENT_REQUIREMENTS)
   if (!fs.existsSync(reqPath)) return null
@@ -428,8 +427,6 @@ export async function installAgentRequirements(
     const fetched = await fetchForLaunch(plan, reqPath, extraArgs, onlineLeft, sendOutput, signal)
     onlineLeft -= Date.now() - startedAt
     if (fetched.kind === 'failed') return { ...fetched.run, online: true }
-    // Nothing fetched: a cache-only "no solution" is still only a cache miss, so it proves nothing;
-    // any other cache-only failure stands, since the network was there.
     if (fetched.kind !== 'fetched') {
       return { ...cached, online: !NO_SOLUTION.test(stripAnsi(cached.output)) }
     }
@@ -967,7 +964,6 @@ async function fetchStep(
     : { kind: 'failed', stage: 'fetch', run: fetched }
 }
 
-/** core's agent line pins only the placeholder release: no agent runs on it. */
 const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
 
 /**
