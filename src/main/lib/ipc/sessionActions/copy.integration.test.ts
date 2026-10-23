@@ -85,7 +85,25 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
+/** Order of the agent background-download hold against the copy, observed through the real one. */
+const holdLog = vi.hoisted(() => [] as string[])
+vi.mock('../../agentRequirementsLaunch', async (importOriginal) => {
+  const actual = await importOriginal<typeof AgentRequirementsLaunchModule>()
+  return {
+    ...actual,
+    holdAgentPrefetch: async (installPath: string) => {
+      const release = await actual.holdAgentPrefetch(installPath)
+      holdLog.push(`held ${installPath}`)
+      return () => {
+        holdLog.push(`released ${installPath}`)
+        release()
+      }
+    }
+  }
+})
+
 import { handleCopy, handleReleaseUpdate, handleCopyChangePytorch } from './copy'
+import type * as AgentRequirementsLaunchModule from '../../agentRequirementsLaunch'
 import { comfybuilder } from '../../../sources/comfybuilder'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
@@ -162,6 +180,23 @@ describe('handleCopy (ComfyBuilder install)', () => {
   afterEach(() => {
     installationsStore.clear()
     fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  it('holds the agent background download off the source while it copies', async () => {
+    holdLog.length = 0
+
+    const result = await handleCopy({
+      event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+      installationId: src.id,
+      inst: src,
+      actionData: { name: 'Held Copy' }
+    })
+
+    expect(result.ok, `copy failed: ${result.message ?? ''}`).toBe(true)
+    expect(holdLog, 'held, then released once the copy is done').toEqual([
+      `held ${srcRoot}`,
+      `released ${srcRoot}`
+    ])
   })
 
   it('creates an independently launchable managed copy with the same Build identity', async () => {

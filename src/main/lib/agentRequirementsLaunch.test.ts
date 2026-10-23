@@ -610,6 +610,33 @@ describe('force-stopping an abandoned install', () => {
     }
   })
 
+  it('hard-stops a uv that ignores the stop even when the launch itself was cancelled', async () => {
+    vi.useFakeTimers()
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    try {
+      deliverThenHang(4343)
+      const launch = new AbortController()
+
+      const pending = installAgentRequirements(planFor(installDir), vi.fn(), launch.signal)
+      await vi.waitFor(() => expect(mockInstall).toHaveBeenCalledTimes(2))
+      launch.abort()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await pending
+
+      if (process.platform === 'win32') {
+        expect(execCalls).toEqual([{ cmd: 'taskkill', args: ['/F', '/T', '/PID', '4343'] }])
+      } else {
+        expect(
+          kill,
+          'a caller waiting on the stop must not outlive a live uv'
+        ).toHaveBeenCalledWith(-4343, 'SIGKILL')
+      }
+    } finally {
+      kill.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('kills nothing when the helper never delivered a handle', async () => {
     vi.useFakeTimers()
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
@@ -1715,7 +1742,7 @@ describe('installAgentRequirements with a version override', () => {
       return pending
     }
 
-    it('stops a stuck cache-only install at 30 s, then tries the network', async () => {
+    it('stops a stuck cache-only install at 120 s, then tries the network', async () => {
       const startedAt = Date.now()
       const stopped: number[] = []
       mockInstall.mockImplementation(async (_file, ...rest) => {
@@ -1734,7 +1761,7 @@ describe('installAgentRequirements with a version override', () => {
 
       const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
 
-      expect(stopped).toEqual([30_000])
+      expect(stopped, 'sized for writing the whole agent, not only a stuck uv').toEqual([120_000])
       expect(decision).toMatchObject({ decision: 'applied' })
     })
 

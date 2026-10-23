@@ -271,11 +271,14 @@ async function runBoundedInstall(
 
   try {
     const outcome = await Promise.race([install, abandoned])
+    // A uv that ignored the stop is hard-stopped whoever asked for it: a caller that waits for
+    // the stop (removing the install) must not go on with uv still running from inside it.
+    if (outcome.kind === 'abandoned')
+      await forceStopAgentInstall(uvProc, plan.installPath, tempName)
     // A cancelled launch kills uv mid-install, so whatever it reports is the
     // cancellation rather than a failure worth showing.
     if (signal?.aborted) return result('cancelled', null)
     if (outcome.kind === 'abandoned') {
-      await forceStopAgentInstall(uvProc, plan.installPath, tempName)
       sendOutput(
         `\n⚠ ${label} install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and continuing without it\n`
       )
@@ -325,8 +328,10 @@ interface RunOptions {
  */
 const ONLINE_BUDGET_MS = 20_000
 
-/** A cache-only install downloads nothing; this only stops a stuck uv holding the launch. */
-const OFFLINE_TIMEOUT_MS = 30_000
+/** A cache-only install downloads nothing but still writes the whole agent into the
+ *  environment, which a cross-drive copy and a virus scan can make slow: sized for that, as the
+ *  launch's install was before it moved downloads to the background. */
+const OFFLINE_TIMEOUT_MS = 120_000
 
 /** One download at a time: a stopped uv keeps every wheel it finished, where in parallel a slow
  *  link finishes none of the large ones and every attempt starts over. */
