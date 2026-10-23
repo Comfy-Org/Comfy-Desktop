@@ -51,7 +51,10 @@ describe('getPipIndexArgs', () => {
   ]
 
   it('puts a configured mirror ahead of pypi.org, as the first index uv asks', () => {
-    expect(getPipIndexArgs(MIRROR)).toEqual(argv([MIRROR]))
+    expect(
+      getPipIndexArgs(MIRROR),
+      'uv asks every --extra-index-url before --index-url: a mirror passed as --index-url is asked after pypi.org, and an unreachable pypi.org fails the install outright'
+    ).toEqual(argv([MIRROR]))
   })
 
   it('passes a padded mirror to uv trimmed', () => {
