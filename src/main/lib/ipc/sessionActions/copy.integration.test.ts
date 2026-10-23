@@ -181,21 +181,53 @@ describe('handleCopy (ComfyBuilder install)', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true })
   })
 
-  it('holds the agent background download off the source while it copies', async () => {
+  /** A sender that writes each copy progress percent into the hold log, to order it there. */
+  const loggingSender = (): Electron.WebContents =>
+    ({
+      isDestroyed: () => false,
+      send: (_channel: string, payload: { phase?: string; percent?: number }) => {
+        if (payload?.phase === 'copy' && (payload.percent ?? 0) > 0) holdLog.push('copying')
+      }
+    }) as unknown as Electron.WebContents
+
+  it('holds the agent background download off the source for the whole copy', async () => {
     holdLog.length = 0
 
     const result = await handleCopy({
-      event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+      event: { sender: loggingSender() } as unknown as Electron.IpcMainInvokeEvent,
       installationId: src.id,
       inst: src,
       actionData: { name: 'Held Copy' }
     })
 
     expect(result.ok, `copy failed: ${result.message ?? ''}`).toBe(true)
-    expect(holdLog, 'held, then released once the copy is done').toEqual([
+    const copying = holdLog.filter((entry) => entry === 'copying')
+    expect(copying.length, 'the copy reported progress').toBeGreaterThan(0)
+    expect(holdLog, 'held before the first file and released after the last').toEqual([
       `held ${srcRoot}`,
+      ...copying,
       `released ${srcRoot}`
     ])
+  })
+
+  it('releases the hold when the copy fails', async () => {
+    holdLog.length = 0
+    const unreadable = path.join(srcRoot, 'ComfyUI', 'unreadable.bin')
+    fs.writeFileSync(unreadable, 'x')
+    fs.chmodSync(unreadable, 0o000)
+    try {
+      const result = await handleCopy({
+        event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+        installationId: src.id,
+        inst: src,
+        actionData: { name: 'Failed Copy' }
+      })
+
+      expect(result.ok, 'an unreadable source file fails the copy').toBe(false)
+      expect(holdLog).toEqual([`held ${srcRoot}`, `released ${srcRoot}`])
+    } finally {
+      fs.chmodSync(unreadable, 0o644)
+    }
   })
 
   it('creates an independently launchable managed copy with the same Build identity', async () => {

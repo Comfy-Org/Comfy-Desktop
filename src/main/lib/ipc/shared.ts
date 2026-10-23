@@ -888,7 +888,8 @@ export async function performCopy(
   try {
     sendProgress('copy', { percent: 0, status: i18n.t('actions.copyingFiles') })
     // The agent's background download writes and removes scratch files inside the install, which
-    // would fail the copy part-way: stop it, and start none until the copy is done.
+    // would fail the copy part-way: stop it, and start none until the copy is done. A stopped
+    // download is not resumed: the install's next launch hands it over again.
     const release = await holdAgentPrefetch(inst.installPath)
     try {
       await copyDirWithProgress(

@@ -16,6 +16,8 @@ vi.mock('./pip', () => ({
 
 /** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
+/** How long a `taskkill` takes to return, in fake-timer ms; 0 answers at once. */
+const exec = { delayMs: 0 }
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
   const execFile = vi.fn(
@@ -27,7 +29,9 @@ vi.mock('child_process', async (importOriginal) => {
     ) => {
       execCalls.push({ cmd, args })
       const discovery = cmd === 'pgrep' || cmd === 'powershell.exe'
-      cb(null, discovery ? '4242\n' : '', '')
+      const answer = (): void => cb(null, discovery ? '4242\n' : '', '')
+      if (exec.delayMs > 0) setTimeout(answer, exec.delayMs)
+      else answer()
       return {}
     }
   )
@@ -612,12 +616,18 @@ describe('force-stopping an abandoned install', () => {
     try {
       deliverThenHang(4343)
       const launch = new AbortController()
+      const sendOutput = vi.fn()
 
-      const pending = installAgentRequirements(planFor(installDir), vi.fn(), launch.signal)
+      const pending = installAgentRequirements(planFor(installDir), sendOutput, launch.signal)
       await vi.waitFor(() => expect(mockInstall).toHaveBeenCalledTimes(2))
       launch.abort()
       await vi.advanceTimersByTimeAsync(10_000)
-      await pending
+
+      expect(await pending, 'a cancelled launch reports no decision').toBeUndefined()
+      expect(
+        sendOutput.mock.calls.join(''),
+        'the kill is the cancellation, not a failure worth showing'
+      ).not.toMatch(/hard-stopped|exceeded|exited with code/)
 
       if (process.platform === 'win32') {
         expect(execCalls).toEqual([{ cmd: 'taskkill', args: ['/F', '/T', '/PID', '4343'] }])
@@ -2095,6 +2105,46 @@ describe('prefetchAgentRequirements', () => {
 
     expect(calls).toHaveLength(1)
     expect(report).toMatchObject({ outcome: 'resolve_failed' })
+  })
+
+  it('waits for a uv that ignores the stop to be hard-stopped, for removing the install', async () => {
+    // As on Windows, where the hard stop is a taskkill that takes time to return.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    exec.delayMs = 1_000
+    try {
+      execCalls.length = 0
+      mockInstall.mockImplementation(
+        (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          args[9]?.({ pid: 4545 } as never)
+          return new Promise<never>(() => {})
+        }
+      )
+      prefetchAgentRequirements(request(), vi.fn())
+      await vi.waitFor(() => expect(mockInstall).toHaveBeenCalled())
+
+      let held = false
+      const hold = holdAgentPrefetch(dir).then((release) => {
+        held = true
+        return release
+      })
+      await vi.advanceTimersByTimeAsync(10_000)
+      // Real I/O (the run's cleanup) settles on real ticks, which faked timers don't drive.
+      for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
+      expect(execCalls, 'the grace ran out, so uv is hard-stopped').toContainEqual({
+        cmd: 'taskkill',
+        args: ['/F', '/T', '/PID', '4545']
+      })
+      expect(held, 'the removal waits until the hard stop has returned').toBe(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      ;(await hold)()
+      expect(held).toBe(true)
+    } finally {
+      exec.delayMs = 0
+      Object.defineProperty(process, 'platform', platform)
+      vi.useRealTimers()
+    }
   })
 
   it("waits for an install's download to stop, for removing the install", async () => {
