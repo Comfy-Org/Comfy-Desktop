@@ -196,7 +196,7 @@ export async function installFilteredRequirements(
   return result.code
 }
 
-/** The canonical PyPI index — always used as the primary `--index-url`. */
+/** The canonical PyPI index: always the `--index-url`, which uv asks after every mirror. */
 export const PYPI_INDEX_URL = 'https://pypi.org/simple/'
 
 /** Additional PyPI mirror URLs for regions with restricted access (e.g. China). */
@@ -211,42 +211,19 @@ function normalizeIndexUrl(url: string): string {
   return trimmed.endsWith('/') ? trimmed : trimmed + '/'
 }
 
+/**
+ * uv's index arguments, a configured mirror first, then the Chinese mirrors when they are on, then
+ * pypi.org. uv asks every `--extra-index-url`, in order, before `--index-url`, so the mirrors go in
+ * as extras and pypi.org as `--index-url`, the last resort. Under uv's default first-index strategy
+ * pypi.org is then asked only for a package no mirror lists, so a pypi.org the network can't reach
+ * costs nothing while a mirror answers.
+ */
 export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
-  const mirror = pypiMirror?.trim() || undefined
-
-  // Primary --index-url priority: user mirror, then first Chinese mirror, then pypi.org.
-  // The Chinese mirror goes first (not pypi.org as a fallback extra) to avoid uv's first-match
-  // strategy stalling on the unreachable pypi.org before falling back.
-  let primary: string
-  if (mirror) {
-    primary = mirror
-  } else if (useChineseMirrors && PYPI_MIRROR_URLS.length > 0) {
-    primary = PYPI_MIRROR_URLS[0]!
-  } else {
-    primary = PYPI_INDEX_URL
-  }
-
-  const args: string[] = ['--index-url', primary]
-  const seen = new Set<string>([normalizeIndexUrl(primary)])
-  const extras: string[] = []
-
-  const pypiNorm = normalizeIndexUrl(PYPI_INDEX_URL)
-  if (!seen.has(pypiNorm)) {
-    extras.push(PYPI_INDEX_URL)
-    seen.add(pypiNorm)
-  }
-
-  if (useChineseMirrors) {
-    for (const url of PYPI_MIRROR_URLS) {
-      const norm = normalizeIndexUrl(url)
-      if (!seen.has(norm)) {
-        extras.push(url)
-        seen.add(norm)
-      }
-    }
-  }
-
-  for (const url of extras) {
+  const args = ['--index-url', PYPI_INDEX_URL]
+  const seen = new Set([normalizeIndexUrl(PYPI_INDEX_URL)])
+  for (const url of [pypiMirror?.trim(), ...(useChineseMirrors ? PYPI_MIRROR_URLS : [])]) {
+    if (!url || seen.has(normalizeIndexUrl(url))) continue
+    seen.add(normalizeIndexUrl(url))
     args.push('--extra-index-url', url)
   }
   return args
