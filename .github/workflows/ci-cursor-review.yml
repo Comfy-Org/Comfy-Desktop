@@ -22,9 +22,20 @@ jobs:
     # SHA-pinned per zizmor `unpinned-uses: hash-pin`. Bump this SHA to pick up
     # upstream changes; keep `workflows_ref` matching so prompts/scripts load
     # from the same commit as the workflow definition.
-    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e # github-workflows main (ece4c3e)
+    #
+    # This bump crosses the panel's model refresh: three labs instead of four
+    # (the Gemini cells were retired upstream after a findings-attribution
+    # review), each remaining lane one reasoning notch lower, the Anthropic
+    # cell on Opus 5.5, and a panel cell now ends once it has submitted its
+    # findings instead of running on to the wall-clock cap. A cell that never
+    # reports `status: ok` is still not stopped, so a hung cell fails as
+    # before. Upstream also narrowed `diff_excludes` to the reviewed diff
+    # only; the size gate now reads `extra_generated_globs`, so the paths we
+    # want out of the cap are restated there (the input replaces upstream's
+    # default list, so its defaults are carried over too).
+    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@06f835f96accfd84d0a0929777d602837402608c # github-workflows main (06f835f)
     with:
-      workflows_ref: ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e
+      workflows_ref: 06f835f96accfd84d0a0929777d602837402608c
       diff_excludes: >-
         :!**/pnpm-lock.yaml
         :!**/package-lock.json
@@ -37,6 +48,15 @@ jobs:
         :!**/*.min.js
         :!**/*.min.css
         :!**/*-snapshots/**
+      extra_generated_globs: >-
+        **/node_modules/**
+        **/dist/**
+        **/vendor/**
+        **/*.generated.*
+        **/*.min.js
+        **/*.min.css
+        **/.claude/**
+        **/*-snapshots/**
     secrets:
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
