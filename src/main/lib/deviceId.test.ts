@@ -81,7 +81,10 @@ describe('deviceId', () => {
     mockMachineIdFiles = {}
     setPlatform('linux')
     const realReadFileSync = fs.readFileSync
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options) => {
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      file: fs.PathOrFileDescriptor,
+      options: Parameters<typeof fs.readFileSync>[1]
+    ) => {
       if (file === ETC_MACHINE_ID || file === DBUS_MACHINE_ID) {
         const contents = mockMachineIdFiles[file]
         if (contents === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
