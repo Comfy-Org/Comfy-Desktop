@@ -523,6 +523,7 @@ export interface PrefetchReport {
     | 'completed'
     | 'nothing_missing'
     | 'resolve_failed'
+    | 'not_served'
     | 'download_failed'
     | 'timed_out'
     | 'abandoned'

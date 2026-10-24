@@ -2663,17 +2663,19 @@ describe('prefetchAgentRequirements', () => {
       code: 0,
       output: JSON.stringify([
         { name: 'Comfy_Agent', version: '0.0.0.dev0' },
+        { name: 'comfy-agent-go', version: '0.1.0rc3' },
         { name: 'requests', version: '2.31.0' }
       ])
     }
 
     const report = await finish(request())
 
-    expect(probes.map((probe) => [probe.content, probe.extraArgs[0]])).toEqual([
-      ['comfy-agent==0.0.0.dev0\nrequests==2.31.0\n', '--no-deps']
-    ])
+    expect(
+      probes.map((probe) => [probe.content, probe.extraArgs[0]]),
+      'comfy-agent-go stays where it is installed, so the index is not asked for it'
+    ).toEqual([['comfy-agent==0.0.0.dev0\nrequests==2.31.0\n', '--no-deps']])
     expect(report).toMatchObject({ outcome: 'completed' })
-    expect(calls.at(-1)!.content).toBe(COMPILED)
+    expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\nrequests==2.32.0\n')
   })
 
   it('fetches nothing, and reports why, when an installed version the compile moves is not served', async () => {
@@ -2693,9 +2695,25 @@ describe('prefetchAgentRequirements', () => {
       calls.filter((call) => call.extraArgs.includes('--target')),
       'a local build the launch keeps must not be replaced from what is fetched here'
     ).toEqual([])
+    expect(report, 'a deliberate decline, told apart from a resolve that failed').toMatchObject({
+      outcome: 'not_served',
+      errorTail: expect.stringContaining('no version of requests==2.30.0+local')
+    })
+  })
+
+  it('reports a probe that fails for another reason as resolve_failed, and fetches nothing', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([{ name: 'requests', version: '2.31.0' }])
+    }
+    probeAnswer = { code: 2, output: 'error: Failed to fetch: `requests`\n' }
+
+    const report = await finish(request())
+
+    expect(calls.filter((call) => call.extraArgs.includes('--target'))).toEqual([])
     expect(report).toMatchObject({
       outcome: 'resolve_failed',
-      errorTail: expect.stringContaining('no version of requests==2.30.0+local')
+      errorTail: 'error: Failed to fetch: `requests`'
     })
   })
 
@@ -2706,13 +2724,16 @@ describe('prefetchAgentRequirements', () => {
     expect(probes).toEqual([])
   })
 
-  it('fetches every compiled pin, from an empty seed, when the environment cannot be listed', async () => {
+  it('fetches nothing, and reports it, when the environment cannot be listed', async () => {
     installedAnswer = { code: 1, output: 'error: broken environment\n' }
 
-    await finish(request())
+    const report = await finish(request())
 
-    expect(calls[0]!.seed).toBe('')
-    expect(calls.at(-1)!.content).toBe(COMPILED)
+    expect(calls, 'unseeded, the compile would move every installed version').toEqual([])
+    expect(report).toMatchObject({
+      outcome: 'resolve_failed',
+      errorTail: 'error: could not list the installed packages'
+    })
   })
 
   it("waits for the environment's listing to exit, for removing the install", async () => {

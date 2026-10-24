@@ -24,7 +24,7 @@ vi.mock('../../../settings', () => ({
 
 vi.mock('../../pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(),
-  runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '' }))
+  runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
 
 import { handleDelegateToSource } from './delegate'

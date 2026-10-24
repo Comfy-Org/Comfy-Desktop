@@ -459,7 +459,8 @@ export interface PrefetchRequest {
   steps: PrefetchStep[]
   signature: string
   /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
-   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not. */
+   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not, and an
+   *  installed version no index serves as `not_served`. */
   eager?: boolean
 }
 
@@ -1036,7 +1037,7 @@ async function runPrefetch(
       if (fetched.kind === 'failed') {
         if (fetched.stage === 'fetch') fetches.push(fetched.run)
         const { outcome } = fetched.run.report
-        const exited = fetched.stage === 'resolve' ? 'resolve_failed' : 'download_failed'
+        const exited = FAILED_OUTCOME[fetched.stage]
         return done(outcome === 'exited' ? exited : outcome, fetched.run)
       }
     }
@@ -1053,12 +1054,19 @@ async function runPrefetch(
 interface Resolved {
   run: BoundedResult
   pins: string[]
+  notServed?: boolean
 }
+
+const FAILED_OUTCOME = {
+  resolve: 'resolve_failed',
+  fetch: 'download_failed',
+  not_served: 'not_served'
+} as const
 
 type StepResult =
   | { kind: 'cached' | 'nothing' }
   | { kind: 'fetched'; run: BoundedResult }
-  | { kind: 'failed'; stage: 'resolve' | 'fetch'; run: BoundedResult }
+  | { kind: 'failed'; stage: 'resolve' | 'fetch' | 'not_served'; run: BoundedResult }
 
 async function fetchStep(
   plan: AgentRequirementsInstall,
@@ -1111,7 +1119,9 @@ async function fetchStep(
   // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
   // running ComfyUI would wait behind it.
   const compile = async (): Promise<Resolved> => {
-    const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '') ?? []
+    const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
+    // Unseeded, the compile would move every installed version, local builds included.
+    if (listed === null) return { run: unlisted(signal), pins: [] }
     // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
     const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
     const compiledName = `${tag}-compiled.txt`
@@ -1156,10 +1166,12 @@ async function fetchStep(
       signal,
       { extraArgs: ['--no-deps', '--no-header', '--no-annotate'], subcommand: 'compile' }
     )
-    return served.ok ? { run, pins } : { run: served, pins: [] }
+    if (served.ok) return { run, pins }
+    return { run: served, pins: [], notServed: NO_SOLUTION.test(stripAnsi(served.output)) }
   }
-  const { run: resolved, pins } = await (mode === 'launch' ? dryRun() : compile())
-  if (!resolved.ok) return { kind: 'failed', stage: 'resolve', run: resolved }
+  const { run: resolved, pins, notServed } = await (mode === 'launch' ? dryRun() : compile())
+  if (!resolved.ok)
+    return { kind: 'failed', stage: notServed ? 'not_served' : 'resolve', run: resolved }
   if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
   if (eager) {
@@ -1190,6 +1202,20 @@ async function fetchStep(
   return fetched.ok
     ? { kind: 'fetched', run: fetched }
     : { kind: 'failed', stage: 'fetch', run: fetched }
+}
+
+function unlisted(signal: AbortSignal): BoundedResult {
+  return {
+    ok: false,
+    output: '',
+    report: {
+      outcome: signal.aborted ? 'cancelled' : 'exited',
+      exitCode: null,
+      elapsedMs: 0,
+      budgetMs: 0,
+      errorTail: signal.aborted ? null : 'error: could not list the installed packages'
+    }
+  }
 }
 
 const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
