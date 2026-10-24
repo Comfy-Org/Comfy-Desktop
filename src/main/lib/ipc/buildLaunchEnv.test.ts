@@ -70,13 +70,13 @@ describe('createSessionPath', () => {
     vi.restoreAllMocks()
   })
 
-  it('gives two launches in the same millisecond different session folders', () => {
+  it('gives two launches in the same millisecond different session paths', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_792_800_000_000)
     const first = createSessionPath()
     const second = createSessionPath()
     expect(
       first,
-      "one shared folder would let one launch consume the other launch's markers"
+      "one shared session path would let one launch consume the other launch's .reboot marker"
     ).not.toBe(second)
     for (const sessionPath of [first, second]) {
       expect(path.dirname(sessionPath)).toBe(os.tmpdir())
