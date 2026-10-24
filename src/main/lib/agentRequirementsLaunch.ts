@@ -88,17 +88,23 @@ async function forceStopAgentInstall(
   installPath: string,
   tempName: string
 ): Promise<void> {
-  const pid = proc?.pid
-  if (pid) {
-    if (process.platform === 'win32') {
-      await runBounded('taskkill', ['/F', '/T', '/PID', String(pid)])
-    } else {
-      killGroup(pid)
-    }
-  }
+  await hardStop(proc)
   try {
     await fs.promises.unlink(path.join(installPath, tempName))
   } catch {}
+}
+
+async function hardStop(proc: ChildProcess | null): Promise<void> {
+  const pid = proc?.pid
+  if (!pid) return
+  if (process.platform === 'win32') await runBounded('taskkill', ['/F', '/T', '/PID', String(pid)])
+  else killGroup(pid)
+}
+
+function settledWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), ms)))
+  return Promise.race([promise.then(() => true), late]).finally(() => clearTimeout(timer))
 }
 
 /** Negated pid: the helper spawns detached, so uv leads its own process group and the group is
@@ -395,8 +401,9 @@ const ONLINE_BUDGET_MS = 20_000
  *  launch's install was before it moved downloads to the background. */
 const OFFLINE_TIMEOUT_MS = 120_000
 
-/** The cache-only retry after a download ran out: another install's download can hold uv's cache
- *  lock, so the retry must not wait out the whole install bound behind it. */
+/** The cache-only check (`--dry-run`, so it writes nothing) before installing what a download that
+ *  ran out may have left in the cache: another install's download can hold uv's cache, and a check
+ *  is safe to stop where an install into the environment is not. */
 const LATE_RETRY_TIMEOUT_MS = 30_000
 
 /** One download at a time: a stopped uv keeps every wheel it finished, where in parallel a slow
@@ -501,8 +508,8 @@ export async function installAgentRequirements(
       signal
     )
     onlineLeft -= Date.now() - startedAt
-    const fromCache = (timeoutMs = OFFLINE_TIMEOUT_MS): Promise<BoundedResult> =>
-      runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, {
+    const fromCache = (): Promise<BoundedResult> =>
+      runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, sendOutput, signal, {
         extraArgs: [OFFLINE, ...extraArgs]
       })
     if (fetched.kind === 'failed') {
@@ -510,7 +517,20 @@ export async function installAgentRequirements(
       // that writing alone can outlast the budget: the cache may already hold everything.
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
-      const retried = late ? await fromCache(LATE_RETRY_TIMEOUT_MS) : null
+      const check = late
+        ? await runBoundedInstall(
+            plan,
+            reqPath,
+            tempName,
+            LATE_RETRY_TIMEOUT_MS,
+            () => {},
+            signal,
+            {
+              extraArgs: [OFFLINE, '--dry-run', ...extraArgs]
+            }
+          )
+        : null
+      const retried = check?.ok && !WOULD_DOWNLOAD.test(check.output) ? await fromCache() : null
       return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
     }
     if (fetched.kind !== 'fetched') {
@@ -654,7 +674,8 @@ async function tryOverride(
 /** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
 const LIST_TIMEOUT_MS = 30_000
 
-/** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive. */
+/** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive,
+ *  bounded as an install's stop is: the grace, then a hard stop. */
 async function listInstalled(
   plan: AgentRequirementsInstall,
   signal: AbortSignal | undefined,
@@ -669,14 +690,22 @@ async function listInstalled(
     stop.signal.addEventListener('abort', () => resolve(null), { once: true })
   )
   try {
+    let proc: ChildProcess | null = null
     const listed = runUvPipDetailed(
       plan.uvPath,
       ['pip', 'list', '--format', 'json', '--python', plan.pythonPath],
       plan.installPath,
       () => {},
-      stop.signal
+      stop.signal,
+      (spawned) => (proc = spawned)
     ).then((result) => (result.code === 0 ? result.output : null))
-    return await (untilExit ? listed : Promise.race([listed, stopped]))
+    const first = await Promise.race([listed, stopped])
+    if (!untilExit || !stop.signal.aborted) return first
+    if (!(await settledWithin(listed, KILL_GRACE_MS))) {
+      await hardStop(proc)
+      await settledWithin(listed, FORCE_STOP_TIMEOUT_MS)
+    }
+    return null
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onStop)
@@ -1103,12 +1132,12 @@ async function removeScratch(
   owns: (name: string, at: string) => boolean | Promise<boolean>
 ): Promise<void> {
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
-  await Promise.all(
+  await Promise.allSettled(
     names.map(async (name) => {
       const at = path.join(installPath, name)
       if (await owns(name, at)) await fs.promises.rm(at, { recursive: true, force: true })
     })
-  ).catch(() => {})
+  )
 }
 
 function removePrefetchFiles(installPath: string): Promise<void> {

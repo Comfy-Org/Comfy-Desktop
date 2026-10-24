@@ -1027,7 +1027,8 @@ describe('installAgentRequirements with a version override', () => {
       ['pip', 'list', '--format', 'json', '--python', '/py'],
       installDir,
       expect.any(Function),
-      expect.any(AbortSignal)
+      expect.any(AbortSignal),
+      expect.any(Function)
     )
   })
 
@@ -2124,69 +2125,115 @@ describe('installAgentRequirements with a version override', () => {
       return retries
     }
 
-    it("bounds the cache retry after a download ran out at 30 s, deferring when another install's download holds the cache", async () => {
-      const startedAt = Date.now()
-      let stoppedAt = 0
-      const retryStopped: number[] = []
+    const downloadRunsOut = (
+      afterStop: (extraArgs: string[], signal: AbortSignal) => Promise<UvResult> | UvResult
+    ) => {
+      const late: string[][] = []
+      let stopped = false
       mockInstall.mockImplementation(async (_file, ...rest) => {
         const signal = rest[5] as AbortSignal
         const extraArgs = rest[7] as string[]
-        const hang = (onStop: () => void) => {
-          waiting++
-          return new Promise<{ code: number; output: string }>((resolve) =>
-            signal.addEventListener('abort', () => {
-              waiting--
-              onStop()
-              resolve({ code: 1, output: '' })
-            })
-          )
-        }
         if (extraArgs.includes('--offline')) {
-          if (stoppedAt === 0 || !extraArgs.includes('--constraint')) return { code: 1, output: '' }
-          return hang(() => retryStopped.push(Date.now() - stoppedAt))
+          if (!stopped || !extraArgs.includes('--constraint')) return { code: 1, output: '' }
+          late.push(extraArgs.filter((arg) => arg.startsWith('--') && arg !== '--constraint'))
+          return afterStop(extraArgs, signal)
         }
         if (!extraArgs.includes('--target')) return { code: 0, output: ' + comfy-agent==0.2.3\n' }
-        return hang(() => (stoppedAt = Date.now()))
+        waiting++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            waiting--
+            stopped = true
+            resolve({ code: 1, output: '' })
+          })
+        )
       })
-      const onDeferred = vi.fn()
+      return late
+    }
+    type UvResult = { code: number; output: string }
+    const lasting = (signal: AbortSignal, ms: number, result: UvResult, stoppedAt?: number[]) => {
+      const startedAt = Date.now()
+      waiting++
+      return new Promise<UvResult>((resolve) => {
+        const timer =
+          ms === Infinity
+            ? undefined
+            : setTimeout(() => {
+                waiting--
+                resolve(result)
+              }, ms)
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer)
+          waiting--
+          stoppedAt?.push(Date.now() - startedAt)
+          resolve({ code: 1, output: '' })
+        })
+      })
+    }
 
-      const decision = await settle(
-        installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+    it('checks the cache without writing after a download ran out, then installs from it under the install bound', async () => {
+      const late = downloadRunsOut((extraArgs, signal) =>
+        extraArgs.includes('--dry-run')
+          ? { code: 0, output: ' + comfy-agent==0.2.3\n' }
+          : lasting(signal, 60_000, { code: 0, output: '' })
       )
-
-      expect(stoppedAt - startedAt, 'the download ran out at the network budget').toBe(20_000)
-      expect(retryStopped, 'not the 120 s an install from the cache gets').toEqual([30_000])
-      expect(
-        decision,
-        "a retry stuck behind uv's cache lock defers like a cache miss, with the download's timeout"
-      ).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out', budgetMs: 20_000 } })
-      expect(onDeferred).toHaveBeenCalledTimes(1)
-    })
-
-    it('installs from the cache on the same launch when the download ran out while uv was still writing it', async () => {
-      const retries = fetchTimesOut('--target', true)
 
       const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
 
-      expect(retries, 'the override is tried from the cache once more').toHaveLength(1)
-      expect(decision).toMatchObject({ decision: 'applied' })
+      expect(late, 'a check that writes nothing, then the install').toEqual([
+        ['--offline', '--dry-run'],
+        ['--offline']
+      ])
+      expect(
+        decision,
+        'a 60 s install from the cache is never cut short at the 30 s a check gets'
+      ).toMatchObject({ decision: 'applied' })
     })
 
-    it('defers a download that ran out when the cache still misses, reporting the timeout', async () => {
-      const retries = fetchTimesOut('--target', false)
+    it("stops a cache check held up behind another install's download at 30 s, and installs nothing", async () => {
+      const checkStopped: number[] = []
+      const late = downloadRunsOut((extraArgs, signal) =>
+        extraArgs.includes('--dry-run')
+          ? lasting(signal, Infinity, { code: 0, output: '' }, checkStopped)
+          : { code: 0, output: '' }
+      )
       const onDeferred = vi.fn()
 
       const decision = await settle(
         installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
       )
 
-      expect(retries).toHaveLength(1)
-      expect(
-        decision,
-        "the download's own timeout is what is reported, not the retry's cache miss"
-      ).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out' } })
+      expect(checkStopped).toEqual([30_000])
+      expect(late, 'nothing went into the environment').toEqual([['--offline', '--dry-run']])
+      expect(decision, "deferred like a cache miss, with the download's own timeout").toMatchObject(
+        { decision: 'deferred', install: { outcome: 'timed_out', budgetMs: 20_000 } }
+      )
       expect(onDeferred).toHaveBeenCalledTimes(1)
     })
+
+    it.each([
+      [
+        'would still download a wheel',
+        { code: 0, output: 'Would download 1 package\n + comfy-agent==0.2.3\n' }
+      ],
+      ['misses the cache', { code: 1, output: '' }]
+    ])(
+      'installs nothing when the check after a download ran out %s, and defers',
+      async (_label, check) => {
+        const late = downloadRunsOut((extraArgs) =>
+          extraArgs.includes('--dry-run') ? check : { code: 0, output: '' }
+        )
+        const onDeferred = vi.fn()
+
+        const decision = await settle(
+          installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+        )
+
+        expect(late).toEqual([['--offline', '--dry-run']])
+        expect(decision).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out' } })
+        expect(onDeferred).toHaveBeenCalledTimes(1)
+      }
+    )
 
     it('tries the cache no more after a resolve that ran out, which fetched nothing', async () => {
       const retries = fetchTimesOut('--dry-run', true)
@@ -2446,6 +2493,38 @@ describe('prefetchAgentRequirements', () => {
       '--target'
     )
     expect(fs.readdirSync(dir)).toEqual([])
+  })
+
+  it('ends a run only once every scratch removal has settled, even when one of them fails', async () => {
+    const failing = path.join(dir, '.agent-prefetch-left-1')
+    const slow = path.join(dir, '.agent-prefetch-left-2')
+    mockInstall.mockImplementationOnce(async () => {
+      fs.writeFileSync(failing, '')
+      fs.writeFileSync(slow, '')
+      return { code: 0, output: '' }
+    })
+    const rm = fs.promises.rm
+    let releaseSlow = (): void => {}
+    const spy = vi.spyOn(fs.promises, 'rm').mockImplementation((async (
+      ...args: Parameters<typeof rm>
+    ) => {
+      if (args[0] === failing) throw new Error('EBUSY')
+      if (args[0] === slow) await new Promise<void>((resolve) => (releaseSlow = resolve))
+      return rm(...args)
+    }) as typeof rm)
+    try {
+      const done = vi.fn()
+      expect(prefetchAgentRequirements(request(), done)).toBe(true)
+      await vi.waitFor(() => expect(spy.mock.calls.map(([at]) => at)).toContain(slow))
+
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(done, 'a removal still running holds the run open').not.toHaveBeenCalled()
+      releaseSlow()
+      await vi.waitFor(() => expect(done).toHaveBeenCalled())
+      expect(fs.existsSync(slow)).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('clears what a run cut short by an exit left behind', async () => {

@@ -34,8 +34,14 @@ vi.mock('./pip', () => ({
   runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
 
-import { installAgentRequirements, reapOrphanedAgentUv } from './agentRequirementsLaunch'
-import { installFilteredRequirementsDetailed } from './pip'
+import {
+  _resetAgentPrefetchesForTest,
+  holdAgentPrefetch,
+  installAgentRequirements,
+  prepareAgentPrefetch,
+  reapOrphanedAgentUv
+} from './agentRequirementsLaunch'
+import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type * as ChildProcessModule from 'child_process'
 
 const alive = (pid: number): boolean => {
@@ -180,3 +186,71 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false), { timeout: 10_000 })
   })
 })
+
+describe.skipIf(process.platform === 'win32')(
+  "a preparation's uv listing that ignores the stop",
+  { timeout: 20_000 },
+  () => {
+    let dir = ''
+    let child: ChildProcess | undefined
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-uv-listing-'))
+      fs.mkdirSync(path.join(dir, 'ComfyUI'))
+      fs.writeFileSync(path.join(dir, 'ComfyUI', 'agent_requirements.txt'), 'comfy-agent==0.2.0\n')
+      _resetAgentPrefetchesForTest()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      try {
+        process.kill(-child!.pid!, 'SIGKILL')
+      } catch {}
+      vi.mocked(runUvPipDetailed).mockReset()
+      fs.rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('is hard-stopped after the grace, so a hold for a removal still returns', async () => {
+      let ready = (): void => {}
+      const trapped = new Promise<void>((resolve) => (ready = resolve))
+      vi.mocked(runUvPipDetailed).mockImplementationOnce(
+        (_uv, _args, _cwd, _output, signal, onSpawn) =>
+          new Promise((resolve) => {
+            child = spawn('sh', ['-c', 'trap "" TERM; echo ready; while :; do sleep 1; done'], {
+              detached: true,
+              stdio: ['ignore', 'pipe', 'ignore']
+            })
+            child.stdout!.once('data', () => ready())
+            onSpawn?.(child)
+            signal?.addEventListener('abort', () => process.kill(-child!.pid!, 'SIGTERM'), {
+              once: true
+            })
+            child.once('close', () => resolve({ code: 1, output: '' }))
+          })
+      )
+      const plan = {
+        reqPath: path.join(dir, 'ComfyUI', 'agent_requirements.txt'),
+        uvPath: '/uv',
+        pythonPath: '/py',
+        installPath: dir
+      }
+      const prepared = prepareAgentPrefetch(plan, { 'comfy-agent': '0.2.3' }, null)
+      await trapped
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let held = false
+      const hold = holdAgentPrefetch(dir).then((release) => {
+        held = true
+        return release
+      })
+
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(held, 'it first waits out the grace a stop gets').toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await vi.waitFor(() => expect(held).toBe(true))
+
+      expect(alive(child!.pid!), 'a removal must not go on with uv still running in it').toBe(false)
+      ;(await hold)()
+      expect(await prepared).toBeNull()
+    })
+  }
+)
