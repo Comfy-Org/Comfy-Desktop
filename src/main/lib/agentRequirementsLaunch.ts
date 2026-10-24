@@ -4,7 +4,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import * as settings from '../settings'
-import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
+import { VALID_PIP_NAME, installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
@@ -1143,7 +1143,10 @@ async function fetchStep(
     // uv keeps a version already in its output file where the requirements allow and an index
     // serves it. One no index serves (a local build) is not kept: uv picks the newest it finds,
     // or, under a constraint that pins it, finds no solution.
-    const freeze = listed.map(({ name, version }) => `${name}==${version}\n`).join('')
+    const freeze = listed
+      .filter(({ name, version }) => VALID_PIP_NAME.test(name) && PIP_VERSION.test(version))
+      .map(({ name, version }) => `${name}==${version}\n`)
+      .join('')
     await fs.promises.writeFile(compiledPath, freeze, 'utf-8')
     const run = await runBoundedInstall(
       plan,
@@ -1227,6 +1230,7 @@ async function fetchStep(
     : { kind: 'failed', stage: 'fetch', run: fetched }
 }
 
+const PIP_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+!_-]*$/
 const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
 
 /**

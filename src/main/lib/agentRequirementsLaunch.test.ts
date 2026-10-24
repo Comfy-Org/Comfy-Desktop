@@ -10,7 +10,10 @@ vi.mock('../settings', () => ({
   getMirrorConfig: () => mirrors
 }))
 
-vi.mock('./pip', () => ({
+import type * as pip from './pip'
+
+vi.mock('./pip', async (importOriginal) => ({
+  VALID_PIP_NAME: (await importOriginal<typeof pip>()).VALID_PIP_NAME,
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
   runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
@@ -2701,6 +2704,23 @@ describe('prefetchAgentRequirements', () => {
       errorTail: null,
       uvVersion: '0.13.4'
     })
+  })
+
+  it('leaves installed entries uv could misread out of the seed', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([
+        { name: 'requests', version: '2.32.0' },
+        { name: '-r evil.txt', version: '1.0' },
+        { name: 'six', version: '1.16.0\nurllib3==1.0' }
+      ])
+    }
+    await finish(request())
+
+    expect(
+      calls[0]!.seed,
+      'an option-shaped name or a version with a newline would be read as a uv directive'
+    ).toBe('requests==2.32.0\n')
   })
 
   it('fetches a pin installed at another version, matching names the way uv does', async () => {
