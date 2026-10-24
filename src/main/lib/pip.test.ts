@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { spawn } from 'child_process'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
   getPipIndexArgs,
+  installFilteredRequirementsDetailed,
   parsePipFreeze,
   runUvPipDetailed,
   uvEnv,
@@ -271,6 +275,60 @@ describe('runUvPipDetailed onSpawn', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("passes an install's extra environment through to uv, over the uv environment", async () => {
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pip-env-'))
+    try {
+      const reqPath = path.join(dir, 'reqs.txt')
+      fs.writeFileSync(reqPath, 'comfy-agent==0.2.0\n')
+
+      const running = installFilteredRequirementsDetailed(
+        reqPath,
+        'uv',
+        '/py',
+        dir,
+        'filtered.txt',
+        () => {},
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { UV_CONCURRENT_DOWNLOADS: '1', NO_COLOR: 'caller' }
+      )
+      await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled())
+      proc.emit('close', 0)
+      await running
+
+      const env = (spawnMock.mock.calls[0]![2] as { env: Record<string, string> }).env
+      expect(env).toMatchObject({ UV_CONCURRENT_DOWNLOADS: '1', NO_COLOR: 'caller' })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("passes a caller's extra environment to uv, over the uv environment", async () => {
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+
+    const running = runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      undefined,
+      {
+        UV_CONCURRENT_DOWNLOADS: '1'
+      }
+    )
+    proc.emit('close', 0)
+    await running
+
+    const env = (spawnMock.mock.calls[0]![2] as { env: Record<string, string> }).env
+    expect(env).toMatchObject({ UV_CONCURRENT_DOWNLOADS: '1', NO_COLOR: '1' })
   })
 
   it('hands the caller the process it spawned', async () => {

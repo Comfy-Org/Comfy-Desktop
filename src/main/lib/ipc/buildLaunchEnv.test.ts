@@ -14,8 +14,18 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+const { uuids } = vi.hoisted(() => ({ uuids: [] as string[] }))
+vi.mock('crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof nodeCrypto>()
+  const randomUUID = (): string => uuids.shift() ?? actual.randomUUID()
+  return { ...actual, default: { ...actual, randomUUID }, randomUUID }
+})
+
 import type { InstallationRecord } from '../../installations'
-import { buildLaunchEnv, sanitizeEnvVars } from './shared'
+import type * as nodeCrypto from 'crypto'
+import os from 'os'
+import path from 'path'
+import { buildLaunchEnv, createSessionPath, sanitizeEnvVars } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -98,5 +108,28 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   it('ignores a user env var override', () => {
     const env = buildLaunchEnv(inst('git', { __COMFYUI_DESKTOP_VERSION__: '9.9.9' }))
     expect(env).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+  })
+})
+
+describe('createSessionPath', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('gives two launches in the same millisecond different session paths', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_792_800_000_000)
+    uuids.push('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002')
+    const first = createSessionPath()
+    const second = createSessionPath()
+    expect(
+      first,
+      "one shared session path would let one launch consume the other launch's .reboot marker"
+    ).not.toBe(second)
+    for (const sessionPath of [first, second]) {
+      expect(path.dirname(sessionPath)).toBe(os.tmpdir())
+      expect(path.basename(sessionPath)).toMatch(
+        /^comfyui-desktop-2-1792800000000-0{8}-0{4}-4000-8000-00000000000[12]$/
+      )
+    }
   })
 })

@@ -3,6 +3,7 @@ import {
   ENROL_MAX_AGE_MS,
   HOLD_MAX_AGE_MS,
   appliedPassThrough,
+  enrolledAgentOverride,
   campaignCandidateGrants,
   parseCampaignAnswer,
   parseCampaignRecords,
@@ -625,5 +626,56 @@ describe('appliedPassThrough', () => {
     const payload: CampaignAnswer = { ...answer('enrol'), payload: { grants: [] } }
     const plan = planCampaignArgs(facts({ answers: new Map([[KEY, payload]]) }))
     expect(appliedPassThrough(plan.applied, '--enable-agent')).toBeUndefined()
+  })
+})
+
+describe('enrolledAgentOverride', () => {
+  const NOW = Date.now()
+  const listed = [{ key: KEY, args: ['--enable-agent'] }]
+  const fresh = (a: CampaignAnswer): CampaignAnswer => ({ ...a, fetchedAt: NOW })
+  const of = (a: CampaignAnswer, registry = listed) => ({ registry, answers: new Map([[KEY, a]]) })
+
+  it('returns the override an enrolling answer for the agent carries', () => {
+    expect(enrolledAgentOverride(of(fresh(answer('enrol'))), NOW, 'machine_derived')).toEqual({
+      override: { 'comfy-agent': '0.2.3' }
+    })
+  })
+
+  it('names no override for an enrolling answer that carries none', () => {
+    const payload: CampaignAnswer = { ...fresh(answer('enrol')), payload: { grants: [] } }
+    expect(enrolledAgentOverride(of(payload), NOW, 'machine_derived')).toEqual({
+      override: undefined
+    })
+  })
+
+  it('is null for an answer a launch could not enrol on', () => {
+    const enrol = fresh(answer('enrol'))
+    expect(enrolledAgentOverride(of(fresh(answer('hold'))), NOW, 'machine_derived')).toBeNull()
+    expect(enrolledAgentOverride(of(enrol), NOW, 'random_fallback'), 'id class').toBeNull()
+    expect(
+      enrolledAgentOverride(of(enrol), NOW + ENROL_MAX_AGE_MS + 1, 'machine_derived'),
+      'too old to enrol'
+    ).toBeNull()
+    expect(
+      enrolledAgentOverride(
+        of(enrol, [{ key: KEY, args: ['--enable-assets'] }]),
+        NOW,
+        'machine_derived'
+      ),
+      'the campaign does not list the agent'
+    ).toBeNull()
+    expect(
+      enrolledAgentOverride(
+        { registry: [], answers: new Map([[KEY, enrol]]) },
+        NOW,
+        'machine_derived'
+      ),
+      'an answer for a campaign that is not listed'
+    ).toBeNull()
+    const assets: CampaignAnswer = {
+      ...enrol,
+      grants: enrol.grants.map((g) => ({ ...g, grant: { ...g.grant, arg: '--enable-assets' } }))
+    }
+    expect(enrolledAgentOverride(of(assets), NOW, 'machine_derived'), 'grants no agent').toBeNull()
   })
 })

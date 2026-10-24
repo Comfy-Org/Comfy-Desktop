@@ -15,6 +15,7 @@ import {
   parseAgentRequirementsOverride,
   pinsOverBareLines,
   compareVersions,
+  indexKind,
   readFrontendPin,
   readOverrideState,
   reportOverrideDecision
@@ -463,6 +464,51 @@ describe('reportOverrideDecision', () => {
     }
   })
 
+  it("carries how the launch's install went, and which kind of index it used", () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      reportOverrideDecision(
+        'i',
+        {
+          decision: 'deferred',
+          reason: 'not_cached',
+          pins: pins({ 'comfy-agent': '0.2.3' }),
+          install: {
+            outcome: 'timed_out',
+            exitCode: 1,
+            elapsedMs: 20_004,
+            budgetMs: 20_000,
+            errorTail: null
+          }
+        },
+        'cn_mirror'
+      )
+      reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
+
+      expect(emit.mock.calls.map(([, props]) => props)).toEqual([
+        expect.objectContaining({
+          decision: 'deferred',
+          reason: 'not_cached',
+          install_outcome: 'timed_out',
+          exit_code: 1,
+          elapsed_ms: 20_004,
+          budget_ms: 20_000,
+          error_tail: null,
+          index: 'cn_mirror'
+        }),
+        expect.objectContaining({
+          install_outcome: null,
+          exit_code: null,
+          elapsed_ms: null,
+          budget_ms: null,
+          index: null
+        })
+      ])
+    } finally {
+      emit.mockRestore()
+    }
+  })
+
   it('never lets a failing telemetry sink reach the launch', () => {
     vi.spyOn(telemetry, 'emit').mockImplementation(() => {
       throw new Error('sink down')
@@ -859,5 +905,16 @@ describe('a comfy-agent-go pin', () => {
         agentGoBehindAgent(pins({ 'comfy-agent': '0.1.0rc3' }), CORE, installed('0.1.0rc3'))
       ).toBeNull()
     })
+  })
+})
+
+describe('indexKind', () => {
+  it('names the kind of index, never its URL', () => {
+    expect(indexKind({})).toBe('pypi')
+    expect(indexKind({ useChineseMirrors: true })).toBe('cn_mirror')
+    expect(
+      indexKind({ pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true })
+    ).toBe('custom')
+    expect(indexKind({ pypiMirror: '  ' }), 'a blank mirror setting is no mirror').toBe('pypi')
   })
 })

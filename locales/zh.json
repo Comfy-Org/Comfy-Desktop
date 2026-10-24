@@ -1332,9 +1332,8 @@
     },
     "viewLogs": "查看日志",
     "agentRequirements": {
-      "downloading": "正在下载 {name}（{size}）",
-      "installing": "正在安装…",
-      "failed": "智能体依赖安装失败；继续启动 ComfyUI"
+      "deferred": "正在后台下载智能体；下次启动时生效",
+      "deferredUpdate": "正在后台下载新版智能体；下次启动时生效"
     }
   },
   "devPlatform": {

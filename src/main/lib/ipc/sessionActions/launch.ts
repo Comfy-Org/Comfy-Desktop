@@ -101,13 +101,16 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import {
   installAgentRequirements,
+  holdAgentPrefetch,
   planAgentRequirementsInstall,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
-import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
+import type { PrefetchRequest } from '../../agentRequirementsLaunch'
+import { startAgentPrefetch } from '../../agentPrefetch'
 import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
+  indexKind,
   nextOverrideState,
   pinSpecifier,
   readFrontendPin,
@@ -451,22 +454,6 @@ export function emitCoreBetaTelemetry(input: {
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
-}
-
-/** Launch-row text for the agent install. uv already formats the size, so it is
- *  passed through rather than re-rendered. */
-export function agentInstallStatusText(status: AgentInstallStatus): string {
-  switch (status.kind) {
-    case 'downloading':
-      return i18n.t('launch.agentRequirements.downloading', {
-        name: status.name,
-        size: status.size
-      })
-    case 'installing':
-      return i18n.t('launch.agentRequirements.installing')
-    case 'failed':
-      return i18n.t('launch.agentRequirements.failed')
-  }
 }
 
 const overrideRecording = new Map<string, Promise<void>>()
@@ -996,9 +983,11 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   // launching marker exists. The finally is the single teardown-complete
   // signal: `cancelLaunching` awaits it before letting a restart relaunch.
   const launch = _beginLaunch(sessionId)
+  const prefetchHold = { release: (): void => {} }
   try {
-    return await runLaunch(ctx, launch.abort)
+    return await runLaunch(ctx, launch.abort, prefetchHold)
   } finally {
+    prefetchHold.release()
     if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
     _endLaunch(sessionId, launch)
   }
@@ -1006,7 +995,8 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
 
 async function runLaunch(
   { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
-  abort: AbortController
+  abort: AbortController,
+  prefetchHold: { release: () => void }
 ): Promise<ActionResult> {
   let inst = instArg
   const sessionId = runtimeSessionId ?? installationId
@@ -1049,6 +1039,11 @@ async function runLaunch(
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
+  // A background download's uv contends with the launch's own uv work on the environment (repair,
+  // the agent's install, a frontend restore): held off until the launch is past them.
+  if (typeof inst.installPath === 'string') {
+    prefetchHold.release = await holdAgentPrefetch(inst.installPath)
+  }
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(sessionId)
   // The startup model-download pass (migrate legacy final-path partials,
@@ -1584,6 +1579,14 @@ async function runLaunch(
   // watched for how the agent's start went, so a version that keeps failing goes back to core's.
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
+  // Started once this launch's own uv work (the install below and any frontend restore after it)
+  // is done, and on a cancel before that too, so nothing the launch handed back is dropped. The
+  // hold goes first: while it stands, a download for this install is refused.
+  const handedBack: { request?: PrefetchRequest } = {}
+  const startHandedBack = (): void => {
+    prefetchHold.release()
+    if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
+  }
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
@@ -1591,20 +1594,35 @@ async function runLaunch(
       agentRequirements,
       makeSendOutput(sender, installationId),
       abort.signal,
-      (status) =>
-        sendProgress('agentRequirements', {
-          percent: -1,
-          status: agentInstallStatusText(status)
-        }),
       // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
-      readOverrideState(inst)
+      readOverrideState(inst),
+      (request, deferral) => {
+        // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: i18n.t(
+            deferral === 'agent'
+              ? 'launch.agentRequirements.deferred'
+              : 'launch.agentRequirements.deferredUpdate'
+          )
+        })
+        handedBack.request = request
+      }
     )
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (abort.signal.aborted) {
+      startHandedBack()
+      return { ok: false, cancelled: true }
+    }
     if (overrideDecision) {
-      reportOverrideDecision(installationId, overrideDecision)
+      reportOverrideDecision(
+        installationId,
+        overrideDecision,
+        indexKind(settings.getMirrorConfig())
+      )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
       // Counted like a failed start, so a version that cannot install stops costing launch time.
+      // A deferred one cost none: it is downloading in the background.
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
         void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
@@ -1633,7 +1651,10 @@ async function runLaunch(
       makeSendOutput(sender, installationId),
       abort.signal
     )
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (abort.signal.aborted) {
+      startHandedBack()
+      return { ok: false, cancelled: true }
+    }
     // Kept on a failed restore, so the next launch tries again.
     if (restored) {
       await installations
@@ -1641,6 +1662,7 @@ async function runLaunch(
         .catch(() => {})
     }
   }
+  startHandedBack()
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)

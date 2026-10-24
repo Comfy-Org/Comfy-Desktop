@@ -67,6 +67,8 @@ import {
   suspendActiveModelDownloadsForQuit,
   suspendActiveModelDownloadsForSleep
 } from './lib/comfyDownloadManager'
+import { stopAgentPrefetches } from './lib/agentRequirementsLaunch'
+import { prefetchEnrolledAgents } from './lib/agentPrefetch'
 import {
   hasActiveTemplateDownloads,
   getTemplateDownloadState
@@ -1546,7 +1548,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCoreBetaFlags({
       distinctId: installationId,
       betaEnabled: settings.peekBetaFeaturesEnabled()
-    })
+    }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
@@ -2460,6 +2462,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     flushLastSessionSync()
     flushOperationOutput()
     cleanupTempDownloads()
+    stopAgentPrefetches()
   })
 
   // Deferred-quit suspension for managed model downloads: stop each active

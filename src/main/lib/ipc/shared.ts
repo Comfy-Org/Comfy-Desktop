@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
 import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { execFile, spawn, execFileSync } from 'child_process'
@@ -29,6 +30,7 @@ import * as settings from '../../settings'
 import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
 import { createCache } from '../cache'
+import { holdAgentPrefetch } from '../agentRequirementsLaunch'
 import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
@@ -887,20 +889,28 @@ export async function performCopy(
 
   try {
     sendProgress('copy', { percent: 0, status: i18n.t('actions.copyingFiles') })
-    await copyDirWithProgress(
-      inst.installPath,
-      destPath,
-      (copied, total, elapsedSecs, etaSecs) => {
-        const percent = Math.round((copied / total) * 100)
-        const elapsed = formatTime(elapsedSecs)
-        const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-        sendProgress('copy', {
-          percent,
-          status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-        })
-      },
-      { signal }
-    )
+    // The agent's background download writes and removes scratch files inside the install, which
+    // would fail the copy part-way: stop it, and start none until the copy is done. A stopped
+    // download is not resumed: the install's next launch hands it over again.
+    const release = await holdAgentPrefetch(inst.installPath)
+    try {
+      await copyDirWithProgress(
+        inst.installPath,
+        destPath,
+        (copied, total, elapsedSecs, etaSecs) => {
+          const percent = Math.round((copied / total) * 100)
+          const elapsed = formatTime(elapsedSecs)
+          const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+          sendProgress('copy', {
+            percent,
+            status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+          })
+        },
+        { signal }
+      )
+    } finally {
+      release()
+    }
 
     const source = sourceMap[inst.sourceId]
     if (source?.fixupCopy) {
@@ -1002,7 +1012,7 @@ export async function performCopy(
 }
 
 export function createSessionPath(): string {
-  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}`)
+  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}-${randomUUID()}`)
 }
 
 export function sanitizeEnvVars(raw: unknown): Record<string, string> {

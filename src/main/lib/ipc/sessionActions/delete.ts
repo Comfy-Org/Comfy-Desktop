@@ -13,6 +13,7 @@ import {
 } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { withAbortableSessionAction } from './withAbortable'
+import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
 
 /** Best-effort removal of an install's per-instance model-paths YAML, which
  *  lives under dataDir() rather than inside the install directory. */
@@ -98,6 +99,8 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
   sendProgress('delete', { percent: 0, status: 'Counting files…' })
 
   return withAbortableSessionAction(ctx, async (signal) => {
+    // The agent's background download runs uv from inside the install: stop it, and start none.
+    const release = await holdAgentPrefetch(inst.installPath)
     try {
       await deleteDir(
         inst.installPath,
@@ -151,6 +154,8 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
         throw new Error(i18n.t('errors.deleteLocked', { path: raw.path ?? '' }), { cause: err })
       }
       throw err
+    } finally {
+      release()
     }
     removeInstanceModelPathsYaml(installationId)
     await installations.remove(installationId)

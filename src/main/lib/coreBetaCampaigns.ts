@@ -349,6 +349,36 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   return { applied, misses, trace }
 }
 
+/**
+ * The agent override an answer that would enrol this machine carries, for fetching the agent's
+ * packages ahead of the launch that enrols: the campaign must list `--enable-agent`, and the
+ * answer pass the freshness and id-class checks a launch's enrolment makes. `undefined` inside when
+ * it carries none; null when no answer qualifies. Opaque here: the override module validates it.
+ */
+export function enrolledAgentOverride(
+  campaigns: {
+    registry: readonly CampaignRegistryEntry[]
+    answers: ReadonlyMap<string, CampaignAnswer>
+  },
+  now: number,
+  idClass: IdClass
+): { override: unknown } | null {
+  for (const { key, args } of campaigns.registry) {
+    const answer = campaigns.answers.get(key)
+    if (!answer?.enrol || !args.includes('--enable-agent')) continue
+    if (!answer.grants.some(({ grant }) => grant.arg === '--enable-agent')) continue
+    if (answerRefusal(answer, false, now, idClass)) continue
+    const payload = answer.payload
+    return {
+      override:
+        payload && typeof payload === 'object'
+          ? (payload as Record<string, unknown>)[AGENT_PASS_THROUGH_FIELD]
+          : undefined
+    }
+  }
+  return null
+}
+
 /** Opaque here: the override module validates the value. */
 export function appliedPassThrough(applied: readonly CampaignApplied[], arg: string): unknown {
   const payload = applied.find((entry) => entry.grant.arg === arg)?.payload
