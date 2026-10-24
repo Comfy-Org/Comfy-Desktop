@@ -7,6 +7,9 @@ import InfoTooltip from './InfoTooltip.vue'
 import MigrateConfirmBody from './MigrateConfirmBody.vue'
 import BaseAlert from './ui/BaseAlert.vue'
 import { formatNodeVersion } from '../lib/snapshots'
+import { providePaletteScope } from '../composables/usePaletteScope'
+
+const paletteScope = providePaletteScope()
 
 const { t } = useI18n()
 
@@ -224,10 +227,13 @@ onUnmounted(() => {
   />
 
   <Teleport to="body">
+    <!-- Dialogs take the Void palette everywhere, over every screen
+         (assets/palette-void.css): one dialog style. -->
     <div
       v-if="state.visible && !usesBaseAlert"
       ref="overlayRef"
       class="modal-overlay"
+      :class="paletteScope"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >
