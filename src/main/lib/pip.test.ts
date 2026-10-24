@@ -17,136 +17,70 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, spawn, default: { ...actual, spawn } }
 })
 
-/** Extract --index-url value from args. */
-function getIndexUrl(args: string[]): string | undefined {
-  const i = args.indexOf('--index-url')
-  return i >= 0 ? args[i + 1] : undefined
-}
-
-/** Extract all --extra-index-url values from args. */
-function getExtras(args: string[]): string[] {
-  const extras: string[] = []
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--extra-index-url') extras.push(args[i + 1]!)
-  }
-  return extras
-}
-
 describe('getPipIndexArgs', () => {
-  it('uses pypi.org as --index-url when no mirrors configured', () => {
-    const args = getPipIndexArgs()
-    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
-    expect(getExtras(args)).toEqual([])
+  const MIRROR = 'https://custom.mirror.example/simple/'
+
+  it('uses pypi.org alone when no mirrors are configured', () => {
+    expect(getPipIndexArgs()).toEqual(['--index-url', PYPI_INDEX_URL])
   })
 
-  it('does not include Chinese mirrors when useChineseMirrors is false or unset', () => {
-    const args = getPipIndexArgs()
-    for (const url of PYPI_MIRROR_URLS) {
-      expect(args).not.toContain(url)
+  it('treats an empty or blank mirror as no mirror', () => {
+    expect(getPipIndexArgs('')).toEqual(getPipIndexArgs())
+    expect(getPipIndexArgs('   ')).toEqual(getPipIndexArgs())
+  })
+
+  const argv = (extras: string[]): string[] => [
+    '--index-url',
+    PYPI_INDEX_URL,
+    ...extras.flatMap((url) => ['--extra-index-url', url])
+  ]
+
+  it('puts a configured mirror ahead of pypi.org, as the first index uv asks', () => {
+    expect(
+      getPipIndexArgs(MIRROR),
+      'uv asks every --extra-index-url before --index-url: a mirror passed as --index-url is asked after pypi.org, and an unreachable pypi.org fails the install outright'
+    ).toEqual(argv([MIRROR]))
+  })
+
+  it('passes a padded mirror to uv trimmed', () => {
+    expect(getPipIndexArgs(`  ${MIRROR}  `)).toEqual(argv([MIRROR]))
+  })
+
+  it('puts the Chinese mirrors ahead of pypi.org, in their order', () => {
+    expect(getPipIndexArgs(undefined, true)).toEqual(argv(PYPI_MIRROR_URLS))
+  })
+
+  it('asks a configured mirror before the Chinese mirrors, and pypi.org last', () => {
+    expect(getPipIndexArgs(MIRROR, true)).toEqual(argv([MIRROR, ...PYPI_MIRROR_URLS]))
+  })
+
+  it('keeps a configured mirror first and leaves the Chinese mirrors out when they are off', () => {
+    for (const off of [undefined, false]) {
+      expect(getPipIndexArgs(MIRROR, off)).toEqual(argv([MIRROR]))
     }
-    expect(getExtras(args)).toHaveLength(0)
   })
 
-  it('uses first Chinese mirror as --index-url when useChineseMirrors is true', () => {
-    const args = getPipIndexArgs(undefined, true)
-    expect(getIndexUrl(args)).toBe(PYPI_MIRROR_URLS[0])
-  })
-
-  it('demotes pypi.org to --extra-index-url when useChineseMirrors is true', () => {
-    const args = getPipIndexArgs(undefined, true)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-  })
-
-  it('includes remaining Chinese mirrors as --extra-index-url when useChineseMirrors is true', () => {
-    const args = getPipIndexArgs(undefined, true)
-    const extras = getExtras(args)
-    const expectedExtras = [PYPI_INDEX_URL, ...PYPI_MIRROR_URLS.slice(1)]
-    expect(extras).toEqual(expectedExtras)
-  })
-
-  it('does not include --index-strategy', () => {
-    const noMirror = getPipIndexArgs()
-    expect(noMirror).not.toContain('--index-strategy')
-
-    const withMirror = getPipIndexArgs('https://custom.mirror.example/simple/')
-    expect(withMirror).not.toContain('--index-strategy')
-  })
-
-  it('uses user mirror as --index-url when provided', () => {
-    const mirror = 'https://custom.mirror.example/simple/'
-    const args = getPipIndexArgs(mirror)
-    expect(getIndexUrl(args)).toBe(mirror)
-  })
-
-  it('demotes pypi.org to --extra-index-url when user mirror is provided', () => {
-    const mirror = 'https://custom.mirror.example/simple/'
-    const args = getPipIndexArgs(mirror)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-  })
-
-  it('adds user mirror without Chinese mirrors when useChineseMirrors is false', () => {
-    const mirror = 'https://custom.mirror.example/simple/'
-    const args = getPipIndexArgs(mirror, false)
-    expect(getIndexUrl(args)).toBe(mirror)
-    const extras = getExtras(args)
-    expect(extras).toEqual([PYPI_INDEX_URL])
-  })
-
-  it('uses user mirror as --index-url with Chinese mirrors and pypi.org as extras', () => {
-    const mirror = 'https://custom.mirror.example/simple/'
-    const args = getPipIndexArgs(mirror, true)
-    expect(getIndexUrl(args)).toBe(mirror)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-    for (const url of PYPI_MIRROR_URLS) {
-      expect(extras).toContain(url)
+  it('names pypi.org once when the configured mirror is pypi.org, with or without its slash', () => {
+    for (const mirror of [
+      'https://pypi.org/simple/',
+      'https://pypi.org/simple',
+      ' https://pypi.org/simple/ '
+    ]) {
+      expect(getPipIndexArgs(mirror, true)).toEqual(argv(PYPI_MIRROR_URLS))
     }
-    expect(extras).toHaveLength(1 + PYPI_MIRROR_URLS.length)
   })
 
-  it('deduplicates when user mirror matches pypi.org', () => {
-    const args = getPipIndexArgs('https://pypi.org/simple/', true)
-    expect(getIndexUrl(args)).toBe('https://pypi.org/simple/')
-    const extras = getExtras(args)
-    expect(extras).not.toContain('https://pypi.org/simple/')
-    expect(extras).toHaveLength(PYPI_MIRROR_URLS.length)
+  it('names a Chinese mirror once when it is also the configured mirror, keeping it first', () => {
+    const chinese = PYPI_MIRROR_URLS[1]!
+    for (const mirror of [chinese, chinese.replace(/\/$/, '')]) {
+      expect(getPipIndexArgs(mirror, true), 'with or without its slash').toEqual(
+        argv([mirror, ...PYPI_MIRROR_URLS.filter((url) => url !== chinese)])
+      )
+    }
   })
 
-  it('deduplicates when user mirror matches pypi.org without trailing slash', () => {
-    const args = getPipIndexArgs('https://pypi.org/simple', true)
-    const extras = getExtras(args)
-    expect(extras).toHaveLength(PYPI_MIRROR_URLS.length)
-  })
-
-  it('deduplicates when user mirror is one of the Chinese mirrors', () => {
-    const mirror = PYPI_MIRROR_URLS[0]!
-    const args = getPipIndexArgs(mirror, true)
-    expect(getIndexUrl(args)).toBe(mirror)
-    const extras = getExtras(args)
-    expect(extras.filter((u) => u === mirror)).toHaveLength(0)
-    expect(extras).toHaveLength(1 + PYPI_MIRROR_URLS.length - 1)
-  })
-
-  it('treats empty string as no mirror', () => {
-    const args = getPipIndexArgs('')
-    expect(args).toEqual(getPipIndexArgs())
-  })
-
-  it('treats whitespace-only string as no mirror', () => {
-    const args = getPipIndexArgs('   ')
-    expect(args).toEqual(getPipIndexArgs())
-  })
-
-  it('trims whitespace from mirror URL', () => {
-    const mirror = '  https://custom.mirror.example/simple/  '
-    const args = getPipIndexArgs(mirror)
-    expect(getIndexUrl(args)).toBe('https://custom.mirror.example/simple/')
-  })
-
-  it('passes undefined the same as no argument', () => {
-    expect(getPipIndexArgs(undefined)).toEqual(getPipIndexArgs())
+  it('adds no --index-strategy, so uv keeps its default of falling through when a mirror lacks a package', () => {
+    expect(getPipIndexArgs(MIRROR, true)).not.toContain('--index-strategy')
   })
 })
 
