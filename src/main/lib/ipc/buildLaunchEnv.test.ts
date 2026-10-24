@@ -15,7 +15,9 @@ vi.mock('electron', () => ({
 }))
 
 import type { InstallationRecord } from '../../installations'
-import { buildLaunchEnv } from './shared'
+import os from 'os'
+import path from 'path'
+import { buildLaunchEnv, createSessionPath } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -60,5 +62,25 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   it('ignores a user env var override', () => {
     const env = buildLaunchEnv(inst('git', { __COMFYUI_DESKTOP_VERSION__: '9.9.9' }))
     expect(env).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+  })
+})
+
+describe('createSessionPath', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('gives two launches in the same millisecond different session folders', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_792_800_000_000)
+    const first = createSessionPath()
+    const second = createSessionPath()
+    expect(
+      first,
+      "one shared folder would let one launch consume the other launch's markers"
+    ).not.toBe(second)
+    for (const sessionPath of [first, second]) {
+      expect(path.dirname(sessionPath)).toBe(os.tmpdir())
+      expect(path.basename(sessionPath)).toMatch(/^comfyui-desktop-2-1792800000000-[0-9a-f]{8}$/)
+    }
   })
 })

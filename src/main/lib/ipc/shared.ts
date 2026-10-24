@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
 import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { execFile, spawn, execFileSync } from 'child_process'
@@ -1010,7 +1011,7 @@ export async function performCopy(
 }
 
 export function createSessionPath(): string {
-  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}`)
+  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}-${randomUUID().slice(0, 8)}`)
 }
 
 export function sanitizeEnvVars(raw: unknown): Record<string, string> {
