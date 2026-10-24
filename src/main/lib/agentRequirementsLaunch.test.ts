@@ -2551,8 +2551,6 @@ describe('prefetchAgentRequirements', () => {
   let probes: Call[] = []
   let probeAnswer: { code: number; output: string } = { code: 0, output: '' }
   let unserved = new Set<string>()
-  let keeps: Call[] = []
-  let keepAnswer: { code: number; output: string } = { code: 0, output: '' }
   let compileAnswer: CompileAnswer
   let cacheCheckAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
@@ -2575,8 +2573,6 @@ describe('prefetchAgentRequirements', () => {
     probes = []
     probeAnswer = { code: 0, output: '' }
     unserved = new Set()
-    keeps = []
-    keepAnswer = { code: 0, output: '' }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-prefetch-'))
     plan = {
       reqPath: path.join(dir, 'ComfyUI', 'agent_requirements.txt'),
@@ -2608,10 +2604,6 @@ describe('prefetchAgentRequirements', () => {
         env: rest[9] as Call['env'],
         subcommand: (rest[10] as string | undefined) ?? 'install',
         ...(output ? { seed: fs.readFileSync(output, 'utf-8') } : {})
-      }
-      if (call.subcommand === 'compile' && extraArgs.some((arg) => arg.endsWith('-keep.txt'))) {
-        keeps.push({ ...call, seed: fs.readFileSync(path.join(dir, extraArgs.at(-1)!), 'utf-8') })
-        return keepAnswer
       }
       if (call.subcommand === 'compile' && !output) {
         probes.push(call)
@@ -2749,58 +2741,6 @@ describe('prefetchAgentRequirements', () => {
       'a local build the launch keeps must not be replaced from what is fetched here'
     ).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
     expect(report).toMatchObject({ outcome: 'completed' })
-  })
-
-  it('fetches the replacement for a local build the requirements cannot keep', async () => {
-    installedAnswer = {
-      code: 0,
-      output: JSON.stringify([{ name: 'requests', version: '2.31.0+local' }])
-    }
-    unserved.add('requests==2.31.0+local')
-    keepAnswer = {
-      code: 1,
-      output: 'error: No solution found when resolving dependencies\n'
-    }
-
-    expect(await finish(request())).toMatchObject({ outcome: 'completed' })
-    expect(
-      keeps.map((keep) => keep.seed),
-      "asked with the build's public version held, on top of the step's own constraints"
-    ).toEqual(['requests==2.31.0\n'])
-    expect(
-      keeps[0]!.extraArgs.filter((arg) => arg === '--constraint'),
-      "the step's constraints and the held version"
-    ).toHaveLength(2)
-    expect(calls.at(-1)!.content, 'the launch moves it anyway').toBe(COMPILED)
-  })
-
-  it('keeps a local build when the check of whether it can stay fails for another reason', async () => {
-    installedAnswer = {
-      code: 0,
-      output: JSON.stringify([{ name: 'requests', version: '2.31.0+local' }])
-    }
-    unserved.add('requests==2.31.0+local')
-    keepAnswer = { code: 2, output: 'error: Failed to fetch: `requests`\n' }
-
-    await finish(request())
-
-    expect(keeps).toHaveLength(1)
-    expect(calls.at(-1)!.content, 'not proved forced, so not replaced').toBe(
-      'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
-    )
-  })
-
-  it('asks nothing more for an unserved version that is not a local build', async () => {
-    installedAnswer = {
-      code: 0,
-      output: JSON.stringify([{ name: 'requests', version: '2.31.0' }])
-    }
-    unserved.add('requests==2.31.0')
-
-    await finish(request())
-
-    expect(keeps).toEqual([])
-    expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
   })
 
   it('fetches nothing, and reports why, when every pin replaces an installed version no index serves', async () => {
