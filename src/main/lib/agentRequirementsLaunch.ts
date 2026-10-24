@@ -461,8 +461,8 @@ export interface PrefetchRequest {
   /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
    *  online first, so an index it can't reach is reported as `unreachable`, cache or not. When
    *  the compile would move an installed version no index serves, its replacement is not fetched,
-   *  and the step is `not_served` if that leaves nothing to fetch; when a constraint pins such a
-   *  version, the compile finds no solution and the step is `resolve_failed`. */
+   *  and the run is `not_served` if nothing is fetched; when a constraint pins such a version
+   *  that is not a local build, the compile finds no solution and the step is `resolve_failed`. */
   eager?: boolean
 }
 
@@ -1031,6 +1031,7 @@ async function runPrefetch(
     uvVersion = await readUvVersion(plan, signal)
     await removePrefetchFiles(plan.installPath)
     let cachedSteps = 0
+    let declined = false
     for (const [index, step] of request.steps.entries()) {
       const left = (): number => Math.max(0, PREFETCH_TIMEOUT_MS - (Date.now() - startedAt))
       const fetched = await fetchStep(plan, step, `${PREFETCH_PREFIX}${attemptTag()}-${index}`, {
@@ -1041,6 +1042,7 @@ async function runPrefetch(
       })
       if (fetched.kind === 'unlisted') return done(signal.aborted ? 'cancelled' : 'list_failed')
       if (fetched.kind === 'cached') cachedSteps++
+      if (fetched.kind === 'declined') declined = true
       if (fetched.kind === 'fetched') fetches.push(fetched.run)
       if (fetched.kind === 'failed') {
         if (fetched.stage === 'fetch') fetches.push(fetched.run)
@@ -1050,7 +1052,9 @@ async function runPrefetch(
       }
     }
     if (cachedSteps === request.steps.length) return null
-    return done(fetches.length ? 'completed' : 'nothing_missing', fetches.at(-1))
+    // No tail for a decline: it names the installed version, which may carry a private label.
+    const nothing = declined ? 'not_served' : 'nothing_missing'
+    return done(fetches.length ? 'completed' : nothing, fetches.at(-1))
   } catch {
     return done('spawn_error')
   } finally {
@@ -1068,12 +1072,11 @@ interface Resolved {
 const FAILED_OUTCOME = {
   resolve: 'resolve_failed',
   fetch: 'download_failed',
-  not_served: 'not_served',
   unreachable: 'unreachable'
 } as const
 
 type StepResult =
-  | { kind: 'cached' | 'nothing' | 'unlisted' }
+  | { kind: 'cached' | 'nothing' | 'unlisted' | 'declined' }
   | { kind: 'fetched'; run: BoundedResult }
   | { kind: 'failed'; stage: keyof typeof FAILED_OUTCOME; run: BoundedResult }
 
@@ -1105,7 +1108,9 @@ async function fetchStep(
   if (step.constraints !== undefined) {
     await fs.promises.writeFile(
       path.join(plan.installPath, constraintsName),
-      step.constraints,
+      // A compile can't see installed versions, so pinning a local build leaves no solution; the
+      // seed and the probe keep it installed instead.
+      mode === 'prefetch' ? step.constraints.replace(/^.*==\S*\+.*$\n?/gm, '') : step.constraints,
       'utf-8'
     )
     constraintArgs.push('--constraint', constraintsName)
@@ -1161,7 +1166,6 @@ async function fetchStep(
     // replaces one no index serves (a local build) with what this compile chose, once that is
     // cached. So the replacement for such a version is not fetched; the rest is.
     const unserved = new Set<string>()
-    let declined: BoundedResult | undefined
     for (const { name } of pins.filter(({ name }) => installed.has(name))) {
       const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
       await fs.promises.writeFile(probePath, `${name}==${installed.get(name)}\n`, 'utf-8')
@@ -1177,20 +1181,19 @@ async function fetchStep(
       if (served.ok) continue
       if (!NO_SOLUTION.test(stripAnsi(served.output))) return { run: served, pins: [] }
       unserved.add(name)
-      declined = served
     }
     const kept = pins.filter(({ name }) => !unserved.has(name)).map(({ line }) => line)
-    if (declined && kept.length === 0) return { run: declined, pins: [], notServed: true }
+    if (unserved.size && kept.length === 0) return { run, pins: [], notServed: true }
     return { run, pins: kept }
   }
   const resolution = await (mode === 'launch' ? dryRun() : compile())
   if (resolution === null) return { kind: 'unlisted' }
   const { run: resolved, pins, notServed } = resolution
+  if (notServed) return { kind: 'declined' }
   if (!resolved.ok) {
     const error = uvErrorSection(resolved.output) ?? ''
     const unreachable = eager && !NO_SOLUTION.test(error) && DOWNLOAD_FAILED.test(error)
-    const stage = notServed ? 'not_served' : unreachable ? 'unreachable' : 'resolve'
-    return { kind: 'failed', stage, run: resolved }
+    return { kind: 'failed', stage: unreachable ? 'unreachable' : 'resolve', run: resolved }
   }
   if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')

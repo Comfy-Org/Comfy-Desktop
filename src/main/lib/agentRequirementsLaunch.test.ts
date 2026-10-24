@@ -991,6 +991,17 @@ describe('installAgentRequirements with a version override', () => {
     ])
   })
 
+  it("keeps a local build pinned in the launch's own resolve, which sees it installed", async () => {
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([...JSON.parse(INSTALLED), { name: 'idna', version: '3.20+qa316' }])
+    })
+
+    await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+    expect(calls[0]!.constraints).toBe('requests==2.32.0\nidna==3.20+qa316\n')
+  })
+
   it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
     fs.writeFileSync(
       path.join(installDir, 'ComfyUI', 'requirements.txt'),
@@ -2545,6 +2556,7 @@ describe('prefetchAgentRequirements', () => {
     env: Record<string, string> | undefined
     subcommand: string
     seed?: string
+    constraints?: string
   }
   type CompileAnswer = { code: number; output: string; compiled: string }
   let calls: Call[] = []
@@ -2603,7 +2615,15 @@ describe('prefetchAgentRequirements', () => {
         extraArgs,
         env: rest[9] as Call['env'],
         subcommand: (rest[10] as string | undefined) ?? 'install',
-        ...(output ? { seed: fs.readFileSync(output, 'utf-8') } : {})
+        ...(output ? { seed: fs.readFileSync(output, 'utf-8') } : {}),
+        ...(extraArgs.includes('--constraint')
+          ? {
+              constraints: fs.readFileSync(
+                path.join(dir, extraArgs[extraArgs.indexOf('--constraint') + 1]!),
+                'utf-8'
+              )
+            }
+          : {})
       }
       if (call.subcommand === 'compile' && !output) {
         probes.push(call)
@@ -2759,8 +2779,68 @@ describe('prefetchAgentRequirements', () => {
     ).toEqual([])
     expect(report, 'a deliberate decline, told apart from a resolve that failed').toMatchObject({
       outcome: 'not_served',
-      errorTail: expect.stringContaining('no version of requests==2.30.0+local')
+      exitCode: null,
+      errorTail: null
     })
+    expect(JSON.stringify(report), 'no private local version label is reported').not.toContain(
+      '+local'
+    )
+  })
+
+  it('goes on past a declined step, and reports what the next one fetched', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([{ name: 'requests', version: '2.30.0+local' }])
+    }
+    unserved.add('requests==2.30.0+local')
+    const original = mockInstall.getMockImplementation()!
+    let compiles = 0
+    mockInstall.mockImplementation(async (file, ...rest) => {
+      if (rest[10] === 'compile' && (rest[7] as string[]).includes('-o')) {
+        compileAnswer = {
+          ...compileAnswer,
+          compiled: compiles++ === 0 ? 'requests==2.32.0\n' : COMPILED
+        }
+      }
+      return original(file, ...rest)
+    })
+
+    const report = await finish({
+      plan,
+      steps: [{ text: 'comfy-agent==0.0.0.dev0\n' }, request().steps[0]!],
+      signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
+    })
+
+    expect(report, "core's step declined; the override's still ran").toMatchObject({
+      outcome: 'completed'
+    })
+    expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+  })
+
+  it('leaves a local build out of the constraints, keeps it installed, and fetches the rest', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([
+        { name: 'requests', version: '2.32.0' },
+        { name: 'idna', version: '3.20+qa316' }
+      ])
+    }
+    unserved.add('idna==3.20+qa316')
+    compileAnswer = { ...compileAnswer, compiled: COMPILED + 'idna==3.20\n' }
+
+    const report = await finish({
+      ...request(),
+      steps: [{ ...request().steps[0]!, constraints: 'requests==2.32.0\nidna==3.20+qa316\n' }]
+    })
+
+    expect(
+      calls[0]!.constraints,
+      'no index serves it, so pinning it leaves the compile no solution'
+    ).toBe('requests==2.32.0\n')
+    expect(report).toMatchObject({ outcome: 'completed' })
+    expect(calls.at(-1)!.content, 'its replacement is not fetched').toBe(
+      'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
+    )
   })
 
   it('reports a probe that fails for another reason as resolve_failed, and fetches nothing', async () => {
