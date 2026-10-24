@@ -70,6 +70,8 @@ import {
   suspendActiveModelDownloadsForQuit,
   suspendActiveModelDownloadsForSleep
 } from './lib/comfyDownloadManager'
+import { stopAgentPrefetches } from './lib/agentRequirementsLaunch'
+import { prefetchEnrolledAgents } from './lib/agentPrefetch'
 import {
   hasActiveTemplateDownloads,
   getTemplateDownloadState
@@ -122,7 +124,7 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaFlags } from './lib/coreBetaCampaignFlags'
+import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
@@ -1533,12 +1535,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
 
-    // Bind the stored staff classification BEFORE any ops flag is fetched. The
-    // boot evaluation is the only authoritative one, so a property that arrives
-    // after it cannot affect this launch — see `staffFlagTargeting.ts`. Also
-    // subscribes to the identity consensus, which is what reclassifies for the
-    // NEXT launch; this runs before any view exists, so no outcome is missed.
-    initStaffFlagTargeting()
+    // Before any ops flag is fetched, so the boot evaluation is targeted on the stored classification.
+    initStaffFlagTargeting({ onFlagPropertiesChange: () => void refreshCoreBetaFlags() })
 
     // Hydrate the persisted cloud user-tier cache (billing telemetry, free-tier offer UI) and
     // bind it for the ops-flag fetches below, for the same reason as staff targeting. A small
@@ -1554,7 +1552,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCoreBetaFlags({
       distinctId: installationId,
       betaEnabled: settings.peekBetaFeaturesEnabled()
-    })
+    }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
@@ -2475,6 +2473,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       flushLastSessionSync()
       flushOperationOutput()
       cleanupTempDownloads()
+      stopAgentPrefetches()
     } finally {
       // Hold the quit until the ComfyUI processes being stopped have exited (bounded) and
       // telemetry has drained, then quit again; that re-issued quit passes through. In a

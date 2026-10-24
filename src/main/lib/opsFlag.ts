@@ -10,8 +10,9 @@
  * `opsFlagPersonProperties` in telemetry.ts); implicit flag events are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
- * operational override isn't accidentally consent-gated. Fetched once at boot; a `persist` flag
- * answers from its saved treatment at once and refreshes it in the background.
+ * operational override isn't accidentally consent-gated. Fetched at boot, and again on `refresh`
+ * when a person property changes mid-session; a `persist` flag answers from its saved treatment
+ * at once and refreshes it in the background.
  *
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
@@ -200,6 +201,13 @@ export interface OpsFlag<T> {
    *  caller so far reads from an IPC handler, where racing the boot fetch to the fallback is
    *  exactly the bug this exists to avoid. */
   get(): Promise<T>
+  /** Re-run the evaluation under the id `init` used, because a person property it sends has
+   *  changed mid-session (a staff sign-in). Authoritative exactly as the boot fetch is: a value
+   *  replaces `cached` and is persisted; `unreachable` changes nothing. Any fetch still in flight
+   *  is superseded, since it carried the old properties. `get()` waits for it, each refresh bounded by the
+   *  flag's deadline (a refresh started while one is awaited extends the wait). A no-op before
+   *  `init`. Never rejects. */
+  refresh(): Promise<void>
   /** @internal — exposed for tests. */
   _resetForTest(): void
 }
@@ -249,6 +257,11 @@ export function makeOpsFlag<T>(opts: {
    *  deadline can still settle long after the launch (or the test) that started it moved on;
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
+  /** Only the latest-started fetch may apply: an older one went out with superseded person
+   *  properties, even when the newer one turns out unreachable. */
+  let fetchSeq = 0
+  let initOpts: { distinctId: string; timeoutMs?: number } | null = null
+  let refreshPromise: Promise<void> | null = null
 
   /** The stored treatment, parsed, or `undefined` when there is none. Read once per `init`.
    *  Read-only: an unreachable server must never overwrite what a successful fetch stored. */
@@ -269,8 +282,8 @@ export function makeOpsFlag<T>(opts: {
    *  campaign flags sharing `campaign-flags.json` cannot interleave, and `ops-flags.json` has a
    *  single persisting flag. Across two overlapping launches the loser of a race re-fetches on
    *  the next launch anyway. */
-  function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
-    if (generationAtInit !== generation) return
+  function persistLate(generationAtInit: number, seq: number, result: OpsFlagValueResult): void {
+    if (generationAtInit !== generation || seq !== fetchSeq) return
     const parsed = parse(result.value, result.payload, Date.now())
     if (parsed !== undefined) cached = parsed
     if (logLabel) console.log(`[${logLabel}] late: fetched=`, result.value)
@@ -283,64 +296,80 @@ export function makeOpsFlag<T>(opts: {
     }
   }
 
-  return {
-    init(initOpts) {
-      if (initPromise) return initPromise
-      const generationAtInit = generation
-      const saved = readPersisted()
-      if (saved !== undefined) cached = saved
-      const fetched = mainTelemetry
-        .getOpsFlagResult(
-          key,
-          initOpts.distinctId,
-          initOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          // Non-persisting flags pass no callback at all, so they stay write-free structurally
-          // rather than by a guard inside one — no write path is attached to the abandoned fetch.
-          // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
-          // not a write, and deliberately does not depend on whether the flag persists.)
-          persist ? (late) => persistLate(generationAtInit, late) : undefined
-        )
-        .then((result) => {
-          // A refresh runs detached, so it can outlive a `_resetForTest`.
-          if (generationAtInit !== generation) return
-          if (result.kind === 'unreachable') {
-            // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
-            // it here could undo a late value that landed first.
-            const parsed = saved === undefined ? parse(undefined, undefined) : undefined
-            if (parsed !== undefined) cached = parsed
-          } else {
-            const parsed = parse(result.value, result.payload, Date.now())
-            if (parsed !== undefined) cached = parsed
-            if (persist) {
-              try {
-                writePersistedResult(persistFile, key, {
-                  value: result.value,
-                  payload: result.payload
-                })
-              } catch (err) {
-                // A failed write must not cost this launch the value it just fetched.
-                if (logLabel) console.log(`[${logLabel}] persist error:`, err)
-              }
+  function fetchAndApply(
+    fetchOpts: { distinctId: string; timeoutMs?: number },
+    fallbackOnUnreachable: boolean,
+    tag: 'init' | 'refresh'
+  ): Promise<void> {
+    const generationAtInit = generation
+    const seq = ++fetchSeq
+    return mainTelemetry
+      .getOpsFlagResult(
+        key,
+        fetchOpts.distinctId,
+        fetchOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        // Non-persisting flags pass no callback at all, so they stay write-free structurally
+        // rather than by a guard inside one — no write path is attached to the abandoned fetch.
+        // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
+        // not a write, and deliberately does not depend on whether the flag persists.)
+        persist ? (late) => persistLate(generationAtInit, seq, late) : undefined
+      )
+      .then((result) => {
+        // A refresh runs detached, so it can outlive a `_resetForTest`.
+        if (generationAtInit !== generation) return
+        if (seq !== fetchSeq) return
+        if (result.kind === 'unreachable') {
+          // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
+          // it here could undo a late value that landed first.
+          const parsed = fallbackOnUnreachable ? parse(undefined, undefined) : undefined
+          if (parsed !== undefined) cached = parsed
+        } else {
+          const parsed = parse(result.value, result.payload, Date.now())
+          if (parsed !== undefined) cached = parsed
+          if (persist) {
+            try {
+              writePersistedResult(persistFile, key, {
+                value: result.value,
+                payload: result.payload
+              })
+            } catch (err) {
+              // A failed write must not cost this launch the value it just fetched.
+              if (logLabel) console.log(`[${logLabel}] persist error:`, err)
             }
           }
+        }
 
-          if (logLabel)
-            console.log(
-              `[${logLabel}] init: fetched=`,
-              result.kind === 'value' ? result.value : result.kind,
-              '→ cached=',
-              // One line at full depth: the default inspect folds nested payloads to `[Array]`
-              // and wraps across lines that a `[label]` grep then misses.
-              inspect(cached, { depth: null, breakLength: Infinity, compact: true })
-            )
-        })
-        .catch((err) => {
-          if (logLabel) console.log(`[${logLabel}] init error:`, err)
-          // `cached` keeps what it holds: the saved treatment, or `fallback`.
-        })
+        if (logLabel)
+          console.log(
+            `[${logLabel}] ${tag}: fetched=`,
+            result.kind === 'value' ? result.value : result.kind,
+            '→ cached=',
+            // One line at full depth: the default inspect folds nested payloads to `[Array]`
+            // and wraps across lines that a `[label]` grep then misses.
+            inspect(cached, { depth: null, breakLength: Infinity, compact: true })
+          )
+      })
+      .catch((err) => {
+        if (logLabel) console.log(`[${logLabel}] ${tag} error:`, err)
+        // `cached` keeps what it holds: the saved treatment, or `fallback`.
+      })
+  }
+
+  return {
+    init(bootOpts) {
+      if (initPromise) return initPromise
+      initOpts = bootOpts
+      const saved = readPersisted()
+      if (saved !== undefined) cached = saved
+      const fetched = fetchAndApply(bootOpts, saved === undefined, 'init')
       // A saved treatment answers now; the fetch above only refreshes it.
       initPromise = saved !== undefined ? Promise.resolve() : fetched
       return initPromise
+    },
+    refresh() {
+      if (!initOpts) return Promise.resolve()
+      refreshPromise = fetchAndApply(initOpts, false, 'refresh')
+      return refreshPromise
     },
     async get() {
       if (initPromise) {
@@ -350,11 +379,18 @@ export function makeOpsFlag<T>(opts: {
           /* keep cached */
         }
       }
+      // A refresh superseded while awaited discards its answer, so wait for its replacement too.
+      for (let awaited = refreshPromise; awaited; awaited = refreshPromise) {
+        await awaited
+        if (awaited === refreshPromise) break
+      }
       return cached
     },
     _resetForTest() {
       cached = fallback
       initPromise = null
+      initOpts = null
+      refreshPromise = null
       // Strands any fetch still in flight, so a late result from the previous test cannot
       // write into the next one's config dir.
       generation += 1

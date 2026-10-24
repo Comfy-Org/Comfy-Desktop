@@ -49,6 +49,16 @@ function makeTestFlag() {
   })
 }
 
+function makePersistedFlag() {
+  return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
+    key: 'test-flag',
+    fallback: 'normal',
+    parse: (value) =>
+      value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
+    persist: true
+  })
+}
+
 /** Pinned clock, so a written entry's `fetchedAt` stamp compares exactly. */
 const NOW = Date.UTC(2026, 9, 5)
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -196,16 +206,6 @@ describe('makeOpsFlag persistence', () => {
 
   function readFlagsFile(): string {
     return fs.readFileSync(flagsFilePath(), 'utf-8')
-  }
-
-  function makePersistedFlag() {
-    return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
-      key: 'test-flag',
-      fallback: 'normal',
-      parse: (value) =>
-        value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
-      persist: true
-    })
   }
 
   it('uses the persisted value when the fetch resolves undefined', async () => {
@@ -917,5 +917,148 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     })
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBeNull()
+  })
+})
+
+describe('makeOpsFlag refresh', () => {
+  const stored = () =>
+    JSON.parse(fs.readFileSync(path.join(testConfigDir, 'ops-flags.json'), 'utf-8'))['test-flag']
+
+  it('does nothing before init', async () => {
+    const flag = makePersistedFlag()
+    await flag.refresh()
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+  })
+
+  it('re-fetches under the boot id and applies and persists the new answer', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'boot-id', timeoutMs: 1234 })
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('disabled'))
+
+    await flag.refresh()
+
+    expect(getOpsFlagResult.mock.calls[1]?.slice(0, 3)).toEqual(['test-flag', 'boot-id', 1234])
+    expect(await flag.get()).toBe('disabled')
+    expect(stored()).toMatchObject({ value: 'disabled' })
+  })
+
+  it('keeps the current answer, and the file, when the refresh is unreachable', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('degraded'))
+    await flag.init({ distinctId: 'id' })
+    const before = stored()
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+
+    await flag.refresh()
+
+    expect(await flag.get()).toBe('degraded')
+    expect(stored()).toEqual(before)
+  })
+
+  it('keeps the answer even for a flag whose parse fails closed on no value', async () => {
+    const flag = makeOpsFlag<string[]>({
+      key: 'test-flag',
+      fallback: [],
+      parse: (value, payload) => (value === true && Array.isArray(payload) ? payload : []),
+      persist: true
+    })
+    getOpsFlagResult.mockResolvedValueOnce(flagResult(true, ['--enable-x']))
+    await flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+
+    await flag.refresh()
+
+    expect(await flag.get(), 'an offline refresh must not parse "no answer" into a cut').toEqual([
+      '--enable-x'
+    ])
+  })
+
+  it('drops an older answer even when the refresh that superseded it is unreachable', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let staffAnswer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (staffAnswer = resolve)))
+    void flag.refresh()
+    const staffLate = lateCallback()!
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+    await flag.refresh()
+
+    staffAnswer(flagResult('disabled'))
+    staffLate(flagResult('disabled'))
+    await settle()
+
+    const why = 'a staff answer arriving after a failed sign-out refresh is stale'
+    expect(await flag.get(), why).toBe('normal')
+    expect(stored(), why).toMatchObject({ value: 'normal' })
+  })
+
+  it("applies and persists the refresh's own late answer", async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    getOpsFlagResult.mockResolvedValueOnce(unreachable())
+    await flag.refresh()
+
+    lateCallback()!(flagResult('disabled'))
+
+    expect(await flag.get()).toBe('disabled')
+    expect(stored()).toMatchObject({ value: 'disabled' })
+  })
+
+  it('makes get() wait for an in-flight refresh rather than answer the boot value', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let answer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+
+    void flag.refresh()
+    const read = flag.get()
+    await settle()
+    answer(flagResult('disabled'))
+
+    expect(await read).toBe('disabled')
+  })
+
+  it('makes a waiting get() follow a refresh that supersedes the one it awaited', async () => {
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('normal'))
+    await flag.init({ distinctId: 'id' })
+    let answerFirst!: (v: unknown) => void
+    let answerSecond!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (answerSecond = resolve)))
+
+    void flag.refresh()
+    const read = flag.get()
+    await settle()
+    void flag.refresh()
+    answerFirst(flagResult('degraded'))
+    await settle()
+    answerSecond(flagResult('disabled'))
+
+    expect(await read, 'the first answer was superseded, not the boot one restored').toBe(
+      'disabled'
+    )
+  })
+
+  it('does not let a slower boot answer land over the refresh', async () => {
+    const flag = makePersistedFlag()
+    let bootAnswer!: (v: unknown) => void
+    getOpsFlagResult.mockReturnValueOnce(new Promise((resolve) => (bootAnswer = resolve)))
+    void flag.init({ distinctId: 'id' })
+    const bootLate = lateCallback()!
+    getOpsFlagResult.mockResolvedValueOnce(flagResult('disabled'))
+    await flag.refresh()
+
+    bootAnswer(flagResult('normal'))
+    bootLate(flagResult('normal'))
+    await settle()
+
+    const why = 'the boot fetch went out without the refreshed property, so its answer is stale'
+    expect(await flag.get(), why).toBe('disabled')
+    expect(stored(), why).toMatchObject({ value: 'disabled' })
   })
 })

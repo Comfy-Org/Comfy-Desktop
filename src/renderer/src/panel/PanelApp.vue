@@ -16,7 +16,6 @@ import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
-import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -43,8 +42,6 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
-import { useMediaPrefetch } from '../composables/useMediaPrefetch'
-import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -171,16 +168,6 @@ const {
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
-
-// Warm the ~5 MB MCP film into cache once so it isn't black on first open. No
-// `runningTabCount` gate: the modal is only reachable while an instance runs.
-const { prefetch: prefetchMedia } = useMediaPrefetch()
-let mcpVideoWarmed = false
-function warmMcpVideo(): void {
-  if (mcpVideoWarmed) return
-  mcpVideoWarmed = true
-  prefetchMedia([MCP_LAUNCH_VIDEO_SRC])
-}
 
 let warmTemplateThumbnailsOnce: Promise<void> | null = null
 function warmTemplateThumbnails(): Promise<void> {
@@ -357,28 +344,11 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-/**
- * Dismisses the MCP overlay and restores the main canvas.
- * The 'mcp-setup' overlay leaves the underlying view active.
- */
-function handleMcpClose(): void {
-  window.api.closeCurrentPanel()
-}
-
-/**
- * Handles the "Open terminal" CTA.
- * Switches to the console tab, and restores the canvas when closed.
- */
-function handleMcpOpenTerminal(): void {
-  if (!installationId) return
-  window.api.openInstancePicker({ installationId, initialTab: 'console' })
-}
-
 /** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
+    const isOverlay = next === 'feedback' || next === 'announcement'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
@@ -560,8 +530,6 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
-    // After bootstrap so it never competes with init (idle-deferred internally).
-    warmMcpVideo()
   }
 })
 
@@ -678,12 +646,6 @@ onUnmounted(() => {
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
-
-    <McpSetupModal
-      v-if="activePanel === 'mcp-setup'"
-      @close="handleMcpClose"
-      @open-terminal="handleMcpOpenTerminal"
-    />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />

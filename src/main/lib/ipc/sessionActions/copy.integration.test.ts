@@ -85,7 +85,24 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
+const holdLog = vi.hoisted(() => [] as string[])
+vi.mock('../../agentRequirementsLaunch', async (importOriginal) => {
+  const actual = await importOriginal<typeof AgentRequirementsLaunchModule>()
+  return {
+    ...actual,
+    holdAgentPrefetch: async (installPath: string) => {
+      const release = await actual.holdAgentPrefetch(installPath)
+      holdLog.push(`held ${installPath}`)
+      return () => {
+        holdLog.push(`released ${installPath}`)
+        release()
+      }
+    }
+  }
+})
+
 import { handleCopy, handleReleaseUpdate, handleCopyChangePytorch } from './copy'
+import type * as AgentRequirementsLaunchModule from '../../agentRequirementsLaunch'
 import { comfybuilder } from '../../../sources/comfybuilder'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
@@ -162,6 +179,56 @@ describe('handleCopy (ComfyBuilder install)', () => {
   afterEach(() => {
     installationsStore.clear()
     fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  const loggingSender = (): Electron.WebContents =>
+    ({
+      isDestroyed: () => false,
+      send: (_channel: string, payload: { phase?: string; percent?: number }) => {
+        if (payload?.phase === 'copy' && (payload.percent ?? 0) > 0) holdLog.push('copying')
+      }
+    }) as unknown as Electron.WebContents
+
+  it('holds the agent background download off the source for the whole copy', async () => {
+    holdLog.length = 0
+
+    const result = await handleCopy({
+      event: { sender: loggingSender() } as unknown as Electron.IpcMainInvokeEvent,
+      installationId: src.id,
+      inst: src,
+      actionData: { name: 'Held Copy' }
+    })
+
+    expect(result.ok, `copy failed: ${result.message ?? ''}`).toBe(true)
+    const copying = holdLog.filter((entry) => entry === 'copying')
+    expect(copying.length, 'the copy reported progress').toBeGreaterThan(0)
+    expect(holdLog, 'held before the first file and released after the last').toEqual([
+      `held ${srcRoot}`,
+      ...copying,
+      `released ${srcRoot}`
+    ])
+  })
+
+  const chmodCanDenyRead = process.platform !== 'win32' && process.getuid?.() !== 0
+
+  it.runIf(chmodCanDenyRead)('releases the hold when the copy fails', async () => {
+    holdLog.length = 0
+    const unreadable = path.join(srcRoot, 'ComfyUI', 'unreadable.bin')
+    fs.writeFileSync(unreadable, 'x')
+    fs.chmodSync(unreadable, 0o000)
+    try {
+      const result = await handleCopy({
+        event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+        installationId: src.id,
+        inst: src,
+        actionData: { name: 'Failed Copy' }
+      })
+
+      expect(result.ok, 'an unreadable source file fails the copy').toBe(false)
+      expect(holdLog).toEqual([`held ${srcRoot}`, `released ${srcRoot}`])
+    } finally {
+      fs.chmodSync(unreadable, 0o644)
+    }
   })
 
   it('creates an independently launchable managed copy with the same Build identity', async () => {

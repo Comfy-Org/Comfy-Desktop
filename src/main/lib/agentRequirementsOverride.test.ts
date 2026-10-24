@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as telemetry from './telemetry'
 import {
   START_FAILURES_TO_REVERT,
+  agentGoBehindAgent,
   classifyAgentEvent,
   coreFileInstalled,
   coreFrontendVersion,
@@ -14,6 +15,7 @@ import {
   parseAgentRequirementsOverride,
   pinsOverBareLines,
   compareVersions,
+  indexKind,
   readFrontendPin,
   readOverrideState,
   reportOverrideDecision
@@ -196,7 +198,7 @@ describe('effectiveAgentRequirements', () => {
     })
   })
 
-  it('never adds a package core does not list', () => {
+  it('never adds a comfy-cli line core does not list', () => {
     expect(
       effectiveAgentRequirements('comfy-agent==0.2.0\n', pins({ 'comfy-cli': '1.0' }))
     ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
@@ -462,6 +464,51 @@ describe('reportOverrideDecision', () => {
     }
   })
 
+  it("carries how the launch's install went, and which kind of index it used", () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      reportOverrideDecision(
+        'i',
+        {
+          decision: 'deferred',
+          reason: 'not_cached',
+          pins: pins({ 'comfy-agent': '0.2.3' }),
+          install: {
+            outcome: 'timed_out',
+            exitCode: 1,
+            elapsedMs: 20_004,
+            budgetMs: 20_000,
+            errorTail: null
+          }
+        },
+        'cn_mirror'
+      )
+      reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
+
+      expect(emit.mock.calls.map(([, props]) => props)).toEqual([
+        expect.objectContaining({
+          decision: 'deferred',
+          reason: 'not_cached',
+          install_outcome: 'timed_out',
+          exit_code: 1,
+          elapsed_ms: 20_004,
+          budget_ms: 20_000,
+          error_tail: null,
+          index: 'cn_mirror'
+        }),
+        expect.objectContaining({
+          install_outcome: null,
+          exit_code: null,
+          elapsed_ms: null,
+          budget_ms: null,
+          index: null
+        })
+      ])
+    } finally {
+      emit.mockRestore()
+    }
+  })
+
   it('never lets a failing telemetry sink reach the launch', () => {
     vi.spyOn(telemetry, 'emit').mockImplementation(() => {
       throw new Error('sink down')
@@ -650,6 +697,23 @@ describe('the agent package name and extras', () => {
     )
   })
 
+  it("frees the agent's comfy-agent-go, so an agent upgrade can move it", () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent', version: '0.1.0rc2' },
+      { name: 'comfy_agent_go', version: '0.1.0rc2' },
+      { name: 'comfy-agent-sdk', version: '1.0' },
+      { name: 'comfy-agent-gox', version: '1.0' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    const held = 'comfy-agent-sdk==1.0\ncomfy-agent-gox==1.0\nrequests==2.32.0\n'
+    const parsed = parseAgentRequirementsOverride({ 'comfy-agent[go-nonfree]': '0.1.0rc3' })
+    if (parsed.kind !== 'pins') throw new Error(parsed.kind)
+    expect(installedConstraints(list, parsed.pins, 'comfy-agent==0.0.0.dev0\n')).toBe(held)
+    expect(installedConstraints(list, new Map(), 'comfy-agent==0.0.0.dev0\n'), 'unpinned').toBe(
+      held
+    )
+  })
+
   it('refuses an over-long extra name, or too many extras', () => {
     expect(parseAgentRequirementsOverride({ [`comfy-agent[${'a'.repeat(64)}]`]: '1.0' }).kind).toBe(
       'pins'
@@ -720,5 +784,137 @@ describe('the agent package name and extras', () => {
       kind: 'refused',
       reason: 'bad_version'
     })
+  })
+})
+
+describe('a comfy-agent-go pin', () => {
+  const CORE = 'comfy-agent==0.1.0rc3\ncomfy-cli==1.23.0\n'
+
+  it('is accepted on its own key, not taken for the agent', () => {
+    expect(parseAgentRequirementsOverride({ comfy_agent_go: '0.1.0rc4' })).toEqual({
+      kind: 'pins',
+      pins: new Map([['comfy-agent-go', '0.1.0rc4']])
+    })
+  })
+
+  it("goes in as a line of its own, leaving core's agent line out", () => {
+    expect(effectiveAgentRequirements(CORE, pins({ 'comfy-agent-go': '0.1.0rc4' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-cli==1.23.0\ncomfy-agent-go==0.1.0rc4\n'
+    })
+  })
+
+  it("alone, never takes the agent to core's line, a placeholder or a renamed package", () => {
+    const go = pins({ 'comfy-agent-go': '0.1.0rc3' })
+    expect(effectiveAgentRequirements('comfy-agent==0.0.0.dev0\n', go)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-go==0.1.0rc3\n'
+    })
+    expect(effectiveAgentRequirements('comfy-agent-oss==0.2.0\ncomfy-cli==1.23.0\n', go)).toEqual({
+      kind: 'text',
+      text: 'comfy-cli==1.23.0\ncomfy-agent-go==0.1.0rc3\n'
+    })
+  })
+
+  it("sits beside an agent pin, which still decorates core's agent line", () => {
+    const both = pins({ 'comfy-agent': '0.1.0rc4', 'comfy-agent-go': '0.1.0rc4' })
+    expect(effectiveAgentRequirements(CORE, both)).toEqual({
+      kind: 'text',
+      text: 'comfy-agent==0.1.0rc4\ncomfy-cli==1.23.0\ncomfy-agent-go==0.1.0rc4\n'
+    })
+  })
+
+  it("never takes a comfy-agent-go line in core's file for the agent's", () => {
+    const listed = 'comfy-agent-go==0.1.0rc3\ncomfy-agent==0.1.0rc3\n'
+    expect(effectiveAgentRequirements(listed, pins({ 'comfy-agent': '0.1.0rc4' }))).toEqual({
+      kind: 'text',
+      text: 'comfy-agent-go==0.1.0rc3\ncomfy-agent==0.1.0rc4\n'
+    })
+    expect(
+      effectiveAgentRequirements(listed, pins({ 'comfy-agent-go': '0.1.0rc4' })),
+      'a core file naming the carrier is not supported yet, and refuses rather than doubling it'
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('frees a renamed agent package listed after comfy-agent-go', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent-oss', version: '0.2.0' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    const core = 'comfy-agent-go==0.1.0\ncomfy-agent-oss==0.2.0\n'
+    expect(installedConstraints(list, new Map(), core)).toBe('requests==2.32.0\n')
+  })
+
+  it('still holds every unrelated installed package', () => {
+    const list = JSON.stringify([
+      { name: 'comfy-agent', version: '0.1.0rc3' },
+      { name: 'comfy-agent-go', version: '0.1.0rc3' },
+      { name: 'comfyui-frontend-package', version: '1.55.18' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+    expect(installedConstraints(list, pins({ 'comfy-agent-go': '0.1.0rc4' }), CORE)).toBe(
+      'comfyui-frontend-package==1.55.18\nrequests==2.32.0\n'
+    )
+  })
+
+  it("is one core's file can't take back, unlike a frontend pin", () => {
+    const both = pins({ 'comfy-agent-go': '0.1.0rc4', 'comfyui-frontend-package': '1.55.19' })
+    expect(pinsOverBareLines(CORE, both)).toEqual(new Map([['comfy-agent-go', '0.1.0rc4']]))
+  })
+
+  describe('older than the agent', () => {
+    const installed = (version: string): string =>
+      JSON.stringify([{ name: 'comfy_agent', version }])
+    const go = (version: string): OverridePins => pins({ 'comfy-agent-go': version })
+
+    it("is flagged against the installed agent, which it holds, not core's version", () => {
+      expect(agentGoBehindAgent(go('0.1.0rc4'), CORE, installed('0.1.0rc5'))).toEqual({
+        name: 'comfy-agent',
+        go: '0.1.0rc4',
+        agent: '0.1.0rc5'
+      })
+      expect(agentGoBehindAgent(go('0.1.0rc2'), CORE, installed('0.1.0rc1'))).toBeNull()
+    })
+
+    it('is flagged against the agent pin, over core and what is installed', () => {
+      const both = pins({ 'comfy-agent': '0.1.0rc5', 'comfy-agent-go': '0.1.0rc4' })
+      expect(agentGoBehindAgent(both, CORE, installed('0.1.0rc3'))).toEqual({
+        name: 'comfy-agent',
+        go: '0.1.0rc4',
+        agent: '0.1.0rc5'
+      })
+    })
+
+    it('names a renamed agent package', () => {
+      const oss = JSON.stringify([{ name: 'comfy-agent-oss', version: '0.2.0' }])
+      expect(agentGoBehindAgent(go('0.1.0'), 'comfy-agent-oss\n', oss)).toEqual({
+        name: 'comfy-agent-oss',
+        go: '0.1.0',
+        agent: '0.2.0'
+      })
+    })
+
+    it('is not flagged at or above the agent, or with no agent to compare', () => {
+      for (const version of ['0.1.0rc3', '0.1.0'])
+        expect(agentGoBehindAgent(go(version), CORE, installed('0.1.0rc3')), version).toBeNull()
+      expect(agentGoBehindAgent(go('0.1.0rc2'), 'comfy-agent\n', '[]')).toBeNull()
+      expect(
+        agentGoBehindAgent(go('0.1.0rc2'), 'comfy-agent\n', installed('0.1.0rc3+local'))
+      ).toBeNull()
+      expect(
+        agentGoBehindAgent(pins({ 'comfy-agent': '0.1.0rc3' }), CORE, installed('0.1.0rc3'))
+      ).toBeNull()
+    })
+  })
+})
+
+describe('indexKind', () => {
+  it('names the kind of index, never its URL', () => {
+    expect(indexKind({})).toBe('pypi')
+    expect(indexKind({ useChineseMirrors: true })).toBe('cn_mirror')
+    expect(
+      indexKind({ pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true })
+    ).toBe('custom')
+    expect(indexKind({ pypiMirror: '  ' }), 'a blank mirror setting is no mirror').toBe('pypi')
   })
 })

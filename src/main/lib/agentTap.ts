@@ -21,7 +21,14 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'node_fetch_failed',
   'health_check_failed',
   'agent_exited',
-  'agent_error'
+  'agent_error',
+  // The agent's startup, built by its v1 host from the agent's own log
+  // (cloud services/agent/packaging/comfy_agent/host.py AgentRecords).
+  'startup_step',
+  'startup_stalled',
+  'startup_failed',
+  'document_host_degraded',
+  'agent_orphans_stopped'
 ])
 
 // Absent from ALLOWED_EVENTS, so no line can forge it.
@@ -41,7 +48,34 @@ export const REASONS: ReadonlySet<string> = new Set([
   'checksum_mismatch',
   'permission_denied',
   'disabled',
-  'unknown'
+  'unknown',
+  'data_dir_locked',
+  'address_in_use',
+  'not_set_up',
+  'config_invalid'
+])
+
+// The agent's startup step ids: byte-identical to cloud's
+// services/agent/packaging/testdata/startup_step_ids.txt, plus "init" (a
+// failure before the first step) and "other" (a step this list does not know).
+export const STARTUP_STEPS: ReadonlySet<string> = new Set([
+  'init',
+  'open_data_dir',
+  'cli_provision',
+  'find_comfyui',
+  'code_search_canary',
+  'find_node',
+  'sandbox_config',
+  'egress_proxy',
+  'sandbox_setup',
+  'sandbox_grants',
+  'object_info',
+  'knowledge',
+  'cli_skills',
+  'detect_environment',
+  'document_host',
+  'listen',
+  'other'
 ])
 
 // A Set, not an object literal, so untrusted keys like `constructor` can't hit the prototype.
@@ -50,7 +84,56 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'duration_ms',
   'agent_version',
   'node_version',
-  'reason'
+  'reason',
+  // Typed in LIFECYCLE_ENUMS / LIFECYCLE_COUNTS / fieldValue.
+  'step',
+  'outcome',
+  'attempt',
+  'count',
+  'uptime_ms',
+  'startup_ms',
+  'ready',
+  'crash',
+  'missing',
+  'python_arch',
+  'python_version',
+  'crdt',
+  'cli',
+  'comfyui',
+  'comfyui_found_by',
+  'comfyui_match',
+  'shell',
+  'sandbox',
+  'assets'
+])
+
+// Closed sets for the lifecycle fields that name a state. A value outside its
+// set still reports the event, as "unknown", like `reason`.
+const LIFECYCLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
+  Object.entries({
+    step: STARTUP_STEPS,
+    outcome: ['ok', 'degraded', 'failed'],
+    crash: ['panic', 'fatal_error', 'none'],
+    missing: ['comfy_cli', 'node', 'comfy_cli_and_node'],
+    python_arch: ['amd64', 'arm64', 'other'],
+    crdt: ['on', 'disabled', 'failed', 'other'],
+    cli: ['provisioned', 'override', 'unavailable', 'other'],
+    comfyui: ['found', 'not_found'],
+    comfyui_found_by: ['explicit', 'server', 'known_location', 'none', 'other'],
+    comfyui_match: ['match', 'mismatch', 'unknown', 'other'],
+    shell: ['on', 'off'],
+    sandbox: ['none', 'seatbelt', 'appcontainer', 'other'],
+    assets: ['enabled', 'disabled', 'unknown', 'other']
+  }).map(([name, values]): [string, ReadonlySet<string>] => [name, new Set(values)])
+)
+
+// Lifecycle fields that are non-negative counts (unlike `code`, an exit code).
+const LIFECYCLE_COUNTS: ReadonlySet<string> = new Set([
+  'duration_ms',
+  'attempt',
+  'count',
+  'uptime_ms',
+  'startup_ms'
 ])
 
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
@@ -175,11 +258,14 @@ type AgentTapOptions = {
 
 function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   if (key === 'reason') return REASONS.has(rawValue) ? rawValue : 'unknown'
-  if (key === 'agent_version' || key === 'node_version') {
+  const values = LIFECYCLE_ENUMS.get(key)
+  if (values) return values.has(rawValue) ? rawValue : 'unknown'
+  if (key === 'ready') return bool(rawValue)
+  if (key === 'agent_version' || key === 'node_version' || key === 'python_version') {
     return VERSION.test(rawValue) ? rawValue : undefined
   }
   const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
-  if (!Number.isSafeInteger(value) || (key === 'duration_ms' && value < 0)) return undefined
+  if (!Number.isSafeInteger(value) || (LIFECYCLE_COUNTS.has(key) && value < 0)) return undefined
   return value
 }
 
@@ -261,6 +347,9 @@ export function parseAgentEventLine(line: string): AgentEvent | null {
 
 // Per-event budget on top of telemetry's own per-minute limit.
 const PER_EVENT_HOURLY_CAP = 60
+// One start writes a startup_step per step (15) on each of up to 4 attempts,
+// so the default cap would hold one launch an hour.
+const LIFECYCLE_HOURLY_CAPS: Readonly<Record<string, number>> = { startup_step: 240 }
 const RATE_WINDOW_MS = 60 * 60_000
 
 export function createAgentTap(opts: AgentTapOptions): {
@@ -313,7 +402,7 @@ export function createAgentTap(opts: AgentTapOptions): {
     const { event, fields } =
       parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed
     const bucket = rateBucket(event)
-    if (bucket.count >= PER_EVENT_HOURLY_CAP) return
+    if (bucket.count >= (LIFECYCLE_HOURLY_CAPS[event] ?? PER_EVENT_HOURLY_CAP)) return
     bucket.count++
     try {
       // Base context merged last so parsed fields can never override it.

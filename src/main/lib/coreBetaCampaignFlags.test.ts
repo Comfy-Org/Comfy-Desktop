@@ -23,6 +23,7 @@ import {
   initCoreBetaCampaigns,
   initCoreBetaFlags,
   readCampaignRecords,
+  refreshCoreBetaFlags,
   writeCampaignRecord
 } from './coreBetaCampaignFlags'
 import {
@@ -564,5 +565,76 @@ describe('enrolment records', () => {
     expect(readCampaignRecords()).toEqual({})
     fs.writeFileSync(file('campaign-enrolments.json'), '{not json')
     expect(readCampaignRecords()).toEqual({})
+  })
+})
+
+describe('refreshCoreBetaFlags', () => {
+  it('re-evaluates slot #0 and the campaigns under the boot id, and the next launch reads it', async () => {
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value(false) })
+    await initCoreBetaFlags({ distinctId: 'machine-hash', betaEnabled: true })
+    expect((await getCoreBetaCampaigns()).answers.get(KEY)).toMatchObject({ enrol: false })
+    getOpsFlagResult.mockClear()
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+
+    await refreshCoreBetaFlags()
+
+    expect(fetchedKeys().sort()).toEqual(
+      ['desktop_campaigns', 'desktop_core_beta_features', KEY].sort()
+    )
+    for (const call of getOpsFlagResult.mock.calls) expect(call[1]).toBe('machine-hash')
+    expect((await getCoreBetaCampaigns()).answers.get(KEY)).toMatchObject({ enrol: true })
+    expect(readJson('campaign-flags.json')[KEY]).toMatchObject({ value: 'enrol' })
+  })
+
+  it('keeps every current answer when the server is unreachable', async () => {
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
+    const before = readJson('campaign-flags.json')
+    serve({})
+
+    await refreshCoreBetaFlags()
+
+    expect((await getCoreBetaCampaigns()).answers.get(KEY)).toMatchObject({ enrol: true })
+    expect(readJson('campaign-flags.json')).toEqual(before)
+  })
+
+  it('fetches nothing before boot', async () => {
+    await refreshCoreBetaFlags()
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+  })
+
+  it('refreshes only slot #0 under an id that cannot enrol, as boot does', async () => {
+    serve({})
+    idClass = 'provisional'
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
+    getOpsFlagResult.mockClear()
+
+    await refreshCoreBetaFlags()
+
+    expect(fetchedKeys()).toEqual(['desktop_core_beta_features'])
+  })
+
+  it('keeps slot #0 grants when the refresh is unreachable', async () => {
+    serve({ desktop_core_beta_features: value(true, HASHING) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    const before = await getCoreBetaGrantsAsync()
+    expect(before).toHaveLength(1)
+    serve({})
+
+    await refreshCoreBetaFlags()
+
+    expect(await getCoreBetaGrantsAsync(), 'parseCoreBetaGrants(undefined) is [], a cut').toEqual(
+      before
+    )
+  })
+
+  it('leaves campaigns a beta-off boot never started to start on first use', async () => {
+    serve({})
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    getOpsFlagResult.mockClear()
+
+    await refreshCoreBetaFlags()
+
+    expect(fetchedKeys()).toEqual(['desktop_core_beta_features'])
   })
 })

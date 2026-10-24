@@ -39,6 +39,7 @@ const {
   ALLOWED_EVENTS,
   ALLOWED_FIELD_NAMES,
   REASONS,
+  STARTUP_STEPS,
   PRODUCT_EVENTS,
   PRODUCT_FIELDS,
   _resetProductEventBudgetForTest
@@ -58,7 +59,12 @@ const AGENT_EVENTS = [
   'node_fetch_failed',
   'health_check_failed',
   'agent_exited',
-  'agent_error'
+  'agent_error',
+  'startup_step',
+  'startup_stalled',
+  'startup_failed',
+  'document_host_degraded',
+  'agent_orphans_stopped'
 ]
 
 describe('agentTap', () => {
@@ -114,7 +120,32 @@ describe('agentTap', () => {
 
     it('exposes exactly the agent field allowlist', () => {
       expect([...ALLOWED_FIELD_NAMES].sort()).toEqual(
-        ['agent_version', 'code', 'duration_ms', 'node_version', 'reason'].sort()
+        [
+          'agent_version',
+          'code',
+          'duration_ms',
+          'node_version',
+          'reason',
+          'step',
+          'outcome',
+          'attempt',
+          'count',
+          'uptime_ms',
+          'startup_ms',
+          'ready',
+          'crash',
+          'missing',
+          'python_arch',
+          'python_version',
+          'crdt',
+          'cli',
+          'comfyui',
+          'comfyui_found_by',
+          'comfyui_match',
+          'shell',
+          'sandbox',
+          'assets'
+        ].sort()
       )
     })
 
@@ -189,7 +220,11 @@ describe('agentTap', () => {
           'checksum_mismatch',
           'permission_denied',
           'disabled',
-          'unknown'
+          'unknown',
+          'data_dir_locked',
+          'address_in_use',
+          'not_set_up',
+          'config_invalid'
         ].sort()
       )
     })
@@ -408,6 +443,17 @@ describe('agentTap', () => {
       vi.setSystemTime(60 * 60_000)
       tap.ingest('[agent-event] health_check_failed\n', 'stdout')
       expect(captured).toHaveLength(61)
+    })
+  })
+
+  describe('startup step cap', () => {
+    it('holds four full launches an hour', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const tap = createAgentTap(baseOpts)
+      const line = '[agent-event] startup_step step=listen outcome=ok duration_ms=1\n'
+      tap.ingest(line.repeat(241), 'stdout')
+      expect(captured).toHaveLength(240)
     })
   })
 
@@ -913,5 +959,137 @@ describe('agentTap consent gating', () => {
     expect(agentCaptures(), 'the denied case is only meaningful if this arrives').toEqual([
       'comfy.desktop.comfyui.agent.unknown_events_dropped'
     ])
+  })
+})
+
+// The host's startup records, byte-identical to cloud's
+// services/agent/packaging/testdata/startup_events.txt, and the step ids to
+// its startup_step_ids.txt.
+const STARTUP_FIXTURE = fs
+  .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-events.txt'), 'utf8')
+  .trimEnd()
+  .split('\n')
+const STARTUP_STEP_IDS = fs
+  .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-step-ids.txt'), 'utf8')
+  .trim()
+  .split('\n')
+
+describe('agentTap startup records', () => {
+  let captured: Array<{ event: string; ctx: Record<string, unknown> }>
+
+  beforeEach(() => {
+    captured = []
+    vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
+      captured.push({ event, ctx: ctx as Record<string, unknown> })
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // As ComfyUI prints a record it logs: ANSI level tag, CRLF on Windows.
+  function ingest(lines: string[]): void {
+    createAgentTap({ installationId: 'inst-1' }).ingest(
+      lines.map((line) => `\u001b[32m[INFO]\u001b[0m ${line}\r\n`).join(''),
+      'stderr'
+    )
+  }
+
+  function fields(line: string): Record<string, unknown> {
+    ingest([line])
+    expect(captured, line).toHaveLength(1)
+    const ctx = { ...captured[0]?.ctx }
+    for (const key of ['installation_id', 'variant', 'release', 'core_beta_flags']) delete ctx[key]
+    captured = []
+    return ctx
+  }
+
+  it('knows every step id the agent reports, plus init and other', () => {
+    expect([...STARTUP_STEPS].sort()).toEqual([...STARTUP_STEP_IDS, 'init', 'other'].sort())
+  })
+
+  it('forwards every fixture record with its typed fields', () => {
+    ingest(STARTUP_FIXTURE)
+    expect(captured.map((c) => c.event)).toEqual(
+      STARTUP_FIXTURE.map((line) => `comfy.desktop.comfyui.agent.${line.split(' ')[1]}`)
+    )
+    expect(captured[1]?.ctx).toMatchObject({
+      step: 'cli_provision',
+      outcome: 'degraded',
+      duration_ms: 30500,
+      reason: 'network_error'
+    })
+    expect(captured[4]?.ctx).toMatchObject({ step: 'object_info', reason: 'timeout' })
+    expect(captured[6]?.ctx).toMatchObject({ duration_ms: 41000, node_version: 'v22.11.0' })
+  })
+
+  it('types the host lifecycle fields', () => {
+    expect(
+      fields(
+        '[agent-event] agent_starting agent_version=0.1.0 attempt=2 python_arch=amd64 python_version=3.12.4'
+      )
+    ).toEqual({
+      agent_version: '0.1.0',
+      attempt: 2,
+      python_arch: 'amd64',
+      python_version: '3.12.4'
+    })
+    expect(
+      fields(
+        '[agent-event] agent_started duration_ms=4100 agent_version=0.1.0 startup_ms=3900 crdt=on cli=provisioned comfyui=found comfyui_found_by=explicit comfyui_match=mismatch shell=off sandbox=appcontainer assets=enabled'
+      )
+    ).toEqual({
+      duration_ms: 4100,
+      agent_version: '0.1.0',
+      startup_ms: 3900,
+      crdt: 'on',
+      cli: 'provisioned',
+      comfyui: 'found',
+      comfyui_found_by: 'explicit',
+      comfyui_match: 'mismatch',
+      shell: 'off',
+      sandbox: 'appcontainer',
+      assets: 'enabled'
+    })
+    expect(
+      fields('[agent-event] agent_exited code=2 uptime_ms=812 ready=false crash=panic')
+    ).toEqual({
+      code: 2,
+      uptime_ms: 812,
+      ready: false,
+      crash: 'panic'
+    })
+    expect(fields('[agent-event] agent_orphans_stopped count=2')).toEqual({ count: 2 })
+    expect(fields('[agent-event] package_missing missing=comfy_cli_and_node')).toEqual({
+      missing: 'comfy_cli_and_node'
+    })
+    expect(fields('[agent-event] startup_failed step=init reason=config_invalid')).toEqual({
+      step: 'init',
+      reason: 'config_invalid'
+    })
+  })
+
+  it('reports a state value it does not know as unknown, keeping the event', () => {
+    expect(fields('[agent-event] startup_step step=new_step outcome=great duration_ms=5')).toEqual({
+      step: 'unknown',
+      outcome: 'unknown',
+      duration_ms: 5
+    })
+  })
+
+  it('drops an event whose count is negative or whose version is not one', () => {
+    ingest([
+      '[agent-event] agent_exited uptime_ms=-1',
+      '[agent-event] agent_orphans_stopped count=-3',
+      '[agent-event] agent_starting python_version=three'
+    ])
+    expect(captured).toEqual([])
+  })
+
+  it('never lets a line set the platform or arch Desktop attaches itself', () => {
+    expect(fields('[agent-event] agent_starting attempt=1 platform=x arch=y')).toEqual({
+      attempt: 1
+    })
   })
 })

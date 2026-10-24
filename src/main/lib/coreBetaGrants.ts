@@ -634,7 +634,8 @@ export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
 // forever. It now persists the late `false`.
 //
 // A saved decision applies at once and is refreshed in the background; a cut lands on the first
-// ComfyUI launch after the refresh answers. Only an install with nothing saved waits, up to 5 s.
+// ComfyUI launch after the refresh answers. Only an install with nothing saved, or a launch during a
+// staff-change refresh (`refreshCoreBetaFlags`), waits, up to 5 s.
 const flag = makeOpsFlag<CoreBetaGrant[]>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: [],
@@ -647,5 +648,7 @@ const flag = makeOpsFlag<CoreBetaGrant[]>({
 export const initCoreBetaGrants = flag.init
 
 export const getCoreBetaGrantsAsync = flag.get
+
+export const refreshCoreBetaGrants = flag.refresh
 
 export const _resetForTest = flag._resetForTest

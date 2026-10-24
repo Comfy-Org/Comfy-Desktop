@@ -7,8 +7,14 @@ vi.mock('electron', () => ({
   app: { getPath: () => '' }
 }))
 
+vi.mock('../../lib/disk', async (importOriginal) => ({
+  ...(await importOriginal<typeof DiskModule>()),
+  getDiskSpace: async () => ({ free: Number.MAX_SAFE_INTEGER, total: Number.MAX_SAFE_INTEGER })
+}))
+
 import { getTorchVendorMismatch, repairTorch } from './torchRepair'
 import type { InstallationRecord } from '../../installations'
+import type * as DiskModule from '../../lib/disk'
 
 let tmpDir: string
 

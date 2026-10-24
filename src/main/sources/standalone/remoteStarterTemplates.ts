@@ -119,11 +119,11 @@ export function parseRemoteStarterTemplates(raw: unknown): CuratedTemplate[] | n
 
 /**
  * At most one free card per tab carries the badge, so the wizard never
- * auto-selects a card that spends credits. An all-paid tab gets none.
+ * recommends a card that spends credits. An all-paid tab gets none.
  *
  * @param fromRemote leading slots the document supplied. The badge stays among
  * them, since a backfilled card arrives pre-flagged and would otherwise claim
- * an auto-pick content did not choose.
+ * a recommendation content did not choose.
  */
 function enforceOneRecommended(cards: CuratedTemplate[], fromRemote: number): CuratedTemplate[] {
   const preferred = fromRemote > 0 ? cards.slice(0, fromRemote) : cards

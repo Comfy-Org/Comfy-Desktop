@@ -1,8 +1,9 @@
 // Classifying the signed-in account for ops-flag person targeting, and carrying that
 // classification to the next launch.
 //
-// The boot flag evaluation is the only authoritative one, so what matters here is that the
-// stored answer is bound BEFORE it and that the stored answer is a boolean and nothing else.
+// The stored answer must be bound BEFORE the boot flag evaluation, and must be a boolean and
+// nothing else. A change to what that evaluation sent re-evaluates in-session (see the
+// "applying a change without a restart" block).
 // Whether the property may leave the process is telemetry's gate (`telemetry.test.ts`).
 //
 // The classification is driven by the reconciled identity, so the consensus is what these tests
@@ -21,8 +22,10 @@ vi.mock('./paths', () => ({
 }))
 
 const setFlagEvaluationStaff = vi.fn()
+let consentState = 'granted'
 vi.mock('./telemetry', () => ({
-  setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff)
+  setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff),
+  sendsStaffProperty: (isStaff: boolean) => consentState === 'granted' && isStaff
 }))
 
 const identity = vi.hoisted(() => {
@@ -158,6 +161,7 @@ function nextLaunchBinding(): boolean {
 beforeEach(() => {
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'staff-targeting-'))
   setFlagEvaluationStaff.mockClear()
+  consentState = 'granted'
   pageReads = 0
   _resetForTest()
   identity.reset()
@@ -521,16 +525,6 @@ describe('classification driven by the identity consensus', () => {
     expect(nextLaunchBinding()).toBe(true)
   })
 
-  it('does not target the launch it runs on', async () => {
-    // The accepted cost, pinned: the boot evaluation has already gone out by the time the
-    // consensus resolves, and this deliberately does not try to redo it.
-    expect(nextLaunchBinding()).toBe(false)
-
-    await consensusSignedIn([stubContents(true)])
-
-    expect(storedFile()).toMatchObject({ staff: true })
-  })
-
   it('leaves a non-staff account untargeted, and writes nothing to say so', async () => {
     // An absent file already means "not staff", so the overwhelmingly common case costs no disk
     // write at all. The write that matters is the one that REVOKES, covered below.
@@ -626,6 +620,92 @@ describe('classification driven by the identity consensus', () => {
     // emits `false` and then `true`. The mock is cleared before the transition and the known
     // answer is bound synchronously, so no `false` belongs anywhere in this window.
     expect(setFlagEvaluationStaff).not.toHaveBeenCalledWith(false)
+  })
+})
+
+describe('applying a change without a restart', () => {
+  const onFlagPropertiesChange = vi.fn()
+  beforeEach(() => {
+    onFlagPropertiesChange.mockClear()
+  })
+
+  it('re-evaluates after a staff sign-in with consent, once the property is bound and stored', async () => {
+    const atCallback: { bound?: unknown; stored?: unknown } = {}
+    initStaffFlagTargeting({
+      onFlagPropertiesChange: () => {
+        atCallback.bound = setFlagEvaluationStaff.mock.calls.at(-1)?.[0]
+        atCallback.stored = storedFile()
+        onFlagPropertiesChange()
+      }
+    })
+
+    await consensusSignedIn([stubContents(true)])
+
+    expect(onFlagPropertiesChange).toHaveBeenCalledTimes(1)
+    expect(atCallback.bound, 'the refresh reads the bound property synchronously').toBe(true)
+    expect(atCallback.stored, 'the next boot is targeted on the same answer').toMatchObject({
+      staff: true
+    })
+  })
+
+  it('does not re-evaluate without consent, since the property is not sent', async () => {
+    for (const state of ['undecided', 'denied']) {
+      _resetForTest()
+      fs.rmSync(persistFilePath(), { force: true })
+      consentState = state
+      initStaffFlagTargeting({ onFlagPropertiesChange })
+      const readsBefore = pageReads
+
+      await consensusSignedIn([stubContents(true)])
+
+      expect(pageReads, `classified under ${state}`).toBe(readsBefore + 1)
+    }
+
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('still re-evaluates when the classification write fails, from the bound answer', async () => {
+    fs.mkdirSync(persistFilePath() + '.tmp', { recursive: true })
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(true)])
+
+    expect(fs.existsSync(persistFilePath()), 'the write did fail').toBe(false)
+    expect(
+      onFlagPropertiesChange,
+      'this launch is targeted; the write is retried later'
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-evaluate after a non-staff sign-in', async () => {
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(false)])
+
+    expect(pageReads, 'classified').toBe(1)
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('does not re-evaluate a staff launch that booted already targeted', async () => {
+    fs.writeFileSync(persistFilePath(), JSON.stringify({ staff: true }), 'utf-8')
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+
+    await consensusSignedIn([stubContents(true)])
+    await consensusUnresolved('pending')
+    await consensusSignedIn([stubContents(true)])
+
+    expect(pageReads, 'classified, then revalidated').toBe(2)
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
+  })
+
+  it('re-evaluates again on a staff sign-out, withdrawing staff targeting for the next launch', async () => {
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+    await consensusSignedIn([stubContents(true)])
+
+    await consensusSignedOut()
+
+    expect(onFlagPropertiesChange).toHaveBeenCalledTimes(2)
+    expect(storedFile()).toMatchObject({ staff: false })
   })
 })
 

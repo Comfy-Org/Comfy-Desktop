@@ -1,4 +1,4 @@
-import { initCoreBetaGrants } from './coreBetaGrants'
+import { initCoreBetaGrants, refreshCoreBetaGrants } from './coreBetaGrants'
 import { getIdClass } from './deviceId'
 import {
   CAMPAIGN_REGISTRY_KEY,
@@ -88,6 +88,15 @@ export async function initCoreBetaFlags(opts: {
   await Promise.all([
     initCoreBetaGrants({ distinctId }),
     opts.betaEnabled && !savedOnly ? initCoreBetaCampaigns({ distinctId }) : undefined
+  ])
+}
+
+/** For a mid-session staff change (`staffFlagTargeting.ts`); a ComfyUI already running keeps its args. */
+export async function refreshCoreBetaFlags(): Promise<void> {
+  if (bootId === null) return
+  await Promise.all([
+    refreshCoreBetaGrants(),
+    ...(started ? [registry, ...campaigns.values()].map((flag) => flag.refresh()) : [])
   ])
 }
 

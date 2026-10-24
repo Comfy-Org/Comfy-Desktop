@@ -6,11 +6,20 @@ import type { StreamSource } from './stderrTail'
 
 export const FRONTEND_PACKAGE = 'comfyui-frontend-package'
 
+const AGENT_GO = 'comfy-agent-go'
+
 /**
  * The frontend is pinned in ComfyUI's `requirements.txt`, not the agent's file, so a critical fix
- * published to PyPI can reach the agent cohort before ComfyUI's next pin. Exact versions only.
+ * published to PyPI can reach the agent cohort before ComfyUI's next pin. `comfy-agent-go` is in
+ * neither file, so its pin is added as a line of its own. Exact versions only.
  */
-const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries', FRONTEND_PACKAGE])
+const OVERRIDABLE = new Set([
+  'comfy-agent',
+  'comfy-cli',
+  'nodejs-wheel-binaries',
+  FRONTEND_PACKAGE,
+  AGENT_GO
+])
 
 /**
  * PEP 440 public versions only, so no operator, URL, index, option or marker can get through. An
@@ -30,14 +39,26 @@ const MAX_EXTRAS = 8
 const AGENT_KEY = 'comfy-agent'
 /**
  * The agent's key decorates the first line of core's file whose name is `comfy-agent` or starts
- * with `comfy-agent-`, so a renamed agent package (`comfy-agent-oss`) is still found but an
- * unrelated `comfy-agentx` is not. The name always comes from core's line: a pin supplies the
- * version and extras, never the package.
+ * with `comfy-agent-` (other than the Go carrier, `comfy-agent-go`), so a renamed agent package
+ * (`comfy-agent-oss`) is still found but an unrelated `comfy-agentx` is not. The name always comes
+ * from core's line: a pin supplies the version and extras, never the package.
  */
 const AGENT_LINE = /^comfy-agent(?:-|$)/
 
+function isAgentLine(normalized: string): boolean {
+  return normalized !== AGENT_GO && AGENT_LINE.test(normalized)
+}
+
+/**
+ * A Go pin without an agent pin leaves the installed agent where it is: core's agent line can be a
+ * placeholder (`0.0.0.dev0`) that would replace a working agent.
+ */
+function holdsAgent(pins: OverridePins): boolean {
+  return pins.has(AGENT_GO) && !pins.has(AGENT_KEY)
+}
+
 function pinKey(normalized: string): string {
-  return AGENT_LINE.test(normalized) ? AGENT_KEY : normalized
+  return isAgentLine(normalized) ? AGENT_KEY : normalized
 }
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
@@ -158,18 +179,23 @@ export function effectiveAgentRequirements(
 ): { kind: 'text'; text: string } | { kind: 'refused'; reason: OverrideRefusal } {
   // Per pin key, the package name of the line it decorates.
   const matched = new Map<string, string>()
-  const lines = coreText.split(/\r?\n/)
+  const held = holdsAgent(pins) ? agentPackage(coreText) : undefined
+  const lines = coreText.split(/\r?\n/).filter((line) => {
+    const name = line.match(LEADING_NAME)?.[1]
+    return !name || normalizePackageName(name) !== held
+  })
   const keyOf = (line: string): string | undefined => {
     const name = line.match(LEADING_NAME)?.[1]
     return name && pinKey(normalizePackageName(name))
   }
   const agentKeys = new Set(lines.map(keyOf))
-  const fromMain = mainText.split(/\r?\n/).filter((line) => {
+  const appended = mainText.split(/\r?\n/).filter((line) => {
     const key = keyOf(line)
     return !!key && pins.has(key) && !agentKeys.has(key)
   })
+  if (pins.has(AGENT_GO)) appended.push(AGENT_GO)
   // Before the agent file's trailing newline, so the result still ends in one.
-  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...fromMain)
+  lines.splice(lines.at(-1) === '' ? -1 : lines.length, 0, ...appended)
   for (let i = 0; i < lines.length; i++) {
     const name = lines[i]!.match(LEADING_NAME)?.[1]
     if (!name) continue
@@ -223,7 +249,7 @@ function agentPackage(coreText: string): string | undefined {
     .split(/\r?\n/)
     .map((line) => line.match(LEADING_NAME)?.[1])
     .map((name) => name && normalizePackageName(name))
-    .find((name) => !!name && AGENT_LINE.test(name))
+    .find((name) => !!name && isAgentLine(name))
 }
 
 /**
@@ -231,7 +257,9 @@ function agentPackage(coreText: string): string | undefined {
  * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
- * Any other comfy-agent* package is held. The frontend is held too unless this override pins it.
+ * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
+ * holding it would block every agent upgrade. Any other comfy-agent* package is held. The
+ * frontend is held too unless this override pins it.
  */
 export function installedConstraints(
   pipListOutput: string,
@@ -265,14 +293,43 @@ export function coreFileInstalled(coreText: string, pipListOutput: string): bool
     .every((name) => name === undefined || installed.has(normalizePackageName(name)))
 }
 
-/** The pins over lines core left unversioned: core's file can't take those back. */
+/**
+ * The pins over lines core left unversioned, or over no line at all (an added `comfy-agent-go`):
+ * core's file can't take those back.
+ */
 export function pinsOverBareLines(coreText: string, pins: OverridePins): OverridePins {
   const bare = coreText.split(/\r?\n/).map((line) => line.match(REQUIREMENT_LINE))
   return new Map(
-    [...pins].filter(([name]) =>
-      bare.some((line) => line && !line[2] && pinKey(normalizePackageName(line[1]!)) === name)
+    [...pins].filter(
+      ([name]) =>
+        name === AGENT_GO ||
+        bare.some((line) => line && !line[2] && pinKey(normalizePackageName(line[1]!)) === name)
     )
   )
+}
+
+/**
+ * The agent runs its Go carrier only when the carrier is at least its own version, and otherwise
+ * falls back to its bundled agent, saying so only in its own output. Returns the agent's package
+ * and both versions when a `comfy-agent-go` pin is older than the agent this override leaves: its
+ * pin, else the installed one, which a Go pin alone holds where it is.
+ */
+export function agentGoBehindAgent(
+  pins: OverridePins,
+  coreText: string,
+  pipListOutput: string
+): { name: string; go: string; agent: string } | null {
+  const go = pins.get(AGENT_GO)
+  if (go === undefined) return null
+  const agentPin = pins.get(AGENT_KEY)
+  const name = agentPackage(coreText) ?? AGENT_KEY
+  const agent =
+    agentPin !== undefined
+      ? pinVersion(agentPin)
+      : parseInstalled(pipListOutput)?.find((p) => normalizePackageName(p.name) === name)?.version
+  // An installed version can carry a local label (`+cu`) this comparison does not order.
+  if (agent === undefined || !EXACT_VERSION.test(agent)) return null
+  return compareVersions(pinVersion(go), agent) < 0 ? { name, go: pinVersion(go), agent } : null
 }
 
 export interface AgentOverrideState {
@@ -296,21 +353,48 @@ export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePi
   )
 }
 
+export interface InstallReport {
+  outcome: 'exited' | 'timed_out' | 'abandoned' | 'spawn_error' | 'cancelled'
+  exitCode: number | null
+  elapsedMs: number
+  budgetMs: number
+  errorTail: string | null
+}
+
 export type OverrideDecision =
   | { decision: 'applied'; pins: OverridePins }
   | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
+  /** Not in uv's cache yet: a background download fetches it for a later launch. Never counted. */
+  | { decision: 'deferred'; reason: 'not_cached'; pins: OverridePins; install?: InstallReport }
   | {
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
+      install?: InstallReport
       failures?: number
       /** The reverted pins core's file can't take back, whether or not they went in. */
       staysInstalled?: OverridePins
     }
 
-export function reportOverrideDecision(installationId: string, d: OverrideDecision): void {
+/** Which index uv was pointed at, never the URL itself. */
+export type IndexKind = 'pypi' | 'cn_mirror' | 'custom'
+
+export function indexKind(mirrors: {
+  pypiMirror?: string
+  useChineseMirrors?: boolean
+}): IndexKind {
+  if (mirrors.pypiMirror?.trim()) return 'custom'
+  return mirrors.useChineseMirrors ? 'cn_mirror' : 'pypi'
+}
+
+export function reportOverrideDecision(
+  installationId: string,
+  d: OverrideDecision,
+  index: IndexKind | null = null
+): void {
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
+    const install = 'install' in d ? d.install : undefined
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
@@ -318,7 +402,13 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
-        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null
+        'staysInstalled' in d && d.staysInstalled ? overrideSignature(d.staysInstalled) : null,
+      install_outcome: install?.outcome ?? null,
+      exit_code: install?.exitCode ?? null,
+      elapsed_ms: install?.elapsedMs ?? null,
+      budget_ms: install?.budgetMs ?? null,
+      error_tail: install?.errorTail ?? null,
+      index
     })
   } catch {
     // Telemetry must never reach the launch.
@@ -408,4 +498,47 @@ export function readFrontendPin(installation: InstallationRecord): string | null
   if (!state || typeof state !== 'object') return null
   const { version } = state as Record<string, unknown>
   return typeof version === 'string' ? version : null
+}
+
+export interface PrefetchReport {
+  outcome:
+    | 'completed'
+    | 'nothing_missing'
+    | 'resolve_failed'
+    | 'download_failed'
+    | 'timed_out'
+    | 'abandoned'
+    | 'spawn_error'
+    | 'cancelled'
+  exitCode: number | null
+  elapsedMs: number
+  downloadsStarted: number
+  downloadsFinished: number
+  errorTail: string | null
+  uvVersion: string | null
+}
+
+export function reportAgentPrefetch(
+  installationId: string,
+  signature: string,
+  index: IndexKind,
+  r: PrefetchReport
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_prefetch', {
+      installation_id: installationId,
+      target: signature === 'core' ? 'core' : 'override',
+      pins: signature === 'core' ? null : signature,
+      install_outcome: r.outcome,
+      exit_code: r.exitCode,
+      elapsed_ms: r.elapsedMs,
+      downloads_started: r.downloadsStarted,
+      downloads_finished: r.downloadsFinished,
+      error_tail: r.errorTail,
+      index,
+      uv_version: r.uvVersion
+    })
+  } catch {
+    // Telemetry must never reach the launch.
+  }
 }

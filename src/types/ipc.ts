@@ -1447,7 +1447,7 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
-  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+  /** Tell main an overlay panel (feedback / announcement) has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
