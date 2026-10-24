@@ -1160,6 +1160,23 @@ async function fetchStep(
     // A launch keeps an installed version that still satisfies, unless offline it can't: then it
     // replaces one no index serves (a local build) with what this compile chose, once that is
     // cached. So the replacement for such a version is not fetched; the rest is.
+    const forcedOff = async (name: string, version: string): Promise<boolean> => {
+      const keepName = `${tag}-keep.txt`
+      await fs.promises.writeFile(path.join(plan.installPath, keepName), `${name}==${version}\n`)
+      const keep = await runBoundedInstall(
+        plan,
+        srcPath,
+        `${tag}-keep-filtered.txt`,
+        left(),
+        output,
+        signal,
+        {
+          extraArgs: ['--no-header', '--no-annotate', ...constraintArgs, '--constraint', keepName],
+          subcommand: 'compile'
+        }
+      )
+      return !keep.ok && NO_SOLUTION.test(stripAnsi(keep.output))
+    }
     const unserved = new Set<string>()
     let declined: BoundedResult | undefined
     for (const { name } of pins.filter(({ name }) => installed.has(name))) {
@@ -1176,6 +1193,10 @@ async function fetchStep(
       )
       if (served.ok) continue
       if (!NO_SOLUTION.test(stripAnsi(served.output))) return { run: served, pins: [] }
+      // A local build is not served, but its public version stands in for it: if the requirements
+      // can't keep even that, the launch moves it anyway, so its replacement is fetched.
+      const publicVersion = installed.get(name)!.split('+')[0]!
+      if (publicVersion !== installed.get(name) && (await forcedOff(name, publicVersion))) continue
       unserved.add(name)
       declined = served
     }
