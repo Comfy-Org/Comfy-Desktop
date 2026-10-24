@@ -29,6 +29,11 @@ import {
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import {
+  expectNoBetaArgsPill,
+  openWithBetaArgsAnswers,
+  type BetaArgsOpen,
+} from './support/betaArgsAnswers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -96,17 +101,19 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-async function openStartupArgs(): Promise<WebContentsPage> {
+async function openStartupArgs(): Promise<BetaArgsOpen> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  await ctx.panel.evaluate(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
+  return openWithBetaArgsAnswers(ctx.app, async () => {
+    await ctx.panel.evaluate(
+      `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
+    )
+    await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+    const popup = titlePopupPage(ctx.app)
+    await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
+    await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
+    return popup
+  })
 }
 
 async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
@@ -115,16 +122,8 @@ async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
   )
 }
 
-/** Absence is a real answer only against a fresh sections read. Every caller reaches here from the
- *  Desktop Settings popup kind, which unmounts the picker, so the args field `openStartupArgs` waited
- *  for was rendered from this open's own response. The schema is already cached by then, so no
- *  discovery-driven re-read is still coming either. */
-async function expectNoPill(popup: WebContentsPage): Promise<void> {
-  expect(await pillAriaLabel(popup)).toBeNull()
-}
-
 test('shows the grants the next launch is eligible for @linux', async () => {
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   // First open: the field's own schema discovery fills the cache, then the pill asks again.
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillAriaLabel(popup)).toBe(
@@ -140,7 +139,7 @@ test('shows the grants the next launch is eligible for @linux', async () => {
 })
 
 test('turning the beta opt-in off removes the pill on the next open, and on restores it @linux', async () => {
-  let popup = await openStartupArgs()
+  let { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
   expect(await popup.click(MANAGE)).toBe(true)
@@ -153,8 +152,11 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
 
-  popup = await openStartupArgs()
-  await expectNoPill(popup)
+  await expectNoBetaArgsPill(
+    ctx.app,
+    await openStartupArgs(),
+    'the pill was shown on the next open after the beta opt-in was turned off',
+  )
 
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
@@ -167,27 +169,27 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'true', { timeout: 5_000 })
 
-  popup = await openStartupArgs()
+  popup = (await openStartupArgs()).popup
   await popup.waitForVisible(PILL, { timeout: 10_000 })
 })
 
 test('an opt-in change made while the picker is hidden shows on reopen @linux', async () => {
-  let popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   // Hidden, not swapped: the cached picker keeps its sections, which is what could go stale.
   await closeTitlePopupIfOpen(ctx.app)
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', false)`)
 
-  popup = await openStartupArgs()
-  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
-    timeout: 10_000,
-    message: 'the pill survived an opt-out made while the picker was hidden',
-  })
+  await expectNoBetaArgsPill(
+    ctx.app,
+    await openStartupArgs(),
+    'the pill survived an opt-out made while the picker was hidden',
+  )
 
   await closeTitlePopupIfOpen(ctx.app)
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
-  popup = await openStartupArgs()
-  await popup.waitForVisible(PILL, { timeout: 10_000 })
+  const reopened = await openStartupArgs()
+  await reopened.popup.waitForVisible(PILL, { timeout: 10_000 })
 })
 
 const betaArgsRequests = async (): Promise<number> =>
@@ -206,7 +208,7 @@ async function commitArgs(popup: WebContentsPage, value: string): Promise<void> 
 }
 
 test('only the pill asks: another field\'s save asks nothing, an args commit asks once @linux', async () => {
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
 
@@ -231,7 +233,7 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
 })
 
 test("adding the grant's opposite to the startup args removes it @linux", async () => {
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   // Commit through the input's own change event, as a blur would.
   await popup.evaluate(
