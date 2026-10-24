@@ -1011,7 +1011,7 @@ export async function performCopy(
 }
 
 export function createSessionPath(): string {
-  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}-${randomUUID().slice(0, 8)}`)
+  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}-${randomUUID()}`)
 }
 
 export function sanitizeEnvVars(raw: unknown): Record<string, string> {

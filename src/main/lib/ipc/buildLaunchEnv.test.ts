@@ -14,7 +14,15 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+const { uuids } = vi.hoisted(() => ({ uuids: [] as string[] }))
+vi.mock('crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof nodeCrypto>()
+  const randomUUID = (): string => uuids.shift() ?? actual.randomUUID()
+  return { ...actual, default: { ...actual, randomUUID }, randomUUID }
+})
+
 import type { InstallationRecord } from '../../installations'
+import type * as nodeCrypto from 'crypto'
 import os from 'os'
 import path from 'path'
 import { buildLaunchEnv, createSessionPath } from './shared'
@@ -72,6 +80,7 @@ describe('createSessionPath', () => {
 
   it('gives two launches in the same millisecond different session paths', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_792_800_000_000)
+    uuids.push('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002')
     const first = createSessionPath()
     const second = createSessionPath()
     expect(
@@ -80,7 +89,9 @@ describe('createSessionPath', () => {
     ).not.toBe(second)
     for (const sessionPath of [first, second]) {
       expect(path.dirname(sessionPath)).toBe(os.tmpdir())
-      expect(path.basename(sessionPath)).toMatch(/^comfyui-desktop-2-1792800000000-[0-9a-f]{8}$/)
+      expect(path.basename(sessionPath)).toMatch(
+        /^comfyui-desktop-2-1792800000000-0{8}-0{4}-4000-8000-00000000000[12]$/
+      )
     }
   })
 })
