@@ -524,6 +524,8 @@ export interface PrefetchReport {
     | 'nothing_missing'
     | 'resolve_failed'
     | 'not_served'
+    | 'unreachable'
+    | 'list_failed'
     | 'download_failed'
     | 'timed_out'
     | 'abandoned'

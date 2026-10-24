@@ -3661,6 +3661,10 @@ describe('agent requirements at launch', () => {
     expect(progress.filter((p) => p.phase === 'agentRequirements').at(-1)).toMatchObject({
       status: 'launch.agentRequirements.deferred'
     })
+    expect(
+      vi.mocked(telemetry.emit).mock.calls.map(([event]) => event),
+      'a download failure is handed to the background download, not reported as a core failure'
+    ).not.toContain('comfy.desktop.agent_requirements_core')
   })
 
   it('launches with a failure caption, and reports it, when no download can fix core file', async () => {
@@ -3699,17 +3703,6 @@ describe('agent requirements at launch', () => {
         }
       ]
     ])
-  })
-
-  it('reports no core failure for a core file that only failed to download', async () => {
-    pipHarness.result = { code: 2, output: 'error: Failed to fetch\n' }
-
-    await handleLaunch(ctxFor('agent-reqs-core-download-failed'))
-
-    expect(
-      vi.mocked(telemetry.emit).mock.calls.map(([event]) => event),
-      'a download failure is handed to the background download instead'
-    ).not.toContain('comfy.desktop.agent_requirements_core')
   })
 
   it('publishes the install as a step the renderer can show', async () => {
@@ -4041,6 +4034,11 @@ describe('agent requirements at launch', () => {
 
     it('shows the failed caption when core file cannot install after the override was deferred', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.1.0' },
+        { name: 'comfy-cli', version: '1.20.0' },
+        { name: 'requests', version: '2.32.0' }
+      ])
       pipHarness.respond = (args) =>
         missesOverride(args)
           ? { code: 2, output: 'error: Failed to fetch: `comfy-agent`\n' }
@@ -4060,6 +4058,18 @@ describe('agent requirements at launch', () => {
       })
       expect(overrideEvents()).toEqual([
         expect.objectContaining({ decision: 'deferred', reason: 'not_cached' })
+      ])
+      expect(
+        prefetchHarness.requests,
+        "the override's download is still handed back: core's failure does not cancel it"
+      ).toEqual([
+        {
+          installationId: ID,
+          request: expect.objectContaining({
+            steps: [{ text: OVERRIDDEN, constraints: 'requests==2.32.0\n' }],
+            signature: 'comfy-agent==0.2.3'
+          })
+        }
       ])
     })
 

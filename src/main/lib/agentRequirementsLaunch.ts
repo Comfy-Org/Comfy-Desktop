@@ -459,9 +459,10 @@ export interface PrefetchRequest {
   steps: PrefetchStep[]
   signature: string
   /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
-   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not. An
-   *  installed version no index serves is `not_served` when the compile would move it, and
-   *  `resolve_failed` when a constraint pins it (the compile then finds no solution). */
+   *  online first, so an index it can't reach is reported as `unreachable`, cache or not. When
+   *  the compile would move an installed version no index serves, its replacement is not fetched,
+   *  and the step is `not_served` if that leaves nothing to fetch; when a constraint pins such a
+   *  version, the compile finds no solution and the step is `resolve_failed`. */
   eager?: boolean
 }
 
@@ -526,18 +527,8 @@ export async function installAgentRequirements(
   let onlineLeft = ONLINE_BUDGET_MS
   const run: CachedRun = async (reqPath, tempName, constraints, network = true) => {
     const extraArgs = constraints ? ['--constraint', constraints.name] : []
-    const cacheHoldsAll = async (): Promise<BoundedResult> => {
-      const check = await runBoundedInstall(
-        plan,
-        reqPath,
-        tempName,
-        CACHE_CHECK_TIMEOUT_MS,
-        () => {},
-        signal,
-        { extraArgs: [OFFLINE, '--dry-run', ...extraArgs] }
-      )
-      return { ...check, ok: check.ok && !WOULD_DOWNLOAD.test(check.output) }
-    }
+    const cacheHoldsAll = (): Promise<BoundedResult> =>
+      checkCache(plan, reqPath, tempName, CACHE_CHECK_TIMEOUT_MS, () => {}, signal, extraArgs)
     const fromCache = (output = sendOutput): Promise<BoundedResult> =>
       runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, output, signal, {
         extraArgs: [OFFLINE, ...extraArgs]
@@ -633,6 +624,22 @@ export async function installAgentRequirements(
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
+}
+
+/** An offline `--dry-run`, so it writes nothing: `ok` only when the cache holds every wheel. */
+async function checkCache(
+  plan: AgentRequirementsInstall,
+  reqPath: string,
+  tempName: string,
+  timeoutMs: number,
+  output: (text: string) => void,
+  signal: AbortSignal | undefined,
+  extraArgs: string[]
+): Promise<BoundedResult> {
+  const check = await runBoundedInstall(plan, reqPath, tempName, timeoutMs, output, signal, {
+    extraArgs: [OFFLINE, '--dry-run', ...extraArgs]
+  })
+  return { ...check, ok: check.ok && !WOULD_DOWNLOAD.test(check.output) }
 }
 
 async function tryOverride(
@@ -1033,6 +1040,7 @@ async function runPrefetch(
         left,
         mode: 'prefetch'
       })
+      if (fetched.kind === 'unlisted') return done(signal.aborted ? 'cancelled' : 'list_failed')
       if (fetched.kind === 'cached') cachedSteps++
       if (fetched.kind === 'fetched') fetches.push(fetched.run)
       if (fetched.kind === 'failed') {
@@ -1061,13 +1069,14 @@ interface Resolved {
 const FAILED_OUTCOME = {
   resolve: 'resolve_failed',
   fetch: 'download_failed',
-  not_served: 'not_served'
+  not_served: 'not_served',
+  unreachable: 'unreachable'
 } as const
 
 type StepResult =
-  | { kind: 'cached' | 'nothing' }
+  | { kind: 'cached' | 'nothing' | 'unlisted' }
   | { kind: 'fetched'; run: BoundedResult }
-  | { kind: 'failed'; stage: 'resolve' | 'fetch' | 'not_served'; run: BoundedResult }
+  | { kind: 'failed'; stage: keyof typeof FAILED_OUTCOME; run: BoundedResult }
 
 async function fetchStep(
   plan: AgentRequirementsInstall,
@@ -1119,10 +1128,10 @@ async function fetchStep(
   }
   // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
   // running ComfyUI would wait behind it.
-  const compile = async (): Promise<Resolved> => {
+  const compile = async (): Promise<Resolved | null> => {
     const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
     // Unseeded, the compile would move every installed version, local builds included.
-    if (listed === null) return { run: unlisted(signal), pins: [] }
+    if (listed === null) return null
     // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
     const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
     const compiledName = `${tag}-compiled.txt`
@@ -1145,48 +1154,58 @@ async function fetchStep(
       }
     )
     const compiled = run.ok ? await fs.promises.readFile(compiledPath, 'utf-8') : ''
-    const moved: string[] = []
     const pins = compiled.split(/\r?\n/).flatMap((line) => {
       const pin = line.trim().match(COMPILED_PIN)
-      if (!pin || installed.get(pin[1]!) === pin[2]) return []
-      if (installed.has(pin[1]!)) moved.push(`${pin[1]}==${installed.get(pin[1]!)}`)
-      return [pin[0]]
+      return pin && installed.get(pin[1]!) !== pin[2] ? [{ name: pin[1]!, line: pin[0] }] : []
     })
-    if (moved.length === 0) return { run, pins }
     // A launch keeps an installed version that still satisfies, unless offline it can't: then it
     // replaces one no index serves (a local build) with what this compile chose, once that is
-    // cached. So nothing is fetched unless every installed version this moves is served.
-    const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
-    await fs.promises.writeFile(probePath, moved.join('\n') + '\n', 'utf-8')
-    const served = await runBoundedInstall(
-      plan,
-      probePath,
-      `${tag}-installed-filtered.txt`,
-      left(),
-      output,
-      signal,
-      { extraArgs: ['--no-deps', '--no-header', '--no-annotate'], subcommand: 'compile' }
-    )
-    if (served.ok) return { run, pins }
-    return { run: served, pins: [], notServed: NO_SOLUTION.test(stripAnsi(served.output)) }
+    // cached. So the replacement for such a version is not fetched; the rest is.
+    const unserved = new Set<string>()
+    let declined: BoundedResult | undefined
+    for (const { name } of pins.filter(({ name }) => installed.has(name))) {
+      const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
+      await fs.promises.writeFile(probePath, `${name}==${installed.get(name)}\n`, 'utf-8')
+      const served = await runBoundedInstall(
+        plan,
+        probePath,
+        `${tag}-installed-filtered.txt`,
+        left(),
+        output,
+        signal,
+        { extraArgs: ['--no-deps', '--no-header', '--no-annotate'], subcommand: 'compile' }
+      )
+      if (served.ok) continue
+      if (!NO_SOLUTION.test(stripAnsi(served.output))) return { run: served, pins: [] }
+      unserved.add(name)
+      declined = served
+    }
+    const kept = pins.filter(({ name }) => !unserved.has(name)).map(({ line }) => line)
+    if (declined && kept.length === 0) return { run: declined, pins: [], notServed: true }
+    return { run, pins: kept }
   }
-  const { run: resolved, pins, notServed } = await (mode === 'launch' ? dryRun() : compile())
-  if (!resolved.ok)
-    return { kind: 'failed', stage: notServed ? 'not_served' : 'resolve', run: resolved }
+  const resolution = await (mode === 'launch' ? dryRun() : compile())
+  if (resolution === null) return { kind: 'unlisted' }
+  const { run: resolved, pins, notServed } = resolution
+  if (!resolved.ok) {
+    const unreachable = eager && DOWNLOAD_FAILED.test(uvErrorSection(resolved.output) ?? '')
+    const stage = notServed ? 'not_served' : unreachable ? 'unreachable' : 'resolve'
+    return { kind: 'failed', stage, run: resolved }
+  }
   if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
   if (eager) {
     // Asked of the scratch target: asking the environment takes its lock.
-    const check = await runBoundedInstall(
+    const check = await checkCache(
       plan,
       pinsPath,
       `${tag}-pins-filtered.txt`,
       left(),
       output,
       signal,
-      { extraArgs: [OFFLINE, '--dry-run', '--no-deps', '--target', tag] }
+      ['--no-deps', '--target', tag]
     )
-    if (check.ok && !WOULD_DOWNLOAD.test(check.output)) return { kind: 'cached' }
+    if (check.ok) return { kind: 'cached' }
   }
   const fetched = await runBoundedInstall(
     plan,
@@ -1203,20 +1222,6 @@ async function fetchStep(
   return fetched.ok
     ? { kind: 'fetched', run: fetched }
     : { kind: 'failed', stage: 'fetch', run: fetched }
-}
-
-function unlisted(signal: AbortSignal): BoundedResult {
-  return {
-    ok: false,
-    output: '',
-    report: {
-      outcome: signal.aborted ? 'cancelled' : 'exited',
-      exitCode: null,
-      elapsedMs: 0,
-      budgetMs: 0,
-      errorTail: signal.aborted ? null : 'error: could not list the installed packages'
-    }
-  }
 }
 
 const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m

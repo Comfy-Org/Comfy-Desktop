@@ -2519,6 +2519,7 @@ describe('prefetchAgentRequirements', () => {
   let calls: Call[] = []
   let probes: Call[] = []
   let probeAnswer: { code: number; output: string } = { code: 0, output: '' }
+  let unserved = new Set<string>()
   let compileAnswer: CompileAnswer
   let cacheCheckAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
@@ -2540,6 +2541,7 @@ describe('prefetchAgentRequirements', () => {
     calls = []
     probes = []
     probeAnswer = { code: 0, output: '' }
+    unserved = new Set()
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-prefetch-'))
     plan = {
       reqPath: path.join(dir, 'ComfyUI', 'agent_requirements.txt'),
@@ -2574,7 +2576,13 @@ describe('prefetchAgentRequirements', () => {
       }
       if (call.subcommand === 'compile' && !output) {
         probes.push(call)
-        return probeAnswer
+        const asked = call.content.trim()
+        return unserved.has(asked)
+          ? {
+              code: 1,
+              output: `error: No solution found when resolving dependencies\n  cause: Because there is no version of ${asked}\n`
+            }
+          : probeAnswer
       }
       calls.push(call)
       if (call.subcommand === 'compile') {
@@ -2672,22 +2680,45 @@ describe('prefetchAgentRequirements', () => {
 
     expect(
       probes.map((probe) => [probe.content, probe.extraArgs[0]]),
-      'comfy-agent-go stays where it is installed, so the index is not asked for it'
-    ).toEqual([['comfy-agent==0.0.0.dev0\nrequests==2.31.0\n', '--no-deps']])
+      'one probe per moved package; comfy-agent-go stays where it is installed, so it is not asked'
+    ).toEqual([
+      ['comfy-agent==0.0.0.dev0\n', '--no-deps'],
+      ['requests==2.31.0\n', '--no-deps']
+    ])
     expect(report).toMatchObject({ outcome: 'completed' })
     expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\nrequests==2.32.0\n')
   })
 
-  it('fetches nothing, and reports why, when an installed version the compile moves is not served', async () => {
+  it('fetches everything but the replacement for an installed version no index serves', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([
+        { name: 'comfy-agent', version: '0.0.0.dev0' },
+        { name: 'requests', version: '2.30.0+local' }
+      ])
+    }
+    unserved.add('requests==2.30.0+local')
+
+    const report = await finish(request())
+
+    expect(probes.map((probe) => probe.content)).toEqual([
+      'comfy-agent==0.0.0.dev0\n',
+      'requests==2.30.0+local\n'
+    ])
+    expect(
+      calls.at(-1)!.content,
+      'a local build the launch keeps must not be replaced from what is fetched here'
+    ).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+    expect(report).toMatchObject({ outcome: 'completed' })
+  })
+
+  it('fetches nothing, and reports why, when every pin replaces an installed version no index serves', async () => {
     installedAnswer = {
       code: 0,
       output: JSON.stringify([{ name: 'requests', version: '2.30.0+local' }])
     }
-    probeAnswer = {
-      code: 1,
-      output:
-        'error: No solution found when resolving dependencies\n  cause: Because there is no version of requests==2.30.0+local\n'
-    }
+    unserved.add('requests==2.30.0+local')
+    compileAnswer = { ...compileAnswer, compiled: 'requests==2.32.0\n' }
 
     const report = await finish(request())
 
@@ -2730,10 +2761,7 @@ describe('prefetchAgentRequirements', () => {
     const report = await finish(request())
 
     expect(calls, 'unseeded, the compile would move every installed version').toEqual([])
-    expect(report).toMatchObject({
-      outcome: 'resolve_failed',
-      errorTail: 'error: could not list the installed packages'
-    })
+    expect(report).toMatchObject({ outcome: 'list_failed', exitCode: null, errorTail: null })
   })
 
   it("waits for the environment's listing to exit, for removing the install", async () => {
@@ -3144,6 +3172,19 @@ describe('prefetchAgentRequirements', () => {
         errorTail: 'error: No solution found when resolving dependencies'
       })
       expect(calls.map((call) => call.subcommand)).toEqual(['compile'])
+    })
+
+    it('reports an index it cannot reach as unreachable, even when the cache holds it all', async () => {
+      compileAnswer = { code: 2, output: 'error: Failed to fetch: `comfy-agent`\n', compiled: '' }
+
+      expect(await finish(eager()), 'told apart from a resolve that failed').toMatchObject({
+        outcome: 'unreachable',
+        errorTail: 'error: Failed to fetch: `comfy-agent`'
+      })
+      expect(
+        calls.map((call) => call.subcommand),
+        'the cache is not asked'
+      ).toEqual(['compile'])
     })
 
     it('never touches the environment on the way to a fetch', async () => {
