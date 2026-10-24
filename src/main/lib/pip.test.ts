@@ -54,10 +54,9 @@ describe('getPipIndexArgs', () => {
     expect(getPipIndexArgs(MIRROR, true)).toEqual(argv([MIRROR, ...PYPI_MIRROR_URLS]))
   })
 
-  it('leaves the Chinese mirrors out when they are off', () => {
+  it('keeps a configured mirror first and leaves the Chinese mirrors out when they are off', () => {
     for (const off of [undefined, false]) {
-      const args = getPipIndexArgs(MIRROR, off)
-      for (const url of PYPI_MIRROR_URLS) expect(args).not.toContain(url)
+      expect(getPipIndexArgs(MIRROR, off)).toEqual(argv([MIRROR]))
     }
   })
 
@@ -67,11 +66,7 @@ describe('getPipIndexArgs', () => {
       'https://pypi.org/simple',
       ' https://pypi.org/simple/ '
     ]) {
-      expect(getPipIndexArgs(mirror, true)).toEqual([
-        '--index-url',
-        PYPI_INDEX_URL,
-        ...PYPI_MIRROR_URLS.flatMap((url) => ['--extra-index-url', url])
-      ])
+      expect(getPipIndexArgs(mirror, true)).toEqual(argv(PYPI_MIRROR_URLS))
     }
   })
 
@@ -84,7 +79,7 @@ describe('getPipIndexArgs', () => {
     }
   })
 
-  it('adds no --index-strategy: a mirror that lacks a package falls through to the next index', () => {
+  it('adds no --index-strategy, so uv keeps its default of falling through when a mirror lacks a package', () => {
     expect(getPipIndexArgs(MIRROR, true)).not.toContain('--index-strategy')
   })
 })
