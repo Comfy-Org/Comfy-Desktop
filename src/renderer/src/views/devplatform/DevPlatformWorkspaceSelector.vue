@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, ref } from 'vue'
 import { Check, ChevronDown } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
-import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/workspaces'
+import { useWorkspaceChoices } from '../../composables/useWorkspaceChoices'
+import { PERSONAL_WORKSPACE_ID } from '../../../../shared/workspaces'
 
 const props = defineProps<{
   modelValue: string
@@ -15,7 +15,6 @@ const emit = defineEmits<{
   'update:modelValue': [workspaceId: string]
 }>()
 
-const { t } = useI18n()
 const store = useAuthStore()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -29,48 +28,8 @@ const {
   onKeydown
 } = usePopoverDismiss({ rootRef, faceRef })
 
-function workspaceLabel(workspace: { name: string; type: string }): string {
-  return isPersonalWorkspace(workspace) || workspace.type !== 'team'
-    ? t('devPlatform.workspace.personalLabel')
-    : workspace.name
-}
-
-const teamWorkspaces = computed(() =>
-  store.isSignedIn ? store.workspaces.filter((workspace) => !isPersonalWorkspace(workspace)) : []
-)
-
-const currentWorkspaceName = computed(() => {
-  if (currentWorkspaceId.value === PERSONAL_WORKSPACE_ID) {
-    return t('devPlatform.workspace.personalLabel')
-  }
-  const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
-  if (current) return workspaceLabel(current)
-  // Cached auth metadata describes only the authenticated workspace, which
-  // may differ from the dashboard's selection (especially while offline).
-  if (store.status.workspaceId === currentWorkspaceId.value) {
-    if (
-      isPersonalWorkspace({ name: store.status.workspaceName, type: store.status.workspaceType })
-    ) {
-      return t('devPlatform.workspace.personalLabel')
-    }
-    if (store.status.workspaceName) return store.status.workspaceName
-  }
-  return t('devPlatform.workspace.currentFallback')
-})
-
-function fetchWorkspacesIfNeeded(): void {
-  if (store.isSignedIn && store.workspaces.length === 0 && !store.loadingWorkspaces) {
-    void store.fetchWorkspaces().catch(() => {})
-  }
-}
-
-watch(
-  () => store.isSignedIn,
-  (signedIn) => {
-    if (signedIn) fetchWorkspacesIfNeeded()
-  },
-  { immediate: true }
-)
+const { teamWorkspaces, currentWorkspaceName, workspaceLabel, fetchWorkspacesIfNeeded } =
+  useWorkspaceChoices(currentWorkspaceId)
 
 function toggleMenu(): void {
   togglePopover()

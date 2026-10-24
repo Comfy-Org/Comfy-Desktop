@@ -44,7 +44,7 @@ The gradient values were tuned visually. Do not change them without design.
 | ---------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Buttons    | `Button`                                                               | `primary` (the one white CTA per surface), `secondary`, `ghost`, `link`                               |
 | Text entry | `SearchInput`, `Input`                                                 | Share `fieldClass`; focus ring on the shell, never the native input                                   |
-| Menus      | `DropdownMenuContent/Item/Label/Separator`                             | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                        |
+| Menus      | `DropdownMenuContent/Item/Label/Separator/SubTrigger/SubContent`       | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                        |
 | Overlays   | `Tooltip`                                                              | Needs a Reka `TooltipProvider` above it                                                               |
 | Surfaces   | `Card` (`elevated`, `dashed`, `inset`), `Avatar`, `Badge`, `StatusDot` | `StatusDot`: `running` and `ready` (green) and `busy` (amber) pulse; `error` red; `idle` the quietest |
 | Identity   | `LocationIcon`                                                         | The one this-computer / Comfy Cloud mark                                                              |

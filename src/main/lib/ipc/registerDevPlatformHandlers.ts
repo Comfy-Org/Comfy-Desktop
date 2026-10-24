@@ -20,6 +20,8 @@ import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import { CLOUD_ISSUER } from '../../cloud/config'
+import type { CloudPage } from '../../../types/ipc'
 import {
   getBuilderClient,
   getCloudSession,
@@ -56,6 +58,12 @@ import {
   workspaceContextId
 } from '../../../shared/workspaces'
 
+/** The Comfy Cloud pages the account menu links to, by their query parameter. */
+const CLOUD_PAGES: Record<CloudPage, [string, string]> = {
+  'plan-credits': ['settings', 'plan-credits'],
+  'create-workspace': ['create_workspace', '1']
+}
+
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
   signIn: 'comfybuilder:signIn',
@@ -66,6 +74,7 @@ export const DEVPLATFORM_CHANNELS = {
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
   openBuildsPage: 'comfybuilder:openBuildsPage',
+  openCloudPage: 'comfybuilder:openCloudPage',
   installBuild: 'comfybuilder:installBuild',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
@@ -244,6 +253,18 @@ export function registerDevPlatformHandlers(): void {
       await shell.openExternal(url.toString())
     }
   )
+
+  // Comfy Cloud's own pages for what Desktop does not do itself; Cloud opens
+  // them from these query parameters, after a login if needed.
+  ipcMain.handle(DEVPLATFORM_CHANNELS.openCloudPage, async (_event, page: unknown) => {
+    if (typeof page !== 'string' || !Object.hasOwn(CLOUD_PAGES, page)) {
+      throw new Error('Unknown Comfy Cloud page.')
+    }
+    const param = CLOUD_PAGES[page as CloudPage]
+    const url = new URL('/', CLOUD_ISSUER)
+    url.searchParams.set(param[0], param[1])
+    await shell.openExternal(url.toString())
+  })
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) =>
     switchCloudWorkspace(workspaceId)

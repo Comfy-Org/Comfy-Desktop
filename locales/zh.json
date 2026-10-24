@@ -1802,5 +1802,35 @@
     "label": "等待期间",
     "cloudFailedTitle": "无法打开 Comfy Cloud",
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
+  },
+  "buildsDashboard": {
+    "sidebar": {
+      "label": "构建与工作区",
+      "builds": "构建"
+    },
+    "newBuild": "新建构建",
+    "allBuilds": "所有构建",
+    "account": {
+      "logInTitle": "登录 Comfy",
+      "logInDescription": "同步你的作品，使用云端。",
+      "switchWorkspace": "切换工作区",
+      "workspaces": "工作区",
+      "managePlan": "管理套餐与积分",
+      "language": "语言",
+      "addWorkspace": "添加工作区",
+      "tier": {
+        "free": "免费版",
+        "standard": "标准版",
+        "creator": "创作者版",
+        "pro": "专业版",
+        "founders_edition": "创始版",
+        "team": "团队版",
+        "enterprise": "企业版"
+      },
+      "role": {
+        "owner": "所有者",
+        "member": "成员"
+      }
+    }
   }
 }

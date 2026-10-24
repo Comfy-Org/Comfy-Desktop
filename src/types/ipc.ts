@@ -11,6 +11,9 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
+/** Comfy Cloud pages the dashboard's account menu opens. */
+export type CloudPage = 'plan-credits' | 'create-workspace'
+
 // One Core beta activation card, as main resolves it for the title bar. Re-exported from its
 // producer rather than restated here: this file's header forbids duplicating types, and an
 // independent copy would drift silently — `ipcMain.handle` is ungeneric and `ipcRenderer.invoke`
@@ -1721,6 +1724,9 @@ export interface ElectronApi {
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    /** Open a Comfy Cloud page in the browser: plan and credits, or creating
+     *  a workspace. */
+    openCloudPage(page: CloudPage): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

@@ -1802,5 +1802,35 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from the dashboard."
+  },
+  "buildsDashboard": {
+    "sidebar": {
+      "label": "Builds and workspace",
+      "builds": "Builds"
+    },
+    "newBuild": "New build",
+    "allBuilds": "All builds",
+    "account": {
+      "logInTitle": "Log in to Comfy",
+      "logInDescription": "Sync your work, use Cloud.",
+      "switchWorkspace": "Switch workspace",
+      "workspaces": "Workspaces",
+      "managePlan": "Manage plan & credits",
+      "language": "Language",
+      "addWorkspace": "Add workspace",
+      "tier": {
+        "free": "Free",
+        "standard": "Standard",
+        "creator": "Creator",
+        "pro": "Pro",
+        "founders_edition": "Founders",
+        "team": "Team",
+        "enterprise": "Enterprise"
+      },
+      "role": {
+        "owner": "Owner",
+        "member": "Member"
+      }
+    }
   }
 }
