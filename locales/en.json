@@ -1865,5 +1865,15 @@
       "hint": "Double-click to rename",
       "failed": "Couldn't rename this build"
     }
+  },
+  "installContents": {
+    "disabled": "This list is not available yet.",
+    "invalidRequest": "That request was not understood.",
+    "notFound": "This build no longer exists.",
+    "signedOut": "Log in to Comfy Cloud to see this.",
+    "cloudError": "Comfy Cloud could not load this list (error {status}). Try again.",
+    "cloudUnreachable": "Comfy Cloud is not reachable. Check your connection and try again.",
+    "cloudUnexpected": "Comfy Cloud sent a reply this app could not read. Try again later.",
+    "readError": "This list could not be read. Try again."
   }
 }

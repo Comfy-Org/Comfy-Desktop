@@ -1865,5 +1865,15 @@
       "hint": "双击以重命名",
       "failed": "无法重命名此构建"
     }
+  },
+  "installContents": {
+    "disabled": "此列表暂不可用。",
+    "invalidRequest": "无法识别该请求。",
+    "notFound": "此构建已不存在。",
+    "signedOut": "登录 Comfy Cloud 后即可查看。",
+    "cloudError": "Comfy Cloud 无法加载此列表（错误 {status}）。请重试。",
+    "cloudUnreachable": "无法连接 Comfy Cloud。请检查网络后重试。",
+    "cloudUnexpected": "无法读取 Comfy Cloud 的响应。请稍后重试。",
+    "readError": "无法读取此列表。请重试。"
   }
 }
