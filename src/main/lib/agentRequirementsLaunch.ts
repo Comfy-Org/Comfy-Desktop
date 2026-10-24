@@ -1133,9 +1133,10 @@ async function fetchStep(
   // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
   // running ComfyUI would wait behind it.
   const compile = async (): Promise<Resolved | null> => {
-    const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
+    const parsed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
     // Unseeded, the compile would move every installed version, local builds included.
-    if (listed === null) return null
+    if (parsed === null) return null
+    const listed = parsed.filter((p) => VALID_PIP_NAME.test(p.name) && PIP_VERSION.test(p.version))
     // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
     const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
     const compiledName = `${tag}-compiled.txt`
@@ -1143,10 +1144,7 @@ async function fetchStep(
     // uv keeps a version already in its output file where the requirements allow and an index
     // serves it. One no index serves (a local build) is not kept: uv picks the newest it finds,
     // or, under a constraint that pins it, finds no solution.
-    const freeze = listed
-      .filter(({ name, version }) => VALID_PIP_NAME.test(name) && PIP_VERSION.test(version))
-      .map(({ name, version }) => `${name}==${version}\n`)
-      .join('')
+    const freeze = listed.map(({ name, version }) => `${name}==${version}\n`).join('')
     await fs.promises.writeFile(compiledPath, freeze, 'utf-8')
     const run = await runBoundedInstall(
       plan,
