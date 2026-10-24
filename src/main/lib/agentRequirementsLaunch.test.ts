@@ -2518,10 +2518,7 @@ describe('prefetchAgentRequirements', () => {
   type CompileAnswer = { code: number; output: string; compiled: string }
   let calls: Call[] = []
   let compileAnswer: CompileAnswer
-  let cacheCompileAnswer: CompileAnswer
   let cacheCheckAnswer: { code: number; output: string } = { code: 0, output: '' }
-  let dryRunAnswer: { code: number; output: string } = { code: 0, output: '' }
-  let cacheDryRunAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
   let installedAnswer: { code: number; output: string }
 
@@ -2547,13 +2544,7 @@ describe('prefetchAgentRequirements', () => {
       installPath: dir
     }
     compileAnswer = { code: 0, output: 'Resolved 3 packages in 400ms\n', compiled: COMPILED }
-    cacheCompileAnswer = compileAnswer
     cacheCheckAnswer = { code: 0, output: 'Would install 2 packages\n' }
-    dryRunAnswer = { code: 0, output: ' - comfy-agent==0.0.0.dev0\n + comfy-agent==0.1.0rc3\n' }
-    cacheDryRunAnswer = {
-      code: 1,
-      output: 'error: No solution found when resolving dependencies\n'
-    }
     installedAnswer = { code: 0, output: INSTALLED }
     fetchAnswer = {
       code: 0,
@@ -2579,13 +2570,10 @@ describe('prefetchAgentRequirements', () => {
       }
       calls.push(call)
       if (call.subcommand === 'compile') {
-        const answer = extraArgs.includes('--offline') ? cacheCompileAnswer : compileAnswer
-        if (answer.code === 0) fs.writeFileSync(output!, answer.compiled)
-        return { code: answer.code, output: answer.output }
+        if (compileAnswer.code === 0) fs.writeFileSync(output!, compileAnswer.compiled)
+        return { code: compileAnswer.code, output: compileAnswer.output }
       }
-      if (extraArgs.includes('--dry-run') && extraArgs.includes('--target')) return cacheCheckAnswer
-      if (extraArgs.includes('--dry-run'))
-        return extraArgs.includes('--offline') ? cacheDryRunAnswer : dryRunAnswer
+      if (extraArgs.includes('--dry-run')) return cacheCheckAnswer
       if (extraArgs.includes('--target')) {
         fs.mkdirSync(path.join(dir, extraArgs[extraArgs.indexOf('--target') + 1]!, 'comfy_agent'), {
           recursive: true
@@ -2765,47 +2753,11 @@ describe('prefetchAgentRequirements', () => {
 
     const report = await finish(request())
 
-    expect(calls, 'only no solution falls back to the environment').toHaveLength(1)
+    expect(calls, 'nothing runs after a failed resolve').toHaveLength(1)
     expect(report).toMatchObject({
       outcome: 'resolve_failed',
       exitCode: 2,
       errorTail: 'error: Failed to fetch: `comfy-agent`'
-    })
-  })
-
-  it('resolves against the environment when the compile finds no solution, and fetches its pins', async () => {
-    compileAnswer = {
-      code: 1,
-      output: 'error: No solution found when resolving dependencies\n',
-      compiled: ''
-    }
-
-    const report = await finish(request())
-
-    const [compiled, dryRun, fetched] = calls
-    expect(compiled!.subcommand).toBe('compile')
-    expect(
-      dryRun!.extraArgs,
-      'an installed version no index serves is a candidate only to the environment'
-    ).toEqual(['--dry-run', '--constraint', expect.any(String)])
-    expect(fetched!.content).toBe('comfy-agent==0.1.0rc3\n')
-    expect(report).toMatchObject({ outcome: 'completed' })
-  })
-
-  it('reports the environment resolve when it finds no solution either', async () => {
-    compileAnswer = {
-      code: 1,
-      output: 'error: No solution found when resolving dependencies\n',
-      compiled: ''
-    }
-    dryRunAnswer = { code: 1, output: 'error: No solution found: comfy-agent==9\n' }
-
-    const report = await finish(request())
-
-    expect(calls).toHaveLength(2)
-    expect(report).toMatchObject({
-      outcome: 'resolve_failed',
-      errorTail: 'error: No solution found: comfy-agent==9'
     })
   })
 
@@ -3041,47 +2993,83 @@ describe('prefetchAgentRequirements', () => {
 
   describe('ahead of a launch', () => {
     const eager = (): PrefetchRequest => ({ ...request(), eager: true })
-    const network = (): Call[] => calls.filter((call) => !call.extraArgs.includes('--offline'))
+    const lockFree = (call: Call): boolean =>
+      call.subcommand === 'compile' || call.extraArgs.includes('--target')
 
     it('does nothing, and reports nothing, when the cache holds every wheel', async () => {
       expect(await finish(eager())).toBeNull()
-      const [compiled, check] = calls
+      const [compiled, check, ...rest] = calls
       expect(compiled!.subcommand).toBe('compile')
-      expect(compiled!.extraArgs).toContain('--offline')
+      expect(
+        compiled!.extraArgs,
+        'an offline compile reads a cache miss as no solution'
+      ).not.toContain('--offline')
       expect(
         check!.extraArgs.slice(0, 5),
         "checked against a scratch target, which takes no lock on the environment's"
       ).toEqual(['--offline', '--dry-run', '--no-deps', '--target', expect.any(String)])
       expect(check!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
-      expect(network(), 'nothing went to the network').toEqual([])
+      expect(rest, 'nothing is fetched').toEqual([])
     })
 
-    it('checks no wheels when the cache resolves to what is installed', async () => {
-      cacheCompileAnswer = { ...compileAnswer, compiled: 'requests==2.32.0\n' }
+    it('checks no wheels when the compile finds nothing missing', async () => {
+      compileAnswer = { ...compileAnswer, compiled: 'requests==2.32.0\n' }
 
       expect(await finish(eager())).toBeNull()
       expect(calls, 'only the compile ran').toHaveLength(1)
     })
 
-    it('fetches when the cache knows the packages but holds no wheels for them', async () => {
+    it('fetches exactly the missing pins when the cache holds no wheels for them', async () => {
       cacheCheckAnswer = {
         code: 0,
         output: 'Would download 2 packages\nWould install 2 packages\n'
       }
 
+      expect(await finish(eager())).toMatchObject({ outcome: 'completed' })
+      const [compiled, check, fetched] = calls
+      expect([compiled, check].map((call) => call!.subcommand)).toEqual(['compile', 'install'])
+      expect(check!.extraArgs).toContain('--offline')
+      expect(fetched!.extraArgs).not.toContain('--offline')
+      expect(fetched!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+    })
+
+    it('reports a compile that finds no solution as resolve_failed, and touches nothing else', async () => {
+      compileAnswer = {
+        code: 1,
+        output: 'error: No solution found when resolving dependencies\n',
+        compiled: ''
+      }
+
+      const report = await finish(eager())
+
+      expect(report).toMatchObject({
+        outcome: 'resolve_failed',
+        errorTail: 'error: No solution found when resolving dependencies'
+      })
+      expect(calls.map((call) => call.subcommand)).toEqual(['compile'])
+    })
+
+    it('never touches the environment on the way to a fetch', async () => {
+      cacheCheckAnswer = { code: 0, output: 'Would download 2 packages\n' }
+
+      await finish(eager())
+
+      expect(calls).toHaveLength(3)
+      for (const call of calls)
+        expect(lockFree(call), `compiles or uses the scratch target: ${call.extraArgs}`).toBe(true)
       expect(
-        await finish(eager()),
-        'a resolve from the cache passes on metadata an earlier resolve left there'
-      ).toMatchObject({ outcome: 'completed' })
-      expect(calls.at(-1)!.extraArgs).toContain('--target')
-      expect(network().map((call) => call.subcommand)).toEqual(['compile', 'install'])
+        mockUvPip.mock.calls.map(([, args]) => args[0] === '--version' || args[1] === 'list'),
+        'the rest only asks uv its version or lists the environment'
+      ).not.toContain(false)
     })
 
     it('fetches when the check of the cached wheels fails', async () => {
       cacheCheckAnswer = { code: 2, output: 'error: Failed to read the cache\n' }
 
       expect(await finish(eager())).toMatchObject({ outcome: 'completed' })
-      expect(network().map((call) => call.subcommand)).toEqual(['compile', 'install'])
+      expect(
+        calls.filter((call) => !call.extraArgs.includes('--offline')).map((call) => call.subcommand)
+      ).toEqual(['compile', 'install'])
     })
 
     it('reports a run whose first step was cached and whose second was fetched', async () => {
@@ -3154,38 +3142,6 @@ describe('prefetchAgentRequirements', () => {
       } finally {
         vi.useRealTimers()
       }
-    })
-
-    it('fetches when the cache cannot even resolve', async () => {
-      cacheCompileAnswer = {
-        code: 1,
-        output: 'error: No solution found when resolving dependencies\n',
-        compiled: ''
-      }
-
-      expect(await finish(eager())).toMatchObject({ outcome: 'completed' })
-      expect(
-        calls.filter((call) => call.extraArgs.includes('--offline')).map((call) => call.subcommand),
-        'the cache resolve falls back to the environment, offline too'
-      ).toEqual(['compile', 'install'])
-      expect(
-        calls.filter(
-          (call) => call.extraArgs.includes('--target') && call.extraArgs.includes('--dry-run')
-        ),
-        'no wheels to check'
-      ).toEqual([])
-    })
-
-    it('counts as cached what the environment resolves from the cache when the compile cannot', async () => {
-      cacheCompileAnswer = {
-        code: 1,
-        output: 'error: No solution found when resolving dependencies\n',
-        compiled: ''
-      }
-      cacheDryRunAnswer = { code: 0, output: 'Would install 1 package\n + comfy-agent==0.1.0rc3\n' }
-
-      expect(await finish(eager())).toBeNull()
-      expect(calls.at(-1)!.content, 'its pins get the wheel check').toBe('comfy-agent==0.1.0rc3\n')
     })
   })
 })

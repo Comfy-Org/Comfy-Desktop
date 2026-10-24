@@ -1092,7 +1092,7 @@ async function fetchStep(
     )
     constraintArgs.push('--constraint', constraintsName)
   }
-  const dryRun = async (extra: string[]): Promise<Resolved> => {
+  const dryRun = async (): Promise<Resolved> => {
     const run = await runBoundedInstall(
       plan,
       srcPath,
@@ -1100,7 +1100,7 @@ async function fetchStep(
       left(),
       output,
       signal,
-      { extraArgs: [...extra, '--dry-run', ...constraintArgs] }
+      { extraArgs: ['--dry-run', ...constraintArgs] }
     )
     return {
       run,
@@ -1109,16 +1109,15 @@ async function fetchStep(
   }
   // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
   // running ComfyUI would wait behind it.
-  let listing: Promise<{ name: string; version: string }[]> | undefined
-  const compile = async (extra: string[]): Promise<Resolved> => {
-    listing ??= listInstalled(plan, signal, true).then((out) => parseInstalled(out ?? '') ?? [])
-    const listed = await listing
+  const compile = async (): Promise<Resolved> => {
+    const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '') ?? []
     // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
     const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
     const compiledName = `${tag}-compiled.txt`
     const compiledPath = path.join(plan.installPath, compiledName)
-    // uv keeps the versions already in its output file where the requirements allow, as an install
-    // keeps what is installed.
+    // uv keeps a version already in its output file where the requirements allow and an index
+    // serves it. One no index serves (a local build) is not kept: uv picks the newest it finds,
+    // or, under a constraint that pins it, finds no solution.
     const freeze = listed.map(({ name, version }) => `${name}==${version}\n`).join('')
     await fs.promises.writeFile(compiledPath, freeze, 'utf-8')
     const run = await runBoundedInstall(
@@ -1129,14 +1128,7 @@ async function fetchStep(
       output,
       signal,
       {
-        extraArgs: [
-          ...extra,
-          '-o',
-          compiledName,
-          '--no-header',
-          '--no-annotate',
-          ...constraintArgs
-        ],
+        extraArgs: ['-o', compiledName, '--no-header', '--no-annotate', ...constraintArgs],
         subcommand: 'compile'
       }
     )
@@ -1147,38 +1139,24 @@ async function fetchStep(
     })
     return { run, pins }
   }
-  // The output file gives uv the installed versions as preferences, not as candidates: one no index
-  // here serves (a mirror without it, a local build) leaves no solution, which the environment has.
-  const resolve =
-    mode === 'launch'
-      ? dryRun
-      : async (extra: string[]): Promise<Resolved> => {
-          const compiled = await compile(extra)
-          return NO_SOLUTION.test(stripAnsi(compiled.run.output)) ? dryRun(extra) : compiled
-        }
-  // From the cache alone: a resolve passes on cached metadata, so only "Would download" says a
-  // wheel is still missing. It asks the scratch target: asking the environment takes its lock.
-  if (eager) {
-    const cached = await resolve([OFFLINE])
-    if (cached.run.ok && cached.pins.length === 0) return { kind: 'cached' }
-    if (cached.run.ok) {
-      await fs.promises.writeFile(pinsPath, cached.pins.join('\n') + '\n', 'utf-8')
-      const check = await runBoundedInstall(
-        plan,
-        pinsPath,
-        `${tag}-pins-filtered.txt`,
-        left(),
-        output,
-        signal,
-        { extraArgs: [OFFLINE, '--dry-run', '--no-deps', '--target', tag] }
-      )
-      if (check.ok && !WOULD_DOWNLOAD.test(check.output)) return { kind: 'cached' }
-    }
-  }
-  const { run: resolved, pins } = await resolve([])
+  const { run: resolved, pins } = await (mode === 'launch' ? dryRun() : compile())
   if (!resolved.ok) return { kind: 'failed', stage: 'resolve', run: resolved }
-  if (pins.length === 0) return { kind: 'nothing' }
+  // Ahead of a launch, nothing is downloaded and nothing reported when the cache has it all.
+  if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
+  if (eager) {
+    // Asked of the scratch target: asking the environment takes its lock.
+    const check = await runBoundedInstall(
+      plan,
+      pinsPath,
+      `${tag}-pins-filtered.txt`,
+      left(),
+      output,
+      signal,
+      { extraArgs: [OFFLINE, '--dry-run', '--no-deps', '--target', tag] }
+    )
+    if (check.ok && !WOULD_DOWNLOAD.test(check.output)) return { kind: 'cached' }
+  }
   const fetched = await runBoundedInstall(
     plan,
     pinsPath,
