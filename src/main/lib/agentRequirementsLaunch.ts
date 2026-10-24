@@ -141,7 +141,6 @@ function recordUv(proc: ChildProcess, installPath: string): void {
 /** No agent uv runs this long (the background download's budget is 30 minutes): its record is
  *  stale, and is removed without asking `ps`. */
 const RECORD_MAX_AGE_MS = 60 * 60_000
-/** Short: a hold waits on these checks. */
 const PS_TIMEOUT_MS = 2_000
 
 /** Whether `pid` is still the uv a record names: pids recycle, so the name and start time must
@@ -974,7 +973,6 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
   const running = prefetches.get(installPath)
   running?.stop.abort()
   await Promise.all([preparation?.done, running?.done])
-  // A uv a killed Desktop left running would contend just as much; ours are stopped by now.
   await reapOrphanedAgentUv(installPath)
   let released = false
   return () => {
