@@ -1141,7 +1141,6 @@ async function fetchStep(
   }
   const { run: resolved, pins } = await (mode === 'launch' ? dryRun() : compile())
   if (!resolved.ok) return { kind: 'failed', stage: 'resolve', run: resolved }
-  // Ahead of a launch, nothing is downloaded and nothing reported when the cache has it all.
   if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
   if (eager) {
