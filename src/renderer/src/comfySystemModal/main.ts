@@ -9,6 +9,9 @@ import SystemModalApp from './SystemModalApp.vue'
 // happens main-side. Default to dark; `data-theme` drives fallback CSS variables not
 // overridden by the inline theme main pushes.
 document.documentElement.setAttribute('data-theme', 'dark')
+// Everything this renderer draws is in the Void palette's scope
+// (assets/palette-void.css).
+document.documentElement.classList.add('palette-void')
 
 // No vue-i18n: main composes the localized strings and pushes them with the spec.
 loadProprietaryFonts()
