@@ -17,7 +17,9 @@ import {
   coreFileInstalled,
   installedConstraints,
   isRevertedFor,
+  normalizePackageName,
   overrideSignature,
+  parseInstalled,
   parseAgentRequirementsOverride,
   pinsOverBareLines
 } from './agentRequirementsOverride'
@@ -299,7 +301,7 @@ async function runBoundedInstall(
   timeoutMs: number,
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
-  { extraArgs, env }: RunOptions = {}
+  { extraArgs, env, subcommand }: RunOptions = {}
 ): Promise<BoundedResult> {
   const startedAt = Date.now()
   const result = (
@@ -362,7 +364,8 @@ async function runBoundedInstall(
       uvProc = proc
       recordUv(proc, plan.installPath)
     },
-    env
+    env,
+    subcommand
   ).then(
     (result) => ({ kind: 'settled', result }),
     (error: unknown) => ({ kind: 'failed', error })
@@ -415,6 +418,7 @@ async function runBoundedInstall(
 interface RunOptions {
   extraArgs?: string[]
   env?: Record<string, string>
+  subcommand?: 'install' | 'compile'
 }
 
 /**
@@ -454,7 +458,11 @@ export interface PrefetchRequest {
   /** In order: core's own file first when it is not in yet, since a launch installs it first. */
   steps: PrefetchStep[]
   signature: string
-  /** Ahead of any launch: skipped, unreported, when the cache already holds everything. */
+  /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
+   *  online first, so an index it can't reach is reported as `unreachable`, cache or not. When
+   *  the compile would move an installed version no index serves, its replacement is not fetched,
+   *  and the run is `not_served` if nothing is fetched; when a constraint pins such a version
+   *  that is not a local build, the compile finds no solution and the step is `resolve_failed`. */
   eager?: boolean
 }
 
@@ -503,7 +511,8 @@ export type Deferral = 'agent' | 'update'
  * validates and passes its check goes in first; otherwise, or when it is not downloaded in time,
  * core's own file. On a fresh install the override waits for core's file and then goes in on the
  * same launch. What does not download in time is handed to `onDeferred` for a background download;
- * a failure no download can fix is not. Returns the decision to report, if any.
+ * a failure of core's file no download can fix goes to `onCoreFailed` instead. Returns the decision
+ * to report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -511,24 +520,15 @@ export async function installAgentRequirements(
   signal?: AbortSignal,
   override?: unknown,
   overrideState: AgentOverrideState | null = null,
-  onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void
+  onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void,
+  onCoreFailed?: (report: InstallReport) => void
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
   const run: CachedRun = async (reqPath, tempName, constraints, network = true) => {
     const extraArgs = constraints ? ['--constraint', constraints.name] : []
-    const cacheHoldsAll = async (): Promise<BoundedResult> => {
-      const check = await runBoundedInstall(
-        plan,
-        reqPath,
-        tempName,
-        CACHE_CHECK_TIMEOUT_MS,
-        () => {},
-        signal,
-        { extraArgs: [OFFLINE, '--dry-run', ...extraArgs] }
-      )
-      return { ...check, ok: check.ok && !WOULD_DOWNLOAD.test(check.output) }
-    }
+    const cacheHoldsAll = (): Promise<BoundedResult> =>
+      checkCache(plan, reqPath, tempName, CACHE_CHECK_TIMEOUT_MS, () => {}, signal, extraArgs)
     const fromCache = (output = sendOutput): Promise<BoundedResult> =>
       runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, output, signal, {
         extraArgs: [OFFLINE, ...extraArgs]
@@ -609,7 +609,8 @@ export async function installAgentRequirements(
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
   if (!core.ok) {
-    if (!cannotDownload(core)) await defer(true)
+    if (cannotDownload(core)) onCoreFailed?.(core.report)
+    else await defer(true)
     return decision
   }
   if (decision?.decision !== 'refused' || decision.reason !== 'core_first') return decision
@@ -623,6 +624,21 @@ export async function installAgentRequirements(
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
+}
+
+async function checkCache(
+  plan: AgentRequirementsInstall,
+  reqPath: string,
+  tempName: string,
+  timeoutMs: number,
+  output: (text: string) => void,
+  signal: AbortSignal | undefined,
+  extraArgs: string[]
+): Promise<BoundedResult> {
+  const check = await runBoundedInstall(plan, reqPath, tempName, timeoutMs, output, signal, {
+    extraArgs: [OFFLINE, '--dry-run', ...extraArgs]
+  })
+  return { ...check, ok: check.ok && !WOULD_DOWNLOAD.test(check.output) }
 }
 
 async function tryOverride(
@@ -920,8 +936,9 @@ let quit = new AbortController()
 
 /**
  * Fetch what a launch could not install into uv's cache without touching the environment ComfyUI
- * runs from: resolve against it (`--dry-run`), then install exactly the missing pins into a scratch
- * target, deleted after. The next launch's cache-only install takes them from there.
+ * runs from: resolve (`uv pip compile`, preferring what is installed), then install exactly the
+ * pins it lacks into a scratch target, deleted after. The next launch's cache-only install takes
+ * them from there.
  *
  * One runs per install: another request while it runs is refused (false), and a different one
  * gets `onDone(null)` at once, so no caller waits on it. False after quit or while the install is
@@ -988,6 +1005,7 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
 const UV_DOWNLOADING_LINE = /^\s*Downloading\s/
 const UV_DOWNLOADED_LINE = /^\s*Downloaded\s/
 const DRY_RUN_ADDED = /^ \+ (\S+==\S+)$/
+const COMPILED_PIN = /^([A-Za-z0-9][\w.-]*)==(\S+)$/
 const WOULD_DOWNLOAD = /^Would download /m
 
 async function runPrefetch(
@@ -1013,24 +1031,30 @@ async function runPrefetch(
     uvVersion = await readUvVersion(plan, signal)
     await removePrefetchFiles(plan.installPath)
     let cachedSteps = 0
+    let declined = false
     for (const [index, step] of request.steps.entries()) {
       const left = (): number => Math.max(0, PREFETCH_TIMEOUT_MS - (Date.now() - startedAt))
       const fetched = await fetchStep(plan, step, `${PREFETCH_PREFIX}${attemptTag()}-${index}`, {
         eager: request.eager === true,
         signal,
-        left
+        left,
+        mode: 'prefetch'
       })
+      if (fetched.kind === 'unlisted') return done(signal.aborted ? 'cancelled' : 'list_failed')
       if (fetched.kind === 'cached') cachedSteps++
+      if (fetched.kind === 'declined') declined = true
       if (fetched.kind === 'fetched') fetches.push(fetched.run)
       if (fetched.kind === 'failed') {
         if (fetched.stage === 'fetch') fetches.push(fetched.run)
         const { outcome } = fetched.run.report
-        const exited = fetched.stage === 'resolve' ? 'resolve_failed' : 'download_failed'
+        const exited = FAILED_OUTCOME[fetched.stage]
         return done(outcome === 'exited' ? exited : outcome, fetched.run)
       }
     }
     if (cachedSteps === request.steps.length) return null
-    return done(fetches.length ? 'completed' : 'nothing_missing', fetches.at(-1))
+    // No tail for a decline: it names the installed version, which may carry a private label.
+    const nothing = declined ? 'not_served' : 'nothing_missing'
+    return done(fetches.length ? 'completed' : nothing, fetches.at(-1))
   } catch {
     return done('spawn_error')
   } finally {
@@ -1039,10 +1063,22 @@ async function runPrefetch(
   }
 }
 
+interface Resolved {
+  run: BoundedResult
+  pins: string[]
+  notServed?: boolean
+}
+
+const FAILED_OUTCOME = {
+  resolve: 'resolve_failed',
+  fetch: 'download_failed',
+  unreachable: 'unreachable'
+} as const
+
 type StepResult =
-  | { kind: 'cached' | 'nothing' }
+  | { kind: 'cached' | 'nothing' | 'unlisted' | 'declined' }
   | { kind: 'fetched'; run: BoundedResult }
-  | { kind: 'failed'; stage: 'resolve' | 'fetch'; run: BoundedResult }
+  | { kind: 'failed'; stage: keyof typeof FAILED_OUTCOME; run: BoundedResult }
 
 async function fetchStep(
   plan: AgentRequirementsInstall,
@@ -1052,13 +1088,14 @@ async function fetchStep(
     eager,
     signal,
     left,
-    serial = true,
+    mode,
     output = () => {}
   }: {
     eager: boolean
     signal: AbortSignal
     left: () => number
-    serial?: boolean
+    /** A launch waits on its download, so it fetches in parallel and may take the lock. */
+    mode: 'launch' | 'prefetch'
     output?: (text: string) => void
   }
 ): Promise<StepResult> {
@@ -1071,28 +1108,108 @@ async function fetchStep(
   if (step.constraints !== undefined) {
     await fs.promises.writeFile(
       path.join(plan.installPath, constraintsName),
-      step.constraints,
+      // A compile can't see installed versions, so pinning a local build leaves no solution; the
+      // seed and the probe keep it installed instead.
+      mode === 'prefetch' ? step.constraints.replace(/^.*==\S*\+.*$\n?/gm, '') : step.constraints,
       'utf-8'
     )
     constraintArgs.push('--constraint', constraintsName)
   }
-  const dryRun = (extra: string[]): Promise<BoundedResult> =>
-    runBoundedInstall(plan, srcPath, `${tag}-src-filtered.txt`, left(), output, signal, {
-      extraArgs: [...extra, '--dry-run', ...constraintArgs]
-    })
-  // From the cache alone: a resolve passes on cached metadata, so only "Would download" says a
-  // wheel is still missing.
-  if (eager) {
-    const cached = await dryRun([OFFLINE])
-    if (cached.ok && !WOULD_DOWNLOAD.test(cached.output)) return { kind: 'cached' }
+  const dryRun = async (): Promise<Resolved> => {
+    const run = await runBoundedInstall(
+      plan,
+      srcPath,
+      `${tag}-src-filtered.txt`,
+      left(),
+      output,
+      signal,
+      { extraArgs: ['--dry-run', ...constraintArgs] }
+    )
+    return {
+      run,
+      pins: run.output.split(/\r?\n/).flatMap((line) => line.match(DRY_RUN_ADDED)?.[1] ?? [])
+    }
   }
-  const resolved = await dryRun([])
-  if (!resolved.ok) return { kind: 'failed', stage: 'resolve', run: resolved }
-  const pins = resolved.output
-    .split(/\r?\n/)
-    .flatMap((line) => line.match(DRY_RUN_ADDED)?.[1] ?? [])
-  if (pins.length === 0) return { kind: 'nothing' }
+  // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
+  // running ComfyUI would wait behind it.
+  const compile = async (): Promise<Resolved | null> => {
+    const listed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
+    // Unseeded, the compile would move every installed version, local builds included.
+    if (listed === null) return null
+    // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
+    const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
+    const compiledName = `${tag}-compiled.txt`
+    const compiledPath = path.join(plan.installPath, compiledName)
+    // uv keeps a version already in its output file where the requirements allow and an index
+    // serves it. One no index serves (a local build) is not kept: uv picks the newest it finds,
+    // or, under a constraint that pins it, finds no solution.
+    const freeze = listed.map(({ name, version }) => `${name}==${version}\n`).join('')
+    await fs.promises.writeFile(compiledPath, freeze, 'utf-8')
+    const run = await runBoundedInstall(
+      plan,
+      srcPath,
+      `${tag}-src-filtered.txt`,
+      left(),
+      output,
+      signal,
+      {
+        extraArgs: ['-o', compiledName, '--no-header', '--no-annotate', ...constraintArgs],
+        subcommand: 'compile'
+      }
+    )
+    const compiled = run.ok ? await fs.promises.readFile(compiledPath, 'utf-8') : ''
+    const pins = compiled.split(/\r?\n/).flatMap((line) => {
+      const pin = line.trim().match(COMPILED_PIN)
+      return pin && installed.get(pin[1]!) !== pin[2] ? [{ name: pin[1]!, line: pin[0] }] : []
+    })
+    // A launch keeps an installed version that still satisfies, unless offline it can't: then it
+    // replaces one no index serves (a local build) with what this compile chose, once that is
+    // cached. So the replacement for such a version is not fetched; the rest is.
+    const unserved = new Set<string>()
+    for (const { name } of pins.filter(({ name }) => installed.has(name))) {
+      const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
+      await fs.promises.writeFile(probePath, `${name}==${installed.get(name)}\n`, 'utf-8')
+      const served = await runBoundedInstall(
+        plan,
+        probePath,
+        `${tag}-installed-filtered.txt`,
+        left(),
+        output,
+        signal,
+        { extraArgs: ['--no-deps', '--no-header', '--no-annotate'], subcommand: 'compile' }
+      )
+      if (served.ok) continue
+      if (!NO_SOLUTION.test(stripAnsi(served.output))) return { run: served, pins: [] }
+      unserved.add(name)
+    }
+    const kept = pins.filter(({ name }) => !unserved.has(name)).map(({ line }) => line)
+    if (unserved.size && kept.length === 0) return { run, pins: [], notServed: true }
+    return { run, pins: kept }
+  }
+  const resolution = await (mode === 'launch' ? dryRun() : compile())
+  if (resolution === null) return { kind: 'unlisted' }
+  const { run: resolved, pins, notServed } = resolution
+  if (notServed) return { kind: 'declined' }
+  if (!resolved.ok) {
+    const error = uvErrorSection(resolved.output) ?? ''
+    const unreachable = eager && !NO_SOLUTION.test(error) && DOWNLOAD_FAILED.test(error)
+    return { kind: 'failed', stage: unreachable ? 'unreachable' : 'resolve', run: resolved }
+  }
+  if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
+  if (eager) {
+    // Asked of the scratch target: asking the environment takes its lock.
+    const check = await checkCache(
+      plan,
+      pinsPath,
+      `${tag}-pins-filtered.txt`,
+      left(),
+      output,
+      signal,
+      ['--no-deps', '--target', tag]
+    )
+    if (check.ok) return { kind: 'cached' }
+  }
   const fetched = await runBoundedInstall(
     plan,
     pinsPath,
@@ -1100,7 +1217,10 @@ async function fetchStep(
     left(),
     output,
     signal,
-    { extraArgs: ['--no-deps', '--target', tag], ...(serial ? { env: SERIAL_DOWNLOADS } : {}) }
+    {
+      extraArgs: ['--no-deps', '--target', tag],
+      ...(mode === 'prefetch' ? { env: SERIAL_DOWNLOADS } : {})
+    }
   )
   return fetched.ok
     ? { kind: 'fetched', run: fetched }
@@ -1141,7 +1261,7 @@ async function fetchForLaunch(
       eager: false,
       signal: stop.signal,
       left: () => Math.max(0, deadline - Date.now()),
-      serial: false,
+      mode: 'launch',
       output
     })
   } catch {

@@ -18,6 +18,7 @@ import {
   indexKind,
   readFrontendPin,
   readOverrideState,
+  reportAgentCoreFailure,
   reportOverrideDecision
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
@@ -517,6 +518,53 @@ describe('reportOverrideDecision', () => {
     expect(() =>
       reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
     ).not.toThrow()
+  })
+})
+
+describe('reportAgentCoreFailure', () => {
+  const report = {
+    outcome: 'exited',
+    exitCode: 1,
+    elapsedMs: 900,
+    budgetMs: 20_000,
+    errorTail: 'error: No solution found when resolving dependencies'
+  } as const
+
+  it('reports how core file failed, and which kind of index it used', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      reportAgentCoreFailure('i', report, 'custom')
+
+      expect(
+        emit.mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_core')
+      ).toEqual([
+        [
+          'comfy.desktop.agent_requirements_core',
+          {
+            installation_id: 'i',
+            install_outcome: 'exited',
+            exit_code: 1,
+            elapsed_ms: 900,
+            budget_ms: 20_000,
+            error_tail: 'error: No solution found when resolving dependencies',
+            index: 'custom'
+          }
+        ]
+      ])
+    } finally {
+      emit.mockRestore()
+    }
+  })
+
+  it('never lets a failing telemetry sink reach the launch', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {
+      throw new Error('sink down')
+    })
+    try {
+      expect(() => reportAgentCoreFailure('i', report, 'pypi')).not.toThrow()
+    } finally {
+      emit.mockRestore()
+    }
   })
 })
 

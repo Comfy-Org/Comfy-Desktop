@@ -309,6 +309,55 @@ describe('runUvPipDetailed onSpawn', () => {
     }
   })
 
+  it('compiles the filtered copy instead of installing it, with every other argument kept', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pip-compile-'))
+    try {
+      const reqPath = path.join(dir, 'reqs.txt')
+      fs.writeFileSync(reqPath, 'torch\ncomfy-agent==0.2.0\n')
+      const argsFor = async (subcommand?: 'install' | 'compile'): Promise<string[]> => {
+        const proc = fakeUv()
+        spawnMock.mockReturnValueOnce(proc as never)
+        const running = installFilteredRequirementsDetailed(
+          reqPath,
+          'uv',
+          '/py',
+          dir,
+          'filtered.txt',
+          () => {},
+          undefined,
+          undefined,
+          ['-o', 'out.txt'],
+          undefined,
+          undefined,
+          subcommand
+        )
+        await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled())
+        const filtered = fs.readFileSync(path.join(dir, 'filtered.txt'), 'utf-8')
+        proc.emit('close', 0)
+        await running
+        const args = spawnMock.mock.calls[0]![1] as string[]
+        spawnMock.mockClear()
+        expect(filtered, 'torch is filtered out of a compile too').toBe('comfy-agent==0.2.0\n')
+        return args.map((arg) => (arg === path.join(dir, 'filtered.txt') ? '<filtered>' : arg))
+      }
+
+      const installed = await argsFor()
+      const compiled = await argsFor('compile')
+
+      expect(installed.slice(0, 4)).toEqual(['pip', 'install', '-r', '<filtered>'])
+      expect(compiled.slice(0, 3), 'uv pip compile takes its source file positionally').toEqual([
+        'pip',
+        'compile',
+        '<filtered>'
+      ])
+      expect(compiled.slice(3), 'python, index and extra arguments are unchanged').toEqual(
+        installed.slice(4)
+      )
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("passes a caller's extra environment to uv, over the uv environment", async () => {
     const proc = fakeUv()
     spawnMock.mockReturnValueOnce(proc as never)

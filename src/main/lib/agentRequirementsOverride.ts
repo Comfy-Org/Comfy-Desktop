@@ -221,7 +221,7 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
-function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
+export function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
   // uv's stderr ("Using Python … environment at") shares the captured stream.
   const json = pipListOutput
     .split(/\r?\n/)
@@ -415,6 +415,24 @@ export function reportOverrideDecision(
   }
 }
 
+export function reportAgentCoreFailure(
+  installationId: string,
+  r: InstallReport,
+  index: IndexKind
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_core', {
+      installation_id: installationId,
+      install_outcome: r.outcome,
+      exit_code: r.exitCode,
+      elapsed_ms: r.elapsedMs,
+      budget_ms: r.budgetMs,
+      error_tail: r.errorTail,
+      index
+    })
+  } catch {}
+}
+
 /** Failures: agent_error, health_check_failed, package_missing. Not agent_exited or permission_denied. */
 export type AgentStartOutcome = 'started' | 'failed' | 'inconclusive'
 
@@ -505,6 +523,9 @@ export interface PrefetchReport {
     | 'completed'
     | 'nothing_missing'
     | 'resolve_failed'
+    | 'not_served'
+    | 'unreachable'
+    | 'list_failed'
     | 'download_failed'
     | 'timed_out'
     | 'abandoned'

@@ -3661,6 +3661,48 @@ describe('agent requirements at launch', () => {
     expect(progress.filter((p) => p.phase === 'agentRequirements').at(-1)).toMatchObject({
       status: 'launch.agentRequirements.deferred'
     })
+    expect(
+      vi.mocked(telemetry.emit).mock.calls.map(([event]) => event),
+      'a download failure is handed to the background download, not reported as a core failure'
+    ).not.toContain('comfy.desktop.agent_requirements_core')
+  })
+
+  it('launches with a failure caption, and reports it, when no download can fix core file', async () => {
+    pipHarness.result = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n'
+    }
+    vi.spyOn(i18nModule, 't').mockImplementation(((key: string) => key) as never)
+    settingsModule.set('pypiMirror', 'https://mirror.example/simple/')
+
+    const res = await handleLaunch(ctxFor('agent-reqs-core-unsolvable')).finally(() =>
+      settingsModule.set('pypiMirror', '')
+    )
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-agent')
+    expect(prefetchHarness.requests, 'no download can fix it, so none is handed over').toEqual([])
+    expect(progress.filter((p) => p.phase === 'agentRequirements').at(-1)).toMatchObject({
+      status: 'launch.agentRequirements.failed'
+    })
+    expect(
+      vi
+        .mocked(telemetry.emit)
+        .mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_core')
+    ).toEqual([
+      [
+        'comfy.desktop.agent_requirements_core',
+        {
+          installation_id: 'agent-reqs-core-unsolvable',
+          install_outcome: 'exited',
+          exit_code: 1,
+          elapsed_ms: expect.any(Number),
+          budget_ms: expect.any(Number),
+          error_tail: 'error: No solution found when resolving dependencies',
+          index: 'custom'
+        }
+      ]
+    ])
   })
 
   it('publishes the install as a step the renderer can show', async () => {
@@ -3980,6 +4022,47 @@ describe('agent requirements at launch', () => {
         "core's agent runs now; only the newer version waits"
       ).toMatchObject({ status: 'launch.agentRequirements.deferredUpdate' })
       expect(prefetchHarness.requests).toEqual([
+        {
+          installationId: ID,
+          request: expect.objectContaining({
+            steps: [{ text: OVERRIDDEN, constraints: 'requests==2.32.0\n' }],
+            signature: 'comfy-agent==0.2.3'
+          })
+        }
+      ])
+    })
+
+    it('shows the failed caption when core file cannot install after the override was deferred', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = JSON.stringify([
+        { name: 'comfy-agent', version: '0.1.0' },
+        { name: 'comfy-cli', version: '1.20.0' },
+        { name: 'requests', version: '2.32.0' }
+      ])
+      pipHarness.respond = (args) =>
+        missesOverride(args)
+          ? { code: 2, output: 'error: Failed to fetch: `comfy-agent`\n' }
+          : { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+      vi.spyOn(i18nModule, 't').mockImplementation(((key: string) => key) as never)
+
+      await launchAndPrint()
+
+      expect(
+        progress
+          .filter((p) => p.phase === 'agentRequirements')
+          .map((p) => (p as { status?: string }).status),
+        "the deferral's caption is replaced: core's agent is not running either"
+      ).toEqual(expect.arrayContaining(['launch.agentRequirements.deferredUpdate']))
+      expect(progress.filter((p) => p.phase === 'agentRequirements').at(-1)).toMatchObject({
+        status: 'launch.agentRequirements.failed'
+      })
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'deferred', reason: 'not_cached' })
+      ])
+      expect(
+        prefetchHarness.requests,
+        "the override's download is still handed back: core's failure does not cancel it"
+      ).toEqual([
         {
           installationId: ID,
           request: expect.objectContaining({
@@ -4389,7 +4472,7 @@ describe('agent install status strings', () => {
     .agentRequirements
 
   it('defines every key the mapper asks for', () => {
-    expect(Object.keys(strings ?? {}).sort()).toEqual(['deferred', 'deferredUpdate'])
+    expect(Object.keys(strings ?? {}).sort()).toEqual(['deferred', 'deferredUpdate', 'failed'])
   })
 })
 
