@@ -1333,7 +1333,8 @@
     "viewLogs": "View logs",
     "agentRequirements": {
       "deferred": "Downloading the agent in the background; it starts next launch",
-      "deferredUpdate": "Downloading a newer agent in the background; it applies next launch"
+      "deferredUpdate": "Downloading a newer agent in the background; it applies next launch",
+      "failed": "Couldn't install the agent's packages; the agent may not start"
     }
   },
   "devPlatform": {

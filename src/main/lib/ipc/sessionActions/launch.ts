@@ -115,6 +115,7 @@ import {
   pinSpecifier,
   readFrontendPin,
   readOverrideState,
+  reportAgentCoreFailure,
   reportOverrideDecision
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
@@ -1608,6 +1609,13 @@ async function runLaunch(
           )
         })
         handedBack.request = request
+      },
+      (report) => {
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: i18n.t('launch.agentRequirements.failed')
+        })
+        reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
       }
     )
     if (abort.signal.aborted) {

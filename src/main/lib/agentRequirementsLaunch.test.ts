@@ -242,6 +242,7 @@ describe('installAgentRequirements', () => {
       mirrors,
       ['--offline'],
       expect.any(Function),
+      undefined,
       undefined
     )
     expect(mockInstall, 'a cache hit downloads nothing').toHaveBeenCalledTimes(2)
@@ -622,6 +623,61 @@ describe('installAgentRequirements handing over to the background download', () 
 
     expect(onDeferred, 'no download can fix a resolve with no solution').not.toHaveBeenCalled()
     expect(sendOutput.mock.calls.join('')).not.toContain('next launch')
+  })
+
+  it('hands a core file uv proved unsatisfiable to onCoreFailed, with its error', async () => {
+    networkExits(1, 'error: No solution found when resolving dependencies\n')
+    const onCoreFailed = vi.fn()
+
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, vi.fn(), onCoreFailed)
+
+    expect(onCoreFailed).toHaveBeenCalledTimes(1)
+    expect(onCoreFailed.mock.calls[0]![0]).toMatchObject({
+      outcome: 'exited',
+      exitCode: 1,
+      errorTail: 'error: No solution found when resolving dependencies'
+    })
+  })
+
+  it('hands a core file that only failed to download to the background, not to onCoreFailed', async () => {
+    networkExits(2, 'error: Failed to download comfy-agent\n')
+    const onDeferred = vi.fn()
+    const onCoreFailed = vi.fn()
+
+    await installAgentRequirements(
+      plan,
+      vi.fn(),
+      undefined,
+      undefined,
+      null,
+      onDeferred,
+      onCoreFailed
+    )
+
+    expect(onDeferred).toHaveBeenCalledTimes(1)
+    expect(onCoreFailed, 'a later download can fix it').not.toHaveBeenCalled()
+  })
+
+  it('reports, and does not hand over, a core file uv failed on for a reason no download fixes', async () => {
+    networkExits(
+      2,
+      'error: failed to remove file `<venv>/lib/site.py`: Permission denied (os error 13)\n'
+    )
+    const onDeferred = vi.fn()
+    const onCoreFailed = vi.fn()
+
+    await installAgentRequirements(
+      plan,
+      vi.fn(),
+      undefined,
+      undefined,
+      null,
+      onDeferred,
+      onCoreFailed
+    )
+
+    expect(onCoreFailed.mock.calls[0]![0]).toMatchObject({ outcome: 'exited', exitCode: 2 })
+    expect(onDeferred, 'a later download cannot fix a permission error').not.toHaveBeenCalled()
   })
 
   it('hands over nothing when the launch is cancelled while core file is read', async () => {
@@ -2452,20 +2508,28 @@ describe('uvErrorTail', () => {
 describe('prefetchAgentRequirements', () => {
   let dir = ''
   let plan: PrefetchRequest['plan']
-  type Call = { content: string; extraArgs: string[]; env: Record<string, string> | undefined }
+  type Call = {
+    content: string
+    extraArgs: string[]
+    env: Record<string, string> | undefined
+    subcommand: string
+    seed?: string
+  }
+  type CompileAnswer = { code: number; output: string; compiled: string }
   let calls: Call[] = []
-  let resolveAnswer: { code: number; output: string } = { code: 0, output: '' }
+  let compileAnswer: CompileAnswer
+  let cacheCompileAnswer: CompileAnswer
+  let cacheCheckAnswer: { code: number; output: string } = { code: 0, output: '' }
+  let dryRunAnswer: { code: number; output: string } = { code: 0, output: '' }
+  let cacheDryRunAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
+  let installedAnswer: { code: number; output: string }
 
-  const DRY_RUN = [
-    'Resolved 6 packages in 400ms',
-    'Would download 2 packages',
-    'Would uninstall 1 package',
-    'Would install 2 packages',
-    ' - comfy-agent==0.0.0.dev0',
-    ' + comfy-agent==0.1.0rc3',
-    ' + comfy-agent-go==0.1.0rc3'
-  ].join('\n')
+  const INSTALLED = JSON.stringify([
+    { name: 'comfy-agent', version: '0.0.0.dev0' },
+    { name: 'requests', version: '2.32.0' }
+  ])
+  const COMPILED = 'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\nrequests==2.32.0\n'
 
   const finish = (request: PrefetchRequest): Promise<PrefetchReport | null> =>
     new Promise((resolve, reject) => {
@@ -2482,28 +2546,53 @@ describe('prefetchAgentRequirements', () => {
       pythonPath: '/py',
       installPath: dir
     }
-    resolveAnswer = { code: 0, output: DRY_RUN }
+    compileAnswer = { code: 0, output: 'Resolved 3 packages in 400ms\n', compiled: COMPILED }
+    cacheCompileAnswer = compileAnswer
+    cacheCheckAnswer = { code: 0, output: 'Would install 2 packages\n' }
+    dryRunAnswer = { code: 0, output: ' - comfy-agent==0.0.0.dev0\n + comfy-agent==0.1.0rc3\n' }
+    cacheDryRunAnswer = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n'
+    }
+    installedAnswer = { code: 0, output: INSTALLED }
     fetchAnswer = {
       code: 0,
       output:
         'Downloading comfy-agent (49.4MiB)\nDownloading comfy-agent-go (49.3MiB)\n Downloaded comfy-agent\n Downloaded comfy-agent-go\n'
     }
-    mockUvPip.mockResolvedValue({ code: 0, output: 'uv 0.13.4 (7456b60bc 2026-10-20)\n' })
+    mockUvPip.mockImplementation(async (_uv, args) =>
+      args[0] === '--version'
+        ? { code: 0, output: 'uv 0.13.4 (7456b60bc 2026-10-20)\n' }
+        : installedAnswer
+    )
     mockInstall.mockImplementation(async (file, ...rest) => {
       const extraArgs = rest[7] as string[]
+      const output = extraArgs.includes('-o')
+        ? path.join(dir, extraArgs[extraArgs.indexOf('-o') + 1]!)
+        : null
       const call = {
         content: fs.readFileSync(file, 'utf-8'),
         extraArgs,
-        env: rest[9] as Call['env']
+        env: rest[9] as Call['env'],
+        subcommand: (rest[10] as string | undefined) ?? 'install',
+        ...(output ? { seed: fs.readFileSync(output, 'utf-8') } : {})
       }
       calls.push(call)
+      if (call.subcommand === 'compile') {
+        const answer = extraArgs.includes('--offline') ? cacheCompileAnswer : compileAnswer
+        if (answer.code === 0) fs.writeFileSync(output!, answer.compiled)
+        return { code: answer.code, output: answer.output }
+      }
+      if (extraArgs.includes('--dry-run') && extraArgs.includes('--target')) return cacheCheckAnswer
+      if (extraArgs.includes('--dry-run'))
+        return extraArgs.includes('--offline') ? cacheDryRunAnswer : dryRunAnswer
       if (extraArgs.includes('--target')) {
         fs.mkdirSync(path.join(dir, extraArgs[extraArgs.indexOf('--target') + 1]!, 'comfy_agent'), {
           recursive: true
         })
         return fetchAnswer
       }
-      return resolveAnswer
+      return { code: 0, output: '' }
     })
   })
 
@@ -2521,16 +2610,26 @@ describe('prefetchAgentRequirements', () => {
     signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
   })
 
-  it('resolves against the environment, then fetches exactly the missing pins one at a time', async () => {
+  it('resolves with a compile seeded with what is installed, then fetches exactly the missing pins one at a time', async () => {
     const report = await finish(request())
 
     expect(calls).toHaveLength(2)
     const [resolved, fetched] = calls
     expect(resolved!.content).toBe('comfy-agent[go-nonfree]==0.1.0rc3\n')
-    expect(resolved!.extraArgs[0]).toBe('--dry-run')
+    expect(resolved!.subcommand, "a dry-run takes the environment's lock").toBe('compile')
+    expect(resolved!.extraArgs).not.toContain('--dry-run')
+    expect(resolved!.seed, 'uv prefers the versions already in its output file').toBe(
+      'comfy-agent==0.0.0.dev0\nrequests==2.32.0\n'
+    )
+    const compiledTo = resolved!.extraArgs[resolved!.extraArgs.indexOf('-o') + 1]!
+    expect(path.isAbsolute(compiledTo), 'relative to the install, as every path here').toBe(false)
     const constraint = resolved!.extraArgs[resolved!.extraArgs.indexOf('--constraint') + 1]!
     expect(path.isAbsolute(constraint), 'uv splits an absolute --constraint on spaces').toBe(false)
-    expect(fetched!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+    expect(
+      fetched!.content,
+      'requests is installed at the compiled version, so only the agent is fetched'
+    ).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+    expect(fetched!.subcommand).toBe('install')
     expect(fetched!.extraArgs.slice(0, 2)).toEqual(['--no-deps', '--target'])
     expect(path.isAbsolute(fetched!.extraArgs[2]!)).toBe(false)
     expect(
@@ -2549,13 +2648,67 @@ describe('prefetchAgentRequirements', () => {
     })
   })
 
+  it('fetches a pin installed at another version, matching names the way uv does', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([
+        { name: 'Comfy_Agent.Go', version: '0.1.0rc3' },
+        { name: 'requests', version: '2.31.0' }
+      ])
+    }
+
+    await finish(request())
+
+    expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\nrequests==2.32.0\n')
+  })
+
+  it('fetches every compiled pin, from an empty seed, when the environment cannot be listed', async () => {
+    installedAnswer = { code: 1, output: 'error: broken environment\n' }
+
+    await finish(request())
+
+    expect(calls[0]!.seed).toBe('')
+    expect(calls.at(-1)!.content).toBe(COMPILED)
+  })
+
+  it("waits for the environment's listing to exit, for removing the install", async () => {
+    let exit = (): void => {}
+    let stopAsked = false
+    let listing = (): void => {}
+    mockUvPip.mockImplementation(async (_uv, args, _cwd, _out, uvSignal) => {
+      if (args[0] === '--version') return { code: 0, output: 'uv 0.13.4\n' }
+      uvSignal!.addEventListener('abort', () => (stopAsked = true), { once: true })
+      listing()
+      return new Promise((resolve) => (exit = () => resolve({ code: 1, output: '' })))
+    })
+    const listed = new Promise<void>((resolve) => (listing = resolve))
+    const pending = finish(request())
+    await listed
+
+    let held = false
+    const hold = holdAgentPrefetch(dir).then((release) => {
+      held = true
+      return release
+    })
+    await vi.waitFor(() => expect(stopAsked).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(held, 'a hold must not return with uv still running in the install').toBe(false)
+    expect(mockInstall, 'nothing runs after a listing that has not exited').not.toHaveBeenCalled()
+    exit()
+    ;(await hold)()
+    await expect(pending).resolves.toMatchObject({ outcome: 'cancelled' })
+  })
+
   it('never touches the environment, and leaves no scratch target or files behind', async () => {
     await finish(request())
 
     for (const call of calls) expect(call.extraArgs).not.toContain('--offline')
-    expect(calls[1]!.extraArgs, 'installs into the scratch target, not the venv').toContain(
-      '--target'
-    )
+    for (const call of calls)
+      expect(
+        call.subcommand === 'compile' || call.extraArgs.includes('--target'),
+        'every uv call compiles or installs into the scratch target, never the venv'
+      ).toBe(true)
     expect(fs.readdirSync(dir)).toEqual([])
   })
 
@@ -2604,19 +2757,55 @@ describe('prefetchAgentRequirements', () => {
   it("passes no constraints for core file's own text", async () => {
     await finish({ plan, steps: [{ text: 'comfy-agent==0.2.0\n' }], signature: 'core' })
 
-    expect(calls[0]!.extraArgs).toEqual(['--dry-run'])
+    expect(calls[0]!.extraArgs).not.toContain('--constraint')
   })
 
   it('reports a resolve that fails as resolve_failed, with the error, and fetches nothing', async () => {
-    resolveAnswer = { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+    compileAnswer = { code: 2, output: 'error: Failed to fetch: `comfy-agent`\n', compiled: '' }
 
     const report = await finish(request())
 
-    expect(calls).toHaveLength(1)
+    expect(calls, 'only no solution falls back to the environment').toHaveLength(1)
     expect(report).toMatchObject({
       outcome: 'resolve_failed',
-      exitCode: 1,
-      errorTail: 'error: No solution found when resolving dependencies'
+      exitCode: 2,
+      errorTail: 'error: Failed to fetch: `comfy-agent`'
+    })
+  })
+
+  it('resolves against the environment when the compile finds no solution, and fetches its pins', async () => {
+    compileAnswer = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n',
+      compiled: ''
+    }
+
+    const report = await finish(request())
+
+    const [compiled, dryRun, fetched] = calls
+    expect(compiled!.subcommand).toBe('compile')
+    expect(
+      dryRun!.extraArgs,
+      'an installed version no index serves is a candidate only to the environment'
+    ).toEqual(['--dry-run', '--constraint', expect.any(String)])
+    expect(fetched!.content).toBe('comfy-agent==0.1.0rc3\n')
+    expect(report).toMatchObject({ outcome: 'completed' })
+  })
+
+  it('reports the environment resolve when it finds no solution either', async () => {
+    compileAnswer = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n',
+      compiled: ''
+    }
+    dryRunAnswer = { code: 1, output: 'error: No solution found: comfy-agent==9\n' }
+
+    const report = await finish(request())
+
+    expect(calls).toHaveLength(2)
+    expect(report).toMatchObject({
+      outcome: 'resolve_failed',
+      errorTail: 'error: No solution found: comfy-agent==9'
     })
   })
 
@@ -2639,7 +2828,7 @@ describe('prefetchAgentRequirements', () => {
   })
 
   it('reports nothing_missing when the resolve finds everything installed', async () => {
-    resolveAnswer = { code: 0, output: 'Resolved 6 packages in 400ms\nWould make no changes\n' }
+    compileAnswer = { ...compileAnswer, compiled: 'comfy-agent==0.0.0.dev0\nrequests==2.32.0\n' }
 
     const report = await finish(request())
 
@@ -2654,10 +2843,15 @@ describe('prefetchAgentRequirements', () => {
       signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
     })
 
-    expect(calls.map((call) => [call.extraArgs[0], call.content.split('\n')[0]])).toEqual([
-      ['--dry-run', 'comfy-agent==0.0.0.dev0'],
+    expect(
+      calls.map((call) => [
+        call.subcommand === 'compile' ? 'compile' : call.extraArgs[0],
+        call.content.split('\n')[0]
+      ])
+    ).toEqual([
+      ['compile', 'comfy-agent==0.0.0.dev0'],
       ['--no-deps', 'comfy-agent==0.1.0rc3'],
-      ['--dry-run', 'comfy-agent[go-nonfree]==0.1.0rc3'],
+      ['compile', 'comfy-agent[go-nonfree]==0.1.0rc3'],
       ['--no-deps', 'comfy-agent==0.1.0rc3']
     ])
     expect(report).toMatchObject({
@@ -2668,7 +2862,7 @@ describe('prefetchAgentRequirements', () => {
   })
 
   it('stops at the first step that fails, reporting it', async () => {
-    resolveAnswer = { code: 1, output: 'error: No solution found\n' }
+    compileAnswer = { code: 2, output: 'error: Failed to fetch\n', compiled: '' }
 
     const report = await finish({
       plan,
@@ -2846,36 +3040,58 @@ describe('prefetchAgentRequirements', () => {
   })
 
   describe('ahead of a launch', () => {
-    const answerCacheOnly = (cachedOutput: { code: number; output: string }): void => {
-      const original = mockInstall.getMockImplementation()!
-      mockInstall.mockImplementation(async (file, ...rest) =>
-        (rest[7] as string[]).includes('--offline') ? cachedOutput : original(file, ...rest)
-      )
-    }
+    const eager = (): PrefetchRequest => ({ ...request(), eager: true })
+    const network = (): Call[] => calls.filter((call) => !call.extraArgs.includes('--offline'))
 
     it('does nothing, and reports nothing, when the cache holds every wheel', async () => {
-      answerCacheOnly({ code: 0, output: 'Would uninstall 1 package\nWould install 2 packages\n' })
+      expect(await finish(eager())).toBeNull()
+      const [compiled, check] = calls
+      expect(compiled!.subcommand).toBe('compile')
+      expect(compiled!.extraArgs).toContain('--offline')
+      expect(
+        check!.extraArgs.slice(0, 5),
+        "checked against a scratch target, which takes no lock on the environment's"
+      ).toEqual(['--offline', '--dry-run', '--no-deps', '--target', expect.any(String)])
+      expect(check!.content).toBe('comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n')
+      expect(network(), 'nothing went to the network').toEqual([])
+    })
 
-      expect(await finish({ ...request(), eager: true })).toBeNull()
-      expect(calls, 'nothing went to the network').toEqual([])
+    it('checks no wheels when the cache resolves to what is installed', async () => {
+      cacheCompileAnswer = { ...compileAnswer, compiled: 'requests==2.32.0\n' }
+
+      expect(await finish(eager())).toBeNull()
+      expect(calls, 'only the compile ran').toHaveLength(1)
     })
 
     it('fetches when the cache knows the packages but holds no wheels for them', async () => {
-      answerCacheOnly({ code: 0, output: 'Would download 2 packages\nWould install 2 packages\n' })
+      cacheCheckAnswer = {
+        code: 0,
+        output: 'Would download 2 packages\nWould install 2 packages\n'
+      }
 
       expect(
-        await finish({ ...request(), eager: true }),
+        await finish(eager()),
         'a resolve from the cache passes on metadata an earlier resolve left there'
       ).toMatchObject({ outcome: 'completed' })
       expect(calls.at(-1)!.extraArgs).toContain('--target')
+      expect(network().map((call) => call.subcommand)).toEqual(['compile', 'install'])
+    })
+
+    it('fetches when the check of the cached wheels fails', async () => {
+      cacheCheckAnswer = { code: 2, output: 'error: Failed to read the cache\n' }
+
+      expect(await finish(eager())).toMatchObject({ outcome: 'completed' })
+      expect(network().map((call) => call.subcommand)).toEqual(['compile', 'install'])
     })
 
     it('reports a run whose first step was cached and whose second was fetched', async () => {
-      let cacheOnly = 0
+      let checks = 0
       const original = mockInstall.getMockImplementation()!
       mockInstall.mockImplementation(async (file, ...rest) => {
-        if (!(rest[7] as string[]).includes('--offline')) return original(file, ...rest)
-        return cacheOnly++ === 0
+        const extraArgs = rest[7] as string[]
+        if (!(extraArgs.includes('--offline') && extraArgs.includes('--target')))
+          return original(file, ...rest)
+        return checks++ === 0
           ? { code: 0, output: 'Would install 1 package\n' }
           : { code: 0, output: 'Would download 2 packages\n' }
       })
@@ -2888,7 +3104,11 @@ describe('prefetchAgentRequirements', () => {
       })
 
       expect(report).toMatchObject({ outcome: 'completed' })
-      expect(calls.filter((call) => call.extraArgs.includes('--target'))).toHaveLength(1)
+      expect(
+        calls.filter(
+          (call) => call.extraArgs.includes('--target') && !call.extraArgs.includes('--offline')
+        )
+      ).toHaveLength(1)
     })
 
     it('gives a later step only what the earlier ones left of the 30 minutes', async () => {
@@ -2906,7 +3126,9 @@ describe('prefetchAgentRequirements', () => {
           const startedAt = Date.now()
           if (budgets.length === 0) {
             budgets.push(-1)
-            return { code: 0, output: DRY_RUN }
+            const output = extraArgs[extraArgs.indexOf('-o') + 1]!
+            fs.writeFileSync(path.join(dir, output), COMPILED)
+            return { code: 0, output: '' }
           }
           return new Promise((resolve) =>
             signal.addEventListener('abort', () => {
@@ -2935,9 +3157,35 @@ describe('prefetchAgentRequirements', () => {
     })
 
     it('fetches when the cache cannot even resolve', async () => {
-      answerCacheOnly({ code: 1, output: 'error: No solution found\n' })
+      cacheCompileAnswer = {
+        code: 1,
+        output: 'error: No solution found when resolving dependencies\n',
+        compiled: ''
+      }
 
-      expect(await finish({ ...request(), eager: true })).toMatchObject({ outcome: 'completed' })
+      expect(await finish(eager())).toMatchObject({ outcome: 'completed' })
+      expect(
+        calls.filter((call) => call.extraArgs.includes('--offline')).map((call) => call.subcommand),
+        'the cache resolve falls back to the environment, offline too'
+      ).toEqual(['compile', 'install'])
+      expect(
+        calls.filter(
+          (call) => call.extraArgs.includes('--target') && call.extraArgs.includes('--dry-run')
+        ),
+        'no wheels to check'
+      ).toEqual([])
+    })
+
+    it('counts as cached what the environment resolves from the cache when the compile cannot', async () => {
+      cacheCompileAnswer = {
+        code: 1,
+        output: 'error: No solution found when resolving dependencies\n',
+        compiled: ''
+      }
+      cacheDryRunAnswer = { code: 0, output: 'Would install 1 package\n + comfy-agent==0.1.0rc3\n' }
+
+      expect(await finish(eager())).toBeNull()
+      expect(calls.at(-1)!.content, 'its pins get the wheel check').toBe('comfy-agent==0.1.0rc3\n')
     })
   })
 })

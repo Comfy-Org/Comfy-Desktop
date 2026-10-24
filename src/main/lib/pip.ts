@@ -124,7 +124,8 @@ export interface PipMirrorConfig {
   useChineseMirrors?: boolean
 }
 
-/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code and captured output. */
+/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code and captured output.
+ *  `compile` resolves it into an output file instead and installs nothing. */
 export async function installFilteredRequirementsDetailed(
   reqPath: string,
   uvPath: string,
@@ -136,7 +137,8 @@ export async function installFilteredRequirementsDetailed(
   mirrors?: PipMirrorConfig,
   extraArgs?: string[],
   onSpawn?: OnUvSpawn,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  subcommand: 'install' | 'compile' = 'install'
 ): Promise<UvPipResult> {
   const content = await fs.promises.readFile(reqPath, 'utf-8')
   const filtered = content
@@ -152,8 +154,7 @@ export async function installFilteredRequirementsDetailed(
       uvPath,
       [
         'pip',
-        'install',
-        '-r',
+        ...(subcommand === 'install' ? ['install', '-r'] : ['compile']),
         filteredPath,
         '--python',
         pythonPath,
