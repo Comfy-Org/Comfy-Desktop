@@ -58,6 +58,7 @@ import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
+import { storageIoDirs } from '../../installFolders'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -553,37 +554,16 @@ export function applyStorageLaunchArgs(
     const baselineSet = new Set([...(config?.extraFolders ?? []), ...installExtras])
     preLaunchExtras = [...baselineSet].sort()
   }
-  if (argsAvailable) {
-    // Input and output are independent per-folder choices: shared (global
-    // settings) or the per-install path. A per-install path is omitted when
-    // unset so ComfyUI falls back to its own <installPath>/{input,output}
-    // defaults (e.g. adopted-from-legacy records pin these fields).
-    const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
-    const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
-    if (useSharedInput) {
-      const inputDir =
-        (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
-      fs.mkdirSync(inputDir, { recursive: true })
-      launchCmd.args!.push('--input-directory', inputDir)
-    } else {
-      const perInstallInput = inst.inputDir as string | undefined
-      if (perInstallInput) {
-        fs.mkdirSync(perInstallInput, { recursive: true })
-        launchCmd.args!.push('--input-directory', perInstallInput)
-      }
-    }
-    if (useSharedOutput) {
-      const outputDir =
-        (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
-      fs.mkdirSync(outputDir, { recursive: true })
-      launchCmd.args!.push('--output-directory', outputDir)
-    } else {
-      const perInstallOutput = inst.outputDir as string | undefined
-      if (perInstallOutput) {
-        fs.mkdirSync(perInstallOutput, { recursive: true })
-        launchCmd.args!.push('--output-directory', perInstallOutput)
-      }
-    }
+  // Input and output: the rule lives in `storageIoDirs` so the dashboard's
+  // listings read the same folders launch passes.
+  const io = storageIoDirs(inst, launchCmd)
+  if (io.input) {
+    fs.mkdirSync(io.input, { recursive: true })
+    launchCmd.args!.push('--input-directory', io.input)
+  }
+  if (io.output) {
+    fs.mkdirSync(io.output, { recursive: true })
+    launchCmd.args!.push('--output-directory', io.output)
   }
 
   return { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions }
