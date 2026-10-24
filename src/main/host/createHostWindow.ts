@@ -18,6 +18,7 @@ import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
   isLikelyDownloadUrl,
+  reservedTabRoute,
   shouldOpenInPopup
 } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
@@ -259,6 +260,97 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
 /** Max wait for the host reload to paint before closing the popup
  *  anyway, so a stalled reload can't trap the user on checkout. */
 const CHECKOUT_RELOAD_TIMEOUT_MS = 4000
+
+/** Hosted Stripe Checkout always runs in the user's real browser — see the
+ *  `isCheckoutUrl` branch of the comfyView window-open handler. */
+function openCheckoutInSystemBrowser(url: string): void {
+  mainTelemetry.capture('comfy.desktop.billing.checkout_opened', {
+    source: 'system_browser',
+    user_tier: getUserTier()
+  })
+  void shell.openExternal(url)
+}
+
+/** How long a reserved blank tab may stay hidden — waiting for the page to
+ *  navigate it, then for an in-app destination to load — before it is treated
+ *  as abandoned (opener reloaded, request hung) and closed. */
+const RESERVED_TAB_HIDDEN_TIMEOUT_MS = 60_000
+
+/**
+ * Show an in-app reserved child only once its destination has loaded —
+ * `will-navigate` fires while it still shows `about:blank`. If the navigation
+ * fails or becomes a download (an `application/octet-stream` blob), nothing
+ * will ever paint, so close the hidden child instead of leaving it behind.
+ */
+function revealWhenLoaded(
+  childWindow: BrowserWindow,
+  session: Electron.Session,
+  onRevealed: () => void
+): void {
+  const contents = childWindow.webContents
+  const close = (): void => {
+    if (!childWindow.isDestroyed()) childWindow.close()
+  }
+  const closeOnOwnDownload = (
+    _event: Electron.Event,
+    _item: Electron.DownloadItem,
+    source: Electron.WebContents
+  ): void => {
+    if (source === contents) close()
+  }
+  const closeOnFailedLoad = (
+    _event: Electron.Event,
+    _errorCode: number,
+    _errorDescription: string,
+    _validatedURL: string,
+    isMainFrame: boolean
+  ): void => {
+    if (isMainFrame) close()
+  }
+  const stopWatching = (): void => {
+    contents.off('did-fail-load', closeOnFailedLoad)
+    session.off('will-download', closeOnOwnDownload)
+  }
+  contents.once('did-finish-load', () => {
+    stopWatching()
+    onRevealed()
+    if (!childWindow.isDestroyed()) childWindow.show()
+  })
+  contents.on('did-fail-load', closeOnFailedLoad)
+  session.on('will-download', closeOnOwnDownload)
+  childWindow.once('closed', stopWatching)
+}
+
+/**
+ * Route a reserved blank tab's first navigation (`tab.location = url`, which
+ * the window-open handler never sees) through the same policy a direct
+ * `window.open(url)` gets. A destination that doesn't belong in-app is
+ * handed off and the blank child closed; the page still got a live handle,
+ * so it doesn't report a blocked pop-up.
+ */
+function gateReservedTab(childWindow: BrowserWindow, hostContents: Electron.WebContents): void {
+  const close = (): void => {
+    if (!childWindow.isDestroyed()) childWindow.close()
+  }
+  const abandonTimer = setTimeout(close, RESERVED_TAB_HIDDEN_TIMEOUT_MS)
+  const stopAbandonTimer = (): void => clearTimeout(abandonTimer)
+  childWindow.once('closed', stopAbandonTimer)
+
+  const onWillNavigate = (event: Electron.Event, url: string): void => {
+    childWindow.webContents.off('will-navigate', onWillNavigate)
+    const route = reservedTabRoute(url)
+    if (route === 'load') {
+      revealWhenLoaded(childWindow, hostContents.session, stopAbandonTimer)
+      return
+    }
+    event.preventDefault()
+    if (route === 'checkout') openCheckoutInSystemBrowser(url)
+    else if (route === 'download') hostContents.session.downloadURL(url)
+    else if (route === 'external') void shell.openExternal(url)
+    close()
+  }
+  childWindow.webContents.on('will-navigate', onWillNavigate)
+}
 
 /**
  * Wire the credits-checkout popup's lifecycle. The window is frameless
@@ -1112,16 +1204,21 @@ export function buildComfyView(
   // return event can report how long the checkout flow took.
   let nextPopupIsCheckout = false
   let nextCheckoutOpenedAt = 0
+  // Same synchronous pairing, for a blank-tab reservation (see below).
+  let nextPopupIsReservedTab = false
 
   comfyContents.on('did-create-window', (childWindow) => {
     const isCheckout = nextPopupIsCheckout
     const openedAt = nextCheckoutOpenedAt
+    const isReservedTab = nextPopupIsReservedTab
     nextPopupIsCheckout = false
     nextCheckoutOpenedAt = 0
+    nextPopupIsReservedTab = false
     childWindow.setIcon(APP_ICON)
     if (process.platform !== 'darwin') childWindow.removeMenu()
     injectMacPasskeyWarning(childWindow)
     if (isCheckout) wireCheckoutPopup(childWindow, comfyWindow, comfyContents, openedAt)
+    if (isReservedTab) gateReservedTab(childWindow, comfyContents)
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     // Intercept Firebase auth popups (`<authDomain>/__/auth/handler?...`)
@@ -1147,14 +1244,24 @@ export function buildComfyView(
       // front. Card/WeChat keep working there too. Credits are granted
       // server-side by the Stripe webhook and the renderer refetches balance on
       // return, so nothing needs to redirect back into the app.
-      mainTelemetry.capture('comfy.desktop.billing.checkout_opened', {
-        source: 'system_browser',
-        user_tier: getUserTier()
-      })
-      void shell.openExternal(childUrl)
+      openCheckoutInSystemBrowser(childUrl)
       return { action: 'deny' }
     }
 
+    // `about:blank` is a reserved tab (`window.open('', '_blank')`) that the
+    // page navigates right after — the frontend's billing portal and hosted
+    // billing flows rely on it (#1729). Denying it nulls the handle, which the
+    // page reports as a blocked pop-up, and openExternal would hand
+    // `about:blank` to the OS shell. Allow it as a hidden, preload-free child;
+    // `gateReservedTab` checks its real destination on first navigation and
+    // only shows it if that destination stays in-app.
+    if (childUrl === 'about:blank') {
+      nextPopupIsReservedTab = true
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: { show: false, webPreferences: { preload: undefined } }
+      }
+    }
     if (shouldOpenInPopup(childUrl)) {
       // preload: undefined strips our title-bar bridge so OAuth/cloud-login
       // popups can't reach the file menu IPCs.
