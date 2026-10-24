@@ -108,7 +108,7 @@ async function runGuardInBackground(actionLabel: string): Promise<void> {
 }
 
 function readGuardVerdict(): Promise<boolean> {
-  return ctx.panel.evaluate<boolean>('window.__guardPromise')
+  return ctx.panel.evaluate<boolean>('window.__guardPromise', { readOnly: true })
 }
 
 test('useActionGuard fires cancel-operation when the user confirms cancelling the busy op @windows @macos @linux', async () => {
@@ -172,6 +172,7 @@ test('Return-to-Dashboard from in-flight op cancels and closes the takeover @win
     .poll(
       async () => ctx.panel.evaluate<boolean>(
         `window.__e2eRenderer.isRunning(${JSON.stringify(INSTALL_ID)})`,
+        { readOnly: true },
       ),
       { timeout: 5_000, intervals: [100, 200] },
     )

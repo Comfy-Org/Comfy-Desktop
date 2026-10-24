@@ -162,6 +162,7 @@ test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () 
   // does not have to guess the on-disk filename the harness picked.
   const filenames = await ctx.panel.evaluate<string[]>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.filename))`,
+    { readOnly: true },
   )
   expect(filenames.length).toBe(2)
   const firstFilename = filenames[0]!

@@ -243,12 +243,16 @@ function findActiveByRef(ref: string): PendingDownload | undefined {
   return byUrl.length === 1 ? byUrl[0] : undefined
 }
 
-/** Machine-readable cause for callers that must distinguish integrity
- *  failures from transport failures (e.g. ComfyBuilder model staging):
+/** Machine-readable cause for callers that must distinguish deterministic
+ *  refusals from transport failures (e.g. ComfyBuilder model staging):
  *  `checksum-mismatch` means the downloaded bytes failed sha256 verification;
  *  `existing-file-mismatch` means a file already at the destination does not
- *  match the expected sha256. */
-export type ModelJobErrorCode = 'checksum-mismatch' | 'existing-file-mismatch'
+ *  match the expected sha256; `unsafe-existing-file` means a previous
+ *  incomplete file must be quarantined before another transfer can start. */
+export type ModelJobErrorCode =
+  | 'checksum-mismatch'
+  | 'existing-file-mismatch'
+  | 'unsafe-existing-file'
 
 /** Terminal outcome of a managed model job. `paused` is deliberately absent:
  *  a paused job's completion promise stays pending until it is resumed and
@@ -1280,22 +1284,32 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   try {
     startupSafety = await initializeModelDownloads()
   } catch {
-    startupSafety = { safe: false, unsafePaths: [] }
+    startupSafety = { safe: false, unsafePaths: currentUnsafeModelPaths() }
   }
   const lockedAfterStartup = rejectLockedRoot()
   if (lockedAfterStartup) return lockedAfterStartup
   const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
   if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
-    // The quarantine was re-attempted by the awaited pass just above (unsafe
-    // passes are never memoized), so this fires only while the broken file is
-    // STILL immovable right now - and a completed transfer could not replace
-    // it at finalization either (install is strictly no-clobber). Refusing up
-    // front spares the full transfer; Retry re-runs the whole path.
+    // A root transaction retains earlier quarantine failures. Its own lock
+    // does not explain the stuck file; another transaction can additionally
+    // defer a recheck. Never certify a known partial or retry it under the
+    // same staging lock without giving the caller a chance to resolve it.
+    const otherOperationLocked = [...lockedModelRoots.keys()].some((root) => root !== lockExemptKey)
+    // A tray retry repairs one model, whereas staging must be relaunched to
+    // finish the remaining manifest after a deterministic conflict stops it.
+    const retryInstruction = lockExemptKey
+      ? 'relaunch this installation to finish model staging.'
+      : 'press Retry.'
     const error =
-      'A previous incomplete download is stuck at this location, likely in ' +
-      'use by another program. Close it, then press Retry.'
+      'A previous incomplete download was found at this location. Close any program using the file, ' +
+      (otherOperationLocked ? 'wait for current model operations to finish, then ' : 'then ') +
+      retryInstruction
     reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return settledJobHandle(id, url, savePath, {
+      status: 'error',
+      error,
+      code: 'unsafe-existing-file'
+    })
   }
 
   // Report completed without downloading only when the file already exists
@@ -2499,7 +2513,9 @@ export function initializeModelDownloads(): Promise<ModelDownloadStartupSafety> 
   const run = prior
     .catch(() => undefined)
     .then(async () => {
-      if (lockedModelRoots.size > 0) return { safe: false, unsafePaths: [] }
+      // A staging transaction cannot rescan its locked root. Preserve known
+      // incomplete files so its own exempt jobs cannot certify them as present.
+      if (lockedModelRoots.size > 0) return { safe: false, unsafePaths: currentUnsafeModelPaths() }
       modelDownloadsInitRunning++
       try {
         return await doInitializeModelDownloads()
@@ -2666,7 +2682,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
     // Without the roots the legacy migration cannot certify anything -
     // treat the whole pass as unsafe rather than silently skipping it.
     console.error('Model download startup: collecting model roots failed:', err)
-    return { safe: false, unsafePaths: [] }
+    return { safe: false, unsafePaths: currentUnsafeModelPaths() }
   }
   // Known-incomplete model files that could NOT be hidden from ComfyUI's
   // scan (move failed, e.g. file locked). Their sidecars were kept so the

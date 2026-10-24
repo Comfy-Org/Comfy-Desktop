@@ -145,6 +145,7 @@ test.afterAll(async () => {
 async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof titlePopupPage>> {
   const expectedCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(installId)}).then(d => d.snapshots.length)`,
+    { readOnly: true },
   )
   await ctx.panel.evaluate<boolean>(
     `(() => {
@@ -208,6 +209,7 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
 test('Import into B previews the full envelope and stages it without committing history @lifecycle', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`,
+    { readOnly: true },
   )
   expect(initialCount).toBe(0)
 
@@ -243,6 +245,7 @@ test('Import into B previews the full envelope and stages it without committing 
   // top, so assert on the imported labels and trigger, not on the raw count.
   const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+    { readOnly: true },
   )
   expect(snapshots.some((s) => s.label === LABEL_FIRST || s.label === LABEL_SECOND)).toBe(false)
   expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)

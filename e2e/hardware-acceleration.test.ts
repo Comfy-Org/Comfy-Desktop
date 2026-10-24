@@ -126,7 +126,8 @@ async function disableHardwareAccelerationFromDesktopSettings(ctx: AppContext): 
   await popup.waitForVisible(selector, { timeout: 5_000 })
   expect(
     await popup.evaluate(
-      `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-checked')`
+      `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-checked')`,
+      { readOnly: true },
     )
   ).toBe('true')
   expect(await popup.allText('.settings-v2-field-description')).toContain(
@@ -136,7 +137,8 @@ async function disableHardwareAccelerationFromDesktopSettings(ctx: AppContext): 
   await popup.waitFor(
     async () =>
       (await popup.evaluate(
-        `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-checked')`
+        `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-checked')`,
+        { readOnly: true },
       )) === 'false',
     { timeout: 5_000, message: 'hardware acceleration toggle did not switch off' }
   )

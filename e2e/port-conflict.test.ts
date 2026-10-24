@@ -134,6 +134,7 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
 
   const beforeCount = await ctx.panel.evaluate<number>(
     `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   expect(beforeCount, 'apiCall must have run once for the initial conflict').toBe(1)
 
@@ -164,6 +165,7 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
       () =>
         ctx.panel.evaluate<number>(
           `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+          { readOnly: true },
         ),
       { timeout: 5_000, intervals: [100, 200] },
     )

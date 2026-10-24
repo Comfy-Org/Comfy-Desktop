@@ -106,7 +106,7 @@ export async function captureHostWindow(
       ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height)
     }
     return canvas.toDataURL('image/png').split(',')[1]
-  })()`)
+  })()`, { readOnly: true })
 
   await writeFile(filePath, Buffer.from(base64, 'base64'))
   return filePath

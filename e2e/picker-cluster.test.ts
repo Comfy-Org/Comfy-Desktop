@@ -106,6 +106,7 @@ async function openExpandedPicker(): Promise<void> {
   await popup.waitFor(
     async () => popup.evaluate<boolean>(
       'typeof window.__comfyTitlePopup?.pickInstall === "function"',
+      { readOnly: true },
     ),
     { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' },
   )

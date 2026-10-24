@@ -89,12 +89,12 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) v22 LTS or later
+- [**Node.js**](https://nodejs.org/) at the version pinned in [`.nvmrc`](.nvmrc)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
 ```bash
-nvm install 22 && nvm use 22   # recommended — https://github.com/nvm-sh/nvm
-corepack enable                # enables pnpm (bundled with Node)
+nvm install && nvm use   # reads .nvmrc; mise and fnm read it too
+corepack enable          # enables pnpm (bundled with Node 24)
 ```
 
 ### Setup

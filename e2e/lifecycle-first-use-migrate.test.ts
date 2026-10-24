@@ -82,11 +82,13 @@ test('cold start with legacy desktop lands on start screen and surfaces migrate 
   await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
   expect(await ctx.panel.evaluate<boolean>(
     `!document.querySelector('[data-testid="first-use-express-install"] input').checked`,
+    { readOnly: true },
   )).toBe(true)
   expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
   await ctx.panel.waitFor(
     async () => ctx.panel.evaluate<boolean>(
       `!document.querySelector('[data-testid="first-use-continue"]').disabled`,
+      { readOnly: true },
     ),
     { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' },
   )
@@ -119,6 +121,7 @@ test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @lifecycl
   await ctx.panel.waitFor(
     async () => ctx.panel.evaluate<boolean>(
       `!document.querySelector('[data-testid="migrate-takeover-confirm"]').disabled`,
+      { readOnly: true },
     ),
     { timeout: 15_000, message: 'migrate-takeover Confirm never became enabled (preview stalled)' },
   )
@@ -156,6 +159,7 @@ test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @lifecycl
   // user can retry (and the harness can tear down cleanly).
   const legacyInstalls = await ctx.panel.evaluate<Array<{ id: string; sourceId: string }>>(
     `window.api.getInstallations()`,
+    { readOnly: true },
   )
   const legacy = legacyInstalls.find((i) => i.sourceId === 'desktop')
   expect(legacy, 'legacy desktop record must survive a failed adoption').toBeDefined()

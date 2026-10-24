@@ -10,11 +10,20 @@
  * run twice and turn an exactly-once product action into at-least-once.
  */
 
-const RETRY_PATTERN = /Execution context was destroyed/i
+// Playwright 1.64 gives CDP's "Promise was collected" a distinct message.
+// Earlier versions reported it as a destroyed context; keep the same recovery
+// for read-only/idempotent evaluations without changing the retry budget.
+const RETRY_PATTERN = /Execution context was destroyed|Resulting promise was garbage collected/i
+
+/** The callback may have completed even though its result was lost. */
+export function isLostEvaluationResult(err: unknown): boolean {
+  return RETRY_PATTERN.test(err instanceof Error ? err.message : String(err))
+}
 
 export async function evalWithRetry<T>(
   fn: () => Promise<T>,
   attempts = 3,
+  shouldRetry: (err: unknown) => boolean = isLostEvaluationResult,
 ): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
@@ -22,9 +31,8 @@ export async function evalWithRetry<T>(
       return await fn()
     } catch (err) {
       lastErr = err
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!RETRY_PATTERN.test(msg)) throw err
-      await new Promise((r) => setTimeout(r, 50 * (i + 1)))
+      if (!shouldRetry(err)) throw err
+      if (i + 1 < attempts) await new Promise((r) => setTimeout(r, 50 * (i + 1)))
     }
   }
   throw lastErr

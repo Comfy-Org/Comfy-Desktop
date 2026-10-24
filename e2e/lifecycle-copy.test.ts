@@ -89,10 +89,11 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   await popup.waitForVisible('button.settings-v2-more', { timeout: 30_000 })
   // Opening Update can start its stale-channel refresh on the next tick. Let
   // that settle, then require the real control to be enabled before clicking.
-  await popup.evaluate<void>('new Promise((resolve) => setTimeout(resolve, 1000))')
+  await popup.evaluate<void>('new Promise((resolve) => setTimeout(resolve, 1000))', { readOnly: true })
   await popup.waitFor(
     () => popup.evaluate<boolean>(
       `document.querySelector('button.settings-v2-more')?.hasAttribute('disabled') === false`,
+      { readOnly: true },
     ),
     { timeout: 30_000, message: 'Settings More button did not become enabled' },
   )
@@ -115,7 +116,7 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
 
   await expect.poll(
     async () => {
-      const current = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+      const current = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()', { readOnly: true })
       return current.some((installation) =>
         installation.id !== SOURCE_ID && installation.name === COPY_NAME)
     },
@@ -128,6 +129,7 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   // there's no collision.
   const installations = await ctx.panel.evaluate<InstallationLike[]>(
     'window.api.getInstallations()',
+    { readOnly: true },
   )
   const newEntry = installations.find((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   expect(newEntry, 'new install not enumerated after copy').toBeDefined()

@@ -105,6 +105,7 @@ test('seeded snapshot row renders the backend-formatted version @lifecycle', asy
 test('captures a new snapshot through the picker UI and shows it at the top @lifecycle', async () => {
   const before = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+    { readOnly: true },
   )
   expect(before).toBe(1)
 
@@ -134,6 +135,7 @@ test('captures a new snapshot through the picker UI and shows it at the top @lif
       async () =>
         ctx.panel.evaluate<number>(
           `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+          { readOnly: true },
         ),
       { timeout: 15_000, intervals: [250, 500] },
     )
@@ -141,6 +143,7 @@ test('captures a new snapshot through the picker UI and shows it at the top @lif
 
   const snapshots = await ctx.panel.evaluate<Array<{ filename: string; label: string | null }>>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ filename: s.filename, label: s.label })))`,
+    { readOnly: true },
   )
   expect(snapshots[0]?.label).toBe('captured-by-test')
   await popup.waitForSelector(byTestId(TID.snapshotRow(snapshots[0]!.filename)), { timeout: 15_000 })

@@ -100,7 +100,7 @@ test('ProgressModal error block caps its height and scrolls @windows @macos @lin
       overflowY: cs.overflowY,
       textLength: (el.textContent || '').length,
     }
-  })()`)
+  })()`, { readOnly: true })
 
   expect(layout, 'progress error message element layout query returned null').not.toBeNull()
   // Sanity-check the helper delivered the long message.

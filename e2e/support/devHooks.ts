@@ -103,13 +103,13 @@ export async function getTitlePopupBounds(
 export async function returnFirstInstallHostToDashboard(
   app: ElectronApplication,
 ): Promise<number | null> {
-  return await evalWithRetry(() => app.evaluate(async () => {
+  return await app.evaluate(async () => {
     const helpers = (globalThis as unknown as {
       __e2e?: { returnFirstInstallHostToDashboard: () => Promise<number | null> }
     }).__e2e
     if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
     return helpers.returnFirstInstallHostToDashboard()
-  }))
+  })
 }
 
 /** Recorded args for an instrumented IPC channel since the last reset. */
@@ -165,13 +165,13 @@ export async function seedRunningSession(
     coreBetaArgs?: { arg: string; name: string | null }[]
   },
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, o) => {
+  await app.evaluate((_electron, o) => {
     const helpers = (globalThis as unknown as {
       __e2e?: { seedRunningSession: (o: unknown) => void }
     }).__e2e
     if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
     helpers.seedRunningSession(o)
-  }, opts))
+  }, opts)
 }
 
 /** Mount the install-backed panelView eagerly. Production lazily mounts it
@@ -286,13 +286,13 @@ export async function hasActiveLaunch(
  *  until released or aborted. Pair with `releaseLaunchSpawnHold` in a
  *  finally so a failed test can't leave a launch parked forever. */
 export async function armLaunchSpawnHold(app: ElectronApplication): Promise<void> {
-  await evalWithRetry(() => app.evaluate(() => {
+  await app.evaluate(() => {
     const helpers = (globalThis as unknown as {
       __e2e?: { armLaunchSpawnHold: () => void }
     }).__e2e
     if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
     helpers.armLaunchSpawnHold()
-  }))
+  })
 }
 
 /** Release a held launch (and disarm a not-yet-consumed hold). Idempotent. */
