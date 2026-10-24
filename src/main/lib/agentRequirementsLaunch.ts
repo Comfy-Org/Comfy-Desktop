@@ -459,8 +459,9 @@ export interface PrefetchRequest {
   steps: PrefetchStep[]
   signature: string
   /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
-   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not, and an
-   *  installed version no index serves as `not_served`. */
+   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not. An
+   *  installed version no index serves is `not_served` when the compile would move it, and
+   *  `resolve_failed` when a constraint pins it (the compile then finds no solution). */
   eager?: boolean
 }
 
