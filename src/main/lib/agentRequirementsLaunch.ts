@@ -1187,7 +1187,8 @@ async function fetchStep(
   if (resolution === null) return { kind: 'unlisted' }
   const { run: resolved, pins, notServed } = resolution
   if (!resolved.ok) {
-    const unreachable = eager && DOWNLOAD_FAILED.test(uvErrorSection(resolved.output) ?? '')
+    const error = uvErrorSection(resolved.output) ?? ''
+    const unreachable = eager && !NO_SOLUTION.test(error) && DOWNLOAD_FAILED.test(error)
     const stage = notServed ? 'not_served' : unreachable ? 'unreachable' : 'resolve'
     return { kind: 'failed', stage, run: resolved }
   }

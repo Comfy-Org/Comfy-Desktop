@@ -704,6 +704,37 @@ describe('installAgentRequirements handing over to the background download', () 
     ).toHaveBeenCalledTimes(2)
     expect(onDeferred).not.toHaveBeenCalled()
   })
+
+  it('reports no core failure when the launch is cancelled after core file failed', async () => {
+    networkExits(1, 'error: No solution found when resolving dependencies\n')
+    const abort = new AbortController()
+    const readdir = fs.promises.readdir
+    vi.spyOn(fs.promises, 'readdir').mockImplementation((async (
+      ...args: Parameters<typeof readdir>
+    ) => {
+      if (mockInstall.mock.calls.length >= 2) abort.abort()
+      return readdir(...args)
+    }) as typeof readdir)
+    const onCoreFailed = vi.fn()
+
+    try {
+      await installAgentRequirements(
+        plan,
+        vi.fn(),
+        abort.signal,
+        undefined,
+        null,
+        vi.fn(),
+        onCoreFailed
+      )
+    } finally {
+      vi.mocked(fs.promises.readdir).mockRestore()
+    }
+
+    expect(abort.signal.aborted, 'cancelled once the network try had settled').toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(2)
+    expect(onCoreFailed, 'a cancelled launch reports nothing').not.toHaveBeenCalled()
+  })
 })
 
 describe('force-stopping an abandoned install', () => {
@@ -2748,6 +2779,20 @@ describe('prefetchAgentRequirements', () => {
     })
   })
 
+  it('fetches nothing for a compiled line that is not a name==version pin, and goes on', async () => {
+    compileAnswer = {
+      ...compileAnswer,
+      compiled: COMPILED + 'pkg @ https://example.invalid/pkg-1.0-py3-none-any.whl\n'
+    }
+
+    const report = await finish(request())
+
+    expect(report).toMatchObject({ outcome: 'completed' })
+    expect(calls.at(-1)!.content, 'the URL line is left to the launch').toBe(
+      'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
+    )
+  })
+
   it('asks the index nothing when the compile moves no installed version', async () => {
     installedAnswer = { code: 0, output: JSON.stringify([{ name: 'six', version: '1.15.0' }]) }
 
@@ -3185,6 +3230,17 @@ describe('prefetchAgentRequirements', () => {
         calls.map((call) => call.subcommand),
         'the cache is not asked'
       ).toEqual(['compile'])
+    })
+
+    it('keeps a no-solution resolve_failed when its text names a network word', async () => {
+      compileAnswer = {
+        code: 1,
+        output:
+          'error: No solution found when resolving dependencies\n  cause: Because databricks-connect was not found in the package registry\n',
+        compiled: ''
+      }
+
+      expect(await finish(eager())).toMatchObject({ outcome: 'resolve_failed' })
     })
 
     it('never touches the environment on the way to a fetch', async () => {
