@@ -1874,6 +1874,7 @@
     "cloudError": "Comfy Cloud 无法加载此列表（错误 {status}）。请重试。",
     "cloudUnreachable": "无法连接 Comfy Cloud。请检查网络后重试。",
     "cloudUnexpected": "无法读取 Comfy Cloud 的响应。请稍后重试。",
-    "readError": "无法读取此列表。请重试。"
+    "readError": "无法读取此列表。请重试。",
+    "assetNotFound": "此文件已不存在。"
   }
 }

@@ -99,6 +99,10 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('install-contents:list-models', installationId, request),
     listInstallNodes: (installationId, request) =>
       ipcRenderer.invoke('install-contents:list-nodes', installationId, request),
+    listInstallAssets: (installationId, request) =>
+      ipcRenderer.invoke('install-contents:list-assets', installationId, request),
+    revealInstallAsset: (installationId, assetId) =>
+      ipcRenderer.invoke('install-contents:reveal-asset', installationId, assetId),
 
     // Interactive console
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
