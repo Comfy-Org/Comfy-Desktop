@@ -138,44 +138,77 @@ function recordUv(proc: ChildProcess, installPath: string): void {
   })
 }
 
+/** No agent uv runs this long (the background download's budget is 30 minutes): its record is
+ *  stale, and is removed without asking `ps`. */
+const RECORD_MAX_AGE_MS = 60 * 60_000
+/** Short: a hold waits on these checks. */
+const PS_TIMEOUT_MS = 2_000
+
 /** Whether `pid` is still the uv a record names: pids recycle, so the name and start time must
- *  match too (`ps` reports the start to the second). */
-function isRecordedUv(pid: number, startedAt: number): Promise<boolean> {
+ *  match too (`ps` reports the start to the second). `ps` exits 1, silent, for a pid that is gone;
+ *  any other failure leaves it unknown, and the record is kept for a later start to retry. */
+function recordedUvIdentity(
+  pid: number,
+  startedAt: number
+): Promise<'match' | 'other' | 'unknown'> {
   return new Promise((resolve) => {
-    const options = { timeout: FORCE_STOP_TIMEOUT_MS, env: { ...process.env, LC_ALL: 'C' } }
+    const options = { timeout: PS_TIMEOUT_MS, env: { ...process.env, LC_ALL: 'C' } }
     execFile('ps', ['-p', String(pid), '-o', 'lstart=,comm='], options, (err, stdout) => {
-      const match = /^\s*(\S+ \S+ +\d+ [\d:]+ \d+) +(.+?)\s*$/.exec(String(stdout))
-      if (err || !match) return resolve(false)
-      const started = Date.parse(match[1]!)
-      resolve(path.basename(match[2]!) === 'uv' && Math.abs(started - startedAt) < 5_000)
+      const output = String(stdout)
+      if (err) return resolve(err.code === 1 && !output.trim() ? 'other' : 'unknown')
+      const match = /^\s*(\S+ \S+ +\d+ [\d:]+ \d+) +(.+?)\s*$/.exec(output)
+      const started = match ? Date.parse(match[1]!) : NaN
+      if (Number.isNaN(started)) return resolve('unknown')
+      const same = path.basename(match![2]!) === 'uv' && Math.abs(started - startedAt) < 5_000
+      resolve(same ? 'match' : 'other')
     })
   })
+}
+
+/** Whether `pid` is gone within `ms`: only ESRCH says so, not a pid we may not signal. */
+async function goneWithin(pid: number, ms: number): Promise<boolean> {
+  for (const until = Date.now() + ms; Date.now() < until; ) {
+    try {
+      process.kill(pid, 0)
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === 'ESRCH'
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return false
 }
 
 /**
  * Stop a uv a killed Desktop left running from `installPath`: it holds the environment's lock,
  * so a launch would wait on it, and it writes into files a new start clears. Skips the uv this
- * process runs; a record whose process is gone, or is not that uv, is just removed. Never throws.
+ * process runs; a record whose process is gone, or is not that uv, is just removed, and one
+ * that can't be told is kept. Every record is checked at once. Never throws.
  */
 export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
   if (process.platform === 'win32') return
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
-  for (const name of names.filter((entry) => entry.startsWith(UV_RECORD_PREFIX))) {
-    const record = path.join(installPath, name)
-    try {
-      const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
-      const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
-      if (valid && runningOwnUv.has(pid)) continue
-      if (valid && (await isRecordedUv(pid, startedAt))) {
-        killGroup(pid)
-        for (const until = Date.now() + FORCE_STOP_TIMEOUT_MS; Date.now() < until; ) {
-          process.kill(pid, 0)
-          await new Promise((resolve) => setTimeout(resolve, 50))
-        }
-      }
-    } catch {}
-    await fs.promises.rm(record, { force: true }).catch(() => {})
-  }
+  await Promise.all(
+    names
+      .filter((entry) => entry.startsWith(UV_RECORD_PREFIX))
+      .map((name) => reapRecord(path.join(installPath, name)))
+  )
+}
+
+async function reapRecord(record: string): Promise<void> {
+  let keep = false
+  try {
+    const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
+    const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
+    if (valid && runningOwnUv.has(pid)) return
+    const fresh = valid && Date.now() - startedAt < RECORD_MAX_AGE_MS
+    const identity = fresh ? await recordedUvIdentity(pid, startedAt) : 'other'
+    keep = identity === 'unknown'
+    if (identity === 'match') {
+      killGroup(pid)
+      keep = !(await goneWithin(pid, FORCE_STOP_TIMEOUT_MS))
+    }
+  } catch {}
+  if (!keep) await fs.promises.rm(record, { force: true }).catch(() => {})
 }
 
 /** Which way the bounded wait ended: uv exited, it threw, or the launch stopped
@@ -941,6 +974,8 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
   const running = prefetches.get(installPath)
   running?.stop.abort()
   await Promise.all([preparation?.done, running?.done])
+  // A uv a killed Desktop left running would contend just as much; ours are stopped by now.
+  await reapOrphanedAgentUv(installPath)
   let released = false
   return () => {
     if (released) return

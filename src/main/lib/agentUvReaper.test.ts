@@ -9,15 +9,29 @@ vi.mock('../settings', () => ({
   getMirrorConfig: () => ({ pypiMirror: undefined, useChineseMirrors: false })
 }))
 
-const fakePs = vi.hoisted(() => ({ answer: null as string | null }))
+const fakePs = vi.hoisted(() => ({
+  answer: null as string | null,
+  fails: null as null | { code: number | null; killed: boolean },
+  calls: 0,
+  inFlight: 0,
+  mostInFlight: 0
+}))
 
 vi.mock('child_process', async () => {
   const actual = await vi.importActual<typeof ChildProcessModule>('node:child_process')
   const execFile = ((cmd: string, ...rest: unknown[]) => {
-    const answer = fakePs.answer
-    if (cmd !== 'ps' || answer === null)
+    if (cmd === 'ps') fakePs.calls++
+    const { answer, fails } = fakePs
+    if (cmd !== 'ps' || (answer === null && fails === null))
       return Reflect.apply(actual.execFile, undefined, [cmd, ...rest])
-    ;(rest.at(-1) as (e: null, out: string, err: string) => void)(null, answer, '')
+    const callback = rest.at(-1) as (e: unknown, out: string, err: string) => void
+    fakePs.inFlight++
+    fakePs.mostInFlight = Math.max(fakePs.mostInFlight, fakePs.inFlight)
+    setTimeout(() => {
+      fakePs.inFlight--
+      if (fails) callback(Object.assign(new Error('ps failed'), fails), '', '')
+      else callback(null, answer!, '')
+    }, 20)
     return {}
   }) as typeof actual.execFile
   return {
@@ -86,6 +100,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   }
 
   beforeEach(() => {
+    Object.assign(fakePs, { answer: null, fails: null, calls: 0, inFlight: 0, mostInFlight: 0 })
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-uv-reaper-'))
     fakeUv = path.join(dir, 'bin', 'uv')
     fs.mkdirSync(path.dirname(fakeUv))
@@ -149,12 +164,52 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     }
   })
 
-  it('removes the record of a uv that has already exited', async () => {
+  it('removes the record of a uv that has already exited, which ps answers with a silent exit 1', async () => {
     const file = record(2 ** 22 + 1)
 
     await reapOrphanedAgentUv(dir)
 
+    expect(fakePs.calls, 'the real ps was asked').toBe(1)
     expect(fs.existsSync(file)).toBe(false)
+  })
+
+  it.each([
+    ['times out', { code: null, killed: true }],
+    ['fails some other way', { code: 2, killed: false }]
+  ])(
+    'keeps a record and kills nothing when ps %s, for a later start to retry',
+    async (_label, fails) => {
+      fakePs.fails = fails
+      const kill = vi.spyOn(process, 'kill')
+      try {
+        const file = record(2 ** 22 + 1)
+
+        await reapOrphanedAgentUv(dir)
+
+        expect(fs.existsSync(file), 'an uncertain check proves nothing').toBe(true)
+        expect(kill).not.toHaveBeenCalled()
+      } finally {
+        kill.mockRestore()
+      }
+    }
+  )
+
+  it('removes a record over an hour old without asking ps', async () => {
+    const file = record(2 ** 22 + 1, Date.now() - 2 * 60 * 60_000)
+
+    await reapOrphanedAgentUv(dir)
+
+    expect(fakePs.calls, 'no agent uv runs that long').toBe(0)
+    expect(fs.existsSync(file)).toBe(false)
+  })
+
+  it('checks every record at once, so a hold waits on one ps bound however many are stuck', async () => {
+    fakePs.fails = { code: null, killed: true }
+    for (let n = 1; n <= 4; n++) record(2 ** 22 + n)
+
+    await reapOrphanedAgentUv(dir)
+
+    expect(fakePs.mostInFlight).toBe(4)
   })
 
   it('records each uv it starts, leaves its own running uv alone, and clears the record when it exits', async () => {

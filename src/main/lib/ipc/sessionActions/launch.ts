@@ -103,7 +103,6 @@ import {
   installAgentRequirements,
   holdAgentPrefetch,
   planAgentRequirementsInstall,
-  reapOrphanedAgentUv,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
 import type { PrefetchRequest } from '../../agentRequirementsLaunch'
@@ -1591,7 +1590,6 @@ async function runLaunch(
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
-    await reapOrphanedAgentUv(agentRequirements.installPath)
     const overrideDecision = await installAgentRequirements(
       agentRequirements,
       makeSendOutput(sender, installationId),

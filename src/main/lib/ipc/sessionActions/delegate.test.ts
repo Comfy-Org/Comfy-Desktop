@@ -1,3 +1,4 @@
+import { execFileSync, spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -104,4 +105,50 @@ describe('handleDelegateToSource', () => {
       'released once it ends'
     ).toBe(true)
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a uv a killed Desktop left running in the install before the action starts',
+    async () => {
+      const fakeUv = path.join(dir, 'bin', 'uv')
+      fs.mkdirSync(path.dirname(fakeUv))
+      fs.writeFileSync(fakeUv, '#!/bin/sh\nsleep 60\n', { mode: 0o755 })
+      const startedAt = Date.now()
+      const orphan = spawn(fakeUv, [], { detached: true, stdio: 'ignore' })
+      const pid = orphan.pid!
+      const comm = (): string => {
+        try {
+          return execFileSync('ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf-8' })
+        } catch {
+          return ''
+        }
+      }
+      try {
+        await vi.waitFor(() => expect(path.basename(comm().trim())).toBe('uv'), { timeout: 10_000 })
+        fs.writeFileSync(
+          path.join(dir, `.agent-uv-${pid}.json`),
+          JSON.stringify({ pid, startedAt })
+        )
+        let aliveDuringAction: boolean | undefined
+        harness.handleAction = async () => {
+          aliveDuringAction = comm().trim() !== ''
+          return { ok: true }
+        }
+        const ctx = {
+          event: { sender: { isDestroyed: () => false, send: () => {} } },
+          installationId: 'i',
+          inst: { id: 'i', sourceId: 'stub', installPath: dir },
+          actionData: {}
+        }
+
+        expect(await handleDelegateToSource(ctx as never, 'update-comfyui')).toEqual({ ok: true })
+
+        expect(aliveDuringAction, "the orphan holds the environment's lock").toBe(false)
+      } finally {
+        try {
+          process.kill(-pid, 'SIGKILL')
+        } catch {}
+      }
+    },
+    20_000
+  )
 })
