@@ -2,6 +2,8 @@
 /** One grid of installed instances for the selected dashboard scope. */
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'
+import Avatar from '../../design-system/components/Avatar.vue'
+import Card from '../../design-system/components/Card.vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
 import type { Installation } from '../../types/ipc'
 
@@ -70,17 +72,25 @@ function unlockTileSize(el: Element): void {
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >
-    <button
+    <Card
       v-if="props.showNew"
       key="__new"
+      as="button"
       type="button"
-      class="chooser-tile chooser-tile-new"
+      variant="dashed"
+      padding="md"
+      interactive
+      class="chooser-tile chooser-tile-new flex min-h-full flex-col items-start justify-between gap-4 text-left"
       @click="emit('new-install')"
     >
-      <div class="chooser-tile-icon"><Plus :size="32" /></div>
-      <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
-      <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
-    </button>
+      <Avatar><Plus :size="15" /></Avatar>
+      <span>
+        <span class="block text-heading font-semibold text-base-foreground">{{
+          t('chooser.newInstall')
+        }}</span>
+        <span class="text-ui">{{ t('chooser.newInstallDesc') }}</span>
+      </span>
+    </Card>
 
     <ChooserInstallTile
       v-for="installation in props.installations"
@@ -102,19 +112,13 @@ function unlockTileSize(el: Element): void {
 </template>
 
 <style scoped>
-@import './chooser-tiles.css';
-
 .chooser-family-grid {
   /* Containing block for absolutely-positioned leaving tiles. */
   position: relative;
   width: 100%;
   display: grid;
-  /* Fixed-width tracks instead of `auto-fill` `minmax(...)`: with `auto-fill`
-   * the grid reserves blank tracks across the full width, leaving 1-3 cards
-   * stuck at the left edge. Fixed tracks wrap honestly. */
-  grid-template-columns: repeat(auto-fit, 280px);
-  justify-content: start;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
   align-content: start;
 }
 
