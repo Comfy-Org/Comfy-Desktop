@@ -2517,6 +2517,8 @@ describe('prefetchAgentRequirements', () => {
   }
   type CompileAnswer = { code: number; output: string; compiled: string }
   let calls: Call[] = []
+  let probes: Call[] = []
+  let probeAnswer: { code: number; output: string } = { code: 0, output: '' }
   let compileAnswer: CompileAnswer
   let cacheCheckAnswer: { code: number; output: string } = { code: 0, output: '' }
   let fetchAnswer: { code: number; output: string } = { code: 0, output: '' }
@@ -2536,6 +2538,8 @@ describe('prefetchAgentRequirements', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     calls = []
+    probes = []
+    probeAnswer = { code: 0, output: '' }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-prefetch-'))
     plan = {
       reqPath: path.join(dir, 'ComfyUI', 'agent_requirements.txt'),
@@ -2567,6 +2571,10 @@ describe('prefetchAgentRequirements', () => {
         env: rest[9] as Call['env'],
         subcommand: (rest[10] as string | undefined) ?? 'install',
         ...(output ? { seed: fs.readFileSync(output, 'utf-8') } : {})
+      }
+      if (call.subcommand === 'compile' && !output) {
+        probes.push(call)
+        return probeAnswer
       }
       calls.push(call)
       if (call.subcommand === 'compile') {
@@ -2648,6 +2656,54 @@ describe('prefetchAgentRequirements', () => {
     await finish(request())
 
     expect(calls.at(-1)!.content).toBe('comfy-agent==0.1.0rc3\nrequests==2.32.0\n')
+  })
+
+  it('asks the index for every installed version the compile moves, and fetches when all are served', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([
+        { name: 'Comfy_Agent', version: '0.0.0.dev0' },
+        { name: 'requests', version: '2.31.0' }
+      ])
+    }
+
+    const report = await finish(request())
+
+    expect(probes.map((probe) => [probe.content, probe.extraArgs[0]])).toEqual([
+      ['comfy-agent==0.0.0.dev0\nrequests==2.31.0\n', '--no-deps']
+    ])
+    expect(report).toMatchObject({ outcome: 'completed' })
+    expect(calls.at(-1)!.content).toBe(COMPILED)
+  })
+
+  it('fetches nothing, and reports why, when an installed version the compile moves is not served', async () => {
+    installedAnswer = {
+      code: 0,
+      output: JSON.stringify([{ name: 'requests', version: '2.30.0+local' }])
+    }
+    probeAnswer = {
+      code: 1,
+      output:
+        'error: No solution found when resolving dependencies\n  cause: Because there is no version of requests==2.30.0+local\n'
+    }
+
+    const report = await finish(request())
+
+    expect(
+      calls.filter((call) => call.extraArgs.includes('--target')),
+      'a local build the launch keeps must not be replaced from what is fetched here'
+    ).toEqual([])
+    expect(report).toMatchObject({
+      outcome: 'resolve_failed',
+      errorTail: expect.stringContaining('no version of requests==2.30.0+local')
+    })
+  })
+
+  it('asks the index nothing when the compile moves no installed version', async () => {
+    installedAnswer = { code: 0, output: JSON.stringify([{ name: 'six', version: '1.15.0' }]) }
+
+    expect(await finish(request())).toMatchObject({ outcome: 'completed' })
+    expect(probes).toEqual([])
   })
 
   it('fetches every compiled pin, from an empty seed, when the environment cannot be listed', async () => {
@@ -2759,6 +2815,26 @@ describe('prefetchAgentRequirements', () => {
       exitCode: 2,
       errorTail: 'error: Failed to fetch: `comfy-agent`'
     })
+  })
+
+  it('reports a compile that finds no solution as resolve_failed, and touches nothing else', async () => {
+    compileAnswer = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n',
+      compiled: ''
+    }
+
+    const report = await finish(request())
+
+    expect(report).toMatchObject({
+      outcome: 'resolve_failed',
+      exitCode: 1,
+      errorTail: 'error: No solution found when resolving dependencies'
+    })
+    expect(
+      calls.map((call) => call.subcommand),
+      'a download a launch hands back never resolves against the environment'
+    ).toEqual(['compile'])
   })
 
   it('reports a fetch that fails as download_failed, with how far it got', async () => {
@@ -3111,6 +3187,7 @@ describe('prefetchAgentRequirements', () => {
               setTimeout(() => resolve({ code: 0, output: '' }), 10 * 60_000)
             )
           }
+          if (rest[10] === 'compile' && !extraArgs.includes('-o')) return { code: 0, output: '' }
           const startedAt = Date.now()
           if (budgets.length === 0) {
             budgets.push(-1)

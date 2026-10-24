@@ -458,7 +458,8 @@ export interface PrefetchRequest {
   /** In order: core's own file first when it is not in yet, since a launch installs it first. */
   steps: PrefetchStep[]
   signature: string
-  /** Ahead of any launch: skipped, unreported, when the cache already holds everything. */
+  /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
+   *  online first, so an index it can't reach is reported as `resolve_failed`, cache or not. */
   eager?: boolean
 }
 
@@ -1133,11 +1134,29 @@ async function fetchStep(
       }
     )
     const compiled = run.ok ? await fs.promises.readFile(compiledPath, 'utf-8') : ''
+    const moved: string[] = []
     const pins = compiled.split(/\r?\n/).flatMap((line) => {
       const pin = line.trim().match(COMPILED_PIN)
-      return pin && installed.get(pin[1]!) !== pin[2] ? [pin[0]] : []
+      if (!pin || installed.get(pin[1]!) === pin[2]) return []
+      if (installed.has(pin[1]!)) moved.push(`${pin[1]}==${installed.get(pin[1]!)}`)
+      return [pin[0]]
     })
-    return { run, pins }
+    if (moved.length === 0) return { run, pins }
+    // A launch keeps an installed version that still satisfies, unless offline it can't: then it
+    // replaces one no index serves (a local build) with what this compile chose, once that is
+    // cached. So nothing is fetched unless every installed version this moves is served.
+    const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
+    await fs.promises.writeFile(probePath, moved.join('\n') + '\n', 'utf-8')
+    const served = await runBoundedInstall(
+      plan,
+      probePath,
+      `${tag}-installed-filtered.txt`,
+      left(),
+      output,
+      signal,
+      { extraArgs: ['--no-deps', '--no-header', '--no-annotate'], subcommand: 'compile' }
+    )
+    return served.ok ? { run, pins } : { run: served, pins: [] }
   }
   const { run: resolved, pins } = await (mode === 'launch' ? dryRun() : compile())
   if (!resolved.ok) return { kind: 'failed', stage: 'resolve', run: resolved }
