@@ -1,0 +1,5 @@
+/* The design system: tokens, scope and surfaces. Imported once, from
+ * assets/main.css, so every renderer gets the utilities. */
+@import './tokens.css';
+@import './base.css';
+@import './surfaces.css';
