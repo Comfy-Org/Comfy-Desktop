@@ -25,7 +25,7 @@ import type { InstallationRecord } from '../../installations'
 import type * as nodeCrypto from 'crypto'
 import os from 'os'
 import path from 'path'
-import { buildLaunchEnv, createSessionPath } from './shared'
+import { buildLaunchEnv, createSessionPath, sanitizeEnvVars } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -37,6 +37,44 @@ function inst(sourceId: string, envVars?: Record<string, string>): InstallationR
     ...(envVars ? { envVars } : {})
   } as InstallationRecord
 }
+
+describe('buildLaunchEnv COMFYUI_DESKTOP_EXE', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('names the Desktop binary to a desktop-managed install only, whatever the user or parent set', () => {
+    vi.stubEnv('COMFYUI_DESKTOP_EXE', '/inherited/exe')
+    const override = { COMFYUI_DESKTOP_EXE: '/user/exe' }
+    for (const sourceId of ['standalone', 'comfybuilder']) {
+      expect(buildLaunchEnv(inst(sourceId, override)).COMFYUI_DESKTOP_EXE, sourceId).toBe(
+        process.execPath
+      )
+    }
+    for (const sourceId of ['portable', 'git']) {
+      expect(buildLaunchEnv(inst(sourceId, override)), sourceId).not.toHaveProperty(
+        'COMFYUI_DESKTOP_EXE'
+      )
+    }
+  })
+
+  it.each(['portable', 'git'])(
+    'drops inherited Desktop markers in any casing for user-managed source %s',
+    (sourceId) => {
+      vi.stubEnv('ComfyUI_Desktop_Exe', '/inherited/exe')
+      vi.stubEnv('__ComfyUI_Desktop_Version__', '1.0.0')
+      const keys = Object.keys(buildLaunchEnv(inst(sourceId))).map((key) => key.toUpperCase())
+      expect(keys).not.toContain('COMFYUI_DESKTOP_EXE')
+      expect(keys).not.toContain('__COMFYUI_DESKTOP_VERSION__')
+    }
+  )
+
+  it('is not one an install can save as its own env var', () => {
+    expect(sanitizeEnvVars({ COMFYUI_DESKTOP_EXE: '/user/exe', OTHER: '1' })).toEqual({
+      OTHER: '1'
+    })
+  })
+})
 
 describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   afterEach(() => {

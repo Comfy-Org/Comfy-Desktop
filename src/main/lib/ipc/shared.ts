@@ -275,7 +275,8 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
   'CM_USE_PYGIT2',
-  '__COMFYUI_DESKTOP_VERSION__'
+  '__COMFYUI_DESKTOP_VERSION__',
+  'COMFYUI_DESKTOP_EXE'
 ])
 
 /** Sources whose ComfyUI and Manager are installed and updated by this app. Portable and git
@@ -1048,6 +1049,9 @@ export function buildLaunchEnv(
     // pyproject.toml instead of `git describe`, and leaves its own updates and the
     // "ComfyUI is outdated" warning to us.
     ...(desktopManaged ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() } : {}),
+    // The Desktop binary, which the bundled ComfyUI agent can run as Node (ELECTRON_RUN_AS_NODE)
+    // instead of shipping its own; only an install this app manages is given it.
+    ...(desktopManaged ? { COMFYUI_DESKTOP_EXE: process.execPath } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring
@@ -1057,9 +1061,16 @@ export function buildLaunchEnv(
       ? { CM_USE_PYGIT2: '1' }
       : {})
   }
-  // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
-  // user-managed portable or git install as Desktop-managed.
-  if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  // Inherited markers (e.g. the app itself started from a ComfyUI shell) must not tag a
+  // user-managed portable or git install as Desktop-managed, or hand it the Desktop binary.
+  if (!desktopManaged) {
+    // Any casing: Windows reads env names case-insensitively, and a spread keeps the parent's.
+    for (const key of Object.keys(env)) {
+      const upper = key.toUpperCase()
+      if (upper === '__COMFYUI_DESKTOP_VERSION__' || upper === 'COMFYUI_DESKTOP_EXE')
+        delete env[key]
+    }
+  }
   return env
 }
 
