@@ -12,7 +12,7 @@
  * const client = new ComfyBuilderClient({ baseUrl, auth: tokenStoreAdapter })
  * const builds = await client.listBuilds()                     // render tiles
  * const { artifacts } = await client.getVersion(versionId)
- * const artifact = selectArtifactForHost(artifacts, { os: hostOs(), gpu })
+ * const artifact = selectArtifactForHost(artifacts, { os: hostOs(), arch: process.arch, gpu })
  * await installArtifact({ artifact, client, installPath, cacheDir, onProgress })
  * const launch = buildLaunchSpec(installPath, { launchArgs })
  * ```
