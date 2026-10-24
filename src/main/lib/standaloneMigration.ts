@@ -37,7 +37,7 @@ import type { ComfyVersion } from './version'
 import { assertReadable } from './desktopDetect'
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
-import { tryBuildInstallation } from './buildInstallation'
+import { buildInstallationData } from './buildInstallation'
 
 const MARKER_FILE = '.comfyui-desktop-2'
 
@@ -138,10 +138,8 @@ async function resolveStandaloneInstallData(
     variant = variantOptions.find((v) => v.recommended) || variantOptions[0]!
   }
 
-  const buildResult = tryBuildInstallation(standaloneSource, { release, variant })
-  if (!buildResult.ok) throw new Error(buildResult.message)
   const instData = {
-    ...buildResult.data,
+    ...buildInstallationData(standaloneSource, { release, variant }),
     // Migrating from a snapshot freezes the install to the snapshot's pinned
     // ComfyUI version: skip the post-install auto-update (the snapshot restore
     // re-pins the core commit). updateChannel is left as built here and
@@ -546,22 +544,22 @@ export async function migrateToStandaloneFromSnapshot(
   const cleanupStagedFile = async (): Promise<void> => {
     if (stagedSnapshot.owned) await fs.promises.unlink(stagedSnapshot.path).catch(() => {})
   }
+  // Until the record below references it, nothing else will delete the staged file.
+  const cleanupAndRethrow = async (error: unknown): Promise<never> => {
+    await cleanupStagedFile()
+    throw error
+  }
 
   // 1. Resolve release/variant
   const { instData, standaloneSource } = await telemetry
     .trackedStep('comfy.desktop.migrate.resolve_target', {}, async () =>
       resolveStandaloneInstallData(target, tools.sourceMap)
     )
-    .catch(async (error: unknown) => {
-      await cleanupStagedFile()
-      throw error
-    })
+    .catch(cleanupAndRethrow)
 
   // 2. Create new standalone installation record
-  const { entry, destPath } = await telemetry.trackedStep(
-    'comfy.desktop.migrate.allocate',
-    {},
-    async () => {
+  const { entry, destPath } = await telemetry
+    .trackedStep('comfy.desktop.migrate.allocate', {}, async () => {
       const name = await uniqueName(input.installNameBase)
       const dirName = sanitizeDirName(name)
       const installDir = defaultInstallDir()
@@ -583,8 +581,8 @@ export async function migrateToStandaloneFromSnapshot(
           : {})
       })
       return { entry: createdEntry, destPath: allocatedPath }
-    }
-  )
+    })
+    .catch(cleanupAndRethrow)
 
   try {
     // 3. Install standalone (download + extract + setup env)
@@ -664,7 +662,7 @@ export async function migrateToStandaloneFromSnapshot(
       // Drop the retry pointer so a later re-install can't replay the failed
       // restore, and release the staged file if this migration owns it.
       await update({ pendingSnapshotRestore: undefined })
-      if (stagedSnapshot.owned) await fs.promises.unlink(stagedSnapshot.path).catch(() => {})
+      await cleanupStagedFile()
     }
 
     // 5. Copy user data, input, output, models

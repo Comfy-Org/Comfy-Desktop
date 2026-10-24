@@ -202,6 +202,20 @@ describe('InstallWizardModal standalone runtime availability', () => {
 
     expect(wrapper.get('.wizard-error').text()).toBe(en.standalone.invalidRuntime)
     expect(window.api.addInstallation).not.toHaveBeenCalled()
+
+    wrapper.findAllComponents(BaseSelect)[0]!.vm.$emit('update:modelValue', 'latest')
+    await flushPromises()
+    expect(wrapper.find('.wizard-error').exists()).toBe(false)
+  })
+
+  it('shows a rejected build-installation invoke without adding an installation', async () => {
+    vi.mocked(window.api.buildInstallation).mockRejectedValue(new Error('IPC unavailable'))
+    await openWithOptions({ release: [release], variant: [variant] })
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.wizard-error').text()).toBe('IPC unavailable')
+    expect(window.api.addInstallation).not.toHaveBeenCalled()
   })
 })
 

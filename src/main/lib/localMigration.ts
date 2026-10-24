@@ -10,6 +10,7 @@ import type { MigrationTools, StandaloneTargetSelection } from './standaloneMigr
 import type { Snapshot, SnapshotExportEnvelope } from './snapshots'
 import type { InstallationRecord } from '../installations'
 import * as i18n from './i18n'
+import { buildInstallationData } from './buildInstallation'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 
 /** Find a Python executable in a portable install (python_embeded/ at the portable root). */
@@ -128,6 +129,15 @@ export async function performLocalMigration(
     throw new Error(i18n.t('migrate.noComfyUIDir'))
   }
 
+  const target = actionData?.target as StandaloneTargetSelection | undefined
+  // Reject an explicit target before the scan stages a snapshot for it.
+  if (target?.mode === 'selected') {
+    buildInstallationData(tools.sourceMap['standalone']!, {
+      release: target.release,
+      variant: target.variant
+    })
+  }
+
   const hasPreStaged = !!(
     actionData?.snapshotPath &&
     typeof actionData.snapshotPath === 'string' &&
@@ -158,8 +168,6 @@ export async function performLocalMigration(
     ownsStagedFile = true
     sendProgress('scan', { percent: 100, status: i18n.t('common.done') })
   }
-
-  const target = actionData?.target as StandaloneTargetSelection | undefined
 
   return migrateToStandaloneFromSnapshot(
     {
