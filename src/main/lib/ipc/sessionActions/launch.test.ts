@@ -311,6 +311,7 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
  *  under test installs nothing and a test can choose the outcome. */
 const pipHarness = vi.hoisted(() => ({
   calls: [] as unknown[][],
+  checks: [] as unknown[][],
   result: { code: 0, output: '' },
   respond: null as null | ((args: unknown[]) => { code: number; output: string }),
   installed: '[]',
@@ -322,7 +323,10 @@ vi.mock('../../pip', async (importOriginal) => {
   return {
     ...actual,
     installFilteredRequirementsDetailed: async (...args: unknown[]) => {
-      pipHarness.calls.push(args)
+      const launchCheck =
+        String(args[4]).startsWith('.launch-agent-reqs') &&
+        (args[8] as string[]).includes('--dry-run')
+      ;(launchCheck ? pipHarness.checks : pipHarness.calls).push(args)
       pipHarness.duringInstall?.()
       return pipHarness.respond?.(args) ?? pipHarness.result
     },
@@ -3520,6 +3524,7 @@ describe('agent requirements at launch', () => {
     spawnArgs = []
     spawned = 0
     pipHarness.calls = []
+    pipHarness.checks = []
     prefetchHarness.requests = []
     prefetchHarness.onStart = null
     pipHarness.result = { code: 0, output: '' }
@@ -3778,7 +3783,8 @@ describe('agent requirements at launch', () => {
         { name: 'requests', version: '2.32.0' }
       ])
       pipHarness.respond = (args) => {
-        installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
+        if (!(args[8] as string[]).includes('--dry-run'))
+          installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
         return { code: 0, output: '' }
       }
     })
@@ -3998,8 +4004,8 @@ describe('agent requirements at launch', () => {
 
       expect(
         installed,
-        'not latched, so it is tried again: cache, network, then core file'
-      ).toEqual([OVERRIDDEN, OVERRIDDEN, CORE_FILE])
+        "not latched, so it is tried again: the cache check, the network, then core file's check and install"
+      ).toEqual([OVERRIDDEN, OVERRIDDEN, CORE_FILE, CORE_FILE])
       expect(overrideState()).toBeUndefined()
       expect(prefetchHarness.requests.map((r) => r.request)).toEqual(
         Array(3).fill(

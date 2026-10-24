@@ -222,12 +222,16 @@ describe('installAgentRequirements', () => {
         : (impl(...args) as ReturnType<typeof installFilteredRequirementsDetailed>)
     )
 
-  it("installs the planned file from uv's cache through the shared uv helper", async () => {
+  it("checks uv's cache without writing, then installs the planned file from it through the shared uv helper", async () => {
     const sendOutput = vi.fn()
 
     await installAgentRequirements(plan, sendOutput)
 
-    expect(mockInstall).toHaveBeenCalledWith(
+    expect(
+      mockInstall.mock.calls[0]![8],
+      "a check takes no lock on a wheel another install's download is fetching"
+    ).toEqual(['--offline', '--dry-run'])
+    expect(mockInstall).toHaveBeenLastCalledWith(
       plan.reqPath,
       plan.uvPath,
       plan.pythonPath,
@@ -240,7 +244,7 @@ describe('installAgentRequirements', () => {
       expect.any(Function),
       undefined
     )
-    expect(mockInstall, 'a cache hit downloads nothing').toHaveBeenCalledTimes(1)
+    expect(mockInstall, 'a cache hit downloads nothing').toHaveBeenCalledTimes(2)
     expect(sendOutput.mock.calls.join('')).toContain('Installing agent requirements')
   })
 
@@ -805,9 +809,8 @@ describe("core file's temporary copy", () => {
     await installAgentRequirements(plan, vi.fn())
     await installAgentRequirements(plan, vi.fn())
 
-    const names = mockInstall.mock.calls.map((args) => args[4])
-    expect(names).toHaveLength(2)
-    expect(names[0]).not.toBe(names[1])
+    const names = [...new Set(mockInstall.mock.calls.map((args) => args[4]))]
+    expect(names, "each attempt's check and install share one name").toHaveLength(2)
   })
 })
 
@@ -859,7 +862,7 @@ describe('installAgentRequirements with a version override', () => {
         return { code: 0, output: '' }
       }
       if (extraArgs?.includes('--offline')) {
-        offlineTries++
+        if (!extraArgs.includes('--dry-run')) offlineTries++
         if (cached) return respond(call)
         return fetched.has(call.content) ? { code: 0, output: '' } : { code: 1, output: '' }
       }
@@ -1038,6 +1041,7 @@ describe('installAgentRequirements with a version override', () => {
     const [offline, resolve] = mockInstall.mock.calls
     expect(offline![8], 'the cache goes first').toEqual([
       '--offline',
+      '--dry-run',
       '--constraint',
       expect.stringMatching(/^\.launch-agent-reqs-override-[\w-]+-constraints\.txt$/)
     ])
@@ -1147,7 +1151,10 @@ describe('installAgentRequirements with a version override', () => {
       decision: 'reverted',
       reason: 'install_failed'
     })
-    expect(offlineTries, "core file's own cache-only try still runs").toBe(1)
+    expect(
+      mockInstall.mock.calls.map(([, , , , , , , , extraArgs]) => extraArgs),
+      "core file's own cache check still runs, and finds nothing to install"
+    ).toEqual([['--offline', '--dry-run']])
     expect(calls, 'the network try cannot write its scratch files there either').toEqual([])
   })
 
@@ -1819,8 +1826,11 @@ describe('installAgentRequirements with a version override', () => {
       const lastOverride = tries.map((t) => t.core).lastIndexOf(false)
       expect(
         tries.slice(lastOverride + 1),
-        'core file again from the cache, and not the network, even when it misses there'
-      ).toEqual([{ core: true, offline: true }])
+        'core file again from the cache only, its check and then its install, never the network'
+      ).toEqual([
+        { core: true, offline: true },
+        { core: true, offline: true }
+      ])
     })
 
     it('puts core file back from the cache after a same-launch retry that did not go in', async () => {
@@ -2170,6 +2180,60 @@ describe('installAgentRequirements with a version override', () => {
         })
       })
     }
+
+    it('goes to the network without a cache-only install when the cache check would still download', async () => {
+      const tries: string[][] = []
+      mockInstall.mockImplementation(async (_file, ...rest) => {
+        const extraArgs = rest[7] as string[]
+        tries.push(extraArgs.filter((arg) => arg.startsWith('--') && arg !== '--constraint'))
+        if (extraArgs.includes('--offline') && extraArgs.includes('--dry-run')) {
+          return tries.length === 1
+            ? { code: 0, output: 'Would download 1 package\n + comfy-agent==0.2.3\n' }
+            : { code: 0, output: '' }
+        }
+        if (extraArgs.includes('--dry-run')) return { code: 0, output: ' + comfy-agent==0.2.3\n' }
+        return { code: 0, output: '' }
+      })
+
+      const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
+
+      expect(
+        tries,
+        'no install waits on a wheel another download is fetching: check, download, then install'
+      ).toEqual([
+        ['--offline', '--dry-run'],
+        ['--dry-run'],
+        ['--no-deps', '--target'],
+        ['--offline']
+      ])
+      expect(decision).toMatchObject({ decision: 'applied' })
+    })
+
+    it('stops a cache check held up for 30 s, takes it as a miss, and never counts it', async () => {
+      const checkStopped: number[] = []
+      mockInstall.mockImplementation(async (_file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[]
+        const override = extraArgs.includes('--constraint')
+        if (override && extraArgs.includes('--offline') && extraArgs.includes('--dry-run')) {
+          return lasting(signal, Infinity, { code: 0, output: '' }, checkStopped)
+        }
+        if (override) return { code: 2, output: 'error: Failed to download `comfy-agent`\n' }
+        return { code: 0, output: '' }
+      })
+      const onDeferred = vi.fn()
+
+      const decision = await settle(
+        installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+      )
+
+      expect(checkStopped, 'a check is safe to stop: it writes nothing').toEqual([30_000])
+      expect(decision, 'a miss, so it waits for the background download').toMatchObject({
+        decision: 'deferred',
+        reason: 'not_cached'
+      })
+      expect(onDeferred).toHaveBeenCalledTimes(1)
+    })
 
     it('checks the cache without writing after a download ran out, then installs from it under the install bound', async () => {
       const late = downloadRunsOut((extraArgs, signal) =>

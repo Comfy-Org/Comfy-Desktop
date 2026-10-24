@@ -163,6 +163,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     fs.writeFileSync(reqPath, 'comfy-agent==0.2.0\n')
     let own: ChildProcess | undefined
     vi.mocked(installFilteredRequirementsDetailed).mockImplementation(async (...args) => {
+      if ((args[8] as string[]).includes('--dry-run')) return { code: 0, output: '' }
       own = spawn(fakeUv, [], { detached: true, stdio: 'ignore' })
       children.push(own)
       args[9]?.(own)

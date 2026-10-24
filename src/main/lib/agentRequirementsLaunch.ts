@@ -401,10 +401,10 @@ const ONLINE_BUDGET_MS = 20_000
  *  launch's install was before it moved downloads to the background. */
 const OFFLINE_TIMEOUT_MS = 120_000
 
-/** The cache-only check (`--dry-run`, so it writes nothing) before installing what a download that
- *  ran out may have left in the cache: another install's download can hold uv's cache, and a check
- *  is safe to stop where an install into the environment is not. */
-const LATE_RETRY_TIMEOUT_MS = 30_000
+/** The cache-only check (`--dry-run`, so it writes nothing) before every install from the cache: an
+ *  install waits on the lock of a wheel another install's download is fetching, which a check does
+ *  not take, and a check is safe to stop where an install into the environment is not. */
+const CACHE_CHECK_TIMEOUT_MS = 30_000
 
 /** One download at a time: a stopped uv keeps every wheel it finished, where in parallel a slow
  *  link finishes none of the large ones and every attempt starts over. */
@@ -485,16 +485,25 @@ export async function installAgentRequirements(
   let onlineLeft = ONLINE_BUDGET_MS
   const run: CachedRun = async (reqPath, tempName, constraints, network = true) => {
     const extraArgs = constraints ? ['--constraint', constraints.name] : []
+    const cacheHoldsAll = async (): Promise<BoundedResult> => {
+      const check = await runBoundedInstall(
+        plan,
+        reqPath,
+        tempName,
+        CACHE_CHECK_TIMEOUT_MS,
+        () => {},
+        signal,
+        { extraArgs: [OFFLINE, '--dry-run', ...extraArgs] }
+      )
+      return { ...check, ok: check.ok && !WOULD_DOWNLOAD.test(check.output) }
+    }
+    const fromCache = (output = sendOutput): Promise<BoundedResult> =>
+      runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, output, signal, {
+        extraArgs: [OFFLINE, ...extraArgs]
+      })
     // Quiet: a cache miss is the expected case on a cold cache; the network try speaks for it.
-    const cached = await runBoundedInstall(
-      plan,
-      reqPath,
-      tempName,
-      OFFLINE_TIMEOUT_MS,
-      () => {},
-      signal,
-      { extraArgs: [OFFLINE, ...extraArgs] }
-    )
+    const checked = await cacheHoldsAll()
+    const cached = checked.ok ? await fromCache(() => {}) : checked
     if (cached.ok || signal?.aborted || !network || onlineLeft <= 0) {
       return { ...cached, online: false }
     }
@@ -508,29 +517,12 @@ export async function installAgentRequirements(
       signal
     )
     onlineLeft -= Date.now() - startedAt
-    const fromCache = (): Promise<BoundedResult> =>
-      runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, sendOutput, signal, {
-        extraArgs: [OFFLINE, ...extraArgs]
-      })
     if (fetched.kind === 'failed') {
       // uv writes the scratch target only after the wheels are in its cache, and on a slow disk
       // that writing alone can outlast the budget: the cache may already hold everything.
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
-      const check = late
-        ? await runBoundedInstall(
-            plan,
-            reqPath,
-            tempName,
-            LATE_RETRY_TIMEOUT_MS,
-            () => {},
-            signal,
-            {
-              extraArgs: [OFFLINE, '--dry-run', ...extraArgs]
-            }
-          )
-        : null
-      const retried = check?.ok && !WOULD_DOWNLOAD.test(check.output) ? await fromCache() : null
+      const retried = late && (await cacheHoldsAll()).ok ? await fromCache() : null
       return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
     }
     if (fetched.kind !== 'fetched') {
