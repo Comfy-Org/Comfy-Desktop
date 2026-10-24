@@ -626,7 +626,6 @@ export async function installAgentRequirements(
   return retried
 }
 
-/** An offline `--dry-run`, so it writes nothing: `ok` only when the cache holds every wheel. */
 async function checkCache(
   plan: AgentRequirementsInstall,
   reqPath: string,
