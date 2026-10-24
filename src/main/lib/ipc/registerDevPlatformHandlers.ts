@@ -181,9 +181,10 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
       })
     }
   }
-  session.logout()
+  const revocation = session.logout()
   clearVersionCache()
   broadcastAuthChanged(SIGNED_OUT)
+  await revocation
   return SIGNED_OUT
 }
 

@@ -7,10 +7,11 @@
  * `CloudSession` exposes a `TokenProvider` that client consumes.
  */
 
-/** OAuth tokens held in the (main-process only) token store. */
+/** Workspace tokens and the native account credential, held only in main. */
 export interface AuthTokens {
   accessToken: string
   refreshToken?: string
+  sessionToken?: string
   /** Epoch ms when the access token expires. */
   expiresAt: number
 }
