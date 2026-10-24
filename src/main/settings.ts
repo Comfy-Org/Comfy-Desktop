@@ -11,6 +11,7 @@ import {
 } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
+import { holdForAppLog } from './lib/appLog'
 
 export interface KnownSettings {
   cacheDir: string
@@ -473,13 +474,18 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+function loadOutcome(): {
+  settings: Settings
+  unreadable: boolean
+  /** The change log's baseline: what is on disk now, without defaults merged in. */
+  persisted: Record<string, unknown>
+} {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    return { settings: { ...defaults }, unreadable: true, persisted: {} }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -491,6 +497,9 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
     }
   }
+  // Before the null cleanup below, so a stored `null` is logged as `null`, not as unset.
+  const persisted: Record<string, unknown> = { ...(parsed ?? {}) }
+  if (read.kind === 'data' && !parsed) unparseableBaselines.set(persisted, read.data.length)
   if (parsed) {
     for (const key of KNOWN_SETTING_KEYS) {
       if (parsed[key] === null && !isNullableKnownSettingKey(key)) {
@@ -522,7 +531,9 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
   // silently take effect the moment docking is restored. Preserves a `'quit'`
   // choice.
   if (result.onAppClose === 'tray') {
-    delete (result as Record<string, unknown>).onAppClose
+    // The default, not a delete: every later save writes it back, and would be logged
+    // as that writer's change.
+    result.onAppClose = defaults.onAppClose
     changed = true
   }
 
@@ -641,12 +652,85 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result)
-  return { settings: result, unreadable }
+  // After a repair save, the next writer's baseline is what that save wrote.
+  const baseline = changed && !unreadable ? save(result, persisted) : persisted
+  return { settings: result, unreadable, persisted: baseline }
 }
 
-function save(settings: Settings): void {
-  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
+/** Settings whose values are short tokens from a fixed set (a locale, a theme, a close
+ *  action, an auto-launch sentinel or install id), printed exactly so a line says which way
+ *  the value went. A value that is not token-shaped is still printed by shape. */
+const TOKEN_VALUED_KEYS = new Set(['language', 'theme', 'onAppClose', 'autoLaunchOnStartup'])
+
+/** Booleans, numbers and token values exactly; anything else by shape only. These lines
+ *  reach app.log, which users attach to support requests, and `scrubAll` does not catch
+ *  paths or hosts. */
+function describeForLog(key: string, v: unknown): string {
+  if (v === undefined) return '<unset>'
+  if (v === null) return 'null'
+  if (typeof v === 'boolean' || typeof v === 'number') return String(v)
+  if (typeof v === 'string') {
+    return TOKEN_VALUED_KEYS.has(key) && /^[A-Za-z][\w-]{0,31}$/.test(v)
+      ? JSON.stringify(v)
+      : `<string:${v.length}>`
+  }
+  if (Array.isArray(v)) return `<array:${v.length}>`
+  return `<object:${Object.keys(v as object).length}>`
+}
+
+/** Baselines read from a file that held data but no settings object, with its length: the
+ *  next write drops whatever it held, which a key-by-key diff against `{}` cannot show. */
+const unparseableBaselines = new WeakMap<object, number>()
+
+/** One line per key whose value on disk changed, with the stack that wrote it. `before` is
+ *  what was parsed from disk, not the defaults-merged view, so a key a sparse file gains is
+ *  logged too. Writers that bypass `save` are not logged: the `.bak` restore in
+ *  `readFileSafe` and the Linux cache-dir migration in `paths.ts`. Never throws. */
+function logPersistedChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): void {
+  try {
+    const changes: string[] = []
+    // Own keys only: an absent `toString` must not read as the inherited function.
+    const own = (o: Record<string, unknown>, k: string): unknown =>
+      Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      const a = own(before, key)
+      const b = own(after, key)
+      if (JSON.stringify(a) === JSON.stringify(b)) continue
+      changes.push(`${JSON.stringify(key)}: ${describeForLog(key, a)} -> ${describeForLog(key, b)}`)
+    }
+    const discarded = unparseableBaselines.get(before)
+    if (discarded !== undefined) {
+      changes.unshift(`(previous file unparseable, ${discarded} characters discarded)`)
+    }
+    if (changes.length === 0) return
+    // Stack lines 1-2 are this helper and `save`; the writer starts at line 3. The app's own
+    // location is replaced, since it can name a private install directory.
+    const root = app.getAppPath()
+    const stack = (new Error().stack ?? '')
+      .split('\n')
+      .slice(3, 9)
+      .map((frame) => frame.trim().split(root).join('<app>'))
+      .join(' <- ')
+    const line = `Settings: wrote ${changes.join(', ')} | via ${stack}`
+    console.log(line)
+    holdForAppLog('INFO', line)
+  } catch {
+    // Diagnostics must never cost a write.
+  }
+}
+
+/** Writes, logs what changed against `before` once the write has landed, and returns what
+ *  reached disk as the next baseline. The log reads the payload, not the object: JSON turns
+ *  `NaN` into `null`. */
+function save(settings: Settings, before: Record<string, unknown>): Record<string, unknown> {
+  const payload = JSON.stringify(settings, null, 2)
+  writeFileSafe(dataPath, payload, { backup: true })
+  const written = JSON.parse(payload) as Record<string, unknown>
+  logPersistedChanges(before, written)
+  return written
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
@@ -679,7 +763,7 @@ export function set<K extends string>(
   key: K,
   value: K extends KnownSettingKey ? KnownSettings[K] | undefined : unknown
 ): void {
-  const { settings, unreadable } = loadOutcome()
+  const { settings, unreadable, persisted } = loadOutcome()
   if (unreadable) {
     // Fail closed (issue #1367): settings.json exists but can't be read right
     // now, so `settings` holds bare defaults or stale .bak content. Persisting
@@ -697,11 +781,11 @@ export function set<K extends string>(
     (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
     delete settings[key]
-    save(settings)
+    save(settings, persisted)
     return
   }
   settings[key] = value
-  save(settings)
+  save(settings, persisted)
 }
 
 export function getAll(): Settings {
@@ -718,11 +802,11 @@ export function getAll(): Settings {
  * beta by revoking consent, taking the diagnostics with them.
  */
 export function resolveBetaFeaturesEnabled(): boolean {
-  const { settings, unreadable } = loadOutcome()
+  const { settings, unreadable, persisted } = loadOutcome()
   const enabled = betaFeaturesEnabledIn(settings, unreadable)
   if (typeof settings.betaFeaturesEnabled === 'boolean' || unreadable) return enabled
   settings.betaFeaturesEnabled = enabled
-  save(settings)
+  save(settings, persisted)
   return enabled
 }
 
