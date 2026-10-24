@@ -1831,6 +1831,39 @@
         "owner": "Owner",
         "member": "Member"
       }
+    },
+    "title": "Builds",
+    "description": "Where your work runs. Each has its own ComfyUI version, custom nodes and models.",
+    "filter": {
+      "all": "All",
+      "thisComputer": "This computer",
+      "cloud": "Cloud"
+    },
+    "runsOn": {
+      "thisComputer": "This computer",
+      "cloud": "Comfy Cloud",
+      "remote": "Remote server"
+    },
+    "status": {
+      "notRunning": "Not running",
+      "ready": "Ready"
+    },
+    "openComfy": "Open ComfyUI",
+    "startComfy": "Start ComfyUI",
+    "empty": {
+      "title": "No builds here yet",
+      "filtered": "No builds in this view",
+      "description": "A build is a ComfyUI with its own version, custom nodes and models, on this computer or in the cloud."
+    },
+    "buildInfo": {
+      "runsOn": "Runs on {place}",
+      "lastUsed": "Last used {when}"
+    },
+    "rename": {
+      "action": "Rename",
+      "label": "Build name",
+      "hint": "Double-click to rename",
+      "failed": "Couldn't rename this build"
     }
   }
 }

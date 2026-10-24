@@ -46,6 +46,8 @@ The gradient values were tuned visually. Do not change them without design.
 | Text entry | `SearchInput`, `Input`                                                 | Share `fieldClass`; focus ring on the shell, never the native input                                   |
 | Menus      | `DropdownMenuContent/Item/Label/Separator/SubTrigger/SubContent`       | Use Reka `DropdownMenuRoot`/`Trigger` directly                                                        |
 | Overlays   | `Tooltip`                                                              | Needs a Reka `TooltipProvider` above it                                                               |
+| Navigation | `Tabs`, `SegmentedControl`                                             | `Tabs` switch a page's views; `SegmentedControl` picks a scope or filter, with counts                 |
+| Page       | `PageHeader`, `EmptyState`                                             | A page's title, description and actions; what an empty list says and offers next                      |
 | Surfaces   | `Card` (`elevated`, `dashed`, `inset`), `Avatar`, `Badge`, `StatusDot` | `StatusDot`: `running` and `ready` (green) and `busy` (amber) pulse; `error` red; `idle` the quietest |
 | Identity   | `LocationIcon`                                                         | The one this-computer / Comfy Cloud mark                                                              |
 | Lists      | `ListTable`                                                            | Rows with a column header in a card; skeleton rows while loading                                      |

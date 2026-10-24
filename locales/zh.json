@@ -1831,6 +1831,39 @@
         "owner": "所有者",
         "member": "成员"
       }
+    },
+    "title": "构建",
+    "description": "你的作品在这里运行。每个构建都有自己的 ComfyUI 版本、自定义节点和模型。",
+    "filter": {
+      "all": "全部",
+      "thisComputer": "本机",
+      "cloud": "云端"
+    },
+    "runsOn": {
+      "thisComputer": "本机",
+      "cloud": "Comfy Cloud",
+      "remote": "远程服务器"
+    },
+    "status": {
+      "notRunning": "未运行",
+      "ready": "就绪"
+    },
+    "openComfy": "打开 ComfyUI",
+    "startComfy": "启动 ComfyUI",
+    "empty": {
+      "title": "这里还没有构建",
+      "filtered": "此视图中没有构建",
+      "description": "构建是一个拥有自己的 ComfyUI 版本、自定义节点和模型的 ComfyUI，可在本机或云端运行。"
+    },
+    "buildInfo": {
+      "runsOn": "运行于{place}",
+      "lastUsed": "上次使用：{when}"
+    },
+    "rename": {
+      "action": "重命名",
+      "label": "构建名称",
+      "hint": "双击以重命名",
+      "failed": "无法重命名此构建"
     }
   }
 }

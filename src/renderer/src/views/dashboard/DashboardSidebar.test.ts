@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { TooltipProvider } from 'reka-ui'
-import { h } from 'vue'
+import { defineComponent, h } from 'vue'
 import DashboardSidebar from './DashboardSidebar.vue'
+import { provideBuildRename } from './useBuildRename'
 import { useSessionStore } from '../../stores/sessionStore'
 import { ALL_BUILDS, installPage } from './dashboardPage'
 import type { DashboardPage } from './dashboardPage'
@@ -14,11 +15,22 @@ const installs = [
   { id: 'cloud', name: 'Comfy Cloud', sourceCategory: 'cloud' }
 ] as Installation[]
 
+/** The dashboard provides rename state to its cards, pages and sidebar. */
+const RenameScope = defineComponent({
+  setup(_, { slots }) {
+    provideBuildRename()
+    return () => slots.default?.()
+  }
+})
+
 function mountSidebar(page: DashboardPage = ALL_BUILDS) {
   return mount(TooltipProvider, {
+    attachTo: document.body,
     slots: {
       default: () =>
-        h(DashboardSidebar, { installations: installs, page }, { foot: () => h('div', 'foot') })
+        h(RenameScope, () =>
+          h(DashboardSidebar, { installations: installs, page }, { foot: () => h('div', 'foot') })
+        )
     }
   })
 }
@@ -54,5 +66,28 @@ describe('DashboardSidebar', () => {
     expect(sidebar.emitted('update:page')?.at(-1)).toEqual([installPage('cloud')])
     await wrapper.get('[data-testid="dashboard-new-build"]').trigger('click')
     expect(sidebar.emitted('new-build')).toHaveLength(1)
+  })
+
+  it('renames a build from its row: double-click, type, Enter', async () => {
+    const updateInstallation = vi.fn(async () => ({ ok: true }))
+    Object.defineProperty(window, 'api', { value: { updateInstallation }, configurable: true })
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="dashboard-sidebar-build-local"]').trigger('dblclick')
+    expect(wrapper.find('[data-testid="dashboard-sidebar-build-local"]').exists()).toBe(false)
+    const input = wrapper.get('input')
+    await input.setValue('Studio 2')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(updateInstallation).toHaveBeenCalledWith('local', { name: 'Studio 2' })
+    expect(wrapper.find('input').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it("opens a build's menu on right-click", async () => {
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-testid="dashboard-sidebar-build-local"]').trigger('contextmenu')
+    expect(wrapper.findComponent(DashboardSidebar).emitted('open-menu')?.[0]?.[1]).toEqual(
+      installs[0]
+    )
+    wrapper.unmount()
   })
 })
