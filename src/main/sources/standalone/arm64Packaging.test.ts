@@ -9,16 +9,45 @@ interface ExtraResource {
 }
 
 interface ToDesktopConfig {
-  targetOverrides?: {
-    linux?: Record<string, { extraResources?: ExtraResource[] }>
-  }
+  extraResources?: ExtraResource[]
+  targetOverrides?: Record<string, Record<string, { extraResources?: ExtraResource[] }>>
+  platformOverrides?: Record<string, { extraResources?: ExtraResource[] }>
 }
 
+function readToDesktopConfig(): ToDesktopConfig {
+  return JSON.parse(
+    fs.readFileSync(path.join(process.cwd(), 'todesktop.json'), 'utf-8')
+  ) as ToDesktopConfig
+}
+
+const destinations = (resources: ExtraResource[] = []): string[] =>
+  resources.map((resource) => resource.to).sort()
+
 describe('Linux ARM64 packaging', () => {
+  // A target list replaces, rather than merges with, the platform list, and
+  // ToDesktop decides server-side which architectures a platform builds. An
+  // architecture we did not enumerate falls back to `platformOverrides`, and
+  // without one it lands on the top-level list — `./lib` alone, so the
+  // package ships with no apparmor-profile and no bootstrap-python.
+  it('keeps a platform-level fallback for every platform with per-target overrides', () => {
+    const config = readToDesktopConfig()
+    const platforms = Object.keys(config.targetOverrides ?? {})
+    expect(platforms.length).toBeGreaterThan(0)
+
+    for (const platform of platforms) {
+      const fallback = config.platformOverrides?.[platform]
+      expect(fallback, `platformOverrides.${platform} is missing`).toBeDefined()
+      for (const [arch, target] of Object.entries(config.targetOverrides![platform]!)) {
+        expect(
+          destinations(fallback!.extraResources),
+          `platformOverrides.${platform} must cover every destination of targetOverrides.${platform}.${arch}`
+        ).toEqual(destinations(target.extraResources))
+      }
+    }
+  })
+
   it('uses matching ToDesktop resource paths with a separate ARM64 placeholder', () => {
-    const config = JSON.parse(
-      fs.readFileSync(path.join(process.cwd(), 'todesktop.json'), 'utf-8')
-    ) as ToDesktopConfig
+    const config = readToDesktopConfig()
     const linuxTargets = config.targetOverrides?.linux
     const x64Resources = linuxTargets?.x64?.extraResources ?? []
     const arm64Resources = linuxTargets?.arm64?.extraResources ?? []
