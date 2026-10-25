@@ -384,9 +384,15 @@ describe('dropValuelessArgs', () => {
     ['before another flag', ['--cuda-device', '--lowvram'], ['--lowvram']],
     ['with an empty inline value', ['--cuda-device=', '--lowvram'], ['--lowvram']]
   ])('drops a flag that needs a value %s', (_case, args, kept) => {
-    expect(dropValuelessArgs(args, schema), 'argparse exits on it, so ComfyUI never boots').toEqual(
-      kept
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(
+      dropValuelessArgs(args, schema),
+      'a bare --cuda-device makes argparse exit; an empty one hides every GPU'
+    ).toEqual(kept)
+    expect(warn, 'the app log names what was dropped').toHaveBeenCalledWith(
+      expect.stringContaining('--cuda-device')
     )
+    warn.mockRestore()
   })
 
   it('keeps a bare variadic flag, which may take zero values', () => {
@@ -410,7 +416,9 @@ options:
       '--listen',
       '--lowvram',
       '--extra-model-paths-config',
-      'a.yaml'
+      'a.yaml',
+      '--cuda-device',
+      './cuda-device'
     ]
     expect(dropValuelessArgs(args, schema)).toEqual(args)
   })
