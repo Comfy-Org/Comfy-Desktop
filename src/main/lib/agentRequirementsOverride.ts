@@ -253,10 +253,10 @@ function agentPackage(coreText: string): string | undefined {
 }
 
 /**
- * Keeps every installed package from moving down, so an override that would downgrade one falls
- * back. It may move one up when the agent's packages need a newer version (comfy-cli 1.23.0 needs
- * `blake3>=1.0.9`, and older installs have 1.0.8). A local version (`+cpu`) stays exact, since uv
- * refuses `>=` on one. Exempt are the agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
+ * Holds every installed package at or above its version, so an override that would move one down
+ * falls back. A local build (`+cpu`) stays exact: uv refuses `>=` on one, and the prefetch drops
+ * exactly those `==` lines. The agent file's own are exempt: `comfy-cli`, `nodejs-wheel-binaries`,
+ * `comfy-agent`, and the comfy-agent*
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
  * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
