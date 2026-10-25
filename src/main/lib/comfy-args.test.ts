@@ -12,12 +12,14 @@ vi.mock('./git', () => ({ readGitHead: vi.fn() }))
 
 import {
   clearSchemaCache,
+  dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyArgsSchema,
   peekComfyArgsSchema,
   parseHelpOutput,
   validateArgs
 } from './comfy-args'
+import type { ComfyArgsSchema } from './comfy-args'
 
 const mockedExecFile = vi.mocked(execFile)
 const mockedReadGitHead = vi.mocked(readGitHead)
@@ -357,6 +359,48 @@ describe('validateArgs', () => {
       schema
     )
     expect(unsupported).toEqual([])
+  })
+})
+
+describe('dropValuelessArgs', () => {
+  const schema: ComfyArgsSchema = {
+    args: [
+      { name: 'cuda-device', flag: '--cuda-device', help: '', type: 'value', category: 'gpuVram' },
+      { name: 'listen', flag: '--listen', help: '', type: 'optional-value', category: 'network' },
+      { name: 'lowvram', flag: '--lowvram', help: '', type: 'boolean', category: 'gpuVram' },
+      {
+        name: 'extra-model-paths-config',
+        flag: '--extra-model-paths-config',
+        help: '',
+        type: 'multi-value',
+        category: 'paths'
+      }
+    ],
+    knownFlags: new Set(['cuda-device', 'listen', 'lowvram', 'extra-model-paths-config'])
+  }
+
+  it.each([
+    ['last with no value', ['--lowvram', '--cuda-device'], ['--lowvram']],
+    ['before another flag', ['--cuda-device', '--lowvram'], ['--lowvram']],
+    ['with an empty inline value', ['--cuda-device=', '--lowvram'], ['--lowvram']],
+    ['a multi-value flag with none', ['--extra-model-paths-config', '--lowvram'], ['--lowvram']]
+  ])('drops a flag that needs a value %s', (_case, args, kept) => {
+    expect(dropValuelessArgs(args, schema), 'argparse exits on it, so ComfyUI never boots').toEqual(
+      kept
+    )
+  })
+
+  it('keeps flags that have their value, optional values and booleans', () => {
+    const args = [
+      '--cuda-device',
+      '0',
+      '--cuda-device=1',
+      '--listen',
+      '--lowvram',
+      '--extra-model-paths-config',
+      'a.yaml'
+    ]
+    expect(dropValuelessArgs(args, schema)).toEqual(args)
   })
 })
 

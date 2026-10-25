@@ -469,6 +469,22 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
+/** Drop a flag that needs a value but has none (`--cuda-device` last or before another flag, or
+ *  `--cuda-device=`): argparse would exit on it and ComfyUI would never boot. */
+export function dropValuelessArgs(args: string[], schema: ComfyArgsSchema): string[] {
+  const needsValue = new Set(
+    schema.args.filter((a) => a.type === 'value' || a.type === 'multi-value').map((a) => a.name)
+  )
+  return args.filter((arg, i) => {
+    if (!arg.startsWith('--')) return true
+    const [name, inline] = arg.slice(2).split(/=(.*)/s)
+    if (!needsValue.has(name!)) return true
+    const valueless = inline === undefined ? (args[i + 1]?.startsWith('--') ?? true) : inline === ''
+    if (valueless) console.warn(`launch: dropped ${arg}, which needs a value and has none`)
+    return !valueless
+  })
+}
+
 /** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)

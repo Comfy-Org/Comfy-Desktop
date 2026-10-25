@@ -970,6 +970,31 @@ const build = (over: {
     ...(over.campaign && { campaign: over.campaign })
   })
 
+describe('buildLaunchArgs user args', () => {
+  const schema: ComfyArgsSchema = {
+    args: [
+      { name: 'cuda-device', flag: '--cuda-device', help: '', type: 'value', category: 'gpuVram' }
+    ],
+    knownFlags: new Set(['cuda-device'])
+  }
+
+  it.each([
+    ['with an empty value', ['--cuda-device']],
+    ['with an empty inline value', ['--cuda-device=']]
+  ])('never passes --cuda-device %s to ComfyUI', (_case, userArgs) => {
+    const { args } = build({ userArgs, schema, betaFlags: [] })
+    expect(
+      args.filter((a) => a.startsWith('--cuda-device')),
+      'argparse would exit: "expected one argument"'
+    ).toEqual([])
+  })
+
+  it('passes --cuda-device with its value through', () => {
+    const { args } = build({ userArgs: ['--cuda-device', '1'], schema, betaFlags: [] })
+    expect(args.slice(-2)).toEqual(['--cuda-device', '1'])
+  })
+})
+
 describe('buildLaunchArgs campaigns', () => {
   const KEY = 'desktop_core_beta_agent'
   const schema = schemaOf('enable-assets', 'enable-agent', 'disable-agent')
