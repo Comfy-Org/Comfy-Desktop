@@ -4025,7 +4025,7 @@ describe('agent requirements at launch', () => {
         {
           installationId: ID,
           request: expect.objectContaining({
-            steps: [{ text: OVERRIDDEN, constraints: 'requests==2.32.0\n' }],
+            steps: [{ text: OVERRIDDEN, constraints: 'requests>=2.32.0\n' }],
             signature: 'comfy-agent==0.2.3'
           })
         }
@@ -4066,7 +4066,7 @@ describe('agent requirements at launch', () => {
         {
           installationId: ID,
           request: expect.objectContaining({
-            steps: [{ text: OVERRIDDEN, constraints: 'requests==2.32.0\n' }],
+            steps: [{ text: OVERRIDDEN, constraints: 'requests>=2.32.0\n' }],
             signature: 'comfy-agent==0.2.3'
           })
         }

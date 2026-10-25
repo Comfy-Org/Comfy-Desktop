@@ -982,7 +982,7 @@ describe('installAgentRequirements with a version override', () => {
 
   const OVERRIDE = { 'comfy-agent': '0.2.3' }
 
-  it('installs the overridden file once, holding every other installed package where it is', async () => {
+  it('installs the overridden file once, keeping every other installed package from moving down', async () => {
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
     expect(decision).toMatchObject({
@@ -1005,7 +1005,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls[0]!.constraints).toBe('requests>=2.32.0\nidna==3.20+qa316\n')
   })
 
-  it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
+  it("pins the frontend from ComfyUI's requirements.txt, freeing only it", async () => {
     fs.writeFileSync(
       path.join(installDir, 'ComfyUI', 'requirements.txt'),
       'comfyui-frontend-package==1.55.18\n'
@@ -1025,7 +1025,7 @@ describe('installAgentRequirements with a version override', () => {
     ])
   })
 
-  it('installs a comfy-agent-go pin on its own line, holding everything else', async () => {
+  it('installs a comfy-agent-go pin on its own line, flooring everything else', async () => {
     const sendOutput = vi.fn()
     const go = { 'comfy-agent-go': '0.2.3' }
     const decision = await installAgentRequirements(plan, sendOutput, undefined, go)

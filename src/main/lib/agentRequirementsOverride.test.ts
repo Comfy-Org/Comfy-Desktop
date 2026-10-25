@@ -220,6 +220,13 @@ describe('installedConstraints', () => {
     expect(installedConstraints(LIST)).toBe('requests>=2.32.0\nmy-node-dep>=0.1.0\n')
   })
 
+  it('floors an editable install like any other, so an index release may replace it', () => {
+    expect(
+      installedConstraints(LIST),
+      'only a local version label keeps a package exact'
+    ).toContain('my-node-dep>=0.1.0')
+  })
+
   it('lets a package the agent needs newer move up, and holds a local build exactly', () => {
     const list = JSON.stringify([
       { name: 'blake3', version: '1.0.8' },
@@ -732,7 +739,7 @@ describe('the agent package name and extras', () => {
     ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
   })
 
-  it('lets a renamed agent package move, holding everything else', () => {
+  it('lets a renamed agent package move, flooring everything else', () => {
     const list = JSON.stringify([
       { name: 'comfy-agent-oss', version: '0.2.0' },
       { name: 'requests', version: '2.32.0' }
@@ -904,7 +911,7 @@ describe('a comfy-agent-go pin', () => {
     expect(installedConstraints(list, new Map(), core)).toBe('requests>=2.32.0\n')
   })
 
-  it('still holds every unrelated installed package', () => {
+  it('still floors every unrelated installed package', () => {
     const list = JSON.stringify([
       { name: 'comfy-agent', version: '0.1.0rc3' },
       { name: 'comfy-agent-go', version: '0.1.0rc3' },
