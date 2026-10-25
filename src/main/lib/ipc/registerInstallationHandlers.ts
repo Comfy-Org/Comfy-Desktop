@@ -55,10 +55,10 @@ import { isInstallationVisibleToRenderer } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
- *  channels these installs use, then re-broadcast `installations-changed`
- *  so renderers re-pull statusTag (which drives the dashboard's
- *  per-install "Update" pill). Gated inside the helper by a 1h floor
- *  so it never spams GitHub on dashboard refreshes. */
+ *  channels these installs use, then, when a fetch brought back fresh data,
+ *  re-broadcast `installations-changed` so renderers re-pull statusTag (which
+ *  drives the dashboard's per-install "Update" pill). Gated inside the helper
+ *  by a 1h floor so it never spams GitHub on dashboard refreshes. */
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
     onRefreshed: () => _broadcastToRenderer('installations-changed', {})

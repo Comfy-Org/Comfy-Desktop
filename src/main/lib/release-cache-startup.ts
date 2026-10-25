@@ -19,7 +19,7 @@ const COMFYUI_SOURCE_IDS = new Set(['standalone', 'portable'])
  *  every app start must refresh the catalog at least once. */
 let _torchCatalogCheckedAt = 0
 /** In-flight catalog refresh; concurrent checks join it instead of refetching. */
-let _torchCatalogRefresh: Promise<void> | null = null
+let _torchCatalogRefresh: Promise<boolean> | null = null
 
 /** Test-only: reset the in-memory torch-catalog floor to cold start. */
 export function _resetTorchCatalogFloorForTest(): void {
@@ -29,16 +29,18 @@ export function _resetTorchCatalogFloorForTest(): void {
 
 /** Refresh the torch stack catalog, deduplicating concurrent calls. The
  *  floor advances only on full success so a failed fetch retries on the
- *  next check instead of being suppressed for the floor window. */
+ *  next check instead of being suppressed for the floor window. Resolves
+ *  whether the refresh fully succeeded. */
 function _refreshTorchCatalog(
   installations: InstallationRecord[],
   now: () => number
-): Promise<void> {
+): Promise<boolean> {
   _torchCatalogRefresh ??= refreshTorchStackCatalogs(installations)
     .then((ok) => {
       if (ok) _torchCatalogCheckedAt = now()
+      return ok
     })
-    .catch(() => undefined)
+    .catch(() => false)
     .finally(() => {
       _torchCatalogRefresh = null
     })
@@ -58,7 +60,7 @@ function _channelOf(inst: InstallationRecord): string {
 
 /**
  * Refresh the release cache for every unique channel in use, then run `onRefreshed` if at
- * least one fetch ran. Fire-and-forget; never throws.
+ * least one fetch brought back fresh data. Fire-and-forget; never throws.
  */
 export async function runStartupReleaseChecks(
   installations: InstallationRecord[],
@@ -78,11 +80,19 @@ export async function runStartupReleaseChecks(
   }
   if (channels.size === 0) return
 
+  // A failed check (e.g. offline) learned nothing, so it must not announce a
+  // refresh: `onRefreshed` makes every renderer re-pull installations, which
+  // re-enters this check, and each open window multiplies the next round.
+  let refreshed = false
   const tasks: Promise<unknown>[] = []
   for (const channel of channels) {
-    if (!options.bypassFloor) {
-      const existing = releaseCache.get(COMFYUI_REPO, channel)
-      if (existing?.checkedAt && now() - existing.checkedAt < STARTUP_RECHECK_MS) continue
+    const previousCheckedAt = releaseCache.get(COMFYUI_REPO, channel)?.checkedAt
+    if (
+      !options.bypassFloor &&
+      previousCheckedAt &&
+      now() - previousCheckedAt < STARTUP_RECHECK_MS
+    ) {
+      continue
     }
 
     tasks.push(
@@ -97,6 +107,12 @@ export async function runStartupReleaseChecks(
           },
           /* force */ true
         )
+        // Judge freshness by the entry, not by whether this call's fetch ran: a
+        // failed fetch falls back to the same cached entry, and a fetch joined
+        // from a concurrent caller still lands a newer one.
+        .then((entry) => {
+          if (entry?.checkedAt && entry.checkedAt !== previousCheckedAt) refreshed = true
+        })
         .catch(() => null)
     )
   }
@@ -107,13 +123,17 @@ export async function runStartupReleaseChecks(
   // independent of the persisted release cache, so the refresh must not
   // depend on release fetch tasks being scheduled.
   if (options.bypassFloor || now() - _torchCatalogCheckedAt >= STARTUP_RECHECK_MS) {
-    tasks.push(_refreshTorchCatalog(installations, now))
+    tasks.push(
+      _refreshTorchCatalog(installations, now).then((ok) => {
+        if (ok) refreshed = true
+      })
+    )
   }
 
   if (tasks.length === 0) return
 
   await Promise.allSettled(tasks)
-  options.onRefreshed?.()
+  if (refreshed) options.onRefreshed?.()
 }
 
 /** Matches the picker's stale-cache threshold so pills reflect upstream within this window. */

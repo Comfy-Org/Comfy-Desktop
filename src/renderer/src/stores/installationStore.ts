@@ -6,7 +6,7 @@ export const useInstallationStore = defineStore('installation', () => {
   const installations = ref<Installation[]>([])
   const loading = ref(true)
 
-  async function fetchInstallations(): Promise<Installation[]> {
+  async function loadInstallations(): Promise<Installation[]> {
     loading.value = true
     try {
       installations.value = await window.api.getInstallations()
@@ -14,6 +14,29 @@ export const useInstallationStore = defineStore('installation', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  // At most one request in flight plus one queued behind it: a burst of
+  // `installations-changed` events collapses into a single follow-up fetch,
+  // which still starts after every caller asked, so each caller gets data at
+  // least as fresh as its request.
+  let inFlight: Promise<Installation[]> | null = null
+  let queued: Promise<Installation[]> | null = null
+
+  function fetchInstallations(): Promise<Installation[]> {
+    if (!inFlight) {
+      inFlight = loadInstallations().finally(() => {
+        inFlight = null
+      })
+      return inFlight
+    }
+    queued ??= inFlight
+      .catch(() => undefined)
+      .then(() => {
+        queued = null
+        return fetchInstallations()
+      })
+    return queued
   }
 
   window.api.onInstallationsChanged(() => {

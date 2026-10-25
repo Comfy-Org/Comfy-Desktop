@@ -5,7 +5,7 @@ import type { InstallationRecord } from '../installations'
 vi.mock('./release-cache', () => ({
   get: vi.fn(() => undefined),
   getOrFetch: vi.fn(async () => null),
-  buildCacheEntry: vi.fn((release: unknown) => release)
+  buildCacheEntry: vi.fn((release: object) => ({ ...release, checkedAt: Date.now() }))
 }))
 vi.mock('./comfyui-releases', () => ({
   fetchLatestRelease: vi.fn(async () => null)
@@ -20,7 +20,20 @@ import {
   _resetTorchCatalogFloorForTest
 } from './release-cache-startup'
 import * as releaseCache from './release-cache'
+import { fetchLatestRelease } from './comfyui-releases'
 import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
+
+/** Mirrors the real `getOrFetch`: runs the fetch, and on failure or a null
+ *  result returns the cached entry instead of rejecting. */
+function getOrFetchFallingBackTo(cached: { checkedAt: number } | null) {
+  return (async (_repo: string, _channel: string, fetchFn: () => Promise<unknown>) => {
+    try {
+      return (await fetchFn()) ?? cached
+    } catch {
+      return cached
+    }
+  }) as unknown as typeof releaseCache.getOrFetch
+}
 
 function install(overrides: Partial<InstallationRecord> = {}): InstallationRecord {
   return {
@@ -40,6 +53,7 @@ beforeEach(() => {
   // `clearAllMocks` keeps implementations, so pin the defaults each test relies on.
   vi.mocked(releaseCache.get).mockReturnValue(null)
   vi.mocked(releaseCache.getOrFetch).mockResolvedValue(null)
+  vi.mocked(fetchLatestRelease).mockResolvedValue(null)
   vi.mocked(refreshTorchStackCatalogs).mockResolvedValue(true)
   _resetTorchCatalogFloorForTest()
 })
@@ -127,10 +141,41 @@ describe('runStartupReleaseChecks', () => {
   })
 
   it('still completes the release check and fires onRefreshed when the PyTorch refresh rejects', async () => {
+    vi.mocked(releaseCache.getOrFetch).mockImplementation(getOrFetchFallingBackTo(null))
+    vi.mocked(fetchLatestRelease).mockResolvedValue({ tag_name: 'v1.2.3' })
     vi.mocked(refreshTorchStackCatalogs).mockRejectedValueOnce(new Error('offline'))
     const onRefreshed = vi.fn()
     await expect(runStartupReleaseChecks([install()], { onRefreshed })).resolves.toBeUndefined()
     expect(vi.mocked(releaseCache.getOrFetch)).toHaveBeenCalled()
+    expect(onRefreshed).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire onRefreshed when every fetch fails (offline), so renderers are not told to re-pull', async () => {
+    // onRefreshed broadcasts installations-changed; each renderer then re-fetches installations,
+    // which re-runs this check. Announcing a failed check loops, multiplied per open window.
+    // The stale entry is still returned on failure, as the real cache does.
+    const stale = { checkedAt: 1 }
+    vi.mocked(releaseCache.get).mockReturnValue(stale)
+    vi.mocked(releaseCache.getOrFetch).mockImplementation(getOrFetchFallingBackTo(stale))
+    vi.mocked(fetchLatestRelease).mockRejectedValue(new Error('getaddrinfo ENOTFOUND github.com'))
+    vi.mocked(refreshTorchStackCatalogs).mockResolvedValue(false)
+    const onRefreshed = vi.fn()
+    await runStartupReleaseChecks([install(), install({ id: 'inst-2', updateChannel: 'latest' })], {
+      onRefreshed
+    })
+    expect(vi.mocked(fetchLatestRelease)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
+    expect(onRefreshed).not.toHaveBeenCalled()
+  })
+
+  it('fires onRefreshed when it joins a concurrent fetch that lands a newer entry', async () => {
+    // The joined call's own fetch never runs; the fresh entry comes from the other caller.
+    vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: 1 })
+    vi.mocked(releaseCache.getOrFetch).mockResolvedValue({ checkedAt: 2 })
+    vi.mocked(refreshTorchStackCatalogs).mockResolvedValue(false)
+    const onRefreshed = vi.fn()
+    await runStartupReleaseChecks([install()], { onRefreshed })
+    expect(vi.mocked(fetchLatestRelease)).not.toHaveBeenCalled()
     expect(onRefreshed).toHaveBeenCalledTimes(1)
   })
 })
