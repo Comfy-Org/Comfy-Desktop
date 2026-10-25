@@ -469,11 +469,9 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Drop a single-value flag that has no value (`--cuda-device` last or before another flag, or
- *  `--cuda-device=`): argparse exits on a missing value, and on an empty one for a numeric flag, so
- *  ComfyUI would never boot. Variadic
- *  flags are left alone, since the schema can't tell `--fast` (zero values allowed) from one
- *  that needs at least one. */
+/** Drop a single-value flag with no value (`--cuda-device` last or before another flag, or
+ *  `--cuda-device=`): ComfyUI would exit or lose its GPUs. Variadic flags are kept, since the
+ *  schema can't tell `--fast` (zero values allowed) from one that needs a value. */
 export function dropValuelessArgs(args: string[], schema: ComfyArgsSchema): string[] {
   const needsValue = new Set(schema.args.filter((a) => a.type === 'value').map((a) => a.name))
   return args.filter((arg, i) => {

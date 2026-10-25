@@ -256,12 +256,11 @@ function coreBetaLogRecord(
 /**
  * Assemble the spawn args and resolve this launch's Core beta grants.
  *
- * User args pass through untouched: grants are additive, so the only things that ever remove a
- * user token are the running core's args schema and a single-value flag left with no value.
- * Grants are selected against the UNFILTERED user args — so a grant conflicting with a token this
- * core cannot parse is still suppressed — then passed through that same schema filter so a core
- * predating a flag never sees it. Ordering is fixed: prefix, desktop feature flags, Desktop's
- * assets arg, beta grants, user args.
+ * User args pass through untouched: grants are additive, so the only thing that ever removes a
+ * user token is the running core's args schema. Grants are selected against the UNFILTERED user
+ * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
+ * passed through that same schema filter so a core predating a flag never sees it. Ordering is
+ * fixed: prefix, desktop feature flags, Desktop's assets arg, beta grants, user args.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
