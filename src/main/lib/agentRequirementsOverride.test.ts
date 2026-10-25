@@ -216,14 +216,25 @@ describe('installedConstraints', () => {
       { name: 'Nodejs_Wheel_Binaries', version: '24.19.0' }
     ])
 
-  it("holds every installed package but the agent's own at its installed version", () => {
-    expect(installedConstraints(LIST)).toBe('requests==2.32.0\nmy-node-dep==0.1.0\n')
+  it("keeps every installed package but the agent's own from moving below its installed version", () => {
+    expect(installedConstraints(LIST)).toBe('requests>=2.32.0\nmy-node-dep>=0.1.0\n')
+  })
+
+  it('lets a package the agent needs newer move up, and holds a local build exactly', () => {
+    const list = JSON.stringify([
+      { name: 'blake3', version: '1.0.8' },
+      { name: 'torch', version: '2.8.0+cpu' }
+    ])
+    expect(
+      installedConstraints(list),
+      'comfy-cli 1.23.0 needs blake3>=1.0.9; uv refuses >= on a local version'
+    ).toBe('blake3>=1.0.8\ntorch==2.8.0+cpu\n')
   })
 
   it('finds the list among the lines uv prints on stderr, before or after it', () => {
     const after = `${JSON.stringify([{ name: 'requests', version: '2.32.0' }])}\nwarning: cache is stale\n`
-    expect(installedConstraints(LIST)).toContain('requests==2.32.0')
-    expect(installedConstraints(after)).toBe('requests==2.32.0\n')
+    expect(installedConstraints(LIST)).toContain('requests>=2.32.0')
+    expect(installedConstraints(after)).toBe('requests>=2.32.0\n')
   })
 
   it('cannot be read from anything but a list of named, versioned packages', () => {
@@ -627,14 +638,14 @@ describe('the frontend package', () => {
     })
   })
 
-  it('is held where it is unless this override pins it', () => {
+  it('cannot move below where it is unless this override pins it', () => {
     const list = JSON.stringify([
       { name: 'comfyui-frontend-package', version: '1.55.18' },
       { name: 'requests', version: '2.32.0' }
     ])
-    expect(installedConstraints(list)).toBe('comfyui-frontend-package==1.55.18\nrequests==2.32.0\n')
+    expect(installedConstraints(list)).toBe('comfyui-frontend-package>=1.55.18\nrequests>=2.32.0\n')
     expect(installedConstraints(list, pins({ 'comfyui-frontend-package': '1.55.19' }))).toBe(
-      'requests==2.32.0\n'
+      'requests>=2.32.0\n'
     )
   })
 
@@ -693,7 +704,7 @@ describe('the agent package name and extras', () => {
     expect(
       installedConstraints(list, pins({ 'comfy-agent': '0.2.3' }), 'comfy-agent-oss==0.2.0\n'),
       'comfy-agentx is held; the agent is not'
-    ).toBe('comfy-agentx==1.0\n')
+    ).toBe('comfy-agentx>=1.0\n')
   })
 
   it('refuses a version or extras with a trailing newline, without relying on a trim', () => {
@@ -727,7 +738,7 @@ describe('the agent package name and extras', () => {
       { name: 'requests', version: '2.32.0' }
     ])
     expect(installedConstraints(list, pins({ 'comfy-cli': '1.22.0' }), 'comfy-agent-oss\n')).toBe(
-      'requests==2.32.0\n'
+      'requests>=2.32.0\n'
     )
   })
 
@@ -738,10 +749,10 @@ describe('the agent package name and extras', () => {
     ])
     const core = 'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\n'
     expect(installedConstraints(list, pins({ 'comfy-agent': '0.2.3' }), core)).toBe(
-      'comfy-agent-sdk==1.0\n'
+      'comfy-agent-sdk>=1.0\n'
     )
     expect(installedConstraints(list), 'no agent file, no comfy-agent* freed').toBe(
-      'comfy-agent-oss==0.2.0\ncomfy-agent-sdk==1.0\n'
+      'comfy-agent-oss>=0.2.0\ncomfy-agent-sdk>=1.0\n'
     )
   })
 
@@ -753,7 +764,7 @@ describe('the agent package name and extras', () => {
       { name: 'comfy-agent-gox', version: '1.0' },
       { name: 'requests', version: '2.32.0' }
     ])
-    const held = 'comfy-agent-sdk==1.0\ncomfy-agent-gox==1.0\nrequests==2.32.0\n'
+    const held = 'comfy-agent-sdk>=1.0\ncomfy-agent-gox>=1.0\nrequests>=2.32.0\n'
     const parsed = parseAgentRequirementsOverride({ 'comfy-agent[go-nonfree]': '0.1.0rc3' })
     if (parsed.kind !== 'pins') throw new Error(parsed.kind)
     expect(installedConstraints(list, parsed.pins, 'comfy-agent==0.0.0.dev0\n')).toBe(held)
@@ -890,7 +901,7 @@ describe('a comfy-agent-go pin', () => {
       { name: 'requests', version: '2.32.0' }
     ])
     const core = 'comfy-agent-go==0.1.0\ncomfy-agent-oss==0.2.0\n'
-    expect(installedConstraints(list, new Map(), core)).toBe('requests==2.32.0\n')
+    expect(installedConstraints(list, new Map(), core)).toBe('requests>=2.32.0\n')
   })
 
   it('still holds every unrelated installed package', () => {
@@ -901,7 +912,7 @@ describe('a comfy-agent-go pin', () => {
       { name: 'requests', version: '2.32.0' }
     ])
     expect(installedConstraints(list, pins({ 'comfy-agent-go': '0.1.0rc4' }), CORE)).toBe(
-      'comfyui-frontend-package==1.55.18\nrequests==2.32.0\n'
+      'comfyui-frontend-package>=1.55.18\nrequests>=2.32.0\n'
     )
   })
 

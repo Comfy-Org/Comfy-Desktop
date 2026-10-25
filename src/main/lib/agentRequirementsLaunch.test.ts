@@ -990,7 +990,7 @@ describe('installAgentRequirements with a version override', () => {
       pins: new Map([['comfy-agent', '0.2.3']])
     })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1002,7 +1002,7 @@ describe('installAgentRequirements with a version override', () => {
 
     await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
-    expect(calls[0]!.constraints).toBe('requests==2.32.0\nidna==3.20+qa316\n')
+    expect(calls[0]!.constraints).toBe('requests>=2.32.0\nidna==3.20+qa316\n')
   })
 
   it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
@@ -1020,7 +1020,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
@@ -1037,7 +1037,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
@@ -1067,7 +1067,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
@@ -1103,7 +1103,7 @@ describe('installAgentRequirements with a version override', () => {
       { content: CORE_FILE, constraints: null },
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.1.9\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(
@@ -1205,7 +1205,7 @@ describe('installAgentRequirements with a version override', () => {
     })
     expect(calls, "core's file, then the override constrained by what it installed").toEqual([
       { content: CORE_FILE, constraints: null },
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1395,7 +1395,7 @@ describe('installAgentRequirements with a version override', () => {
 
     expect(decision).toMatchObject({ decision: 'applied' })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1592,7 +1592,7 @@ describe('installAgentRequirements with a version override', () => {
           plan,
           steps: [
             { text: CORE_FILE },
-            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
           ],
           signature: 'comfy-agent==0.2.3'
         },
@@ -2664,7 +2664,7 @@ describe('prefetchAgentRequirements', () => {
 
   const request = (): PrefetchRequest => ({
     plan,
-    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
     signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
   })
 
@@ -2850,13 +2850,13 @@ describe('prefetchAgentRequirements', () => {
 
     const report = await finish({
       ...request(),
-      steps: [{ ...request().steps[0]!, constraints: 'requests==2.32.0\nidna==3.20+qa316\n' }]
+      steps: [{ ...request().steps[0]!, constraints: 'requests>=2.32.0\nidna==3.20+qa316\n' }]
     })
 
     expect(
       calls[0]!.constraints,
       'no index serves it, so pinning it leaves the compile no solution'
-    ).toBe('requests==2.32.0\n')
+    ).toBe('requests>=2.32.0\n')
     expect(report).toMatchObject({ outcome: 'completed' })
     expect(calls.at(-1)!.content, 'its replacement is not fetched').toBe(
       'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
@@ -3472,7 +3472,7 @@ describe('prepareAgentPrefetch', () => {
   it("prepares the override's text and constraints, as the launch would install them", async () => {
     expect(await prepareAgentPrefetch(plan, { 'comfy-agent': '0.1.0rc3' }, null)).toEqual({
       plan,
-      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
       signature: 'comfy-agent==0.1.0rc3',
       eager: true
     })
