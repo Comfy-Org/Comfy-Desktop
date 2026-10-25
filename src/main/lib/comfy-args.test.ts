@@ -382,12 +382,24 @@ describe('dropValuelessArgs', () => {
   it.each([
     ['last with no value', ['--lowvram', '--cuda-device'], ['--lowvram']],
     ['before another flag', ['--cuda-device', '--lowvram'], ['--lowvram']],
-    ['with an empty inline value', ['--cuda-device=', '--lowvram'], ['--lowvram']],
-    ['a multi-value flag with none', ['--extra-model-paths-config', '--lowvram'], ['--lowvram']]
+    ['with an empty inline value', ['--cuda-device=', '--lowvram'], ['--lowvram']]
   ])('drops a flag that needs a value %s', (_case, args, kept) => {
     expect(dropValuelessArgs(args, schema), 'argparse exits on it, so ComfyUI never boots').toEqual(
       kept
     )
+  })
+
+  it('keeps a bare variadic flag, which may take zero values', () => {
+    const fast = parseHelpOutput(`usage: main.py [-h] [--fast [FAST ...]] [--lowvram]
+
+options:
+  --fast [FAST ...]     Enable fast optimisations; with no arguments, all of them.
+  --lowvram             Use less VRAM.
+`)
+    expect(
+      dropValuelessArgs(['--fast', '--lowvram'], fast),
+      '--fast with no values is how ComfyUI enables every fast optimisation'
+    ).toEqual(['--fast', '--lowvram'])
   })
 
   it('keeps flags that have their value, optional values and booleans', () => {

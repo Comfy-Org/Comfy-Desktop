@@ -978,15 +978,9 @@ describe('buildLaunchArgs user args', () => {
     knownFlags: new Set(['cuda-device'])
   }
 
-  it.each([
-    ['with an empty value', ['--cuda-device']],
-    ['with an empty inline value', ['--cuda-device=']]
-  ])('never passes --cuda-device %s to ComfyUI', (_case, userArgs) => {
-    const { args } = build({ userArgs, schema, betaFlags: [] })
-    expect(
-      args.filter((a) => a.startsWith('--cuda-device')),
-      'argparse would exit: "expected one argument"'
-    ).toEqual([])
+  it('never passes a --cuda-device with no value to ComfyUI', () => {
+    const { args } = build({ userArgs: ['--cuda-device'], schema, betaFlags: [] })
+    expect(args, 'argparse would exit: "expected one argument"').not.toContain('--cuda-device')
   })
 
   it('passes --cuda-device with its value through', () => {

@@ -469,12 +469,13 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Drop a flag that needs a value but has none (`--cuda-device` last or before another flag, or
- *  `--cuda-device=`): argparse would exit on it and ComfyUI would never boot. */
+/** Drop a single-value flag that has no value (`--cuda-device` last or before another flag, or
+ *  `--cuda-device=`): argparse exits on a missing value, and on an empty one for a numeric flag, so
+ *  ComfyUI would never boot. Variadic
+ *  flags are left alone, since the schema can't tell `--fast` (zero values allowed) from one
+ *  that needs at least one. */
 export function dropValuelessArgs(args: string[], schema: ComfyArgsSchema): string[] {
-  const needsValue = new Set(
-    schema.args.filter((a) => a.type === 'value' || a.type === 'multi-value').map((a) => a.name)
-  )
+  const needsValue = new Set(schema.args.filter((a) => a.type === 'value').map((a) => a.name))
   return args.filter((arg, i) => {
     if (!arg.startsWith('--')) return true
     const [name, inline] = arg.slice(2).split(/=(.*)/s)
