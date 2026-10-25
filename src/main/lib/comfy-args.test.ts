@@ -398,9 +398,14 @@ describe('dropValuelessArgs', () => {
     }
   })
 
-  it('keeps a TLS flag with no value, so ComfyUI refuses to start instead of serving plain HTTP', () => {
-    const tls =
-      parseHelpOutput(`usage: main.py [-h] [--tls-keyfile TLS_KEYFILE] [--tls-certfile TLS_CERTFILE]
+  it.each([
+    [['--tls-keyfile', '--tls-certfile', 'c.pem']],
+    [['--tls-keyfile', 'k.pem', '--tls-certfile']]
+  ])(
+    'keeps a TLS flag with no value, so ComfyUI refuses to start instead of serving plain HTTP: %j',
+    (args) => {
+      const tls =
+        parseHelpOutput(`usage: main.py [-h] [--tls-keyfile TLS_KEYFILE] [--tls-certfile TLS_CERTFILE]
 
 options:
   --tls-keyfile TLS_KEYFILE
@@ -408,9 +413,10 @@ options:
   --tls-certfile TLS_CERTFILE
                         Path to TLS (SSL) certificate file.
 `)
-    const args = ['--tls-keyfile', '--tls-certfile', 'c.pem']
-    expect(dropValuelessArgs(args, tls), 'ComfyUI enables TLS only with both files').toEqual(args)
-  })
+      expect(tls.args.map((a) => a.type)).toEqual(['value', 'value'])
+      expect(dropValuelessArgs(args, tls), 'ComfyUI enables TLS only with both files').toEqual(args)
+    }
+  )
 
   it('keeps a bare variadic flag, which may take zero values', () => {
     const fast = parseHelpOutput(`usage: main.py [-h] [--fast [FAST ...]] [--lowvram]

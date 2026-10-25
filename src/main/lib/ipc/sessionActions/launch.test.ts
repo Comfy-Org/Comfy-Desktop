@@ -979,8 +979,13 @@ describe('buildLaunchArgs user args', () => {
   }
 
   it('never passes a --cuda-device with no value to ComfyUI', () => {
-    const { args } = build({ userArgs: ['--cuda-device'], schema, betaFlags: [] })
-    expect(args, 'argparse would exit: "expected one argument"').not.toContain('--cuda-device')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema, betaFlags: [] })
+      expect(args, 'argparse would exit: "expected one argument"').not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('passes --cuda-device with its value through', () => {
