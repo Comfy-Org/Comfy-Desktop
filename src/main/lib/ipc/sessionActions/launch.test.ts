@@ -988,6 +988,24 @@ describe('buildLaunchArgs user args', () => {
     }
   })
 
+  it("drops only from the user's args, never Desktop's or a grant's", () => {
+    const valueTyped: ComfyArgsSchema = {
+      args: [
+        ...schema.args,
+        { name: 'enable-assets', flag: '--enable-assets', help: '', type: 'value', category: 'x' }
+      ],
+      knownFlags: new Set(['cuda-device', 'enable-assets'])
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema: valueTyped })
+      expect(args, 'a grant is never filtered for a missing value').toContain('--enable-assets')
+      expect(args).not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('passes --cuda-device with its value through', () => {
     const { args } = build({ userArgs: ['--cuda-device', '1'], schema, betaFlags: [] })
     expect(args.slice(-2)).toEqual(['--cuda-device', '1'])
