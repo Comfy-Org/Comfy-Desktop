@@ -40,6 +40,16 @@ sys.path.insert(0, os.path.dirname(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
+# A fetch that succeeds but brings no master: the remote's ref stays missing.
+NO_FETCH = """
+import os, runpy, sys, pygit2
+sys.argv.pop(1)
+sys.argv.pop(0)
+pygit2.Remote.fetch = lambda self, *args, **kwargs: None
+sys.path.insert(0, os.path.dirname(sys.argv[0]))
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
 # Windows: an exclusively locked file can't be read, so libgit2's restore may
 # report success while skipping it. Simulated: the restore (the second reset)
 # runs, then argv[1] is put back at the target's content and made unreadable.
@@ -220,6 +230,23 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertIn("[ERROR] Failed to fetch from origin:", r.stdout)
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+
+    def test_missing_origin_remote_leaves_the_install_untouched(self):
+        git(self.repo, "remote", "remove", "origin")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("[ERROR] This ComfyUI install has no 'origin' git remote", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("[WRITING_TARGET]", r.stdout)
+        self.assert_clean_at(self.sha["v1"], V1)
+
+    def test_origin_without_master_leaves_the_install_untouched(self):
+        git(self.repo, "update-ref", "-d", "refs/remotes/origin/master")
+        r = self.update("--stable", driver=NO_FETCH, driver_arg="-")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("[ERROR] origin has no master branch to update to.", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assert_clean_at(self.sha["v1"], V1)
 
     def test_failed_fetch_reports_no_write_and_changes_nothing(self):
         # A run that never printed [WRITING_TARGET] moved nothing; when Desktop

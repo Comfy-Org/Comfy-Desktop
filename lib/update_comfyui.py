@@ -211,6 +211,10 @@ def main():
         if remote.name == "origin":
             origin = remote
             break
+    if origin is None:
+        print("[ERROR] This ComfyUI install has no 'origin' git remote, so there is "
+              "nothing to update from.")
+        sys.exit(1)
     if origin is not None:
         force_pygit2 = os.environ.get("COMFY_FORCE_PYGIT2") == "1"
         try:
@@ -272,7 +276,11 @@ def main():
     # conflicts and stash-pop conflict markers that can corrupt working-tree
     # files (see issue #245).
     print("Resetting to origin/master…")
-    remote_ref = repo.lookup_reference("refs/remotes/origin/master")
+    try:
+        remote_ref = repo.lookup_reference("refs/remotes/origin/master")
+    except (KeyError, pygit2.GitError):
+        print("[ERROR] origin has no master branch to update to.")
+        sys.exit(1)
     remote_id = remote_ref.target
     target_id = remote_id if ref is None else ref.peel(pygit2.Commit).id
     branch = repo.lookup_branch("master")
