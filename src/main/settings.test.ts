@@ -985,6 +985,32 @@ describe('settings.json and its .bak both unreadable', () => {
     expect(readPersistedSettings()['lastSaveDialogDir']).toBe(customModels)
   })
 
+  it('readSettled never restores .bak over a write made while it was reading', async () => {
+    writeSettings({ modelsDirs: [customModels] })
+    fs.copyFileSync(settingsPath, settingsPath + '.bak')
+    fs.rmSync(settingsPath)
+    const captured = fs.readFileSync(settingsPath + '.bak', 'utf-8')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const absent = Object.assign(new Error('fake ENOENT'), { code: 'ENOENT' })
+    vi.mocked(fs.promises.readFile)
+      .mockImplementationOnce((async () => {
+        throw absent
+      }) as unknown as typeof fs.promises.readFile)
+      .mockImplementationOnce((async () => {
+        await gate
+        return captured
+      }) as unknown as typeof fs.promises.readFile)
+
+    const result = settings.readSettled()
+    await vi.advanceTimersByTimeAsync(0)
+    settings.set('lastSaveDialogDir', customModels)
+    release()
+
+    expect((await result)?.['modelsDirs']).toEqual([customModels])
+    expect(readPersistedSettings()['lastSaveDialogDir']).toBe(customModels)
+  })
+
   it('readSettled serves defaults at once when settings.json does not exist', async () => {
     fs.rmSync(settingsPath, { force: true })
     fs.rmSync(settingsPath + '.bak', { force: true })

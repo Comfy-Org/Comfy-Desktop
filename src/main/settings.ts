@@ -741,7 +741,8 @@ export async function readSettled(signal?: AbortSignal): Promise<Settings | null
     }
     if (signal?.aborted) return null
     maybeSeedFromEnv()
-    const outcome = loadOutcome(await readFileSafeAsync(dataPath))
+    // No `.bak` restore: a set() during the read would be overwritten by the late copy.
+    const outcome = loadOutcome(await readFileSafeAsync(dataPath, { restore: false }))
     if (!outcome.defaultsOnly) return outcome.settings
   }
   return null

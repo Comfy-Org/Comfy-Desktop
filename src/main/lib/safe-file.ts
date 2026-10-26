@@ -291,14 +291,17 @@ export async function writeFileSafeAsync(
 /** Async twin of `readFileSafe` - same `.bak` and tri-state semantics: retry
  *  transient locks, restore `.bak` over the primary only when the primary is
  *  genuinely absent, and report `unreadable` rather than absent when a file
- *  exists but cannot be read. */
-export async function readFileSafeAsync(filePath: string): Promise<SafeReadOutcome> {
+ *  exists but cannot be read. `restore: false` as for `readFileSafe`. */
+export async function readFileSafeAsync(
+  filePath: string,
+  options: { restore?: boolean } = {}
+): Promise<SafeReadOutcome> {
   const primary = await readFileWithRetryAsync(filePath)
   if (primary.kind === 'data') return primary
 
   const bakPath = filePath + '.bak'
   const { outcome, restoreBak } = resolveBakFallback(primary, await readFileWithRetryAsync(bakPath))
-  if (restoreBak) {
+  if (restoreBak && options.restore !== false) {
     try {
       await fs.promises.copyFile(bakPath, filePath)
     } catch {}
