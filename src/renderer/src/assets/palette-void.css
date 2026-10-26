@@ -25,6 +25,8 @@
 
 /* ── 1. Variables ──────────────────────────────────────────────────── */
 :root.palette-void[data-theme='dark'],
+/* Anywhere else, including an element that sets data-theme itself
+ * (BrandBackground): `:not(:root)` out-ranks its legacy colours. */
 .palette-void:not(:root) {
   /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
   --neutral-950: oklch(0.13 0.004 285);
@@ -146,14 +148,23 @@
 }
 
 /* Filled primary buttons: white with near-black text. */
-:is(:root.palette-void, .palette-void)
-  :is(button.primary, button.brand-secondary, .dlm-btn-primary) {
+:is(:root.palette-void, .palette-void) :is(button.primary, .dlm-btn-primary) {
   color: var(--on-accent);
 }
-:is(:root.palette-void, .palette-void)
-  :is(button.primary, button.brand-secondary):hover:not(:disabled) {
+:is(:root.palette-void, .palette-void) button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+/* The brand secondary beside a white primary: the design system's quiet
+ * secondary button. */
+:is(:root.palette-void, .palette-void) button.brand-secondary {
+  border-color: var(--color-border-default);
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+:is(:root.palette-void, .palette-void) button.brand-secondary:hover:not([disabled]) {
+  border-color: var(--color-border-strong);
+  background: var(--color-secondary-background-hover);
 }
 
 /* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
@@ -382,4 +393,11 @@
 :is(:root.palette-void, .palette-void) .context-menu-separator {
   margin: 4px -4px;
   background: var(--color-border-default);
+}
+
+/* ── 9. Dialogs: the design system's 16px panel ────────────────────── */
+:is(:root.palette-void, .palette-void)
+  :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
+  border-color: var(--color-border-default);
+  border-radius: var(--radius-panel);
 }
