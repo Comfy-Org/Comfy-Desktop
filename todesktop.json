@@ -53,7 +53,10 @@
   },
   "linux": {
     "icon": "./assets/Comfy_Logo_x512.png",
-    "category": "AudioVideo;Graphics;3DGraphics;"
+    "category": "AudioVideo;Graphics;3DGraphics;",
+    "deb": {
+      "additionalDepends": ["libasound2 | libasound2t64", "libgbm1"]
+    }
   },
   "targetOverrides": {
     "windows": {
