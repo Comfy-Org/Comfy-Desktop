@@ -40,7 +40,6 @@ sys.path.insert(0, os.path.dirname(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
-# A fetch that succeeds but brings no master: the remote's ref stays missing.
 NO_FETCH = """
 import os, runpy, sys, pygit2
 sys.argv.pop(1)
