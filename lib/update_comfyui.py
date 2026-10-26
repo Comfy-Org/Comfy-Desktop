@@ -211,10 +211,6 @@ def main():
         if remote.name == "origin":
             origin = remote
             break
-    if origin is None:
-        print("[ERROR] This ComfyUI install has no 'origin' git remote, so there is "
-              "nothing to update from.")
-        sys.exit(1)
     if origin is not None:
         force_pygit2 = os.environ.get("COMFY_FORCE_PYGIT2") == "1"
         try:
@@ -244,6 +240,10 @@ def main():
                 else:
                     print("Check your internet connection and try again.")
                 sys.exit(1)
+    else:
+        print("[ERROR] This ComfyUI install has no 'origin' git remote, so there is "
+              "nothing to update from.")
+        sys.exit(1)
 
     # Resolve the tag before anything moves, so a missing tag exits untouched.
     ref = None
