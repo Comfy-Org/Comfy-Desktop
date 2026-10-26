@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Code, Palette } from 'lucide-vue-next'
+import { Code, Palette, Sparkles } from 'lucide-vue-next'
 import ModeSwitch from '../parts/ModeSwitch.vue'
 import DetailSheet from '../parts/DetailSheet.vue'
 import LaunchOverlay from '../parts/LaunchOverlay.vue'
@@ -9,6 +9,7 @@ import WorkspaceMenu from '../parts/WorkspaceMenu.vue'
 import DeployDialog from '../parts/env/DeployDialog.vue'
 import DeployToolDialog from '../parts/space/DeployToolDialog.vue'
 import NewSpaceFlow from '../parts/space/NewSpaceFlow.vue'
+import AgentNav from '../parts/agent/AgentNav.vue'
 import ModeNav from '../parts/env/ModeNav.vue'
 import SidebarGroup from '../parts/env/SidebarGroup.vue'
 import SpacesGroup from '../parts/space/SpacesGroup.vue'
@@ -23,17 +24,20 @@ import { can, landingPage } from '../milestones'
  *   6    Create / Build: the Builder's lens to ship builds as APIs
  *   8    Projects take the builds' place in the sidebar group
  *   9    Spaces, under the projects
+ *   10   Agent: a third lens, with its own sidebar of chats
  * The workspace switcher sits at the sidebar's foot. Admin (usage, billing,
  * people, …) lives in its menu.
  */
 const mode = computed({
   get: () => proto.mode,
-  set: (m: Mode) => goIn(m, m === 'build' ? 'build-overview' : landingPage())
+  set: (m: Mode) =>
+    goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
 })
-const MODES = [
-  { value: 'create', label: 'Create', icon: Palette },
-  { value: 'build', label: 'Build', icon: Code }
-] as const satisfies { value: Mode; label: string; icon: unknown }[]
+const MODES = computed(() => [
+  { value: 'create' as Mode, label: 'Create', icon: Palette },
+  { value: 'build' as Mode, label: 'Build', icon: Code },
+  ...(can.value.agent ? [{ value: 'agent' as Mode, label: 'Agent', icon: Sparkles }] : [])
+])
 </script>
 
 <template>
@@ -46,7 +50,8 @@ const MODES = [
         <ModeSwitch v-model="mode" :options="MODES" />
       </div>
 
-      <ModeNav v-if="can.home || proto.mode === 'build'" :mode="proto.mode" />
+      <AgentNav v-if="proto.mode === 'agent'" />
+      <ModeNav v-else-if="can.home || proto.mode === 'build'" :mode="proto.mode" />
       <!-- The builds (or projects). New users have none yet (Home walks them
            through). -->
       <SidebarGroup v-if="proto.mode === 'create' && !proto.fresh" />

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import StartPaths from '../../parts/StartPaths.vue'
 import Greeting from '../../parts/Greeting.vue'
+import PromptBox from '../../parts/PromptBox.vue'
 import LaunchesRow from '../../parts/LaunchesRow.vue'
 import QuickLaunch from '../../parts/QuickLaunch.vue'
 import RecentWork from '../../parts/RecentWork.vue'
@@ -16,7 +17,7 @@ import { can } from '../../milestones'
  * Home (Milestone 4). First run: example workflows to run and where to run
  * them (Comfy Cloud or this computer). Returning: open ComfyUI in a recent
  * build, example workflows, and what you used recently. What's new joins
- * with Explore (Milestone 5).
+ * with Explore (Milestone 5); the agent's prompt box with Agent (10).
  */
 // ComfyUI always; Deploy with the Builder, once there's a build to deploy.
 const actions = computed(() => [
@@ -60,6 +61,7 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
         <StartPaths v-if="noLocal" />
         <template v-else>
           <Greeting />
+          <PromptBox v-if="can.agent" target />
           <QuickLaunch />
         </template>
       </div>

@@ -23,6 +23,9 @@ import { proto, type Page } from './useProto'
  *                   build; Workflows, Apps and Assets libraries.
  *   9  Spaces     - future: isolated, branded client spaces the studio
  *                   publishes apps and workflows into (admin / client view).
+ *  10  Agent      - future: a third lens beside Create and Build, where an
+ *                   agent makes workflows and apps from a prompt; Home
+ *                   gains the prompt box.
  */
 export const MILESTONES = [
   { value: '0', label: '0 · Today (main)' },
@@ -34,7 +37,8 @@ export const MILESTONES = [
   { value: '6', label: '6 · Builder' },
   { value: '7', label: '7 · One window' },
   { value: '8', label: '8 · Projects (future)' },
-  { value: '9', label: '9 · Spaces (future)' }
+  { value: '9', label: '9 · Spaces (future)' },
+  { value: '10', label: '10 · Agent (future)' }
 ]
 
 /** What the current milestone has. */
@@ -51,7 +55,8 @@ export const can = computed(() => {
     builder: m >= 6,
     oneWindow: m >= 7,
     projects: m >= 8,
-    spaces: m >= 9
+    spaces: m >= 9,
+    agent: m >= 10
   }
 })
 
