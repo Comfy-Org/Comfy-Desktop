@@ -93,6 +93,12 @@ export function buildElectronApi(): ElectronApi {
     // Running
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
     focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
+    listInstallWorkflows: (installationId, request) =>
+      ipcRenderer.invoke('install-contents:list-workflows', installationId, request),
+    listInstallModels: (installationId, request) =>
+      ipcRenderer.invoke('install-contents:list-models', installationId, request),
+    listInstallNodes: (installationId, request) =>
+      ipcRenderer.invoke('install-contents:list-nodes', installationId, request),
 
     // Interactive console
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),

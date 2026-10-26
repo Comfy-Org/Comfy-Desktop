@@ -1260,6 +1260,75 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+// --- Install contents (the Builds dashboard's tabs) ---
+
+/** A page request for one of a build's listings. */
+export interface InstallContentsRequest {
+  /** Case-insensitive substring filter on the item's name. */
+  query?: string
+  sort?: 'modified' | 'name'
+  /** Opaque cursor from the previous page's `nextCursor`. */
+  cursor?: string
+  /** Page size, at most 500. */
+  limit?: number
+  /** Keep one of the listing's `facets`, by value. */
+  filter?: string
+}
+
+/** One choice of a listing's filter row, with how many items it keeps. */
+export interface InstallContentsFacet {
+  value: string
+  count: number
+}
+
+/** One page of a build's listing. Handlers read up to a cap, filter, sort, then
+ *  page; `truncated` means the cap was hit, so `total` is a lower bound. */
+export type InstallContentsPage<T> =
+  | {
+      ok: true
+      items: T[]
+      nextCursor: string | null
+      total: number
+      truncated: boolean
+      /** The provider manages these items (Comfy Cloud's node packs). */
+      managed?: true
+      /** The filter row's choices, counted before `filter` applies. */
+      facets?: InstallContentsFacet[]
+    }
+  | { ok: false; message: string; signedOut?: true }
+
+export interface InstallWorkflow {
+  /** Path inside the workflows folder, e.g. `portraits/hero.json`. */
+  path: string
+  name: string
+  /** Sub-folder inside the workflows folder, or '' at its root. */
+  folder: string
+  size: number
+  /** Epoch ms of the last save. */
+  modifiedAt: number
+}
+
+export interface InstallModel {
+  /** File name, or its path inside the type folder. */
+  name: string
+  /** The model type (the folder ComfyUI reads it from), e.g. `checkpoints`. */
+  folder: string
+  size: number
+  /** Epoch ms of the last change, when known. */
+  modifiedAt?: number
+  /** Comfy Cloud's public catalog, not the user's own upload. */
+  public?: boolean
+}
+
+export interface InstallNodePack {
+  id: string
+  name: string
+  version?: string
+  enabled: boolean
+  /** How many nodes the pack adds, when known (Comfy Cloud). */
+  nodeCount?: number
+}
+
 // --- IPC API interface ---
 export interface ElectronApi {
   /** Host OS — set synchronously by the preload from `process.platform`.
@@ -1405,6 +1474,20 @@ export interface ElectronApi {
    *  to `true` when a window (or external process window) was focused,
    *  `false` when none exists. */
   focusComfyWindow(installationId: string): Promise<boolean>
+
+  // Install contents (the Builds dashboard's tabs)
+  listInstallWorkflows(
+    installationId: string,
+    request: InstallContentsRequest
+  ): Promise<InstallContentsPage<InstallWorkflow>>
+  listInstallModels(
+    installationId: string,
+    request: InstallContentsRequest
+  ): Promise<InstallContentsPage<InstallModel>>
+  listInstallNodes(
+    installationId: string,
+    request: InstallContentsRequest
+  ): Promise<InstallContentsPage<InstallNodePack>>
 
   // Interactive console (per-installation shell, shared across windows)
   /** Spawn the install's shell if needed, subscribe this surface, and return

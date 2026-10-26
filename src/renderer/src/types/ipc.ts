@@ -76,6 +76,12 @@ export type {
   CloudPage,
   Workspace,
   InstallBuildResult,
+  InstallContentsRequest,
+  InstallContentsFacet,
+  InstallContentsPage,
+  InstallWorkflow,
+  InstallModel,
+  InstallNodePack,
   ElectronApi
 } from '../../../types/ipc'
 export { REQUIRES_STOPPED } from '../../../types/ipc'
