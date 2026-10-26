@@ -1026,7 +1026,7 @@ describe('settings.json and its .bak both unreadable', () => {
   })
 
   it('reports first use as completed instead of reopening onboarding', () => {
-    writeSettings({ firstUseCompleted: true })
+    writeSettings({ firstUseCompleted: false })
     locked.add(settingsPath).add(settingsPath + '.bak')
 
     expect(settings.get('firstUseCompleted')).toBe(true)
@@ -1034,6 +1034,7 @@ describe('settings.json and its .bak both unreadable', () => {
 
   it('still reports an unfinished first use from a readable .bak', () => {
     writeSettings({ firstUseCompleted: false })
+    fs.writeFileSync(settingsPath, JSON.stringify({ firstUseCompleted: true }))
     locked.add(settingsPath)
 
     expect(settings.get('firstUseCompleted')).toBe(false)

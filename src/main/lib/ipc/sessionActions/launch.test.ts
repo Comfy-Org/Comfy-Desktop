@@ -1303,6 +1303,7 @@ describe('core beta report placement', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    launchHarness.waitForUrl = null
     fs.rmSync(installDir, { recursive: true, force: true })
   })
 
@@ -1365,17 +1366,24 @@ describe('core beta report placement', () => {
       expect(spawned).toBe(false)
     })
 
-    it('does not wait for settings for a command with no args (Remote, Cloud)', async () => {
-      launchHarness.launchCommand = { ...launchHarness.launchCommand, args: undefined }
+    it('does not wait for settings for a Remote or Cloud connection', async () => {
+      launchHarness.launchCommand = {
+        remote: true,
+        url: 'http://127.0.0.1:8188/',
+        host: '127.0.0.1',
+        port: '8188'
+      }
+      // The remote server answers at once: no real request leaves the test.
+      launchHarness.waitForUrl = async () => {}
       let reads = 0
       launchHarness.readSettled = async () => {
         reads++
         return null
       }
 
-      const res = await handleLaunch(ctxFor('harness-settings-no-args'))
+      const res = await handleLaunch(ctxFor('harness-settings-remote'))
 
-      expect(res).not.toEqual({ ok: false, message: i18nModule.t('errors.settingsUnreadable') })
+      expect(res.ok).toBe(true)
       expect(reads).toBe(0)
     })
 
