@@ -2,7 +2,8 @@ import { WebContentsView, ipcMain } from 'electron'
 import path from 'path'
 import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
-import { get as getSetting } from '../settings'
+import { get as getSetting, isRolloutEnabled } from '../settings'
+import { ROLLOUT_QUERY_PARAM } from '../../shared/rolloutFlags'
 import { TITLEBAR_BG } from '../lib/theme'
 import { TITLEBAR_HEIGHT, titleBarOverlayForTheme } from '../lib/titleBarOverlay'
 import {
@@ -96,7 +97,9 @@ export function ensurePanelView(
   const panelQuery: Record<string, string> = {
     installationId: panelInstallationId,
     panel: initialPanel,
-    firstUseCompleted: String(firstUseCompleted)
+    firstUseCompleted: String(firstUseCompleted),
+    // Applies on the next window load, like the other query-seeded prefs.
+    [ROLLOUT_QUERY_PARAM.newDashboard]: String(isRolloutEnabled('newDashboardEnabled'))
   }
   // Propagate the E2E flag via the URL query (the renderer can't read process.env) so the
   // renderer-side test hooks only register when the runner opted in.
