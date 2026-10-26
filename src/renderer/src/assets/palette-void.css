@@ -315,3 +315,71 @@
 :is(:root.palette-void, .palette-void) .settings-v2-tab.is-active .settings-v2-tab-badge {
   border-color: var(--neutral-700);
 }
+
+/* ── 8. Dashboard: account, workspace selector and the tile menu ──── */
+
+/* Account and workspace faces: ghost buttons; their menus are the design
+ * system's floating surface (12px, 4px inset, 32px rows with 8px radius).
+ * `button` matches the `.ds-root` control reset's specificity, which these
+ * rules then win by coming later. */
+:is(:root.palette-void, .palette-void)
+  :is(button.account-chip__face, button.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-ui);
+}
+:is(:root.palette-void, .palette-void) :is(.account-chip__email, .workspace-selector__name) {
+  font-size: var(--text-ui);
+}
+:is(:root.palette-void, .palette-void)
+  :is(.account-chip__face, .workspace-selector__face):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-secondary-background);
+}
+/* Signed out: the one white call to action, like the design system's
+ * primary button. */
+:is(:root.palette-void, .palette-void) .account-chip__face.account-chip__signin {
+  height: 28px;
+  padding-inline: 10px;
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+:is(:root.palette-void, .palette-void)
+  .account-chip__face.account-chip__signin:hover:not(:disabled) {
+  background: var(--color-inverted-background-hover);
+}
+:is(:root.palette-void, .palette-void)
+  :is(.account-chip__menu, .workspace-selector__menu, .context-menu),
+.context-menu.palette-void {
+  padding: 4px;
+  border-color: var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-card-background);
+  box-shadow: var(--shadow-popover);
+}
+:is(:root.palette-void, .palette-void)
+  :is(.account-chip__item, .workspace-selector__item, .context-menu-item) {
+  min-height: 32px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+}
+:is(:root.palette-void, .palette-void)
+  :is(.account-chip__item, .workspace-selector__item):hover:not(:disabled),
+:is(:root.palette-void, .palette-void) .context-menu-item:is(:hover, :focus-within):not(.disabled) {
+  background: var(--color-secondary-background);
+}
+:is(:root.palette-void, .palette-void) .context-menu-item-action {
+  padding: 6px 0 6px 10px;
+}
+:is(:root.palette-void, .palette-void) .context-menu-separator {
+  margin: 4px -4px;
+  background: var(--color-border-default);
+}

@@ -2,6 +2,7 @@
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
+import { usePaletteScope } from '../composables/usePaletteScope'
 import type { ContextMenuItem } from '../types/context-menu'
 
 const props = defineProps<{
@@ -16,6 +17,8 @@ const emit = defineEmits<{
   select: [id: string]
 }>()
 
+// Teleported, so it carries the opener's palette itself.
+const paletteScope = usePaletteScope()
 const menuRef = ref<HTMLDivElement | null>(null)
 const adjustedX = ref(0)
 const adjustedY = ref(0)
@@ -76,6 +79,7 @@ function handleClick(item: ContextMenuItem): void {
       v-if="open && items.length > 0"
       ref="menuRef"
       class="context-menu"
+      :class="paletteScope"
       :style="{ left: adjustedX + 'px', top: adjustedY + 'px' }"
     >
       <template v-for="(item, i) in items" :key="item.id">

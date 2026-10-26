@@ -5,15 +5,24 @@ import {
   AlertCircle,
   ArrowDownToLine,
   ArrowRightLeft,
+  EllipsisVertical,
   Info,
   LoaderCircle,
-  MoreVertical
+  Play,
+  SquareArrowOutUpRight
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
+import Badge from '../../design-system/components/Badge.vue'
+import Button from '../../design-system/components/Button.vue'
+import Card from '../../design-system/components/Card.vue'
+import LocationIcon from '../../design-system/components/LocationIcon.vue'
+import StatusDot from '../../design-system/components/StatusDot.vue'
+import { badgeVariants } from '../../design-system/components/badge.variants'
+import { cn } from '../../design-system/cn'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
 import type { Installation } from '../../types/ipc'
@@ -99,7 +108,12 @@ const statusClasses = computed<Record<string, boolean>>(() => ({
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
  * launching wins over running; an idle tile gets no pill. An errored
  * tile shows the clickable error badge instead (see template). */
-const statusPill = computed<{ label: string; dotClass: string; spinning?: boolean } | null>(() => {
+const statusPill = computed<{
+  label: string
+  dotClass: string
+  spinning?: boolean
+  running?: boolean
+} | null>(() => {
   if (props.isPromotingToWorkspace)
     return {
       label: 'devPlatform.workspace.promoting',
@@ -117,7 +131,11 @@ const statusPill = computed<{ label: string; dotClass: string; spinning?: boolea
   if (isLaunching.value)
     return { label: 'chooser.statusLaunching', dotClass: 'chooser-tile-status--launching' }
   if (isRunning.value)
-    return { label: 'chooser.statusRunning', dotClass: 'chooser-tile-status--running' }
+    return {
+      label: 'chooser.statusRunning',
+      dotClass: 'chooser-tile-status--running',
+      running: true
+    }
   return null
 })
 
@@ -193,8 +211,14 @@ const actionPill = computed(() => {
   return null
 })
 
+/** The hover button repeats the tile's own click, labelled with what it does. */
+const launchLabel = computed(() =>
+  isRunning.value || isLaunching.value ? t('chooser.openInstall') : t('actions.launch')
+)
+const canLaunch = computed(() => !isStopping.value && !isUpdating.value)
+
 function handleClick(): void {
-  if (isStopping.value || isUpdating.value) return
+  if (!canLaunch.value) return
   emit('pick', inst.value)
 }
 
@@ -212,11 +236,14 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 </script>
 
 <template>
-  <div
+  <Card
+    variant="elevated"
+    padding="md"
+    interactive
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install"
+    class="chooser-tile chooser-tile--install group flex min-w-0 flex-col gap-3.5"
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
@@ -225,106 +252,80 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @keydown.space.prevent="handleClick"
     @contextmenu.prevent="handleContextMenu"
   >
-    <!-- Type icon only; source/channel lives in the meta line below. A
-         build install wears the build glyph instead. -->
-    <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
-      <!-- `typeMeta` resolves the build glyph itself, so the tile, the
-           picker row and the title bar can't drift apart. -->
-      <component :is="typeMeta.icon" :size="22" />
-    </span>
-
-    <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
-    <div class="chooser-tile-actions">
-      <span
-        v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
-        class="chooser-cloud-runs-pill"
-        data-testid="chooser-cloud-runs-pill"
-        >{{ $t('firstUse.cloudFreeRunsPill') }}</span
-      >
-      <button
-        v-if="hasError"
-        type="button"
-        class="chooser-tile-error-badge"
-        :title="t('chooser.viewErrorTooltip')"
-        @click.stop="emit('view-error', inst)"
-        @keydown.enter.stop="emit('view-error', inst)"
-        @keydown.space.stop
-      >
-        <AlertCircle :size="14" />
-        {{ t('chooser.statusError') }}
-      </button>
-      <span
-        v-else-if="statusPill"
-        class="chooser-tile-pill chooser-tile-status"
-        :class="statusPill.dotClass"
-      >
-        <LoaderCircle
-          v-if="statusPill.spinning"
-          :size="12"
-          class="chooser-tile-status-spinner"
-          aria-hidden="true"
-        />
-        <span v-else class="chooser-tile-status-dot" aria-hidden="true" />
-        {{ t(statusPill.label) }}
+    <div class="flex items-start justify-between gap-2">
+      <!-- Where it runs; the install type is in the meta line and the tooltip. -->
+      <span class="chooser-tile-icon inline-flex" :title="t(typeMeta.labelKey)">
+        <LocationIcon :kind="inst.sourceCategory === 'cloud' ? 'cloud' : 'local'" :size="28" />
       </span>
-      <button
-        v-else-if="dangerTag"
-        type="button"
-        class="chooser-tile-danger-tag"
-        :title="t('chooser.viewErrorTooltip')"
-        @click.stop="emit('view-danger', inst)"
-        @keydown.enter.stop="emit('view-danger', inst)"
-        @keydown.space.stop
-      >
-        <AlertCircle :size="13" />
-        {{ dangerTag.label }}
-      </button>
-      <button
-        v-if="props.showMenu && !isUpdating"
-        type="button"
-        class="chooser-tile-kebab"
-        :title="t('chooser.moreActions')"
-        :aria-label="t('chooser.moreActions')"
-        :data-testid="TID.dashboardTileKebab(inst.id)"
-        @click.stop="emit('open-kebab-menu', $event, inst)"
-        @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
-        @keydown.enter.stop
-        @keydown.space.stop
-      >
-        <MoreVertical :size="16" />
-      </button>
-    </div>
 
-    <!-- Two lines: name, then one row with the meta facts left and the
-         action pill (update / migrate) pinned right. -->
-    <div class="chooser-tile-body">
-      <div class="chooser-tile-name-row">
-        <TruncatedText class="chooser-tile-name" :text="inst.name" />
-        <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
-          <button
-            type="button"
-            class="chooser-tile-why-cloud"
-            :aria-label="t('firstUse.whyTryCloud')"
-            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
-            @click.stop="emit('why-cloud')"
-            @keydown.enter.stop
-            @keydown.space.stop
-          >
-            <Info :size="14" />
-          </button>
-        </Tooltip>
-      </div>
-      <div v-if="metaLine || actionPill" class="chooser-tile-footer">
-        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-          <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
-          <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
-          <span v-if="trailingFact" class="chooser-tile-meta-version">{{ trailingFact }}</span>
-        </TruncatedText>
-        <!-- Action pill; pinned right by its own margin, never truncates. -->
+      <!-- Lifecycle indicator, update / migrate action and kebab. Status pill is
+         click-through; error badge opens details. -->
+      <div class="chooser-tile-actions flex min-w-0 items-center gap-1">
+        <Badge
+          v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+          variant="outline"
+          class="chooser-cloud-runs-pill"
+          data-testid="chooser-cloud-runs-pill"
+          >{{ $t('firstUse.cloudFreeRunsPill') }}</Badge
+        >
+        <button
+          v-if="hasError"
+          type="button"
+          :class="
+            cn(
+              badgeVariants({ variant: 'danger' }),
+              'chooser-tile-error-badge outline-none focus-visible:ring-2 focus-visible:ring-border-focus'
+            )
+          "
+          :title="t('chooser.viewErrorTooltip')"
+          @click.stop="emit('view-error', inst)"
+          @keydown.enter.stop="emit('view-error', inst)"
+          @keydown.space.stop
+        >
+          <AlertCircle :size="12" />
+          {{ t('chooser.statusError') }}
+        </button>
+        <Badge
+          v-else-if="statusPill"
+          class="chooser-tile-pill chooser-tile-status"
+          :class="statusPill.dotClass"
+        >
+          <LoaderCircle
+            v-if="statusPill.spinning"
+            :size="11"
+            class="chooser-tile-status-spinner animate-spin motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <StatusDot v-else :status="statusPill.running ? 'running' : 'busy'" />
+          {{ t(statusPill.label) }}
+        </Badge>
+        <button
+          v-else-if="dangerTag"
+          type="button"
+          :class="
+            cn(
+              badgeVariants({ variant: 'danger' }),
+              'chooser-tile-danger-tag max-w-full min-w-0 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-border-focus'
+            )
+          "
+          :title="t('chooser.viewErrorTooltip')"
+          @click.stop="emit('view-danger', inst)"
+          @keydown.enter.stop="emit('view-danger', inst)"
+          @keydown.space.stop
+        >
+          <AlertCircle :size="12" class="shrink-0" />
+          <span class="truncate">{{ dangerTag.label }}</span>
+        </button>
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <span
-            class="chooser-tile-pill"
-            :class="[actionPill.pillClass, { 'chooser-tile-pill-disabled': isStoppedActionGated }]"
+            :class="
+              cn(
+                badgeVariants(),
+                'chooser-tile-pill text-base-foreground outline-none hover:bg-secondary-background-hover focus-visible:ring-2 focus-visible:ring-border-focus',
+                actionPill.pillClass,
+                isStoppedActionGated && 'chooser-tile-pill-disabled cursor-not-allowed opacity-40'
+              )
+            "
             role="button"
             tabindex="0"
             :aria-disabled="isStoppedActionGated || undefined"
@@ -336,66 +337,72 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             {{ actionPill.label }}
           </span>
         </Tooltip>
+        <Button
+          v-if="props.showMenu && !isUpdating"
+          variant="ghost"
+          size="icon-sm"
+          class="chooser-tile-kebab"
+          :title="t('chooser.moreActions')"
+          :aria-label="t('chooser.moreActions')"
+          :data-testid="TID.dashboardTileKebab(inst.id)"
+          @click.stop="emit('open-kebab-menu', $event, inst)"
+          @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          <EllipsisVertical :size="14" />
+        </Button>
       </div>
     </div>
-  </div>
+
+    <!-- Name, then the meta facts. -->
+    <div class="chooser-tile-body min-w-0">
+      <div class="chooser-tile-name-row flex min-w-0 items-center gap-1.5">
+        <TruncatedText
+          class="chooser-tile-name min-w-0 text-heading font-semibold"
+          :text="inst.name"
+        />
+        <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            class="chooser-tile-why-cloud"
+            :aria-label="t('firstUse.whyTryCloud')"
+            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
+            @click.stop="emit('why-cloud')"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <Info :size="14" />
+          </Button>
+        </Tooltip>
+      </div>
+      <TruncatedText
+        v-if="metaLine"
+        class="chooser-tile-meta-line max-w-full min-w-0 text-ui text-muted-foreground"
+        :text="metaLine"
+      >
+        <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
+        <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep"> · </span>
+        <span v-if="trailingFact" class="chooser-tile-meta-version">{{ trailingFact }}</span>
+      </TruncatedText>
+    </div>
+
+    <!-- Launch on hover; the tile itself launches on click too. -->
+    <div class="chooser-tile-footer mt-auto flex min-h-7 items-center justify-end">
+      <Button
+        v-if="canLaunch"
+        size="sm"
+        tabindex="-1"
+        class="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+        @click.stop="handleClick"
+        @keydown.enter.stop
+        @keydown.space.stop
+      >
+        <SquareArrowOutUpRight v-if="isRunning" :size="12" />
+        <Play v-else :size="12" />
+        {{ launchLabel }}
+      </Button>
+    </div>
+  </Card>
 </template>
-
-<style scoped>
-@import './chooser-tiles.css';
-
-.chooser-tile-name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.chooser-tile-name-row .truncated-text {
-  min-width: 0;
-}
-.chooser-tile-name-row :deep(.tooltip-wrap) {
-  flex: 0 0 auto;
-}
-
-.chooser-tile-why-cloud {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  opacity: 0.7;
-  cursor: pointer;
-  transition:
-    color 100ms ease,
-    opacity 100ms ease;
-}
-.chooser-tile-why-cloud:hover,
-.chooser-tile-why-cloud:focus-visible {
-  color: var(--comfy-yellow);
-  opacity: 1;
-}
-.chooser-tile-why-cloud:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.chooser-cloud-runs-pill {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--comfy-yellow);
-  color: var(--neutral-900);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: normal;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-</style>
