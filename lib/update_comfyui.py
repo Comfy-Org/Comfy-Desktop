@@ -278,7 +278,7 @@ def main():
     print("Resetting to origin/master…")
     try:
         remote_ref = repo.lookup_reference("refs/remotes/origin/master")
-    except (KeyError, pygit2.GitError):
+    except KeyError:
         print("[ERROR] origin has no master branch to update to.")
         sys.exit(1)
     remote_id = remote_ref.target
