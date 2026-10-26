@@ -60,8 +60,6 @@ interface Saved {
   spaceId: string
   fresh: boolean
   live: boolean
-  /** Which milestone of the roadmap the prototype shows (milestones.ts). */
-  milestone: number
 }
 
 function load(): Saved {
@@ -70,8 +68,7 @@ function load(): Saved {
     viewAs: 'studio',
     spaceId: 'northwind',
     fresh: false,
-    live: false,
-    milestone: 7
+    live: false
   }
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') }
@@ -90,7 +87,9 @@ export const proto = reactive({
   /** Projects (Milestone 8, set from milestones.ts). */
   projects: false,
   live: saved.live,
-  milestone: saved.milestone,
+  /** Which milestone of the roadmap the prototype shows (set from
+   *  milestones.ts). */
+  milestone: 0,
   /** The build you were last in: where ⌘⇧H goes back to. */
   lastTab: '' as string,
   page: 'overview' as Page,
@@ -144,8 +143,7 @@ watch(
     fresh: proto.fresh,
     viewAs: proto.viewAs,
     spaceId: proto.spaceId,
-    live: proto.live,
-    milestone: proto.milestone
+    live: proto.live
   }),
   (s) => localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
 )

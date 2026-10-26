@@ -41,6 +41,15 @@ export const MILESTONES = [
   { value: '10', label: '10 · Agent (future)' }
 ]
 
+// Each run of the app opens on the latest milestone; within a run (a
+// reload included) it stays on the one picked.
+const MILESTONE_KEY = 'comfy.design.milestone'
+proto.milestone = Number(sessionStorage.getItem(MILESTONE_KEY) ?? MILESTONES.at(-1)!.value)
+watch(
+  () => proto.milestone,
+  (m) => sessionStorage.setItem(MILESTONE_KEY, String(m))
+)
+
 /** What the current milestone has. */
 export const can = computed(() => {
   const m = proto.milestone
