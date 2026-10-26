@@ -1875,6 +1875,7 @@
     "cloudError": "Comfy Cloud could not load this list (error {status}). Try again.",
     "cloudUnreachable": "Comfy Cloud is not reachable. Check your connection and try again.",
     "cloudUnexpected": "Comfy Cloud sent a reply this app could not read. Try again later.",
-    "readError": "This list could not be read. Try again."
+    "readError": "This list could not be read. Try again.",
+    "assetNotFound": "This file is no longer there."
   }
 }

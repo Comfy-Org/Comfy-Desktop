@@ -101,6 +101,8 @@ import {
   type PickerOperationStatus
 } from './lib/ipc/shared'
 import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHandlers'
+import { localFoldersOf } from './lib/ipc/registerInstallContentsHandlers'
+import { handleMediaRequests, registerMediaScheme } from './lib/mediaProtocol'
 import { getSnapshotListData } from './lib/snapshots'
 import { update as updateInstallation, resolveAutoLaunchInstall } from './installations'
 import { AUTO_LAUNCH_NONE } from './settings'
@@ -1378,12 +1380,14 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
   })
 
+  registerMediaScheme()
   app.whenReady().then(async () => {
     // Open the durable global app log and install the main-process error
     // handlers before anything else runs, so the earliest console output and
     // any startup crash are captured.
     initAppLog()
     registerProcessErrorHandlers()
+    handleMediaRequests(localFoldersOf)
     // Force native surfaces (dialogs, menus) dark before any window opens (see resolveTheme).
     nativeTheme.themeSource = 'dark'
     // Bound the local crash-dump folder; Crashpad's own pruning is coarse in
