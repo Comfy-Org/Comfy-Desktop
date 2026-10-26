@@ -329,8 +329,18 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('get-models-sections', () => buildModelsPayload())
   ipcMain.handle('get-media-sections', () => buildMediaSections())
 
-  ipcMain.handle('set-setting', (_event, key: string, value: unknown) => {
+  ipcMain.handle('set-setting', (event, key: string, value: unknown) => {
     recordIpcInvocation('set-setting', { key, value })
+    // Which renderer asked: for renderer writes the settings log's stack ends here. Page name
+    // only, as the URL holds the install path. Guarded: a destroyed sender throws, and a
+    // diagnostic must never cost the write.
+    let origin = '<sender gone>'
+    try {
+      origin = event.sender.getURL().split(/[?#]/)[0]!.split('/').pop() || '<no url>'
+    } catch {
+      // keep '<sender gone>'
+    }
+    console.log(`Settings: set-setting ${JSON.stringify(key)} requested by ${origin}`)
     applySettingSet(key, value)
   })
 
