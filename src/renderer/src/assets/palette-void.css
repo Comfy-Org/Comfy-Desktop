@@ -234,3 +234,84 @@
   :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
   border-radius: var(--radius-panel);
 }
+
+/* ── 5. Desktop Settings: one surface; the tab list is a quiet nav ──── */
+:is(:root.palette-void, .palette-void) .global-settings .gs-header {
+  padding: 10px 12px 10px 20px;
+  border-bottom-color: var(--color-border-default);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-heading);
+  font-weight: 600;
+  color: var(--text);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-tabs {
+  gap: 1px;
+  padding: 8px;
+  background: transparent;
+  border-right-color: var(--color-border-default);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-tab {
+  min-height: 32px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-tab:hover {
+  background: var(--color-secondary-background);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-tab.active {
+  background: var(--color-secondary-background-hover);
+  color: var(--text);
+}
+:is(:root.palette-void, .palette-void) .global-settings .gs-close {
+  background: transparent;
+}
+:is(:root.palette-void, .palette-void)
+  .global-settings
+  :is(.gs-close:hover, .gs-close:focus-visible) {
+  background: var(--color-secondary-background);
+  border-color: transparent;
+}
+
+/* ── 6. Instance picker ────────────────────────────────────────────── */
+:is(:root.palette-void, .palette-void) .picker .picker-chip {
+  border-radius: var(--radius-control);
+  border-color: var(--color-border-default);
+  background: transparent;
+}
+:is(:root.palette-void, .palette-void) .picker .picker-chip:hover {
+  background: var(--color-secondary-background);
+}
+:is(:root.palette-void, .palette-void) .picker .picker-chip.is-active {
+  border-color: transparent;
+  background: var(--color-secondary-background-hover);
+  color: var(--text);
+}
+:is(:root.palette-void, .palette-void) .picker-row {
+  border-radius: var(--radius-control);
+}
+:is(:root.palette-void, .palette-void) .picker-row.is-active {
+  background: var(--color-secondary-background-hover);
+}
+/* Status dots ring against the surface they sit on. */
+:is(:root.palette-void, .palette-void)
+  :is(.picker-row-running-dot, .picker-row-update-dot, .picker-row-op-dot) {
+  border-color: var(--neutral-800);
+}
+
+/* ── 7. Manage: the settings tabs inside the picker ────────────────── */
+/* The active tab took the old surface colour, which is now the popup's own. */
+:is(:root.palette-void, .palette-void) .settings-v2-tab {
+  border-radius: var(--radius-control);
+}
+:is(:root.palette-void, .palette-void) .settings-v2-tab:hover {
+  background: var(--color-secondary-background);
+}
+:is(:root.palette-void, .palette-void) .settings-v2-tab.is-active {
+  background: var(--color-secondary-background-hover);
+  color: var(--text);
+}
+:is(:root.palette-void, .palette-void) .settings-v2-tab.is-active .settings-v2-tab-badge {
+  border-color: var(--neutral-700);
+}
