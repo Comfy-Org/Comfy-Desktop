@@ -987,20 +987,16 @@ describe('settings.json and its .bak both unreadable', () => {
 
   it('readSettled never restores .bak over a write made while it was reading', async () => {
     writeSettings({ modelsDirs: [customModels] })
-    fs.copyFileSync(settingsPath, settingsPath + '.bak')
     fs.rmSync(settingsPath)
-    const captured = fs.readFileSync(settingsPath + '.bak', 'utf-8')
+    const bakPath = settingsPath + '.bak'
+    const captured = fs.readFileSync(bakPath, 'utf-8')
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
-    const absent = Object.assign(new Error('fake ENOENT'), { code: 'ENOENT' })
-    vi.mocked(fs.promises.readFile)
-      .mockImplementationOnce((async () => {
-        throw absent
-      }) as unknown as typeof fs.promises.readFile)
-      .mockImplementationOnce((async () => {
-        await gate
-        return captured
-      }) as unknown as typeof fs.promises.readFile)
+    const syncBacked = vi.mocked(fs.promises.readFile).getMockImplementation()!
+    vi.mocked(fs.promises.readFile).mockImplementation(((p: fs.PathLike, opts?: unknown) =>
+      p === bakPath
+        ? gate.then(() => captured)
+        : syncBacked(p, opts as BufferEncoding)) as typeof fs.promises.readFile)
 
     const result = settings.readSettled()
     await vi.advanceTimersByTimeAsync(0)
