@@ -96,7 +96,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
   const popup = await openStartupArgs()
   // The args field is on screen (waited above), so the pill's absence is a real answer.
-  expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
+  expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`, { readOnly: true })).toBe(
     false,
   )
 })
@@ -118,6 +118,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
       const el = document.querySelector(${JSON.stringify(PILL)})
       return { text: (el.textContent || '').trim(), expanded: el.getAttribute('aria-expanded') }
     })()`,
+    { readOnly: true },
   )
   expect(pill).toEqual({ text: '+2 beta', expanded: 'false' })
 
@@ -128,6 +129,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
         row.querySelector('.ui-menu-item-label').textContent.trim(),
         row.querySelector('.ui-menu-item-detail').textContent.trim(),
       ])`,
+    { readOnly: true },
   )
   expect(rows).toEqual([
     ['--enable-agent', 'Agent'],
@@ -152,7 +154,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
     timeout: 10_000,
   })
   await popup.waitFor(
-    async () => (await popup.evaluate<boolean>('window.__betaRowFlashed === true')) === true,
+    async () => (await popup.evaluate<boolean>('window.__betaRowFlashed === true', { readOnly: true })) === true,
     { timeout: 5_000, message: 'the beta opt-in row was never flashed' },
   )
 })

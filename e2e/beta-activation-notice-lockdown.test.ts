@@ -175,7 +175,7 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
 
   // Armed in main: the grant cleared every gate and the notice is waiting on the renderer.
   expect(
-    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
+    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`, { readOnly: true })
   ).not.toBeNull()
 
   // REASON 1. The launch ended the lockdown by itself, so the anchor is back and the card is
@@ -203,7 +203,7 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
 
   // Hidden, never retired: main still holds it, so it is not spent.
   expect(
-    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
+    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`, { readOnly: true })
   ).not.toBeNull()
 
   // THE ASSERTION. Lockdown ends, and the card comes back in the SAME session — no relaunch,

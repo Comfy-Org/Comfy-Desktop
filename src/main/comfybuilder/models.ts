@@ -65,7 +65,7 @@ export interface StageModelsOptions {
 
 /** Transient-failure retry budget per model. The managed job keeps its staged
  *  bytes on error, so a retry RESUMES from the prior byte count. Integrity
- *  failures (checksum/conflict) are deterministic and never retried. */
+ *  failures and known-incomplete existing files are deterministic and never retried. */
 const MODEL_DOWNLOAD_RETRIES = 2
 
 /** Progress is forwarded to the install stepper over IPC; the managed job's
@@ -127,6 +127,12 @@ async function runModelJob(
         throw new StageModelsError(
           'model-conflict',
           `Model ${model.type}/${model.filename} conflicts with a different existing file.`
+        )
+      }
+      if (outcome.code === 'unsafe-existing-file') {
+        throw new StageModelsError(
+          'model-conflict',
+          `Model ${model.type}/${model.filename} cannot be staged: ${outcome.error}`
         )
       }
     }

@@ -61,7 +61,7 @@ async function readBetaRow(popup: WebContentsPage): Promise<BetaRowState | null>
       title: el.getAttribute('title'),
       describedText: description ? (description.textContent || '').trim() : null,
     }
-  })()`)
+  })()`, { readOnly: true })
 }
 
 /** Walk the real UI to the Privacy section: title menu -> Desktop Settings ->

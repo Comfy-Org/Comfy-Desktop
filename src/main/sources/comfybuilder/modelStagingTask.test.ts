@@ -7,6 +7,7 @@ const acquireModelDownloadRootLock = vi.hoisted(() =>
 const releaseParkedModelJobsUnder = vi.hoisted(() => vi.fn<(modelsRoot: string) => void>())
 const startManagedModelJob = vi.hoisted(() => vi.fn())
 const cancelModelDownload = vi.hoisted(() => vi.fn())
+const initializeModelDownloads = vi.hoisted(() => vi.fn(async () => {}))
 const stageModels = vi.hoisted(() => vi.fn(async (_opts: unknown) => {}))
 const resolveModelManifest = vi.hoisted(() =>
   vi.fn(async () => ({ models: [], modelPolicy: null, partnerNodePolicy: null }))
@@ -17,7 +18,8 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
   acquireModelDownloadRootLock,
   releaseParkedModelJobsUnder,
   startManagedModelJob,
-  cancelModelDownload
+  cancelModelDownload,
+  initializeModelDownloads
 }))
 vi.mock('../../comfybuilder', () => ({
   stageModels,
@@ -60,6 +62,7 @@ describe('startModelStaging', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     abortModelStaging('i1')
+    initializeModelDownloads.mockReset().mockResolvedValue(undefined)
     acquireModelDownloadRootLock.mockImplementation(() => vi.fn())
     stageModels.mockImplementation(async () => {})
     resolveModelManifest.mockImplementation(async () => ({
@@ -110,6 +113,60 @@ describe('startModelStaging', () => {
 
     expect(stageModels).not.toHaveBeenCalled()
     expect(updateInstallation).not.toHaveBeenCalled()
+  })
+
+  it('joins startup hydration before retiring parked jobs or locking the model root', async () => {
+    let finish!: () => void
+    initializeModelDownloads.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    startModelStaging(record(), [model])
+    await settle(() => expect(initializeModelDownloads).toHaveBeenCalledOnce())
+    expect(releaseParkedModelJobsUnder).not.toHaveBeenCalled()
+    expect(acquireModelDownloadRootLock).not.toHaveBeenCalled()
+    finish()
+    await settle(() =>
+      expect(updateInstallation).toHaveBeenCalledWith('i1', { modelsStaged: true })
+    )
+    expect(stageModels).toHaveBeenCalledOnce()
+  })
+
+  it('does not lock or stage if aborted while startup hydration is pending', async () => {
+    let finish!: () => void
+    const initialization = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    initializeModelDownloads.mockReturnValueOnce(initialization)
+    startModelStaging(record(), [model])
+    await settle(() => expect(initializeModelDownloads).toHaveBeenCalledOnce())
+    abortModelStaging('i1')
+    finish()
+    await initialization
+    // The task's catch/await chain resumes after the deferred promise does.
+    // Drain its resolved continuations before asserting that it did no work.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(releaseParkedModelJobsUnder).not.toHaveBeenCalled()
+    expect(acquireModelDownloadRootLock).not.toHaveBeenCalled()
+    expect(stageModels).not.toHaveBeenCalled()
+    expect(updateInstallation).not.toHaveBeenCalled()
+  })
+
+  it('continues managed staging after advisory startup hydration fails', async () => {
+    initializeModelDownloads.mockRejectedValueOnce(new Error('hydration failed'))
+    startModelStaging(record(), [model])
+    await settle(() =>
+      expect(updateInstallation).toHaveBeenCalledWith('i1', { modelsStaged: true })
+    )
+    expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+    expect(acquireModelDownloadRootLock).toHaveBeenCalledOnce()
+    expect(stageModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
+      })
+    )
   })
 
   it('releases the lock and never records completion when staging fails', async () => {
@@ -166,6 +223,7 @@ describe('restageBuildModelsIfNeeded', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     abortModelStaging('i1')
+    initializeModelDownloads.mockReset().mockResolvedValue(undefined)
     acquireModelDownloadRootLock.mockImplementation(() => vi.fn())
     stageModels.mockImplementation(async () => {})
     resolveModelManifest.mockImplementation(async () => ({

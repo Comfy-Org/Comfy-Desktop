@@ -1718,7 +1718,7 @@ describe('model download startup safety (issue #1322)', () => {
     })
     await expect(h.completion).resolves.toMatchObject({
       status: 'error',
-      error: expect.stringContaining('incomplete download is stuck')
+      error: expect.stringContaining('Close any program using the file, then press Retry')
     })
     await flush()
     // No staging, no transport, and no alreadyPresent certification of the
@@ -1729,6 +1729,143 @@ describe('model download startup safety (issue #1322)', () => {
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)
     mod._test_resetModelDownloadsInit()
+  })
+
+  it.each(['migration', 'scan'] as const)(
+    'retains %s findings when a staging lock prevents rescanning',
+    async (origin) => {
+      mod._test_resetModelDownloadsInit()
+      const root = getModelsBaseDir()
+      const name = uniqueName()
+      const dest = path.join(root, 'checkpoints', name)
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, 'truncated legacy bytes')
+      if (origin === 'migration') {
+        migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
+          finalized: [],
+          staged: [],
+          removedStaleMeta: [],
+          quarantined: [],
+          unsafe: [dest]
+        })
+      } else {
+        scanForStagedDownloads.mockResolvedValueOnce({ downloads: [], unsafeFinalPaths: [dest] })
+      }
+      expect((await mod.initializeModelDownloads()).unsafePaths).toContain(dest)
+      const release = mod.acquireModelDownloadRootLock(root)
+      expect(release).not.toBeNull()
+      const before = transfers.length
+      try {
+        const h = await mod.startManagedModelJob({
+          url: `https://host.example/${name}`,
+          filename: name,
+          directory: 'checkpoints',
+          destinationBaseDir: root,
+          bypassRootLockFor: root
+        })
+        await expect(h.completion).resolves.toMatchObject({
+          status: 'error',
+          code: 'unsafe-existing-file',
+          error: expect.stringContaining(
+            'Close any program using the file, then relaunch this installation to finish model staging'
+          )
+        })
+        expect(transfers.length).toBe(before)
+        expect(fs.readFileSync(dest, 'utf8')).toBe('truncated legacy bytes')
+
+        // The lock owner can still stage a different, safe destination.
+        const otherName = uniqueName()
+        const other = await mod.startManagedModelJob({
+          url: `https://host.example/${otherName}`,
+          filename: otherName,
+          directory: 'checkpoints',
+          destinationBaseDir: root,
+          bypassRootLockFor: root
+        })
+        await waitForTransfers(before + 1)
+        expect(mod.cancelModelDownload(other.id)).toBe(true)
+        await expect(other.completion).resolves.toEqual({ status: 'cancelled' })
+        await flush()
+      } finally {
+        release?.()
+        fs.rmSync(dest, { force: true })
+        await mod.initializeModelDownloads()
+        mod._test_resetModelDownloadsInit()
+      }
+    }
+  )
+
+  it('explains a deferred scan and permits retry after an unrelated root unlocks', async () => {
+    mod._test_resetModelDownloadsInit()
+    const name = uniqueName()
+    const dest = path.join(getModelsBaseDir(), 'checkpoints', name)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.writeFileSync(dest, 'truncated legacy bytes')
+    scanForStagedDownloads.mockResolvedValueOnce({ downloads: [], unsafeFinalPaths: [dest] })
+    expect((await mod.initializeModelDownloads()).unsafePaths).toContain(dest)
+    const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cdm-other-locked-root-'))
+    const release = mod.acquireModelDownloadRootLock(otherRoot)
+    expect(release).not.toBeNull()
+    const before = transfers.length
+    const opts = { url: `https://host.example/${name}`, filename: name, directory: 'checkpoints' }
+    try {
+      const refused = await mod.startManagedModelJob(opts)
+      await expect(refused.completion).resolves.toMatchObject({
+        status: 'error',
+        error: expect.stringContaining(
+          'wait for current model operations to finish, then press Retry'
+        )
+      })
+      expect(transfers.length).toBe(before)
+      release!()
+      // Quarantine can now run; the old partial no longer certifies presence.
+      scanForStagedDownloads.mockImplementationOnce(async () => {
+        fs.rmSync(dest, { force: true })
+        return { downloads: [], unsafeFinalPaths: [] }
+      })
+      const retried = await mod.startManagedModelJob(opts)
+      await waitForTransfers(before + 1)
+      expect(mod.cancelModelDownload(retried.id)).toBe(true)
+      await expect(retried.completion).resolves.toEqual({ status: 'cancelled' })
+      await flush()
+    } finally {
+      release?.()
+      fs.rmSync(dest, { force: true })
+      fs.rmSync(otherRoot, { recursive: true, force: true })
+      await mod.initializeModelDownloads()
+      mod._test_resetModelDownloadsInit()
+    }
+  })
+
+  it('retains known unsafe files when model roots cannot be collected', async () => {
+    mod._test_resetModelDownloadsInit()
+    const name = uniqueName()
+    const dest = path.join(getModelsBaseDir(), 'checkpoints', name)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.writeFileSync(dest, 'truncated legacy bytes')
+    scanForStagedDownloads.mockResolvedValueOnce({ downloads: [], unsafeFinalPaths: [dest] })
+    expect((await mod.initializeModelDownloads()).unsafePaths).toContain(dest)
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    overrides.collectModelScanRoots = async () => {
+      throw new Error('roots unavailable')
+    }
+    try {
+      const h = await mod.startManagedModelJob({
+        url: `https://host.example/${name}`,
+        filename: name,
+        directory: 'checkpoints'
+      })
+      await expect(h.completion).resolves.toMatchObject({
+        status: 'error',
+        error: expect.stringContaining('Close any program using the file, then press Retry')
+      })
+    } finally {
+      overrides.collectModelScanRoots = null
+      errorLog.mockRestore()
+      fs.rmSync(dest, { force: true })
+      await mod.initializeModelDownloads()
+      mod._test_resetModelDownloadsInit()
+    }
   })
 
   it('an unsafe pass does not block jobs for unrelated destinations', async () => {

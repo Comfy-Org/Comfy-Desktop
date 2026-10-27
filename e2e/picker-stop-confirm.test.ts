@@ -98,6 +98,7 @@ test.beforeEach(async () => {
     .poll(
       async () => ctx.panel.evaluate<boolean>(
         `(() => window.__e2eRenderer?.isRunning(${JSON.stringify(INSTALL_ID)}) ?? true)()`,
+        { readOnly: true },
       ),
       { timeout: 5_000, intervals: [100, 200] },
     )
@@ -127,6 +128,7 @@ async function openExpandedPicker(): Promise<void> {
   await popup.waitFor(
     async () => popup.evaluate<boolean>(
       'typeof window.__comfyTitlePopup?.pickerForwardShowProgress === "function"',
+      { readOnly: true },
     ),
     { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' },
   )

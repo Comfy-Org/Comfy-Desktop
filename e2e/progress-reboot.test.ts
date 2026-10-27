@@ -69,6 +69,7 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
   })()`)
   const seeded = await ctx.panel.evaluate<boolean>(
     `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   expect(seeded, 'seedErrorInstance must register the install in errorInstances').toBe(true)
 
@@ -94,6 +95,7 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
   // The apiCall has been invoked exactly once at this point.
   const beforeReboot = await ctx.panel.evaluate<number>(
     `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   expect(beforeReboot, 'apiCall must have run once for the seeded failure').toBe(1)
 
@@ -109,6 +111,7 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
       () =>
         ctx.panel.evaluate<number>(
           `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+          { readOnly: true },
         ),
       { timeout: 5_000, intervals: [100, 200] },
     )

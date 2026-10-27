@@ -192,7 +192,7 @@ function rowStatus(file: string): Promise<string | null> {
     if (!row) return null
     const status = Array.from(row.classList).find(c => c.startsWith('is-'))
     return status ?? ''
-  })()`)
+  })()`, { readOnly: true })
 }
 
 /** Click the control with `ariaLabel` inside the row for `file`. */

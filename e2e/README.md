@@ -109,7 +109,7 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `progress-error-overflow.test.ts` | platform | n/a | Pure UI overflow regression test. |
 | `progress-reboot.test.ts` | platform | n/a | `injectRetryableProgressError` fakes a failing operation and its retry outcome. |
 | `quit-flow.spec.ts` | `@macos` | n/a | Tray-close quit behavior. |
-| `title-bar-hover-gate-comfy-window.test.ts` | platform | n/a | Hover-gate state machine (probes cloud.comfy.org for the host window). |
+| `title-bar-hover-gate-comfy-window.test.ts` | platform | n/a | Hover-gate state machine with a test-owned loopback server and seeded Cloud record. |
 | `title-bar-hover-gate.test.ts` | platform | n/a | Hover-gate state machine. |
 | `update-pills.test.ts` | platform | n/a | Injects update states via `setAppUpdateState` / `setInstallUpdate`. |
 | `window-visible.spec.ts` | platform | n/a | Launch smoke test. |

@@ -6,7 +6,26 @@
  */
 import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
-import { evalWithRetry } from './evalRetry'
+import { evalWithRetry, isLostEvaluationResult } from './evalRetry'
+
+// Created locally only after the bridge proves that no action was dispatched.
+// An identically worded renderer exception cannot opt a mutation into retries.
+class WebContentsUnavailableError extends Error {}
+
+/** Dispatch a fixed-ID expression once, distinguishing lookup failure from a lost result. */
+export async function evaluateWebContents<T>(
+  app: ElectronApplication,
+  id: number,
+  expr: string,
+): Promise<T> {
+  const result = await app.evaluate(async ({ webContents }, payload) => {
+    const wc = webContents.fromId(payload.id)
+    if (!wc || wc.isDestroyed()) return { available: false as const }
+    return { available: true as const, value: await wc.executeJavaScript(payload.expr) as unknown }
+  }, { id, expr })
+  if (!result.available) throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+  return result.value as T
+}
 
 export function findWebContentsId(
   app: ElectronApplication,
@@ -54,18 +73,21 @@ export class WebContentsPage {
   ) {}
 
   private async wcEval<T>(expr: string): Promise<T> {
-    return this.evaluate<T>(expr)
+    return this.evaluate<T>(expr, { readOnly: true })
   }
 
-  /** Evaluate an arbitrary JS expression in the matching webContents. */
-  async evaluate<T>(expr: string): Promise<T> {
-    const id = await findWebContentsId(this.app, this.marker)
-    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-    return evalWithRetry(() => this.app.evaluate(async ({ webContents }, payload) => {
-      const wc = webContents.fromId(payload.id)
-      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-      return wc.executeJavaScript(payload.expr) as Promise<unknown>
-    }, { id, expr })) as Promise<T>
+  /** Dispatch once by default; a failed lookup can safely resolve a replacement
+   *  view. Recover a lost result only for read-only/idempotent expressions. */
+  async evaluate<T>(expr: string, opts: { readOnly?: boolean; idempotent?: boolean } = {}): Promise<T> {
+    const run = async () => {
+      const id = await findWebContentsId(this.app, this.marker)
+      if (id === null) throw new WebContentsUnavailableError(`webContents not found (marker=${this.marker})`)
+      return evaluateWebContents<T>(this.app, id, expr)
+    }
+    return evalWithRetry(run, 3, (err) => {
+      return err instanceof WebContentsUnavailableError ||
+        (!!opts.readOnly || !!opts.idempotent) && isLostEvaluationResult(err)
+    })
   }
 
   url(): Promise<string> {
@@ -110,7 +132,7 @@ export class WebContentsPage {
 
   /** Click the first matching element. Returns false if not found. */
   click(selector: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)})
       if (!el) return false
       el.click()
@@ -121,7 +143,7 @@ export class WebContentsPage {
   /** Click the nth (0-based) element matching `selector`. Returns false
    *  if fewer than `index + 1` elements match. */
   clickNth(selector: string, index: number): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const els = document.querySelectorAll(${JSON.stringify(selector)})
       const el = els[${index}]
       if (!el) return false
@@ -137,34 +159,71 @@ export class WebContentsPage {
    * `input` events - unlike assigning `.value` and dispatching synthetic
    * events, which bypasses the browser's input handling entirely.
    */
-  async fill(selector: string, text: string): Promise<void> {
-    // Each retry attempt re-focuses and re-selects before inserting so a
-    // retried insert replaces the previous attempt's text instead of
-    // appending to it, then verifies the resulting value.
-    await evalWithRetry(async () => {
-      const focused = await this.wcEval<boolean>(`(() => {
+  async fill(selector: string, text: string, opts: { timeout?: number } = {}): Promise<void> {
+    const readinessExpr = `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      return !!el && document.activeElement === el &&
+        (typeof el.select !== 'function' ||
+          (el.selectionStart === null && el.selectionEnd === null) ||
+          (el.selectionStart === 0 && el.selectionEnd === el.value.length))
+    })()`
+    let focused: boolean
+    try {
+      focused = await this.evaluate<boolean>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)})
         if (!el) return false
         el.focus()
         if (typeof el.select === 'function') el.select()
         return document.activeElement === el
       })()`)
-      if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
-      const id = await findWebContentsId(this.app, this.marker)
-      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-      await this.app.evaluate(async ({ webContents }, payload) => {
-        const wc = webContents.fromId(payload.id)
-        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-        await wc.insertText(payload.text)
-      }, { id, text })
-      const value = await this.wcEval<string | null>(`(() => {
-        const el = document.querySelector(${JSON.stringify(selector)})
-        return el && 'value' in el ? el.value : null
-      })()`)
-      if (value !== text) {
-        throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
-      }
-    })
+    } catch (err) {
+      if (!isLostEvaluationResult(err)) throw err
+      // Focus can fire handlers. Verify focus and selection rather than replaying it.
+      focused = await this.wcEval<boolean>(readinessExpr)
+      if (!focused) throw err
+    }
+    if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
+    // Do not repeat input dispatch when its result is lost: input handlers
+    // can commit settings or other effects even when the final text is equal.
+    let inputError: unknown
+    try {
+      await evalWithRetry(async () => {
+        const id = await findWebContentsId(this.app, this.marker)
+        if (id === null) throw new WebContentsUnavailableError(`webContents not found (marker=${this.marker})`)
+        const dispatched = await this.app.evaluate(async ({ webContents }, payload) => {
+          const wc = webContents.fromId(payload.id)
+          if (!wc || wc.isDestroyed()) return 'unavailable' as const
+          // The original focus may belong to a view that has since reloaded.
+          // Check this exact target without replaying focus handlers.
+          const ready = await wc.executeJavaScript(payload.readinessExpr) as unknown
+          if (ready !== true) return 'unfocused' as const
+          if (wc.isDestroyed()) return 'unavailable' as const
+          await wc.insertText(payload.text)
+          return 'dispatched' as const
+        }, { id, text, readinessExpr })
+        if (dispatched === 'unavailable') throw new WebContentsUnavailableError(`webContents ${id} is unavailable`)
+        if (dispatched === 'unfocused') throw new Error(`fill: input lost focus or selection before insertion (selector=${selector}, marker=${this.marker})`)
+      }, 3, (err) => err instanceof WebContentsUnavailableError)
+    } catch (err) {
+      if (!isLostEvaluationResult(err)) throw err
+      inputError = err
+    }
+    const readValue = () => this.wcEval<string | null>(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      return el && 'value' in el ? el.value : null
+    })()`)
+    // A lost bridge result can precede the renderer's IME commit. Wait for
+    // the observable value without dispatching text input a second time.
+    const deadline = Date.now() + (opts.timeout ?? 15_000)
+    let value = await readValue()
+    while (inputError && value !== text && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      value = await readValue()
+    }
+    if (value !== text) {
+      if (inputError) throw inputError
+      throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
+    }
   }
 
   /**
@@ -172,7 +231,7 @@ export class WebContentsPage {
    * `textSubstring` (case-insensitive). Returns false if no match.
    */
   clickByText(selector: string, textSubstring: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.evaluate<boolean>(`(() => {
       const needle = ${JSON.stringify(textSubstring.toLowerCase())}
       const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
       const match = els.find(el => (el.textContent || '').toLowerCase().includes(needle))
@@ -184,7 +243,7 @@ export class WebContentsPage {
 
   /** Press a key by dispatching a KeyboardEvent (limited; for Escape/Enter and similar). */
   pressKey(key: string): Promise<void> {
-    return this.wcEval<void>(`(() => {
+    return this.evaluate<void>(`(() => {
       const ev = new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true })
       document.dispatchEvent(ev)
     })()`)
@@ -244,7 +303,14 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
       }
-      if (state === 'closed') await this.click(trigger)
+      if (state === 'closed') {
+        try {
+          await this.click(trigger)
+        } catch (err) {
+          if (!isLostEvaluationResult(err)) throw err
+          // The click may have landed. Observe the result before another click.
+        }
+      }
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
         throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
@@ -281,10 +347,15 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`selectOption: trigger ${trigger} not found`)
       }
-      if (state === 'closed') {
-        await this.click(trigger)
-      } else {
-        await this.clickByText('.ui-select-option', optionLabel)
+      try {
+        if (state === 'closed') {
+          await this.click(trigger)
+        } else {
+          await this.clickByText('.ui-select-option', optionLabel)
+        }
+      } catch (err) {
+        if (!isLostEvaluationResult(err)) throw err
+        // Re-read selection and expansion before dispatching another click.
       }
       if (Date.now() > deadline) {
         throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)

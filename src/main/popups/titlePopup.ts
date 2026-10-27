@@ -448,13 +448,10 @@ export interface TitlePopupEntry {
    *  payload — used to compare against the next open's config to skip
    *  the renderer roundtrip when the DOM is already correct. */
   lastConfigJson: string | null
-  /** JSON of the config the renderer has acked via
-   *  `comfy-titlepopup:rendered`. When equal to the next open's
-   *  config, the popup view's DOM matches what we want to show, so
-   *  we can `setVisible(true)` immediately without resending the
-   *  config or waiting for an ack — saves one frame + two IPC hops
-   *  per open (the common case for repeated opens of the same menu
-   *  in the same window). */
+  /** Latest sent config recorded when `comfy-titlepopup:rendered` arrives.
+   *  That acknowledgement has no config token. Reuse requires both this
+   *  value and `lastConfigJson` to match the next open, so an intervening
+   *  unacknowledged config cannot be mistaken for a reusable menu. */
   lastSyncedConfigJson: string | null
   /** The instance-picker's currently-selected install (the row whose
    *  Settings + Snapshots accordions are showing in the right pane).
@@ -1422,19 +1419,16 @@ type OpenTitlePopupOpts = {
 
 /** Whether an open must re-send its config even when it matches the last
  *  synced one, bypassing `openTitlePopup`'s identical-config fast path.
- *  A non-null global-settings `initialTab` is a per-open command, not
- *  state: the renderer may have navigated off that tab since the last
- *  identical push, so the snapshot must be re-sent for the view's
- *  tab-retarget watch to fire. `highlightFieldId` is the same kind of
- *  command — a re-open asking for the same flash on an already-open popup
- *  must still reach the view. */
+ *  Global settings can change through broadcasts independently of the last
+ *  full config, and hidden popups miss subsequent broadcasts. Always refresh
+ *  that snapshot on open. This also delivers per-open tab/highlight commands
+ *  even when they match the previous config. */
 export function requiresPerOpenConfigSync(
   opts: Pick<OpenTitlePopupOpts, 'kind'> & {
     snapshot?: { initialTab?: unknown; highlightFieldId?: unknown }
   }
 ): boolean {
-  if (opts.kind !== POPUP_KIND.globalSettings) return false
-  return opts.snapshot?.initialTab != null || opts.snapshot?.highlightFieldId != null
+  return opts.kind === POPUP_KIND.globalSettings
 }
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
@@ -1555,6 +1549,9 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // open latency on the common case.
   if (
     !requiresPerOpenConfigSync(opts) &&
+    // A different config may have been sent since this acknowledgement.
+    // Reopening the acknowledged kind must supersede that pending update.
+    entry.lastConfigJson === configJson &&
     entry.lastSyncedConfigJson === configJson &&
     !entry.view.popup.webContents.isDestroyed()
   ) {
@@ -1795,19 +1792,27 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
+    snapshot: buildGlobalSettingsSnapshot(
+      cachedGlobalSettingsInstalls,
+      initialTab,
+      highlightFieldId
+    ),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
   })
+  // Hydration and star fetching settle independently: a failed broadcast
+  // must not leave the badge loading, nor may GitHub delay install options.
+  void broadcastGlobalSettingsSnapshotToTitlePopups(bindings).catch((err: unknown) =>
+    console.warn('[titlePopup] settings hydration failed:', err)
+  )
   void (async () => {
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
-    // Rebroadcast hydrates per-install options into the auto-launch
-    // dropdown (the fast-open snapshot only carries none/last).
+    // Refresh the star count independently of the install-options hydration.
     await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
-  })()
+  })().catch((err: unknown) => console.warn('[titlePopup] settings refresh failed:', err))
 }
 
 /** Open the large centred "View All Downloads" popup. Reuses the tray popup's
@@ -2137,6 +2142,7 @@ let globalSettingsLastCheckedAt: number | null = null
  *  "unavailable" and the badge is hidden. Prevents an infinite shimmer when
  *  offline. */
 let githubStarsFetchAttempted = false
+let cachedGlobalSettingsInstalls: { id: string; name: string }[] | undefined
 
 const SETTINGS_TYPE_TO_DETAIL_EDIT_TYPE: Record<string, string | undefined> = {
   text: 'text',
@@ -2270,6 +2276,7 @@ async function broadcastGlobalSettingsSnapshotToTitlePopups(
   // Load installs once so each open popup gets the same hydrated list
   // for the auto-launch dropdown — and we don't re-read the file per popup.
   const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
+  cachedGlobalSettingsInstalls = installs
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue

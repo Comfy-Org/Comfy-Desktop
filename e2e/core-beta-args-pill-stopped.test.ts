@@ -112,6 +112,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
   return popup.evaluate<string | null>(
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+    { readOnly: true },
   )
 }
 
@@ -133,6 +134,7 @@ test('shows the grants the next launch is eligible for @linux', async () => {
   await popup.clickUntilVisible(PILL, MENU, { timeout: 10_000 })
   const text = await popup.evaluate<string>(
     `document.querySelector(${JSON.stringify(MENU)}).textContent`,
+    { readOnly: true },
   )
   expect(text).toContain('Eligible for next launch')
   expect(text).toContain('--enable-asset-hashing')
@@ -148,6 +150,7 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   const checked = (): Promise<string | null> =>
     popup.evaluate<string | null>(
       `document.querySelector(${JSON.stringify(BETA_SWITCH)})?.getAttribute('aria-checked') ?? null`,
+      { readOnly: true },
     )
   expect(await checked()).toBe('true')
   expect(await popup.click(BETA_SWITCH)).toBe(true)
@@ -218,6 +221,7 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   const stored = (): Promise<unknown> =>
     ctx.panel.evaluate(
       `window.api.getInstallations().then((all) => all.find((i) => i.id === ${JSON.stringify(INSTALL_ID)})?.portConflict ?? null)`,
+      { readOnly: true },
     )
   await expect.poll(stored, { timeout: 10_000, intervals: [100, 200] }).not.toBeNull()
   // The view re-reads its sections after a save; give that re-read time to land, then count.

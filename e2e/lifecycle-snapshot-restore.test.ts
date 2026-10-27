@@ -241,6 +241,7 @@ test('seeded HEADs start at commit B (sanity) @lifecycle', async () => {
 test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', async () => {
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   expect(list.snapshots.length, 'no seeded snapshot found').toBeGreaterThan(0)
   const target = list.snapshots.find((s) => s.trigger === 'manual' && s.label === 'restore-target')
@@ -272,6 +273,7 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', a
       async () =>
         popup.evaluate<boolean>(
           `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`,
+          { readOnly: true },
         ),
       { timeout: 60_000, intervals: [500, 1_000] },
     )
@@ -299,6 +301,7 @@ test('restore captures a post-restore snapshot @lifecycle', async () => {
       async () =>
         ctx.panel.evaluate<SnapshotListResult>(
           `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+          { readOnly: true },
         ),
       { timeout: 10_000, intervals: [200, 500] },
     )
@@ -334,6 +337,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   // the file header.
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+    { readOnly: true },
   )
   const target = list.snapshots.find((s) => s.trigger === 'manual' && s.label === 'current-state')
   expect(target, 'seeded current-state snapshot missing from list').toBeDefined()
@@ -370,6 +374,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   // Fast local restores may already be latched in success by the first read.
   const labelText = await popup.evaluate<string>(
     `document.querySelector('.snapshots-rail-node.is-save .snapshots-rail-label')?.textContent ?? ''`,
+    { readOnly: true },
   )
   expect(labelText.trim()).toMatch(/Restoring snapshot|Snapshot restored/i)
 
@@ -380,6 +385,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
       async () =>
         popup.evaluate<boolean>(
           `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`,
+          { readOnly: true },
         ),
       { timeout: 60_000, intervals: [500, 1_000] },
     )
@@ -391,6 +397,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
       async () =>
         popup.evaluate<boolean>(
           `!!document.querySelector('.snapshots-rail-cta')`,
+          { readOnly: true },
         ),
       { timeout: 8_000, intervals: [200, 400] },
     )
@@ -400,6 +407,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   expect(
     await popup.evaluate<boolean>(
       `!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`,
+      { readOnly: true },
     ),
   ).toBe(false)
 })
