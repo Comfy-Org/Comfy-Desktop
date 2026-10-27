@@ -10,7 +10,7 @@ import {
 import { prototypeGroups, setPrototypeOption } from './prototypeOptions'
 import { buildState, openInNewWindow } from './buildTabs'
 import { landingPage } from './milestones'
-import { appsProto, closeAppTab, tabApp } from './appFlow'
+import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
 
 /**
@@ -96,10 +96,8 @@ export const titleBarState = computed<TitleBarState>(() => ({
       }
     }),
   apps: appsProto.tabs.flatMap((id) => {
-    const { app, visitor } = tabApp(id)
-    return app
-      ? [{ id, name: visitor ? `${app.name} · visitor` : app.name, thumb: thumb(app.thumbId) }]
-      : []
+    const app = libApp(id)
+    return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),
   appFront: appsProto.front || null,
   options: prototypeGroups.value.map((g) => ({

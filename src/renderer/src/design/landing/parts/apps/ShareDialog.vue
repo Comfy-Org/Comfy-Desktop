@@ -11,6 +11,7 @@ import Select from '../../ui/Select.vue'
 import Switch from '../../ui/Switch.vue'
 import { cn } from '../../ui/cn'
 import MemberAvatar from '../MemberAvatar.vue'
+import PreviewAsMenu from './PreviewAsMenu.vue'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { copyLink, dialogs, libApp, usd, type Person } from '../../appFlow'
@@ -210,7 +211,10 @@ const ROLES = [
       </div>
 
       <div class="flex items-center justify-between border-t border-border-default px-6 py-4">
-        <Button variant="ghost" @click="copyLink(app)"><Copy :size="13" />Copy link</Button>
+        <span class="flex items-center gap-1">
+          <Button variant="ghost" @click="copyLink(app)"><Copy :size="13" />Copy link</Button>
+          <PreviewAsMenu :app-id="app.id" @pick="dialogs.share = ''" />
+        </span>
         <Button variant="primary" @click="dialogs.share = ''">Done</Button>
       </div>
     </DialogContent>

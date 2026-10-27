@@ -6,7 +6,6 @@ import {
   Globe,
   Copy,
   EllipsisVertical,
-  Eye,
   Rocket,
   Sparkles,
   Users,
@@ -21,12 +20,12 @@ import Meter from '../ui/Meter.vue'
 import Tabs from '../ui/Tabs.vue'
 import MemberAvatar from '../parts/MemberAvatar.vue'
 import AppRunPanel from '../parts/apps/AppRunPanel.vue'
+import PreviewAsMenu from '../parts/apps/PreviewAsMenu.vue'
 import { thumb } from '../mock'
 import { go, hostActions, instanceById, toast } from '../useProto'
 import {
   accessLabel,
   openAppUrl,
-  openAsVisitor,
   copyLink,
   dialogs,
   libApp,
@@ -69,9 +68,6 @@ function revokeAll(): void {
   app.people = []
   app.team = false
   toast('Access revoked. Runs in progress stop. People keep their past results.')
-}
-function asVisitor(): void {
-  openAsVisitor(app.id)
 }
 </script>
 
@@ -123,6 +119,7 @@ function asVisitor(): void {
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <template v-if="app.state === 'live'">
+          <PreviewAsMenu v-if="yours" :app-id="app.id" size="lg" />
           <Button v-if="yours" size="lg" @click="dialogs.share = app.id"
             ><Users :size="14" />Share</Button
           >
@@ -146,9 +143,6 @@ function asVisitor(): void {
             <DropdownMenuItem
               @select="hostActions.launch(instanceById('local-1')!, 'product-relight-studio')"
               ><Waypoints :size="14" />Edit the workflow in ComfyUI</DropdownMenuItem
-            >
-            <DropdownMenuItem v-if="app.state === 'live'" @select="asVisitor"
-              ><Eye :size="14" />Open as a visitor</DropdownMenuItem
             >
           </DropdownMenuContent>
         </DropdownMenuRoot>

@@ -4,9 +4,9 @@ import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './a
 
 /**
  * Comfy Apps (Milestone 10, the Agent lens): how a creator turns a workflow
- * into an app that other people run from a link, and what a visitor with
- * no account sees when they open that link. Concept A: apps are a library
- * (Yours · Team · Shared with you), and each app has one page.
+ * into an app that other people run from a link. Concept A: apps are a
+ * library (My apps · Shared with me), and each app has one page and one
+ * URL; its share settings decide what each person can do there.
  *
  * The creator journey is one conversation with the agent: each step is a
  * card in the thread (workflow, inputs, layout, try it, publish, share).
@@ -20,7 +20,12 @@ import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './a
 export type LookVariant = 'panel' | 'themes' | 'brand' | 'describe'
 
 const KEY = 'comfy.design.apps'
-const saved = ((): { look?: LookVariant; tabs?: string[]; front?: string } => {
+const saved = ((): {
+  look?: LookVariant
+  tabs?: string[]
+  front?: string
+  preview?: Record<string, PreviewAs>
+} => {
   try {
     return JSON.parse(sessionStorage.getItem(KEY) ?? '{}')
   } catch {
@@ -30,11 +35,12 @@ const saved = ((): { look?: LookVariant; tabs?: string[]; front?: string } => {
 
 export const appsProto = reactive({
   look: (saved.look ?? 'panel') as LookVariant,
-  /** Apps open in tabs in the title bar, and the one in front ('' = the
-   *  launcher or a build is in front). A tab is an app id; `<id>:visitor`
-   *  is the same app as someone with no account sees it. */
+  /** Apps open in tabs in the title bar (app ids), and the one in front
+   *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
-  front: saved.front ?? ''
+  front: saved.front ?? '',
+  /** Tabs the creator is previewing as someone else (app id -> who). */
+  preview: (saved.preview ?? {}) as Record<string, PreviewAs>
 })
 watch(
   () => appsProto,
@@ -781,6 +787,7 @@ export function copyLink(a: LibApp): void {
 export function openAppUrl(id: string): void {
   if (!appsProto.tabs.includes(id)) appsProto.tabs.push(id)
   appsProto.front = id
+  delete appsProto.preview[id]
 }
 /** Close an app's tab; if it was in front, its neighbour comes forward
  *  (or the launcher). */
@@ -788,14 +795,30 @@ export function closeAppTab(id: string): void {
   const i = appsProto.tabs.indexOf(id)
   if (i < 0) return
   appsProto.tabs.splice(i, 1)
+  delete appsProto.preview[id]
   if (appsProto.front === id) appsProto.front = appsProto.tabs[i] ?? appsProto.tabs[i - 1] ?? ''
 }
-/** The app as someone with no account sees it, in its own tab. */
-export function openAsVisitor(id: string): void {
-  openAppUrl(`${id}:visitor`)
+
+/**
+ * There is no "visitor": one URL, and the share settings decide what each
+ * person can do there. To check that, the creator previews the page as
+ * someone else, like "Preview as viewer" in Google Docs.
+ */
+export type PreviewAs = 'link' | 'teammate' | 'outsider' | 'expired'
+export const PREVIEWS: { id: PreviewAs; label: string; hint: string }[] = [
+  { id: 'link', label: 'Someone with the link', hint: 'Signed out · signs in to run' },
+  { id: 'teammate', label: 'A teammate', hint: 'Jane Park, in Silverside' },
+  { id: 'outsider', label: 'Someone without access', hint: 'Signed in, not on the list' },
+  { id: 'expired', label: 'Someone with an old link', hint: 'Revoked, expired or over the cap' }
+]
+export const previewLabel = (as: PreviewAs): string =>
+  PREVIEWS.find((p) => p.id === as)!
+    .label.replace(/^Someone/, 'someone')
+    .replace(/^A /, 'a ')
+export function previewAs(id: string, as: PreviewAs): void {
+  openAppUrl(id)
+  appsProto.preview[id] = as
 }
-/** What a tab shows: the app, and whether it is the signed-out view. */
-export function tabApp(tab: string): { app: LibApp | undefined; visitor: boolean } {
-  const [id = '', mode] = tab.split(':')
-  return { app: libApp(id), visitor: mode === 'visitor' }
+export function exitPreview(id: string): void {
+  delete appsProto.preview[id]
 }

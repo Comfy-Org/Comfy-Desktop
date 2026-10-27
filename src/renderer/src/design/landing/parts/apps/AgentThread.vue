@@ -1,34 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  ArrowUpRight,
-  Check,
-  Copy,
-  Eye,
-  Loader2,
-  Lock,
-  Rocket,
-  Sparkles,
-  Users
-} from 'lucide-vue-next'
+import { ArrowUpRight, Check, Copy, Loader2, Lock, Rocket, Sparkles, Users } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import GraphPreview from '../GraphPreview.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
 import FieldList from './FieldList.vue'
 import LookStep from './LookStep.vue'
+import PreviewAsMenu from './PreviewAsMenu.vue'
 import { hostActions, instanceById } from '../../useProto'
-import {
-  copyLink,
-  dialogs,
-  flow,
-  libApp,
-  next,
-  openApp,
-  openAppUrl,
-  openAsVisitor,
-  type Msg
-} from '../../appFlow'
+import { copyLink, dialogs, flow, libApp, next, openApp, openAppUrl, type Msg } from '../../appFlow'
 
 /**
  * The conversation. Full: each step is a card you act on (Chat view).
@@ -183,9 +164,7 @@ const bold = (s: string): string =>
                   >
                 </div>
                 <div class="flex items-center gap-2 border-t border-border-default px-4 py-3">
-                  <Button size="sm" variant="ghost" @click="openAsVisitor(live.id)"
-                    ><Eye :size="12" />Open as a visitor</Button
-                  >
+                  <PreviewAsMenu :app-id="live.id" size="sm" />
                   <span class="flex-1" />
                   <Button size="sm" @click="dialogs.share = live.id"
                     ><Users :size="12" />Share…</Button

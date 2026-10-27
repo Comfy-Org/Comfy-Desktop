@@ -25,7 +25,7 @@ import { usd, type AppLayout, type Field } from '../../appFlow'
 /**
  * The app as people use it: the inputs, one Run button, and - always under
  * it - who pays. The same panel on the app page, in the agent's preview
- * and on the visitor's link.
+ * and at the app's URL.
  */
 const {
   fields,

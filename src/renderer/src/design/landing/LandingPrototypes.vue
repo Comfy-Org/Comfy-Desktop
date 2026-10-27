@@ -10,7 +10,7 @@ import VariantModes from './variants/VariantModes.vue'
 import ClassicDashboard from './parts/milestones/ClassicDashboard.vue'
 import ClientPortal from './portal/ClientPortal.vue'
 import ViewToggle from './parts/space/ViewToggle.vue'
-import VisitorView from './parts/apps/VisitorView.vue'
+import AppTab from './parts/apps/AppTab.vue'
 import { appsProto } from './appFlow'
 import { hostActions, proto, toast } from './useProto'
 import { can } from './milestones'
@@ -154,10 +154,10 @@ watch(
       </div>
       <ClassicDashboard v-else-if="!can.builds" />
       <!-- An app opened with Open app: its own tab, full screen. -->
-      <VisitorView
+      <AppTab
         v-else-if="can.agent && appsProto.front"
+        :id="appsProto.front"
         :key="appsProto.front"
-        :tab="appsProto.front"
       />
       <ComfyTab v-else-if="proto.activeTab !== 'home'" />
       <ClientPortal v-else-if="can.spaces && proto.viewAs === 'client'" />
