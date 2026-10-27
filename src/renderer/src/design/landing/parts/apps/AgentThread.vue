@@ -131,7 +131,9 @@ const bold = (s: string): string =>
                   :class="
                     cn(
                       'flex flex-col gap-1.5 rounded-control border p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus enabled:hover:bg-secondary-background disabled:cursor-default',
-                      d.layout === l.id ? 'border-base-foreground/70' : 'border-border-default'
+                      d.layout === l.id && !d.customLayout
+                        ? 'border-base-foreground/70'
+                        : 'border-border-default'
                     )
                   "
                   @mouseenter="flow.stage === 'layout' && (d.layout = l.id)"

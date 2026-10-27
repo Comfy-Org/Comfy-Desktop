@@ -14,6 +14,8 @@ import {
   libApp,
   openAppUrl,
   resetFlow,
+  askCustomLayout,
+  setLayout,
   enterBuilder,
   exitBuilder,
   send,
@@ -39,6 +41,13 @@ function submit(t = text.value): void {
 }
 const d = computed(() => flow.draft)
 const live = computed(() => libApp(flow.appId))
+// Custom: the agent asks for the layout in words; the chat box gets focus.
+const chat = ref<HTMLElement>()
+function pickLayout(v: string): void {
+  if (v !== 'custom') return setLayout(v as AppLayout)
+  askCustomLayout()
+  nextTick(() => chat.value?.querySelector('textarea')?.focus())
+}
 
 // The first time only ("Create an app"): the preview loads while the
 // agent makes the first version (at least ~0.9 s). "Preview app" later
@@ -115,7 +124,7 @@ const fields = computed(() =>
           </div>
         </div>
       </div>
-      <div :class="flow.split ? 'px-4 pb-4' : 'px-6 pb-5'">
+      <div ref="chat" :class="flow.split ? 'px-4 pb-4' : 'px-6 pb-5'">
         <PromptBox
           v-model="text"
           chat
@@ -137,10 +146,13 @@ const fields = computed(() =>
           <span class="flex-1" />
           <SegmentedControl
             v-if="!live"
-            :model-value="d.layout"
+            :model-value="flow.describingLayout || d.customLayout ? 'custom' : d.layout"
             size="sm"
-            :options="LAYOUTS.map((l) => ({ value: l.id, label: l.label }))"
-            @update:model-value="(v: string) => (d!.layout = v as AppLayout)"
+            :options="[
+              ...LAYOUTS.map((l) => ({ value: l.id, label: l.label })),
+              { value: 'custom', label: 'Custom' }
+            ]"
+            @update:model-value="pickLayout"
           />
           <Button v-else size="sm" variant="primary" @click="openAppUrl(live.id)"
             >Open app<ArrowUpRight :size="12"

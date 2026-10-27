@@ -430,6 +430,8 @@ export interface Draft {
   cost: number
   layout: AppLayout
   theme: AppTheme
+  /** A custom layout, as the creator described it ('' = a preset). */
+  customLayout: string
   /** The curated theme picked last (Themes), if any. */
   themeId: string
   /** The agent's last description of the look, if any. */
@@ -446,6 +448,8 @@ export const flow = reactive({
   checks: -1,
   appId: '',
   busy: false,
+  /** Waiting for the creator to describe a custom layout. */
+  describingLayout: false,
   /** From "Create an app" on, the app shows on the right as it is built. */
   split: false,
   /** How many inputs the agent has added so far (the app on the right
@@ -491,6 +495,7 @@ export function resetFlow(): void {
   flow.appId = ''
   flow.busy = false
   flow.split = false
+  flow.describingLayout = false
   flow.fieldsShown = 99
 }
 
@@ -561,6 +566,7 @@ function draftFrom(source: SourceWorkflow, fresh: boolean): Draft {
     cost: 0.04,
     layout: 'left',
     theme: newTheme({ runLabel: 'Relight it', presets: true }),
+    customLayout: '',
     themeId: 'studio',
     described: ''
   }
@@ -592,11 +598,49 @@ export const building = computed(
   () => flow.split && proto.mode === 'agent' && proto.page === 'agent'
 )
 
+/** A preset layout from the app's header: it replaces a custom one. */
+export function setLayout(id: AppLayout): void {
+  const d = flow.draft
+  if (!d) return
+  d.layout = id
+  d.customLayout = ''
+  flow.describingLayout = false
+}
+/** Custom layout: the agent asks for it in words. Like the look, the
+ *  result is built from Comfy's own parts (no creator code on the page). */
+export function askCustomLayout(): void {
+  if (!flow.draft || flow.busy) return
+  flow.describingLayout = true
+  say({
+    role: 'agent',
+    text: '**Describe the layout.** For example: “a big result on top, the photo and the light picker side by side under it”.'
+  })
+}
+function describeLayout(text: string): void {
+  const d = flow.draft!
+  const low = text.toLowerCase()
+  d.layout = /bottom|bar|chat|composer|under|below/.test(low)
+    ? 'bottom'
+    : /right/.test(low)
+      ? 'right'
+      : 'left'
+  d.customLayout = text
+  flow.describingLayout = false
+  const m = say({
+    role: 'agent',
+    text: 'Done. I laid it out as you described, with Comfy’s own parts. See the app on the right.',
+    steps: ['Read your description', 'Placed the inputs and the result'],
+    pending: true
+  })
+  think(m, () => {})
+}
+
 /** Pick a layout, then the inputs. */
 export function chooseLayout(id: AppLayout): void {
   const d = flow.draft
   if (!d || flow.busy) return
   d.layout = id
+  d.customLayout = ''
   // Later, a pick just changes the layout; the first time, it moves on.
   if (flow.stage !== 'layout') return
   say({ role: 'user', text: layoutLabel(id) })
@@ -784,6 +828,7 @@ export function send(text: string): void {
   say({ role: 'user', text: t })
   const d = flow.draft
   if (!d) return next()
+  if (flow.describingLayout) return describeLayout(t)
   const low = t.toLowerCase()
   const done: string[] = []
 
