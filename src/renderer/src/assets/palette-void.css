@@ -155,3 +155,82 @@
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
+
+/* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
+
+/* Ghost icon buttons (no outline on hover), 8px radius, hairline border. */
+:is(:root.palette-void, .palette-void) .title-bar.title-bar:not(.is-light) {
+  border-bottom-color: var(--color-border-default);
+}
+/* The dashboard's bar is the top of its glass page: no seam. */
+:is(:root.palette-void, .palette-void) .title-bar.title-bar.glass-titlebar:not(.is-light) {
+  border-bottom-color: transparent;
+}
+:is(:root.palette-void, .palette-void)
+  .title-bar:not(.is-light)
+  :is(.title-menu-button, .title-downloads-tray) {
+  border-radius: var(--radius-control);
+}
+:is(:root.palette-void, .palette-void)
+  .title-bar.is-hover-active:not(.is-light)
+  :is(
+    .title-menu-button,
+    .title-downloads-tray:not(.has-active, .has-unseen, .has-error),
+    .title-zoom-reset
+  ):hover {
+  background: var(--color-secondary-background);
+  border-color: transparent;
+}
+/* The active-download count sits on the accent, which is white here. */
+:is(:root.palette-void, .palette-void)
+  .title-bar:not(.is-light)
+  .title-downloads-badge:not(.is-unseen, .is-error) {
+  color: var(--color-inverted-foreground);
+}
+/* The install pill: a quiet field, outlined while its picker is open. */
+:is(:root.palette-void, .palette-void) .title-bar:not(.is-light) .title-install-pill {
+  border-color: var(--color-border-default);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--text-muted);
+}
+:is(:root.palette-void, .palette-void)
+  .title-bar.is-hover-active:not(.is-light)
+  .title-install-pill.is-interactive:hover:not(.is-open) {
+  border-color: oklch(1 0 0 / 0.12);
+  background: oklch(1 0 0 / 0.07);
+  color: var(--text);
+}
+:is(:root.palette-void, .palette-void)
+  .title-bar:not(.is-light)
+  .title-install-pill.is-interactive.is-open {
+  border-color: oklch(1 0 0 / 0.3);
+  background: oklch(1 0 0 / 0.07);
+  color: var(--text);
+}
+
+/* ── 4. Popup windows ──────────────────────────────────────────────── */
+
+/* The design system's floating surface: hairline border and the inset top
+ * highlight. The popup windows are sized to their content, so an outer
+ * shadow would be clipped. */
+:is(:root.palette-void, .palette-void) .popup.popup {
+  border-color: var(--color-border-default);
+  box-shadow: var(--shadow-highlight);
+}
+/* Menus and the small downloads list: 12px, like the design system's menus. */
+:is(:root.palette-void, .palette-void)
+  .popup.popup:not(.is-picker, .is-global-settings, .is-downloads-full) {
+  border-radius: var(--radius-card);
+}
+:is(:root.palette-void, .palette-void) .popup.is-menu .item:hover {
+  background: oklch(1 0 0 / 0.07);
+}
+:is(:root.palette-void, .palette-void) .popup.is-menu .separator {
+  background: var(--color-border-default);
+  opacity: 1;
+}
+/* Centred cards (picker, settings, all downloads): 16px panels. */
+:is(:root.palette-void, .palette-void)
+  :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
+  border-radius: var(--radius-panel);
+}
