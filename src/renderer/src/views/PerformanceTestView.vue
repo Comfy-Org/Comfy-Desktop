@@ -28,6 +28,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
+import { providePaletteScope } from '../composables/usePaletteScope'
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -38,6 +39,8 @@ interface PerformanceTestRunTelemetry {
 }
 
 const { t } = useI18n()
+// The new palette only (no component rework); teleported selects inherit it.
+const paletteScope = providePaletteScope()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
@@ -623,7 +626,7 @@ watch(performanceTestLogs, async () => {
 </script>
 
 <template>
-  <BrandBackground class="performance-test" data-testid="performance-test">
+  <BrandBackground class="performance-test" :class="paletteScope" data-testid="performance-test">
     <div class="performance-test__layout">
       <div class="performance-test__intro">
         <BrandedPageHeader
