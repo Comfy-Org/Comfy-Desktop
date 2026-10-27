@@ -77,6 +77,71 @@ jobs:
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 
+  storybook:
+    name: Storybook
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # On a pull request this is GitHub's test merge commit; the summary step lists its parents.
+      - name: Record the checked-out commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Storybook
+        run: pnpm run build-storybook
+
+      - name: Upload Storybook
+        id: storybook-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: storybook-${{ steps.source.outputs.sha }}
+          path: storybook-static/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Link the preview artifact
+        env:
+          ARTIFACT_URL: ${{ steps.storybook-artifact.outputs.artifact-url }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo "Storybook for commit $SOURCE_SHA: [download the static preview]($ARTIFACT_URL)."
+            if [ -n "$BASE_REF" ]; then
+              # cat-file reads the parents from the commit object even in this shallow checkout.
+              parents=$(git cat-file -p "$SOURCE_SHA" | sed -n 's/^parent //p' | xargs)
+              echo "That commit is GitHub's test merge for this pull request, with parents $parents. GitHub reported base ref \`$BASE_REF\`."
+              merged_into=$(for parent in $parents; do [ "$parent" = "$PR_HEAD" ] || echo "$parent"; done | xargs)
+              if [ "$merged_into" != "$parents" ]; then
+                echo "PR head $PR_HEAD was merged into $merged_into. In a stack that commit can include lower pull requests, so it need not be the tip of \`$BASE_REF\`."
+              fi
+            fi
+            echo 'This job runs the story tests from the same checkout, against the Vite-served sources rather than this build.'
+            echo 'Extract into `storybook-static/`, then run `python3 -m http.server 6006 --bind 127.0.0.1 --directory storybook-static` and open http://localhost:6006.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      - name: Test stories
+        run: pnpm run test:storybook
+
   python-git-helpers:
     name: Test (Python git helpers)
     runs-on: ubuntu-latest
