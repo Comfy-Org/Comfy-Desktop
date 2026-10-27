@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { h } from 'vue'
+import type { Component } from 'vue'
 import Tooltip from './Tooltip.vue'
+import { providePaletteScope } from '../../composables/usePaletteScope'
 
 const wrappers: VueWrapper[] = []
 
@@ -75,6 +78,23 @@ describe('Tooltip (ui primitive)', () => {
     const bubble = document.querySelector('.tooltip-bubble')
     expect(bubble).not.toBeNull()
     expect(bubble!.textContent?.trim()).toContain('Hello tooltip')
+  })
+
+  it('carries the Void palette onto its teleported bubble inside a palette scope', async () => {
+    const Scoped: Component = {
+      setup() {
+        const palette = providePaletteScope()
+        return () =>
+          h('div', { class: palette }, [
+            h(Tooltip, { text: 'Hello tooltip', delayMs: 0 }, () => h('button', 'trigger'))
+          ])
+      }
+    }
+    const wrapper = mount(Scoped, { attachTo: document.body })
+    wrappers.push(wrapper)
+    await wrapper.get('.tooltip-wrap').trigger('mouseenter')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')?.classList).toContain('palette-void')
   })
 
   it('hides the bubble on mouseleave', async () => {
