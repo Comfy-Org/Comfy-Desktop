@@ -1,0 +1,82 @@
+/*
+ * The design system's scope. main.css styles bare elements
+ * (`* { margin; padding }`, `button {}`, `input[type=text] {}`, `label {}`)
+ * outside any cascade layer, so those rules beat every Tailwind utility.
+ * Inside `.ds-root` those properties go back to the layered cascade
+ * (preflight + utilities). Design-system components are styled with
+ * utilities only - never scoped CSS on button/input/select/label.
+ */
+.ds-root,
+.ds-root *,
+.ds-root *::before,
+.ds-root *::after {
+  margin: revert-layer;
+  padding: revert-layer;
+}
+.ds-root.ds-root.ds-root :is(button, input, select, textarea, label) {
+  width: revert-layer;
+  margin: revert-layer;
+  padding: revert-layer;
+  border: revert-layer;
+  border-radius: revert-layer;
+  background: revert-layer;
+  color: revert-layer;
+  font-size: revert-layer;
+  opacity: revert-layer;
+  outline: revert-layer;
+  cursor: revert-layer;
+}
+
+@layer base {
+  .ds-root {
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.4;
+    color: var(--color-base-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+  .ds-root button:not(:disabled),
+  .ds-root [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Display headings: soft top-down fade, shared by greeting and hero titles. */
+@utility heading-gradient {
+  background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Card edge: no full outline. A hairline of light along the top edge that
+ * fades down the sides, like a highlight catching a raised surface. Keeps
+ * the 1px border (transparent) so sizes don't change; the ring is drawn
+ * inside it, so overflow-hidden cards keep it. --shine sets its strength. */
+/* Thin, quiet scrollbars for the app's scrolling regions. */
+@utility scrollbar-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@utility edge-shine {
+  border-color: transparent;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      180deg,
+      oklch(1 0 0 / var(--shine, 0.14)),
+      oklch(1 0 0 / calc(var(--shine, 0.14) * 0.25)) 45%,
+      oklch(1 0 0 / 0.015) 100%
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
