@@ -60,7 +60,6 @@ function describe(): void {
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
     <PageHeader title="Apps" description="Tools anyone can run from a link. No graph to learn.">
       <template #actions>
-        <SearchInput v-model="q" placeholder="Search apps" class="w-56" />
         <DropdownMenuRoot :modal="false">
           <DropdownMenuTrigger as-child>
             <Button variant="primary" size="lg"><Plus :size="15" />New app</Button>
@@ -79,15 +78,18 @@ function describe(): void {
       </template>
     </PageHeader>
 
-    <SegmentedControl
-      v-model="tab"
-      variant="contained"
-      class="mb-6"
-      :options="[
-        { value: 'mine', label: 'My apps', count: count('mine') },
-        { value: 'shared', label: 'Shared with me', count: count('shared') }
-      ]"
-    />
+    <!-- Tabs and search share one bar -->
+    <div class="mb-6 flex items-center justify-between gap-4">
+      <SegmentedControl
+        v-model="tab"
+        variant="contained"
+        :options="[
+          { value: 'mine', label: 'My apps', count: count('mine') },
+          { value: 'shared', label: 'Shared with me', count: count('shared') }
+        ]"
+      />
+      <SearchInput v-model="q" placeholder="Search apps" class="w-64" />
+    </div>
 
     <div class="border-t border-border-default">
       <div
