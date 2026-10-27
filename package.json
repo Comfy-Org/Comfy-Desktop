@@ -114,6 +114,7 @@
     "husky": "^9.1.7",
     "jiti": "^2.6.1",
     "lucide-vue-next": "^0.525.0",
+    "motion-v": "2.6.0",
     "pinia": "^3.0.3",
     "playwright": "^1.58.2",
     "prettier": "^3.8.1",
