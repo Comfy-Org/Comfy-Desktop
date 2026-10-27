@@ -17,6 +17,7 @@ import SidebarGroup from '../parts/env/SidebarGroup.vue'
 import SpacesGroup from '../parts/space/SpacesGroup.vue'
 import ModePages from '../pages/modes/ModePages.vue'
 import { goIn, proto, type Mode } from '../useProto'
+import { building } from '../appFlow'
 import { can, landingPage } from '../milestones'
 
 /**
@@ -44,22 +45,33 @@ const MODES = computed(() => [
 
 <template>
   <div class="proto-shell relative flex size-full min-h-0 flex-1 overflow-hidden bg-app-background">
+    <!-- App-builder mode (the agent making an app): the sidebar closes,
+         so the chat and the app get the room. -->
     <aside
-      class="proto-sidebar relative z-5 m-2 mr-0 flex w-59 shrink-0 flex-col overflow-y-auto p-2 [--glyph-ring:var(--color-app-background)] [scrollbar-width:none]"
+      :class="[
+        'proto-sidebar sidebar-slide relative z-5 flex shrink-0 flex-col [--glyph-ring:var(--color-app-background)] [scrollbar-width:none]',
+        building
+          ? 'pointer-events-none m-0 w-0 overflow-hidden p-0 opacity-0'
+          : 'm-2 mr-0 w-59 overflow-y-auto p-2'
+      ]"
+      :aria-hidden="building || undefined"
+      :inert="building || undefined"
     >
-      <!-- Create / Build (Milestone 6: the Builder) -->
-      <div v-if="can.builder" class="mb-3 flex h-8.5 shrink-0 items-center">
-        <ModeSwitch v-model="mode" :options="MODES" />
-      </div>
+      <div class="flex min-h-full w-55 shrink-0 flex-col">
+        <!-- Create / Build (Milestone 6: the Builder) -->
+        <div v-if="can.builder" class="mb-3 flex h-8.5 shrink-0 items-center">
+          <ModeSwitch v-model="mode" :options="MODES" />
+        </div>
 
-      <AgentNav v-if="proto.mode === 'agent'" />
-      <ModeNav v-else-if="can.home || proto.mode === 'build'" :mode="proto.mode" />
-      <!-- The builds (or projects). New users have none yet (Home walks them
+        <AgentNav v-if="proto.mode === 'agent'" />
+        <ModeNav v-else-if="can.home || proto.mode === 'build'" :mode="proto.mode" />
+        <!-- The builds (or projects). New users have none yet (Home walks them
            through). -->
-      <SidebarGroup v-if="proto.mode === 'create' && !proto.fresh" />
-      <SpacesGroup v-if="proto.mode === 'create' && can.spaces && !proto.fresh" />
+        <SidebarGroup v-if="proto.mode === 'create' && !proto.fresh" />
+        <SpacesGroup v-if="proto.mode === 'create' && can.spaces && !proto.fresh" />
 
-      <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>
+        <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>
+      </div>
     </aside>
 
     <main
@@ -77,3 +89,21 @@ const MODES = computed(() => [
     <template v-if="can.agent"><PublishDialog /><ShareDialog /></template>
   </div>
 </template>
+
+<style scoped>
+/* Closing and opening the sidebar for app-builder mode: one move on
+   screen, so ease-in-out; the content fades a touch faster than the
+   width, so it never squeezes. Rare (once per app), so width is fine. */
+.sidebar-slide {
+  transition:
+    width 320ms cubic-bezier(0.645, 0.045, 0.355, 1),
+    margin 320ms cubic-bezier(0.645, 0.045, 0.355, 1),
+    padding 320ms cubic-bezier(0.645, 0.045, 0.355, 1),
+    opacity 200ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-slide {
+    transition: opacity 200ms ease;
+  }
+}
+</style>

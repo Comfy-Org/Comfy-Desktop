@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { go, goIn, proto, toast } from './useProto'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
@@ -578,6 +578,19 @@ function askLayout(): void {
   })
   think(m, () => (flow.stage = 'layout'))
 }
+
+/** App-builder mode: the sidebar closes and the app opens beside the
+ *  chat. Exit keeps the chat and the draft; you can come back to it. */
+export function exitBuilder(): void {
+  flow.split = false
+}
+export function enterBuilder(): void {
+  if (flow.draft && flow.stage !== 'workflow') flow.split = true
+}
+/** The sidebar closes while you build the app. */
+export const building = computed(
+  () => flow.split && proto.mode === 'agent' && proto.page === 'agent'
+)
 
 /** Pick a layout, then the inputs. */
 export function chooseLayout(id: AppLayout): void {
