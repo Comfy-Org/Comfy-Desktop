@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { deployTool, GPU_OPTIONS, REGION_OPTIONS, SPACES } from './spaces'
 import { proto } from './useProto'
 import { APPS } from './mock'
+import { resetFlow, startNew } from './appFlow'
 
 /**
  * The agent: one conversation that takes you from an idea to a tool your
@@ -353,6 +354,7 @@ function generateOutput(attachment?: string): void {
 /** Run a task in the full-screen agent. */
 export function runTask(prompt: string, intent: Intent, attachment?: string): void {
   resetAgent()
+  resetFlow()
   proto.mode = 'agent'
   proto.page = 'agent'
   say({ role: 'user', text: prompt })
@@ -362,7 +364,6 @@ export function runTask(prompt: string, intent: Intent, attachment?: string): vo
 
 export function startAgent(prompt: string): void {
   resetAgent()
-  proto.mode = 'agent'
-  proto.page = 'agent'
-  send(prompt)
+  // Milestone 10: the agent makes an app from the sentence.
+  startNew(prompt)
 }

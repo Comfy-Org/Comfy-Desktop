@@ -9,7 +9,9 @@ import DeployedTo from './space/DeployedTo.vue'
 import { openDeploy } from '../spaces'
 import type { ProjectWorkflow } from '../gallery'
 import { INSTANCES } from '../mock'
-import { EllipsisVertical, Play, Rocket } from 'lucide-vue-next'
+import { AppWindow, EllipsisVertical, Play, Rocket } from 'lucide-vue-next'
+import { startFromName } from '../appFlow'
+import { can } from '../milestones'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../ui/Button.vue'
 import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
@@ -68,6 +70,9 @@ function open(): void {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="min-w-52">
           <DropdownMenuItem @select="open"><Play :size="14" />Open in {{ where }}</DropdownMenuItem>
+          <DropdownMenuItem v-if="can.agent" @select="startFromName(wf.name, wf.thumbId)"
+            ><AppWindow :size="14" />Make an app</DropdownMenuItem
+          >
           <DropdownMenuItem
             v-if="proto.spaces"
             @select="openDeploy({ kind: 'workflow', name: wf.name, thumbId: wf.thumbId })"

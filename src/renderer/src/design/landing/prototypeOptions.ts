@@ -1,6 +1,7 @@
 import { computed, type WritableComputedRef } from 'vue'
 import { proto } from './useProto'
 import { can, MILESTONES } from './milestones'
+import { appsProto, type LookVariant } from './appFlow'
 
 /**
  * The prototype's switches, shown in the Prototype panel (DevBar, browser
@@ -30,9 +31,26 @@ const data = computed({
   set: (v) => (proto.live = v === 'mine')
 })
 
+// Milestone 10: how the creator customizes the app's look.
+const look = computed({
+  get: () => appsProto.look,
+  set: (v) => (appsProto.look = v as LookVariant)
+})
+
 export const prototypeGroups = computed<PrototypeGroup[]>(() =>
   [
     { key: 'milestone', label: 'Milestone', model: milestone, options: MILESTONES },
+    can.value.agent && {
+      key: 'look',
+      label: 'Customize',
+      model: look,
+      options: [
+        { value: 'panel', label: 'Style panel' },
+        { value: 'themes', label: 'Themes' },
+        { value: 'brand', label: 'Brand kit' },
+        { value: 'describe', label: 'Describe it' }
+      ]
+    },
     // First run vs returning only changes Home.
     can.value.home && {
       key: 'user',

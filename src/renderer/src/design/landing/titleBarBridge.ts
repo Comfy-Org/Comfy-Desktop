@@ -43,6 +43,10 @@ export interface TitleBarState {
     location?: string
     update?: string
   }[]
+  /** Apps open in tabs (Milestone 10), one per app, after the build
+   *  switcher; `appFront` is the tab in front (null: none). */
+  apps?: { id: string; name: string; thumb: string }[]
+  appFront?: string | null
   /** The Prototype menu: each switch and its current value. */
   options: {
     key: string
@@ -54,6 +58,9 @@ export interface TitleBarState {
 
 export type TitleBarCommand =
   | { type: 'home' }
+  /** Bring an app's tab to the front, or close it. */
+  | { type: 'app'; id: string }
+  | { type: 'closeApp'; id: string }
   /** Toggle the build switcher under the chevron (window px). */
   | { type: 'switcher'; left: number; width: number; bottom: number }
   /** The pointer entered / left the build's name, or it was clicked - its

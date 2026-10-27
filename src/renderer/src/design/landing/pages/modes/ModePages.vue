@@ -3,9 +3,12 @@ import { computed } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import PageHeader from '../../ui/PageHeader.vue'
-import AgentPage from '../AgentPage.vue'
 import FirstEmpty from '../../parts/FirstEmpty.vue'
 import AppsPage from '../AppsPage.vue'
+import AppsLibrary from '../AppsLibrary.vue'
+import AppDetail from '../AppDetail.vue'
+import AppAgent from '../../parts/apps/AppAgent.vue'
+import { libApp } from '../../appFlow'
 import ProjectsOverview from '../ProjectsOverview.vue'
 import AssetsPage from '../AssetsPage.vue'
 import ExplorePage from '../ExplorePage.vue'
@@ -39,6 +42,9 @@ const projectId = computed(() => (proto.page.startsWith('project:') ? proto.page
 const space = computed(() =>
   proto.page.startsWith('space:') ? spaceById(proto.page.slice(6)) : undefined
 )
+const app = computed(() =>
+  proto.page.startsWith('app:') ? libApp(proto.page.slice(4)) : undefined
+)
 const libraryKind = computed(() => proto.page as 'workflows' | 'apps' | 'assets')
 const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
 </script>
@@ -65,9 +71,11 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
     </PageHeader>
     <ProjectWorkflows />
   </div>
+  <AppsLibrary v-else-if="proto.page === 'apps' && can.agent" />
   <AppsPage v-else-if="proto.page === 'apps'" />
+  <AppDetail v-else-if="app && can.agent" :id="app.id" :key="app.id" />
   <ProjectsOverview v-else-if="proto.page === 'projects' && proto.projects" />
-  <AgentPage v-else-if="proto.page === 'agent'" />
+  <AppAgent v-else-if="proto.page === 'agent'" />
   <AssetsPage v-else-if="proto.page === 'assets'" />
   <EnvironmentsList v-else-if="proto.page === 'environments' || proto.page === 'instances'" />
   <EnvironmentDetail v-else-if="env" :key="env.id" :env />

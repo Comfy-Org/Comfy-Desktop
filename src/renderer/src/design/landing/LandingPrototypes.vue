@@ -10,6 +10,8 @@ import VariantModes from './variants/VariantModes.vue'
 import ClassicDashboard from './parts/milestones/ClassicDashboard.vue'
 import ClientPortal from './portal/ClientPortal.vue'
 import ViewToggle from './parts/space/ViewToggle.vue'
+import VisitorView from './parts/apps/VisitorView.vue'
+import { appsProto } from './appFlow'
 import { hostActions, proto, toast } from './useProto'
 import { can } from './milestones'
 import { connectAccount, realAccount, realSignIn } from './account'
@@ -151,6 +153,12 @@ watch(
         Milestone 0 is Desktop as it ships today. Open the prototype in the app to see it.
       </div>
       <ClassicDashboard v-else-if="!can.builds" />
+      <!-- An app opened with Open app: its own tab, full screen. -->
+      <VisitorView
+        v-else-if="can.agent && appsProto.front"
+        :key="appsProto.front"
+        :tab="appsProto.front"
+      />
       <ComfyTab v-else-if="proto.activeTab !== 'home'" />
       <ClientPortal v-else-if="can.spaces && proto.viewAs === 'client'" />
       <VariantModes v-else />

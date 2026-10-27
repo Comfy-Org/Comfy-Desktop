@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, Home, LayoutGrid } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Home, LayoutGrid, X } from 'lucide-vue-next'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
 
@@ -10,7 +10,8 @@ import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
  * is always in the bar, so the way back from ComfyUI is in view. Renders in
  * the launcher's title bar, each build window's, and the browser preview's
  * stand-in; it only shows `state` and emits what was clicked
- * (titleBarBridge.ts).
+ * (titleBarBridge.ts). From Milestone 10, apps opened with "Open app"
+ * follow as tabs, one per app, each with a close button.
  */
 const { state } = defineProps<{ state: TitleBarState }>()
 const emit = defineEmits<{ command: [cmd: TitleBarCommand] }>()
@@ -71,5 +72,40 @@ const crumb = (active: boolean): string =>
       <span v-if="!state.front">Open a build</span>
       <ChevronDown :size="13" />
     </button>
+
+    <!-- App tabs -->
+    <template v-if="state.apps?.length">
+      <span class="mx-1.5 h-4 w-px shrink-0 bg-border-default" aria-hidden="true" />
+      <div
+        v-for="a in state.apps"
+        :key="a.id"
+        :class="[
+          crumb(state.appFront === a.id),
+          'group min-w-0 shrink pr-1 pl-1.5',
+          state.appFront !== a.id && 'bg-transparent'
+        ]"
+      >
+        <button
+          type="button"
+          class="flex min-w-0 items-center gap-2 outline-none"
+          :aria-current="state.appFront === a.id ? 'page' : undefined"
+          @click="emit('command', { type: 'app', id: a.id })"
+        >
+          <img :src="a.thumb" alt="" class="size-4 shrink-0 rounded-[4px] object-cover" />
+          <span class="max-w-40 truncate">{{ a.name }}</span>
+        </button>
+        <button
+          type="button"
+          :aria-label="`Close ${a.name}`"
+          :class="[
+            'inline-flex size-5 shrink-0 items-center justify-center rounded-min text-subtle-foreground outline-none hover:bg-secondary-background-hover hover:text-base-foreground focus-visible:opacity-100',
+            state.appFront === a.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          ]"
+          @click="emit('command', { type: 'closeApp', id: a.id })"
+        >
+          <X :size="12" />
+        </button>
+      </div>
+    </template>
   </nav>
 </template>

@@ -10,12 +10,22 @@ import {
 import { prototypeGroups, setPrototypeOption } from './prototypeOptions'
 import { buildState, openInNewWindow } from './buildTabs'
 import { landingPage } from './milestones'
+import { appsProto, closeAppTab, tabApp } from './appFlow'
+import { thumb } from './mock'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
  * what the bar shows and what its clicks do. One open build is in front at
  * a time; ComfyUI keeps its own workflow tabs inside.
  */
+
+// Opening a build brings it in front of any app tab.
+watch(
+  () => proto.activeTab,
+  (id) => {
+    if (id !== 'home') appsProto.front = ''
+  }
+)
 
 // The build in front is the one Home runs on next.
 watch(
@@ -51,7 +61,7 @@ const frontTab = computed(() => proto.tabs.find((t) => t.id === proto.activeTab)
 
 export const titleBarState = computed<TitleBarState>(() => ({
   milestone: proto.milestone,
-  home: proto.activeTab === 'home',
+  home: proto.activeTab === 'home' && !appsProto.front,
   menuOpen: switcherMenu.open,
   front: frontTab.value
     ? {
@@ -85,6 +95,13 @@ export const titleBarState = computed<TitleBarState>(() => ({
         update: i.state === 'update' ? 'Update available' : undefined
       }
     }),
+  apps: appsProto.tabs.flatMap((id) => {
+    const { app, visitor } = tabApp(id)
+    return app
+      ? [{ id, name: visitor ? `${app.name} · visitor` : app.name, thumb: thumb(app.thumbId) }]
+      : []
+  }),
+  appFront: appsProto.front || null,
   options: prototypeGroups.value.map((g) => ({
     key: g.key,
     label: g.label,
@@ -99,7 +116,10 @@ export const titleBarState = computed<TitleBarState>(() => ({
  *  folder), `settings:<id>` (the app's Manage dialog for it), or a build id
  *  to open here / bring to the front. */
 export function openFromMenu(id: string): void {
-  if (id === 'home') return go(landingPage())
+  if (id === 'home') {
+    appsProto.front = ''
+    return go(landingPage())
+  }
   if (id === 'manage') return go('environments')
   if (id.startsWith('window:')) return void openInNewWindow(id.slice('window:'.length))
   if (id.startsWith('close:')) {
@@ -129,7 +149,14 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
   if (cmd.type !== 'switcher') switcherMenu.open = false
   switch (cmd.type) {
     case 'home':
+      appsProto.front = ''
       go(landingPage())
+      break
+    case 'app':
+      appsProto.front = cmd.id
+      break
+    case 'closeApp':
+      closeAppTab(cmd.id)
       break
     case 'info':
       // The browser preview has no popup to show it in.

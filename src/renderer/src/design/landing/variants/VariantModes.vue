@@ -9,6 +9,8 @@ import WorkspaceMenu from '../parts/WorkspaceMenu.vue'
 import DeployDialog from '../parts/env/DeployDialog.vue'
 import DeployToolDialog from '../parts/space/DeployToolDialog.vue'
 import NewSpaceFlow from '../parts/space/NewSpaceFlow.vue'
+import PublishDialog from '../parts/apps/PublishDialog.vue'
+import ShareDialog from '../parts/apps/ShareDialog.vue'
 import AgentNav from '../parts/agent/AgentNav.vue'
 import ModeNav from '../parts/env/ModeNav.vue'
 import SidebarGroup from '../parts/env/SidebarGroup.vue'
@@ -72,5 +74,6 @@ const MODES = computed(() => [
     <DeployDialog />
     <DeployToolDialog />
     <NewSpaceFlow v-if="can.spaces" />
+    <template v-if="can.agent"><PublishDialog /><ShareDialog /></template>
   </div>
 </template>

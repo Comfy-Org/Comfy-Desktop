@@ -3,10 +3,13 @@ import { computed } from 'vue'
 import { MessageSquare, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { agent, resetAgent } from '../../agent'
+import { flow, resetFlow } from '../../appFlow'
 import { go, toast } from '../../useProto'
 
 /** Sidebar in Agent mode: a new chat, and recent chats. */
-const current = computed(() => agent.messages.find((m) => m.role === 'user')?.text)
+const current = computed(
+  () => (flow.messages.length ? flow.messages : agent.messages).find((m) => m.role === 'user')?.text
+)
 const RECENT = [
   'Seasonal backgrounds for Nike',
   'Coca-Cola shade swatches app',
@@ -14,6 +17,7 @@ const RECENT = [
 ]
 function newChat(): void {
   resetAgent()
+  resetFlow()
   go('agent')
 }
 </script>

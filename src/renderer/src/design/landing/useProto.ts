@@ -35,6 +35,8 @@ export type Page =
   | 'people'
   | 'provider-keys'
   | `project:${string}`
+  // Apps (Milestone 10): one app's page
+  | `app:${string}`
 
 /** Create: make things. Build: ship them as an API. Two lenses on the
  *  same workspace; admin lives in the workspace menu, outside both. */

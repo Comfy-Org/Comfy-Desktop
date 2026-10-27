@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { hostActions, instances } from '../useProto'
 import { INSTANCES, thumb } from '../mock'
 
@@ -34,15 +34,27 @@ const STARTERS: Starter[] = [
   }
 ]
 
-/** `sm`: smaller cards, flatter fan (when they sit under the prompt). */
-const { size = 'md' } = defineProps<{ size?: 'sm' | 'md' }>()
+/** `sm`: smaller cards, flatter fan (when they sit under the prompt).
+ *  `items` and `onSelect` reuse the fan elsewhere (the Agent's landing). */
+const {
+  size = 'md',
+  items,
+  onSelect,
+  label = 'Example workflows'
+} = defineProps<{
+  size?: 'sm' | 'md'
+  items?: Starter[]
+  onSelect?: (s: Starter) => void
+  label?: string
+}>()
 const hovered = ref<number | null>(null)
-const mid = (STARTERS.length - 1) / 2
+const list = computed(() => items ?? STARTERS)
+const mid = computed(() => (list.value.length - 1) / 2)
 
 /** Fanned like a hand of cards. Hover lifts an inner layer only (CSS),
  *  so the hit area never slips out from under the cursor. */
 function pose(i: number): Record<string, string> {
-  const d = i - mid
+  const d = i - mid.value
   return {
     // Hovered card straightens up; the rest keep their angle.
     transform: `translate(${d * (size === 'sm' ? 86 : 112)}px, ${Math.abs(d) * (size === 'sm' ? 6 : 12)}px) rotate(${hovered.value === i ? 0 : d * (size === 'sm' ? 4 : 6)}deg)`,
@@ -51,6 +63,7 @@ function pose(i: number): Record<string, string> {
 }
 
 function pick(s: Starter): void {
+  if (onSelect) return onSelect(s)
   const cloud = instances.value.find((i) => i.kind === 'cloud') ?? INSTANCES[0]!
   hostActions.launch(cloud, s.label)
 }
@@ -60,11 +73,11 @@ function pick(s: Starter): void {
   <div
     :class="['relative mx-auto w-full', size === 'sm' ? 'h-46' : 'h-62']"
     role="list"
-    aria-label="Example workflows"
+    :aria-label="label"
     @mouseleave="hovered = null"
   >
     <button
-      v-for="(s, i) in STARTERS"
+      v-for="(s, i) in list"
       :key="s.label"
       type="button"
       role="listitem"

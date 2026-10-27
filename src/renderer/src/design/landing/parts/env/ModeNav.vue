@@ -59,7 +59,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             icon: Workflow,
             section: 'Libraries'
           },
-          { page: 'apps' as Page, label: 'Apps', icon: AppWindow },
+          { page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' },
           { page: 'assets' as Page, label: 'Assets', icon: Images },
           ...(proto.fresh
             ? []
