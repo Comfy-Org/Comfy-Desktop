@@ -448,8 +448,6 @@ export const flow = reactive({
   busy: false,
   /** From "Create an app" on, the app shows on the right as it is built. */
   split: false,
-  /** Customizing the look: the left column becomes the style panel. */
-  customizing: false,
   /** How many inputs the agent has added so far (the app on the right
    *  grows while the agent picks them). */
   fieldsShown: 99
@@ -493,7 +491,6 @@ export function resetFlow(): void {
   flow.appId = ''
   flow.busy = false
   flow.split = false
-  flow.customizing = false
   flow.fieldsShown = 99
 }
 
@@ -585,8 +582,10 @@ function askLayout(): void {
 /** Pick a layout, then the inputs. */
 export function chooseLayout(id: AppLayout): void {
   const d = flow.draft
-  if (!d || flow.busy || flow.stage !== 'layout') return
+  if (!d || flow.busy) return
   d.layout = id
+  // Later, a pick just changes the layout; the first time, it moves on.
+  if (flow.stage !== 'layout') return
   say({ role: 'user', text: layoutLabel(id) })
   proposeInputs()
 }
@@ -620,21 +619,17 @@ function proposeInputs(): void {
   })
 }
 
-/** Customize the look (brand, colors, type...) or skip it. How the
- *  options are offered depends on the Prototype menu's "Customize". */
+/** The look: brand, colors, type. Offered in the thread as a card (its
+ *  content depends on the Prototype menu's "Customize"); skippable. */
 function askLook(): void {
   const m = say({
     role: 'agent',
-    text: '**Want to customize the look?** Brand, colors, type and more, inside styles that work on every screen. Or skip it.',
+    text: '**Now the look.** Pick a brand, colors and type, or skip it. You can change anything later, here or by asking me.',
     artifact: 'look',
     pending: true,
     steps: []
   })
   think(m, () => (flow.stage = 'look'), 200)
-}
-export function customize(): void {
-  if (!flow.draft || flow.stage !== 'look') return
-  flow.customizing = true
 }
 
 /** "Describe it": anything goes in the words; the look always lands
@@ -646,21 +641,20 @@ export function describeLook(text: string): void {
   d.theme = theme
   if (layout) d.layout = layout
   d.described = text
-  if (flow.customizing) return
   const m = say({
     role: 'agent',
-    text: 'Done. Look at the app on the right. Say more, or customize it by hand.',
+    text: 'Done. Look at the app on the right. Say more, or adjust it above.',
     steps: ['Read your description', 'Matched it to Comfy’s styles', 'Checked contrast and sizes'],
     pending: true
   })
-  think(m, () => (flow.stage = 'look'))
+  think(m, () => {})
 }
 
 /** The look is set (or skipped): try the app. */
 export function finishLook(skipped = false): void {
   if (!flow.draft || flow.busy) return
-  flow.customizing = false
-  say({ role: 'user', text: skipped ? 'Skip' : 'Done customizing' })
+  if (flow.stage !== 'look') return
+  say({ role: 'user', text: skipped ? 'Skip the look' : 'The look is done' })
   tryIt()
 }
 
@@ -767,32 +761,74 @@ export const ACCESS_OPTIONS: {
 ]
 
 /** Free text in the composer: small edits, or the next step. */
+/** Free text: the agent changes whatever you ask, at any step - layout,
+ *  inputs, the look, the name - and the app on the right follows. When
+ *  it is not a change, it moves the first pass on. */
 export function send(text: string): void {
   const t = text.trim()
   if (!t || flow.busy) return
   if (flow.stage === 'idle') return startNew(t)
   say({ role: 'user', text: t })
-  // While on the look, words describe the look (the escape hatch).
-  if (flow.stage === 'look') return describeLook(t)
-  const low = t.toLowerCase()
   const d = flow.draft
-  if (d && /rename|call it|name it/.test(low)) {
+  if (!d) return next()
+  const low = t.toLowerCase()
+  const done: string[] = []
+
+  if (/rename|call it|name it/.test(low)) {
     const name = t
       .split(/rename (?:it )?to|call it|name it/i)[1]
       ?.replace(/["“”]/g, '')
       .trim()
-    if (name) d.name = name.charAt(0).toUpperCase() + name.slice(1)
-    say({ role: 'agent', text: `Renamed it to **${d.name}**.` })
+    if (name) {
+      d.name = name.charAt(0).toUpperCase() + name.slice(1)
+      done.push(`renamed it to **${d.name}**`)
+    }
+  }
+  const layout: AppLayout | undefined = /prompt bar|bottom|chat style/.test(low)
+    ? 'bottom'
+    : /inputs? (on the )?right|panel right/.test(low)
+      ? 'right'
+      : /inputs? (on the )?left|panel left/.test(low)
+        ? 'left'
+        : undefined
+  if (layout && layout !== d.layout) {
+    d.layout = layout
+    done.push(`switched to **${layoutLabel(layout).toLowerCase()}**`)
+  }
+  for (const f of d.fields) {
+    const name = f.label.toLowerCase()
+    if (!low.includes(name) && !low.includes(f.id)) continue
+    const off = /remove|hide|lock|without|drop/.test(low)
+    if (f.on === !off) continue
+    f.on = !off
+    done.push(`${off ? 'locked' : 'added'} **${f.label}**`)
+  }
+  if (
+    flow.stage === 'look' ||
+    /brand|kit|light|dark|color|colour|font|serif|bold|button says|rounded|sharp|playful|editorial|cover/.test(
+      low
+    )
+  ) {
+    const before = JSON.stringify(d.theme)
+    const { theme } = themeFromWords(t, d.theme)
+    if (JSON.stringify(theme) !== before) {
+      d.theme = theme
+      d.described = t
+      done.push('changed the **look**')
+    }
+  }
+
+  if (done.length) {
+    const list = done.join(', ')
+    say({
+      role: 'agent',
+      text: `${list.charAt(0).toUpperCase()}${list.slice(1)}. See the app on the right.`
+    })
     return
   }
-  if (d && /seed|steps/.test(low)) {
-    const f = d.fields.find((x) => low.includes(x.id))
-    if (f) f.on = !f.on
-    say({ role: 'agent', text: `${f?.on ? 'Added' : 'Locked'} **${f?.label}**.` })
-    return
-  }
-  if (/publish|share|ship|live/.test(low) && (flow.stage === 'preview' || flow.stage === 'inputs'))
+  if (/publish|share|ship|live/.test(low) && ['inputs', 'look', 'preview'].includes(flow.stage))
     return askPublish()
+  if (flow.stage === 'look') return finishLook()
   next()
 }
 

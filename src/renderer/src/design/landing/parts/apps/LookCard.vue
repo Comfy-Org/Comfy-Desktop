@@ -1,27 +1,25 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ArrowUp, Check } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { Check } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import { cn } from '../../ui/cn'
 import BrandKitPicker from './BrandKitPicker.vue'
 import StyleControls from './StyleControls.vue'
 import ThemeMini from './ThemeMini.vue'
-import { appsProto, describeLook, finishLook, flow } from '../../appFlow'
+import { appsProto, finishLook, flow, send } from '../../appFlow'
 import { newTheme, recipe, THEMES, withKit, type AppTheme } from '../../appTheme'
 
 /**
- * Customize the look, in the left column (the app stays on the right and
- * updates as you go). Four ways to offer the same guardrailed styles - the
- * Prototype menu's "Customize": the full style panel, curated themes,
- * brand kits first, or describing it. Words always work too.
+ * The look, as a card in the chat (the app on the right updates as you
+ * go). Four ways to offer the same guardrailed styles - the Prototype
+ * menu's "Customize": every style, curated themes, brand kits first, or
+ * describing it. It stays editable after the first pass; typing in the
+ * chat works too.
  */
 const d = computed(() => flow.draft!)
-const ask = ref('')
-function describe(text = ask.value): void {
-  if (!text.trim()) return
-  describeLook(text)
-  ask.value = ''
+function describe(text: string): void {
+  send(text)
 }
 
 const CARDS = computed(() => [
@@ -46,22 +44,11 @@ const IDEAS = [
   'Bold, like a Nike sneaker drop',
   'Soft and friendly, rounded, purple'
 ]
-const TITLE = {
-  panel: 'Style',
-  themes: 'Themes',
-  brand: 'Brand kit',
-  describe: 'Describe it'
-}
 </script>
 
 <template>
-  <div v-if="flow.draft" class="flex min-h-0 flex-1 flex-col">
-    <header class="flex h-14 shrink-0 items-center justify-between px-5">
-      <span class="text-ui font-semibold">{{ TITLE[appsProto.look] }}</span>
-      <span class="text-ui text-subtle-foreground">Changes show on the right</span>
-    </header>
-
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-6 [scrollbar-width:thin]">
+  <div v-if="flow.draft" class="mt-3 flex flex-col gap-4">
+    <div>
       <!-- 1. Everything -->
       <StyleControls v-if="appsProto.look === 'panel'" />
 
@@ -104,19 +91,9 @@ const TITLE = {
 
       <!-- 4. Words in, styles out -->
       <div v-else class="flex flex-col gap-6">
-        <form
-          class="flex flex-col gap-2 rounded-control border border-border-default p-3 focus-within:border-border-strong"
-          @submit.prevent="describe()"
-        >
-          <textarea
-            v-model="ask"
-            rows="3"
-            placeholder="Describe the look, for example: bold and dark, orange button that says Go"
-            class="resize-none bg-transparent text-ui outline-none placeholder:text-subtle-foreground"
-            @keydown.enter.exact.prevent="describe()"
-          />
-          <Button type="submit" size="sm" class="self-end"><ArrowUp :size="12" />Apply</Button>
-        </form>
+        <p class="text-ui text-subtle-foreground">
+          Type the look in the chat below, or start from one of these.
+        </p>
         <div class="flex flex-col gap-1.5">
           <button
             v-for="i in IDEAS"
@@ -147,22 +124,13 @@ const TITLE = {
       </div>
     </div>
 
-    <footer class="flex shrink-0 flex-col gap-3 border-t border-border-default p-4">
-      <form
-        v-if="appsProto.look !== 'describe'"
-        class="flex h-9 items-center gap-2 rounded-control border border-border-default pr-1 pl-3 focus-within:border-border-strong"
-        @submit.prevent="describe()"
+    <div v-if="flow.stage === 'look'" class="flex justify-end gap-2">
+      <Button size="sm" variant="ghost" :disabled="flow.busy" @click="finishLook(true)"
+        >Skip</Button
       >
-        <input
-          v-model="ask"
-          placeholder="Or describe it to Comfy Agent"
-          class="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-subtle-foreground"
-        />
-        <Button type="submit" size="icon-xs" variant="ghost" aria-label="Apply"
-          ><ArrowUp :size="12"
-        /></Button>
-      </form>
-      <Button variant="primary" block @click="finishLook()">Done</Button>
-    </footer>
+      <Button size="sm" variant="primary" :disabled="flow.busy" @click="finishLook()"
+        >Continue</Button
+      >
+    </div>
   </div>
 </template>

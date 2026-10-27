@@ -1,28 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  ArrowUpRight,
-  Check,
-  Copy,
-  Loader2,
-  Rocket,
-  SlidersHorizontal,
-  Sparkles,
-  Users
-} from 'lucide-vue-next'
+import { ArrowUpRight, Check, Copy, Loader2, Rocket, Sparkles, Users } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import GraphPreview from '../GraphPreview.vue'
 import FieldList from './FieldList.vue'
 import AppLayoutThumb from './AppLayoutThumb.vue'
+import LookCard from './LookCard.vue'
 import PreviewAsMenu from './PreviewAsMenu.vue'
 import { hostActions, instanceById } from '../../useProto'
 import {
   chooseLayout,
   copyLink,
-  customize,
   dialogs,
-  finishLook,
   flow,
   LAYOUTS,
   libApp,
@@ -116,7 +106,7 @@ const bold = (s: string): string =>
 
               <!-- Inputs -->
               <Card v-else-if="m.artifact === 'inputs'" class="mt-3 overflow-hidden">
-                <FieldList :editable="latest(m) && flow.stage === 'inputs'" />
+                <FieldList :editable="latest(m)" />
                 <div
                   v-if="flow.stage === 'inputs' && latest(m)"
                   class="flex items-center gap-3 border-t border-border-default px-4 py-3"
@@ -137,12 +127,11 @@ const bold = (s: string): string =>
                   v-for="l in LAYOUTS"
                   :key="l.id"
                   type="button"
-                  :disabled="flow.stage !== 'layout' || flow.busy"
+                  :disabled="flow.busy"
                   :class="
                     cn(
                       'flex flex-col gap-1.5 rounded-control border p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus enabled:hover:bg-secondary-background disabled:cursor-default',
-                      d.layout === l.id ? 'border-base-foreground/70' : 'border-border-default',
-                      flow.stage !== 'layout' && d.layout !== l.id && 'opacity-45'
+                      d.layout === l.id ? 'border-base-foreground/70' : 'border-border-default'
                     )
                   "
                   @mouseenter="flow.stage === 'layout' && (d.layout = l.id)"
@@ -154,16 +143,8 @@ const bold = (s: string): string =>
                 </button>
               </div>
 
-              <!-- Customize the look, or skip -->
-              <div
-                v-else-if="m.artifact === 'look' && flow.stage === 'look' && !flow.customizing"
-                class="mt-3 flex gap-2"
-              >
-                <Button size="sm" @click="customize"
-                  ><SlidersHorizontal :size="12" />Customize</Button
-                >
-                <Button size="sm" variant="ghost" @click="finishLook(true)">Skip</Button>
-              </div>
+              <!-- The look: editable after the first pass too -->
+              <LookCard v-else-if="m.artifact === 'look' && latest(m)" />
 
               <!-- Publish: the person decides -->
               <div
