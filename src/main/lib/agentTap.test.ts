@@ -40,6 +40,8 @@ const {
   ALLOWED_FIELD_NAMES,
   REASONS,
   STARTUP_STEPS,
+  STARTUP_OPERATIONS,
+  STARTUP_FILES,
   PRODUCT_EVENTS,
   PRODUCT_FIELDS,
   _resetProductEventBudgetForTest
@@ -144,7 +146,10 @@ describe('agentTap', () => {
           'comfyui_match',
           'shell',
           'sandbox',
-          'assets'
+          'assets',
+          'op',
+          'file',
+          'win_error'
         ].sort()
       )
     })
@@ -224,7 +229,8 @@ describe('agentTap', () => {
           'data_dir_locked',
           'address_in_use',
           'not_set_up',
-          'config_invalid'
+          'config_invalid',
+          'outdated'
         ].sort()
       )
     })
@@ -754,6 +760,24 @@ describe('agentTap product events', () => {
     })
   })
 
+  it.each([
+    ['agent_turn_failed', 'error_class', 'interrupted'],
+    ['agent_turn_failed', 'error_class', 'model_refused'],
+    ['agent_turn_failed', 'failure_stage', 'shutdown'],
+    ['agent_turn_failed', 'failure_stage', 'interrupted'],
+    ['agent_turn_failed', 'failure_stage', 'credit'],
+    ['agent_turn_failed', 'failure_stage', 'rate_limit'],
+    ['agent_first_response', 'response_kind', 'refusal']
+  ])('forwards the rc5 value %s %s=%s as itself', (event, field, value) => {
+    const ids =
+      event === 'agent_turn_failed'
+        ? `thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW}`
+        : `thread_id=${THREAD} turn_id=${TURN}`
+    ingest(relayed(`[agent-event] ${event} ${ids} ${field}=${value}`))
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.ctx[field]).toBe(value)
+  })
+
   it('forwards an enum value it doesn’t know as unknown', () => {
     ingest(turnStarted(' engine=warp run_mode=auto'))
     expect(captured[0]?.ctx).toMatchObject({ engine: 'unknown', run_mode: 'auto' })
@@ -969,6 +993,14 @@ const STARTUP_FIXTURE = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-events.txt'), 'utf8')
   .trimEnd()
   .split('\n')
+const STARTUP_OPERATIONS_FIXTURE = fs
+  .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-operations.txt'), 'utf8')
+  .trim()
+  .split('\n')
+const STARTUP_FILES_FIXTURE = fs
+  .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-files.txt'), 'utf8')
+  .trim()
+  .split('\n')
 const STARTUP_STEP_IDS = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-step-ids.txt'), 'utf8')
   .trim()
@@ -1021,7 +1053,33 @@ describe('agentTap startup records', () => {
       reason: 'network_error'
     })
     expect(captured[4]?.ctx).toMatchObject({ step: 'object_info', reason: 'timeout' })
-    expect(captured[6]?.ctx).toMatchObject({ duration_ms: 41000, node_version: 'v22.11.0' })
+    expect(captured[6]?.ctx).toMatchObject({
+      step: 'sandbox_config',
+      reason: 'permission_denied',
+      op: 'resolve_open',
+      win_error: 5
+    })
+    expect(captured[8]?.ctx).toMatchObject({
+      step: 'open_data_dir',
+      reason: 'data_dir_locked',
+      op: 'open',
+      file: 'agent.lock',
+      win_error: 33
+    })
+    expect(captured[10]?.ctx).toMatchObject({ duration_ms: 41000, node_version: 'v22.11.0' })
+  })
+
+  it('knows every diagnostic operation and agent file the host forwards', () => {
+    expect([...STARTUP_OPERATIONS].sort()).toEqual([...STARTUP_OPERATIONS_FIXTURE].sort())
+    expect([...STARTUP_FILES].sort()).toEqual([...STARTUP_FILES_FIXTURE].sort())
+  })
+
+  it('reports a diagnostic value it does not know as unknown, and drops a bad error number', () => {
+    expect(
+      fields('[agent-event] startup_failed step=listen reason=unknown op=CreateProcessW file=x.txt')
+    ).toEqual({ step: 'listen', reason: 'unknown', op: 'unknown', file: 'unknown' })
+    ingest(['[agent-event] startup_failed step=listen reason=unknown win_error=-5'])
+    expect(captured, 'a negative error number is not one').toEqual([])
   })
 
   it('types the host lifecycle fields', () => {
