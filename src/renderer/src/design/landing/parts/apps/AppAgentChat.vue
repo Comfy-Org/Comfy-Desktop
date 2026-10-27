@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { AppWindow, ArrowLeft, ArrowUpRight, Plus, Sparkles } from 'lucide-vue-next'
+import {
+  AppWindow,
+  ArrowLeft,
+  ArrowUpRight,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Sparkles
+} from 'lucide-vue-next'
+import Tooltip from '../../ui/Tooltip.vue'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
@@ -18,6 +27,7 @@ import {
   setLayout,
   enterBuilder,
   exitBuilder,
+  toggleSidebar,
   send,
   suggestions,
   type AppLayout
@@ -101,10 +111,26 @@ const fields = computed(() =>
           flow.split ? 'h-14 shrink-0 border-b border-border-default px-3' : 'px-10 pt-6 pb-4'
         ]"
       >
-        <!-- App-builder mode: the way out, top left -->
-        <Button v-if="flow.split" variant="ghost" size="sm" @click="exitBuilder"
-          ><ArrowLeft :size="13" />Exit</Button
-        >
+        <!-- App-builder mode: the sidebar toggle and the way out, top left -->
+        <template v-if="flow.split">
+          <Tooltip :content="flow.sidebarClosed ? 'Show sidebar' : 'Hide sidebar'">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              :aria-label="flow.sidebarClosed ? 'Show sidebar' : 'Hide sidebar'"
+              :aria-pressed="!flow.sidebarClosed"
+              @click="toggleSidebar"
+            >
+              <PanelLeftOpen v-if="flow.sidebarClosed" :size="15" /><PanelLeftClose
+                v-else
+                :size="15"
+              />
+            </Button>
+          </Tooltip>
+          <Button variant="ghost" size="sm" @click="exitBuilder"
+            ><ArrowLeft :size="13" />Exit</Button
+          >
+        </template>
         <h1 v-else class="flex min-w-0 items-center gap-2 text-heading font-semibold">
           <Sparkles :size="16" /><span class="truncate">{{ d?.name ?? 'New app' }}</span>
         </h1>

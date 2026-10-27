@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import { ArrowUpRight, Check, Copy, Loader2, Rocket, Sparkles, Users } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
@@ -10,6 +10,7 @@ import LookCard from './LookCard.vue'
 import PreviewAsMenu from './PreviewAsMenu.vue'
 import { hostActions, instanceById } from '../../useProto'
 import {
+  askCustomLayout,
   chooseLayout,
   copyLink,
   dialogs,
@@ -19,6 +20,7 @@ import {
   next,
   openApp,
   openAppUrl,
+  type LayoutChoice,
   type Msg
 } from '../../appFlow'
 import { cn } from '../../ui/cn'
@@ -33,6 +35,23 @@ const d = computed(() => flow.draft)
 const live = computed(() => libApp(flow.appId))
 const latest = (m: Msg): boolean =>
   [...flow.messages].reverse().find((x) => x.artifact === m.artifact)?.id === m.id
+// Selected only once picked (or described): nothing is preselected the
+// first time, so the choice is explicit.
+function picked(id: LayoutChoice): boolean {
+  const dr = d.value
+  if (!dr || flow.stage === 'layout') return id === 'custom' && flow.describingLayout
+  return id === 'custom'
+    ? !!dr.customLayout || flow.describingLayout
+    : dr.layout === id && !dr.customLayout && !flow.describingLayout
+}
+function pickLayout(id: LayoutChoice): void {
+  if (id !== 'custom') return chooseLayout(id)
+  askCustomLayout()
+  nextTick(() => {
+    const boxes = document.querySelectorAll<HTMLTextAreaElement>('.chat-col textarea')
+    boxes[boxes.length - 1]?.focus()
+  })
+}
 const bold = (s: string): string =>
   s
     .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
@@ -121,24 +140,21 @@ const bold = (s: string): string =>
                 </div>
               </Card>
 
-              <!-- Layout: three choices; the app on the right shows the pick -->
-              <div v-else-if="m.artifact === 'layout'" class="mt-3 grid grid-cols-3 gap-2">
+              <!-- Layout: three presets or Custom, picked by click -->
+              <div v-else-if="m.artifact === 'layout'" class="mt-3 grid grid-cols-2 gap-2">
                 <button
-                  v-for="l in LAYOUTS"
+                  v-for="l in [...LAYOUTS, { id: 'custom' as const, label: 'Custom' }]"
                   :key="l.id"
                   type="button"
                   :disabled="flow.busy"
+                  :aria-pressed="picked(l.id)"
                   :class="
                     cn(
                       'flex flex-col gap-1.5 rounded-control border p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus enabled:hover:bg-secondary-background disabled:cursor-default',
-                      d.layout === l.id && !d.customLayout
-                        ? 'border-base-foreground/70'
-                        : 'border-border-default'
+                      picked(l.id) ? 'border-base-foreground/70' : 'border-border-default'
                     )
                   "
-                  @mouseenter="flow.stage === 'layout' && (d.layout = l.id)"
-                  @focus="flow.stage === 'layout' && (d.layout = l.id)"
-                  @click="chooseLayout(l.id)"
+                  @click="pickLayout(l.id)"
                 >
                   <AppLayoutThumb :layout="l.id" />
                   <span class="px-0.5 text-ui">{{ l.label }}</span>

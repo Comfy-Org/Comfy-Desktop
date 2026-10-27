@@ -45,8 +45,8 @@ const MODES = computed(() => [
 
 <template>
   <div class="proto-shell relative flex size-full min-h-0 flex-1 overflow-hidden bg-app-background">
-    <!-- App-builder mode (the agent making an app): the sidebar closes,
-         so the chat and the app get the room. -->
+    <!-- App-builder mode (the agent making an app): the creator can close
+         the sidebar to give the chat and the app the room. -->
     <aside
       :class="[
         'proto-sidebar sidebar-slide relative z-5 flex shrink-0 flex-col [--glyph-ring:var(--color-app-background)] [scrollbar-width:none]',

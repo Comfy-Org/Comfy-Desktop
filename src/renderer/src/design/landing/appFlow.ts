@@ -450,6 +450,8 @@ export const flow = reactive({
   busy: false,
   /** Waiting for the creator to describe a custom layout. */
   describingLayout: false,
+  /** In app-builder mode, the creator closed the sidebar (more room). */
+  sidebarClosed: false,
   /** From "Create an app" on, the app shows on the right as it is built. */
   split: false,
   /** How many inputs the agent has added so far (the app on the right
@@ -593,10 +595,14 @@ export function exitBuilder(): void {
 export function enterBuilder(): void {
   if (flow.draft && flow.stage !== 'workflow') flow.split = true
 }
-/** The sidebar closes while you build the app. */
+/** In app-builder mode the sidebar stays open; the creator can close it
+ *  for more room (and open it again). */
 export const building = computed(
-  () => flow.split && proto.mode === 'agent' && proto.page === 'agent'
+  () => flow.split && flow.sidebarClosed && proto.mode === 'agent' && proto.page === 'agent'
 )
+export function toggleSidebar(): void {
+  flow.sidebarClosed = !flow.sidebarClosed
+}
 
 /** A preset layout from the app's header: it replaces a custom one. */
 export function setLayout(id: AppLayout): void {
@@ -632,7 +638,8 @@ function describeLayout(text: string): void {
     steps: ['Read your description', 'Placed the inputs and the result'],
     pending: true
   })
-  think(m, () => {})
+  // The first time, it moves on to the inputs, like a preset pick.
+  think(m, () => flow.stage === 'layout' && proposeInputs())
 }
 
 /** Pick a layout, then the inputs. */
