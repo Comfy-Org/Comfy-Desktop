@@ -1,0 +1,71 @@
+/*
+ * Light theme: a neutral starting point, not a proposal. It inverts the Void
+ * ramp on the same hue so every surface and text role has a light value, and
+ * shows what still ignores the theme (raw white/black in components). The
+ * directions refine it under `[data-ds-theme='light']`.
+ */
+:root[data-ds-theme='light'] {
+  color-scheme: light;
+
+  --color-app-background: oklch(0.955 0.003 285);
+  --color-titlebar-background: oklch(0.94 0.003 285);
+  --color-content-background: oklch(0.99 0.002 285);
+
+  --color-base-foreground: oklch(0.2 0.005 285);
+  --color-muted-foreground: oklch(0.42 0.008 285);
+  --color-subtle-foreground: oklch(0.52 0.01 285);
+
+  --color-card-background: oklch(1 0 0);
+  --color-card-background-hover: oklch(0.975 0.003 285);
+  --color-secondary-background: oklch(0 0 0 / 0.05);
+  --color-secondary-background-hover: oklch(0 0 0 / 0.08);
+
+  --color-inverted-background: oklch(0.2 0.005 285);
+  --color-inverted-background-hover: oklch(0.12 0.004 285);
+  --color-inverted-foreground: oklch(0.985 0.002 285);
+
+  --color-border-default: oklch(0 0 0 / 0.09);
+  --color-border-strong: oklch(0 0 0 / 0.16);
+  --color-border-focus: oklch(0 0 0 / 0.45);
+
+  --color-status-running: oklch(0.52 0.14 155);
+  --color-status-danger: oklch(0.55 0.2 25);
+
+  --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.06), 0 4px 12px oklch(0 0 0 / 0.05);
+  --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.08), 0 8px 20px oklch(0 0 0 / 0.08);
+  --shadow-popover: 0 0 0 1px oklch(0 0 0 / 0.06), 0 12px 32px oklch(0 0 0 / 0.14);
+  --shadow-highlight: inset 0 1px 0 oklch(1 0 0 / 0.6);
+
+  --glass-base: oklch(0.955 0.003 285);
+  --glass-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.5), transparent);
+  --glass-warm: radial-gradient(
+    120vw 34vw at 0 var(--glass-y, 0px),
+    oklch(0.93 0.01 310 / 0.6),
+    transparent 70%
+  );
+}
+
+:root[data-ds-theme='light'] .proto-shell {
+  background-image: var(--glass-sheen), var(--glass-warm);
+}
+
+:root[data-ds-theme='light'] .proto-main.proto-main {
+  background: var(--color-content-background);
+}
+
+:root[data-ds-theme='light'] .proto-main::before {
+  background: radial-gradient(900px 560px at 20% -14%, oklch(0.9 0.02 285 / 0.25), transparent 62%);
+}
+
+:root[data-ds-theme='light'] .heading-gradient {
+  background: linear-gradient(180deg, oklch(0.2 0.005 285) 30%, oklch(0.45 0.01 285));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+:root[data-ds-theme='light'] .edge-shine {
+  border-color: var(--color-border-default);
+}
+:root[data-ds-theme='light'] .edge-shine::after {
+  display: none;
+}

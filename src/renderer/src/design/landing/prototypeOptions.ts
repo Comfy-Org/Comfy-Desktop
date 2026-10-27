@@ -2,6 +2,7 @@ import { computed, type WritableComputedRef } from 'vue'
 import { proto } from './useProto'
 import { can, MILESTONES } from './milestones'
 import { appsProto, type LookVariant } from './appFlow'
+import { DIRECTIONS, look as designLook, THEMES, type Direction, type Theme } from './look'
 
 /**
  * The prototype's switches, shown in the Prototype panel (DevBar, browser
@@ -31,6 +32,16 @@ const data = computed({
   set: (v) => (proto.live = v === 'mine')
 })
 
+// The visual direction and theme being explored (look.ts, ui/looks/).
+const direction = computed({
+  get: () => designLook.direction,
+  set: (v) => (designLook.direction = v as Direction)
+})
+const theme = computed({
+  get: () => designLook.theme,
+  set: (v) => (designLook.theme = v as Theme)
+})
+
 // Milestone 10: how the creator customizes the app's look.
 const look = computed({
   get: () => appsProto.look,
@@ -40,6 +51,8 @@ const look = computed({
 export const prototypeGroups = computed<PrototypeGroup[]>(() =>
   [
     { key: 'milestone', label: 'Milestone', model: milestone, options: MILESTONES },
+    { key: 'direction', label: 'Direction', model: direction, options: [...DIRECTIONS] },
+    { key: 'theme', label: 'Theme', model: theme, options: [...THEMES] },
     can.value.agent && {
       key: 'look',
       label: 'Customize',
