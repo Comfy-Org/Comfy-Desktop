@@ -49,7 +49,7 @@ const fontLabel = (f?: AppFont): string => (f ? fontOf(f).label : 'Sans')
 
 <template>
   <div class="flex flex-col gap-3">
-    <div class="grid grid-cols-3 gap-2.5">
+    <div class="grid grid-cols-2 gap-2.5">
       <!-- No brand: Comfy's look -->
       <button
         type="button"

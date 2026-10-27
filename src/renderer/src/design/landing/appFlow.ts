@@ -399,7 +399,15 @@ export const usd = (n: number): string => `$${n.toFixed(2)}`
 
 // --- The creator journey (scripted agent) -----------------------------------
 
-export type Stage = 'idle' | 'workflow' | 'inputs' | 'layout' | 'preview' | 'publish' | 'live'
+export type Stage =
+  | 'idle'
+  | 'workflow'
+  | 'layout'
+  | 'inputs'
+  | 'look'
+  | 'preview'
+  | 'publish'
+  | 'live'
 
 export interface Msg {
   id: number
@@ -437,7 +445,14 @@ export const flow = reactive({
   /** Publish checks revealed so far; -1 = not publishing. */
   checks: -1,
   appId: '',
-  busy: false
+  busy: false,
+  /** From "Create an app" on, the app shows on the right as it is built. */
+  split: false,
+  /** Customizing the look: the left column becomes the style panel. */
+  customizing: false,
+  /** How many inputs the agent has added so far (the app on the right
+   *  grows while the agent picks them). */
+  fieldsShown: 99
 })
 
 export const CHECKS = (d: Draft): string[] => [
@@ -477,6 +492,9 @@ export function resetFlow(): void {
   flow.checks = -1
   flow.appId = ''
   flow.busy = false
+  flow.split = false
+  flow.customizing = false
+  flow.fieldsShown = 99
 }
 
 function open(): void {
@@ -551,12 +569,35 @@ function draftFrom(source: SourceWorkflow, fresh: boolean): Draft {
   }
 }
 
-/** Inputs: what people change, in plain words. The rest stays locked. */
+/** Layout first: the app appears on the right, in the picked layout. */
+function askLayout(): void {
+  flow.split = true
+  const m = say({
+    role: 'agent',
+    text: '**Pick a layout.** The app on the right shows it. You can change it later.',
+    steps: ['Read 1 output: Save Image', 'Made a first version'],
+    artifact: 'layout',
+    pending: true
+  })
+  think(m, () => (flow.stage = 'layout'))
+}
+
+/** Pick a layout, then the inputs. */
+export function chooseLayout(id: AppLayout): void {
+  const d = flow.draft
+  if (!d || flow.busy || flow.stage !== 'layout') return
+  d.layout = id
+  say({ role: 'user', text: layoutLabel(id) })
+  proposeInputs()
+}
+
+/** Inputs: what people change, in plain words. The rest stays locked.
+ *  They appear on the app one by one as the agent picks them. */
 function proposeInputs(): void {
   const d = flow.draft!
   const m = say({
     role: 'agent',
-    text: `People change **4 things**. The other ${d.source.settings - 4} settings stay locked.`,
+    text: `People change **4 things**. The other ${d.source.settings - 4} settings stay locked. Check or uncheck any of them and watch the app.`,
     steps: [
       'Picked the settings people need',
       'Named them in plain words',
@@ -566,29 +607,34 @@ function proposeInputs(): void {
     artifact: 'inputs',
     pending: true
   })
-  think(m, () => (flow.stage = 'inputs'))
+  flow.fieldsShown = 0
+  const grow = (): void => {
+    if (flow.fieldsShown >= 4) return
+    flow.fieldsShown++
+    setTimeout(grow, 450)
+  }
+  setTimeout(grow, 400)
+  think(m, () => {
+    flow.fieldsShown = 99
+    flow.stage = 'inputs'
+  })
 }
 
-/** Look: how the app looks to the people who use it - layout, brand,
- *  colors, type - inside guardrails. How it is offered depends on the
- *  Prototype menu's "Customize" switch. */
-const LOOK_ASK: Record<LookVariant, string> = {
-  panel:
-    '**Here is a first look.** Open the style panel to change the brand, colors, type and more.',
-  themes: '**Pick a look.** Each theme sets colors, type and corners together. Fine-tune it below.',
-  brand: `**Use a brand kit?** Your workspace has ${BRAND_KITS.length} saved. Or add a new one in a minute.`,
-  describe:
-    '**Describe the look** in your own words. I turn it into styles that work on every screen.'
-}
-function askLayout(): void {
+/** Customize the look (brand, colors, type...) or skip it. How the
+ *  options are offered depends on the Prototype menu's "Customize". */
+function askLook(): void {
   const m = say({
     role: 'agent',
-    text: LOOK_ASK[appsProto.look],
-    steps: ['Read 4 inputs and 1 output', 'Made a first version'],
-    artifact: 'layout',
-    pending: true
+    text: '**Want to customize the look?** Brand, colors, type and more, inside styles that work on every screen. Or skip it.',
+    artifact: 'look',
+    pending: true,
+    steps: []
   })
-  think(m, () => (flow.stage = 'layout'))
+  think(m, () => (flow.stage = 'look'), 200)
+}
+export function customize(): void {
+  if (!flow.draft || flow.stage !== 'look') return
+  flow.customizing = true
 }
 
 /** "Describe it": anything goes in the words; the look always lands
@@ -600,20 +646,21 @@ export function describeLook(text: string): void {
   d.theme = theme
   if (layout) d.layout = layout
   d.described = text
+  if (flow.customizing) return
   const m = say({
     role: 'agent',
-    text: 'Done. Here is what I changed. Click any of it to adjust.',
+    text: 'Done. Look at the app on the right. Say more, or customize it by hand.',
     steps: ['Read your description', 'Matched it to Comfy’s styles', 'Checked contrast and sizes'],
-    artifact: 'layout',
     pending: true
   })
-  think(m, () => (flow.stage = 'layout'))
+  think(m, () => (flow.stage = 'look'))
 }
 
-/** The look is set: try the app. */
-export function finishLook(): void {
+/** The look is set (or skipped): try the app. */
+export function finishLook(skipped = false): void {
   if (!flow.draft || flow.busy) return
-  say({ role: 'user', text: 'Looks good' })
+  flow.customizing = false
+  say({ role: 'user', text: skipped ? 'Skip' : 'Done customizing' })
   tryIt()
 }
 
@@ -621,7 +668,7 @@ export function finishLook(): void {
 function tryIt(): void {
   const m = say({
     role: 'agent',
-    text: 'Here is your app, in its look. I ran the example on Comfy Cloud. Each run costs about **$0.04**.',
+    text: 'I ran the example on Comfy Cloud. Try it on the right. Each run costs about **$0.04**.',
     steps: [
       'All 9 nodes are on Comfy Cloud',
       'Uploaded the relight LoRA from My Local 1',
@@ -649,11 +696,9 @@ export function next(): void {
   if (flow.busy) return
   switch (flow.stage) {
     case 'workflow':
-      return proposeInputs()
-    case 'inputs':
       return askLayout()
-    case 'layout':
-      return tryIt()
+    case 'inputs':
+      return askLook()
     case 'preview':
       return askPublish()
     default:
@@ -728,7 +773,7 @@ export function send(text: string): void {
   if (flow.stage === 'idle') return startNew(t)
   say({ role: 'user', text: t })
   // While on the look, words describe the look (the escape hatch).
-  if (flow.stage === 'layout') return describeLook(t)
+  if (flow.stage === 'look') return describeLook(t)
   const low = t.toLowerCase()
   const d = flow.draft
   if (d && /rename|call it|name it/.test(low)) {
@@ -755,6 +800,8 @@ export function suggestions(): string[] {
   switch (flow.stage) {
     case 'inputs':
       return ['Also let people change the seed']
+    case 'look':
+      return ['Make it light and editorial', 'Use the Nike brand kit']
     case 'preview':
       return ['Publish it', 'Rename it to Packshot light']
     default:

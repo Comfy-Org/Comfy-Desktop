@@ -1,15 +1,37 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowUpRight, Check, Copy, Loader2, Lock, Rocket, Sparkles, Users } from 'lucide-vue-next'
+import {
+  ArrowUpRight,
+  Check,
+  Copy,
+  Loader2,
+  Rocket,
+  SlidersHorizontal,
+  Sparkles,
+  Users
+} from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import GraphPreview from '../GraphPreview.vue'
-import AppThemeFrame from './AppThemeFrame.vue'
 import FieldList from './FieldList.vue'
-import LookStep from './LookStep.vue'
+import AppLayoutThumb from './AppLayoutThumb.vue'
 import PreviewAsMenu from './PreviewAsMenu.vue'
 import { hostActions, instanceById } from '../../useProto'
-import { copyLink, dialogs, flow, libApp, next, openApp, openAppUrl, type Msg } from '../../appFlow'
+import {
+  chooseLayout,
+  copyLink,
+  customize,
+  dialogs,
+  finishLook,
+  flow,
+  LAYOUTS,
+  libApp,
+  next,
+  openApp,
+  openAppUrl,
+  type Msg
+} from '../../appFlow'
+import { cn } from '../../ui/cn'
 
 /**
  * The conversation. Full: each step is a card you act on (Chat view).
@@ -99,9 +121,9 @@ const bold = (s: string): string =>
                   v-if="flow.stage === 'inputs' && latest(m)"
                   class="flex items-center gap-3 border-t border-border-default px-4 py-3"
                 >
-                  <Lock :size="13" class="text-subtle-foreground" />
                   <span class="flex-1 text-ui text-subtle-foreground"
-                    >Everything else stays locked. People never see the graph.</span
+                    >{{ d.fields.filter((f) => f.on).length }} of {{ d.fields.length }} shown · the
+                    rest stay locked</span
                   >
                   <Button variant="primary" size="sm" :disabled="flow.busy" @click="next"
                     >Looks right</Button
@@ -109,34 +131,38 @@ const bold = (s: string): string =>
                 </div>
               </Card>
 
-              <!-- Look: only the latest one is live -->
-              <LookStep
-                v-else-if="m.artifact === 'layout' && latest(m)"
-                :done="flow.stage !== 'layout'"
-              />
-
-              <!-- Try it -->
-              <div
-                v-else-if="m.artifact === 'preview'"
-                class="mt-3 overflow-hidden rounded-card border border-border-default"
-              >
-                <div
-                  class="flex items-center justify-between border-b border-border-default px-4 py-2.5 text-ui text-subtle-foreground"
+              <!-- Layout: three choices; the app on the right shows the pick -->
+              <div v-else-if="m.artifact === 'layout'" class="mt-3 grid grid-cols-3 gap-2">
+                <button
+                  v-for="l in LAYOUTS"
+                  :key="l.id"
+                  type="button"
+                  :disabled="flow.stage !== 'layout' || flow.busy"
+                  :class="
+                    cn(
+                      'flex flex-col gap-1.5 rounded-control border p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus enabled:hover:bg-secondary-background disabled:cursor-default',
+                      d.layout === l.id ? 'border-base-foreground/70' : 'border-border-default',
+                      flow.stage !== 'layout' && d.layout !== l.id && 'opacity-45'
+                    )
+                  "
+                  @mouseenter="flow.stage === 'layout' && (d.layout = l.id)"
+                  @focus="flow.stage === 'layout' && (d.layout = l.id)"
+                  @click="chooseLayout(l.id)"
                 >
-                  <span>Draft · only you see it</span><span>Try it</span>
-                </div>
-                <AppThemeFrame
-                  compact
-                  :name="d.name"
-                  :blurb="d.blurb"
-                  author="Pablo · Silverside"
-                  :thumb-id="d.thumbId"
-                  :fields="d.fields"
-                  :cost="d.cost"
-                  payer="Paid by you while it is a draft"
-                  :layout="d.layout"
-                  :theme="d.theme"
-                />
+                  <AppLayoutThumb :layout="l.id" />
+                  <span class="px-0.5 text-ui">{{ l.label }}</span>
+                </button>
+              </div>
+
+              <!-- Customize the look, or skip -->
+              <div
+                v-else-if="m.artifact === 'look' && flow.stage === 'look' && !flow.customizing"
+                class="mt-3 flex gap-2"
+              >
+                <Button size="sm" @click="customize"
+                  ><SlidersHorizontal :size="12" />Customize</Button
+                >
+                <Button size="sm" variant="ghost" @click="finishLook(true)">Skip</Button>
               </div>
 
               <!-- Publish: the person decides -->

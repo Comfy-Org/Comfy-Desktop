@@ -17,7 +17,6 @@ import { flow, type FieldKind } from '../../appFlow'
 const { editable = true } = defineProps<{ editable?: boolean }>()
 const MAX = 6
 const fields = computed(() => flow.draft?.fields ?? [])
-const picked = computed(() => fields.value.filter((f) => f.on).length)
 const expanded = ref(false)
 const q = ref('')
 const shown = computed(() =>
@@ -80,10 +79,7 @@ function openBuilder(): void {
             )
           "
         />
-        <span v-if="f.on && f.options" class="hidden text-ui text-subtle-foreground md:inline">{{
-          f.options.join(' · ')
-        }}</span>
-        <span class="w-36 truncate text-right font-mono text-[12px] text-subtle-foreground">{{
+        <span class="w-28 truncate text-right font-mono text-[12px] text-subtle-foreground">{{
           f.node
         }}</span>
       </label>
@@ -92,15 +88,14 @@ function openBuilder(): void {
       </p>
     </div>
 
-    <div class="flex items-center gap-3 border-t border-border-default px-4 py-2.5">
+    <div class="flex items-center justify-between gap-3 border-t border-border-default px-4 py-2.5">
       <Button variant="ghost" size="sm" class="-ml-2" @click="expanded = !expanded">
-        {{ expanded ? 'Show fewer' : `Show all ${fields.length} settings` }}
+        {{ expanded ? 'Show fewer' : `All ${fields.length} settings` }}
         <ChevronDown :size="13" :class="cn('transition-transform', expanded && 'rotate-180')" />
       </Button>
-      <span class="flex-1 text-ui text-subtle-foreground"
-        >{{ picked }} of {{ fields.length }} shown to people</span
+      <Button variant="ghost" size="sm" class="-mr-2" @click="openBuilder"
+        ><PanelsTopLeft :size="12" />Open App Builder</Button
       >
-      <Button size="sm" @click="openBuilder"><PanelsTopLeft :size="12" />Open App Builder</Button>
     </div>
   </div>
 </template>
