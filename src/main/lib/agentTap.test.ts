@@ -230,7 +230,8 @@ describe('agentTap', () => {
           'address_in_use',
           'not_set_up',
           'config_invalid',
-          'outdated'
+          'outdated',
+          'unreadable_link'
         ].sort()
       )
     })
@@ -988,7 +989,8 @@ describe('agentTap consent gating', () => {
 
 // The host's startup records, byte-identical to cloud's
 // services/agent/packaging/testdata/startup_events.txt, and the step ids to
-// its startup_step_ids.txt.
+// its startup_step_ids.txt. The events, operations and files were copied
+// from Comfy-Org/cloud#16572 at d595cd23054; re-copy them when cloud changes.
 const STARTUP_FIXTURE = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-events.txt'), 'utf8')
   .trimEnd()
@@ -1059,14 +1061,20 @@ describe('agentTap startup records', () => {
       op: 'resolve_open',
       win_error: 5
     })
-    expect(captured[8]?.ctx).toMatchObject({
+    expect(captured[7]?.ctx).toMatchObject({
+      step: 'sandbox_config',
+      reason: 'unreadable_link',
+      op: 'resolve_open',
+      win_error: 5
+    })
+    expect(captured[9]?.ctx).toMatchObject({
       step: 'open_data_dir',
-      reason: 'data_dir_locked',
+      reason: 'permission_denied',
       op: 'open',
       file: 'agent.lock',
-      win_error: 33
+      win_error: 5
     })
-    expect(captured[10]?.ctx).toMatchObject({ duration_ms: 41000, node_version: 'v22.11.0' })
+    expect(captured[11]?.ctx).toMatchObject({ duration_ms: 41000, node_version: 'v22.11.0' })
   })
 
   it('knows every diagnostic operation and agent file the host forwards', () => {
@@ -1080,6 +1088,10 @@ describe('agentTap startup records', () => {
     ).toEqual({ step: 'listen', reason: 'unknown', op: 'unknown', file: 'unknown' })
     ingest(['[agent-event] startup_failed step=listen reason=unknown win_error=-5'])
     expect(captured, 'a negative error number is not one').toEqual([])
+    ingest(['[agent-event] startup_failed step=listen reason=unknown win_error=4294967296'])
+    expect(captured, 'a Win32 error number fits in 32 bits').toEqual([])
+    ingest(['[agent-event] startup_failed step=listen reason=unknown win_error=4294967295'])
+    expect(captured[0]?.ctx).toMatchObject({ win_error: 0xffffffff })
   })
 
   it('types the host lifecycle fields', () => {

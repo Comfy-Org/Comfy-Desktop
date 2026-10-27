@@ -5,8 +5,9 @@
 [agent-event] startup_failed step=object_info reason=timeout
 [agent-event] startup_step step=sandbox_config outcome=failed duration_ms=4 reason=permission_denied op=resolve_open win_error=5
 [agent-event] startup_failed step=sandbox_config reason=permission_denied op=resolve_open win_error=5
-[agent-event] startup_step step=open_data_dir outcome=failed duration_ms=21000 reason=data_dir_locked op=open file=agent.lock win_error=33
-[agent-event] startup_failed step=open_data_dir reason=data_dir_locked op=open file=agent.lock win_error=33
+[agent-event] startup_failed step=sandbox_config reason=unreadable_link op=resolve_open win_error=5
+[agent-event] startup_step step=open_data_dir outcome=failed duration_ms=21000 reason=permission_denied op=open file=agent.lock win_error=5
+[agent-event] startup_failed step=open_data_dir reason=permission_denied op=open file=agent.lock win_error=5
 [agent-event] node_fetch_started
 [agent-event] node_fetched duration_ms=41000 node_version=v22.11.0
 [agent-event] node_fetch_failed duration_ms=360000 reason=timeout

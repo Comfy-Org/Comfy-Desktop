@@ -55,7 +55,10 @@ export const REASONS: ReadonlySet<string> = new Set([
   'config_invalid',
   // ComfyUI core's agent_error when the installed comfy-agent lacks this
   // Core's host protocol (app/agent_host.py load()).
-  'outdated'
+  'outdated',
+  // The agent's startup_failed when a credential deny path is a link it
+  // cannot open (cloud services/agent/packaging/testdata/startup_reasons.txt).
+  'unreadable_link'
 ])
 
 // The agent's startup step ids: byte-identical to cloud's
@@ -84,7 +87,8 @@ export const STARTUP_STEPS: ReadonlySet<string> = new Set([
 // What a failed startup step was refused on and which of the agent's own
 // files it named: byte-identical to cloud's
 // services/agent/packaging/testdata/startup_operations.txt and
-// startup_files.txt. The host already drops a value outside them.
+// startup_files.txt, as of Comfy-Org/cloud#16572 at d595cd23054. The host
+// already drops a value outside them.
 export const STARTUP_OPERATIONS: ReadonlySet<string> = new Set([
   'open',
   'stat',
@@ -190,8 +194,8 @@ const LIFECYCLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
     shell: ['on', 'off'],
     sandbox: ['none', 'seatbelt', 'appcontainer', 'other'],
     assets: ['enabled', 'disabled', 'unknown', 'other'],
-    op: [...STARTUP_OPERATIONS],
-    file: [...STARTUP_FILES]
+    op: STARTUP_OPERATIONS,
+    file: STARTUP_FILES
   }).map(([name, values]): [string, ReadonlySet<string>] => [name, new Set(values)])
 )
 
@@ -338,6 +342,8 @@ function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   }
   const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
   if (!Number.isSafeInteger(value) || (LIFECYCLE_COUNTS.has(key) && value < 0)) return undefined
+  // A Win32 error number is a DWORD; the host caps it at 32 bits too.
+  if (key === 'win_error' && value > 0xffffffff) return undefined
   return value
 }
 
