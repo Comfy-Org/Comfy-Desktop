@@ -7,6 +7,7 @@ import SegmentedControl from '../../ui/SegmentedControl.vue'
 import PromptBox from '../PromptBox.vue'
 import AgentThread from './AgentThread.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
+import AppPreviewLoading from './AppPreviewLoading.vue'
 import {
   flow,
   LAYOUTS,
@@ -38,6 +39,27 @@ function submit(t = text.value): void {
 }
 const d = computed(() => flow.draft)
 const live = computed(() => libApp(flow.appId))
+
+// The first time only ("Create an app"): the preview loads while the
+// agent makes the first version (at least ~0.9 s). "Preview app" later
+// shows the app straight away.
+const loading = ref(false)
+let timer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => flow.split,
+  (on) => {
+    clearTimeout(timer)
+    loading.value = false
+    if (!on || flow.stage !== 'workflow') return
+    loading.value = true
+    const settle = (): void => {
+      if (flow.stage === 'workflow') timer = setTimeout(settle, 150)
+      else loading.value = false
+    }
+    timer = setTimeout(settle, 900)
+  },
+  { immediate: true }
+)
 // After Exit: the draft is still there, one click away.
 const canBuild = computed(() => !!d.value && !['idle', 'workflow'].includes(flow.stage))
 // The inputs on the app: the checked ones, as the agent adds them.
@@ -124,7 +146,15 @@ const fields = computed(() =>
             >Open app<ArrowUpRight :size="12"
           /></Button>
         </header>
-        <div class="min-h-0 flex-1 overflow-y-auto">
+        <div class="relative min-h-0 flex-1 overflow-y-auto">
+          <!-- A short load while the agent makes the first version -->
+          <Transition name="preview-load">
+            <AppPreviewLoading
+              v-if="loading"
+              :layout="d.layout"
+              class="absolute inset-0 z-1 bg-app-background"
+            />
+          </Transition>
           <AppThemeFrame
             compact
             class="min-h-full"
@@ -174,6 +204,13 @@ const fields = computed(() =>
   transition: opacity 180ms ease;
 }
 .app-pane-leave-to {
+  opacity: 0;
+}
+/* The preview fades in over its loading state. */
+.preview-load-leave-active {
+  transition: opacity 260ms ease;
+}
+.preview-load-leave-to {
   opacity: 0;
 }
 /* The chat settles into its new column. */
