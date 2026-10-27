@@ -79,7 +79,7 @@ const fields = computed(() =>
         </h1>
         <span class="flex-1" />
         <Button v-if="!flow.split && canBuild" size="sm" @click="enterBuilder"
-          ><AppWindow :size="13" />Back to the app</Button
+          ><AppWindow :size="13" />Preview app</Button
         >
         <Button variant="ghost" size="sm" @click="resetFlow"><Plus :size="13" />New</Button>
       </header>
