@@ -2582,7 +2582,7 @@ describe('installAgentRequirements with a version override', () => {
       expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
     })
 
-    it("follows core's file when the flag carries no override (hold, or the override dropped)", async () => {
+    it("follows core's file when a valid answer carries no override (a dropped override)", async () => {
       const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined)
 
       expect(decision).toBeUndefined()
