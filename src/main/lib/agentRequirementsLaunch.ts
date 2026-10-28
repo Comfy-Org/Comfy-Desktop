@@ -17,6 +17,7 @@ import {
   coreFileInstalled,
   installedConstraints,
   isRevertedFor,
+  corePinsPlaceholderAgent,
   keepableAgent,
   normalizePackageName,
   overrideSignature,
@@ -648,7 +649,7 @@ export async function installedWorkingAgent(
   signal?: AbortSignal
 ): Promise<string | null> {
   const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => null)
-  if (coreText === null || !PLACEHOLDER_AGENT.test(coreText)) return null
+  if (coreText === null || !corePinsPlaceholderAgent(coreText)) return null
   const listed = await listInstalled(plan, signal)
   return listed === null ? null : keepableAgent(coreText, listed, state)
 }

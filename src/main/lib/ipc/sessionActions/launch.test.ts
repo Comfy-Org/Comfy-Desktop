@@ -4636,15 +4636,13 @@ describe('agent requirements at launch', () => {
       expect(keptEvents()).toEqual([])
     })
 
-    it('leaves the agent off when the user opted out', async () => {
+    it("leaves the agent off when the user opted out, even with a flag this core doesn't list", async () => {
       launchHarness.launchCommand = {
         cmd: process.execPath,
         args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', '--disable-agent'],
         cwd: installDir,
         skipPortWait: true
       }
-      launchHarness.schemaNames = ['enable-agent', 'disable-agent', 'listen', 'feature-flag']
-
       await handleLaunch(ctxFor('agent-no-answer-opted-out'))
 
       expect(spawnArgs).not.toContain('--enable-agent')

@@ -10,6 +10,7 @@ import {
   effectiveAgentRequirements,
   installedConstraints,
   isRevertedFor,
+  corePinsPlaceholderAgent,
   keepableAgent,
   nextOverrideState,
   overrideSignature,
@@ -490,9 +491,29 @@ describe('keepableAgent', () => {
     expect(keepableAgent(CORE, listed('0.1.0rc4'), failed)).toBe('comfy-agent==0.1.0rc4')
   })
 
+  it('compares the failed version as a version, not as a string', () => {
+    const failed = { signature: 'comfy-agent==0.1rc1', failures: 1 }
+    expect(keepableAgent(CORE, listed('0.1.0rc1'), failed)).toBeNull()
+  })
+
   it('keeps the version a recorded override last started cleanly', () => {
     const started = { signature: 'comfy-agent==0.1.0rc5', failures: 0 }
     expect(keepableAgent(CORE, listed('0.1.0rc5'), started)).toBe('comfy-agent==0.1.0rc5')
+  })
+})
+
+describe('corePinsPlaceholderAgent', () => {
+  it.each([
+    ['comfy-agent==0.0.0.dev0\n', true],
+    ['comfy_agent==0.0.0\n', true],
+    ['comfy-agent[go]==0.0.0.dev0\n', true],
+    ['comfy-agent-oss==0.0.0.dev0\ncomfy-cli==1.21.0\n', true],
+    ['comfy-agent==0.1.0rc5\n', false],
+    ['comfy-agent==0.0.01\n', false],
+    ['comfy-agent\n', false],
+    ['comfy-cli==0.0.0\n', false]
+  ])('%j → %s', (coreText, expected) => {
+    expect(corePinsPlaceholderAgent(coreText)).toBe(expected)
   })
 })
 
@@ -1028,6 +1049,13 @@ describe('reportOverrideDecision: a kept agent', () => {
         decision: 'reverted',
         reason: 'install_failed',
         pins: pins({ 'comfy-agent': '0.2.3' }),
+        install: {
+          outcome: 'exited',
+          exitCode: 2,
+          elapsedMs: 900,
+          budgetMs: 20_000,
+          errorTail: 'x'
+        },
         kept: 'comfy-agent==0.1.0rc5'
       })
       reportOverrideDecision('i', {
@@ -1063,6 +1091,10 @@ describe('reportOverrideDecision: a kept agent', () => {
         },
         { decision: 'refused', reason: 'bad_version', pins: null, kept_agent: null }
       ])
+      expect(
+        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).exit_code),
+        "the install's figures go on the original decision only"
+      ).toEqual([2, null, null, null])
       expect(new Set(emit.mock.calls.map(([name]) => name))).toEqual(
         new Set(['comfy.desktop.agent_requirements_override'])
       )

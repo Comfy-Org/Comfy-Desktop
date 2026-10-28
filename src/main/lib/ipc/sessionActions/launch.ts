@@ -1556,7 +1556,9 @@ async function runLaunch(
           !!campaigns &&
           heldArgUnanswered(built.beta.campaign.misses, campaigns, '--enable-agent') &&
           !built.args.includes('--enable-agent') &&
+          // The user's own args too: an opt-out this core doesn't list is filtered from built.args.
           !built.args.includes('--disable-agent') &&
+          !userArgs.includes('--disable-agent') &&
           filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')

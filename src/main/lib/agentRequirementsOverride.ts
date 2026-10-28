@@ -391,11 +391,28 @@ export type OverrideDecision =
   | { decision: 'kept_installed'; reason: 'no_answer'; pins?: undefined; kept: string }
 
 const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
+/** A `name==version` line, extras allowed: core's agent line can carry them. */
+const PINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)/
 
 /** The agent version an override that has failed to start (or install) pinned, if any. */
 function failedAgentVersion(state: AgentOverrideState | null): string | undefined {
   if (!state || state.failures === 0) return undefined
   return state.signature.match(/(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/)?.[1]
+}
+
+function sameVersion(a: string, b: string): boolean {
+  return EXACT_VERSION.test(a) && EXACT_VERSION.test(b) ? compareVersions(a, b) === 0 : a === b
+}
+
+/** Whether core's file pins its agent package (whatever its name) at the placeholder. */
+export function corePinsPlaceholderAgent(coreText: string): boolean {
+  const name = agentPackage(coreText)
+  return coreText.split(/\r?\n/).some((line) => {
+    const match = line.match(PINNED_LINE)
+    return (
+      !!match && normalizePackageName(match[1]!) === name && PLACEHOLDER_VERSION.test(match[2]!)
+    )
+  })
 }
 
 /**
@@ -414,7 +431,8 @@ export function keepableAgent(
     (p) => normalizePackageName(p.name) === name
   )?.version
   if (version === undefined || PLACEHOLDER_VERSION.test(version)) return null
-  if (version === failedAgentVersion(state)) return null
+  const failed = failedAgentVersion(state)
+  if (failed !== undefined && sameVersion(version, failed)) return null
   return `${name}==${version}`
 }
 
@@ -456,10 +474,18 @@ export function reportOverrideDecision(
     }
     telemetry.emit('comfy.desktop.agent_requirements_override', event)
     // Its own event too, so the original decision still counts as it always has.
+    // Without the install's figures, which the original decision already carries.
     if (kept !== null && d.decision !== 'kept_installed') {
       telemetry.emit('comfy.desktop.agent_requirements_override', {
         ...event,
-        decision: 'kept_installed'
+        decision: 'kept_installed',
+        failures: null,
+        stays_installed: null,
+        install_outcome: null,
+        exit_code: null,
+        elapsed_ms: null,
+        budget_ms: null,
+        error_tail: null
       })
     }
   } catch {
