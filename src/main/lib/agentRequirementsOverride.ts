@@ -407,8 +407,8 @@ function failedPin(state: AgentOverrideState | null, pattern: RegExp): string | 
 }
 
 const SIGNATURE_AGENT = /(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/
-/** The Go carrier stays installed after a failed override (core's file can't take it back), and the
- *  agent selects it again, so a start-failed carrier disqualifies the agent it would run under. */
+/** The Go carrier stays installed after a failed override (core's file can't take it back), and an
+ *  agent no newer than it selects it again, so a start-failed carrier disqualifies that agent. */
 const SIGNATURE_AGENT_GO = /(?:^|,)comfy-agent-go==([^,]+)/
 
 function sameVersion(a: string, b: string): boolean {
@@ -445,7 +445,9 @@ export function keepableAgent(
   if (failed !== undefined && sameVersion(version, failed)) return null
   const failedGo = failedPin(state, SIGNATURE_AGENT_GO)
   const go = installed.find((p) => normalizePackageName(p.name) === AGENT_GO)?.version
-  if (failedGo !== undefined && go !== undefined && sameVersion(go, failedGo)) return null
+  const runsGo =
+    go !== undefined && !agentGoBehindAgent(new Map([[AGENT_GO, go]]), coreText, pipListOutput)
+  if (failedGo !== undefined && runsGo && sameVersion(go, failedGo)) return null
   return `${name}==${version}`
 }
 

@@ -538,6 +538,11 @@ describe('keepableAgent', () => {
       keepableAgent(CORE, withGo('0.1.0rc6'), { ...goFailed, startFailures: 0 }),
       'it only failed to install'
     ).toBe('comfy-agent==0.1.0rc5')
+    const olderFailed = { signature: 'comfy-agent-go==0.1.0rc4', failures: 2, startFailures: 2 }
+    expect(
+      keepableAgent(CORE, withGo('0.1.0rc4'), olderFailed),
+      'an agent newer than the carrier runs its bundled one'
+    ).toBe('comfy-agent==0.1.0rc5')
   })
 
   it('treats a record from before start failures were kept apart as a start failure', () => {
