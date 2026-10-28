@@ -363,12 +363,22 @@ export interface InstallReport {
   errorTail: string | null
 }
 
+/** The installed agent (`name==version`) a launch kept rather than fall back to the placeholder. */
+interface Kept {
+  kept?: string
+}
+
 export type OverrideDecision =
   | { decision: 'applied'; pins: OverridePins }
-  | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
+  | ({ decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins } & Kept)
   /** Not in uv's cache yet: a background download fetches it for a later launch. Never counted. */
-  | { decision: 'deferred'; reason: 'not_cached'; pins: OverridePins; install?: InstallReport }
-  | {
+  | ({
+      decision: 'deferred'
+      reason: 'not_cached'
+      pins: OverridePins
+      install?: InstallReport
+    } & Kept)
+  | ({
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
@@ -376,7 +386,37 @@ export type OverrideDecision =
       failures?: number
       /** The reverted pins core's file can't take back, whether or not they went in. */
       staysInstalled?: OverridePins
-    }
+    } & Kept)
+  /** A member's campaign flag gave no answer in time, so the launch has no override to try. */
+  | { decision: 'kept_installed'; reason: 'no_answer'; pins?: undefined; kept: string }
+
+const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
+
+/** The agent version an override that has failed to start (or install) pinned, if any. */
+function failedAgentVersion(state: AgentOverrideState | null): string | undefined {
+  if (!state || state.failures === 0) return undefined
+  return state.signature.match(/(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/)?.[1]
+}
+
+/**
+ * The installed agent worth keeping when an override can't apply: the package core's file names
+ * for the agent, at a real version rather than the placeholder, and not the version a recorded
+ * override has seen fail. `name==version`, or null.
+ */
+export function keepableAgent(
+  coreText: string,
+  pipListOutput: string,
+  state: AgentOverrideState | null
+): string | null {
+  const name = agentPackage(coreText)
+  if (name === undefined) return null
+  const version = parseInstalled(pipListOutput)?.find(
+    (p) => normalizePackageName(p.name) === name
+  )?.version
+  if (version === undefined || PLACEHOLDER_VERSION.test(version)) return null
+  if (version === failedAgentVersion(state)) return null
+  return `${name}==${version}`
+}
 
 /** Which index uv was pointed at, never the URL itself. */
 export type IndexKind = 'pypi' | 'cn_mirror' | 'custom'
@@ -397,7 +437,8 @@ export function reportOverrideDecision(
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
     const install = 'install' in d ? d.install : undefined
-    telemetry.emit('comfy.desktop.agent_requirements_override', {
+    const kept = 'kept' in d ? (d.kept ?? null) : null
+    const event = {
       installation_id: installationId,
       decision: d.decision,
       reason: 'reason' in d ? d.reason : null,
@@ -410,8 +451,17 @@ export function reportOverrideDecision(
       elapsed_ms: install?.elapsedMs ?? null,
       budget_ms: install?.budgetMs ?? null,
       error_tail: install?.errorTail ?? null,
+      kept_agent: kept,
       index
-    })
+    }
+    telemetry.emit('comfy.desktop.agent_requirements_override', event)
+    // Its own event too, so the original decision still counts as it always has.
+    if (kept !== null && d.decision !== 'kept_installed') {
+      telemetry.emit('comfy.desktop.agent_requirements_override', {
+        ...event,
+        decision: 'kept_installed'
+      })
+    }
   } catch {
     // Telemetry must never reach the launch.
   }

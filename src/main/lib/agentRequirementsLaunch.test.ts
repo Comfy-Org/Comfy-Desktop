@@ -1623,7 +1623,8 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it.each([
-      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
+      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.0.0.dev0'],
+      ['update', 'the placeholder over a kept agent', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
       ['update', 'a real release', CORE_FILE, '0.2.0']
     ])(
       "hands a deferred override over as '%s' when core's file pins %s",
@@ -2458,6 +2459,134 @@ describe('installAgentRequirements with a version override', () => {
           ).toEqual(['ComfyUI']),
         { timeout: 5_000 }
       )
+    })
+  })
+  describe("keeping a working agent over core's placeholder", () => {
+    const PLACEHOLDER_FILE = 'comfy-agent==0.0.0.dev0\ncomfy-cli==1.21.0\n'
+    const KEPT = 'comfy-agent==0.1.0rc5'
+    const installedAgent = (version: string): void => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([
+          { name: 'comfy-agent', version },
+          { name: 'comfy-cli', version: '1.21.0' },
+          { name: 'requests', version: '2.32.0' }
+        ])
+      })
+    }
+    const failing = (output: string): typeof respond => {
+      return ({ constraints }) => (constraints ? { code: 1, output } : { code: 0, output: '' })
+    }
+    const placeholderRuns = (): number =>
+      calls.filter((call) => call.content === PLACEHOLDER_FILE).length
+
+    beforeEach(() => {
+      fs.writeFileSync(plan.reqPath, PLACEHOLDER_FILE)
+      installedAgent('0.1.0rc5')
+    })
+
+    it('keeps it when the payload is refused, installing nothing', async () => {
+      const sendOutput = vi.fn()
+      const decision = await installAgentRequirements(plan, sendOutput, undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version', kept: KEPT })
+      expect(calls).toEqual([])
+      expect(sendOutput.mock.calls.join('')).toContain(`Keeping the installed agent ${KEPT}`)
+    })
+
+    it('keeps it when the override fails to install', async () => {
+      respond = failing('error: failed to remove file `x.pyd`: Access is denied. (os error 5)\n')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns(), "core's file never ran").toBe(0)
+    })
+
+    it('keeps it when the pinned version is not on the index', async () => {
+      respond = failing(
+        'error: No solution found when resolving dependencies\n  cause: Because there is no version of comfy-agent==0.2.3 and you require comfy-agent==0.2.3, we can conclude that your requirements are unsatisfiable.\n'
+      )
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+    })
+
+    it('keeps it while a not-yet-downloaded override fetches for the next launch', async () => {
+      respond = ({ constraints }) =>
+        constraints ? { code: 2, output: '' } : { code: 0, output: '' }
+      const onDeferred = vi.fn()
+
+      const decision = await installAgentRequirements(
+        plan,
+        vi.fn(),
+        undefined,
+        OVERRIDE,
+        null,
+        onDeferred
+      )
+
+      expect(decision).toMatchObject({ decision: 'deferred', reason: 'not_cached', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+      expect(onDeferred.mock.calls[0]![1], 'the agent runs now; the newer one applies next').toBe(
+        'update'
+      )
+    })
+
+    it('keeps an older agent when the override was retired after failing', async () => {
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).toMatchObject({
+        decision: 'reverted',
+        reason: 'previously_failed',
+        kept: KEPT
+      })
+      expect(calls).toEqual([])
+    })
+
+    it('does not keep the very version that was retired for failing to start', async () => {
+      installedAgent('0.2.3')
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns()).toBe(1)
+    })
+
+    it('falls back to core when nothing but the placeholder is installed', async () => {
+      installedAgent('0.0.0.dev0')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
+    })
+
+    it("falls back to core when core's file pins a real release", async () => {
+      fs.writeFileSync(plan.reqPath, CORE_FILE)
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    })
+
+    it("follows core's file when the flag carries no override (hold, or the override dropped)", async () => {
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(decision).toBeUndefined()
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
     })
   })
 })

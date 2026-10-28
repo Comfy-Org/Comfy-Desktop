@@ -102,6 +102,7 @@ import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import {
   installAgentRequirements,
   holdAgentPrefetch,
+  installedWorkingAgent,
   planAgentRequirementsInstall,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
@@ -156,6 +157,7 @@ import {
   appliedPassThrough,
   campaignCandidateGrants,
   campaignPresentArgs,
+  heldArgUnanswered,
   planCampaignArgs
 } from '../../coreBetaCampaigns'
 import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
@@ -1024,6 +1026,8 @@ async function runLaunch(
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   // Desktop's own `--enable-assets`, not the user's: only that one may be dropped on a retry.
   let desktopAddedAssets = false
+  /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
+  let agentUnanswered = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
@@ -1548,6 +1552,12 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
+        agentUnanswered =
+          !!campaigns &&
+          heldArgUnanswered(built.beta.campaign.misses, campaigns, '--enable-agent') &&
+          !built.args.includes('--enable-agent') &&
+          !built.args.includes('--disable-agent') &&
+          filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
       } catch {
@@ -1584,7 +1594,28 @@ async function runLaunch(
   //
   // An agent version override rides on the same step: when it went in, this launch's output is
   // watched for how the agent's start went, so a version that keeps failing goes back to core's.
-  const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
+  //
+  // A member whose campaign flag didn't answer in time keeps the agent a previous launch installed,
+  // with nothing installed: there is no override to try, and core's file may pin only a placeholder.
+  let kept: string | null = null
+  if (agentUnanswered && launchCmd.args) {
+    const plan = planAgentRequirementsInstall(inst, [...launchCmd.args, '--enable-agent'])
+    kept = plan && (await installedWorkingAgent(plan, readOverrideState(inst), abort.signal))
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (kept) {
+      launchCmd.args.push('--enable-agent')
+      makeSendOutput(
+        sender,
+        installationId
+      )(`\nNo campaign answer in time; keeping the installed agent ${kept}\n`)
+      reportOverrideDecision(installationId, {
+        decision: 'kept_installed',
+        reason: 'no_answer',
+        kept
+      })
+    }
+  }
+  const agentRequirements = kept ? null : planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
   // Started once this launch's own uv work (the install below and any frontend restore after it)
   // is done, and on a cancel before that too, so nothing the launch handed back is dropped. The

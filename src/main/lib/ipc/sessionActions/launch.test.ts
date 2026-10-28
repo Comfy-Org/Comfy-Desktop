@@ -4561,6 +4561,96 @@ describe('agent requirements at launch', () => {
       expect(overrideState()).toBeUndefined()
     })
   })
+  describe("a member whose campaign flag didn't answer in time", () => {
+    const KEY = 'desktop_core_beta_agent'
+    const member = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+    const keptEvents = (): unknown[] =>
+      vi
+        .mocked(telemetry.emit)
+        .mock.calls.filter(
+          ([name, props]) =>
+            name === 'comfy.desktop.agent_requirements_override' &&
+            (props as Record<string, unknown>).decision === 'kept_installed'
+        )
+        .map(([, props]) => props)
+
+    beforeEach(() => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+      fs.writeFileSync(agentReqPath(), 'comfy-agent==0.0.0.dev0\n')
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map()
+      }
+      launchHarness.campaignRecords = member
+      pipHarness.installed = JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc5' }])
+    })
+
+    afterEach(() => {
+      launchHarness.campaigns = { registry: [], answers: new Map() }
+      launchHarness.campaignRecords = {}
+      pipHarness.installed = '[]'
+    })
+
+    it('keeps the installed agent on, installing nothing', async () => {
+      const res = await handleLaunch(ctxFor('agent-no-answer-kept'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(pipHarness.calls, "neither core's placeholder nor anything else").toEqual([])
+      expect(keptEvents()).toEqual([
+        expect.objectContaining({
+          reason: 'no_answer',
+          pins: null,
+          kept_agent: 'comfy-agent==0.1.0rc5'
+        })
+      ])
+      expect(sent.join('')).toContain('keeping the installed agent comfy-agent==0.1.0rc5')
+    })
+
+    it('leaves the agent off when only the placeholder is installed', async () => {
+      pipHarness.installed = JSON.stringify([{ name: 'comfy-agent', version: '0.0.0.dev0' }])
+
+      await handleLaunch(ctxFor('agent-no-answer-placeholder'))
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(keptEvents()).toEqual([])
+    })
+
+    it.each([
+      ['the campaign is unlisted', () => (launchHarness.campaigns.registry = [])],
+      [
+        'the campaign serves false',
+        () => launchHarness.campaigns.answers.set(KEY, parseCampaignAnswer(false, null, Date.now()))
+      ]
+    ])('leaves the agent off when %s, which is a revoke', async (_label, revoke) => {
+      revoke()
+
+      await handleLaunch(ctxFor('agent-no-answer-revoked'))
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(keptEvents()).toEqual([])
+    })
+
+    it('leaves the agent off when the user opted out', async () => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', '--disable-agent'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+      launchHarness.schemaNames = ['enable-agent', 'disable-agent', 'listen', 'feature-flag']
+
+      await handleLaunch(ctxFor('agent-no-answer-opted-out'))
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(keptEvents()).toEqual([])
+    })
+  })
 })
 
 describe('agent install status strings', () => {

@@ -10,6 +10,7 @@ import {
   effectiveAgentRequirements,
   installedConstraints,
   isRevertedFor,
+  keepableAgent,
   nextOverrideState,
   overrideSignature,
   parseAgentRequirementsOverride,
@@ -458,6 +459,40 @@ describe('pinsOverBareLines', () => {
     expect(
       pinsOverBareLines(core, pins({ 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' }))
     ).toEqual(new Map([['comfy-agent', '0.2.3']]))
+  })
+})
+
+describe('keepableAgent', () => {
+  const CORE = 'comfy-agent==0.0.0.dev0\ncomfy-cli==1.21.0\n'
+  const listed = (version: string): string =>
+    JSON.stringify([
+      { name: 'comfy_agent', version },
+      { name: 'comfy-cli', version: '1.21.0' }
+    ])
+
+  it('keeps a real installed agent, named as core names it', () => {
+    expect(keepableAgent(CORE, listed('0.1.0rc5'), null)).toBe('comfy-agent==0.1.0rc5')
+  })
+
+  it('keeps nothing when only the placeholder, or no agent, is installed', () => {
+    expect(keepableAgent(CORE, listed('0.0.0.dev0'), null)).toBeNull()
+    expect(keepableAgent(CORE, JSON.stringify([]), null)).toBeNull()
+    expect(keepableAgent(CORE, 'not json', null)).toBeNull()
+  })
+
+  it('keeps nothing when core names no agent package', () => {
+    expect(keepableAgent('comfy-cli==1.21.0\n', listed('0.1.0rc5'), null)).toBeNull()
+  })
+
+  it('keeps nothing at the version a recorded override saw fail, extras and all', () => {
+    const failed = { signature: 'comfy-agent[go,x]==0.1.0rc5,comfy-cli==1.22.0', failures: 1 }
+    expect(keepableAgent(CORE, listed('0.1.0rc5'), failed)).toBeNull()
+    expect(keepableAgent(CORE, listed('0.1.0rc4'), failed)).toBe('comfy-agent==0.1.0rc4')
+  })
+
+  it('keeps the version a recorded override last started cleanly', () => {
+    const started = { signature: 'comfy-agent==0.1.0rc5', failures: 0 }
+    expect(keepableAgent(CORE, listed('0.1.0rc5'), started)).toBe('comfy-agent==0.1.0rc5')
   })
 })
 
@@ -982,5 +1017,57 @@ describe('indexKind', () => {
       indexKind({ pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true })
     ).toBe('custom')
     expect(indexKind({ pypiMirror: '  ' }), 'a blank mirror setting is no mirror').toBe('pypi')
+  })
+})
+
+describe('reportOverrideDecision: a kept agent', () => {
+  it('reports the original decision as before, then kept_installed with the same reason', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      reportOverrideDecision('i', {
+        decision: 'reverted',
+        reason: 'install_failed',
+        pins: pins({ 'comfy-agent': '0.2.3' }),
+        kept: 'comfy-agent==0.1.0rc5'
+      })
+      reportOverrideDecision('i', {
+        decision: 'kept_installed',
+        reason: 'no_answer',
+        kept: 'comfy-agent==0.1.0rc5'
+      })
+      reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
+
+      expect(
+        emit.mock.calls.map(([, props]) => {
+          const { decision, reason, pins, kept_agent } = props as Record<string, unknown>
+          return { decision, reason, pins, kept_agent }
+        })
+      ).toEqual([
+        {
+          decision: 'reverted',
+          reason: 'install_failed',
+          pins: 'comfy-agent==0.2.3',
+          kept_agent: 'comfy-agent==0.1.0rc5'
+        },
+        {
+          decision: 'kept_installed',
+          reason: 'install_failed',
+          pins: 'comfy-agent==0.2.3',
+          kept_agent: 'comfy-agent==0.1.0rc5'
+        },
+        {
+          decision: 'kept_installed',
+          reason: 'no_answer',
+          pins: null,
+          kept_agent: 'comfy-agent==0.1.0rc5'
+        },
+        { decision: 'refused', reason: 'bad_version', pins: null, kept_agent: null }
+      ])
+      expect(new Set(emit.mock.calls.map(([name]) => name))).toEqual(
+        new Set(['comfy.desktop.agent_requirements_override'])
+      )
+    } finally {
+      emit.mockRestore()
+    }
   })
 })
