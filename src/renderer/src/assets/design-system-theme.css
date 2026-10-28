@@ -1,0 +1,138 @@
+/*
+ * Desktop's theme for @comfyorg/design-system: the redesign's "Void" look.
+ *
+ * The package's components never name a color; they ask for roles
+ * (foreground, secondary, border...). The first block gives those roles the
+ * redesign's values. The second holds the parts of the look the package has
+ * no role for, for Desktop's own components.
+ *
+ * `static` emits every variable, so scoped CSS can read them with var(--...).
+ */
+
+@theme static {
+  --font-inter: 'Inter', system-ui, sans-serif;
+
+  --color-background: oklch(0.19 0.003 285);
+  --color-foreground: oklch(0.955 0.002 285);
+  --color-card: oklch(0.23 0.008 285);
+  --color-popover: oklch(0.23 0.008 285);
+  /* The redesign has no blue action color: its main action is the white
+   * `inverted` button. ComfyUI's blue until design picks one. */
+  --color-primary: #0b8ce9;
+  --color-secondary: oklch(1 0 0 / 0.06);
+  --color-muted: oklch(1 0 0 / 0.06);
+  --color-muted-foreground: oklch(0.76 0.006 285);
+  --color-accent: oklch(1 0 0 / 0.1);
+  --color-input: oklch(1 0 0 / 0.06);
+  --color-border: oklch(1 0 0 / 0.08);
+  --color-ring: oklch(1 0 0 / 0.45);
+  --color-destructive: oklch(0.62 0.19 25);
+  --color-warning: oklch(0.82 0.14 85);
+  --color-success: oklch(0.78 0.15 155);
+
+  --color-content-background: oklch(0.14 0.005 285);
+  --color-card-hover: oklch(0.265 0.009 285);
+  --color-subtle-foreground: oklch(0.6 0.008 285);
+  --color-border-strong: oklch(1 0 0 / 0.14);
+  --color-media-overlay: oklch(0 0 0 / 0.55);
+
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-heading: 16px;
+  --text-heading--line-height: 24px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-display: 34px;
+  --text-display--line-height: 40px;
+
+  /* Nested corners: inner radius = outer radius - the padding between them. */
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-min: 4px;
+
+  --shadow-elev:
+    inset 0 1px 0 oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.35), 0 6px 18px oklch(0 0 0 / 0.28);
+  --shadow-elev-hover:
+    inset 0 1px 0 oklch(1 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.35),
+    0 10px 26px oklch(0 0 0 / 0.34);
+  --shadow-popover: inset 0 1px 0 oklch(1 0 0 / 0.07), 0 12px 32px oklch(0 0 0 / 0.45);
+  --shadow-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 160ms var(--ease-out-expo);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-status-pulse: status-pulse 2s ease-out infinite;
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes status-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+}
+
+/*
+ * The scope for design-system UI. main.css styles bare elements (`*`,
+ * `button`, `input`, `label`) outside any cascade layer, which beats every
+ * Tailwind utility. Inside `.ds-root` those properties fall back to the
+ * layered cascade, so the package's components render as designed. Put
+ * `ds-root` on the root of a migrated screen and on anything it teleports
+ * to <body> (menus, tooltips, dialogs).
+ */
+.ds-root,
+.ds-root *,
+.ds-root *::before,
+.ds-root *::after {
+  margin: revert-layer;
+  padding: revert-layer;
+}
+.ds-root.ds-root.ds-root :is(button, input, select, textarea, label) {
+  width: revert-layer;
+  margin: revert-layer;
+  padding: revert-layer;
+  border: revert-layer;
+  border-radius: revert-layer;
+  background: revert-layer;
+  color: revert-layer;
+  font-size: revert-layer;
+  opacity: revert-layer;
+  outline: revert-layer;
+  cursor: revert-layer;
+}
+
+@layer base {
+  .ds-root {
+    font-family: var(--font-inter);
+    line-height: 1.4;
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+  .ds-root button:not(:disabled),
+  .ds-root [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}

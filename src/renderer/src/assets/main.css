@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@comfyorg/design-system/components.css';
+@import './design-system-theme.css';
 
 /* Shared components from @comfyorg/design-system: generate the utilities they
  * use and load their scoped styles. Its base.css is not imported: its fonts use
@@ -47,11 +48,9 @@
   --color-bg: #202020;
   --color-text: #ffffff;
   --color-text-muted: #8a8a8a;
-  --color-accent: #60a5fa;
   --color-accent-hover: #93c5fd;
   --color-selected: rgba(255, 255, 255, 0.85);
   --color-surface: #262729;
-  --color-border: #494a50;
   --color-border-hover: #3c3d42;
   --color-danger: #e05858;
   --color-danger-hover: #ef6b6b;
