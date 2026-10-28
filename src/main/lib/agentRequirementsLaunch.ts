@@ -587,7 +587,7 @@ export async function installAgentRequirements(
     ]
     // Core's file in means the agent starts now, on core's versions, and only the override waits:
     // unless core pins only the placeholder, which is no agent at all.
-    const placeholder = PLACEHOLDER_AGENT.test(
+    const placeholder = corePinsPlaceholderAgent(
       coreText ?? (await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => ''))
     )
     const deferral: Deferral = coreMissing || (placeholder && !kept) ? 'agent' : 'update'
@@ -1259,7 +1259,6 @@ async function fetchStep(
 }
 
 const PIP_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+!_-]*$/
-const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
 
 /**
  * A launch's network try: download what `reqPath` is missing into uv's cache, in parallel and into

@@ -2560,6 +2560,18 @@ describe('installAgentRequirements with a version override', () => {
       expect(placeholderRuns()).toBe(1)
     })
 
+    it("lets core's file in first when it lists a package that isn't installed yet", async () => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc5' }])
+      })
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns(), "core's file installs what it is missing").toBeGreaterThan(0)
+    })
+
     it('falls back to core when nothing but the placeholder is installed', async () => {
       installedAgent('0.0.0.dev0')
 

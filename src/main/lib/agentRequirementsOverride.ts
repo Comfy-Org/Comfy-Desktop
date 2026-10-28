@@ -401,10 +401,15 @@ const PINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*(
  * The agent version of an override that failed to start, if any. An install or check failure is
  * the whole override's, so it says nothing about an agent at that version that is already in.
  */
-function failedAgentVersion(state: AgentOverrideState | null): string | undefined {
+function failedPin(state: AgentOverrideState | null, pattern: RegExp): string | undefined {
   if (!state || (state.startFailures ?? state.failures) === 0) return undefined
-  return state.signature.match(/(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/)?.[1]
+  return state.signature.match(pattern)?.[1]
 }
+
+const SIGNATURE_AGENT = /(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/
+/** The Go carrier stays installed after a failed override (core's file can't take it back), and the
+ *  agent selects it again, so a start-failed carrier disqualifies the agent it would run under. */
+const SIGNATURE_AGENT_GO = /(?:^|,)comfy-agent-go==([^,]+)/
 
 function sameVersion(a: string, b: string): boolean {
   return EXACT_VERSION.test(a) && EXACT_VERSION.test(b) ? compareVersions(a, b) === 0 : a === b
@@ -433,12 +438,14 @@ export function keepableAgent(
 ): string | null {
   const name = agentPackage(coreText)
   if (name === undefined) return null
-  const version = parseInstalled(pipListOutput)?.find(
-    (p) => normalizePackageName(p.name) === name
-  )?.version
+  const installed = parseInstalled(pipListOutput) ?? []
+  const version = installed.find((p) => normalizePackageName(p.name) === name)?.version
   if (version === undefined || PLACEHOLDER_VERSION.test(version)) return null
-  const failed = failedAgentVersion(state)
+  const failed = failedPin(state, SIGNATURE_AGENT)
   if (failed !== undefined && sameVersion(version, failed)) return null
+  const failedGo = failedPin(state, SIGNATURE_AGENT_GO)
+  const go = installed.find((p) => normalizePackageName(p.name) === AGENT_GO)?.version
+  if (failedGo !== undefined && go !== undefined && sameVersion(go, failedGo)) return null
   return `${name}==${version}`
 }
 

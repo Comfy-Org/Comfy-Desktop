@@ -4238,6 +4238,11 @@ describe('agent requirements at launch', () => {
         error_tail: 'error: No solution found when resolving dependencies'
       })
       expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
+      expect(overrideState(), 'install failures, not agent start failures').toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 2,
+        startFailures: 0
+      })
     })
 
     it('stops retrying a version whose environment could not be listed twice', async () => {
@@ -4652,6 +4657,23 @@ describe('agent requirements at launch', () => {
       expect(spawnArgs.filter((arg) => arg === '--enable-agent')).toHaveLength(1)
       expect(keptEvents(), 'the install step decides, not the no-answer path').toEqual([])
       expect(pipHarness.calls).toHaveLength(1)
+    })
+
+    it('leaves the agent off when the installed version is one that failed to start', async () => {
+      const ctx = ctxFor('agent-no-answer-start-failed')
+      ctx.inst = {
+        ...ctx.inst,
+        agentRequirementsOverride: {
+          signature: 'comfy-agent==0.1.0rc5',
+          failures: 2,
+          startFailures: 2
+        }
+      } as InstallationRecord
+
+      await handleLaunch(ctx)
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(keptEvents()).toEqual([])
     })
 
     it('leaves the agent off when only the placeholder is installed', async () => {

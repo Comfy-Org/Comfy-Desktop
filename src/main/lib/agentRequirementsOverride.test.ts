@@ -523,6 +523,23 @@ describe('keepableAgent', () => {
     ).toBeNull()
   })
 
+  it('keeps nothing that would run under a Go carrier that failed to start', () => {
+    const withGo = (go: string): string =>
+      JSON.stringify([
+        { name: 'comfy-agent', version: '0.1.0rc5' },
+        { name: 'comfy_agent_go', version: go }
+      ])
+    const goFailed = { signature: 'comfy-agent-go==0.1.0rc6', failures: 2, startFailures: 2 }
+    expect(keepableAgent(CORE, withGo('0.1.0rc6'), goFailed)).toBeNull()
+    expect(keepableAgent(CORE, withGo('0.1.0rc5'), goFailed), 'another carrier since').toBe(
+      'comfy-agent==0.1.0rc5'
+    )
+    expect(
+      keepableAgent(CORE, withGo('0.1.0rc6'), { ...goFailed, startFailures: 0 }),
+      'it only failed to install'
+    ).toBe('comfy-agent==0.1.0rc5')
+  })
+
   it('treats a record from before start failures were kept apart as a start failure', () => {
     const legacy = { signature: 'comfy-agent==0.1.0rc5', failures: 1 }
     expect(keepableAgent(CORE, listed('0.1.0rc5'), legacy)).toBeNull()
