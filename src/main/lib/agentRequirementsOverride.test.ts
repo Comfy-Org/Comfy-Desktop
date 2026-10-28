@@ -1074,7 +1074,7 @@ describe('indexKind', () => {
 })
 
 describe('reportOverrideDecision: a kept agent', () => {
-  it('reports the original decision as before, then kept_installed with the same reason', () => {
+  it('reports one event per decision, the kept agent on the original one', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
     try {
       reportOverrideDecision('i', {
@@ -1111,12 +1111,6 @@ describe('reportOverrideDecision: a kept agent', () => {
         },
         {
           decision: 'kept_installed',
-          reason: 'install_failed',
-          pins: 'comfy-agent==0.2.3',
-          kept_agent: 'comfy-agent==0.1.0rc5'
-        },
-        {
-          decision: 'kept_installed',
           reason: 'no_answer',
           pins: null,
           kept_agent: 'comfy-agent==0.1.0rc5'
@@ -1124,9 +1118,8 @@ describe('reportOverrideDecision: a kept agent', () => {
         { decision: 'refused', reason: 'bad_version', pins: null, kept_agent: null }
       ])
       expect(
-        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).exit_code),
-        "the install's figures go on the original decision only"
-      ).toEqual([2, null, null, null])
+        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).exit_code)
+      ).toEqual([2, null, null])
       expect(new Set(emit.mock.calls.map(([name]) => name))).toEqual(
         new Set(['comfy.desktop.agent_requirements_override'])
       )

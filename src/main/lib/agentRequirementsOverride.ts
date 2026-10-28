@@ -462,7 +462,8 @@ export function reportOverrideDecision(
     const pins = d.pins ? overrideSignature(d.pins) : null
     const install = 'install' in d ? d.install : undefined
     const kept = 'kept' in d ? (d.kept ?? null) : null
-    const event = {
+    // One event per decision: a kept agent rides on the original decision as `kept_agent`.
+    telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
       reason: 'reason' in d ? d.reason : null,
@@ -477,23 +478,7 @@ export function reportOverrideDecision(
       error_tail: install?.errorTail ?? null,
       kept_agent: kept,
       index
-    }
-    telemetry.emit('comfy.desktop.agent_requirements_override', event)
-    // Its own event too, so the original decision still counts as it always has.
-    // Without the install's figures, which the original decision already carries.
-    if (kept !== null && d.decision !== 'kept_installed') {
-      telemetry.emit('comfy.desktop.agent_requirements_override', {
-        ...event,
-        decision: 'kept_installed',
-        failures: null,
-        stays_installed: null,
-        install_outcome: null,
-        exit_code: null,
-        elapsed_ms: null,
-        budget_ms: null,
-        error_tail: null
-      })
-    }
+    })
   } catch {
     // Telemetry must never reach the launch.
   }
