@@ -1,4 +1,10 @@
 @import 'tailwindcss';
+@import '@comfyorg/design-system/components.css';
+
+/* Shared components from @comfyorg/design-system: generate the utilities they
+ * use and load their scoped styles. Its base.css is not imported: its fonts use
+ * root-relative URLs that break under file://, and Desktop declares Inter below. */
+@source '../../../../node_modules/@comfyorg/design-system/dist';
 
 /* Inter Font Family — matches ComfyUI frontend design system */
 @font-face {
