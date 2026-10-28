@@ -615,7 +615,9 @@ export async function installAgentRequirements(
   }
   if (decision?.decision === 'deferred') await defer(false)
   if (kept !== null && decision) {
-    sendOutput(`Keeping the installed agent ${kept}; ComfyUI's own pins only a placeholder\n`)
+    sendOutput(
+      `Keeping the installed agent ${kept} instead: ComfyUI's agent requirements pin only a placeholder\n`
+    )
     return { ...decision, kept }
   }
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)

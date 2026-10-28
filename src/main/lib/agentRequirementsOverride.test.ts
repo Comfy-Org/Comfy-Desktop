@@ -364,7 +364,7 @@ describe('the start-failure latch', () => {
   it(`reverts on the ${START_FAILURES_TO_REVERT}nd consecutive failure, and reports it once`, () => {
     const first = nextOverrideState(null, p, 'failed')!
     expect(first).toEqual({
-      state: { signature: 'comfy-agent==0.2.3', failures: 1 },
+      state: { signature: 'comfy-agent==0.2.3', failures: 1, startFailures: 1 },
       reverted: false
     })
     const second = nextOverrideState(first.state, p, 'failed')!
@@ -380,6 +380,18 @@ describe('the start-failure latch', () => {
     const started = nextOverrideState(first.state, p, 'started')!
     expect(started.state.failures).toBe(0)
     expect(nextOverrideState(started.state, p, 'failed')!.reverted).toBe(false)
+  })
+
+  it("counts an install failure toward retiring the override, not as the agent's start failure", () => {
+    const installFailed = nextOverrideState(null, p, 'failed', false)!
+    expect(installFailed.state).toEqual({
+      signature: 'comfy-agent==0.2.3',
+      failures: 1,
+      startFailures: 0
+    })
+    const twice = nextOverrideState(installFailed.state, p, 'failed', false)!
+    expect(twice.reverted, 'install failures still retire it').toBe(true)
+    expect(nextOverrideState(twice.state, p, 'failed')!.state.startFailures).toBe(1)
   })
 
   it('leaves the state alone for an inconclusive start', () => {
@@ -398,6 +410,8 @@ describe('the start-failure latch', () => {
     const record = (value: unknown): InstallationRecord =>
       ({ id: 'i', agentRequirementsOverride: value }) as unknown as InstallationRecord
     expect(readOverrideState(record(state))).toEqual(state)
+    const counted = { ...state, startFailures: 0 }
+    expect(readOverrideState(record(counted))).toEqual(counted)
     expect(readOverrideState(record(undefined))).toBeNull()
     expect(readOverrideState(record({ signature: 'x', failures: '1' }))).toBeNull()
   })
@@ -494,6 +508,24 @@ describe('keepableAgent', () => {
   it('compares the failed version as a version, not as a string', () => {
     const failed = { signature: 'comfy-agent==0.1rc1', failures: 1 }
     expect(keepableAgent(CORE, listed('0.1.0rc1'), failed)).toBeNull()
+  })
+
+  it('keeps the agent when its override failed only to install another pin', () => {
+    const companion = {
+      signature: 'comfy-agent==0.1.0rc5,comfy-cli==9.9.9',
+      failures: 1,
+      startFailures: 0
+    }
+    expect(keepableAgent(CORE, listed('0.1.0rc5'), companion)).toBe('comfy-agent==0.1.0rc5')
+    expect(
+      keepableAgent(CORE, listed('0.1.0rc5'), { ...companion, startFailures: 1 }),
+      'but not once the agent itself failed to start'
+    ).toBeNull()
+  })
+
+  it('treats a record from before start failures were kept apart as a start failure', () => {
+    const legacy = { signature: 'comfy-agent==0.1.0rc5', failures: 1 }
+    expect(keepableAgent(CORE, listed('0.1.0rc5'), legacy)).toBeNull()
   })
 
   it('keeps the version a recorded override last started cleanly', () => {

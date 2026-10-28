@@ -485,7 +485,12 @@ async function foldOverrideOutcome(
   try {
     const current = await installations.get(installationId)
     if (!current) return
-    const next = nextOverrideState(readOverrideState(current), pins, outcome)
+    const next = nextOverrideState(
+      readOverrideState(current),
+      pins,
+      outcome,
+      failedBy === 'start_failed'
+    )
     if (!next) return
     await installations.update(installationId, { agentRequirementsOverride: next.state })
     if (next.reverted) {

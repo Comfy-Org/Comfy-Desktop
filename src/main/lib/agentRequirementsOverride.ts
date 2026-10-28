@@ -337,14 +337,17 @@ export function agentGoBehindAgent(
 export interface AgentOverrideState {
   signature: string
   failures: number
+  /** The failures that were the agent failing to start, not an install or check of the whole
+   *  override. Absent on a record from before it was kept. */
+  startFailures?: number
 }
 
 export function readOverrideState(installation: InstallationRecord): AgentOverrideState | null {
   const state = installation.agentRequirementsOverride
   if (!state || typeof state !== 'object') return null
-  const { signature, failures } = state as Record<string, unknown>
+  const { signature, failures, startFailures } = state as Record<string, unknown>
   if (typeof signature !== 'string' || typeof failures !== 'number') return null
-  return { signature, failures }
+  return { signature, failures, ...(typeof startFailures === 'number' && { startFailures }) }
 }
 
 export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePins): boolean {
@@ -394,9 +397,12 @@ const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
 /** A `name==version` line, extras allowed: core's agent line can carry them. */
 const PINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)/
 
-/** The agent version an override that has failed to start (or install) pinned, if any. */
+/**
+ * The agent version of an override that failed to start, if any. An install or check failure is
+ * the whole override's, so it says nothing about an agent at that version that is already in.
+ */
 function failedAgentVersion(state: AgentOverrideState | null): string | undefined {
-  if (!state || state.failures === 0) return undefined
+  if (!state || (state.startFailures ?? state.failures) === 0) return undefined
   return state.signature.match(/(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/)?.[1]
 }
 
@@ -569,13 +575,21 @@ export function createAgentStartWatcher(onOutcome: (outcome: AgentStartOutcome) 
 export function nextOverrideState(
   previous: AgentOverrideState | null,
   pins: OverridePins,
-  outcome: AgentStartOutcome
+  outcome: AgentStartOutcome,
+  /** False for an install or check failure of the override, counted toward retiring it alone. */
+  agentStart = true
 ): { state: AgentOverrideState; reverted: boolean } | null {
   if (outcome === 'inconclusive') return null
   const signature = overrideSignature(pins)
-  const base = previous?.signature === signature ? previous.failures : 0
+  const same = previous?.signature === signature
+  const base = same ? previous.failures : 0
   const failures = outcome === 'started' ? 0 : base + 1
-  return { state: { signature, failures }, reverted: failures === START_FAILURES_TO_REVERT }
+  const startBase = same ? (previous.startFailures ?? previous.failures) : 0
+  const startFailures = outcome === 'started' ? 0 : startBase + (agentStart ? 1 : 0)
+  return {
+    state: { signature, failures, startFailures },
+    reverted: failures === START_FAILURES_TO_REVERT
+  }
 }
 
 /** ComfyUI's own `==` frontend version, or null when its `requirements.txt` pins none exactly. */

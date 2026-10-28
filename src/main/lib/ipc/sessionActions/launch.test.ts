@@ -4024,7 +4024,11 @@ describe('agent requirements at launch', () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
       await launchAndPrint({ lines: ['[agent-event] health_check_failed reason=crashed'] })
-      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+      expect(overrideState()).toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 1,
+        startFailures: 1
+      })
 
       await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
       expect(overrideEvents().at(-1)).toEqual(
@@ -4042,7 +4046,11 @@ describe('agent requirements at launch', () => {
       await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
       await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
 
-      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 2 })
+      expect(overrideState()).toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 2,
+        startFailures: 2
+      })
     })
 
     it("counts a respawned ComfyUI's agent start on its own", async () => {
@@ -4055,7 +4063,11 @@ describe('agent requirements at launch', () => {
 
       proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
       await settle()
-      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+      expect(overrideState()).toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 1,
+        startFailures: 1
+      })
 
       fs.writeFileSync(`${sessionFile}.reboot`, '')
       const first = proc!
@@ -4067,7 +4079,8 @@ describe('agent requirements at launch', () => {
 
       expect(overrideState(), 'the respawn started fine, so the count resets').toEqual({
         signature: 'comfy-agent==0.2.3',
-        failures: 0
+        failures: 0,
+        startFailures: 0
       })
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
@@ -4099,7 +4112,8 @@ describe('agent requirements at launch', () => {
         () =>
           expect(overrideState(), 'neither failure is lost').toEqual({
             signature: 'comfy-agent==0.2.3',
-            failures: 2
+            failures: 2,
+            startFailures: 2
           }),
         { timeout: 10_000 }
       )
@@ -4529,7 +4543,11 @@ describe('agent requirements at launch', () => {
         stream: 'stdout'
       })
 
-      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+      expect(overrideState()).toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 1,
+        startFailures: 1
+      })
     })
 
     it('does not count an agent that exits during a slow start', async () => {
@@ -4610,6 +4628,30 @@ describe('agent requirements at launch', () => {
         })
       ])
       expect(sent.join('')).toContain('keeping the installed agent comfy-agent==0.1.0rc5')
+    })
+
+    it('leaves the agent off on a core whose schema has no --enable-agent', async () => {
+      launchHarness.schemaNames = ['listen', 'feature-flag']
+
+      await handleLaunch(ctxFor('agent-no-answer-old-core'))
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(keptEvents()).toEqual([])
+    })
+
+    it('installs as before when the user typed --enable-agent themselves', async () => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--enable-agent', '--listen'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+
+      await handleLaunch(ctxFor('agent-no-answer-hand-typed'))
+
+      expect(spawnArgs.filter((arg) => arg === '--enable-agent')).toHaveLength(1)
+      expect(keptEvents(), 'the install step decides, not the no-answer path').toEqual([])
+      expect(pipHarness.calls).toHaveLength(1)
     })
 
     it('leaves the agent off when only the placeholder is installed', async () => {

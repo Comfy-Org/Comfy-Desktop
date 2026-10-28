@@ -552,6 +552,18 @@ describe('heldArgUnanswered', () => {
     expect(unanswered(overrides)).toBe(false)
   })
 
+  it("is false when the unanswered member's arg is another one", () => {
+    const misses = [
+      { key: KEY, arg: '--enable-assets', member: true, reason: 'no_answer' as const }
+    ]
+    const campaigns = {
+      registry: [{ key: KEY, args: ['--enable-agent', '--enable-assets'] }],
+      answers: new Map()
+    }
+    expect(heldArgUnanswered(misses, campaigns, '--enable-agent')).toBe(false)
+    expect(heldArgUnanswered(misses, campaigns, '--enable-assets')).toBe(true)
+  })
+
   it('is false for a machine that never enrolled', () => {
     const f = facts({ answers: new Map() })
     expect(heldArgUnanswered(planCampaignArgs(f).misses, f, '--enable-agent')).toBe(false)
