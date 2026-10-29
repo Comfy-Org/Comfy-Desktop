@@ -46,6 +46,9 @@ import {
   ComfyWorkflow
 } from '../icons/comfyIcons'
 import { onCloud } from '../shell/surface'
+import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
+import Tooltip from '../../ui/Tooltip.vue'
+import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
 import CanvasNode from './CanvasNode.vue'
 import AssetsPanel from './AssetsPanel.vue'
@@ -693,7 +696,8 @@ function onKey(e: KeyboardEvent): void {
   else if (k === 'backspace' || k === 'delete') {
     if (selectedLink.value) removeLink(selectedLink.value)
     else remove(selection.value)
-  } else if (k === '/') openMenuAtCentre()
+  } else if (k === '/' || (!mod && !e.altKey && k === 'n')) openMenuAtCentre()
+  else if (!mod && !e.altKey && k === 'a') assets.value = !assets.value
   else if (k === 'escape') {
     menu.value = undefined
     selection.value = []
@@ -1047,14 +1051,21 @@ onBeforeUnmount(() => {
   clearTimeout(textTimer)
 })
 
-const RAIL: { icon: Component; label: string }[] = [
+// Shortcuts are ComfyUI's defaults (platform/keybindings/defaults.ts).
+const RAIL: { icon: Component; label: string; keys?: string }[] = [
   { icon: History, label: 'Queue' },
-  { icon: ComfyNode, label: 'Nodes' },
-  { icon: ComfyModel, label: 'Models' },
-  { icon: ComfyWorkflow, label: 'Workflows' },
+  { icon: ComfyNode, label: 'Nodes', keys: 'N' },
+  { icon: ComfyModel, label: 'Models', keys: 'M' },
+  { icon: ComfyWorkflow, label: 'Workflows', keys: 'W' },
   { icon: ComfyTemplate, label: 'Templates' },
-  { icon: ComfyAssets, label: 'Assets' }
+  { icon: ComfyAssets, label: 'Assets', keys: 'A' }
 ]
+const tip = (label: string, keys?: string): string => (keys ? `${label} (${keys})` : label)
+/** Out of the graph, back to the app's Home: the Comfy logo, as at the
+ *  top of ComfyUI's sidebar. */
+function goHome(): void {
+  proto.activeTab = 'home'
+}
 function onRail(label: string): void {
   if (label === 'Assets') assets.value = !assets.value
   else if (label === 'Nodes') openMenuAtCentre()
@@ -1066,7 +1077,11 @@ function onRail(label: string): void {
   <div ref="host" class="mg" :class="`is-${graphStyle.id}`" :style="{ '--mg-top': `${top}px` }">
     <!-- Current: ComfyUI's top bar, its menu and its workflow tabs. -->
     <div v-if="current" class="mg-topbar">
-      <span class="mg-logo" aria-hidden="true">C</span>
+      <Tooltip content="Home" side="bottom">
+        <button type="button" class="mg-logo" aria-label="Home" @click="goHome">
+          <ComfyCLogo class="mg-logo-mark" />
+        </button>
+      </Tooltip>
       <span class="mg-tab is-on">{{ workflow }}<X :size="12" /></span>
       <span class="mg-tab">Untitled<X :size="12" /></span>
       <Plus :size="14" class="mg-tab-add" />
@@ -1074,26 +1089,45 @@ function onRail(label: string): void {
 
     <!-- ComfyUI's rail: its own panels, not the app's navigation. -->
     <nav class="mg-rail" aria-label="ComfyUI panels">
-      <button
+      <!-- Glass: the way home heads the rail (Current has it in its top bar). -->
+      <template v-if="!current">
+        <Tooltip content="Home" side="right">
+          <button type="button" class="mg-rail-btn is-home" aria-label="Home" @click="goHome">
+            <ComfyCLogo class="mg-logo-mark" />
+          </button>
+        </Tooltip>
+        <span class="mg-rail-gap" />
+      </template>
+      <Tooltip
         v-for="r in RAIL"
         :key="r.label"
-        type="button"
-        class="mg-rail-btn"
-        :class="((r.label === 'Assets' && assets) || (r.label === 'Nodes' && menu)) && 'is-on'"
-        :title="r.label"
-        :aria-label="r.label"
-        @click="onRail(r.label)"
+        :content="tip(r.label, r.keys)"
+        side="right"
+        :disabled="current && !r.keys"
       >
-        <component :is="r.icon" :size="current ? 18 : 17" :stroke-width="1.75" />
-        <span v-if="current" class="mg-rail-label">{{ r.label }}</span>
-      </button>
+        <button
+          type="button"
+          class="mg-rail-btn"
+          :class="((r.label === 'Assets' && assets) || (r.label === 'Nodes' && menu)) && 'is-on'"
+          :aria-label="r.label"
+          :aria-keyshortcuts="r.keys"
+          @click="onRail(r.label)"
+        >
+          <component :is="r.icon" :size="current ? 18 : 17" :stroke-width="1.75" />
+          <span v-if="current" class="mg-rail-label">{{ r.label }}</span>
+        </button>
+      </Tooltip>
       <span class="mg-rail-gap" />
-      <button type="button" class="mg-rail-btn" title="Shortcuts" aria-label="Shortcuts">
-        <Keyboard :size="17" :stroke-width="1.75" />
-      </button>
-      <button type="button" class="mg-rail-btn" title="Settings" aria-label="Settings">
-        <Settings :size="17" :stroke-width="1.75" />
-      </button>
+      <Tooltip :content="tip('Shortcuts', '⌘⇧K')" side="right">
+        <button type="button" class="mg-rail-btn" aria-label="Shortcuts">
+          <Keyboard :size="17" :stroke-width="1.75" />
+        </button>
+      </Tooltip>
+      <Tooltip :content="tip('Settings', '⌘,')" side="right">
+        <button type="button" class="mg-rail-btn" aria-label="Settings">
+          <Settings :size="17" :stroke-width="1.75" />
+        </button>
+      </Tooltip>
     </nav>
 
     <!-- The canvas: its grid moves with the view. -->
@@ -2415,18 +2449,29 @@ function onRail(label: string): void {
   box-shadow: inset 0 -1px 0 var(--mg-chrome-line);
   color: var(--mg-muted);
 }
-.mg-logo {
+:root .proto-ui.proto-ui.proto-ui .mg-logo {
   display: inline-flex;
   width: 52px;
   height: 38px;
+  flex: none;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   color: #f0ff41;
-  font-size: 17px;
-  font-weight: 800;
-  font-style: italic;
 }
-:root[data-ds-theme='light'] .mg-logo {
+:root .proto-ui.proto-ui.proto-ui .mg-logo:hover {
+  background: var(--mg-hover);
+}
+.mg-logo-mark {
+  width: 18px;
+  height: 18px;
+}
+:root .proto-ui.proto-ui.proto-ui .mg-rail-btn.is-home {
+  color: var(--mg-text);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mg-logo {
   color: #1a1a1a;
 }
 .mg-tab {
