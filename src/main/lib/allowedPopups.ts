@@ -38,6 +38,14 @@ export function isCheckoutReturnUrl(url: string): boolean {
   return host === 'comfy.org' || host.endsWith('.comfy.org')
 }
 
+/** May this URL be handed to the system browser via `shell.openExternal`?
+ *  http(s) only: page content must not be able to push `file:`, `smb:` or
+ *  app-protocol URLs to the OS handler. The open-external IPC handler
+ *  enforces the same allowlist. */
+export function isExternalBrowserUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url)
+}
+
 /** Extensions indicating a download rather than something to open in the
  *  browser. Archive + bundled-asset only; deliberately omits `.json`/`.html`. */
 const DOWNLOAD_FILE_EXTENSIONS = [
