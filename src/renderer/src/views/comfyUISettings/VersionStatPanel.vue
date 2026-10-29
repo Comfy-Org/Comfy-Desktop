@@ -40,49 +40,81 @@ const props = withDefaults(
 
 const emit = defineEmits<{ action: [action: ActionDef] }>()
 
+function actionButtonClass(action: ActionDef): string {
+  const base =
+    'version-stat-action inline-flex h-[30px] flex-none items-center justify-center gap-1.5 rounded-lg border border-solid bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-none whitespace-nowrap transition-[background-color,filter] duration-100 ease-[ease] disabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none'
+  return `${base} ${isRunning(action.id) ? 'cursor-progress opacity-85 disabled:cursor-progress disabled:opacity-85' : 'disabled:cursor-default disabled:opacity-50'}`
+}
+
 function isRunning(id: string): boolean {
   return props.runningActionIds.has(id)
 }
 </script>
 
 <template>
-  <div class="version-stat-panel">
-    <div class="version-stat-headline-row">
-      <p class="version-stat-headline">
+  <div class="version-stat-panel flex flex-col gap-3">
+    <div class="version-stat-headline-row flex flex-wrap items-center gap-2">
+      <p
+        class="version-stat-headline m-0 flex flex-wrap items-baseline gap-1.5 text-[18px] leading-6 font-semibold text-text"
+      >
         <span v-if="headlineProduct" class="channel-picker-headline-product">{{
           headlineProduct
         }}</span>
         <span
           class="channel-picker-headline-version"
-          :class="{ 'is-update-available': headlineHighlight }"
+          :class="{ 'is-update-available text-[var(--accent)]': headlineHighlight }"
           >{{ headline }}</span
         >
       </p>
-      <span v-if="badge" class="version-stat-badge channel-picker-badge" :class="badgeTone">{{
-        badge
-      }}</span>
+      <span
+        v-if="badge"
+        class="version-stat-badge shrink-0 rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium channel-picker-badge"
+        :class="
+          badgeTone === 'update'
+            ? 'update text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]'
+            : 'current text-[var(--success,#4ade80)] bg-[color-mix(in_srgb,var(--success,#4ade80)_12%,transparent)]'
+        "
+        >{{ badge }}</span
+      >
     </div>
 
-    <dl v-if="rows.length > 0 || actions.length > 0" class="version-stat-rows">
+    <dl
+      v-if="rows.length > 0 || actions.length > 0"
+      class="version-stat-rows m-0 flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-1"
+    >
       <div
         v-for="row in rows"
         :key="row.id"
-        class="version-stat-row"
+        class="version-stat-row grid grid-cols-2 items-center gap-3 border-t border-solid border-border-hover py-2 first:border-t-0"
         :class="{ 'is-highlight': row.highlight }"
       >
-        <dt>{{ row.label }}</dt>
-        <dd :title="row.title">{{ row.value }}</dd>
+        <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
+        <dd
+          class="m-0 text-right text-[13px] leading-[19px]"
+          :class="row.highlight ? 'font-medium text-[var(--accent)]' : 'text-neutral-100'"
+          :title="row.title"
+        >
+          {{ row.value }}
+        </dd>
       </div>
 
-      <div v-if="actions.length > 0" class="version-stat-actions">
+      <div
+        v-if="actions.length > 0"
+        class="version-stat-actions flex flex-wrap items-center justify-end gap-2 border-t border-solid border-border-hover py-2.5 first:border-t-0"
+      >
         <SectionActionButton
           v-for="action in actions"
           :key="action.id"
           :action="action"
           :running="isRunning(action.id)"
-          button-class="version-stat-action"
-          tooltip-class="version-stat-action-tooltip"
-          spinner-class="version-stat-action-spinner"
+          :button-class="actionButtonClass(action)"
+          :variant-class="
+            action.style === 'primary'
+              ? 'border-[var(--accent)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
+              : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium'
+          "
+          tooltip-class="version-stat-action-tooltip flex-none"
+          spinner-class="version-stat-action-spinner flex-none animate-spin [animation-duration:0.9s]"
           disable-with-message
           direct-style-class
           @action="emit('action', action)"
@@ -91,172 +123,3 @@ function isRunning(id: string): boolean {
     </dl>
   </div>
 </template>
-
-<style scoped>
-.version-stat-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.version-stat-headline-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.version-stat-headline {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 24px;
-  color: var(--text);
-}
-
-.version-stat-headline .is-update-available {
-  color: var(--accent);
-}
-
-.version-stat-badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  border-radius: 999px;
-}
-
-.version-stat-badge.current {
-  color: var(--success, #4ade80);
-  background: color-mix(in srgb, var(--success, #4ade80) 12%, transparent);
-}
-
-.version-stat-badge.update {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.version-stat-rows {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  padding: 4px 12px;
-  background: var(--brand-surface-bg);
-}
-
-.version-stat-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-hover);
-}
-
-.version-stat-row:first-child {
-  border-top: none;
-}
-
-.version-stat-row dt {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
-
-.version-stat-row dd {
-  margin: 0;
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--neutral-100);
-  text-align: right;
-}
-
-.version-stat-row.is-highlight dd {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-/* Inside the table's bottom edge, sharing the row divider so the buttons read
- * as the table's own footer rather than a detached block. */
-.version-stat-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border-hover);
-}
-
-.version-stat-rows > .version-stat-actions:first-child {
-  border-top: none;
-}
-
-.version-stat-action-tooltip {
-  flex: 0 0 auto;
-}
-
-:deep(.version-stat-action) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  height: 30px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition:
-    background-color 100ms ease,
-    filter 100ms ease;
-}
-
-:deep(.version-stat-action:hover:not(:disabled)),
-:deep(.version-stat-action:focus-visible:not(:disabled)) {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-:deep(.version-stat-action.primary) {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-:deep(.version-stat-action:disabled) {
-  opacity: 0.5;
-  cursor: default;
-}
-
-:deep(.version-stat-action.is-running) {
-  cursor: progress;
-  opacity: 0.85;
-}
-
-:deep(.version-stat-action-spinner) {
-  flex: 0 0 auto;
-  animation: version-stat-action-spin 0.9s linear infinite;
-}
-
-@keyframes version-stat-action-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
