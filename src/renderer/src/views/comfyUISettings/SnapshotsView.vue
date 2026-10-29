@@ -1103,7 +1103,7 @@ async function handleImport(): Promise<void> {
 .snapshots-rail-dot.is-state {
   background: var(--warning);
   border-radius: 7px;
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--legacy-color-surface);
 }
 
 .snapshots-rail-dot.is-muted {
@@ -1113,16 +1113,16 @@ async function handleImport(): Promise<void> {
 /* Restore in-flight — rotating conic ring, matching the picker row's spinner. */
 .snapshots-rail-dot.is-spinning {
   background: conic-gradient(var(--brand-accent, #f5c518) 270deg, transparent 270deg);
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--legacy-color-surface);
   animation: snapshots-rail-dot-spin 0.8s linear infinite;
 }
 .snapshots-rail-dot.is-restored {
   background: var(--success, #34c759);
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--legacy-color-surface);
 }
 .snapshots-rail-dot.is-error {
   background: var(--danger, #ef4444);
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--legacy-color-surface);
 }
 @keyframes snapshots-rail-dot-spin {
   to {
