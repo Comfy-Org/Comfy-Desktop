@@ -1,6 +1,6 @@
 import { createTestingPinia } from '@pinia/testing'
 import { mount, flushPromises } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 
@@ -14,9 +14,11 @@ vi.stubGlobal('window', {
   }
 })
 
+const confirmMigration = vi.hoisted(() => vi.fn())
+
 vi.mock('../composables/useMigrateAction', () => ({
   useMigrateAction: () => ({
-    confirmMigration: vi.fn().mockResolvedValue(null)
+    confirmMigration
   })
 }))
 
@@ -66,6 +68,10 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 describe('MigrationBanner', () => {
+  beforeEach(() => {
+    confirmMigration.mockReset().mockResolvedValue(null)
+  })
+
   describe('default state (no active operation)', () => {
     it('renders the migrate title and description', () => {
       const wrapper = mountBanner()
@@ -75,9 +81,10 @@ describe('MigrationBanner', () => {
 
     it('renders the Migrate Now button as primary', () => {
       const wrapper = mountBanner()
-      const btn = wrapper.find('button.primary.dashboard-cta-btn')
+      const btn = wrapper.find('button.migration-start')
       expect(btn.exists()).toBe(true)
       expect(btn.text()).toContain('Migrate Now')
+      expect(btn.attributes('data-variant')).toBe('inverted')
     })
 
     it('renders the New Install Without Migrating button', () => {
@@ -89,7 +96,7 @@ describe('MigrationBanner', () => {
     it('skip button is not styled as primary', () => {
       const wrapper = mountBanner()
       const skipBtn = findButtonByText(wrapper, 'New Install Without Migrating')!
-      expect(skipBtn.classes()).not.toContain('primary')
+      expect(skipBtn.attributes('data-variant')).toBe('secondary')
     })
 
     it('emits show-quick-install when skip button is clicked', async () => {
@@ -106,6 +113,34 @@ describe('MigrationBanner', () => {
       ;(migrateBtn.element as HTMLButtonElement).click()
       await flushPromises()
       expect(wrapper.emitted('show-quick-install')).toBeUndefined()
+    })
+
+    it('waits for confirmation and forwards the confirmed migration options once', async () => {
+      const result = { enablePipSync: true, snapshotPath: '/tmp/legacy-snapshot.json' }
+      let confirm!: (value: typeof result) => void
+      confirmMigration.mockReturnValue(new Promise((resolve) => (confirm = resolve)))
+      const wrapper = mountBanner()
+      const button = wrapper.get('.migration-start')
+      ;(button.element as HTMLButtonElement).click()
+      await nextTick()
+      ;(button.element as HTMLButtonElement).click()
+      await nextTick()
+      expect(confirmMigration).toHaveBeenCalledOnce()
+      expect(button.attributes('disabled')).toBeDefined()
+
+      confirm(result)
+      await flushPromises()
+      expect(button.attributes('disabled')).toBeUndefined()
+      const progress = wrapper.emitted('show-progress')!
+      expect(progress).toHaveLength(1)
+      const options = progress[0]![0] as { installationId: string; apiCall: () => unknown }
+      expect(options.installationId).toBe(stubInstallation.id)
+      await options.apiCall()
+      expect(window.api.runAction).toHaveBeenCalledWith(
+        stubInstallation.id,
+        'migrate-to-standalone',
+        result
+      )
     })
 
     it('emits show-settings when telemetry link is clicked', async () => {
