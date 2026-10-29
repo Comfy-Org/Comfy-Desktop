@@ -243,6 +243,9 @@ const fieldsOfType = (names: string, type: FieldValue): Array<[string, FieldValu
 // the agent's output. They keep the names Cloud uses for the same events.
 export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
   ...fieldsOfType('thread_id session_id turn_id workflow_id', matching(UUID)),
+  // The panel's send id: joins app:agent_message_sent to its turn on a new
+  // chat, whose first send has no thread_id yet.
+  ['client_message_id', matching(UUID)],
   ['mutation_id', matching(HEX64)],
   ...fieldsOfType('occurred_at timestamp accepted_at', timestamp),
   ['agent_version', matching(VERSION)],
@@ -287,7 +290,10 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
   ],
   [
     'agent_turn_started',
-    productEvent('thread_id turn_id workflow_id', 'run_mode engine model accepted_at')
+    productEvent(
+      'thread_id turn_id workflow_id',
+      'client_message_id run_mode engine model accepted_at'
+    )
   ],
   [
     'agent_first_response',

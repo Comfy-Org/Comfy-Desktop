@@ -653,6 +653,13 @@ describe('agentTap product events', () => {
     })
   })
 
+  it('forwards the send id on agent_turn_started so a message joins its turn', () => {
+    const clientMessageId = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+    ingest(turnStarted(` client_message_id=${clientMessageId}`))
+    expect(captured.map((c) => c.event)).toEqual(['agent_turn_started'])
+    expect(captured[0]?.ctx).toMatchObject({ client_message_id: clientMessageId })
+  })
+
   it('never reads a product event inside the agent’s relayed output', () => {
     ingest(`\u001b[32m[INFO]\u001b[0m [comfy-agent] ${PRODUCT_FIXTURE[1]}\r\n`)
     ingest(`\u001b[32m[INFO]\u001b[0m [comfy-agent] x\r${PRODUCT_FIXTURE[1]}\r\n`)
@@ -731,6 +738,7 @@ describe('agentTap product events', () => {
     ['minute 60', turnStarted(' accepted_at=2026-10-09T12:60:00Z')],
     ['second 60', turnStarted(' accepted_at=2026-10-09T12:00:60Z')],
     ['a duplicate key', turnStarted(` thread_id=${THREAD}`)],
+    ['a send id that is not a UUID', turnStarted(' client_message_id=alice.smith:message-42')],
     ['a model with a slash', turnStarted(' model=a/b')],
     ['a model with a backslash', turnStarted(' model=C:\\x')],
     ['a non-ASCII model', turnStarted(' model=caf\u00e9')],
