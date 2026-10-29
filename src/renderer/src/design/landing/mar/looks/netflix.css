@@ -1,0 +1,285 @@
+/*
+ * Netflix · cinematic and content first. A true-black canvas with no
+ * panels or borders between sidebar and page, the latest output edge to
+ * edge at the top of Home (MarLookHero.vue), rows of big covers that never
+ * grow but reveal their details in a panel over the picture, bold
+ * condensed headings, and one red used only for the primary action and
+ * progress. Dark only: in light the look draws nothing (the tweak says so).
+ */
+:root[data-mar-look='netflix'][data-mar-ui]:not([data-ds-theme='light']) {
+  --nf-red: #e50914;
+  --nf-red-hover: #f40612;
+  --nf-display: 'Barlow Condensed', 'Inter', system-ui, sans-serif;
+  --color-app-background: #000;
+  --color-titlebar-background: #000;
+  --color-content-background: #000;
+  --color-card-background: #141414;
+  --color-card-background-hover: #1c1c1c;
+  --color-secondary-background: #232323;
+  --color-secondary-background-hover: #2e2e2e;
+  --color-border-default: oklch(1 0 0 / 0.08) !important;
+  --color-border-strong: oklch(1 0 0 / 0.16) !important;
+  --color-border-focus: #fff;
+  --color-muted-foreground: #b3b3b3;
+  --color-subtle-foreground: #8c8c8c;
+  --shadow-elev: none;
+  --shadow-elev-hover: none;
+  --shadow-popover: 0 20px 50px -10px oklch(0 0 0 / 0.9), 0 0 0 1px oklch(1 0 0 / 0.08);
+}
+
+/* ── Canvas: one black field, no pane edges ────────────────────── */
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .proto-shell.proto-shell,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .proto-sidebar.proto-sidebar,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .glass-titlebar.glass-titlebar {
+  background: #000;
+  border-color: transparent;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .proto-main.proto-main {
+  background: #000;
+  border-color: transparent;
+  box-shadow: none;
+  container-type: inline-size;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .proto-main::before,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-backdrop {
+  display: none;
+}
+
+/* Sidebar: the page you're on is white and bold, the rest grey. */
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .proto-sidebar.proto-sidebar
+  button.bg-secondary-background-hover {
+  background: transparent;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 #fff;
+}
+
+/* ── Type: bold condensed headings ────────────────────────────── */
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-greeting.mar-greeting.mar-greeting,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-page h1,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-page-title {
+  font-family: var(--nf-display);
+  font-weight: 700;
+  letter-spacing: 0;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: #fff;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-greeting.mar-greeting.mar-greeting {
+  font-size: 44px;
+  line-height: 1.05;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-home h2.text-ui {
+  font-family: var(--nf-display);
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #e5e5e5;
+}
+
+/* ── Primary action and progress: the one red ─────────────────── */
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .proto-ui.proto-ui.proto-ui
+  button.bg-inverted-background:not(:disabled),
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-nf-hero-primary,
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  :is(
+    .mar-tpl-primary.mar-tpl-primary.mar-tpl-primary,
+    .mar-dep-primary.mar-dep-primary.mar-dep-primary
+  ):not(:disabled) {
+  background: var(--nf-red);
+  color: #fff;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .proto-ui.proto-ui.proto-ui
+  button.bg-inverted-background:not(:disabled):hover,
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-nf-hero-primary:hover,
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  :is(
+    .mar-tpl-primary.mar-tpl-primary.mar-tpl-primary,
+    .mar-dep-primary.mar-dep-primary.mar-dep-primary
+  ):not(:disabled):hover {
+  background: var(--nf-red-hover);
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  :is(.mar-asset-progress > *, .mar-build-bar i, .mar-credits-bar > span) {
+  background: var(--nf-red);
+}
+
+/* ── Home rows: big covers, details on a panel over the picture ── */
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-home [class*='auto-cols-'] {
+  grid-auto-columns: minmax(240px, calc((100% - 3 * 14px) / 3.4));
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-home .edge-shine.group {
+  padding: 0;
+  border-color: transparent;
+  background: #141414;
+  overflow: hidden;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) .mar-home .edge-shine.group::after {
+  display: none;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-home
+  .edge-shine.group
+  > .overflow-hidden {
+  border-radius: 0;
+}
+/* The card keeps its size; its text becomes a panel that rises over the
+   picture on hover or focus. */
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-home
+  .edge-shine.group
+  > div:last-child:not(.overflow-hidden) {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 28px 12px 10px;
+  background: linear-gradient(180deg, transparent, oklch(0 0 0 / 0.75) 40%, #000);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-home
+  .edge-shine.group:is(:hover, :focus-visible, :focus-within)
+  > div:last-child:not(.overflow-hidden) {
+  opacity: 1;
+  transform: none;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-home
+  .edge-shine.group:is(:hover, :focus-visible) {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+/* Library grids: covers on black, no card around them. */
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .proto-ui.proto-ui.proto-ui
+  .mar-item.is-grid {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .mar-item.is-grid:hover
+  .mar-item-media {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+/* Menus and dialogs: near-black sheets. */
+:root[data-mar-look='netflix']:not([data-ds-theme='light'])
+  .shadow-popover.shadow-popover:not(.bg-inverted-background),
+:root[data-mar-look='netflix']:not([data-ds-theme='light']) [role='dialog'].bg-card-background {
+  background-color: #181818;
+}
+
+/* ── Hero: the latest output, edge to edge ───────────────────── */
+:root[data-mar-look='netflix'] .mar-home:has(> .mar-nf-hero) {
+  display: flex;
+  flex-direction: column;
+}
+.mar-nf-hero {
+  order: -1;
+  position: relative;
+  width: 100cqw;
+  margin-inline: calc((100% - 100cqw) / 2);
+  height: min(56cqw, 520px);
+  overflow: hidden;
+  background: #000;
+}
+.mar-nf-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 30%;
+}
+.mar-nf-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, oklch(0 0 0 / 0.85), oklch(0 0 0 / 0.35) 45%, transparent 70%),
+    linear-gradient(180deg, transparent 55%, #000);
+  pointer-events: none;
+}
+.mar-nf-hero-copy {
+  position: absolute;
+  z-index: 1;
+  left: 40px;
+  bottom: 48px;
+  max-width: 460px;
+  color: #fff;
+}
+.mar-nf-hero-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #e5e5e5;
+}
+.mar-nf-hero-kicker::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  background: var(--nf-red);
+}
+.mar-nf-hero-title {
+  margin-top: 8px;
+  font-family: var(--nf-display);
+  font-size: 56px;
+  line-height: 0.98;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.mar-nf-hero-meta {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #d2d2d2;
+}
+.mar-nf-hero-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.mar-nf-hero-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px 0 14px;
+  border-radius: var(--radius-control);
+  font-size: 15px;
+  font-weight: 600;
+  transition: background-color 150ms ease;
+}
+.mar-nf-hero-secondary {
+  background: oklch(0.45 0 0 / 0.6);
+  color: #fff;
+}
+.mar-nf-hero-secondary:hover {
+  background: oklch(0.45 0 0 / 0.8);
+}
+.mar-nf-hero-actions button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+/* The greeting follows the hero, closer to it. */
+:root[data-mar-look='netflix'] .mar-home:has(> .mar-nf-hero) > section:first-child {
+  padding-top: 28px;
+}
+:root[data-mar-look='netflix']
+  .mar-home:has(> .mar-nf-hero)
+  .mar-greeting.mar-greeting.mar-greeting {
+  padding-top: 0;
+}

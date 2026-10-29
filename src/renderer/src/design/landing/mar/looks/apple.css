@@ -1,0 +1,203 @@
+/*
+ * Apple · macOS-grade craft on the Void greys. The sidebar and title bar
+ * are vibrancy materials (translucent, blurred and saturated over a still
+ * wallpaper, MarLookFx.vue); the page is the window's solid content.
+ * Hairline separators, large soft shadows, Inter with display tracking,
+ * and one quiet system blue for focus and the primary action only.
+ * Springy but small motion. Dark and light.
+ */
+:root[data-mar-look='apple'] {
+  --ap-blue: oklch(0.62 0.19 256);
+  --ap-blue-hover: oklch(0.66 0.19 256);
+  --ap-hair: oklch(1 0 0 / 0.09);
+  --ap-hair-strong: oklch(1 0 0 / 0.15);
+  --ap-sidebar: oklch(0.2 0.004 285 / 0.55);
+  --ap-content: oklch(0.155 0.004 285);
+  --ap-raised: oklch(1 0 0 / 0.1);
+  --ap-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ap-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.5), 0 10px 30px -10px oklch(0 0 0 / 0.55);
+  --ap-shadow-lg:
+    0 0 0 0.5px oklch(1 0 0 / 0.12), 0 24px 64px -16px oklch(0 0 0 / 0.7),
+    0 4px 12px oklch(0 0 0 / 0.3);
+}
+:root[data-mar-look='apple'][data-ds-theme='light'] {
+  --ap-blue: oklch(0.56 0.2 256);
+  --ap-blue-hover: oklch(0.52 0.2 256);
+  --ap-hair: oklch(0 0 0 / 0.08);
+  --ap-hair-strong: oklch(0 0 0 / 0.14);
+  --ap-sidebar: oklch(0.97 0.002 285 / 0.6);
+  --ap-content: oklch(1 0 0);
+  --ap-raised: oklch(1 0 0);
+  --ap-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 8px 24px -12px oklch(0 0 0 / 0.18);
+  --ap-shadow-lg:
+    0 0 0 0.5px oklch(0 0 0 / 0.1), 0 24px 60px -18px oklch(0 0 0 / 0.25),
+    0 4px 12px oklch(0 0 0 / 0.06);
+}
+:root[data-mar-look='apple'][data-mar-ui] {
+  --color-border-default: var(--ap-hair) !important;
+  --color-border-strong: var(--ap-hair-strong) !important;
+  --color-border-focus: var(--ap-blue);
+  --shadow-elev: var(--ap-shadow);
+  --shadow-elev-hover: var(--ap-shadow);
+  --shadow-popover: var(--ap-shadow-lg);
+}
+:root[data-mar-look='apple'][data-mar-ui]:not([data-ds-theme='light']) {
+  --color-card-background: oklch(0.2 0.004 285);
+  --color-card-background-hover: oklch(0.225 0.004 285);
+}
+
+/* ── Type: Inter with optical display tracking ────────────────── */
+:root[data-mar-look='apple'] .proto-ui {
+  font-feature-settings: 'cv11', 'ss03';
+  letter-spacing: -0.008em;
+  -webkit-font-smoothing: antialiased;
+}
+:root[data-mar-look='apple'] .mar-greeting.mar-greeting.mar-greeting {
+  font-weight: 650;
+  letter-spacing: -0.032em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+:root[data-mar-look='apple'] .mar-page h1,
+:root[data-mar-look='apple'] .mar-page-title {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+:root[data-mar-look='apple'] .mar-home h2.text-ui,
+:root[data-mar-look='apple'] .mar-group-title {
+  letter-spacing: -0.01em;
+}
+
+/* ── Materials: vibrant sidebar and title bar, solid content ──── */
+:root[data-mar-look='apple'] .proto-sidebar.proto-sidebar {
+  background: var(--ap-sidebar);
+  backdrop-filter: blur(40px) saturate(1.8);
+  border-color: transparent;
+  box-shadow: inset -0.5px 0 0 var(--ap-hair);
+}
+:root[data-mar-look='apple'] .proto-main.proto-main {
+  background: var(--ap-content);
+  box-shadow: var(--ap-shadow);
+}
+:root[data-mar-look='apple'] .proto-main::before {
+  display: none;
+}
+
+/* Sidebar selection: a raised neutral row, as in Finder. */
+:root[data-mar-look='apple'] .proto-sidebar.proto-sidebar button.bg-secondary-background-hover {
+  background: var(--ap-raised);
+  box-shadow: 0 0 0 0.5px var(--ap-hair);
+}
+
+/* ── Surfaces: hairline rims, soft depth ─────────────────────── */
+:root[data-mar-look='apple'] .edge-shine::after {
+  display: none;
+}
+:root[data-mar-look='apple'] .proto-main .edge-shine.bg-card-background {
+  border-color: var(--ap-hair);
+  transition:
+    box-shadow 300ms ease,
+    transform 360ms var(--ap-spring);
+}
+:root[data-mar-look='apple'] .proto-main .edge-shine.group:hover {
+  transform: translateY(-1px);
+}
+:root[data-mar-look='apple'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid {
+  transition: transform 360ms var(--ap-spring);
+}
+
+/* Prompt: a raised field; focus is the blue ring macOS draws. */
+:root[data-mar-look='apple'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div {
+  background: var(--ap-raised);
+  border-color: var(--ap-hair-strong);
+  box-shadow: var(--ap-shadow);
+}
+:root[data-mar-look='apple'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div:focus-within {
+  border-color: var(--ap-blue);
+  box-shadow:
+    0 0 0 3.5px color-mix(in oklch, var(--ap-blue) 35%, transparent),
+    var(--ap-shadow);
+}
+:root[data-mar-look='apple'] .edge-shine.mar-prompt::after {
+  display: none;
+}
+
+/* ── Controls ─────────────────────────────────────────────────── */
+/* The primary action is the one blue. */
+:root[data-mar-look='apple']
+  .proto-ui.proto-ui.proto-ui
+  button.bg-inverted-background:not(:disabled),
+:root[data-mar-look='apple']
+  :is(
+    .mar-tpl-primary.mar-tpl-primary.mar-tpl-primary,
+    .mar-dep-primary.mar-dep-primary.mar-dep-primary
+  ):not(:disabled) {
+  background: var(--ap-blue);
+  color: #fff;
+  box-shadow:
+    inset 0 0.5px 0 oklch(1 0 0 / 0.3),
+    0 1px 2px oklch(0 0 0 / 0.25);
+}
+:root[data-mar-look='apple']
+  .proto-ui.proto-ui.proto-ui
+  button.bg-inverted-background:not(:disabled):hover,
+:root[data-mar-look='apple']
+  :is(
+    .mar-tpl-primary.mar-tpl-primary.mar-tpl-primary,
+    .mar-dep-primary.mar-dep-primary.mar-dep-primary
+  ):not(:disabled):hover {
+  background: var(--ap-blue-hover);
+}
+/* Push buttons: a raised face with a hairline. */
+:root[data-mar-look='apple']
+  .proto-ui.proto-ui.proto-ui
+  button:is(.border-border-strong, .bg-secondary-background):not(:disabled) {
+  box-shadow:
+    inset 0 0.5px 0 oklch(1 0 0 / 0.1),
+    0 0 0 0.5px var(--ap-hair),
+    0 1px 1.5px oklch(0 0 0 / 0.12);
+}
+:root[data-mar-look='apple'] .proto-ui.proto-ui.proto-ui button {
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    transform 260ms var(--ap-spring);
+}
+:root[data-mar-look='apple'] .proto-ui.proto-ui.proto-ui button:not(:disabled):active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
+}
+:root[data-mar-look='apple'] :focus-visible {
+  outline-color: var(--ap-blue);
+}
+
+/* Segmented controls: a recessed track, a raised selected segment. */
+:root[data-mar-look='apple'] .proto-ui.proto-ui.proto-ui .mar-pseg {
+  box-shadow: inset 0 0 0 0.5px var(--ap-hair);
+}
+:root[data-mar-look='apple'] .proto-ui.proto-ui.proto-ui .mar-pseg-btn[aria-selected='true'] {
+  background: var(--ap-raised);
+  box-shadow:
+    0 0 0 0.5px var(--ap-hair-strong),
+    0 1px 3px oklch(0 0 0 / 0.15);
+}
+
+/* ── Menus, popovers and dialogs: vibrancy, readable ──────────── */
+:root[data-mar-look='apple'] .shadow-popover.shadow-popover:not(.bg-inverted-background) {
+  background-color: color-mix(in oklch, var(--color-card-background) 82%, transparent);
+  backdrop-filter: blur(40px) saturate(1.8);
+  border-color: transparent;
+}
+:root[data-mar-look='apple'] .shadow-popover[data-state='open'] {
+  animation: mar-apple-pop 220ms var(--ap-spring);
+}
+@keyframes mar-apple-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+:root[data-mar-look='apple'] [role='dialog'].bg-card-background {
+  border-color: transparent;
+}
