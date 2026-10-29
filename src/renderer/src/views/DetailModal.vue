@@ -29,6 +29,7 @@ import {
 } from '../composables/actionShoppingList'
 import { REQUIRES_STOPPED } from '../types/ipc'
 import { Pencil } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import type {
   Installation,
@@ -73,6 +74,19 @@ const { confirmMigration } = useMigrateAction()
 function handleHeaderClose(): void {
   emit('close')
 }
+
+const tabButtonClass =
+  'static inline-block rounded-md border border-solid border-transparent px-3 py-1.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto [&]:[appearance:button] text-text-muted transition-[color,background-color] duration-120 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)] hover:text-text focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-primary)]'
+const actionButtonClass =
+  "static inline-block rounded-lg border border-solid px-4 py-2 font-sans text-[14px] leading-[inherit] font-normal whitespace-normal touch-auto [&]:[appearance:button] transition-none disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] [&.loading]:pointer-events-none [&.loading]:opacity-70 [&.loading]:after:ml-1.5 [&.loading]:after:inline-block [&.loading]:after:size-3 [&.loading]:after:rounded-[50%] [&.loading]:after:border-2 [&.loading]:after:border-solid [&.loading]:after:border-[var(--text-faint)] [&.loading]:after:border-t-[var(--accent)] [&.loading]:after:align-middle [&.loading]:after:content-[''] [&.loading]:after:animate-spin [&.loading]:after:[animation-duration:0.6s]"
+const actionClasses = {
+  default: 'border-[var(--border)] bg-surface text-text hover:bg-[var(--border)]',
+  primary:
+    'border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-background hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:border-[var(--accent-hover)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-120 hover:ease-[ease]',
+  accent:
+    'border-[var(--accent)] bg-surface font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-bg',
+  danger: 'border-danger bg-surface text-danger hover:bg-danger hover:text-bg'
+} as const
 
 const scrollRef = ref<HTMLDivElement | null>(null)
 
@@ -503,22 +517,38 @@ function navigateToInstallation(installationId: string): void {
         @keydown.ctrl.a.prevent="handleTitleSelectAll"
         @paste="handleTitlePaste"
       >
-        {{ installation.name }}<Pencil :size="14" class="edit-name-hint" contenteditable="false" />
+        {{ installation.name
+        }}<Pencil
+          :size="14"
+          class="edit-name-hint pointer-events-none shrink-0 align-middle opacity-25 select-none transition-opacity duration-150 ease-[ease]"
+          contenteditable="false"
+        />
       </div>
     </template>
-    <div v-if="hasTabs" class="detail-tabs">
-      <button
+    <div
+      v-if="hasTabs"
+      class="detail-tabs mb-4 flex shrink-0 gap-0.5 border-b border-solid border-[var(--border-hover)] pb-2"
+    >
+      <Button
         v-for="tabId in availableTabs"
         :key="tabId"
         class="detail-tab"
-        :class="{ active: activeTab === tabId }"
+        size="unset"
+        variant="textonly"
+        :class="[
+          tabButtonClass,
+          { 'active bg-surface text-text hover:bg-surface': activeTab === tabId }
+        ]"
         @click="activeTab = tabId"
       >
         {{ tabLabels[tabId] ?? tabId }}
-      </button>
+      </Button>
     </div>
-    <div ref="scrollRef" class="view-scroll">
-      <div v-if="sectionsLoading" class="modal-loading with-spinner">
+    <div ref="scrollRef" class="view-scroll min-h-0 flex-1 overflow-y-auto pr-2">
+      <div
+        v-if="sectionsLoading"
+        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
+      >
         {{ $t('common.loading') }}
       </div>
       <SnapshotTab
@@ -544,13 +574,17 @@ function navigateToInstallation(installationId: string): void {
         />
         <div
           v-if="activeTab === 'status' && (installationSizeLoading || installationSize !== null)"
-          class="detail-section"
+          class="detail-section mb-4"
         >
           <div class="detail-section-body">
-            <div class="detail-fields">
+            <div
+              class="detail-fields flex flex-col gap-2.5 rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-3"
+            >
               <div>
-                <div class="detail-field-label">{{ $t('diskSpace.sizeLabel') }}</div>
-                <div class="detail-field-value">
+                <div class="detail-field-label text-[13px] text-text-muted">
+                  {{ $t('diskSpace.sizeLabel') }}
+                </div>
+                <div class="detail-field-value mt-px text-[14px]">
                   {{
                     installationSizeLoading
                       ? $t('diskSpace.calculatingSize')
@@ -567,16 +601,28 @@ function navigateToInstallation(installationId: string): void {
     </div>
 
     <!-- Bottom pinned actions -->
-    <div v-if="bottomSection" id="detail-bottom-actions">
-      <div class="detail-actions">
+    <div
+      v-if="bottomSection"
+      id="detail-bottom-actions"
+      class="-mx-5 shrink-0 border-t border-solid border-[var(--border)] px-5 pt-3"
+    >
+      <div class="detail-actions mt-2 flex flex-wrap gap-2">
         <TooltipWrap v-for="a in bottomActions" :key="a.id" :text="a.tooltip">
-          <button
-            :class="[a.style, { 'looks-disabled': a.enabled === false && a.disabledMessage }]"
+          <Button
+            size="unset"
+            variant="textonly"
+            :class="[
+              actionButtonClass,
+              actionClasses[a.style ?? 'default'],
+              {
+                'looks-disabled cursor-default opacity-40': a.enabled === false && a.disabledMessage
+              }
+            ]"
             :disabled="a.enabled === false && !a.disabledMessage"
             @click="handleActionClick(a, $event)"
           >
             {{ a.label }}
-          </button>
+          </Button>
         </TooltipWrap>
       </div>
     </div>
@@ -584,9 +630,12 @@ function navigateToInstallation(installationId: string): void {
 
   <!-- Embedded mount: bare panel body for ManageInstallModal; the parent owns the chrome. -->
   <div v-else-if="installation" class="detail-embedded">
-    <div class="detail-embedded-title">
+    <div
+      class="detail-embedded-title mb-4 text-[18px] font-semibold text-text [&:hover_.edit-name-hint]:opacity-60 [&>[contenteditable]:focus_.edit-name-hint]:opacity-0"
+    >
       <div
         role="textbox"
+        class="inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap outline-none"
         :aria-label="$t('detail.editName', 'Edit instance name')"
         contenteditable
         spellcheck="false"
@@ -595,22 +644,38 @@ function navigateToInstallation(installationId: string): void {
         @keydown.ctrl.a.prevent="handleTitleSelectAll"
         @paste="handleTitlePaste"
       >
-        {{ installation.name }}<Pencil :size="14" class="edit-name-hint" contenteditable="false" />
+        {{ installation.name
+        }}<Pencil
+          :size="14"
+          class="edit-name-hint pointer-events-none shrink-0 align-middle opacity-25 select-none transition-opacity duration-150 ease-[ease]"
+          contenteditable="false"
+        />
       </div>
     </div>
-    <div v-if="hasTabs" class="detail-tabs">
-      <button
+    <div
+      v-if="hasTabs"
+      class="detail-tabs mb-4 flex shrink-0 gap-0.5 border-b border-solid border-[var(--border-hover)] pb-2"
+    >
+      <Button
         v-for="tabId in availableTabs"
         :key="tabId"
         class="detail-tab"
-        :class="{ active: activeTab === tabId }"
+        size="unset"
+        variant="textonly"
+        :class="[
+          tabButtonClass,
+          { 'active bg-surface text-text hover:bg-surface': activeTab === tabId }
+        ]"
         @click="activeTab = tabId"
       >
         {{ tabLabels[tabId] ?? tabId }}
-      </button>
+      </Button>
     </div>
-    <div ref="scrollRef" class="view-scroll">
-      <div v-if="sectionsLoading" class="modal-loading with-spinner">
+    <div ref="scrollRef" class="view-scroll min-h-0 flex-1 overflow-y-auto pr-2">
+      <div
+        v-if="sectionsLoading"
+        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
+      >
         {{ $t('common.loading') }}
       </div>
       <SnapshotTab
@@ -636,13 +701,17 @@ function navigateToInstallation(installationId: string): void {
         />
         <div
           v-if="activeTab === 'status' && (installationSizeLoading || installationSize !== null)"
-          class="detail-section"
+          class="detail-section mb-4"
         >
           <div class="detail-section-body">
-            <div class="detail-fields">
+            <div
+              class="detail-fields flex flex-col gap-2.5 rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-3"
+            >
               <div>
-                <div class="detail-field-label">{{ $t('diskSpace.sizeLabel') }}</div>
-                <div class="detail-field-value">
+                <div class="detail-field-label text-[13px] text-text-muted">
+                  {{ $t('diskSpace.sizeLabel') }}
+                </div>
+                <div class="detail-field-value mt-px text-[14px]">
                   {{
                     installationSizeLoading
                       ? $t('diskSpace.calculatingSize')
@@ -658,16 +727,28 @@ function navigateToInstallation(installationId: string): void {
       </template>
     </div>
 
-    <div v-if="bottomSection" id="detail-bottom-actions">
-      <div class="detail-actions">
+    <div
+      v-if="bottomSection"
+      id="detail-bottom-actions"
+      class="-mx-5 shrink-0 border-t border-solid border-[var(--border)] px-5 pt-3"
+    >
+      <div class="detail-actions mt-2 flex flex-wrap gap-2">
         <TooltipWrap v-for="a in bottomActions" :key="a.id" :text="a.tooltip">
-          <button
-            :class="[a.style, { 'looks-disabled': a.enabled === false && a.disabledMessage }]"
+          <Button
+            size="unset"
+            variant="textonly"
+            :class="[
+              actionButtonClass,
+              actionClasses[a.style ?? 'default'],
+              {
+                'looks-disabled cursor-default opacity-40': a.enabled === false && a.disabledMessage
+              }
+            ]"
             :disabled="a.enabled === false && !a.disabledMessage"
             @click="handleActionClick(a, $event)"
           >
             {{ a.label }}
-          </button>
+          </Button>
         </TooltipWrap>
       </div>
     </div>
