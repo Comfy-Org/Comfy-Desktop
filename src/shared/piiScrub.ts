@@ -26,15 +26,17 @@
 // escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
 // stops at `"` or a line break so a JSON string's closing quote, or the next
 // stderr line, survives; not at `'` or a space, which are legal in a Windows
-// username.
+// username. A `\uXXXX` escape is part of the name (non-ASCII JSON).
+const NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
 const PII_PATH_PATTERNS: RegExp[] = [
-  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
-  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
-  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
-  /([\\/]Users[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
-  /([\\/]home[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
-  /(\/mnt\/wsl\/[^/]+\/home\/)[^/\r\n]+?(?=[/"\r\n]|$)/gi
-]
+  String.raw`([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)`,
+  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)`,
+  String.raw`(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)`,
+  // Forward-slash roots only: a backslash `\home\` is usually a nested project folder.
+  String.raw`(\/Users[\\/]+)`,
+  String.raw`(\/home[\\/]+)`,
+  String.raw`(\/mnt\/wsl\/[^/]+\/home\/)`
+].map((prefix) => new RegExp(`${prefix}${NAME}`, 'gi'))
 
 // The real home directory, in any separator spelling. Catches a profile
 // that lives outside `Users` / `home` (a relocated `%USERPROFILE%`, e.g.
@@ -55,7 +57,14 @@ export function setScrubbedHomeDir(homeDir: string): void {
   }
   const parent = segments.map((segment) => `${escapeRegExp(segment)}[\\\\/]+`).join('')
   const name = escapeRegExp(last)
-  homeDirPatterns = [new RegExp(`(${leading}${parent})${name}(?![\\w$~-])`, 'gi')]
+  // Bounded on both sides by a path edge: not inside a longer component
+  // (`/mnt/data` for home `/data`), and not a prefix of a sibling (`alice.smith`).
+  homeDirPatterns = [
+    new RegExp(
+      `(?<![\\w.~$-])(${leading}${parent})${name}(?=[\\\\/"'\\s:;,)\\]}]|\\.(?![\\w-])|$)`,
+      'gi'
+    )
+  ]
 }
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [

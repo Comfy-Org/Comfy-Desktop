@@ -11,11 +11,9 @@ import {
 } from 'electron'
 import type { WebContentsView } from 'electron'
 import type { Tray } from 'electron'
-import os from 'os'
 import path from 'path'
 import fs from 'fs'
 import { normaliseFirstUseMode } from '../shared/firstUseMode'
-import { setScrubbedHomeDir } from '../shared/piiScrub'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
@@ -32,6 +30,7 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerHomeDirScrub } from './lib/homeDirScrub'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -185,13 +184,7 @@ import {
 
 export type { ComfyPanelKey } from './host/registry'
 
-// Scrub every spelling of the real home directory from off-box telemetry,
-// including profiles relocated outside `Users` / `home`.
-try {
-  setScrubbedHomeDir(os.homedir())
-} catch {
-  // os.homedir() throws when the OS reports no home; the generic patterns still apply.
-}
+registerHomeDirScrub()
 
 // Collect native crash minidumps (GPU / renderer / V8 OOM segfaults that
 // never reach a JS handler) into app.getPath('crashDumps'). Kept local — we
