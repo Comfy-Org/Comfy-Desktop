@@ -797,24 +797,35 @@ onMounted(() => {
 </script>
 
 <template>
-  <BrandBackground class="benchmarks" data-testid="benchmarks">
-    <div class="benchmarks__layout">
+  <BrandBackground
+    class="benchmarks min-w-0 min-h-0 [--benchmark-baseline:#e5e86d] [--benchmark-best:#3ecf8e] [--benchmark-faster:#54d890] [--benchmark-faster-text:#6ed8a0] [--benchmark-slower:#ef6f69] [--benchmark-slower-text:#ef8a85] [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0"
+    data-testid="benchmarks"
+  >
+    <div
+      class="benchmarks__layout relative flex h-full min-h-0 w-full flex-col gap-4 overflow-x-hidden overflow-y-auto text-neutral-100"
+    >
       <BrandedPageHeader
         :title="t('benchmarks.title')"
         :description="t('benchmarks.description')"
         logo-test-id="benchmarks-logo"
       />
 
-      <DevPlatformAccountChip class="benchmarks__account" />
+      <div
+        class="benchmarks__account absolute top-0 right-0 z-2 flex [@media(max-width:800px)]:hidden"
+      >
+        <DevPlatformAccountChip />
+      </div>
 
       <section
-        class="benchmarks__card benchmarks__library"
+        class="benchmarks__card min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg)_90%,transparent)] p-4 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__library"
         :aria-label="t('benchmarks.runsLibrary')"
       >
-        <div class="benchmarks__filters">
-          <div class="benchmarks__folder-controls">
+        <div
+          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 [&_.ui-input]:min-h-9 [&_.ui-select-trigger]:min-h-9 [&_.ui-input-control]:pt-1.5 [@media(max-width:1100px)]:grid-cols-[auto_repeat(4,minmax(0,1fr))] [@media(max-width:800px)]:grid-cols-[auto_minmax(0,1fr)]"
+        >
+          <div class="benchmarks__folder-controls flex items-center gap-1">
             <button
-              class="secondary benchmarks__open-folder"
+              class="secondary benchmarks__open-folder rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex min-h-9 items-center gap-2 whitespace-nowrap"
               type="button"
               :disabled="loading"
               :title="benchmarksFolderPath"
@@ -824,7 +835,7 @@ onMounted(() => {
               {{ t('benchmarks.openFolder') }}
             </button>
             <button
-              class="benchmarks__refresh"
+              class="benchmarks__refresh inline-flex size-[30px] cursor-pointer items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 text-[14px] text-text-muted enabled:hover:border-[var(--chooser-surface-border-hover)] enabled:hover:bg-[var(--chooser-surface-bg-hover)] enabled:hover:text-neutral-100 disabled:cursor-default disabled:opacity-60 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
               type="button"
               :disabled="loading"
               :aria-label="t('benchmarks.refresh')"
@@ -834,14 +845,16 @@ onMounted(() => {
             >
               <RefreshCw
                 :size="13"
-                :class="{ 'benchmarks__refresh-icon--busy': loading }"
+                :class="{
+                  'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
+                }"
                 aria-hidden="true"
               />
             </button>
           </div>
           <BaseInput
             v-model="searchQuery"
-            class="benchmarks__search"
+            class="benchmarks__search [@media(max-width:1100px)]:col-[2/-1] [@media(max-width:800px)]:col-2"
             :placeholder="t('benchmarks.searchPlaceholder')"
             :aria-label="t('benchmarks.searchPlaceholder')"
             :spellcheck="false"
@@ -872,16 +885,22 @@ onMounted(() => {
             :aria-label="t('benchmarks.allWorkflows')"
             compact
           />
-          <details ref="libraryColumnsPicker" class="benchmarks__columns-picker">
+          <details
+            ref="libraryColumnsPicker"
+            class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+          >
             <summary class="secondary">
               <SlidersHorizontal :size="16" aria-hidden="true" />
               {{ t('benchmarks.columns') }}
             </summary>
-            <div class="benchmarks__columns-menu">
+            <div
+              class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+            >
               <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
               <label v-for="key in availableColumnKeys" :key="key">
                 <input
                   type="checkbox"
+                  class="relative m-0 h-5 w-9 flex-none cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-[50%] after:bg-text after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:[transform:translateX(16px)] checked:after:bg-background disabled:cursor-not-allowed disabled:opacity-60"
                   :checked="visibleColumnKeys.has(key)"
                   :disabled="key === 'workflowName'"
                   :data-testid="`benchmark-column-${key}`"
@@ -893,22 +912,35 @@ onMounted(() => {
           </details>
         </div>
 
-        <div v-if="loading" class="benchmarks__state">{{ t('common.loading') }}</div>
-        <div v-else-if="loadError" class="benchmarks__state benchmarks__state--error">
+        <div v-if="loading" class="benchmarks__state px-4 py-8 text-center text-text-muted">
+          {{ t('common.loading') }}
+        </div>
+        <div
+          v-else-if="loadError"
+          class="benchmarks__state px-4 py-8 text-center text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
+        >
           {{ t('benchmarks.loadError') }}
         </div>
-        <div v-else-if="benchmarks.length === 0" class="benchmarks__state">
+        <div
+          v-else-if="benchmarks.length === 0"
+          class="benchmarks__state px-4 py-8 text-center text-text-muted"
+        >
           {{ t('benchmarks.empty') }}
         </div>
         <template v-else>
-          <div class="benchmarks__table-scroll">
-            <table class="benchmarks__table">
+          <div
+            class="benchmarks__table-scroll mt-3 max-h-[260px] overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)]"
+          >
+            <table
+              class="benchmarks__table w-full min-w-[1040px] border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-800 [&_thead_th]:font-medium [&_thead_th]:text-neutral-200 [&_th_button]:inline-flex [&_th_button]:cursor-pointer [&_th_button]:gap-1 [&_th_button]:border-0 [&_th_button]:rounded-lg [&_th_button]:bg-transparent [&_th_button]:p-0 [&_th_button]:text-inherit [&_th_button]:[font:inherit]"
+            >
               <thead>
                 <tr>
-                  <th class="benchmarks__check-cell">
-                    <label class="benchmarks__checkbox">
+                  <th class="benchmarks__check-cell w-11 text-center">
+                    <label class="benchmarks__checkbox inline-flex items-center justify-center">
                       <input
                         type="checkbox"
+                        class="relative m-0 size-4 shrink-0 cursor-pointer appearance-none rounded border border-solid border-[var(--brand-surface-border-hover)] bg-[var(--brand-surface-bg)] transition-[background] duration-200 ease-[ease] after:hidden checked:border-[var(--series-color,var(--accent))] checked:bg-[var(--series-color,var(--accent))] checked:bg-[url(data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%20fill%3D%27none%27%20stroke%3D%27white%27%20stroke-width%3D%272.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpolyline%20points%3D%273%2C9%207%2C12%2013%2C5%27%2F%3E%3C%2Fsvg%3E)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
                         :checked="allFilteredSelected"
                         :aria-label="t('benchmarks.selectVisible')"
                         @change="toggleAllFiltered"
@@ -921,14 +953,20 @@ onMounted(() => {
                       <span v-if="sortKey === column.key">{{ sortAscending ? '↑' : '↓' }}</span>
                     </button>
                   </th>
-                  <th class="benchmarks__actions-cell" :aria-label="t('benchmarks.actions')" />
+                  <th
+                    class="benchmarks__actions-cell w-11 text-center"
+                    :aria-label="t('benchmarks.actions')"
+                  />
                 </tr>
               </thead>
               <tbody>
                 <tr
                   v-for="benchmark in filteredBenchmarks"
                   :key="benchmark.id"
-                  :class="{ 'benchmarks__row--selected': selectedIds.has(benchmark.id) }"
+                  :class="{
+                    'benchmarks__row--selected [&>td]:bg-[color-mix(in_srgb,var(--series-color)_10%,transparent)] [&>td:first-child]:[box-shadow:inset_3px_0_var(--series-color)]':
+                      selectedIds.has(benchmark.id)
+                  }"
                   :style="
                     selectedIds.has(benchmark.id)
                       ? { '--series-color': seriesColor(benchmark) }
@@ -936,10 +974,11 @@ onMounted(() => {
                   "
                   :data-testid="`benchmark-row-${benchmark.id}`"
                 >
-                  <td class="benchmarks__check-cell">
-                    <label class="benchmarks__checkbox">
+                  <td class="benchmarks__check-cell w-11 text-center">
+                    <label class="benchmarks__checkbox inline-flex items-center justify-center">
                       <input
                         type="checkbox"
+                        class="relative m-0 size-4 shrink-0 cursor-pointer appearance-none rounded border border-solid border-[var(--brand-surface-border-hover)] bg-[var(--brand-surface-bg)] transition-[background] duration-200 ease-[ease] after:hidden checked:border-[var(--series-color,var(--accent))] checked:bg-[var(--series-color,var(--accent))] checked:bg-[url(data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%20fill%3D%27none%27%20stroke%3D%27white%27%20stroke-width%3D%272.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpolyline%20points%3D%273%2C9%207%2C12%2013%2C5%27%2F%3E%3C%2Fsvg%3E)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
                         :checked="selectedIds.has(benchmark.id)"
                         :aria-label="
                           t('benchmarks.selectRun', { workflow: benchmark.workflowName })
@@ -951,14 +990,20 @@ onMounted(() => {
                   <td
                     v-for="column in visibleColumns"
                     :key="column.key"
-                    :class="{ benchmarks__strong: column.key === 'workflowName' }"
+                    :class="{
+                      'benchmarks__strong font-semibold text-neutral-100':
+                        column.key === 'workflowName'
+                    }"
                   >
                     <template v-if="column.key === 'id'">
-                      <span class="benchmarks__session-name-editor">
+                      <span
+                        class="benchmarks__session-name-editor relative inline-block align-middle"
+                      >
                         <button
-                          class="benchmarks__session-name"
+                          class="benchmarks__session-name inline-flex cursor-text items-center gap-[5px] rounded border-0 bg-transparent px-[3px] py-0.5 text-inherit [font:inherit] [&:hover_.benchmarks\_\_session-name-icon]:opacity-100 [&:focus-visible_.benchmarks\_\_session-name-icon]:opacity-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
                           :class="{
-                            'benchmarks__session-name--editing': editingSessionId === benchmark.id
+                            'benchmarks__session-name--editing invisible':
+                              editingSessionId === benchmark.id
                           }"
                           type="button"
                           :disabled="editingSessionId === benchmark.id"
@@ -968,7 +1013,7 @@ onMounted(() => {
                         >
                           <span>{{ benchmark.id }}</span>
                           <Pencil
-                            class="benchmarks__session-name-icon"
+                            class="benchmarks__session-name-icon flex-none text-text-muted opacity-0 transition-opacity duration-[120ms] ease-[ease]"
                             :size="12"
                             aria-hidden="true"
                           />
@@ -977,7 +1022,7 @@ onMounted(() => {
                           v-if="editingSessionId === benchmark.id"
                           :ref="setSessionNameInput"
                           v-model="sessionNameDraft"
-                          class="benchmarks__session-name-input"
+                          class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 rounded-md border border-solid border-[var(--border)] bg-surface px-0.5 py-px text-text [font:inherit] disabled:opacity-40 focus:border-[var(--accent)] focus:outline-none"
                           type="text"
                           :disabled="renamingSessionId === benchmark.id"
                           :aria-label="t('benchmarks.sessionName')"
@@ -991,9 +1036,9 @@ onMounted(() => {
                       {{ formatColumnValue(benchmark, column.key) }}
                     </template>
                   </td>
-                  <td class="benchmarks__actions-cell">
+                  <td class="benchmarks__actions-cell w-11 text-center">
                     <button
-                      class="benchmarks__delete-record"
+                      class="benchmarks__delete-record inline-flex size-[26px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent p-0 text-[14px] text-text-muted enabled:hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] enabled:hover:text-danger disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
                       type="button"
                       :disabled="deletingIds.has(benchmark.id) || editingSessionId === benchmark.id"
                       :aria-label="
@@ -1010,13 +1055,16 @@ onMounted(() => {
             </table>
           </div>
 
-          <div v-if="filteredBenchmarks.length === 0" class="benchmarks__no-results">
+          <div
+            v-if="filteredBenchmarks.length === 0"
+            class="benchmarks__no-results px-4 py-8 text-center text-text-muted"
+          >
             {{ t('benchmarks.noMatches') }}
           </div>
         </template>
       </section>
 
-      <div class="benchmarks__comparison-section">
+      <div class="benchmarks__comparison-section flex flex-col gap-4">
         <CollapsibleSectionToggle
           id="comparison-title"
           :expanded="comparisonExpanded"
@@ -1026,15 +1074,17 @@ onMounted(() => {
 
         <section
           v-show="comparisonExpanded"
-          class="benchmarks__card benchmarks__comparison"
+          class="benchmarks__card min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg)_90%,transparent)] p-4 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__comparison"
           aria-labelledby="comparison-title"
         >
-          <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden">
+          <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden sr-only">
             {{ t('benchmarks.reorderComparisonHint') }}
           </span>
-          <div class="benchmarks__comparison-toolbar">
+          <div
+            class="benchmarks__comparison-toolbar mb-3.5 flex flex-wrap items-center justify-end gap-3"
+          >
             <div
-              class="benchmarks__visualization-tabs"
+              class="benchmarks__visualization-tabs mr-auto inline-flex rounded-[7px] border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-0.5 [&_button]:cursor-pointer [&_button]:rounded-[5px] [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-2.5 [&_button]:py-[7px] [&_button]:text-[11px] [&_button]:text-text-muted [&_button]:whitespace-nowrap [&_button[aria-pressed=true]]:bg-[var(--chooser-surface-bg-hover)] [&_button[aria-pressed=true]]:text-neutral-100 [&_button[aria-pressed=true]]:shadow-[0_0_0_1px_var(--chooser-surface-border-hover)] [&_button:focus-visible]:outline-2 [&_button:focus-visible]:[outline-style:solid] [&_button:focus-visible]:outline-[var(--focus-ring)] [&_button:focus-visible]:outline-offset-2"
               role="group"
               :aria-label="t('benchmarks.visualization')"
             >
@@ -1053,12 +1103,18 @@ onMounted(() => {
                 {{ t('benchmarks.speed') }}
               </button>
             </div>
-            <span v-if="exportResultsError" class="benchmarks__export-error">
+            <span
+              v-if="exportResultsError"
+              class="benchmarks__export-error text-[12px] text-danger"
+            >
               {{ exportResultsError }}
             </span>
             <div
-              class="benchmarks__comparison-metric"
-              :class="{ 'benchmarks__comparison-metric--hidden': !isRelativeView }"
+              class="benchmarks__comparison-metric flex w-[165px] [&_.ui-select-trigger]:min-w-0 [&_.ui-select-trigger]:flex-1"
+              :class="{
+                'benchmarks__comparison-metric--hidden invisible pointer-events-none':
+                  !isRelativeView
+              }"
               :aria-hidden="!isRelativeView"
             >
               <BaseSelect
@@ -1068,7 +1124,7 @@ onMounted(() => {
                 compact
               />
             </div>
-            <div class="benchmarks__comparison-sort">
+            <div class="benchmarks__comparison-sort w-[220px]">
               <BaseSelect
                 v-model="comparisonSortMetric"
                 :options="comparisonSortOptions"
@@ -1077,7 +1133,7 @@ onMounted(() => {
               />
             </div>
             <button
-              class="secondary benchmarks__sort-direction"
+              class="secondary benchmarks__sort-direction rounded-lg border border-solid border-[var(--border)] bg-surface text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex size-9 min-w-9 items-center justify-center p-0"
               type="button"
               :disabled="comparisonSortMetric === 'manual'"
               :aria-label="
@@ -1095,7 +1151,7 @@ onMounted(() => {
               <ArrowUpDown :size="16" aria-hidden="true" />
             </button>
             <button
-              class="secondary benchmarks__export-results"
+              class="secondary benchmarks__export-results rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex items-center gap-2"
               type="button"
               :disabled="isExportingResults || selectedBenchmarks.length === 0"
               @click="exportComparisonImage"
@@ -1107,16 +1163,22 @@ onMounted(() => {
                   : t('benchmarks.exportResultsImage')
               }}
             </button>
-            <details ref="comparisonColumnsPicker" class="benchmarks__columns-picker">
+            <details
+              ref="comparisonColumnsPicker"
+              class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+            >
               <summary class="secondary">
                 <SlidersHorizontal :size="16" aria-hidden="true" />
                 {{ t('benchmarks.columns') }}
               </summary>
-              <div class="benchmarks__columns-menu">
+              <div
+                class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+              >
                 <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
                 <label v-for="key in availableColumnKeys" :key="key">
                   <input
                     type="checkbox"
+                    class="relative m-0 h-5 w-9 flex-none cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-[50%] after:bg-text after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:[transform:translateX(16px)] checked:after:bg-background disabled:cursor-not-allowed disabled:opacity-60"
                     :checked="comparisonColumnKeys.has(key)"
                     :disabled="key === 'workflowName'"
                     :data-testid="`benchmark-comparison-column-${key}`"
@@ -1128,13 +1190,21 @@ onMounted(() => {
             </details>
           </div>
 
-          <div v-if="selectedBenchmarks.length === 0" class="benchmarks__state">
+          <div
+            v-if="selectedBenchmarks.length === 0"
+            class="benchmarks__state px-4 py-8 text-center text-text-muted"
+          >
             {{ t('benchmarks.selectPrompt') }}
           </div>
-          <div v-else class="benchmarks__comparison-grid">
-            <div class="benchmarks__matrix-scroll">
+          <div
+            v-else
+            class="benchmarks__comparison-grid grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
+          >
+            <div
+              class="benchmarks__matrix-scroll overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)]"
+            >
               <table
-                class="benchmarks__matrix"
+                class="benchmarks__matrix [&_.benchmarks\_\_matrix-column--baseline]:[box-shadow:inset_0_3px_var(--benchmark-baseline)] [&_.benchmarks\_\_matrix-column--baseline_.benchmarks\_\_matrix-title]:pr-[58px] w-full border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_th:not(:first-child)]:min-w-[190px] [&_th:not(:first-child)]:text-center [&_td]:min-w-[190px] [&_td]:text-center [&_thead_th]:relative [&_thead_th]:bg-neutral-800 [&_thead_th]:align-top [&_thead_th:first-child]:align-bottom [&_tbody_th]:font-medium [&_tbody_th]:text-neutral-200"
                 :style="{ minWidth: `max(100%, ${130 + selectedBenchmarks.length * 190}px)` }"
               >
                 <thead>
@@ -1144,8 +1214,9 @@ onMounted(() => {
                       v-for="benchmark in selectedBenchmarks"
                       :key="benchmark.id"
                       :class="{
-                        'benchmarks__matrix-column--dragging': draggedBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--drop-target':
+                        'benchmarks__matrix-column--dragging opacity-55':
+                          draggedBenchmarkId === benchmark.id,
+                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--accent)]':
                           dropTargetBenchmarkId === benchmark.id,
                         'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
                       }"
@@ -1156,8 +1227,11 @@ onMounted(() => {
                       @drop="dropComparisonColumn($event, benchmark.id)"
                     >
                       <span
-                        class="benchmarks__matrix-title"
-                        :class="{ 'benchmarks__matrix-title--selectable': isRelativeView }"
+                        class="benchmarks__matrix-title flex items-start gap-2 text-left select-none [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted focus-visible:rounded focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px]"
+                        :class="{
+                          'benchmarks__matrix-title--selectable cursor-pointer [&:hover_strong]:text-[var(--accent)]':
+                            isRelativeView
+                        }"
                         tabindex="0"
                         :role="isRelativeView ? 'button' : undefined"
                         :aria-pressed="isRelativeView ? isBaselineColumn(benchmark.id) : undefined"
@@ -1180,7 +1254,7 @@ onMounted(() => {
                         @keydown.alt.right.prevent="moveComparisonColumn(benchmark.id, 1)"
                       >
                         <span
-                          class="benchmarks__column-grip"
+                          class="benchmarks__column-grip -ml-1.5 inline-flex flex-none cursor-grab text-text-muted active:cursor-grabbing"
                           draggable="true"
                           @click.stop
                           @dragstart.stop="startComparisonColumnDrag($event, benchmark.id)"
@@ -1188,7 +1262,9 @@ onMounted(() => {
                         >
                           <GripVertical :size="14" aria-hidden="true" />
                         </span>
-                        <span class="benchmarks__series-dot" />
+                        <span
+                          class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
+                        />
                         <span>
                           <template v-for="column in comparisonColumns" :key="column.key">
                             <strong
@@ -1209,7 +1285,7 @@ onMounted(() => {
                       </span>
                       <small
                         v-if="isBaselineColumn(benchmark.id)"
-                        class="benchmarks__baseline-badge"
+                        class="benchmarks__baseline-badge absolute top-2 right-2 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--benchmark-baseline)_55%,transparent)] bg-[color-mix(in_srgb,var(--benchmark-baseline)_12%,transparent)] px-[5px] py-0.5 text-[9px] font-semibold text-[var(--benchmark-baseline)]"
                       >
                         {{ t('benchmarks.baseline') }}
                       </small>
@@ -1222,7 +1298,10 @@ onMounted(() => {
                     <td
                       v-for="benchmark in selectedBenchmarks"
                       :key="benchmark.id"
-                      :class="{ benchmarks__best: isBest(benchmark, metric.key) }"
+                      :class="{
+                        'benchmarks__best bg-[color-mix(in_srgb,var(--benchmark-best)_18%,transparent)] font-semibold text-[#78e7b6]':
+                          isBest(benchmark, metric.key)
+                      }"
                     >
                       {{
                         metric.key === 'measuredJobCount'
@@ -1235,7 +1314,9 @@ onMounted(() => {
               </table>
             </div>
 
-            <div class="benchmarks__chart">
+            <div
+              class="benchmarks__chart min-w-0 overflow-x-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3.5 [&_h3]:m-0 [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-neutral-100 [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-[18px] [&_p]:ml-0 [&_p]:min-h-[2lh] [&_p]:text-[11px] [&_p]:text-text-muted"
+            >
               <h3>
                 {{
                   isRelativeView
@@ -1251,21 +1332,28 @@ onMounted(() => {
                 }}
               </p>
               <!-- Rendered in both views so rows keep their position when toggling. -->
-              <div class="benchmarks__chart-axis" aria-hidden="true">
+              <div
+                class="benchmarks__chart-axis mb-2 grid min-h-3.5 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 text-[10px] text-text-muted"
+                aria-hidden="true"
+              >
                 <template v-if="isRelativeView">
-                  <span class="benchmarks__relative-direction--slower">
+                  <span
+                    class="benchmarks__relative-direction--slower col-3 row-1 justify-self-start text-[var(--benchmark-slower-text)]"
+                  >
                     ← {{ t('benchmarks.slower') }}
                   </span>
-                  <span class="benchmarks__relative-direction--faster">
+                  <span
+                    class="benchmarks__relative-direction--faster col-3 row-1 justify-self-end text-[var(--benchmark-faster-text)]"
+                  >
                     {{ t('benchmarks.faster') }} →
                   </span>
                 </template>
               </div>
-              <div class="benchmarks__chart-rows">
+              <div class="benchmarks__chart-rows grid">
                 <div
                   v-for="benchmark in selectedBenchmarks"
                   :key="benchmark.id"
-                  class="benchmarks__chart-row"
+                  class="benchmarks__chart-row box-border grid min-h-20 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 border-t border-solid border-[var(--chooser-surface-border)] py-2 [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-faster)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-slower)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-l-[3px] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-solid [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-[var(--benchmark-baseline)] [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-faster-text)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-slower-text)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-baseline)]"
                   :class="
                     isRelativeView
                       ? [
@@ -1276,8 +1364,12 @@ onMounted(() => {
                   "
                   :style="{ '--series-color': seriesColor(benchmark) }"
                 >
-                  <div class="benchmarks__chart-label">
-                    <span class="benchmarks__series-dot" />
+                  <div
+                    class="benchmarks__chart-label flex min-w-0 items-center gap-2 [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted"
+                  >
+                    <span
+                      class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
+                    />
                     <span>
                       <template v-for="column in comparisonColumns" :key="column.key">
                         <strong
@@ -1297,17 +1389,25 @@ onMounted(() => {
                     </span>
                   </div>
                   <template v-if="isRelativeView">
-                    <strong class="benchmarks__relative-duration">
+                    <strong
+                      class="benchmarks__relative-duration text-right text-[12px] font-medium text-neutral-200"
+                    >
                       {{ formatDuration(metricValue(benchmark, comparisonMetric)) }}
                     </strong>
-                    <div class="benchmarks__relative-plot">
-                      <span class="benchmarks__relative-center" />
+                    <div
+                      class="benchmarks__relative-plot relative h-7 rounded bg-[color-mix(in_srgb,var(--chooser-surface-border)_40%,transparent)]"
+                    >
                       <span
-                        class="benchmarks__relative-bar"
+                        class="benchmarks__relative-center absolute -top-[5px] -bottom-[5px] left-1/2 z-1 border-l border-dashed border-neutral-300"
+                      />
+                      <span
+                        class="benchmarks__relative-bar absolute top-[7px] h-3.5 rounded-[3px]"
                         :style="relativeBarStyle(relativeSpeedResult(benchmark).factor)"
                       />
                     </div>
-                    <div class="benchmarks__relative-result">
+                    <div
+                      class="benchmarks__relative-result flex flex-col [&_strong]:text-[14px] [&_strong]:text-neutral-100 [&_span]:text-[10px] [&_span]:text-text-muted"
+                    >
                       <strong>{{
                         relativeFactorLabel(relativeSpeedResult(benchmark).factor)
                       }}</strong>
@@ -1316,10 +1416,13 @@ onMounted(() => {
                       </span>
                     </div>
                   </template>
-                  <div v-else class="benchmarks__chart-track">
-                    <div class="benchmarks__chart-plot">
+                  <div
+                    v-else
+                    class="benchmarks__chart-track relative col-[2/-1] h-16 before:absolute before:top-9 before:right-0 before:left-0 before:h-0.5 before:bg-[var(--chooser-surface-border)] before:content-['']"
+                  >
+                    <div class="benchmarks__chart-plot absolute inset-y-0 inset-x-[52px]">
                       <span
-                        class="benchmarks__chart-range"
+                        class="benchmarks__chart-range absolute top-9 h-0.5 bg-[var(--series-color)] before:absolute before:top-1/2 before:left-0 before:size-[7px] before:[transform:translate(-50%,-50%)] before:rounded-[50%] before:border before:border-solid before:border-neutral-800 before:bg-[var(--series-color)] before:content-[''] after:absolute after:top-1/2 after:left-full after:size-[7px] after:[transform:translate(-50%,-50%)] after:rounded-[50%] after:border after:border-solid after:border-neutral-800 after:bg-[var(--series-color)] after:content-['']"
                         :style="{
                           left: chartPosition(benchmark.fastestJobDurationSeconds),
                           width: chartWidth(benchmark)
@@ -1327,13 +1430,13 @@ onMounted(() => {
                       />
                       <span
                         v-if="benchmark.averageJobDurationSeconds !== null"
-                        class="benchmarks__chart-average"
+                        class="benchmarks__chart-average absolute top-[37px] size-[9px] [transform:translate(-50%,-50%)] rounded-[50%] border border-solid border-neutral-800 bg-[var(--series-color)]"
                         :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
                       />
                       <span
                         v-if="benchmark.fastestJobDurationSeconds !== null"
                         :data-testid="`benchmark-chart-${benchmark.id}-fastest-label`"
-                        class="benchmarks__chart-point-label benchmarks__chart-point-label--endpoint benchmarks__chart-point-label--fastest"
+                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[30px] benchmarks__chart-point-label--fastest [transform:translateX(calc(-100%_-_5px))]"
                         :style="{ left: chartPosition(benchmark.fastestJobDurationSeconds) }"
                       >
                         {{ formatDuration(benchmark.fastestJobDurationSeconds) }}
@@ -1341,7 +1444,7 @@ onMounted(() => {
                       <span
                         v-if="benchmark.slowestJobDurationSeconds !== null"
                         :data-testid="`benchmark-chart-${benchmark.id}-slowest-label`"
-                        class="benchmarks__chart-point-label benchmarks__chart-point-label--endpoint benchmarks__chart-point-label--slowest"
+                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[30px] benchmarks__chart-point-label--slowest [transform:translateX(5px)]"
                         :style="{ left: chartPosition(benchmark.slowestJobDurationSeconds) }"
                       >
                         {{ formatDuration(benchmark.slowestJobDurationSeconds) }}
@@ -1349,7 +1452,7 @@ onMounted(() => {
                       <span
                         v-if="benchmark.averageJobDurationSeconds !== null"
                         :data-testid="`benchmark-chart-${benchmark.id}-average-label`"
-                        class="benchmarks__chart-point-label benchmarks__chart-point-label--below benchmarks__chart-point-label--center"
+                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--below top-12 benchmarks__chart-point-label--center [transform:translateX(-50%)]"
                         :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
                       >
                         {{ formatDuration(benchmark.averageJobDurationSeconds) }}
@@ -1365,880 +1468,3 @@ onMounted(() => {
     </div>
   </BrandBackground>
 </template>
-
-<style scoped>
-.benchmarks {
-  --benchmark-baseline: #e5e86d;
-  --benchmark-faster: #54d890;
-  --benchmark-faster-text: #6ed8a0;
-  --benchmark-slower: #ef6f69;
-  --benchmark-slower-text: #ef8a85;
-  min-width: 0;
-  min-height: 0;
-}
-
-.benchmarks :deep(.brand-outer-frame),
-.benchmarks :deep(.brand-inner-frame) {
-  min-width: 0;
-}
-
-.benchmarks__layout {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  gap: 16px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  color: var(--neutral-100);
-}
-
-.benchmarks__account {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
-}
-
-.benchmarks__card {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--chooser-surface-bg) 90%, transparent);
-}
-
-.benchmarks__card h2,
-.benchmarks__chart h3 {
-  margin: 0;
-  color: var(--neutral-100);
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.benchmarks__open-folder {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  white-space: nowrap;
-}
-
-.benchmarks__folder-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.benchmarks__refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.benchmarks__refresh:hover:not(:disabled) {
-  border-color: var(--chooser-surface-border-hover);
-  background: var(--chooser-surface-bg-hover);
-  color: var(--neutral-100);
-}
-
-.benchmarks__refresh:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.benchmarks__refresh:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.benchmarks__refresh-icon--busy {
-  animation: benchmarks-refresh-spin 900ms linear infinite;
-}
-
-@keyframes benchmarks-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.benchmarks__filters {
-  display: grid;
-  grid-template-columns: auto minmax(180px, 1.5fr) repeat(4, minmax(115px, 1fr)) auto;
-  gap: 10px;
-}
-
-.benchmarks__filters > * {
-  min-width: 0;
-}
-
-.benchmarks__filters :deep(.ui-input),
-.benchmarks__filters :deep(.ui-select-trigger) {
-  min-height: 36px;
-}
-
-.benchmarks__filters :deep(.ui-input-control) {
-  padding-top: 6px;
-}
-
-.benchmarks__columns-picker {
-  position: relative;
-}
-
-.benchmarks__columns-picker summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  list-style: none;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.benchmarks__columns-picker summary::-webkit-details-marker {
-  display: none;
-}
-
-.benchmarks__columns-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 4;
-  display: grid;
-  gap: 8px;
-  width: max-content;
-  min-width: 240px;
-  max-width: 360px;
-  max-height: 360px;
-  padding: 12px;
-  overflow-y: auto;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--neutral-800);
-  box-shadow: 0 12px 30px rgb(0 0 0 / 35%);
-}
-
-.benchmarks__columns-menu > strong {
-  color: var(--neutral-100);
-  font-size: 12px;
-}
-
-.benchmarks__columns-menu label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--neutral-200);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.benchmarks__columns-menu input {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
-.benchmarks__columns-menu input:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.benchmarks__table-scroll,
-.benchmarks__matrix-scroll {
-  overflow: auto;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-}
-
-.benchmarks__table-scroll {
-  max-height: 260px;
-  margin-top: 12px;
-}
-
-.benchmarks__table,
-.benchmarks__matrix {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  text-align: left;
-}
-
-.benchmarks__table {
-  min-width: 1040px;
-}
-
-.benchmarks__table th,
-.benchmarks__table td,
-.benchmarks__matrix th,
-.benchmarks__matrix td {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--chooser-surface-border);
-  white-space: nowrap;
-}
-
-.benchmarks__table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--neutral-800);
-  color: var(--neutral-200);
-  font-weight: 500;
-}
-
-.benchmarks__table th button {
-  display: inline-flex;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-}
-
-.benchmarks__table tbody tr:last-child td,
-.benchmarks__matrix tbody tr:last-child > * {
-  border-bottom: 0;
-}
-
-.benchmarks__row--selected td {
-  background: color-mix(in srgb, var(--series-color) 10%, transparent);
-}
-
-.benchmarks__row--selected td:first-child {
-  box-shadow: inset 3px 0 var(--series-color);
-}
-
-.benchmarks__strong {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-
-.benchmarks__session-name-editor {
-  position: relative;
-  display: inline-block;
-  vertical-align: middle;
-}
-
-.benchmarks__session-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 3px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: text;
-}
-
-.benchmarks__session-name--editing {
-  visibility: hidden;
-}
-
-.benchmarks__session-name-icon {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.benchmarks__session-name:hover .benchmarks__session-name-icon,
-.benchmarks__session-name:focus-visible .benchmarks__session-name-icon {
-  opacity: 1;
-}
-
-.benchmarks__session-name:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
-.benchmarks__session-name-input {
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 1px 2px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
-.benchmarks__session-name-input:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.benchmarks__check-cell {
-  width: 44px;
-  text-align: center;
-}
-
-.benchmarks__actions-cell {
-  width: 44px;
-  text-align: center;
-}
-
-.benchmarks__delete-record {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.benchmarks__delete-record:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
-}
-
-.benchmarks__delete-record:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.benchmarks__delete-record:disabled {
-  cursor: wait;
-  opacity: 0.5;
-}
-
-.benchmarks__checkbox {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.benchmarks__checkbox input {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 1px solid var(--brand-surface-border-hover);
-  border-radius: 4px;
-  background: var(--brand-surface-bg);
-  cursor: pointer;
-}
-
-.benchmarks__checkbox input:checked {
-  border-color: var(--series-color, var(--accent));
-  background-color: var(--series-color, var(--accent));
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='3,9 7,12 13,5'/></svg>");
-}
-
-.benchmarks__checkbox input::after {
-  display: none;
-}
-
-.benchmarks__checkbox input:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.benchmarks__state,
-.benchmarks__no-results {
-  padding: 32px 16px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.benchmarks__state--error {
-  color: var(--danger);
-}
-
-.benchmarks__chart-label > span:not(.benchmarks__series-dot),
-.benchmarks__matrix-title > span:not(.benchmarks__series-dot) {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.benchmarks__chart-label strong,
-.benchmarks__chart-label small,
-.benchmarks__matrix-title strong,
-.benchmarks__matrix-title small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.benchmarks__chart-label small,
-.benchmarks__matrix-title small {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 400;
-}
-
-.benchmarks__series-dot {
-  flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--series-color);
-}
-
-.benchmarks__comparison-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.benchmarks__comparison-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.benchmarks__comparison-metric {
-  display: flex;
-  width: 165px;
-}
-
-/* Hidden rather than removed so the toolbar layout stays stable across views. */
-.benchmarks__comparison-metric--hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.benchmarks__comparison-metric :deep(.ui-select-trigger) {
-  min-width: 0;
-  flex: 1;
-}
-
-.benchmarks__comparison-sort {
-  width: 220px;
-}
-
-.benchmarks__sort-direction {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0;
-}
-
-.benchmarks__export-results {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.benchmarks__visualization-tabs {
-  display: inline-flex;
-  margin-right: auto;
-  padding: 2px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 7px;
-  background: var(--neutral-800);
-}
-
-.benchmarks__visualization-tabs button {
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.benchmarks__visualization-tabs button[aria-pressed='true'] {
-  background: var(--chooser-surface-bg-hover);
-  color: var(--neutral-100);
-  box-shadow: 0 0 0 1px var(--chooser-surface-border-hover);
-}
-
-.benchmarks__visualization-tabs button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.benchmarks__export-error {
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.benchmarks__visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.benchmarks__chart p {
-  margin: 0 0 14px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.benchmarks__comparison-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  min-width: 0;
-}
-
-.benchmarks__matrix th:not(:first-child),
-.benchmarks__matrix td {
-  min-width: 190px;
-  text-align: center;
-}
-
-.benchmarks__matrix thead th {
-  position: relative;
-  vertical-align: top;
-  background: var(--neutral-800);
-}
-
-.benchmarks__matrix thead th:first-child {
-  vertical-align: bottom;
-}
-
-.benchmarks__matrix tbody th {
-  color: var(--neutral-200);
-  font-weight: 500;
-}
-
-.benchmarks__matrix-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  text-align: left;
-  user-select: none;
-}
-
-.benchmarks__matrix-title--selectable {
-  cursor: pointer;
-}
-
-.benchmarks__matrix-title--selectable:hover strong {
-  color: var(--accent);
-}
-
-.benchmarks__matrix-title:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
-.benchmarks__column-grip {
-  display: inline-flex;
-  flex: 0 0 auto;
-  margin-left: -6px;
-  color: var(--text-muted);
-  cursor: grab;
-}
-
-.benchmarks__column-grip:active {
-  cursor: grabbing;
-}
-
-.benchmarks__matrix-column--dragging {
-  opacity: 0.55;
-}
-
-.benchmarks__matrix-column--drop-target {
-  box-shadow: inset 3px 0 var(--accent);
-}
-
-.benchmarks__matrix-column--baseline {
-  box-shadow: inset 0 3px var(--benchmark-baseline);
-}
-
-.benchmarks__matrix-column--baseline .benchmarks__matrix-title {
-  padding-right: 58px;
-}
-
-.benchmarks__baseline-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 2px 5px;
-  border: 1px solid color-mix(in srgb, var(--benchmark-baseline) 55%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--benchmark-baseline) 12%, transparent);
-  color: var(--benchmark-baseline);
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.benchmarks__best {
-  background: color-mix(in srgb, #3ecf8e 18%, transparent);
-  color: #78e7b6;
-  font-weight: 600;
-}
-
-.benchmarks__chart {
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--neutral-800);
-  overflow-x: auto;
-}
-
-/* Reserve two lines so wrapping hints don't shift the rows when toggling views. */
-.benchmarks__chart p {
-  min-height: 2lh;
-  margin: 4px 0 18px;
-}
-
-.benchmarks__chart-axis,
-.benchmarks__chart-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 32%) 90px minmax(260px, 1fr) 105px;
-  align-items: center;
-  gap: 14px;
-  min-width: 760px;
-}
-
-.benchmarks__chart-axis {
-  min-height: 14px;
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.benchmarks__relative-direction--slower {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: start;
-  color: var(--benchmark-slower-text);
-}
-
-.benchmarks__relative-direction--faster {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-  color: var(--benchmark-faster-text);
-}
-
-.benchmarks__chart-rows {
-  display: grid;
-}
-
-.benchmarks__chart-row {
-  min-height: 80px;
-  padding: 8px 0;
-  border-top: 1px solid var(--chooser-surface-border);
-  box-sizing: border-box;
-}
-
-.benchmarks__relative-duration {
-  color: var(--neutral-200);
-  font-size: 12px;
-  font-weight: 500;
-  text-align: right;
-}
-
-.benchmarks__relative-plot {
-  position: relative;
-  height: 28px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--chooser-surface-border) 40%, transparent);
-}
-
-.benchmarks__relative-center {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  left: 50%;
-  z-index: 1;
-  border-left: 1px dashed var(--neutral-300);
-}
-
-.benchmarks__relative-bar {
-  position: absolute;
-  top: 7px;
-  height: 14px;
-  border-radius: 3px;
-}
-
-.benchmarks__relative-row--faster .benchmarks__relative-bar {
-  background: var(--benchmark-faster);
-}
-
-.benchmarks__relative-row--slower .benchmarks__relative-bar {
-  background: var(--benchmark-slower);
-}
-
-.benchmarks__relative-row--baseline .benchmarks__relative-center {
-  border-color: var(--benchmark-baseline);
-  border-left-style: solid;
-  border-left-width: 3px;
-}
-
-.benchmarks__relative-result {
-  display: flex;
-  flex-direction: column;
-}
-
-.benchmarks__relative-result strong {
-  color: var(--neutral-100);
-  font-size: 14px;
-}
-
-.benchmarks__relative-result span {
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.benchmarks__relative-row--faster .benchmarks__relative-result strong {
-  color: var(--benchmark-faster-text);
-}
-
-.benchmarks__relative-row--slower .benchmarks__relative-result strong {
-  color: var(--benchmark-slower-text);
-}
-
-.benchmarks__relative-row--baseline .benchmarks__relative-result strong {
-  color: var(--benchmark-baseline);
-}
-
-.benchmarks__chart-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.benchmarks__chart-track {
-  position: relative;
-  grid-column: 2 / -1;
-  height: 64px;
-}
-
-.benchmarks__chart-track::before {
-  content: '';
-  position: absolute;
-  top: 36px;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: var(--chooser-surface-border);
-}
-
-.benchmarks__chart-plot {
-  position: absolute;
-  inset: 0 52px;
-}
-
-.benchmarks__chart-range {
-  position: absolute;
-  top: 36px;
-  height: 2px;
-  background: var(--series-color);
-}
-
-.benchmarks__chart-range::before,
-.benchmarks__chart-range::after,
-.benchmarks__chart-average {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border: 1px solid var(--neutral-800);
-  border-radius: 50%;
-  background: var(--series-color);
-  transform: translate(-50%, -50%);
-}
-
-.benchmarks__chart-range::before {
-  left: 0;
-}
-
-.benchmarks__chart-range::after {
-  left: 100%;
-}
-
-.benchmarks__chart-average {
-  top: 37px;
-  width: 9px;
-  height: 9px;
-  background: var(--series-color);
-}
-
-.benchmarks__chart-point-label {
-  position: absolute;
-  z-index: 1;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 14px;
-  white-space: nowrap;
-}
-
-.benchmarks__chart-point-label--below {
-  top: 48px;
-}
-
-.benchmarks__chart-point-label--endpoint {
-  top: 30px;
-}
-
-.benchmarks__chart-point-label--fastest {
-  transform: translateX(calc(-100% - 5px));
-}
-
-.benchmarks__chart-point-label--slowest {
-  transform: translateX(5px);
-}
-
-.benchmarks__chart-point-label--center {
-  transform: translateX(-50%);
-}
-
-@media (max-width: 1100px) {
-  .benchmarks__filters {
-    grid-template-columns: auto repeat(4, minmax(0, 1fr));
-  }
-
-  .benchmarks__search {
-    grid-column: 2 / -1;
-  }
-}
-
-@media (max-width: 800px) {
-  .benchmarks__account {
-    display: none;
-  }
-
-  .benchmarks__filters {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .benchmarks__search {
-    grid-column: 2;
-  }
-}
-</style>
