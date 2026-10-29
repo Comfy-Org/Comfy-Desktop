@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
+import { TID } from '../../../shared/testIds'
 import { HardDrive } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
@@ -15,6 +17,13 @@ const emit = defineEmits<{
   close: []
   'navigate-list': []
 }>()
+
+const brandInputClass =
+  'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
+const inputClass =
+  '[:where(&)]:[all:unset] m-0 min-w-0 w-auto flex-auto cursor-text appearance-none border-none bg-transparent p-0 text-inherit [font:inherit] outline-none placeholder:text-neutral-400'
+const browseClass =
+  'static flex h-10 items-center justify-center rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-[inherit] font-medium whitespace-normal text-neutral-100 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
 
 const { t } = useI18n()
 const modal = useModal()
@@ -229,57 +238,88 @@ defineExpose({ open })
 
 <template>
   <BrandTakeoverLayout v-if="isOpen">
-    <div class="track-shell" data-testid="track-modal">
-      <h1 class="brand-title">{{ $t('track.grandTitle') }}</h1>
-      <p class="brand-lead">{{ $t('track.grandSubtitle') }}</p>
+    <div
+      class="track-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[640px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
+      data-testid="track-modal"
+    >
+      <h1
+        class="track-title m-0 text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold text-white [font-family:var(--font-display)] opacity-85 text-center"
+      >
+        {{ $t('track.grandTitle') }}
+      </h1>
+      <p
+        class="track-lead mt-[var(--takeover-gap-md)] mr-0 mb-[var(--takeover-gap-lg)] ml-0 text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 [font-family:var(--font-sans)] text-center"
+      >
+        {{ $t('track.grandSubtitle') }}
+      </p>
       <div
         ref="cardRef"
-        class="brand-card"
+        class="track-card flex max-h-full w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('track.grandTitle')"
         tabindex="-1"
       >
-        <div class="brand-card__body">
-          <div class="track-field">
-            <label class="track-label">{{ $t('track.installDir') }}</label>
-            <div class="track-path-row">
-              <div class="brand-input track-path-input">
+        <div
+          class="track-card-body flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
+            <label class="track-label text-[13px] text-neutral-200">{{
+              $t('track.installDir')
+            }}</label>
+            <div class="track-path-row flex items-stretch gap-2">
+              <div :class="[brandInputClass, 'track-path-input h-10 min-w-0 flex-auto px-3 py-0']">
                 <HardDrive :size="14" aria-hidden="true" />
-                <button
+                <Button
                   v-if="trackPath"
+                  variant="textonly"
+                  size="unset"
                   type="button"
-                  class="open-folder-link track-path-open"
+                  class="track-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer overflow-hidden rounded-lg border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-inherit [font:inherit] appearance-auto touch-auto [&]:[appearance:button] transition-none hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:[box-shadow:none] focus-visible:outline-none"
                   :title="$t('actions.openDirectory', 'Open Directory')"
                   :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
                   @click="handleOpenTrackPath"
                 >
                   {{ trackPath }}
-                </button>
-                <span v-else class="open-folder-link track-path-open track-path-placeholder">{{
-                  $t('track.selectDir')
-                }}</span>
+                </Button>
+                <span
+                  v-else
+                  class="track-path-placeholder min-w-0 flex-[0_1_auto] cursor-default overflow-hidden border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-neutral-400 [font:inherit]"
+                  >{{ $t('track.selectDir') }}</span
+                >
               </div>
-              <button class="brand-tertiary" type="button" @click="handleBrowse">
+              <Button
+                variant="textonly"
+                size="unset"
+                :class="browseClass"
+                :data-testid="TID.trackBrowse"
+                type="button"
+                @click="handleBrowse"
+              >
                 {{ $t('common.browse') }}
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div class="track-field">
-            <label class="track-label" for="track-name">{{ $t('common.name') }}</label>
-            <div class="brand-input">
+          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
+            <label class="track-label text-[13px] text-neutral-200" for="track-name">{{
+              $t('common.name')
+            }}</label>
+            <div :class="[brandInputClass, 'px-3.5 py-2.5']">
               <input
                 id="track-name"
                 v-model="trackName"
                 type="text"
+                :class="inputClass"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
               />
             </div>
           </div>
 
-          <div class="track-field">
-            <label class="track-label">{{ $t('track.detectedType') }}</label>
+          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
+            <label class="track-label text-[13px] text-neutral-200">{{
+              $t('track.detectedType')
+            }}</label>
             <BaseSelect
               :model-value="selectedProbeValue"
               :options="probeOptions"
@@ -290,117 +330,71 @@ defineExpose({ open })
             />
           </div>
 
-          <div v-if="detailFields.length > 0" class="brand-summary">
-            <div v-for="field in detailFields" :key="field.label" class="brand-summary__row">
-              <span class="brand-summary__label">{{ field.label }}</span>
-              <span class="brand-summary__value">{{ field.value }}</span>
+          <div
+            v-if="detailFields.length > 0"
+            class="track-summary flex flex-col gap-0.5 rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-3.5"
+          >
+            <div
+              v-for="field in detailFields"
+              :key="field.label"
+              class="track-summary-row flex items-baseline justify-between gap-3 py-1.5 text-[length:var(--takeover-fs-body)] [&+&]:border-t [&+&]:border-solid [&+&]:border-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]"
+            >
+              <span class="track-summary-label flex-none text-neutral-300">{{ field.label }}</span>
+              <span class="track-summary-value max-w-[60%] truncate font-medium text-neutral-100">{{
+                field.value
+              }}</span>
             </div>
           </div>
 
-          <div v-if="showVenvField" class="track-field">
-            <label class="track-label">{{ $t('git.venv') }}</label>
-            <div class="track-path-row">
-              <div class="brand-input track-path-input">
+          <div
+            v-if="showVenvField"
+            class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]"
+          >
+            <label class="track-label text-[13px] text-neutral-200">{{ $t('git.venv') }}</label>
+            <div class="track-path-row flex items-stretch gap-2">
+              <div :class="[brandInputClass, 'track-path-input h-10 min-w-0 flex-auto px-3 py-0']">
                 <HardDrive :size="14" aria-hidden="true" />
-                <input type="text" :value="effectiveVenvName || $t('git.venvNotFound')" disabled />
+                <input
+                  type="text"
+                  :class="inputClass"
+                  :value="effectiveVenvName || $t('git.venvNotFound')"
+                  disabled
+                />
               </div>
-              <button class="brand-tertiary" type="button" @click="handleBrowseVenv">
+              <Button
+                variant="textonly"
+                size="unset"
+                :class="browseClass"
+                type="button"
+                @click="handleBrowseVenv"
+              >
                 {{ $t('common.browse') }}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
 
-        <div class="brand-card__footer">
-          <button class="brand-primary track-save" :disabled="saveDisabled" @click="handleSave">
+        <div
+          class="track-card-footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
+        >
+          <Button
+            variant="inverted"
+            size="unset"
+            class="track-save static inline-flex min-w-[120px] items-center justify-center rounded-lg border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-900 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-comfy-yellow"
+            :disabled="saveDisabled"
+            @click="handleSave"
+          >
             {{ $t('track.trackInstallation') }}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
     <template #footer-left>
       <TakeoverBack
-        class="track-back-to-dashboard"
+        class="track-back-to-dashboard absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2"
         :label="$t('common.backToDashboard')"
         @back="emit('close')"
       />
     </template>
   </BrandTakeoverLayout>
 </template>
-
-<style scoped>
-.track-shell {
-  align-self: stretch;
-  height: 100%;
-  max-height: 100%;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding-block: clamp(1.5rem, 4vh, 3rem);
-  min-height: 0;
-}
-
-.track-back-to-dashboard {
-  position: absolute;
-  left: clamp(1.25rem, 2vw, 2rem);
-  bottom: clamp(1.25rem, 2vw, 2rem);
-  z-index: 2;
-}
-
-.track-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.track-label {
-  font-size: 13px;
-  color: var(--neutral-200);
-}
-
-.track-path-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.track-path-row > .track-path-input,
-.track-path-row > button.brand-tertiary {
-  height: 40px;
-  padding-block: 0;
-  display: flex;
-  align-items: center;
-}
-.track-path-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-inline: 12px;
-}
-/* Path text replaces the old readonly <input>; clicking it opens the tracked
- *  directory in the OS file manager. Inherits .open-folder-link; only the
- *  row-specific sizing/inheritance differ. */
-.track-path-open {
-  flex: 0 1 auto;
-  color: inherit;
-  font: inherit;
-}
-.track-path-placeholder {
-  color: var(--neutral-400);
-  cursor: default;
-}
-.track-path-placeholder:hover {
-  color: var(--neutral-400);
-  text-decoration: none;
-}
-.track-path-row > button.brand-tertiary {
-  padding-inline: 14px;
-  font-size: 13px;
-}
-
-.track-save {
-  min-width: 120px;
-}
-</style>
