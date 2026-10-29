@@ -306,97 +306,6 @@
 /* App shell */
 :root {
   --titlebar-height: 37px;
-  --sidebar-width: 200px;
-}
-.app-layout {
-  display: flex;
-  height: calc(100vh - var(--titlebar-height));
-}
-
-.sidebar {
-  width: var(--sidebar-width);
-  flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  padding: 16px 0;
-}
-.sidebar-brand {
-  padding: 12px 20px 24px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.2px;
-}
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 8px;
-  flex: 1;
-}
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-}
-.sidebar-item:hover {
-  background: var(--border);
-  color: var(--text);
-}
-.sidebar-item.active {
-  background: var(--border);
-  color: var(--text);
-  font-weight: 600;
-}
-.sidebar-item svg {
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-.sidebar-item.active svg {
-  opacity: 1;
-}
-.sidebar-error-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--danger);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-.sidebar-error-dot + .sidebar-count {
-  margin-left: 6px;
-}
-.sidebar-count {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--accent);
-  color: var(--bg);
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.sidebar-version {
-  padding: 8px 20px;
-  font-size: 11px;
-  color: var(--text-muted);
-  opacity: 0.6;
 }
 .content {
   flex: 1;
@@ -982,121 +891,7 @@ button.add-btn {
   min-height: 18px;
 }
 
-/* Filter tabs */
-.filter-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.filter-tab {
-  padding: 6px 16px;
-  border: none;
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.filter-count {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  min-width: 18px;
-  height: 18px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-}
-.filter-count.has-new {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.filter-tab:hover {
-  color: var(--text);
-  background: none;
-}
-.filter-tab.active {
-  color: var(--text);
-  font-weight: 600;
-}
-.filter-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-}
-
-/* Filter pills — independent rounded chips with their own border,
- * separated by gap. Used by the chooser-view filter row and the
- * Settings → Downloads tab status filter; same chip shape and active
- * treatment so the two surfaces read consistently. */
-.filter-pill-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.filter-pill {
-  background: transparent;
-  color: inherit;
-  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
-  padding: 4px 12px;
-  font: inherit;
-  font-size: 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  opacity: 0.8;
-  transition:
-    background-color 100ms ease,
-    opacity 100ms ease,
-    border-color 100ms ease;
-}
-.filter-pill:hover {
-  opacity: 1;
-}
-.filter-pill.active {
-  background: var(--bg-elev-2, rgba(127, 127, 127, 0.16));
-  border-color: var(--border-strong, rgba(127, 127, 127, 0.4));
-  opacity: 1;
-}
-
-/* Instance list */
-.instance-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.instance-card {
-  --card-pad-y: 14px;
-  --card-pad-x: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: var(--card-pad-y) var(--card-pad-x);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.instance-card.is-idle {
-  transition: transform 0.12s ease;
-}
-.instance-card.is-draggable {
-  z-index: 10;
-  user-select: none;
-}
+/* Shared drag handles */
 .drag-handle {
   display: flex;
   flex-direction: column;
@@ -1128,24 +923,6 @@ button.add-btn {
   height: 2px;
   background: var(--text);
   border-radius: 1px;
-}
-.instance-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-.instance-name {
-  font-size: 16px;
-  font-weight: 600;
-}
-.instance-meta {
-  font-size: 13px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .status-danger {
   color: var(--danger);
@@ -1208,21 +985,6 @@ button.add-btn {
 .status-in-progress {
   color: var(--accent);
   font-weight: 600;
-}
-.instance-card.card-running {
-  border-color: var(--accent);
-}
-.instance-card.card-stopping {
-  border-color: var(--accent);
-  animation: card-breathe 2s ease-in-out infinite;
-}
-.instance-card.card-in-progress {
-  border-color: var(--accent);
-  animation: card-breathe 2s ease-in-out infinite;
-}
-.instance-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .empty-state {
@@ -1437,11 +1199,6 @@ button.add-btn {
 /* Clickable non-editable path value (wraps instead of truncating). */
 
 /* Channel cards */
-.dashboard-empty-hint {
-  font-size: 14px;
-  color: var(--text-muted);
-  padding: 12px 0;
-}
 .detail-actions {
   display: flex;
   gap: 8px;
@@ -1658,29 +1415,6 @@ button.add-btn {
   font-size: 13px;
   color: var(--text-muted);
   user-select: text;
-}
-
-.progress-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 16px;
-}
-.progress-banner-success {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
-}
-.progress-banner-error {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
-}
-.progress-banner-cancelled {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
 }
 
 .progress-conflict-actions {
@@ -2685,105 +2419,7 @@ button.add-btn {
 .dashboard-telemetry-link:hover {
   color: var(--accent-hover);
 }
-.dashboard-section {
-  margin-bottom: 24px;
-}
-.dashboard-section-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 
-/* Quick Launch cards */
-.dashboard-quick-launch {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-}
-.dashboard-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.dashboard-card.card-running,
-.dashboard-cloud-card.card-running {
-  border-color: var(--accent);
-}
-.dashboard-card.card-stopping,
-.dashboard-cloud-card.card-stopping {
-  border-color: var(--accent);
-  animation: card-breathe 2s ease-in-out infinite;
-}
-.dashboard-card.card-in-progress,
-.dashboard-cloud-card.card-in-progress {
-  border-color: var(--accent);
-  animation: card-breathe 2s ease-in-out infinite;
-}
-.dashboard-card-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-}
-.dashboard-card-badge-primary {
-  color: var(--accent);
-}
-.dashboard-card-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-.dashboard-card-name {
-  font-size: 16px;
-  font-weight: 600;
-}
-.dashboard-card-meta {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.dashboard-card-detail {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.dashboard-card-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.dashboard-change-btn {
-  margin-left: auto;
-  padding: 2px 8px;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-}
-.dashboard-change-btn:hover {
-  color: var(--text);
-  border-color: var(--border-hover);
-  background: none;
-}
 /* Primary card indicator */
 .card-indicator {
   display: inline-block;
@@ -2794,23 +2430,7 @@ button.add-btn {
   color: var(--accent);
 }
 
-/* Cloud card */
-.dashboard-cloud-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 /* Install wizard */
-.wizard-step {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .wizard-loading {
   font-size: 14px;
   color: var(--text-muted);
@@ -2834,65 +2454,6 @@ button.add-btn {
   color: var(--text-muted);
   padding: 8px 0;
   margin-top: 6px;
-}
-
-/* Source cards (Step 1) */
-.source-card {
-  display: flex;
-  flex-direction: column;
-  padding: 16px 20px;
-  background: var(--surface);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s;
-}
-.source-card:hover {
-  border-color: var(--border-hover);
-}
-.source-card.selected {
-  border-color: var(--selected);
-}
-
-.source-card-hero {
-  padding: 24px;
-  min-height: 260px;
-  justify-content: center;
-}
-.source-card-hero .source-card-label {
-  font-size: 18px;
-}
-
-.source-card-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.source-card-label {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-.source-card-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-.source-card-badge {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--accent);
-  letter-spacing: 0.5px;
-}
-
-.source-cards-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
 }
 
 /* Variant / GPU cards (Step 2) */
@@ -2985,44 +2546,6 @@ button.add-btn {
   align-items: center;
   padding-top: 16px;
   gap: 16px;
-}
-.wizard-back {
-  justify-self: start;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 14px;
-  padding: 6px 16px;
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    border-color 0.15s;
-}
-.wizard-back:hover {
-  color: var(--text);
-  border-color: var(--border-hover);
-}
-.wizard-dots {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-self: center;
-}
-.wizard-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border);
-  transition: all 0.2s;
-}
-.wizard-dot.active {
-  width: 24px;
-  border-radius: 4px;
-  background: var(--accent);
-}
-.wizard-dot.completed {
-  background: var(--accent);
 }
 .wizard-footer > :last-child {
   justify-self: end;
