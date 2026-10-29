@@ -9,18 +9,18 @@ import ShotsPage, { type Shot } from './ShotsPage.vue'
 const PALETTE: Shot['crop'] = [296, 96, 688, 680]
 const SHOTS: Shot[] = [
   {
-    label: 'empty · recent work, suggested templates, quick actions',
+    label: 'empty · recent work and templates as pictures, four actions',
     run: 'search',
     crop: PALETTE
   },
-  { label: 'keyboard · ↓ slides the raised highlight', run: 'search-empty-keys', crop: PALETTE },
   {
-    label: 'typing · grouped by kind, matched letters in bold',
-    run: 'search-typed',
+    label: 'keyboard · ↓ moves between rows, the name shows on the active picture',
+    run: 'search-empty-keys',
     crop: PALETTE
   },
+  { label: 'typing · one word per row, groups apart by space', run: 'search-typed', crop: PALETTE },
   {
-    label: 'active row · Open ↵, Open in Cloud ⌘↵ where it runs there',
+    label: 'active row · ↵, and ⌘↵ to open in Cloud where it runs there',
     run: 'search-keys',
     crop: PALETTE
   },
@@ -51,7 +51,7 @@ const SHOTS: Shot[] = [
   </Section>
   <ShotsPage
     title="Palette"
-    note="Everything in one place: templates, workflows, projects, spaces, apps, assets and quick actions. Sizes to what it shows. Scope with the chips, a prefix (w, p, s, a, t or as, then a space), or Tab; ⌫ on an empty field searches everything again. Live: type in it."
+    note="Everything in one place: templates, workflows, projects, spaces, apps, assets and quick actions. Pictures over words: recent work and templates are thumbnails, rows carry one muted word, keys show only on the active row. Sizes to what it shows. Scope with the chips, a prefix (w, p, s, a, t or as, then a space), or Tab; ⌫ on an empty field searches everything again. Live: type in it."
     :shots="SHOTS"
   />
 </template>

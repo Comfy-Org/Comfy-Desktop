@@ -51,7 +51,8 @@ interface Item {
   group: string
   label: string
   at?: number[]
-  meta: string[]
+  /** One short muted word: when, what kind, or the state. */
+  word?: string
   image?: string
   tile?: { mark: string; bg: string; fg: string }
   icon: Component
@@ -62,9 +63,9 @@ interface Item {
 }
 interface Section {
   name: string
-  scope?: Scope
-  tiles?: boolean
-  more?: number
+  /** rows: a list; tiles: pictures in a row; chips: icon + label in a row. */
+  layout: 'rows' | 'tiles' | 'chips'
+  label?: boolean
   items: (Item & { index: number })[]
 }
 
@@ -77,7 +78,7 @@ const SCOPES: { id: Scope; label: string; prefix?: string; icon?: Component }[] 
   { id: 'apps', label: 'Apps', prefix: 'a', icon: PanelsTopLeft },
   { id: 'assets', label: 'Assets', prefix: 'as', icon: ComfyAssets }
 ]
-const PER_GROUP = 4
+const PER_GROUP = 3
 
 const query = ref('')
 const scope = ref<Scope>('all')
@@ -87,9 +88,16 @@ const active = ref(0)
 
 // --- What can be found ----------------------------------------------------
 
-const RUNS = ['7.9k', '7.5k', '6.5k', '4.5k', '3.4k', '3.2k', '3.1k', '2.9k', '2.1k', '1.8k']
 const CATEGORY = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
-const WHERE = { local: 'Local', cloud: 'Comfy Cloud', both: 'Local or Cloud' } as const
+/** "12 min ago" → "12m", "Yesterday" → "1d": a time in one short word. */
+function ago(when: string): string | undefined {
+  const w = when.toLowerCase()
+  if (w === 'just now') return 'now'
+  if (w === 'yesterday') return '1d'
+  if (w === 'last week') return '1w'
+  const m = w.match(/^(\d+) (min|hour|day|week)/)
+  return m ? `${m[1]}${{ min: 'm', hour: 'h', day: 'd', week: 'w' }[m[2]!]}` : undefined
+}
 const cloud = (): ReturnType<typeof instanceById> => instances.value.find((i) => i.kind === 'cloud')
 
 function inCloud(what: string, then: () => void): () => void {
@@ -99,11 +107,11 @@ function inCloud(what: string, then: () => void): () => void {
   }
 }
 
-const templateItem = (t: Template, i: number): Item => ({
+const templateItem = (t: Template): Item => ({
   key: `t:${t.id}`,
   group: 'Templates',
   label: t.title,
-  meta: [CATEGORY[t.category], WHERE[t.runs], `${RUNS[i % RUNS.length]} runs`],
+  word: CATEGORY[t.category],
   image: thumb(t.id),
   icon: t.kind === 'app' ? PanelsTopLeft : ComfyTemplate,
   open: () => openDetail('template', t.id),
@@ -114,12 +122,11 @@ const templates = computed(() => TEMPLATES.map(templateItem))
 const workflows = computed<Item[]>(() =>
   WORKFLOWS.map((w) => {
     const name = w.name.replace(/\.json$/, '')
-    const runsOn = instanceById(w.instanceId)?.name
     return {
       key: `w:${w.name}`,
       group: 'Workflows',
       label: name,
-      meta: [w.project, runsOn, w.modified].filter((m): m is string => !!m),
+      word: ago(w.modified),
       image: thumb(w.thumbId),
       icon: ComfyWorkflow,
       open: () => openDetail('workflow', w.name),
@@ -135,16 +142,11 @@ const projectItems = computed<Item[]>(() =>
   projects.items
     .filter((p) => !p.archived)
     .map((p) => {
-      const count = WORKFLOWS.filter((w) => w.project === p.name).length
       return {
         key: `p:${p.id}`,
         group: 'Projects',
         label: p.name,
-        meta: [
-          instanceById(p.envId)?.name ?? 'Deployment',
-          count ? `${count} workflow${count === 1 ? '' : 's'}` : 'No workflows yet',
-          p.updated
-        ],
+        word: ago(p.updated),
         image: p.art,
         icon: Folder,
         open: () => go(`project:${p.id}` as Page)
@@ -158,7 +160,7 @@ const spaces = computed<Item[]>(() =>
     key: `s:${s.id}`,
     group: 'Spaces',
     label: s.name,
-    meta: [STATUS[s.status], s.domain, `${s.members.length} members`],
+    word: STATUS[s.status],
     tile: {
       mark: s.brand.logo.mark,
       bg: s.brand.logo.bg ?? s.brand.color,
@@ -175,7 +177,7 @@ const apps = computed<Item[]>(() =>
     key: `a:${a.id}`,
     group: 'Apps',
     label: a.name,
-    meta: [a.you ? 'Yours' : a.owner, `${compact(a.runs)} runs`, `Updated ${a.updated}`],
+    word: `${compact(a.runs)} runs`,
     image: thumb(a.thumbId),
     icon: PanelsTopLeft,
     open: () => go(`app:${a.id}` as Page)
@@ -188,7 +190,7 @@ const assets = computed<Item[]>(() =>
     key: `m:${a.id}`,
     group: 'Assets',
     label: a.name,
-    meta: [TYPE[a.type], a.size, a.project ?? a.when].filter((m): m is string => !!m),
+    word: TYPE[a.type],
     image: thumb(a.thumbId),
     icon: ComfyAssets,
     open: () => go('assets')
@@ -200,7 +202,6 @@ const actions = computed<Item[]>(() => [
     key: 'x:new-workflow',
     group: 'Actions',
     label: 'New workflow',
-    meta: [activeInstance.value ? `On ${activeInstance.value.name}` : 'Pick where it runs'],
     icon: Plus,
     shortcut: ['⌘', 'N'],
     open: () => {
@@ -212,7 +213,6 @@ const actions = computed<Item[]>(() => [
     key: 'x:new-project',
     group: 'Actions',
     label: 'New project',
-    meta: ['A shared place for workflows'],
     icon: FolderPlus,
     shortcut: ['⇧', '⌘', 'P'],
     open: () => go(`project:${newProject().id}` as Page)
@@ -220,8 +220,7 @@ const actions = computed<Item[]>(() => [
   {
     key: 'x:cloud',
     group: 'Actions',
-    label: 'Open Comfy Cloud',
-    meta: [cloud()?.gpu ?? 'Run on rented GPUs'],
+    label: 'Comfy Cloud',
     icon: Cloud,
     shortcut: ['⇧', '⌘', 'C'],
     open: () => {
@@ -232,8 +231,7 @@ const actions = computed<Item[]>(() => [
   {
     key: 'x:settings',
     group: 'Actions',
-    label: 'Go to Settings',
-    meta: ['Account, appearance, shortcuts'],
+    label: 'Settings',
     icon: Settings2,
     shortcut: ['⌘', ','],
     open: () => go('settings' as Page)
@@ -241,8 +239,7 @@ const actions = computed<Item[]>(() => [
   {
     key: 'x:theme',
     group: 'Actions',
-    label: look.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
-    meta: ['Appearance'],
+    label: look.theme === 'light' ? 'Dark theme' : 'Light theme',
     icon: look.theme === 'light' ? Moon : Sun,
     shortcut: ['⇧', '⌘', 'L'],
     open: toggleTheme
@@ -262,6 +259,8 @@ const BY_SCOPE = computed<Record<Exclude<Scope, 'all'>, Item[]>>(() => ({
 }))
 
 // --- What shows -----------------------------------------------------------
+
+const scopeLabel = computed(() => SCOPES.find((s) => s.id === scope.value)!.label)
 
 const q = computed(() => query.value.trim())
 
@@ -292,62 +291,61 @@ const counts = computed(() => {
 const docs = computed<Item>(() => ({
   key: 'd:docs',
   group: 'Docs',
-  label: `Search the docs for “${q.value}”`,
-  meta: ['docs.comfy.org'],
+  label: `Search docs for “${q.value}”`,
   icon: BookOpen,
   open: () => toast(`Searching the docs for “${q.value}”`)
 }))
 
+const QUICK = ['x:new-workflow', 'x:new-project', 'x:cloud', 'x:settings']
 const sections = computed<Section[]>(() => {
   const out: (Omit<Section, 'items'> & { items: Item[] })[] = []
+  const list = (s: Scope): Item[] => BY_SCOPE.value[s as Exclude<Scope, 'all'>]
   if (!q.value) {
     if (scope.value === 'all') {
       const w = workflows.value
       const p = projectItems.value
       out.push({
         name: 'Recent',
-        items: [w[0], p[3], w[1], w[2]]
-          .filter((it): it is Item => !!it)
-          .map((it) => ({ ...it, meta: [it.group.replace(/s$/, ''), ...it.meta] }))
+        layout: 'tiles',
+        label: true,
+        items: [w[0], p[3], w[1], w[2], p[0], w[3]].filter((it): it is Item => !!it)
       })
       out.push({
-        name: 'Suggested templates',
-        scope: 'templates',
-        tiles: true,
-        items: [4, 1, 6, 9].map((i) => templates.value[i]).filter((it): it is Item => !!it)
+        name: 'Templates',
+        layout: 'tiles',
+        label: true,
+        items: [4, 1, 6, 9, 2, 11].map((i) => templates.value[i]).filter((it): it is Item => !!it)
       })
-      out.push({ name: 'Quick actions', items: actions.value })
-    } else {
-      const s = SCOPES.find((x) => x.id === scope.value)!
-      out.push({ name: s.label, items: BY_SCOPE.value[scope.value as Exclude<Scope, 'all'>] })
-    }
+      out.push({
+        name: 'Actions',
+        layout: 'chips',
+        items: actions.value.filter((a) => QUICK.includes(a.key))
+      })
+    } else out.push({ name: scopeLabel.value, layout: 'rows', items: list(scope.value) })
   } else if (scope.value === 'all') {
     const groups = [
       ...SCOPES.filter((s) => s.id !== 'all').map((s) => ({
         name: s.label,
-        scope: s.id,
-        items: hits(BY_SCOPE.value[s.id as Exclude<Scope, 'all'>])
+        items: hits(list(s.id))
       })),
-      { name: 'Actions', scope: undefined, items: hits(actions.value) }
+      { name: 'Actions', items: hits(actions.value) }
     ]
       .filter((g) => g.items.length)
       .sort((a, b) => (b.items[0]!.score ?? 0) - (a.items[0]!.score ?? 0))
-    for (const g of groups)
-      out.push({
-        ...g,
-        more: g.items.length > PER_GROUP ? g.items.length : undefined,
-        items: g.items.slice(0, PER_GROUP)
-      })
+    for (const g of groups) out.push({ ...g, layout: 'rows', items: g.items.slice(0, PER_GROUP) })
   } else {
-    const s = SCOPES.find((x) => x.id === scope.value)!
-    const items = hits(BY_SCOPE.value[scope.value as Exclude<Scope, 'all'>])
-    if (items.length) out.push({ name: s.label, items })
+    const items = hits(list(scope.value))
+    if (items.length) out.push({ name: scopeLabel.value, layout: 'rows', items })
   }
-  if (q.value && out.length) out.push({ name: 'Docs', items: [docs.value] })
+  if (q.value && out.length) out.push({ name: 'Docs', layout: 'rows', items: [docs.value] })
 
   let index = 0
   return out.map((s) => ({ ...s, items: s.items.map((it) => ({ ...it, index: index++ })) }))
 })
+/** The one muted word on a row: what kind it is when everything is
+ *  mixed, otherwise its own word (when, state). */
+const wordOf = (it: Item): string | undefined =>
+  q.value && scope.value === 'all' && it.group !== 'Docs' ? it.group.replace(/s$/, '') : it.word
 const flat = computed(() => sections.value.flatMap((s) => s.items))
 const current = computed(() => flat.value[active.value])
 const none = computed(() => !!q.value && !flat.value.length)
@@ -399,11 +397,37 @@ function choose(it: Item | undefined, inCloud = false): void {
   if (inCloud && it.cloud) it.cloud()
   else it.open()
 }
-function move(by: number): void {
+/** ↑↓ go row by row in a list and section by section across a row of
+ *  pictures or chips; ←→ move along such a row. */
+function move(by: 1 | -1): void {
   const n = flat.value.length
   if (!n) return
-  active.value = (active.value + by + n) % n
+  const secs = sections.value
+  const at = secs.findIndex((g) => g.items.some((it) => it.index === active.value))
+  const sec = secs[at]
+  const first = (g: Section): number => g.items[0]!.index
+  const last = (g: Section): number => g.items[g.items.length - 1]!.index
+  const entry = (g: Section, down: boolean): number =>
+    g.layout === 'rows' && !down ? last(g) : first(g)
+  let next: number
+  if (!sec) next = 0
+  else if (
+    sec.layout !== 'rows' ||
+    (by > 0 ? active.value === last(sec) : active.value === first(sec))
+  ) {
+    const g = secs[(at + by + secs.length) % secs.length]!
+    next = entry(g, by > 0)
+  } else next = active.value + by
+  active.value = next
   pointerMoved = false
+}
+function along(by: 1 | -1): boolean {
+  const sec = sections.value.find((g) => g.items.some((it) => it.index === active.value))
+  if (!sec || sec.layout === 'rows') return false
+  const i = sec.items.findIndex((it) => it.index === active.value) + by
+  if (i >= 0 && i < sec.items.length) active.value = sec.items[i]!.index
+  pointerMoved = false
+  return true
 }
 
 const SHORTCUTS: Record<string, string> = {
@@ -421,6 +445,8 @@ function onKey(e: KeyboardEvent): void {
   } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
     e.preventDefault()
     move(-1)
+  } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !query.value) {
+    if (along(e.key === 'ArrowRight' ? 1 : -1)) e.preventDefault()
   } else if (e.key === 'Enter') {
     e.preventDefault()
     choose(current.value, mod)
@@ -509,11 +535,17 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-const scopeLabel = computed(() => SCOPES.find((s) => s.id === scope.value)!.label)
 const placeholder = computed(() =>
   scope.value === 'all' ? 'Search or jump to…' : `Search ${scopeLabel.value.toLowerCase()}…`
 )
 const optionId = (i: number): string => `mar-search-opt-${i}`
+const verb = computed(() =>
+  current.value?.group === 'Actions' ? 'Run' : current.value?.group === 'Docs' ? 'Search' : 'Open'
+)
+const hlTile = computed(
+  () =>
+    sections.value.find((g) => g.items.some((it) => it.index === active.value))?.layout === 'tiles'
+)
 </script>
 
 <template>
@@ -555,7 +587,6 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
               spellcheck="false"
               autocomplete="off"
             />
-            <kbd class="mar-search-esc">esc</kbd>
           </div>
 
           <div class="mar-search-scopes" role="tablist" aria-label="Search in">
@@ -570,10 +601,7 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
               :class="[scope === s.id && 'is-on', counts[s.id] === 0 && 'is-zero']"
               @click="setScope(s.id)"
             >
-              {{ s.label
-              }}<span v-if="counts[s.id] !== undefined" class="mar-search-count">{{
-                counts[s.id]
-              }}</span>
+              {{ s.label }}
             </button>
           </div>
 
@@ -587,7 +615,7 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
             <span
               v-if="hl"
               class="mar-search-hl"
-              :class="hlReady && 'is-moving'"
+              :class="[hlReady && 'is-moving', hlTile && 'is-tile']"
               :style="{
                 transform: `translate(${hl.x}px, ${hl.y}px)`,
                 width: `${hl.w}px`,
@@ -596,26 +624,22 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
               aria-hidden="true"
             />
 
-            <section v-for="g in sections" :key="g.name" class="mar-search-group">
-              <div class="mar-search-head">
-                <span>{{ g.name }}</span>
-                <button
-                  v-if="g.scope && (g.more || g.tiles)"
-                  type="button"
-                  tabindex="-1"
-                  @click="setScope(g.scope)"
-                >
-                  {{ g.more ? `All ${g.more}` : 'See all' }}<kbd>⇥</kbd>
-                </button>
-              </div>
+            <section
+              v-for="g in sections"
+              :key="g.name"
+              class="mar-search-group"
+              :class="`is-${g.layout}`"
+            >
+              <div v-if="g.label" class="mar-search-head">{{ g.name }}</div>
 
-              <div v-if="g.tiles" class="mar-search-tiles">
+              <div v-if="g.layout === 'tiles'" class="mar-search-tiles">
                 <div
                   v-for="it in g.items"
                   :id="optionId(it.index)"
                   :key="it.key"
                   role="option"
                   :aria-selected="active === it.index"
+                  :aria-label="it.label"
                   :data-i="it.index"
                   class="mar-search-tile"
                   :class="active === it.index && 'is-on'"
@@ -624,7 +648,24 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
                 >
                   <img :src="it.image" alt="" />
                   <span class="mar-search-tile-t">{{ it.label }}</span>
-                  <span class="mar-search-tile-m">{{ it.meta[2] }}</span>
+                </div>
+              </div>
+
+              <div v-else-if="g.layout === 'chips'" class="mar-search-chips">
+                <div
+                  v-for="it in g.items"
+                  :id="optionId(it.index)"
+                  :key="it.key"
+                  role="option"
+                  :aria-selected="active === it.index"
+                  :data-i="it.index"
+                  class="mar-search-chip"
+                  :class="active === it.index && 'is-on'"
+                  @pointermove="onPointer(it.index)"
+                  @click="choose(it)"
+                >
+                  <component :is="it.icon" :size="16" />
+                  <span class="truncate">{{ it.label }}</span>
                 </div>
               </div>
 
@@ -641,7 +682,7 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
                   @pointermove="onPointer(it.index)"
                   @click="choose(it)"
                 >
-                  <span class="mar-search-lead">
+                  <span class="mar-search-lead" :class="!it.image && !it.tile && 'is-icon'">
                     <img v-if="it.image" :src="it.image" alt="" />
                     <span
                       v-else-if="it.tile"
@@ -650,30 +691,20 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
                       >{{ it.tile.mark }}</span
                     >
                     <component :is="it.icon" v-else :size="16" />
-                    <span v-if="it.image || it.tile" class="mar-search-kind"
-                      ><component :is="it.icon" :size="10"
-                    /></span>
                   </span>
-                  <span class="mar-search-text">
-                    <span class="mar-search-label"
-                      ><template v-for="(s, k) in segments(it.label, it.at ?? [])" :key="k"
-                        ><mark v-if="s.hit">{{ s.text }}</mark
-                        ><template v-else>{{ s.text }}</template></template
-                      ></span
-                    >
-                    <span class="mar-search-meta">{{ it.meta.join(' · ') }}</span>
-                  </span>
+                  <span class="mar-search-label"
+                    ><template v-for="(s, k) in segments(it.label, it.at ?? [])" :key="k"
+                      ><mark v-if="s.hit">{{ s.text }}</mark
+                      ><template v-else>{{ s.text }}</template></template
+                    ></span
+                  >
+                  <span v-if="wordOf(it)" class="mar-search-word">{{ wordOf(it) }}</span>
+                  <span class="flex-1" />
                   <span v-if="active === it.index" class="mar-search-do">
-                    <span v-if="it.cloud" class="mar-search-hint">
-                      Open in Cloud<kbd>⌘</kbd><kbd>↵</kbd>
-                    </span>
-                    <span class="mar-search-hint is-main">
-                      {{ it.group === 'Actions' ? 'Run' : it.group === 'Docs' ? 'Search' : 'Open'
-                      }}<kbd><CornerDownLeft :size="11" /></kbd>
-                    </span>
-                  </span>
-                  <span v-else-if="it.shortcut" class="mar-search-keys">
-                    <kbd v-for="k in it.shortcut" :key="k">{{ k }}</kbd>
+                    <span v-if="it.cloud" class="mar-search-hint" title="Open in Comfy Cloud"
+                      ><Cloud :size="13" /><kbd>⌘</kbd><kbd>↵</kbd></span
+                    >
+                    <kbd class="is-main"><CornerDownLeft :size="11" /></kbd>
                   </span>
                 </div>
               </template>
@@ -686,10 +717,10 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
                 :title="`Nothing called “${q}”`"
                 :text="
                   scope === 'all'
-                    ? 'Check the spelling, or look for it in the docs.'
-                    : `No ${scopeLabel.toLowerCase()} match. It may be somewhere else.`
+                    ? 'Try another word, or the docs.'
+                    : `No ${scopeLabel.toLowerCase()} match.`
                 "
-                action="Search the docs"
+                action="Search docs"
                 :second="scope === 'all' ? undefined : 'Search everything'"
                 @action="choose(undefined)"
                 @second="setScope('all')"
@@ -698,18 +729,10 @@ const optionId = (i: number): string => `mar-search-opt-${i}`
           </div>
 
           <footer class="mar-search-foot">
-            <span v-if="scope === 'all' && !q" class="mar-search-tip">
-              Type <kbd>w</kbd><kbd>␣</kbd> for workflows, <kbd>⇥</kbd> to switch scope
-            </span>
-            <span v-else-if="scope !== 'all'" class="mar-search-tip">
-              <kbd>⌫</kbd> to search everything
-            </span>
-            <span v-else class="mar-search-tip"><kbd>⇥</kbd> to switch scope</span>
-            <span class="flex-1" />
-            <template v-if="flat.length">
-              <span><kbd>↑</kbd><kbd>↓</kbd>Move</span>
-            </template>
-            <span><kbd>⌘</kbd><kbd>K</kbd>Close</span>
+            <span v-if="current"
+              ><kbd><CornerDownLeft :size="11" /></kbd>{{ verb }}</span
+            >
+            <span><kbd>esc</kbd>Close</span>
           </footer>
         </div>
       </div>

@@ -166,11 +166,8 @@
   font-weight: 500;
   line-height: 1;
 }
-.mar-search-esc {
-  flex-shrink: 0;
-}
 
-/* Scopes: a row of chips under the field, with counts while typing. */
+/* Scopes: a row of chips under the field; empty ones dim while typing. */
 .mar-search-scopes {
   display: flex;
   flex-shrink: 0;
@@ -213,11 +210,6 @@
 .mar-search-scope.is-zero {
   opacity: 0.5;
 }
-.mar-search-count {
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 
 /* The results. Not a menu, so not the menus' glass (layers.css styles
    every listbox). */
@@ -228,38 +220,29 @@
   flex: 0 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2px var(--s-pad) var(--s-pad);
+  padding: 4px var(--s-pad) 10px;
   background: transparent;
   backdrop-filter: none;
-  scroll-padding: 34px 0 var(--s-pad);
+  scroll-padding: 8px 0;
   scrollbar-width: none;
 }
+/* Groups part with space, not a title or a line; only the picture rows
+   of the empty palette carry a small one. */
 .mar-search-group + .mar-search-group {
+  margin-top: 10px;
+}
+.mar-search-group.is-tiles + .mar-search-group {
   margin-top: 2px;
 }
 .mar-search-head {
-  display: flex;
-  height: 32px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 0;
+  padding: 10px 6px 8px;
   color: var(--color-subtle-foreground);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-search-head button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-head button:hover {
-  color: var(--s-ink);
-}
 
-/* The raised highlight: one panel that slides to the active row. */
+/* The raised highlight: one panel that slides to the active row. On a
+   picture it is a frame round it. */
 .mar-search-hl {
   position: absolute;
   top: 0;
@@ -271,6 +254,9 @@
     inset 0 1px 0 color-mix(in oklch, var(--s-ink) 7%, transparent),
     0 1px 2px rgb(0 0 0 / 0.22);
   pointer-events: none;
+}
+.mar-search-hl.is-tile {
+  background: color-mix(in oklch, var(--s-ink) 12%, transparent);
 }
 .mar-search-hl.is-moving {
   transition:
@@ -284,34 +270,41 @@
     inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 6%, transparent),
     0 1px 3px rgb(0 0 0 / 0.1);
 }
+[data-ds-theme='light'] .mar-search-hl.is-tile {
+  background: color-mix(in oklch, var(--s-ink) 10%, transparent);
+  box-shadow: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .mar-search-hl.is-moving {
     transition: none;
   }
 }
 
+/* Rows: a picture, the name, one muted word; keys only on the active. */
 .mar-search-row {
   position: relative;
   z-index: 1;
   display: flex;
-  height: 40px;
+  height: 52px;
   align-items: center;
   gap: 12px;
-  padding: 0 10px 0 8px;
+  padding: 0 12px 0 8px;
   border-radius: var(--s-row);
   cursor: default;
 }
 .mar-search-lead {
-  position: relative;
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: calc(var(--s-row) - 3px);
-  background: var(--s-well);
+  overflow: hidden;
+  border-radius: calc(var(--s-row) - 2px);
   color: var(--color-muted-foreground);
+}
+.mar-search-lead.is-icon {
+  background: var(--s-well);
 }
 .mar-search-row.is-on .mar-search-lead {
   color: var(--s-ink);
@@ -320,11 +313,10 @@
 .mar-search-mark {
   width: 100%;
   height: 100%;
-  border-radius: inherit;
   object-fit: cover;
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 8%, transparent);
 }
 .mar-search-lead > img {
+  border-radius: inherit;
   outline: 1px solid color-mix(in oklch, var(--s-ink) 8%, transparent);
   outline-offset: -1px;
 }
@@ -332,36 +324,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
-/* The kind, as a small badge on a picture. */
-.mar-search-kind {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--color-card-background);
-  box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--s-ink) 10%, var(--color-card-background));
-  color: var(--color-muted-foreground);
-}
-.mar-search-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  gap: 8px;
-}
 .mar-search-label {
-  flex-shrink: 0;
-  max-width: 62%;
+  min-width: 0;
   overflow: hidden;
   color: var(--color-muted-foreground);
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -373,116 +343,120 @@
   color: var(--s-ink);
   font-weight: 600;
 }
-.mar-search-meta {
-  min-width: 0;
-  overflow: hidden;
+.mar-search-word {
+  flex-shrink: 0;
   color: var(--color-subtle-foreground);
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.mar-search-do,
-.mar-search-keys {
+.mar-search-do {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 4px;
-}
-.mar-search-do {
-  gap: 12px;
+  gap: 10px;
 }
 .mar-search-hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   color: var(--color-subtle-foreground);
-  font-size: 12px;
 }
-.mar-search-hint > kbd:first-of-type {
-  margin-left: 2px;
+.mar-search-hint > svg {
+  margin-right: 3px;
 }
-.mar-search-hint.is-main {
+.mar-search kbd.is-main {
   color: var(--s-ink);
 }
-.mar-search-keys kbd {
-  background: transparent;
-  box-shadow: none;
-  color: var(--color-subtle-foreground);
-  min-width: 0;
-  padding: 0 1px;
-  font-size: 12px;
-}
 
-/* Suggested templates: four small cards in a row. */
+/* Pictures in a row: recent work and templates. The name shows on the
+   active one (and on hover), over the picture. */
 .mar-search-tiles {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 .mar-search-tile {
   position: relative;
   z-index: 1;
-  display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 6px 8px;
-  border-radius: var(--s-row);
+  padding: 4px;
+  border-radius: calc(var(--s-row) + 2px);
   cursor: default;
 }
 .mar-search-tile img {
+  display: block;
   width: 100%;
-  height: 56px;
-  margin-bottom: 6px;
-  border-radius: calc(var(--s-row) - 4px);
+  aspect-ratio: 1;
+  border-radius: var(--s-row);
   object-fit: cover;
   outline: 1px solid color-mix(in oklch, var(--s-ink) 8%, transparent);
   outline-offset: -1px;
 }
 .mar-search-tile-t {
+  position: absolute;
+  inset: auto 4px 4px;
   overflow: hidden;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
+  padding: 18px 8px 6px;
+  border-radius: 0 0 var(--s-row) var(--s-row);
+  background: linear-gradient(to top, rgb(0 0 0 / 0.72), transparent);
+  color: #fff;
+  font-size: 11px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
-.mar-search-tile.is-on .mar-search-tile-t {
+.mar-search-tile.is-on .mar-search-tile-t,
+.mar-search-tile:hover .mar-search-tile-t {
+  opacity: 1;
+}
+
+/* Quick actions: icon and a short label, in a row. */
+.mar-search-group.is-chips {
+  margin-top: 12px;
+}
+.mar-search-chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.mar-search-chip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: var(--s-row);
+  color: var(--color-muted-foreground);
+  cursor: default;
+}
+.mar-search-chip.is-on {
   color: var(--s-ink);
-}
-.mar-search-tile-m {
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
 }
 
 .mar-search-none .mar-empty {
-  padding: 28px 0 24px;
+  padding: 32px 0 28px;
 }
 
-/* Footer: one slim line of what the keys do right now. */
+/* Footer: ↵ and esc, nothing else. */
 .mar-search-foot {
   display: flex;
-  height: 34px;
+  height: 32px;
   flex-shrink: 0;
   align-items: center;
+  justify-content: flex-end;
   gap: 14px;
-  padding: 0 14px 0 18px;
+  padding: 0 14px;
   border-top: 1px solid var(--s-line);
   color: var(--color-subtle-foreground);
-  font-size: 12px;
+  font-size: 11px;
 }
 .mar-search-foot > span {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-}
-.mar-search-foot > span > kbd:last-of-type {
-  margin-right: 4px;
-}
-.mar-search-tip kbd {
-  margin: 0 1px;
-}
-.mar-search-foot > span.mar-search-tip > kbd:last-of-type {
-  margin-right: 1px;
+  gap: 6px;
 }

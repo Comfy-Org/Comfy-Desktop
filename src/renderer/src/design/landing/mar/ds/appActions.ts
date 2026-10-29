@@ -54,5 +54,5 @@ export const APP_ACTIONS: Record<AppAction, () => void> = {
   'search-none': searchFor(['zzqx']),
   'search-scoped': searchFor(['w ', 're']),
   'search-tab': searchFor(['temp', '\t', 'video']),
-  'search-empty-keys': searchFor([], 5)
+  'search-empty-keys': searchFor([], 3)
 }
