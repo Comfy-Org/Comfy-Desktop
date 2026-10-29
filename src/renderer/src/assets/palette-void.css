@@ -129,24 +129,6 @@
 :root.palette-void .title-bar:not(.is-light) .title-downloads-badge:not(.is-unseen, .is-error) {
   color: var(--color-background);
 }
-/* The install pill: a quiet field, outlined while its picker is open. */
-:root.palette-void .title-bar:not(.is-light) .title-install-pill {
-  border-color: var(--color-border);
-  background: oklch(1 0 0 / 0.04);
-  color: var(--text-muted);
-}
-:root.palette-void
-  .title-bar.is-hover-active:not(.is-light)
-  .title-install-pill.is-interactive:hover:not(.is-open) {
-  border-color: oklch(1 0 0 / 0.12);
-  background: oklch(1 0 0 / 0.07);
-  color: var(--text);
-}
-:root.palette-void .title-bar:not(.is-light) .title-install-pill.is-interactive.is-open {
-  border-color: oklch(1 0 0 / 0.3);
-  background: oklch(1 0 0 / 0.07);
-  color: var(--text);
-}
 
 /* ── 4. Popup windows ──────────────────────────────────────────────── */
 :root.palette-void .popup.is-menu .item:hover {
