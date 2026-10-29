@@ -278,7 +278,9 @@ const placeholderTitle = computed<string>(() => {
 </script>
 
 <template>
-  <div class="lifecycle-view">
+  <div
+    class="lifecycle-view flex min-h-0 flex-1 items-center justify-center bg-[var(--bg)] p-6 text-text"
+  >
     <!-- Crashed → keep the host window alive after ComfyUI exits
          unexpectedly so the user has somewhere to view logs, return to
          the dashboard, or restart. Matches ProgressModal's error
@@ -371,64 +373,17 @@ const placeholderTitle = computed<string>(() => {
          no ProgressModal is mounted. Hidden until the unknown grace
          window lapses so a fast `sessionStore.init()` (the common
          case) doesn't flash anything. -->
-    <div v-else-if="showPlaceholder" class="lifecycle-placeholder" data-state="placeholder">
-      <div class="lifecycle-placeholder__icon">
-        <Loader2 :size="32" />
+    <div
+      v-else-if="showPlaceholder"
+      class="lifecycle-placeholder flex max-w-[480px] flex-col items-center gap-3 px-8 py-7 text-center"
+      data-state="placeholder"
+    >
+      <div
+        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-[var(--border)] bg-surface text-[var(--accent,#4d8eff)]"
+      >
+        <Loader2 :size="32" class="animate-spin" />
       </div>
-      <h2>{{ placeholderTitle }}</h2>
+      <h2 class="m-0 text-[18px] font-semibold">{{ placeholderTitle }}</h2>
     </div>
   </div>
 </template>
-
-<style scoped>
-.lifecycle-view {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--bg);
-  color: var(--text);
-}
-
-/* Pre-hydration / race-window placeholder. The brand-finished surface
- * is teleported to body and covers the panel viewport; this is the
- * only branch that stays inline. */
-.lifecycle-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-  max-width: 480px;
-  padding: 28px 32px;
-}
-.lifecycle-placeholder h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-.lifecycle-placeholder__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--accent, #4d8eff);
-}
-.lifecycle-placeholder__icon :deep(svg) {
-  animation: lifecycle-spin 1s linear infinite;
-}
-@keyframes lifecycle-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
