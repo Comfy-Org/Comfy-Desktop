@@ -3,13 +3,10 @@
  * @comfyorg/design-system. Values are the redesign's (Pablo's #1752-#1756);
  * a color comes from design-system-theme.css where one matches.
  *
- * Applies only under `.palette-void`:
- * - on <html> of the title bar, title popup, tooltip and system modal
- *   renderers, which draw nothing else;
- * - in the main window, on the dashboard, Performance Tests, Benchmarks and
- *   every dialog, and on what they teleport to <body> (usePaletteScope).
- * The install wizard, first-run, progress and other brand takeovers keep
- * their look.
+ * Applies to every Desktop renderer, including first-use, installation,
+ * progress, recovery and their teleported dialogs. The embedded ComfyUI
+ * document has its own theme; its light title bar remains light.
+ * This changes presentation only: existing layouts and actions stay in place.
  *
  * 1. Desktop's color variables, pointed at Void. Variables defined from other
  *    variables are re-declared: `--surface-recessed: var(--neutral-900)`
@@ -27,9 +24,11 @@
 
 /* ── 1. Variables ──────────────────────────────────────────────────── */
 :root.palette-void[data-theme='dark'],
-/* Anywhere else, including an element that sets data-theme itself
- * (BrandBackground): `:not(:root)` out-ranks its legacy colors. */
-.palette-void:not(:root) {
+/* The launcher stays on the reference's dark palette even when the hosted
+ * editor is light. Nested theme roots must redeclare the aliases too. */
+:root.palette-void.desktop-panel,
+.palette-void:not(:root),
+.palette-void [data-theme='dark'] {
   /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
   --neutral-950: oklch(0.13 0.004 285);
   --neutral-900: oklch(0.165 0.005 285);
@@ -75,6 +74,9 @@
   --danger: var(--color-destructive);
   --danger-hover: oklch(0.68 0.19 25);
   --success: var(--color-success);
+  --semantic-danger: var(--color-destructive);
+  --semantic-warning: var(--color-warning);
+  --semantic-success: var(--color-success);
 
   --brand-surface-bg: oklch(1 0 0 / 0.04);
   --brand-surface-bg-hover: oklch(1 0 0 / 0.07);
@@ -98,7 +100,7 @@
   --tooltip-fg: var(--color-background);
 }
 
-/* ── 2. Shared controls (also used out of scope, so only under the class) ─ */
+/* ── 2. Shared controls ────────────────────────────────────────────── */
 
 /* Selects: translucent fill, hairline border. */
 :is(:root.palette-void, .palette-void) .ui-select-trigger {
@@ -386,4 +388,50 @@
   :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
   border-color: var(--color-border);
   border-radius: var(--radius-panel);
+}
+
+/* ── 10. Full-window flows ────────────────────────────────────────── */
+/* Keep the existing composition and artwork, but remove the old plum/yellow
+ * palette. No new shell, navigation, form structure or content is introduced. */
+.palette-void .brand-background.brand-background {
+  background: var(--color-background);
+}
+.palette-void .brand-inner-frame.brand-inner-frame {
+  background: var(--color-content-background);
+}
+.palette-void .brand-inner-frame.brand-inner-frame--vignette {
+  background: radial-gradient(
+    circle 196px at 50% 50%,
+    var(--neutral-950) 0%,
+    var(--neutral-950) 35%,
+    var(--color-content-background) 100%
+  );
+}
+.palette-void .brand-beam {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.palette-void .brand-takeover-root:focus {
+  /* This container receives programmatic entry focus. Interactive controls
+   * retain their own visible keyboard rings; avoid the OS accent at its edge. */
+  outline: none;
+}
+.palette-void .brand-progress__glyph {
+  color: var(--color-foreground);
+}
+.palette-void .brand-progress__glyph stop {
+  stop-color: currentColor;
+}
+.palette-void :is(.brand-progress__caption, .brand-progress__substatus) {
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.65);
+}
+.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
+  border-color: var(--color-border);
+}
+.palette-void :is(button.brand-primary, button.brand-secondary, button.brand-tertiary) {
+  border-radius: var(--radius-control);
+}
+/* These forms keep their existing control dimensions during the recolor. */
+.palette-void .brand-background .ui-select-trigger {
+  font-size: 14px;
 }

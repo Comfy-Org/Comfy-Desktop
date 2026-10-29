@@ -56,6 +56,5 @@ export interface SplashTheme {
 export const SPLASH_DARK: SplashTheme = { bg: COMFY_BG_DARK, fg: '#ffffff', isDark: true }
 export const SPLASH_LIGHT: SplashTheme = { bg: COMFY_BG_LIGHT, fg: '#000000', isDark: false }
 
-/** Brand-purple splash for app updates. It keeps the brand plum: the update splash is outside
- *  the Void redesign, so it no longer follows `TITLEBAR_BG`. */
-export const SPLASH_PURPLE: SplashTheme = { bg: '#211927', fg: '#ffffff', isDark: true }
+/** Desktop update splash follows the same palette as the launcher chrome. */
+export const SPLASH_DESKTOP: SplashTheme = { bg: TITLEBAR_BG, fg: '#ffffff', isDark: true }

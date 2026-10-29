@@ -37,8 +37,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
-// Teleported, so the overlay carries its opener's palette: Manage's snapshot
-// dialogs have it, the first-run screen does not.
+// Carry the launcher's palette into this teleported overlay.
 const paletteScope = usePaletteScope()
 const overlayRef = ref<HTMLDivElement | null>(null)
 const mouseDownOnOverlay = ref(false)
