@@ -2289,6 +2289,9 @@ function onRail(label: string): void {
 .mg-map-node {
   fill: color-mix(in oklch, var(--color-base-foreground) 24%, var(--mg-canvas));
 }
+:root[data-ds-theme='light'] .mg-map-node {
+  fill: color-mix(in oklch, var(--color-base-foreground) 12%, var(--mg-canvas));
+}
 .mg-map-node.is-on {
   fill: color-mix(in oklch, var(--color-base-foreground) 45%, var(--mg-canvas));
 }
