@@ -6,6 +6,7 @@
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Power, ChevronDown } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import BrandProgressGlyph from './icons/BrandProgressGlyph.vue'
 import ComfyWordmark from './icons/ComfyWordmark.vue'
@@ -24,6 +25,16 @@ interface Props {
    *  surface for a deliberate stop. */
   tone?: 'error' | 'neutral'
 }
+
+// Slot actions share the finished surface's responsive control recipe. Keeping
+// it here lets their owners preserve click handlers without global button CSS.
+const footerButtonClass =
+  'static inline-flex min-w-auto appearance-auto items-center gap-1.5 rounded-md border border-solid px-3.5 py-[7px] font-sans text-[13px] leading-[inherit] font-medium whitespace-nowrap touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 [@media(max-width:720px)]:px-2.5 [@media(max-width:720px)]:py-1.5 [@media(max-width:720px)]:text-[12px]'
+const buttonClass = `${footerButtonClass} flex-1 justify-center`
+const secondaryClass =
+  'border-neutral-500 bg-transparent text-neutral-100 hover:bg-[var(--brand-surface-bg)] hover:text-neutral-100'
+const primaryClass =
+  'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
 
 const props = withDefaults(defineProps<Props>(), {
   message: undefined,
@@ -50,324 +61,115 @@ function getLogText(): string {
 
 <template>
   <BrandTakeoverLayout :aria-label="ariaLabel">
-    <div class="brand-progress">
-      <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
-      <div class="brand-progress__stack">
-        <ComfyWordmark class="brand-progress__wordmark" />
+    <div
+      class="brand-progress relative flex w-full flex-auto items-center justify-center self-stretch"
+    >
+      <BrandProgressGlyph
+        class="brand-progress__glyph pointer-events-none absolute top-1/2 left-[60%] z-0 h-screen w-auto opacity-90 [transform:translate(-50%,-50%)]"
+        aria-hidden="true"
+      />
+      <div
+        class="brand-progress__stack relative z-2 flex w-[min(85%,880px)] max-w-[calc(100vw-48px)] flex-col items-center gap-[clamp(1rem,3vh,2rem)] overflow-hidden text-center before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:-z-1 before:h-[160%] before:w-[130%] before:rounded-[50%] before:bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--neutral-800)_60%,transparent)_0%,color-mix(in_srgb,var(--neutral-800)_40%,transparent)_35%,transparent_60%)] before:content-[''] before:[transform:translate(-50%,-50%)]"
+      >
+        <ComfyWordmark
+          class="brand-progress__wordmark h-auto w-[clamp(140px,9.7vw,240px)] text-comfy-yellow [anchor-name:--brand-beam-target]"
+        />
         <div
-          class="brand-progress__banner"
-          :class="`brand-progress__banner--${tone}`"
+          class="brand-progress__banner inline-flex min-h-[1.5em] items-center gap-2.5 text-[length:var(--takeover-fs-body)] tracking-[0.01em] [&_svg]:flex-none"
+          :class="
+            tone === 'error'
+              ? 'brand-progress__banner--error text-[var(--semantic-danger,#ff7a7a)]'
+              : 'brand-progress__banner--neutral text-text'
+          "
           aria-live="polite"
         >
           <X v-if="tone === 'error'" :size="20" />
           <Power v-else :size="20" />
           <span>{{ title }}</span>
         </div>
-        <div v-if="message" class="brand-progress__error-row">
-          <div class="brand-progress__error-message">{{ message }}</div>
+        <div
+          v-if="message"
+          class="brand-progress__error-row -mt-1 flex w-full max-w-[640px] items-start gap-2"
+        >
+          <div
+            class="brand-progress__error-message mt-0 max-h-[clamp(120px,22vh,240px)] w-full max-w-[640px] flex-auto overflow-y-auto overscroll-contain rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-3 text-left text-[13px] leading-[1.55] whitespace-pre-wrap text-neutral-200 select-text [word-break:break-word]"
+          >
+            {{ message }}
+          </div>
           <!-- Copy only makes sense for an error message worth pasting into a
                bug report — a neutral status line ("ComfyUI is stopped") doesn't. -->
           <BaseCopyButton
             v-if="tone === 'error'"
             :value="message"
             :aria-label="t('common.copy')"
-            class="brand-progress__error-copy"
+            class="brand-progress__error-copy mt-1 flex-none"
           />
         </div>
         <!-- Actions live in the hero stack (under the message), matching
              ProgressModal, so the CTAs stay with the failure context. -->
-        <div v-if="$slots.actions" class="brand-progress__error-actions">
-          <slot name="actions" />
+        <div
+          v-if="$slots.actions"
+          class="brand-progress__error-actions flex w-full max-w-[420px] flex-row items-stretch gap-3"
+        >
+          <slot name="actions" v-bind="{ buttonClass, secondaryClass, primaryClass }" />
         </div>
       </div>
     </div>
     <template v-if="logs" #footer>
-      <div class="brand-progress__footer">
+      <div
+        class="brand-progress__footer pointer-events-none absolute top-[clamp(72px,14vh,160px)] right-[clamp(16px,2.5vw,32px)] bottom-[clamp(16px,2.5vh,32px)] left-[clamp(16px,2.5vw,32px)] z-3 flex min-h-0 flex-col justify-end gap-2 [&>*]:pointer-events-auto"
+      >
         <BaseAccordion
           :open="logsExpanded"
-          class="brand-progress__logs-wrap"
-          :class="{ 'is-expanded': logsExpanded }"
+          class="brand-progress__logs-wrap min-h-0 overflow-hidden rounded-[10px]"
+          :class="{
+            'is-expanded border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] backdrop-blur-[8px]':
+              logsExpanded
+          }"
         >
-          <div class="brand-progress__logs-panel-header">
-            <span class="brand-progress__logs-panel-title">
+          <div
+            class="brand-progress__logs-panel-header flex items-center justify-between border-b border-solid border-[var(--brand-surface-border)] px-3 py-2"
+          >
+            <span
+              class="brand-progress__logs-panel-title text-[length:var(--takeover-fs-caption,12px)] font-medium text-neutral-200"
+            >
               {{ logsLabel ?? t('launch.viewLogs') }}
             </span>
             <BaseCopyButton
               :get-value="getLogText"
               :aria-label="t('common.copy')"
-              class="brand-progress__logs-copy"
+              class="brand-progress__logs-copy flex-none"
             />
           </div>
-          <div :id="logsId" class="brand-progress__logs">
+          <div
+            :id="logsId"
+            class="brand-progress__logs min-h-0 max-h-[clamp(88px,25vh,260px)] w-full overflow-y-auto overscroll-contain px-3.5 py-3 text-left text-[11px] leading-[1.55] whitespace-pre-wrap text-neutral-300 select-text [font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace] [word-break:break-word]"
+          >
             {{ logs }}
           </div>
         </BaseAccordion>
-        <div class="brand-progress__footer-bar">
-          <button
+        <div class="brand-progress__footer-bar flex flex-wrap items-center justify-end gap-3">
+          <Button
+            size="unset"
+            variant="textonly"
             type="button"
-            class="brand-ghost brand-progress__footer-btn brand-progress__logs-toggle"
+            class="brand-progress__footer-btn brand-progress__logs-toggle justify-center border-neutral-500 bg-[rgba(138,134,136,0.1)] text-neutral-100 backdrop-blur-[75px] [box-shadow:0_1px_0_0_rgba(255,255,255,0.1)_inset] hover:bg-[var(--brand-surface-bg)] focus-visible:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+            :class="footerButtonClass"
             :aria-expanded="logsExpanded"
             :aria-controls="logsId"
             @click="toggleLogs"
           >
             <ChevronDown
               :size="14"
-              class="brand-progress__logs-chevron"
-              :class="{ 'is-open': logsExpanded }"
+              class="brand-progress__logs-chevron transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              :class="
+                logsExpanded ? 'is-open [transform:rotate(0deg)]' : '[transform:rotate(180deg)]'
+              "
             />
             {{ logsLabel ?? t('launch.viewLogs') }}
-          </button>
+          </Button>
         </div>
       </div>
     </template>
   </BrandTakeoverLayout>
 </template>
-
-<style scoped>
-/* Mirrors ProgressModal's brand-progress error-state subtree; keep in sync. */
-.brand-progress {
-  position: relative;
-  align-self: stretch;
-  flex: 1 1 auto;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.brand-progress__glyph {
-  position: absolute;
-  top: 50%;
-  left: 60%;
-  transform: translate(-50%, -50%);
-  height: 100vh;
-  width: auto;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.9;
-}
-
-.brand-progress__stack {
-  position: relative;
-  z-index: 2;
-  width: min(85%, 880px);
-  max-width: calc(100vw - 48px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* This standalone finished surface can use a roomier gap than ProgressModal's
-     stack, which also hosts the in-flight stepper and is deliberately tighter. */
-  gap: clamp(1rem, 3vh, 2rem);
-  text-align: center;
-  overflow: hidden;
-}
-.brand-progress__stack::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 130%;
-  height: 160%;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, var(--neutral-800) 60%, transparent) 0%,
-    color-mix(in srgb, var(--neutral-800) 40%, transparent) 35%,
-    transparent 60%
-  );
-  pointer-events: none;
-  z-index: -1;
-}
-.brand-progress__wordmark {
-  width: clamp(140px, 9.7vw, 240px);
-  height: auto;
-  color: var(--comfy-yellow);
-  anchor-name: --brand-beam-target;
-}
-
-.brand-progress__banner {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--takeover-fs-body);
-  letter-spacing: 0.01em;
-  min-height: 1.5em;
-  color: var(--text);
-}
-.brand-progress__banner--error {
-  color: var(--semantic-danger, #ff7a7a);
-}
-.brand-progress__banner--neutral {
-  color: var(--text);
-}
-.brand-progress__banner :deep(svg) {
-  flex: none;
-}
-
-/* Crash-detail row beneath the banner. */
-.brand-progress__error-row {
-  width: 100%;
-  max-width: 640px;
-  margin-top: -4px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.brand-progress__error-row .brand-progress__error-message {
-  margin-top: 0;
-  flex: 1 1 auto;
-}
-.brand-progress__error-copy {
-  flex: none;
-  margin-top: 4px;
-}
-.brand-progress__error-message {
-  width: 100%;
-  max-width: 640px;
-  max-height: clamp(120px, 22vh, 240px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  margin-top: -4px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--brand-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-200);
-  font-size: 13px;
-  line-height: 1.55;
-  text-align: left;
-  user-select: text;
-  -webkit-user-select: text;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-/* Mirrors ProgressModal's `.brand-progress__error-actions`; keep in sync. */
-.brand-progress__error-actions {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 12px;
-  width: 100%;
-  max-width: 420px;
-}
-.brand-progress__error-actions > :slotted(.brand-progress__footer-btn) {
-  flex: 1 1 0;
-  justify-content: center;
-}
-
-/* `top` is anchored so the block can't grow taller than the available gap;
- * the logs panel shrinks instead of clipping the toggle on short windows.
- * Mirrors ProgressModal's `.brand-progress__footer`; keep in sync. */
-.brand-progress__footer {
-  position: absolute;
-  top: clamp(72px, 14vh, 160px);
-  bottom: clamp(16px, 2.5vh, 32px);
-  left: clamp(16px, 2.5vw, 32px);
-  right: clamp(16px, 2.5vw, 32px);
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 8px;
-  min-height: 0;
-  pointer-events: none;
-}
-/* Container is a click-through geometric bound; re-enable on content. */
-.brand-progress__footer > * {
-  pointer-events: auto;
-}
-.brand-progress__footer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-/* `:slotted()` mirrors the plain selector so these rules reach slotted
- * Back/Restart buttons (scoped styles don't cross slot boundaries). */
-.brand-progress__footer-btn,
-:slotted(.brand-progress__footer-btn) {
-  min-width: auto;
-  padding: 7px 14px;
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.brand-progress__footer-btn.brand-ghost,
-:slotted(.brand-progress__footer-btn.brand-ghost) {
-  border-color: var(--neutral-500);
-  color: var(--neutral-100);
-}
-@media (max-width: 720px) {
-  .brand-progress__footer-btn,
-  :slotted(.brand-progress__footer-btn) {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-}
-
-.brand-progress__logs-toggle {
-  gap: 6px;
-  border-radius: 6px;
-  border: 1px solid rgba(194, 191, 185, 0.09);
-  background: rgba(138, 134, 136, 0.1);
-  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.1) inset;
-  backdrop-filter: blur(75px);
-  color: var(--text);
-}
-.brand-progress__logs-chevron {
-  transform: rotate(180deg);
-  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.brand-progress__logs-chevron.is-open {
-  transform: rotate(0deg);
-}
-/* `min-height: 0` lets the accordion shrink within the bounded footer so
- * short windows scroll the log body instead of pushing the footer off-screen. */
-.brand-progress__logs-wrap {
-  border-radius: 10px;
-  overflow: hidden;
-  min-height: 0;
-}
-.brand-progress__logs-wrap.is-expanded {
-  border: 1px solid var(--brand-surface-border);
-  background: var(--brand-surface-bg);
-  backdrop-filter: blur(8px);
-}
-.brand-progress__logs-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--brand-surface-border);
-}
-.brand-progress__logs-panel-title {
-  font-size: var(--takeover-fs-caption, 12px);
-  color: var(--neutral-200);
-  font-weight: 500;
-}
-.brand-progress__logs-copy {
-  flex: none;
-}
-.brand-progress__logs {
-  width: 100%;
-  /* max-height (not height) so the panel shrinks on short windows. */
-  max-height: clamp(88px, 25vh, 260px);
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 12px 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--neutral-300);
-  text-align: left;
-  white-space: pre-wrap;
-  word-break: break-word;
-  user-select: text;
-  -webkit-user-select: text;
-}
-</style>
