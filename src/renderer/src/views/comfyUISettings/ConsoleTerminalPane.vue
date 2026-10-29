@@ -4,6 +4,7 @@ import { useDebounceFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import Button from '@comfyorg/design-system/button/Button'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalRestore } from '../../../../types/ipc'
 import { TID } from '../../../../shared/testIds'
@@ -267,28 +268,56 @@ onBeforeUnmount(teardown)
 </script>
 
 <template>
-  <div ref="paneRef" class="console-pane">
-    <header class="console-header" aria-hidden="true">
-      <span class="console-header-dots"> <span /><span /><span /> </span>
-      <span class="console-header-title">{{ t('console.shellLabel') }}</span>
+  <!-- min-w-0 prevents xterm's intrinsic column width from expanding the pane. -->
+  <div
+    ref="paneRef"
+    class="console-pane flex min-h-[240px] w-full min-w-0 flex-auto flex-col overflow-hidden rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] [box-shadow:0_0_0_1px_color-mix(in_srgb,var(--neutral-950)_35%,transparent),0_8px_24px_color-mix(in_srgb,var(--neutral-950)_28%,transparent)]"
+  >
+    <header
+      class="console-header flex h-[34px] shrink-0 items-center gap-2.5 border-0 border-b border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--neutral-800)_72%,transparent)] px-3.5"
+      aria-hidden="true"
+    >
+      <span
+        class="console-header-dots inline-flex items-center gap-[5px] [&>span]:size-[7px] [&>span]:rounded-[50%] [&>span]:bg-[color-mix(in_srgb,var(--neutral-400)_42%,transparent)] [&>span]:[box-shadow:inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)]"
+      >
+        <span /><span /><span />
+      </span>
+      <span
+        class="console-header-title text-[11px] font-medium tracking-[0.06em] text-[color-mix(in_srgb,var(--text-muted)_88%,transparent)] uppercase"
+        >{{ t('console.shellLabel') }}</span
+      >
     </header>
-    <div class="console-viewport">
+    <div
+      class="console-viewport relative min-h-0 flex-auto bg-neutral-800 [box-shadow:inset_0_1px_0_color-mix(in_srgb,white_3%,transparent)]"
+    >
+      <!-- Absolute content-box sizing keeps FitAddon measurements independent of
+           xterm's intrinsic dimensions and excludes padding from the inner height. -->
       <div
         ref="hostRef"
-        class="console-host"
+        class="console-host absolute inset-0 box-content overflow-hidden px-3.5 pt-3 pb-3.5"
         :data-testid="TID.consoleTerminal"
         @contextmenu.prevent="openContextMenu"
       />
-      <div v-if="exited" class="console-ended" role="status" :data-testid="TID.consoleSessionEnded">
-        <span class="console-ended-text">{{ t('console.sessionEnded') }}</span>
-        <button
+      <div
+        v-if="exited"
+        class="console-ended absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-0 border-t border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--modal-surface-bg)_90%,transparent)] px-3.5 py-2.5 backdrop-blur-[10px]"
+        role="status"
+        :data-testid="TID.consoleSessionEnded"
+      >
+        <span
+          class="console-ended-text text-[12px] leading-[1.45] text-[var(--text-muted,var(--neutral-100))]"
+          >{{ t('console.sessionEnded') }}</span
+        >
+        <Button
+          size="unset"
+          variant="textonly"
           type="button"
-          class="accent console-ended-restart"
+          class="console-ended-restart static block h-[30px] shrink-0 appearance-auto rounded-lg border border-solid border-[var(--accent)] bg-surface px-3.5 py-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-normal text-[var(--accent)] touch-auto transition-none [&]:[appearance:button] hover:bg-[var(--accent)] hover:text-[var(--bg)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
           :data-testid="TID.consoleRestart"
           @click="restart"
         >
           {{ t('console.restartSession') }}
-        </button>
+        </Button>
       </div>
     </div>
     <ContextMenu
@@ -303,83 +332,9 @@ onBeforeUnmount(teardown)
 </template>
 
 <style scoped>
-.console-pane {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  /* Without min-width:0 the xterm host's intrinsic ~80-col width propagates up
-   * the flex chain and blows out the settings pane (overflowing buttons, broken
-   * tab strip). */
-  min-width: 0;
-  flex: 1 1 auto;
-  min-height: 240px;
-  background: var(--chooser-surface-bg);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--neutral-950) 35%, transparent),
-    0 8px 24px color-mix(in srgb, var(--neutral-950) 28%, transparent);
-}
-
-.console-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 34px;
-  padding: 0 14px;
-  background: color-mix(in srgb, var(--neutral-800) 72%, transparent);
-  border-bottom: 1px solid var(--chooser-surface-border);
-}
-
-.console-header-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.console-header-dots span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--neutral-400) 42%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
-}
-
-.console-header-title {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
-}
-
-.console-viewport {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  background: var(--neutral-800);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 3%, transparent);
-}
-
-/* Absolutely positioned so xterm's content size never contributes to the
- * layout's intrinsic width — the pane is sized by the flex container only. */
-.console-host {
-  position: absolute;
-  inset: 0;
-  /* content-box so FitAddon's getComputedStyle(host).height reports the inner
-   * area (excludes padding). Under the global border-box reset it returns the
-   * padded height, over-counting ~1 row and pushing the prompt below the fold. */
-  box-sizing: content-box;
-  padding: 12px 14px 14px;
-  overflow: hidden;
-}
-
-/* xterm injects its own DOM at runtime, outside Vue's scoped templates, so
- * `:deep()` is required to reach it. Without clamping these layers they
- * overflow the host and capture pointer events across the settings window,
- * which reads as the whole UI freezing. */
+/* xterm creates this DOM outside Vue and ships unlayered vendor CSS. These
+ * integration overrides must stay unlayered so the viewport fits its host and
+ * cannot capture pointer events beyond the pane. Component layout is utility-owned. */
 .console-host :deep(.xterm) {
   overflow: hidden;
   height: 100%;
@@ -392,34 +347,5 @@ onBeforeUnmount(teardown)
 .console-host :deep(.xterm-screen) {
   overflow: hidden;
   background-color: var(--neutral-800);
-}
-
-.console-ended {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--modal-surface-bg) 90%, transparent);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--chooser-surface-border);
-}
-
-.console-ended-text {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted, var(--neutral-100));
-}
-
-.console-ended-restart {
-  height: 30px;
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  flex-shrink: 0;
 }
 </style>
