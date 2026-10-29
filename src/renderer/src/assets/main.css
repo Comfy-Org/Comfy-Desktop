@@ -272,26 +272,46 @@
  * Base styles from renderer/styles.css
  * Ported verbatim to bridge old CSS class names used by Vue components.
  * These will be incrementally replaced with Tailwind utility classes.
+ *
+ * Rules that target bare elements live in `@layer base` so any Tailwind
+ * utility or design-system component overrides them. Outside a layer they
+ * would beat every utility, whatever its specificity.
  * ================================================================ */
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 
-::-webkit-scrollbar {
-  width: 0px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-hover);
+  ::-webkit-scrollbar {
+    width: 0px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    /* Tailwind `antialiased` — macOS WebKit/Chromium only; ignored on
+     * Windows/Linux where the engine handles ClearType/DirectWrite. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--bg);
+    color: var(--text);
+    user-select: none;
+    height: 100vh;
+    overflow: hidden;
+    margin: 0;
+  }
 }
 
 .scroll-visible {
@@ -313,20 +333,6 @@
 }
 .scroll-visible::-webkit-scrollbar-thumb:hover {
   background-color: var(--border-hover);
-}
-
-body {
-  font-family: 'Inter', system-ui, sans-serif;
-  /* Tailwind `antialiased` — macOS WebKit/Chromium only; ignored on
-   * Windows/Linux where the engine handles ClearType/DirectWrite. */
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg);
-  color: var(--text);
-  user-select: none;
-  height: 100vh;
-  overflow: hidden;
-  margin: 0;
 }
 
 /* App shell */
@@ -434,17 +440,23 @@ body {
 }
 
 /* Buttons */
-button {
-  padding: 8px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-}
-button:hover {
-  background: var(--border);
+@layer base {
+  button {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover {
+    background: var(--border);
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
 }
 button.primary {
   background: var(--accent-primary);
@@ -484,7 +496,6 @@ button.danger-solid {
 button.danger-solid:hover {
   background: color-mix(in srgb, var(--danger) 85%, #000);
 }
-button:disabled,
 button.looks-disabled {
   opacity: 0.4;
   cursor: default;
@@ -624,6 +635,9 @@ button.looks-disabled {
 .brand-pill:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+.brand-pill:disabled {
+  cursor: default;
 }
 .brand-pill--selected {
   border-color: var(--accent);
@@ -913,60 +927,62 @@ button.add-btn {
 }
 
 /* Forms */
-label {
-  font-size: 14px;
-  color: var(--text-muted);
-}
-select,
-input[type='text'],
-input[type='number'] {
-  width: 100%;
-  padding: 8px 10px;
-  margin-top: 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  outline: none;
-}
-select:focus,
-input[type='text']:focus,
-input[type='number']:focus {
-  border-color: var(--accent);
-}
-select:disabled,
-input:disabled {
-  opacity: 0.4;
-}
-input[type='checkbox'] {
-  appearance: none;
-  width: 36px;
-  height: 20px;
-  background: var(--border);
-  border-radius: 10px;
-  position: relative;
-  cursor: pointer;
-  margin-top: 8px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-input[type='checkbox']::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: var(--text);
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-input[type='checkbox']:checked {
-  background: var(--accent);
-}
-input[type='checkbox']:checked::after {
-  transform: translateX(16px);
+@layer base {
+  label {
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  select,
+  input[type='text'],
+  input[type='number'] {
+    width: 100%;
+    padding: 8px 10px;
+    margin-top: 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  select:focus,
+  input[type='text']:focus,
+  input[type='number']:focus {
+    border-color: var(--accent);
+  }
+  select:disabled,
+  input:disabled {
+    opacity: 0.4;
+  }
+  input[type='checkbox'] {
+    appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  input[type='checkbox']::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: var(--text);
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  input[type='checkbox']:checked {
+    background: var(--accent);
+  }
+  input[type='checkbox']:checked::after {
+    transform: translateX(16px);
+  }
 }
 .field {
   display: flex;
@@ -1449,6 +1465,10 @@ input[type='checkbox']:checked::after {
   margin-top: 4px;
   padding: 6px 8px;
   font-size: 14px;
+}
+.detail-field-input[type='text'] {
+  margin-top: 6px;
+  padding: 8px 10px;
 }
 /* Inline filesystem path rendered as a button that opens the folder in the OS
  *  file manager. Resets the button chrome to plain text, truncates with an
@@ -2565,7 +2585,7 @@ input[type='checkbox']:checked::after {
 }
 .modal-input {
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 10px;
   font-size: 14px;
 }
 .modal-actions {
