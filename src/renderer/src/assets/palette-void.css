@@ -114,15 +114,6 @@
   border-color: var(--accent-hover);
 }
 
-/* ── 4. Popup windows ──────────────────────────────────────────────── */
-:root.palette-void .popup.is-menu .item:hover {
-  background: oklch(1 0 0 / 0.07);
-}
-:root.palette-void .popup.is-menu .separator {
-  background: var(--color-border);
-  opacity: 1;
-}
-
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
 :root.palette-void .modal-box {
   border-color: var(--color-border);
