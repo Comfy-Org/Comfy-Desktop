@@ -134,7 +134,7 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
         <button
           type="button"
           role="menuitem"
-          class="more-menu-item group/more flex w-full items-center gap-[9px] rounded-md border-none bg-transparent px-3.5 py-2 text-left text-[13px] transition-[background-color,color] duration-100 ease-[ease] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+          class="more-menu-item group/more cursor-pointer flex w-full items-center gap-[9px] rounded-md border-none bg-transparent px-3.5 py-2 text-left text-[13px] transition-[background-color,color] duration-100 ease-[ease] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
           :class="[
             { 'is-disabled': action.enabled === false },
             action.style === 'danger'

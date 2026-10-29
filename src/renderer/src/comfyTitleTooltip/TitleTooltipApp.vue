@@ -211,7 +211,7 @@ onUnmounted(() => {
         <button
           v-if="cmActionLabel"
           type="button"
-          class="coachmark-action appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
+          class="coachmark-action rounded-lg appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
           :style="{ color: themeAccent }"
           @click="onAction"
         >
@@ -219,7 +219,7 @@ onUnmounted(() => {
         </button>
         <button
           type="button"
-          class="coachmark-dismiss appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
+          class="coachmark-dismiss rounded-lg appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
           :style="{ color: themeAccent }"
           @click="onDismiss"
         >

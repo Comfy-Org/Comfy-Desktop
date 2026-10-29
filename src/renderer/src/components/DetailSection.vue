@@ -49,7 +49,7 @@ const fieldControlClass =
 const collapsibleTitleClass =
   "inline-block cursor-pointer select-none before:mr-1 before:inline-block before:content-['▸'] before:transition-transform before:duration-150 before:ease-[ease]"
 const openPathClass =
-  'min-w-0 border-0 bg-transparent p-0 text-left text-[14px] text-text hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none'
+  'cursor-pointer rounded-lg min-w-0 border-0 bg-transparent p-0 text-left text-[14px] text-text hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none'
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef, button: HTMLButtonElement | null]

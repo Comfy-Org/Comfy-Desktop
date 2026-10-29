@@ -93,7 +93,7 @@ watch(
         {{ title }}
       </div>
       <button
-        class="view-modal-close shrink-0 border-none bg-transparent px-2 py-1 text-[18px] leading-none text-text-muted cursor-pointer hover:bg-transparent hover:text-text"
+        class="view-modal-close rounded-lg shrink-0 border-none bg-transparent px-2 py-1 text-[18px] leading-none text-text-muted cursor-pointer hover:bg-transparent hover:text-text"
         @click="emit('close')"
       >
         {{ !isExited && !errorInfo ? '−' : '✕' }}
@@ -108,7 +108,7 @@ watch(
       </div>
       <button
         type="button"
-        class="terminal-toggle flex shrink-0 items-center gap-1.5 border-none bg-transparent p-1.5 text-[14px] text-text-muted select-none cursor-pointer hover:bg-transparent hover:text-text"
+        class="terminal-toggle rounded-lg flex shrink-0 items-center gap-1.5 border-none bg-transparent p-1.5 text-[14px] text-text-muted select-none cursor-pointer hover:bg-transparent hover:text-text"
         :aria-expanded="terminalExpanded"
         @click="terminalExpanded = !terminalExpanded"
       >
