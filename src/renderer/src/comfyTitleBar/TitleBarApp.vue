@@ -224,6 +224,9 @@ interface Bridge {
 
 const bridge = (window as unknown as { __comfyTitleBar?: Bridge }).__comfyTitleBar
 
+const titleMenuButtonClass =
+  '[-webkit-app-region:no-drag] inline-flex items-center gap-0 rounded-[4px] border border-solid border-transparent bg-transparent px-1.5 py-1 [font:inherit] text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity,border-color] duration-[120ms] ease-[ease] [.title-bar:not(.is-light)_&]:rounded-control [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent'
+
 const isMac = ref(bridge?.isMac() ?? false)
 /** Active body-mode pill, mirrored from main. Drives the native Install
  *  menu's checkmark for install-scoped pages (Install Settings /
@@ -895,6 +898,7 @@ onUnmounted(() => {
         ref="fileBtn"
         type="button"
         class="title-menu-button title-menu-button--icon"
+        :class="titleMenuButtonClass"
         aria-haspopup="menu"
         v-bind="tooltipAttrs(t('titleBar.menu'))"
         @click="handleFileMenu"
@@ -908,6 +912,7 @@ onUnmounted(() => {
         v-if="showRefreshButton"
         type="button"
         class="title-menu-button title-menu-button--icon title-refresh-button"
+        :class="titleMenuButtonClass"
         v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
         @click="handleRefreshInstance"
       >
@@ -1039,29 +1044,35 @@ onUnmounted(() => {
         <button
           v-if="showZoomReset"
           type="button"
-          class="title-zoom-reset"
+          class="title-zoom-reset [-webkit-app-region:no-drag] inline-flex shrink-0 items-center gap-1 rounded-[999px] border border-solid border-transparent bg-transparent px-2 py-[3px] [font-family:inherit] text-[11px] leading-[14px] font-normal text-[var(--titlebar-icon)] opacity-85 tabular-nums cursor-pointer transition-[background-color,opacity,border-color,color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
           v-bind="tooltipAttrs(t('titleBar.resetZoomTooltip'))"
           @click="handleResetZoom"
         >
           <ZoomIn :size="14" class="title-zoom-reset-icon" />
-          <span class="title-zoom-reset-percent">{{ zoomPercent }}%</span>
+          <span class="title-zoom-reset-percent tracking-[0.01em]">{{ zoomPercent }}%</span>
         </button>
       </Transition>
       <button
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
         type="button"
-        class="title-menu-button title-menu-button--icon title-announcement-button"
+        class="title-menu-button title-menu-button--icon title-announcement-button relative"
+        :class="titleMenuButtonClass"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
         @click="handleAnnouncement"
       >
         <Bell :size="16" />
-        <span v-if="announcementUnread" class="title-announcement-dot" aria-hidden="true" />
+        <span
+          v-if="announcementUnread"
+          class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))]"
+          aria-hidden="true"
+        />
       </button>
       <button
         v-if="!isFirstUseLockdown"
         type="button"
         class="title-menu-button title-menu-button--icon title-feedback-button"
+        :class="titleMenuButtonClass"
         v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
         @click="handleFeedback"
       >
@@ -1122,57 +1133,8 @@ onUnmounted(() => {
 
 <style scoped>
 /* --- App / hamburger menu button --- */
-.title-menu-button {
-  -webkit-app-region: no-drag;
-  background: transparent;
-  color: var(--titlebar-icon);
-  border: 1px solid transparent;
-  padding: 4px 10px;
-  font: inherit;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.85;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition:
-    background-color 0.12s,
-    opacity 0.12s,
-    border-color 0.12s;
-}
-.title-bar.is-hover-active .title-menu-button:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-.title-bar.is-light.is-hover-active .title-menu-button:hover {
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.18);
-}
-.title-menu-button--icon {
-  padding: 4px 6px;
-  gap: 0;
-}
-.title-feedback-button {
-  color: var(--titlebar-icon);
-}
-.title-announcement-button {
-  position: relative;
-  color: var(--titlebar-icon);
-}
 /* Subtle unread marker on the bell, a small accent dot at the icon's upper
    right, cleared once the announcement is opened. */
-.title-announcement-dot {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--comfy-yellow, #ffd23f);
-  box-shadow: 0 0 0 1.5px var(--titlebar-bg, rgba(0, 0, 0, 0.5));
-  pointer-events: none;
-}
 .title-install-pill {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -1299,45 +1261,6 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--comfy-yellow) 22%, transparent);
   border-color: color-mix(in srgb, var(--comfy-yellow) 70%, var(--neutral-700));
   color: var(--neutral-700);
-}
-.title-zoom-reset {
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--titlebar-icon);
-  opacity: 0.85;
-  font: inherit;
-  font-size: 11px;
-  line-height: 14px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    background-color 0.12s,
-    opacity 0.12s,
-    border-color 0.12s,
-    color 0.12s;
-}
-.title-zoom-reset-percent {
-  letter-spacing: 0.01em;
-}
-.title-bar.is-hover-active .title-zoom-reset:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-.title-bar.is-light.is-hover-active .title-zoom-reset:hover {
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.18);
-}
-.title-zoom-reset:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 .title-zoom-fade-enter-active,
 .title-zoom-fade-leave-active {
