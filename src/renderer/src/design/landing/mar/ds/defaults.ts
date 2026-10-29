@@ -19,6 +19,9 @@ import '../graph/graphStyle'
 import '../assets/assetView'
 import '../p20/p20'
 import '../motion/tabSlide'
+import '../looks/looks'
+import '../pages/pageState'
+import '../pabloPorts'
 // Mar's look: the prototype loads it with MarBackdrop, always mounted in
 // her proposal.
 import '../shell/marShell.css'

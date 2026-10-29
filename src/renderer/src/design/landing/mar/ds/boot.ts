@@ -3,10 +3,14 @@ import './kit/ds.css'
 import { createApp, type Component } from 'vue'
 
 /**
- * Three kinds of document share this entry, picked by `?frame=`:
+ * Four kinds of document share this entry, picked by `?frame=`:
  *   (none)  the page itself: nav, About, and the theme frames
  *   page    one component page in one theme (an iframe per theme)
  *   stage   one component opened (a menu, a tooltip), inside a page
+ *   app     the whole prototype on one page, state or knob (kit/AppShot.vue)
+ *
+ * `?seed={"key":"value"}` starts a frame with those prototype settings
+ * (the in-memory storage, main.ts), so it can show any knob's value.
  *
  * Mar's styles hang off <html> (`data-ds-theme`, `data-mar-ui`…), so a
  * theme can't be scoped to a pane: each theme renders in its own frame.
@@ -16,12 +20,15 @@ const frame = url.get('frame')
 
 async function boot(): Promise<void> {
   let root: Component
-  if (frame === 'page' || frame === 'stage') {
+  if (frame === 'page' || frame === 'stage' || frame === 'app') {
+    for (const [k, v] of Object.entries(JSON.parse(url.get('seed') ?? '{}')))
+      localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v))
     const theme = url.get('theme') === 'light' ? 'light' : 'dark'
     const html = document.documentElement
     html.dataset.dsDirection = 'original'
     html.dataset.dsTheme = theme
     html.classList.add('ds-frame')
+    if (frame === 'app') html.classList.add('ds-app-frame')
     // The same modules the prototype loads for Mar's proposal, so every
     // knob sets its <html> attribute and stylesheet at its default.
     await import('./defaults')
@@ -30,7 +37,9 @@ async function boot(): Promise<void> {
     root =
       frame === 'page'
         ? (await import('./kit/PageFrame.vue')).default
-        : (await import('./kit/StageFrame.vue')).default
+        : frame === 'stage'
+          ? (await import('./kit/StageFrame.vue')).default
+          : (await import('./kit/AppFrame.vue')).default
   } else {
     root = (await import('./DsApp.vue')).default
   }

@@ -260,6 +260,18 @@ html.ds-frame #app {
   border-radius: 12px;
 }
 
+/* A sample over a picture (chips on media). */
+.ds-photo {
+  display: flex;
+  width: 100%;
+  min-height: 96px;
+  align-items: flex-end;
+  padding: 10px;
+  border-radius: 12px;
+  background-position: center;
+  background-size: cover;
+}
+
 /* A window (kit/Window.vue): a fixed-size app, scaled to the pane. */
 .ds-window {
   position: relative;
@@ -275,6 +287,24 @@ html.ds-frame #app {
   display: flex;
   flex-direction: column;
   transform-origin: 0 0;
+}
+
+/* An app shot (kit/AppShot.vue): the whole prototype, scaled. */
+.ds-app-shot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  transform-origin: 0 0;
+}
+html.ds-app-frame,
+html.ds-app-frame body,
+html.ds-app-frame #app {
+  height: 100%;
+}
+html.ds-app-frame #app {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Inside a stage frame (one component, opened) ─────────────────── */

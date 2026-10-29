@@ -1,0 +1,139 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import Select from '../../../ui/Select.vue'
+import MarSeg from '../../pages/MarSeg.vue'
+import MarSearchField from '../../pages/MarSearchField.vue'
+import MarViewToggle from '../../pages/MarViewToggle.vue'
+import AppShot from '../kit/AppShot.vue'
+import Cell from '../kit/Cell.vue'
+import Cells from '../kit/Cells.vue'
+import Section from '../kit/Section.vue'
+import Stage from '../kit/Stage.vue'
+
+const WHERE = [
+  { value: 'all', label: 'All', count: 24 },
+  { value: 'local', label: 'This computer', count: 16 },
+  { value: 'cloud', label: 'Cloud', count: 8 }
+]
+const TYPES = [
+  { value: 'any', label: 'Any type' },
+  { value: 'image', label: 'Image' }
+]
+const SORTS = [
+  { value: 'recent', label: 'Last opened' },
+  { value: 'name', label: 'Name' }
+]
+const where = ref('all')
+const type = ref('any')
+const sort = ref('recent')
+const empty = ref('')
+const typed = ref('portrait')
+const grid = ref<'grid' | 'list'>('grid')
+const list = ref<'grid' | 'list'>('list')
+const TUNING = 'comfy.design.uiTuning.v4'
+// The Workflows toolbar, in app pixels.
+const TOOLBAR: [number, number, number, number] = [250, 318, 1030, 64]
+</script>
+
+<template>
+  <Section
+    title="Toolbar"
+    note="Tabs on the left, filters, sort, search and view on the right. All share one corner: --mar-tab-radius on the track and --mar-tab-item-radius on what sits in it."
+  >
+    <Cells :min="900">
+      <Cell label="as on Workflows" fill>
+        <div class="mar-page is-embedded">
+          <div class="mar-page-bar">
+            <MarSeg v-model="where" :options="WHERE" label="Where" />
+            <div class="ml-auto flex items-center gap-2">
+              <Select v-model="type" :options="TYPES" class="w-32" />
+              <Select v-model="sort" :options="SORTS" label="Sort" class="w-40" />
+              <MarSearchField v-model="empty" placeholder="Search workflows" />
+              <MarViewToggle v-model="grid" />
+            </div>
+          </div>
+        </div>
+      </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Tabs"
+    note="A soft track, no border; a pill slides to the picked tab. Counts are hidden for now."
+  >
+    <Cells :min="320">
+      <Cell label="idle"><MarSeg v-model="where" :options="WHERE" label="Where" /></Cell>
+      <Cell label="tab hover" force="hover" target="button:nth-of-type(2)">
+        <MarSeg v-model="where" :options="WHERE" label="Where" />
+      </Cell>
+      <Cell label="tab focus" force="focus" target="button:nth-of-type(2)">
+        <MarSeg v-model="where" :options="WHERE" label="Where" />
+      </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Filters and sort"
+    note="Pills: muted label, white value, no edge; a step lighter on hover and while open. Sort shows as an icon (ArrowUpDown)."
+  >
+    <Cells :min="200">
+      <Cell label="filter"><Select v-model="type" :options="TYPES" class="w-32" /></Cell>
+      <Cell label="sort"><Select v-model="sort" :options="SORTS" label="Sort" class="w-40" /></Cell>
+      <Cell label="hover" force="hover" target="button">
+        <Select v-model="sort" :options="SORTS" label="Sort" class="w-40" />
+      </Cell>
+      <Cell label="open" target="button" :attrs="{ 'data-state': 'open' }">
+        <Select v-model="sort" :options="SORTS" label="Sort" class="w-40" />
+      </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Search and view"
+    note="Search is the same pill with its icon. The view toggle is a small track: grid or list."
+  >
+    <Cells :min="220">
+      <Cell label="search · idle"
+        ><MarSearchField v-model="empty" placeholder="Search workflows"
+      /></Cell>
+      <Cell label="search · focus" force="focus" target="label, input">
+        <MarSearchField v-model="empty" placeholder="Search workflows" />
+      </Cell>
+      <Cell label="search · typed"
+        ><MarSearchField v-model="typed" placeholder="Search workflows"
+      /></Cell>
+      <Cell label="view · grid"><MarViewToggle v-model="grid" /></Cell>
+      <Cell label="view · list"><MarViewToggle v-model="list" /></Cell>
+      <Cell label="view · hover" force="hover" target="button:nth-of-type(2)">
+        <MarViewToggle v-model="grid" />
+      </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="View menu"
+    note="Assets: size, layout and details, in sections with hints. Its trigger takes the tab corner."
+  >
+    <Cells :min="420"><Stage id="view-menu" label="open" /></Cells>
+  </Section>
+
+  <Section
+    title="Corners"
+    note="UI Playground › Corners moves every tab, filter and search together: Soft (10 / 7, the default) or Default (6 / 3)."
+  >
+    <Cells :min="520">
+      <AppShot
+        label="Soft · 10 / 7"
+        page="workflows"
+        :crop="TOOLBAR"
+        :seed="{ [TUNING]: { radius: 'soft' } }"
+      />
+      <AppShot
+        label="Default · 6 / 3"
+        page="workflows"
+        :crop="TOOLBAR"
+        :seed="{ [TUNING]: { radius: 'default' } }"
+      />
+    </Cells>
+  </Section>
+</template>
