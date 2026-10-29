@@ -32,7 +32,8 @@ import {
   Redo2,
   Search,
   Settings,
-  Tag,
+  CircleSlash,
+  EyeOff,
   Trash2,
   Undo2,
   X
@@ -55,6 +56,7 @@ import {
   CANVAS_GEOMETRY,
   SOCKETS,
   canvasNodeHeight,
+  nodeWidth,
   createCanvas,
   createNode,
   uid,
@@ -95,7 +97,6 @@ const groups = reactive<Group[]>(start.groups)
 const sById = computed(() => Object.fromEntries(sNodes.map((n) => [n.id, n])))
 const selection = ref<string[]>([])
 const selectedLink = ref('')
-const labels = ref(false)
 const isSel = (id: string): boolean => selection.value.includes(id)
 
 /** Every node's box: the world and the minimap. */
@@ -112,9 +113,9 @@ const paths = computed(() =>
     const to = sById.value[l.to]
     const out = from?.outs[l.out]
     if (!from || !to || !out) return []
-    const x1 = from.x + from.w + 5
+    const x1 = from.x + nodeWidth(from)
     const y1 = socketY(from, l.out, cg.value)
-    const x2 = to.x - 5
+    const x2 = to.x
     const y2 = socketY(to, l.in, cg.value)
     return [
       {
@@ -276,6 +277,8 @@ type Drag =
   | { kind: 'wire'; wire: Wire }
   | { kind: 'marquee'; x0: number; y0: number }
 let drag: Drag | undefined
+/** Nodes being moved: the selection's toolbox steps aside meanwhile. */
+const moving = ref(false)
 /** The link being drawn, its loose end in world coordinates. */
 const wiring = ref<Wire & { x: number; y: number }>()
 const marquee = ref<{ x: number; y: number; w: number; h: number }>()
@@ -285,7 +288,7 @@ const wirePath = computed(() => {
   if (!w) return ''
   const n = sById.value[w.node]!
   const sy = socketY(n, w.index, cg.value)
-  return w.side === 'out' ? curve(n.x + n.w + 5, sy, w.x, w.y) : curve(w.x, w.y, n.x - 5, sy)
+  return w.side === 'out' ? curve(n.x + nodeWidth(n), sy, w.x, w.y) : curve(w.x, w.y, n.x, sy)
 })
 
 function select(id: string, add: boolean): void {
@@ -375,6 +378,7 @@ function onMove(e: PointerEvent): void {
     view.y += dy
   } else if (drag.kind === 'nodes') {
     drag.moved = true
+    moving.value = true
     for (const id of selection.value) {
       const n = sById.value[id]!
       n.x += dx / view.k
@@ -396,6 +400,7 @@ function onMove(e: PointerEvent): void {
 function onUp(e: PointerEvent): void {
   const d = drag
   drag = undefined
+  moving.value = false
   if (!d) return
   if (d.kind === 'wire') {
     const w = wiring.value!
@@ -525,7 +530,7 @@ function add(kind: NodeKind): void {
   menu.value = undefined
   const g = cg.value
   // A node from a dropped link sits with its socket under the drop.
-  const n = createNode(kind, at.x, at.y - g.head - 34)
+  const n = createNode(kind, at.x, at.y - g.head - g.gap - g.slot / 2)
   if (pending?.side === 'in') n.x = at.x - n.w
   sNodes.push(n)
   if (pending) {
@@ -654,16 +659,17 @@ function ungroup(g: Group): void {
 
 /** Where the selection's toolbar floats: above it, in canvas pixels. */
 const selectionBar = computed(() => {
-  if (selection.value.length < 2 || drag) return undefined
+  if (!selection.value.length || moving.value) return undefined
   const bs = boxes.value.filter((b) => isSel(b.node.id))
   if (!bs.length) return undefined
   const x0 = Math.min(...bs.map((b) => b.node.x))
   const x1 = Math.max(...bs.map((b) => b.node.x + b.node.w))
   const y0 = Math.min(...bs.map((b) => b.node.y))
-  return {
-    x: view.x + ((x0 + x1) / 2) * view.k,
-    y: Math.max(top.value + 70, view.y + y0 * view.k - 52)
-  }
+  // It rides above the nodes, and leaves with them when they scroll
+  // under the top of the canvas, as ComfyUI's toolbox does.
+  const y = view.y + y0 * view.k - 52
+  if (y < top.value + 8) return undefined
+  return { x: view.x + ((x0 + x1) / 2) * view.k, y }
 })
 
 // ── Keyboard, while the graph is in front and nothing is being typed. ──
@@ -681,6 +687,9 @@ function onKey(e: KeyboardEvent): void {
   else if (mod && k === 'v') duplicate(clipboard.filter((id) => sById.value[id]))
   else if (mod && k === 'g') groupSelection()
   else if (mod && k === 'enter') run()
+  else if (mod && k === 'b') setMode(selection.value, 'bypass')
+  else if (mod && k === 'm') setMode(selection.value, 'mute')
+  else if (e.altKey && e.code === 'KeyC') collapse(selection.value)
   else if (k === 'backspace' || k === 'delete') {
     if (selectedLink.value) removeLink(selectedLink.value)
     else remove(selection.value)
@@ -781,7 +790,9 @@ const waiting = computed(() => jobs.value.filter((j) => j.status === 'queued'))
 /** What a run is given: the nodes' values as they are now, without the
  *  ones in locked groups (and only `only`, when given). */
 function snapshot(only?: string[]): RunGraph {
-  const keep = sNodes.filter((n) => !lockedIds.value.has(n.id) && (!only || only.includes(n.id)))
+  const keep = sNodes.filter(
+    (n) => !lockedIds.value.has(n.id) && !n.mode && (!only || only.includes(n.id))
+  )
   const ids = new Set(keep.map((n) => n.id))
   return {
     title: workflow,
@@ -794,8 +805,37 @@ function snapshot(only?: string[]): RunGraph {
       if (n.chip) params.chip = n.chip
       return { id: n.id, kind: n.kind, title: n.title, ins: n.ins.map((s) => s.name), params }
     }),
-    links: links.filter((l) => ids.has(l.from) && ids.has(l.to))
+    links: passThrough().filter((l) => ids.has(l.from) && ids.has(l.to))
   }
+}
+
+/** The links a run follows: a bypassed node hands its first input of the
+ *  output's type straight on, as ComfyUI does; a muted one stops there. */
+function passThrough(): Link[] {
+  const source = (
+    from: string,
+    out: number,
+    seen = new Set<string>()
+  ): Link['from'] | undefined => {
+    const n = sById.value[from]
+    if (!n || n.mode !== 'bypass') return from
+    if (seen.has(from)) return undefined
+    seen.add(from)
+    const type = n.outs[out]?.type
+    const inLink = links.find((l) => l.to === from && n.ins[l.in]?.type === type)
+    return inLink ? source(inLink.from, inLink.out, seen) : undefined
+  }
+  const outOf = (from: string, out: number): number => {
+    const n = sById.value[from]
+    if (!n || n.mode !== 'bypass') return out
+    const type = n.outs[out]?.type
+    const inLink = links.find((l) => l.to === from && n.ins[l.in]?.type === type)
+    return inLink ? outOf(inLink.from, inLink.out) : out
+  }
+  return links.flatMap((l) => {
+    const from = source(l.from, l.out)
+    return from ? [{ ...l, from, out: outOf(l.from, l.out) }] : []
+  })
 }
 
 /** A job row's second line: where it is, or its place in the queue. */
@@ -944,10 +984,32 @@ function setText(n: SNode, text: string): void {
 
 function act(n: SNode, key: string): void {
   if (key === 'save') save(n)
+  else if (key === 'collapse') collapse([n.id])
   else if (key === 'run') runOnly([n.id])
   else if (key === 'duplicate') duplicate([n.id])
   else if (key === 'delete') remove([n.id])
 }
+
+// Bypass (Ctrl+B), mute (Ctrl+M) and collapse (Alt+C), as in ComfyUI: on
+// the selection, and back off when every node already has it.
+function setMode(ids: string[], mode: 'bypass' | 'mute'): void {
+  const ns = ids.map((id) => sById.value[id]).filter((n): n is SNode => !!n)
+  if (!ns.length) return
+  const off = ns.every((n) => n.mode === mode)
+  for (const n of ns) n.mode = off ? undefined : mode
+  commit()
+}
+function collapse(ids: string[]): void {
+  const ns = ids.map((id) => sById.value[id]).filter((n): n is SNode => !!n)
+  if (!ns.length) return
+  const open = ns.every((n) => n.collapsed)
+  for (const n of ns) n.collapsed = !open
+  commit()
+}
+const allBypassed = computed(
+  () =>
+    !!selection.value.length && selection.value.every((id) => sById.value[id]?.mode === 'bypass')
+)
 
 // Save to Assets: the picture joins the assets, with a toast.
 const toast = ref<{ text: string; image?: string }>()
@@ -1099,9 +1161,7 @@ function onRail(label: string): void {
         </div>
 
         <svg class="mg-links" :viewBox="`0 0 ${world.w} ${world.h}`" aria-hidden="true">
-          <template v-if="current">
-            <path v-for="l in paths" :key="`s${l.id}`" :d="l.d" class="mg-link-shade" />
-          </template>
+          <path v-for="l in paths" :key="`s${l.id}`" :d="l.d" class="mg-link-shade" />
           <path
             v-for="l in paths"
             :key="l.id"
@@ -1143,17 +1203,13 @@ function onRail(label: string): void {
         </template>
 
         <CanvasNode
-          v-for="(n, i) in sNodes"
+          v-for="n in sNodes"
           :key="n.id"
           :node="n"
           :g="cg"
-          :current="current"
-          :labels="labels"
           :selected="isSel(n.id)"
-          :solo="selection.length === 1 && isSel(n.id)"
           :wiring="wiring"
           :locked="lockedIds.has(n.id)"
-          :style="{ '--sg-delay': `${-i * 1.3}s` }"
           @set="(key, value) => setControl(n, key, value)"
           @text="(text) => setText(n, text)"
           @resume="activeJob && engine.resume(activeJob.id)"
@@ -1181,11 +1237,42 @@ function onRail(label: string): void {
         :style="{ left: `${selectionBar.x}px`, top: `${selectionBar.y}px` }"
         @pointerdown.stop
       >
-        <span class="mg-selbar-count">{{ selection.length }} nodes</span>
-        <button type="button" class="mg-selbar-btn" @click="runOnly(selection)">
+        <span v-if="selection.length > 1" class="mg-selbar-count"
+          >{{ selection.length }} nodes</span
+        >
+        <button
+          type="button"
+          class="mg-selbar-btn"
+          :title="selection.length > 1 ? 'Run these nodes' : 'Run up to here'"
+          @click="runOnly(selection)"
+        >
           <Play :size="12" fill="currentColor" />Run
         </button>
-        <button type="button" class="mg-selbar-btn" @click="groupSelection">
+        <button
+          type="button"
+          class="mg-selbar-btn is-icon"
+          :class="allBypassed && 'is-on'"
+          aria-label="Bypass"
+          title="Bypass (Ctrl+B)"
+          @click="setMode(selection, 'bypass')"
+        >
+          <CircleSlash :size="13" />
+        </button>
+        <button
+          type="button"
+          class="mg-selbar-btn is-icon"
+          aria-label="Mute"
+          title="Mute (Ctrl+M)"
+          @click="setMode(selection, 'mute')"
+        >
+          <EyeOff :size="13" />
+        </button>
+        <button
+          v-if="selection.length > 1"
+          type="button"
+          class="mg-selbar-btn"
+          @click="groupSelection"
+        >
           <GroupIcon :size="13" />Group
         </button>
         <button
@@ -1378,14 +1465,17 @@ function onRail(label: string): void {
           :viewBox="`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`"
           preserveAspectRatio="none"
         >
+          <path v-for="l in paths" :key="l.id" :d="l.d" :stroke="l.color" class="mg-map-link" />
           <rect
             v-for="b in boxes"
             :key="b.node.id"
+            class="mg-map-node"
+            :class="[isSel(b.node.id) && 'is-on', b.node.state === 'running' && 'is-running']"
             :x="b.node.x"
             :y="b.node.y"
-            :width="b.node.w"
+            :width="nodeWidth(b.node)"
             :height="b.h"
-            :rx="current ? 6 : 14"
+            rx="12"
           />
           <rect
             class="mg-map-view"
@@ -1393,7 +1483,6 @@ function onRail(label: string): void {
             :y="mapView.y"
             :width="mapView.w"
             :height="mapView.h"
-            :rx="current ? 4 : 18"
           />
         </svg>
       </div>
@@ -1415,16 +1504,6 @@ function onRail(label: string): void {
           @click="tool = 'hand'"
         >
           <Hand :size="14" />
-        </button>
-        <button
-          type="button"
-          class="mg-tool"
-          :class="labels && 'is-on'"
-          aria-label="Socket labels"
-          title="Socket labels"
-          @click="labels = !labels"
-        >
-          <Tag :size="14" />
         </button>
         <span class="mg-tools-sep" />
         <button type="button" class="mg-tool" aria-label="Undo" :disabled="!canUndo" @click="undo">
@@ -1482,8 +1561,8 @@ function onRail(label: string): void {
   --mg-muted: var(--color-muted-foreground);
   --mg-dim: var(--color-subtle-foreground);
   --mg-ring: var(--color-content-background);
-  --mg-radius: 18px;
-  --mg-radius-in: 10px;
+  --mg-radius: var(--radius-card);
+  --mg-radius-in: var(--mar-tab-item-radius);
   --mg-run: var(--color-inverted-background);
   --mg-run-text: var(--color-inverted-foreground);
   position: relative;
@@ -1534,16 +1613,11 @@ function onRail(label: string): void {
 }
 .mg-link {
   fill: none;
-  stroke-width: 1.75;
+  stroke-width: 3;
   stroke-linecap: round;
-  opacity: 0.7;
-}
-.mg-link.is-live {
-  opacity: 0.95;
 }
 .mg-link.is-on {
-  opacity: 1;
-  stroke-width: 3;
+  stroke-width: 4.5;
 }
 .mg-link.is-wire {
   opacity: 0.9;
@@ -1577,7 +1651,7 @@ function onRail(label: string): void {
 /* Groups: a quiet frame behind their nodes, its name above. */
 .mg-group {
   position: absolute;
-  border-radius: 24px;
+  border-radius: var(--mar-tab-radius);
   background: color-mix(in oklch, var(--color-base-foreground) 3.5%, transparent);
 }
 .mg-group.is-locked {
@@ -1622,7 +1696,7 @@ function onRail(label: string): void {
   justify-content: center;
   margin-left: auto;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -1637,7 +1711,7 @@ function onRail(label: string): void {
 .mg-marquee {
   position: absolute;
   z-index: 3;
-  border-radius: 6px;
+  border-radius: var(--mar-tab-item-radius);
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
   pointer-events: none;
@@ -1650,7 +1724,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 2px;
   padding: 0 4px 0 12px;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
@@ -1668,7 +1742,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-text);
   font-size: 12.5px;
@@ -1703,7 +1777,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 8px;
   padding: 0 14px 0 12px;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
   color: var(--mg-text);
@@ -1717,7 +1791,7 @@ function onRail(label: string): void {
   width: 240px;
   flex-direction: column;
   padding: 4px;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   background: color-mix(in oklch, var(--color-content-background) 84%, transparent);
   backdrop-filter: blur(24px) saturate(1.2);
   box-shadow: 0 12px 34px rgb(0 0 0 / 0.28);
@@ -1728,7 +1802,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-text);
   font-size: 13px;
@@ -1756,7 +1830,7 @@ function onRail(label: string): void {
   pointer-events: none;
 }
 .is-current :is(.mg-selbar, .mg-runmenu) {
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow:
     0 0 0 1px var(--mg-chrome-line),
@@ -1764,13 +1838,13 @@ function onRail(label: string): void {
   backdrop-filter: none;
 }
 .is-current .mg-group {
-  border-radius: 6px;
+  border-radius: var(--mar-tab-radius);
   background: color-mix(in oklch, #8a8af0 10%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, #8a8af0 30%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-agent-btn {
   left: 68px;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow: 0 0 0 1px var(--mg-chrome-line);
   backdrop-filter: none;
@@ -1786,7 +1860,7 @@ function onRail(label: string): void {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border-radius: 16px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
 }
@@ -1804,7 +1878,7 @@ function onRail(label: string): void {
   justify-content: center;
   gap: 3px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -1839,7 +1913,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 4px;
-  border-radius: 16px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
   color: var(--mg-muted);
@@ -1856,7 +1930,7 @@ function onRail(label: string): void {
   height: 32px;
   align-items: stretch;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-well);
   color: var(--mg-text);
   font-size: 14px;
@@ -1881,7 +1955,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 3px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-dim);
 }
@@ -1895,7 +1969,7 @@ function onRail(label: string): void {
   display: inline-flex;
   height: 32px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-run);
 }
 :root .proto-ui.proto-ui.proto-ui .mg-run,
@@ -1927,7 +2001,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -1952,7 +2026,7 @@ function onRail(label: string): void {
   gap: 8px;
   padding: 0 8px 0 10px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
   color: var(--mg-text);
@@ -2007,7 +2081,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 10px;
   padding: 0 6px;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
@@ -2018,20 +2092,20 @@ function onRail(label: string): void {
 .mg-toast img {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--mar-tab-item-radius);
   object-fit: cover;
 }
 :root .proto-ui.proto-ui.proto-ui .mg-toast-btn {
   height: 30px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-hover);
   color: var(--mg-text);
   font-size: 12px;
   font-weight: 500;
 }
 .is-current .mg-toast {
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow:
     0 0 0 1px var(--mg-chrome-line),
@@ -2086,7 +2160,7 @@ function onRail(label: string): void {
   gap: 8px;
   padding: 4px 6px 4px 12px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
 }
@@ -2126,7 +2200,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -2151,7 +2225,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: space-between;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
 }
@@ -2172,7 +2246,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
   font-size: 12px;
@@ -2193,7 +2267,7 @@ function onRail(label: string): void {
 }
 .mg-map {
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px);
   cursor: pointer;
@@ -2203,8 +2277,23 @@ function onRail(label: string): void {
   width: 100%;
   height: 100%;
 }
-.mg-map rect {
-  fill: color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+/* The minimap draws the graph as ComfyUI's does: the links in their
+   type's colour under the nodes' bodies; the selected and the running
+   nodes stand out. */
+.mg-map-link {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.mg-map-node {
+  fill: color-mix(in oklch, var(--color-base-foreground) 24%, var(--mg-canvas));
+}
+.mg-map-node.is-on {
+  fill: color-mix(in oklch, var(--color-base-foreground) 45%, var(--mg-canvas));
+}
+.mg-map-node.is-running {
+  fill: #0b8ce9;
 }
 .mg-map .mg-map-view {
   fill: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
@@ -2218,7 +2307,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 2px;
   padding: 0 4px;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-float);
   backdrop-filter: blur(24px) saturate(1.2);
 }
@@ -2229,7 +2318,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -2269,8 +2358,8 @@ function onRail(label: string): void {
   --mg-chrome: #171718;
   --mg-chrome-2: #262729;
   --mg-chrome-line: #0a0a0a;
-  --mg-radius: 8px;
-  --mg-radius-in: 10px;
+  --mg-radius: var(--radius-card);
+  --mg-radius-in: var(--mar-tab-item-radius);
   --mg-run: #f2f2f2;
   --mg-run-text: #111;
   display: grid;
@@ -2343,7 +2432,7 @@ function onRail(label: string): void {
   align-items: center;
   gap: 10px;
   padding: 0 10px 0 12px;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--mar-tab-item-radius) var(--mar-tab-item-radius) 0 0;
   font-size: 12px;
 }
 .mg-tab svg {
@@ -2372,7 +2461,7 @@ function onRail(label: string): void {
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-rail-btn {
   width: 44px;
   height: 46px;
-  border-radius: 6px;
+  border-radius: var(--mar-tab-item-radius);
 }
 .mg-rail-label {
   font-size: 9.5px;
@@ -2390,10 +2479,6 @@ function onRail(label: string): void {
 :root[data-ds-theme='light'] .mg-link-shade {
   stroke: rgb(0 0 0 / 0.22);
 }
-.is-current .mg-link {
-  stroke-width: 3;
-  opacity: 1;
-}
 
 /* Current: the same run block on ComfyUI's chrome, with its hairline
    borders, under the top bar. */
@@ -2401,22 +2486,22 @@ function onRail(label: string): void {
   top: calc(var(--mg-top) + 38px + 12px);
 }
 .is-current :is(.mg-actionbar, .mg-job, .mg-job-foot) {
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow: 0 0 0 1px var(--mg-chrome-line);
   backdrop-filter: none;
 }
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-pill {
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow: 0 0 0 1px var(--mg-chrome-line);
   backdrop-filter: none;
 }
 .is-current :is(.mg-batch, .mg-run-group) {
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
 }
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-panel-btn {
-  border-radius: 6px;
+  border-radius: var(--mar-tab-item-radius);
 }
 :root .proto-ui.proto-ui.proto-ui .mg-search {
   position: absolute;
@@ -2429,7 +2514,7 @@ function onRail(label: string): void {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow: 0 0 0 1px var(--mg-chrome-line);
   color: var(--mg-muted);
@@ -2438,7 +2523,7 @@ function onRail(label: string): void {
   gap: 6px;
 }
 .is-current :is(.mg-map, .mg-tools) {
-  border-radius: 6px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-chrome-2);
   box-shadow: 0 0 0 1px var(--mg-chrome-line);
   backdrop-filter: none;
@@ -2446,13 +2531,13 @@ function onRail(label: string): void {
 .is-current .mg-tools {
   height: 34px;
 }
-.is-current .mg-map rect:not(.mg-map-view) {
-  fill: #5a5a5a;
+.is-current .mg-map-node:not(.is-on, .is-running) {
+  fill: #313235;
 }
-:root[data-ds-theme='light'] .is-current .mg-map rect:not(.mg-map-view) {
-  fill: #bdbdbd;
+:root[data-ds-theme='light'] .is-current .mg-map-node:not(.is-on, .is-running) {
+  fill: #d9d9d9;
 }
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-tool {
-  border-radius: 4px;
+  border-radius: var(--mar-tab-item-radius);
 }
 </style>

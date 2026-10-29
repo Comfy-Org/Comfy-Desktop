@@ -86,7 +86,7 @@ const shown = computed(() =>
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--color-content-background) 70%, transparent);
   backdrop-filter: blur(32px) saturate(1.2);
   color: var(--mg-text);
@@ -118,7 +118,7 @@ const shown = computed(() =>
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-well);
   color: var(--mg-dim);
 }
@@ -139,7 +139,7 @@ const shown = computed(() =>
 :root .proto-ui.proto-ui.proto-ui .ga-filter {
   height: 26px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
   font-size: 12px;
@@ -165,7 +165,7 @@ const shown = computed(() =>
   display: block;
   width: 100%;
   aspect-ratio: 4 / 5;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   object-fit: cover;
 }
 .ga-item figcaption {
@@ -192,6 +192,6 @@ const shown = computed(() =>
 }
 .is-current .ga-search,
 .is-current .ga-item img {
-  border-radius: 4px;
+  border-radius: var(--mar-tab-item-radius);
 }
 </style>

@@ -100,6 +100,10 @@ export interface SNode {
   error?: string
   /** Its result no longer matches its inputs: they changed since. */
   stale?: boolean
+  /** Bypassed: runs pass its input straight through. Muted: never runs. */
+  mode?: 'bypass' | 'mute'
+  /** Folded to its title bar. */
+  collapsed?: boolean
 }
 
 export interface Link {
@@ -121,18 +125,29 @@ export interface Group {
   locked: boolean
 }
 
+/** A node's rows, as ComfyUI's Vue nodes lay them out: the title bar,
+ *  then the body's sections (slots, widgets, content) a gap apart. */
 export interface CanvasGeometry {
+  /** The title bar. */
   head: number
+  /** One slot row: a typed input on the left, an output on the right. */
+  slot: number
+  /** One widget row. */
   control: number
+  /** Between the body's sections and between widget rows. */
   gap: number
-  /** Space between the preview and the controls under it. */
-  under: number
+  /** Under the body's last section. */
+  foot: number
 }
 
+const COMFY_ROWS: CanvasGeometry = { head: 32, slot: 20, control: 24, gap: 4, foot: 12 }
 export const CANVAS_GEOMETRY: Record<'glass' | 'current', CanvasGeometry> = {
-  glass: { head: 30, control: 30, gap: 4, under: 8 },
-  current: { head: 30, control: 22, gap: 4, under: 0 }
+  glass: COMFY_ROWS,
+  current: COMFY_ROWS
 }
+
+/** A collapsed node shrinks to its title. */
+export const COLLAPSED_W = 180
 
 // ── The catalog: every node you can add, grouped as Node Banana does. ──
 
@@ -221,7 +236,7 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     media: 'image',
     verb: 'Generating',
     w: 290,
-    body: 362,
+    body: 332,
     ins: [
       { name: 'prompt', type: 'TEXT' },
       { name: 'image', type: 'IMAGE' }
@@ -359,7 +374,7 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     media: 'image',
     verb: 'Cutting out',
     w: 250,
-    body: 312,
+    body: 282,
     ins: [{ name: 'image', type: 'IMAGE' }],
     outs: [{ name: 'image', type: 'IMAGE' }],
     controls: () => [
@@ -379,7 +394,7 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     media: 'image',
     verb: 'Upscaling',
     w: 250,
-    body: 312,
+    body: 282,
     ins: [{ name: 'image', type: 'IMAGE' }],
     outs: [{ name: 'image', type: 'IMAGE' }],
     controls: () => [
@@ -394,7 +409,7 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     media: 'image',
     verb: 'Relighting',
     w: 290,
-    body: 362,
+    body: 332,
     ins: [{ name: 'image', type: 'IMAGE' }],
     outs: [{ name: 'image', type: 'IMAGE' }],
     controls: () => [
@@ -420,8 +435,8 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     category: 'Flow',
     description: 'Hold the run so you can refine',
     media: 'pause',
-    w: 170,
-    body: 132,
+    w: 220,
+    body: 58,
     ins: [{ name: 'image', type: 'IMAGE' }],
     outs: [{ name: 'image', type: 'IMAGE' }],
     controls: () => []
@@ -457,7 +472,7 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
     description: 'The result, ready to keep',
     media: 'image',
     w: 270,
-    body: 338,
+    body: 308,
     ins: [{ name: 'image', type: 'IMAGE' }],
     outs: [],
     controls: () => [
@@ -516,7 +531,7 @@ export function createCanvas(): { nodes: SNode[]; links: Link[]; groups: Group[]
   const prompt = createNode('prompt', 40, 60, 'prompt')
   prompt.text =
     'Portrait of a woman in late sun, hand on her cheek, soft window light, 85 mm, warm film tones'
-  const ref = createNode('image', 40, 270, 'ref')
+  const ref = createNode('image', 40, 300, 'ref')
   ref.title = 'Reference'
   const gen = createNode('generate', 420, 60, 'gen')
   gen.title = 'Generate'
@@ -548,16 +563,28 @@ export function createCanvas(): { nodes: SNode[]; links: Link[]; groups: Group[]
   }
 }
 
+/** A file input (image, video, audio) shows its file as a widget row. */
+export const hasFileRow = (n: SNode): boolean =>
+  n.kind === 'image' || n.kind === 'video' || n.kind === 'audio'
+
+export const slotsHeight = (n: SNode, g: CanvasGeometry): number =>
+  Math.max(n.ins.length, n.outs.length) * g.slot
+
 export function controlsHeight(n: SNode, g: CanvasGeometry): number {
-  const c = n.controls.length
-  return c ? c * g.control + (c - 1) * g.gap + 12 : 0
+  const c = n.controls.length + (hasFileRow(n) ? 1 : 0)
+  return c ? c * g.control + (c - 1) * g.gap : 0
 }
 
 export function canvasNodeHeight(n: SNode, g: CanvasGeometry): number {
-  const c = controlsHeight(n, g)
-  return g.head + n.body + (c ? g.under + c : 0)
+  if (n.collapsed) return g.head
+  const parts = [slotsHeight(n, g), controlsHeight(n, g), n.body].filter((h) => h > 0)
+  const inner = parts.reduce((a, h) => a + h, 0) + (parts.length - 1) * g.gap
+  return g.head + g.gap + inner + g.foot
 }
 
-/** Sockets sit on the preview's edge, outside the node. */
+export const nodeWidth = (n: SNode): number => (n.collapsed ? Math.min(COLLAPSED_W, n.w) : n.w)
+
+/** Slots sit at the top of the body, their dots on the node's edges; a
+ *  collapsed node gathers them on its title bar. */
 export const socketY = (n: SNode, i: number, g: CanvasGeometry): number =>
-  n.y + g.head + 34 + i * 34
+  n.collapsed ? n.y + g.head / 2 : n.y + g.head + g.gap + i * g.slot + g.slot / 2

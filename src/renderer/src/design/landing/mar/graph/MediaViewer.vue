@@ -134,7 +134,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', key, true))
   align-items: center;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-hover);
   color: var(--mg-text);
   font-size: 13px;
@@ -158,7 +158,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', key, true))
 .mv-media {
   max-width: calc(100% - 120px);
   max-height: 100%;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   object-fit: contain;
 }
 :root .proto-ui.proto-ui.proto-ui .mv-arrow {
@@ -187,7 +187,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', key, true))
   height: 52px;
   padding: 0;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   opacity: 0.5;
 }
