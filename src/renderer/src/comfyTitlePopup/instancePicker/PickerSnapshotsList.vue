@@ -55,13 +55,17 @@ function handleDelete(snapshot: SnapshotSummary): void {
 </script>
 
 <template>
-  <div class="picker-snapshots">
-    <button type="button" class="picker-snapshots-save" @click="emit('save')">
+  <div class="picker-snapshots flex flex-col gap-2.5">
+    <button
+      type="button"
+      class="picker-snapshots-save inline-flex items-center gap-1.5 self-start rounded-md border border-solid border-[rgba(255,255,255,0.12)] bg-[var(--chooser-surface-bg)] px-2.5 py-1.5 text-[12px] leading-4 text-neutral-100 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[rgba(255,255,255,0.08)] hover:outline-none focus-visible:bg-[rgba(255,255,255,0.08)] focus-visible:outline-none"
+      @click="emit('save')"
+    >
       <Camera :size="14" aria-hidden="true" />
       <span>{{ t('snapshots.createSnapshot', 'Create Snapshot') }}</span>
     </button>
 
-    <div v-if="hasSnapshots" class="picker-snapshots-list">
+    <div v-if="hasSnapshots" class="picker-snapshots-list flex flex-col gap-2.5">
       <SnapshotRow
         v-for="(snap, idx) in snapshots"
         :key="snap.filename"
@@ -71,18 +75,18 @@ function handleDelete(snapshot: SnapshotSummary): void {
         @toggle="toggleExpand(snap.filename)"
       >
         <template #expanded>
-          <div class="picker-snapshot-summary">
+          <div class="picker-snapshot-summary flex flex-col gap-2">
             <p
               v-for="(line, i) in summaryFor(snap)"
               :key="`l-${i}`"
-              class="picker-snapshot-summary-line"
+              class="picker-snapshot-summary-line m-0 text-[12px] leading-4 text-text-muted"
             >
               {{ line }}
             </p>
-            <div class="picker-snapshot-actions">
+            <div class="picker-snapshot-actions mt-0.5 flex gap-1.5">
               <button
                 type="button"
-                class="picker-snapshot-action is-primary"
+                class="picker-snapshot-action is-primary inline-flex items-center gap-1 rounded-md border border-solid border-[rgba(255,255,255,0.1)] bg-[var(--chooser-surface-bg)] px-2.5 py-[5px] text-[12px] leading-4 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[rgba(255,255,255,0.1)] hover:outline-none focus-visible:bg-[rgba(255,255,255,0.1)] focus-visible:outline-none text-[var(--accent-primary,#60a5fa)]"
                 @click="handleRestore(snap)"
               >
                 <RotateCcw :size="12" aria-hidden="true" />
@@ -90,7 +94,7 @@ function handleDelete(snapshot: SnapshotSummary): void {
               </button>
               <button
                 type="button"
-                class="picker-snapshot-action is-danger"
+                class="picker-snapshot-action is-danger inline-flex items-center gap-1 rounded-md border border-solid border-[rgba(255,255,255,0.1)] bg-[var(--chooser-surface-bg)] px-2.5 py-[5px] text-[12px] leading-4 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:outline-none focus-visible:outline-none text-danger hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] hover:text-danger-hover focus-visible:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] focus-visible:text-danger-hover"
                 @click="handleDelete(snap)"
               >
                 <Trash2 :size="12" aria-hidden="true" />
@@ -102,7 +106,10 @@ function handleDelete(snapshot: SnapshotSummary): void {
       </SnapshotRow>
     </div>
 
-    <div v-else class="picker-snapshots-empty">
+    <div
+      v-else
+      class="picker-snapshots-empty py-1 text-[12px] leading-4 text-neutral-100 opacity-60"
+    >
       {{
         t(
           'snapshots.empty',
@@ -112,89 +119,3 @@ function handleDelete(snapshot: SnapshotSummary): void {
     </div>
   </div>
 </template>
-
-<style scoped>
-.picker-snapshots {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.picker-snapshots-save {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: var(--chooser-surface-bg);
-  color: var(--neutral-100);
-  font-size: 12px;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-.picker-snapshots-save:hover,
-.picker-snapshots-save:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  outline: none;
-}
-.picker-snapshots-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.picker-snapshots-empty {
-  font-size: 12px;
-  color: var(--neutral-100);
-  opacity: 0.6;
-  padding: 4px 0;
-  line-height: 16px;
-}
-.picker-snapshot-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.picker-snapshot-summary-line {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
-.picker-snapshot-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 2px;
-}
-.picker-snapshot-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--chooser-surface-bg);
-  color: var(--neutral-100);
-  font-size: 12px;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-.picker-snapshot-action:hover,
-.picker-snapshot-action:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  outline: none;
-}
-.picker-snapshot-action.is-primary {
-  color: var(--accent-primary, #60a5fa);
-}
-.picker-snapshot-action.is-danger {
-  color: var(--danger);
-}
-.picker-snapshot-action.is-danger:hover,
-.picker-snapshot-action.is-danger:focus-visible {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger-hover);
-}
-</style>

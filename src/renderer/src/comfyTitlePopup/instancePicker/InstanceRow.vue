@@ -43,161 +43,62 @@ function handleClick(): void {
 </script>
 
 <template>
-  <div class="picker-row-wrap">
+  <div class="picker-row-wrap box-border w-full px-2 py-0.5">
     <div
       role="option"
       :aria-selected="active"
       tabindex="0"
-      class="picker-row"
-      :class="{ 'is-active': active, 'is-running': running }"
+      class="picker-row group/instance grid grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-solid border-transparent py-2 pr-2 pl-2.5 text-left text-inherit cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] focus-visible:outline-none"
+      :class="[
+        active
+          ? 'is-active bg-accent'
+          : 'hover:bg-[var(--chooser-surface-border)] focus-visible:bg-[var(--chooser-surface-border)]',
+        { 'is-running': running }
+      ]"
       :data-testid="TID.pickerRow(installation.id)"
       @click="handleClick"
       @keydown.enter="handleClick"
       @keydown.space.prevent="handleClick"
     >
-      <div class="picker-row-icon" :title="$t(typeMeta.labelKey)">
+      <div
+        class="picker-row-icon relative flex size-6 flex-none items-center justify-center text-neutral-100 transition-[color] duration-[120ms] ease-[ease] group-aria-selected/instance:text-text"
+        :title="$t(typeMeta.labelKey)"
+      >
         <component :is="typeMeta.icon" :size="20" />
-        <span v-if="operating" class="picker-row-op-dot" aria-hidden="true"></span>
-        <span v-else-if="updateAvailable" class="picker-row-update-dot" aria-hidden="true"></span>
-        <span v-else-if="running" class="picker-row-running-dot" aria-hidden="true"></span>
+        <span
+          v-if="operating"
+          class="picker-row-op-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-neutral-800 bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:800ms]"
+          aria-hidden="true"
+        ></span>
+        <span
+          v-else-if="updateAvailable"
+          class="picker-row-update-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-neutral-800 bg-[var(--status-update,#f59e0b)]"
+          aria-hidden="true"
+        ></span>
+        <span
+          v-else-if="running"
+          class="picker-row-running-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-neutral-800 bg-[#38c149]"
+          aria-hidden="true"
+        ></span>
       </div>
-      <div class="picker-row-body">
-        <span class="picker-row-name">{{ installation.name }}</span>
-        <span v-if="isCurrent" class="picker-row-current-pill">
+      <div class="picker-row-body flex min-w-0 items-center gap-2 overflow-hidden">
+        <span
+          class="picker-row-name min-w-0 flex-auto truncate text-[14px] leading-5 font-medium text-neutral-100 group-aria-selected/instance:text-text"
+          >{{ installation.name }}</span
+        >
+        <span
+          v-if="isCurrent"
+          class="picker-row-current-pill flex-none rounded-[999px] bg-[color-mix(in_srgb,var(--text)_10%,transparent)] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted group-aria-selected/instance:bg-[color-mix(in_srgb,var(--text)_14%,transparent)] group-aria-selected/instance:text-text"
+        >
           {{ t('snapshots.current') }}
         </span>
-        <span v-else-if="lastLaunchedShortLabel" class="picker-row-recency">
+        <span
+          v-else-if="lastLaunchedShortLabel"
+          class="picker-row-recency flex-none text-[12px] leading-4 whitespace-nowrap text-text-muted"
+        >
           {{ lastLaunchedShortLabel }}
         </span>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.picker-row-wrap {
-  padding: 2px 8px;
-  width: 100%;
-  box-sizing: border-box;
-}
-.picker-row {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  transition: background-color 120ms ease;
-}
-.picker-row:hover,
-.picker-row:focus-visible {
-  background: var(--chooser-surface-border);
-  outline: none;
-}
-.picker-row.is-active {
-  background: var(--chooser-surface-border);
-}
-.picker-row-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  color: var(--neutral-100);
-  flex: 0 0 auto;
-  transition: color 120ms ease;
-}
-.picker-row.is-active .picker-row-icon {
-  color: var(--text);
-}
-.picker-row-body {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-}
-.picker-row-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--neutral-100);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.picker-row.is-active .picker-row-name {
-  color: var(--text);
-}
-.picker-row-recency {
-  flex: 0 0 auto;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.picker-row-running-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #38c149;
-  border: 2px solid #38303d;
-  box-sizing: content-box;
-}
-.picker-row-update-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--status-update, #f59e0b);
-  border: 2px solid #38303d;
-  box-sizing: content-box;
-}
-/* Spinner dot for in-flight background ops, drawn with a conic-gradient. */
-.picker-row-op-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: conic-gradient(var(--brand-accent, #f5c518) 270deg, transparent 270deg);
-  border: 2px solid #38303d;
-  box-sizing: content-box;
-  animation: op-dot-spin 0.8s linear infinite;
-}
-@keyframes op-dot-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.picker-row-current-pill {
-  flex: 0 0 auto;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text) 10%, transparent);
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.picker-row.is-active .picker-row-current-pill {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 14%, transparent);
-}
-</style>
