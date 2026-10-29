@@ -41,7 +41,7 @@ const hasLeading = computed(() => !!slots.leading)
 const hasTrailing = computed(() => !!slots.trailing)
 
 const slotButtonClass =
-  '[&_button]:inline-flex [&_button]:size-7 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-md [&_button]:border-none [&_button]:bg-transparent [&_button]:p-0 [&_button]:text-text-muted [&_button]:cursor-pointer [&_button]:transition-[color,background-color] [&_button]:duration-[150ms] [&_button]:ease-[ease] [&_button:hover]:bg-border-hover [&_button:hover]:text-text [&_button:focus-visible]:text-text [&_button:focus-visible]:outline-2 [&_button:focus-visible]:[outline-style:solid] [&_button:focus-visible]:outline-[var(--accent-primary)] [&_button:focus-visible]:outline-offset-[-2px]'
+  '[&_button]:inline-flex [&_button]:size-7 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-md [&_button]:border-none [&_button]:bg-transparent [&_button]:p-0 [&_button]:text-[14px] [&_button]:text-text-muted [&_button]:cursor-pointer [&_button]:transition-[color,background-color] [&_button]:duration-[150ms] [&_button]:ease-[ease] [&_button:hover]:bg-border-hover [&_button:hover]:text-text [&_button:focus-visible]:text-text [&_button:focus-visible]:outline-2 [&_button:focus-visible]:[outline-style:solid] [&_button:focus-visible]:outline-[var(--accent-primary)] [&_button:focus-visible]:outline-offset-[-2px]'
 
 function onInput(event: Event): void {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
