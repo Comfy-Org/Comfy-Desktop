@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@comfyorg/design-system/components.css';
 @import './design-system-theme.css';
+@import './palette-void.css';
 
 /* Shared components from @comfyorg/design-system: generate the utilities they
  * use and load their scoped styles. Its base.css is not imported: its fonts use

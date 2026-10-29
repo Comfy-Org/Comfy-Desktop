@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, ChevronDown } from 'lucide-vue-next'
+import { usePaletteScope } from '../../composables/usePaletteScope'
 
 // Custom select primitive: trigger + popover listbox, teleported to <body>
 // so a drawer host's overflow:hidden can't clip it.
@@ -35,6 +36,9 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+// Teleported, so the listbox carries its opener's palette itself.
+const paletteScope = usePaletteScope()
 
 const triggerRef = ref<HTMLButtonElement | null>(null)
 const listboxRef = ref<HTMLUListElement | null>(null)
@@ -258,7 +262,7 @@ onBeforeUnmount(() => {
         :id="listboxId"
         ref="listboxRef"
         class="ui-select-listbox"
-        :class="{ 'ui-select-listbox--compact': compact }"
+        :class="[paletteScope, { 'ui-select-listbox--compact': compact }]"
         role="listbox"
         tabindex="-1"
         :style="popoverStyle"

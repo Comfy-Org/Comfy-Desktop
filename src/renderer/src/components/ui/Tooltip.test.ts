@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import Tooltip from './Tooltip.vue'
+import { PALETTE_VOID_CLASS, providePaletteScope } from '../../composables/usePaletteScope'
 
 const wrappers: VueWrapper[] = []
 
@@ -196,5 +198,31 @@ describe('Tooltip (ui primitive)', () => {
     } finally {
       restore()
     }
+  })
+})
+
+describe('Tooltip palette', () => {
+  it.each([
+    { opener: 'a Void screen', inVoid: true },
+    { opener: 'a brand screen', inVoid: false }
+  ])('gives the teleported bubble the palette of $opener', async ({ inVoid }) => {
+    const Screen = defineComponent({
+      setup() {
+        const palette = inVoid ? providePaletteScope() : undefined
+        return () =>
+          h('div', { class: palette }, [
+            h(Tooltip, { text: 'Hello tooltip', delayMs: 0 }, () => h('button', 'trigger'))
+          ])
+      }
+    })
+    const wrapper = mount(Screen, { attachTo: document.body })
+    wrappers.push(wrapper)
+
+    await wrapper.get('.tooltip-wrap').trigger('mouseenter')
+    await flushPromises()
+
+    const bubble = document.querySelector('.tooltip-bubble')
+    expect(bubble?.textContent).toContain('Hello tooltip')
+    expect(bubble?.classList.contains(PALETTE_VOID_CLASS)).toBe(inVoid)
   })
 })

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useModalOverlay } from '../../composables/useModalOverlay'
+import { providePaletteScope } from '../../composables/usePaletteScope'
 
 // Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,
 // body scroll lock, and a11y attrs. One of aria-label / aria-labelledby is
@@ -36,6 +37,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{ close: [] }>()
+// Dialogs take the Void palette over every screen: one dialog style.
+const paletteScope = providePaletteScope()
 
 if (!props.ariaLabel && !props.ariaLabelledby) {
   console.warn(
@@ -128,7 +131,7 @@ const sizeClass = computed(() => `is-size-${props.size}`)
         v-if="open"
         ref="dialogRef"
         class="base-modal-overlay"
-        :class="{ 'base-modal-overlay--blur': blurOverlay }"
+        :class="[paletteScope, { 'base-modal-overlay--blur': blurOverlay }]"
         role="dialog"
         aria-modal="true"
         :aria-label="ariaLabel"

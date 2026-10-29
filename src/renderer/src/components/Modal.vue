@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { usePaletteScope } from '../composables/usePaletteScope'
 
 /**
  * Single modal primitive.
@@ -36,6 +37,9 @@ const emit = defineEmits<{
   close: []
 }>()
 
+// Teleported, so the overlay carries its opener's palette: Manage's snapshot
+// dialogs have it, the first-run screen does not.
+const paletteScope = usePaletteScope()
 const overlayRef = ref<HTMLDivElement | null>(null)
 const mouseDownOnOverlay = ref(false)
 
@@ -75,10 +79,13 @@ onUnmounted(() => {
     <div
       ref="overlayRef"
       class="view-modal active"
-      :class="{
-        'view-modal--heavy-dim': resolvedOpacity === 'heavy-dim',
-        'view-modal--opaque': resolvedOpacity === 'opaque'
-      }"
+      :class="[
+        paletteScope,
+        {
+          'view-modal--heavy-dim': resolvedOpacity === 'heavy-dim',
+          'view-modal--opaque': resolvedOpacity === 'opaque'
+        }
+      ]"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >
