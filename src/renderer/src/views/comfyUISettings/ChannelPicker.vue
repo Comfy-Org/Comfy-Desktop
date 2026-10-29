@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { Loader2 } from 'lucide-vue-next'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
@@ -440,10 +441,29 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
     .filter((opt) => path.every((id, i) => opt.groupPath?.[i]?.id === id))
     .map(toSelectOption)
 })
+
+function actionClass(
+  variant: 'default' | 'accent' | 'danger',
+  running: boolean,
+  compact = false
+): string[] {
+  return [
+    'static inline-flex flex-none items-center justify-center gap-1.5 rounded-lg border border-solid bg-[var(--brand-surface-bg)] whitespace-nowrap box-border appearance-auto transition-[background-color,filter] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg)] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed',
+    compact
+      ? 'h-7 min-h-7 px-3 py-0 text-[12px] leading-none'
+      : 'h-8 min-h-8 px-4 py-0 text-[13px] leading-none',
+    variant === 'accent'
+      ? 'border-[var(--accent)] text-[var(--accent)] font-semibold disabled:hover:bg-[var(--accent)] enabled:hover:bg-[var(--accent)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--accent)] enabled:focus-visible:text-[var(--bg)]'
+      : variant === 'danger'
+        ? 'border-[var(--chooser-surface-border)] text-danger font-medium disabled:hover:bg-[var(--danger)]'
+        : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium',
+    running ? 'is-running cursor-progress opacity-85' : 'cursor-pointer'
+  ]
+}
 </script>
 
 <template>
-  <div class="channel-picker">
+  <div class="channel-picker flex flex-col gap-3">
     <VersionStatPanel
       :headline-product="headlineProduct"
       :headline="headlineVersion"
@@ -455,22 +475,37 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
 
     <!-- Hint shown while `commitsAhead` is still being computed; self-hides
          after the max window if enrichment never completes. -->
-    <p v-if="showEnrichingHint" class="channel-picker-enriching" role="status" aria-live="polite">
-      <Loader2 :size="12" class="channel-picker-enriching-spinner" aria-hidden="true" />
+    <p
+      v-if="showEnrichingHint"
+      class="channel-picker-enriching m-0 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted italic"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2
+        :size="12"
+        class="channel-picker-enriching-spinner flex-none animate-spin [animation-duration:0.9s] motion-reduce:animate-none"
+        aria-hidden="true"
+      />
       {{ t('channelCards.computingCommitsAhead', 'Computing commits ahead…') }}
     </p>
 
-    <div class="channel-picker-card">
-      <div class="channel-picker-channel-header">
-        <span class="channel-picker-field-label">
+    <div
+      class="channel-picker-card flex flex-col gap-3 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-3"
+    >
+      <div class="channel-picker-channel-header flex items-center justify-between gap-3">
+        <span
+          class="channel-picker-field-label inline-flex items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
+        >
           {{ field.label }}
           <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
         </span>
-        <button
+        <Button
           v-if="showCheckInHeader && checkUpdateAction"
+          variant="textonly"
+          size="unset"
           type="button"
           class="channel-picker-action compact"
-          :class="{ 'is-running': isActionRunning(checkUpdateAction.id) }"
+          :class="actionClass('default', isActionRunning(checkUpdateAction.id), true)"
           :disabled="checkUpdateAction.enabled === false || isActionRunning(checkUpdateAction.id)"
           :title="checkUpdateAction.tooltip"
           :data-testid="TID.updateActionButton(checkUpdateAction.id)"
@@ -479,20 +514,24 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
           <Loader2
             v-if="isActionRunning(checkUpdateAction.id)"
             :size="14"
-            class="channel-picker-action-spinner"
+            class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
           />
           {{ checkUpdateAction.label }}
-        </button>
+        </Button>
       </div>
 
-      <div class="channel-picker-channel">
+      <div class="channel-picker-channel flex flex-col gap-2">
         <div
           v-for="(level, i) in cascadeLevels"
           :key="i"
-          class="channel-picker-cascade-level"
+          class="channel-picker-cascade-level flex flex-col gap-1"
           :data-testid="TID.channelGroupSelect(i)"
         >
-          <span v-if="level.label" class="channel-picker-field-label">{{ level.label }}</span>
+          <span
+            v-if="level.label"
+            class="channel-picker-field-label inline-flex items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
+            >{{ level.label }}</span
+          >
           <BaseSelect
             :model-value="level.selected"
             :options="level.options"
@@ -506,25 +545,40 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
           :aria-label="field.label"
           @update:model-value="state.draft = $event"
         />
-        <p v-if="selectedOption?.description" class="channel-picker-desc">
+        <p
+          v-if="selectedOption?.description"
+          class="channel-picker-desc m-0 text-[12px] leading-[16.5px] text-text-muted"
+        >
           {{ selectedOption.description }}
         </p>
       </div>
 
-      <p v-if="!draftIsCurrent && !preview" class="channel-picker-empty">
+      <p
+        v-if="!draftIsCurrent && !preview"
+        class="channel-picker-empty m-0 rounded-md border border-dashed border-[var(--chooser-surface-border)] px-2.5 py-2 text-[12px] leading-4 text-text-muted"
+      >
         {{ t('channelCards.noInfo', 'No information available for this channel.') }}
       </p>
-      <p v-else-if="!draftIsCurrent && preview" class="channel-picker-switch-hint">
+      <p
+        v-else-if="!draftIsCurrent && preview"
+        class="channel-picker-switch-hint m-0 text-[12px] leading-4 text-text-muted"
+      >
         {{ t('channelCards.switchTo', { channel: selectedOption?.label ?? '' }) }}
       </p>
 
-      <div v-if="showFooterActions" class="channel-picker-actions">
-        <button
+      <div
+        v-if="showFooterActions"
+        class="channel-picker-actions mt-1 flex flex-wrap items-center justify-end gap-2 border-t border-solid border-border-hover pt-3"
+      >
+        <Button
           v-for="{ action, variant } in footerActions"
           :key="action.id"
+          variant="textonly"
+          size="unset"
           type="button"
           class="channel-picker-action"
-          :class="[variant, { 'is-running': isActionRunning(action.id) }]"
+          :class="actionClass(variant, isActionRunning(action.id))"
+          :data-variant="variant"
           :disabled="action.enabled === false || isActionRunning(action.id)"
           :title="action.tooltip"
           :data-testid="TID.updateActionButton(action.id)"
@@ -533,188 +587,11 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
           <Loader2
             v-if="isActionRunning(action.id)"
             :size="14"
-            class="channel-picker-action-spinner"
+            class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
           />
           {{ action.label }}
-        </button>
+        </Button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.channel-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.channel-picker-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-}
-
-.channel-picker-channel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.channel-picker-channel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.channel-picker-cascade-level {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.channel-picker-field-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-muted);
-  line-height: 16px;
-}
-
-.channel-picker-desc {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 16.5px;
-}
-
-.channel-picker-empty,
-.channel-picker-switch-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
-
-.channel-picker-enriching {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.channel-picker-enriching-spinner {
-  flex: 0 0 auto;
-  animation: channel-picker-action-spin 0.9s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .channel-picker-enriching-spinner {
-    animation: none;
-  }
-}
-
-.channel-picker-empty {
-  padding: 8px 10px;
-  border: 1px dashed var(--chooser-surface-border);
-  border-radius: 6px;
-}
-
-.channel-picker-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-hover);
-}
-
-.channel-picker-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  height: 32px;
-  min-height: 32px;
-  padding: 0 16px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition:
-    background-color 100ms ease,
-    filter 100ms ease;
-}
-
-.channel-picker-action.is-running {
-  cursor: progress;
-  opacity: 0.85;
-}
-
-.channel-picker-action-spinner {
-  flex: 0 0 auto;
-  animation: channel-picker-action-spin 0.9s linear infinite;
-}
-
-@keyframes channel-picker-action-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.channel-picker-action.compact {
-  height: 28px;
-  min-height: 28px;
-  padding: 0 12px;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.channel-picker-action:hover:not(:disabled),
-.channel-picker-action:focus-visible:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.channel-picker-action.accent {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.channel-picker-action.accent:hover:not(:disabled),
-.channel-picker-action.accent:focus-visible:not(:disabled) {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.channel-picker-action.danger {
-  color: var(--danger);
-  border-color: var(--chooser-surface-border);
-}
-
-.channel-picker-action:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-</style>
