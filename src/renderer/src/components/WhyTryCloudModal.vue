@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { Check, X } from 'lucide-vue-next'
 import heroUrl from '../assets/first-use/why-cloud-hero.svg'
 
@@ -50,7 +51,7 @@ onUnmounted(() => {
     <Transition name="modal-fade" appear>
       <div
         ref="overlayRef"
-        class="why-cloud-overlay"
+        class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70 backdrop-blur-[8px] backdrop-saturate-[115%]"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('firstUse.whyCloud.title')"
@@ -58,9 +59,11 @@ onUnmounted(() => {
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
       >
-        <div class="why-cloud-content modal-fade-panel">
+        <div
+          class="why-cloud-content modal-fade-panel relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
+        >
           <button
-            class="why-cloud-close"
+            class="why-cloud-close absolute top-4 right-4 z-2 inline-flex size-8 items-center justify-center rounded-lg border border-solid border-[var(--border)] bg-text/4 p-0 text-neutral-100 opacity-70 cursor-pointer transition-[border-color,opacity] duration-120 ease-[ease] hover:border-neutral-100/44 hover:opacity-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] [&_svg]:size-[18px] [&_svg]:flex-none [&_svg]:stroke-current"
             type="button"
             :aria-label="$t('common.close')"
             data-testid="why-cloud-close"
@@ -68,38 +71,64 @@ onUnmounted(() => {
           >
             <X :size="18" />
           </button>
-          <div class="why-cloud-grid">
-            <img :src="heroUrl" class="why-cloud-image" :alt="$t('firstUse.whyCloud.imageAlt')" />
-            <div class="why-cloud-body">
-              <div class="why-cloud-body-main">
-                <header class="why-cloud-header">
-                  <h2 class="why-cloud-title">{{ $t('firstUse.whyCloud.title') }}</h2>
+          <div
+            class="why-cloud-grid flex-auto grid size-full grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))]"
+          >
+            <img
+              :src="heroUrl"
+              class="why-cloud-image block size-full object-cover object-center bg-[linear-gradient(135deg,var(--neutral-800)_0%,var(--neutral-900)_100%)]"
+              :alt="$t('firstUse.whyCloud.imageAlt')"
+            />
+            <div
+              class="why-cloud-body flex flex-col justify-between overflow-auto p-[clamp(1.5rem,2.5vw,2.5rem)]"
+            >
+              <div
+                class="why-cloud-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
+              >
+                <header class="why-cloud-header flex flex-wrap items-center gap-3">
+                  <h2
+                    class="why-cloud-title m-0 font-display text-[length:var(--takeover-fs-h2)] leading-8 font-extrabold tracking-normal text-neutral-100"
+                  >
+                    {{ $t('firstUse.whyCloud.title') }}
+                  </h2>
                 </header>
-                <p class="why-cloud-lead">{{ $t('firstUse.whyCloud.lead') }}</p>
-                <ul class="why-cloud-list">
+                <p
+                  class="why-cloud-lead m-0 font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-300"
+                >
+                  {{ $t('firstUse.whyCloud.lead') }}
+                </p>
+                <ul
+                  class="why-cloud-list mt-1 mr-0 mb-0 ml-0 flex list-none flex-col gap-2.5 p-0 [&>li]:grid [&>li]:grid-cols-[auto_1fr] [&>li]:items-start [&>li]:gap-3 [&>li]:text-[length:var(--takeover-fs-lead)] [&>li]:leading-[normal] [&>li]:text-neutral-100"
+                >
                   <li v-for="b in benefits" :key="b">
-                    <Check :size="16" class="why-cloud-check" />
+                    <Check :size="16" class="why-cloud-check mt-[3px] text-comfy-yellow" />
                     <span>{{ b }}</span>
                   </li>
                 </ul>
               </div>
-              <footer class="why-cloud-footer">
-                <button
-                  class="brand-ghost why-cloud-maybe"
+              <footer
+                class="why-cloud-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"
+              >
+                <Button
+                  size="unset"
+                  variant="textonly"
+                  class="why-cloud-maybe static inline-flex touch-auto items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-300 cursor-pointer transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100 focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55"
                   type="button"
                   data-testid="why-cloud-maybe"
                   @click="emit('close')"
                 >
                   {{ $t('firstUse.whyCloud.maybeLater') }}
-                </button>
-                <button
-                  class="brand-primary"
+                </Button>
+                <Button
+                  size="unset"
+                  variant="textonly"
+                  class="why-cloud-primary static inline-flex touch-auto items-center justify-center gap-0 rounded-[var(--radius-control)] border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-900 cursor-pointer transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55"
                   type="button"
                   data-testid="why-cloud-try"
                   @click="emit('try-cloud')"
                 >
                   {{ $t('firstUse.whyCloud.tryCta') }}
-                </button>
+                </Button>
               </footer>
             </div>
           </div>
@@ -108,164 +137,3 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.why-cloud-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: clamp(72px, 10vh, 132px) clamp(32px, 5vw, 80px) clamp(80px, 11vh, 140px);
-  background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
-  backdrop-filter: blur(8px) saturate(115%);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
-}
-
-.why-cloud-content {
-  position: relative;
-  display: flex;
-  width: min(100%, calc((100vh - clamp(152px, 21vh, 272px)) * (916 / 445)));
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 916 / 445;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--neutral-900);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  /* box-shadow: 0 40px 100px 0 rgba(0, 0, 0, 0.45); */
-}
-
-.why-cloud-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  opacity: 0.7;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.why-cloud-close:hover {
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  opacity: 1;
-}
-.why-cloud-close:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.why-cloud-close :deep(svg) {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  stroke: currentColor;
-}
-
-.why-cloud-grid {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  width: 100%;
-  height: 100%;
-}
-
-.why-cloud-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  display: block;
-  background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
-}
-
-.why-cloud-body {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: clamp(1.5rem, 2.5vw, 2.5rem);
-  overflow: auto;
-}
-.why-cloud-body-main {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: clamp(0.75rem, 1.2vw, 1.25rem);
-}
-
-.why-cloud-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.why-cloud-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--takeover-fs-h2);
-  font-weight: 800;
-  letter-spacing: 0;
-  color: var(--neutral-100);
-  line-height: 32px;
-}
-.why-cloud-pill {
-  padding: 4px;
-  border-radius: 32px;
-  background: var(--neutral-100);
-  color: var(--neutral-900);
-  font-size: var(--takeover-fs-caption);
-  font-weight: 600;
-  line-height: normal;
-  font-family: var(--font-sans);
-  text-transform: uppercase;
-}
-.why-cloud-lead {
-  margin: 0;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-300);
-  font-weight: 400;
-  font-family: var(--font-sans);
-  line-height: normal;
-}
-
-.why-cloud-list {
-  list-style: none;
-  margin: 4px 0 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.why-cloud-list li {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: start;
-  gap: 12px;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-100);
-  line-height: normal;
-}
-.why-cloud-check {
-  color: var(--comfy-yellow);
-  margin-top: 3px;
-}
-
-.why-cloud-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 16px;
-  padding-top: clamp(1rem, 1.5vw, 1.5rem);
-  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-</style>
