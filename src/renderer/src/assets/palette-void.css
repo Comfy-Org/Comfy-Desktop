@@ -178,22 +178,6 @@
   background: var(--color-accent);
   color: var(--text);
 }
-/* ── 7. Manage: the settings tabs inside the picker ────────────────── */
-/* The active tab took the old surface color, which is now the popup's own. */
-:root.palette-void .settings-v2-tab {
-  border-radius: var(--radius-control);
-}
-:root.palette-void .settings-v2-tab:hover {
-  background: var(--color-secondary);
-}
-:root.palette-void .settings-v2-tab.is-active {
-  background: var(--color-accent);
-  color: var(--text);
-}
-:root.palette-void .settings-v2-tab.is-active .settings-v2-tab-badge {
-  border-color: var(--neutral-700);
-}
-
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
 :root.palette-void :is(.modal-box, .announce-content) {
   border-color: var(--color-border);
