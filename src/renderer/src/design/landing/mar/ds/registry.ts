@@ -139,7 +139,7 @@ export const PAGES: DsPage[] = [
     group: 'Shell',
     title: 'Global search',
     source: 'mar/search/MarSearch.vue (search.ts), parts/env/ModeNav.vue (the sidebar row)',
-    use: "Find any template, workflow, project or space: ⌘K anywhere, or the sidebar's first row.",
+    use: "Find anything or run a quick action: ⌘K anywhere, or the sidebar's first row.",
     component: lazy(() => import('./pages/SearchPage.vue'))
   },
   {

@@ -5,13 +5,32 @@ import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 import ShotsPage, { type Shot } from './ShotsPage.vue'
 
-// The palette, in app pixels.
-const PALETTE: Shot['crop'] = [300, 60, 680, 600]
+// The palette, in app pixels (640 wide, 15% from the top of 1280 × 800).
+const PALETTE: Shot['crop'] = [296, 96, 688, 680]
 const SHOTS: Shot[] = [
-  { label: 'empty · popular templates as pictures, then a list', run: 'search', crop: PALETTE },
-  { label: 'typing · results grouped by kind', run: 'search-typed', crop: PALETTE },
-  { label: 'keyboard · ↓ moves the highlighted row', run: 'search-keys', crop: PALETTE },
-  { label: 'no results', run: 'search-none', crop: PALETTE }
+  {
+    label: 'empty · recent work, suggested templates, quick actions',
+    run: 'search',
+    crop: PALETTE
+  },
+  { label: 'keyboard · ↓ slides the raised highlight', run: 'search-empty-keys', crop: PALETTE },
+  {
+    label: 'typing · grouped by kind, matched letters in bold',
+    run: 'search-typed',
+    crop: PALETTE
+  },
+  {
+    label: 'active row · Open ↵, Open in Cloud ⌘↵ where it runs there',
+    run: 'search-keys',
+    crop: PALETTE
+  },
+  { label: 'scoped · “w␣” searches only workflows', run: 'search-scoped', crop: PALETTE },
+  { label: 'scoped · “temp⇥” completes the scope', run: 'search-tab', crop: PALETTE },
+  {
+    label: 'no results · the shared empty state, docs as the way out',
+    run: 'search-none',
+    crop: PALETTE
+  }
 ]
 </script>
 
@@ -32,7 +51,7 @@ const SHOTS: Shot[] = [
   </Section>
   <ShotsPage
     title="Palette"
-    note="Templates, workflows, projects and spaces in one place. Live: type in it."
+    note="Everything in one place: templates, workflows, projects, spaces, apps, assets and quick actions. Sizes to what it shows. Scope with the chips, a prefix (w, p, s, a, t or as, then a space), or Tab; ⌫ on an empty field searches everything again. Live: type in it."
     :shots="SHOTS"
   />
 </template>

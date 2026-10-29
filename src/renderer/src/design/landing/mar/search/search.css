@@ -1,0 +1,488 @@
+/* Mar's search palette (MarSearch.vue). Global on purpose: its buttons
+   have to get past the prototype's button reset, which scoped styles
+   can't reach. Everything is under .mar-search.
+
+   Radius nesting follows UI Playground › Corners: rows and the raised
+   highlight take --mar-tab-radius, the palette that much plus its 8px
+   inset; chips and key caps take --mar-tab-item-radius. Same smoked glass
+   as the menus (mar/menus/layers.css), a step more opaque since it holds
+   a whole page of results. */
+
+.mar-search {
+  --s-ink: var(--color-base-foreground);
+  --s-line: color-mix(in oklch, var(--s-ink) 8%, transparent);
+  --s-well: color-mix(in oklch, var(--s-ink) 6%, transparent);
+  --s-row: var(--mar-tab-radius, 10px);
+  --s-item: var(--mar-tab-item-radius, 7px);
+  --s-pad: 8px;
+
+  display: flex;
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(700px, 85vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: calc(var(--s-row) + var(--s-pad));
+  color: var(--s-ink);
+  font-size: 13px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--s-ink) 6%, var(--color-card-background)) 86%,
+    transparent
+  );
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow:
+    inset 0 0 0 1px var(--s-line),
+    inset 0 1px 0 color-mix(in oklch, var(--s-ink) 6%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 32px 80px -24px rgb(0 0 0 / 0.75);
+}
+[data-ds-theme='light'] .mar-search {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--s-ink) 2%, var(--color-card-background)) 84%,
+    transparent
+  );
+  backdrop-filter: blur(40px) saturate(1.6);
+  box-shadow:
+    inset 0 0 0 1px var(--s-line),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 70px -24px rgb(0 0 0 / 0.28);
+}
+
+.mar-search-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: rgb(0 0 0 / 0.32);
+}
+[data-ds-theme='light'] .mar-search-scrim {
+  background: rgb(0 0 0 / 0.12);
+}
+
+/* Enter and leave: the scrim fades, the palette rises a few pixels. */
+.mar-search-enter-active,
+.mar-search-leave-active {
+  transition: opacity 160ms ease;
+}
+.mar-search-enter-active .mar-search,
+.mar-search-leave-active .mar-search {
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms ease;
+}
+.mar-search-leave-active,
+.mar-search-leave-active .mar-search {
+  transition-duration: 110ms;
+}
+.mar-search-enter-from,
+.mar-search-leave-to {
+  opacity: 0;
+}
+.mar-search-enter-from .mar-search,
+.mar-search-leave-to .mar-search {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-search-enter-from .mar-search,
+  .mar-search-leave-to .mar-search {
+    transform: none;
+  }
+}
+
+/* The field: one line, no box of its own; a hairline under it. */
+.mar-search-field {
+  display: flex;
+  height: 52px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 18px;
+}
+.mar-search-glass {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-field input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--s-ink);
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+.mar-search-field input::placeholder {
+  color: var(--color-subtle-foreground);
+}
+.mar-search-token {
+  display: inline-flex;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 9px;
+  border-radius: var(--s-item);
+  background: color-mix(in oklch, var(--s-ink) 10%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-token button {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: calc(var(--s-item) - 3px);
+  color: var(--color-subtle-foreground);
+}
+.mar-search-token button:hover {
+  color: var(--s-ink);
+}
+
+/* Key caps, everywhere in the palette. */
+.mar-search kbd {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: calc(var(--s-item) - 2px);
+  background: color-mix(in oklch, var(--s-ink) 8%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--s-ink) 6%, transparent);
+  color: var(--color-muted-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+.mar-search-esc {
+  flex-shrink: 0;
+}
+
+/* Scopes: a row of chips under the field, with counts while typing. */
+.mar-search-scopes {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 0 var(--s-pad) var(--s-pad) 12px;
+  border-bottom: 1px solid var(--s-line);
+  scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-scope {
+  display: inline-flex;
+  height: 26px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: var(--s-item);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-scope:hover {
+  background: var(--s-well);
+  color: var(--s-ink);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-scope.is-on {
+  background: color-mix(in oklch, var(--s-ink) 10%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--s-ink) 6%, transparent);
+  color: var(--s-ink);
+}
+[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-search-scope.is-on {
+  background: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.08);
+}
+.mar-search-scope.is-zero {
+  opacity: 0.5;
+}
+.mar-search-count {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The results. Not a menu, so not the menus' glass (layers.css styles
+   every listbox). */
+:root[data-mar-ui='on'] .mar-search .mar-search-list[role='listbox'],
+.mar-search-list {
+  position: relative;
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px var(--s-pad) var(--s-pad);
+  background: transparent;
+  backdrop-filter: none;
+  scroll-padding: 34px 0 var(--s-pad);
+  scrollbar-width: none;
+}
+.mar-search-group + .mar-search-group {
+  margin-top: 2px;
+}
+.mar-search-head {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-head button:hover {
+  color: var(--s-ink);
+}
+
+/* The raised highlight: one panel that slides to the active row. */
+.mar-search-hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--s-row);
+  background: color-mix(in oklch, var(--s-ink) 8%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--s-ink) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.22);
+  pointer-events: none;
+}
+.mar-search-hl.is-moving {
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+[data-ds-theme='light'] .mar-search-hl {
+  background: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 6%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-search-hl.is-moving {
+    transition: none;
+  }
+}
+
+.mar-search-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--s-row);
+  cursor: default;
+}
+.mar-search-lead {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--s-row) - 3px);
+  background: var(--s-well);
+  color: var(--color-muted-foreground);
+}
+.mar-search-row.is-on .mar-search-lead {
+  color: var(--s-ink);
+}
+.mar-search-lead > img,
+.mar-search-mark {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 8%, transparent);
+}
+.mar-search-lead > img {
+  outline: 1px solid color-mix(in oklch, var(--s-ink) 8%, transparent);
+  outline-offset: -1px;
+}
+.mar-search-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+/* The kind, as a small badge on a picture. */
+.mar-search-kind {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-card-background);
+  box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--s-ink) 10%, var(--color-card-background));
+  color: var(--color-muted-foreground);
+}
+.mar-search-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+}
+.mar-search-label {
+  flex-shrink: 0;
+  max-width: 62%;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-search-row.is-on .mar-search-label {
+  color: var(--s-ink);
+}
+.mar-search-label mark {
+  background: none;
+  color: var(--s-ink);
+  font-weight: 600;
+}
+.mar-search-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-search-do,
+.mar-search-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.mar-search-do {
+  gap: 12px;
+}
+.mar-search-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-search-hint > kbd:first-of-type {
+  margin-left: 2px;
+}
+.mar-search-hint.is-main {
+  color: var(--s-ink);
+}
+.mar-search-keys kbd {
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-subtle-foreground);
+  min-width: 0;
+  padding: 0 1px;
+  font-size: 12px;
+}
+
+/* Suggested templates: four small cards in a row. */
+.mar-search-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.mar-search-tile {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 6px 8px;
+  border-radius: var(--s-row);
+  cursor: default;
+}
+.mar-search-tile img {
+  width: 100%;
+  height: 56px;
+  margin-bottom: 6px;
+  border-radius: calc(var(--s-row) - 4px);
+  object-fit: cover;
+  outline: 1px solid color-mix(in oklch, var(--s-ink) 8%, transparent);
+  outline-offset: -1px;
+}
+.mar-search-tile-t {
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-search-tile.is-on .mar-search-tile-t {
+  color: var(--s-ink);
+}
+.mar-search-tile-m {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+}
+
+.mar-search-none .mar-empty {
+  padding: 28px 0 24px;
+}
+
+/* Footer: one slim line of what the keys do right now. */
+.mar-search-foot {
+  display: flex;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px 0 18px;
+  border-top: 1px solid var(--s-line);
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-search-foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.mar-search-foot > span > kbd:last-of-type {
+  margin-right: 4px;
+}
+.mar-search-tip kbd {
+  margin: 0 1px;
+}
+.mar-search-foot > span.mar-search-tip > kbd:last-of-type {
+  margin-right: 1px;
+}
