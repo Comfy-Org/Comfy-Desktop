@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowRight } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import InlineRichText from './InlineRichText.vue'
 
 withDefaults(
@@ -34,11 +35,16 @@ defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <button
+  <Button
+    size="unset"
+    variant="textonly"
     type="button"
     :class="[
-      'choice-card',
-      { 'choice-card--glow': glow, 'choice-card--selected': selectable && selected }
+      'choice-card group/choice static flex appearance-auto flex-col items-stretch justify-start gap-0 overflow-hidden rounded-[10px] border border-solid p-0 [font:inherit] whitespace-normal text-neutral-100 text-left touch-auto [backdrop-filter:blur(var(--brand-surface-blur))] transition-[border-color,background] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--brand-surface-bg-hover)]',
+      { 'choice-card--glow': glow, 'choice-card--selected': selectable && selected },
+      selectable && selected
+        ? 'disabled:hover:bg-[color-mix(in_oklab,var(--neutral-100)_6%,var(--brand-surface-bg-hover))] border-[color-mix(in_oklab,var(--neutral-100)_60%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,var(--brand-surface-bg-hover))] [box-shadow:0_0_0_1px_color-mix(in_oklab,var(--neutral-100)_40%,transparent)_inset] focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--neutral-100)_40%,transparent)] enabled:hover:border-[color-mix(in_oklab,var(--neutral-100)_75%,transparent)] enabled:hover:bg-[color-mix(in_oklab,var(--neutral-100)_9%,rgba(137,137,137,0.13))]'
+        : 'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg-hover)] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[rgba(137,137,137,0.13)]'
     ]"
     :role="selectable ? 'radio' : undefined"
     :aria-checked="selectable ? selected : undefined"
@@ -46,164 +52,47 @@ defineEmits<{ click: [] }>()
     :disabled="disabled"
     @click="$emit('click')"
   >
-    <div v-if="tagline" class="choice-card__tagline">{{ tagline }}</div>
-    <div class="choice-card__body">
-      <div class="choice-card__text">
-        <div class="choice-card__label">
-          <span class="choice-card__label-text">{{ label }}</span>
-          <span v-if="$slots['label-trailing']" class="choice-card__label-trailing">
+    <div
+      v-if="tagline"
+      class="choice-card__tagline relative z-1 border-b border-solid border-[var(--brand-surface-border)] bg-[linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.02)_100%)] px-5 py-2.5 text-[length:var(--takeover-fs-body)] leading-[normal] font-medium text-neutral-100"
+    >
+      {{ tagline }}
+    </div>
+    <div
+      class="choice-card__body relative z-1 flex flex-row items-center gap-4 px-5 pt-[18px] pb-5"
+    >
+      <div class="choice-card__text flex min-w-0 flex-auto flex-col gap-2">
+        <div
+          :class="{ 'group-hover/choice:text-text': !disabled }"
+          class="choice-card__label flex w-full flex-wrap items-center justify-start gap-1 font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-bold text-neutral-100 transition-colors duration-120 ease-[ease]"
+        >
+          <span class="choice-card__label-text flex-none">{{ label }}</span>
+          <span
+            v-if="$slots['label-trailing']"
+            class="choice-card__label-trailing inline-flex flex-none items-center gap-2"
+          >
             <slot name="label-trailing" />
           </span>
         </div>
-        <div class="choice-card__desc">
+        <div
+          class="choice-card__desc font-sans text-[length:var(--takeover-fs-body)] leading-[normal] font-normal text-neutral-300 [&_strong]:font-normal [&_strong]:text-neutral-100"
+        >
           <InlineRichText :text="description" />
-          <div v-if="$slots['desc-trailing']" class="choice-card__desc-trailing">
+          <div v-if="$slots['desc-trailing']" class="choice-card__desc-trailing mt-3.5">
             <slot name="desc-trailing" />
           </div>
         </div>
       </div>
-      <ArrowRight v-if="!selectable" :size="18" class="choice-card__arrow" aria-hidden="true" />
+      <ArrowRight
+        v-if="!selectable"
+        :size="18"
+        :class="{
+          'group-hover/choice:opacity-100 group-hover/choice:[transform:translateX(0)] motion-reduce:group-hover/choice:[transform:none]':
+            !disabled
+        }"
+        class="choice-card__arrow flex-none text-neutral-100 opacity-0 [transform:translateX(-4px)] [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:[transform:none] motion-reduce:[transition:opacity_100ms_ease]"
+        aria-hidden="true"
+      />
     </div>
-  </button>
+  </Button>
 </template>
-
-<style scoped>
-.choice-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: stretch;
-  gap: 0;
-  padding: 0;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 10px;
-  /* Resting bg uses the hover token so cards separate from the takeover
-   * surface even at rest. */
-  background: var(--brand-surface-bg-hover);
-  backdrop-filter: blur(var(--brand-surface-blur));
-  color: var(--neutral-100);
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease;
-  font: inherit;
-}
-.choice-card:hover:not(:disabled) {
-  border-color: var(--brand-surface-border-hover);
-  background: rgba(137, 137, 137, 0.13);
-}
-.choice-card:hover:not(:disabled) .choice-card__label {
-  color: var(--text);
-}
-.choice-card:hover:not(:disabled) .choice-card__arrow {
-  opacity: 1;
-  transform: translateX(0);
-}
-.choice-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.choice-card:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-/* Selected uses neutral-100, not blue or yellow — border-only selection
- * language, no accent color competing with the yellow Continue CTA. */
-.choice-card--selected {
-  border-color: color-mix(in oklab, var(--neutral-100) 60%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 6%, var(--brand-surface-bg-hover));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--neutral-100) 40%, transparent) inset;
-}
-.choice-card--selected:hover:not(:disabled) {
-  border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 9%, rgba(137, 137, 137, 0.13));
-}
-
-.choice-card__tagline {
-  position: relative;
-  z-index: 1;
-  padding: 10px 20px;
-  font-size: var(--takeover-fs-body);
-  font-weight: 500;
-  line-height: normal;
-  color: var(--neutral-100);
-  /* Gradient + bottom rule so the tagline reads as a header band, not a
-   * watermark on the card surface. */
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%);
-  border-bottom: 1px solid var(--brand-surface-border);
-}
-.choice-card__body {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 20px 20px 20px;
-}
-.choice-card__text {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.choice-card__label {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  /* Tight: the first trailing item is an (i) that belongs to the title. */
-  gap: 4px;
-  width: 100%;
-  font-family: var(--font-sans);
-  font-size: var(--takeover-fs-lead);
-  font-weight: 700;
-  line-height: normal;
-  color: var(--neutral-100);
-  transition: color 120ms ease;
-}
-.choice-card__label-text {
-  flex: 0 0 auto;
-}
-/* Trailing items separate more from each other than from the label — an
- * (i) and a badge are peers, not one run of text. */
-.choice-card__label-trailing {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-.choice-card__desc-trailing {
-  margin-top: 14px;
-}
-.choice-card__desc {
-  font-family: var(--font-sans);
-  font-size: var(--takeover-fs-body);
-  font-weight: 400;
-  line-height: normal;
-  color: var(--neutral-300);
-}
-.choice-card__desc :deep(strong) {
-  color: var(--neutral-100);
-  font-weight: 400;
-}
-/* Resting state is muted + nudged left so hover reads as a slide-in. */
-.choice-card__arrow {
-  flex: 0 0 auto;
-  color: var(--neutral-100);
-  opacity: 0;
-  transform: translateX(-4px);
-  transition:
-    opacity 140ms ease,
-    transform 140ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .choice-card__arrow {
-    transition: opacity 100ms ease;
-    transform: none;
-  }
-}
-</style>
