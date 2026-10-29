@@ -187,7 +187,11 @@ export type { ComfyPanelKey } from './host/registry'
 
 // Scrub every spelling of the real home directory from off-box telemetry,
 // including profiles relocated outside `Users` / `home`.
-setScrubbedHomeDir(os.homedir())
+try {
+  setScrubbedHomeDir(os.homedir())
+} catch {
+  // os.homedir() throws when the OS reports no home; the generic patterns still apply.
+}
 
 // Collect native crash minidumps (GPU / renderer / V8 OOM segfaults that
 // never reach a JS handler) into app.getPath('crashDumps'). Kept local — we

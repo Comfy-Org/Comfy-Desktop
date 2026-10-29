@@ -39,6 +39,16 @@ describe('piiScrub', () => {
       )
     })
 
+    it('stops at a line break so the next stderr line survives', () => {
+      expect(scrubPII('failed to create /home/bob\nCaused by: Permission denied')).toBe(
+        'failed to create /home/[REDACTED]\nCaused by: Permission denied'
+      )
+    })
+
+    it('redacts a username containing a space in full', () => {
+      expect(scrubPII('C:\\Users\\Alice Smith\\x')).toBe('C:\\Users\\[REDACTED]\\x')
+    })
+
     it('redacts a username containing an apostrophe in full', () => {
       expect(scrubPII("C:\\Users\\o'brien\\x")).toBe('C:\\Users\\[REDACTED]\\x')
     })
@@ -102,9 +112,16 @@ describe('piiScrub', () => {
       expect(scrubPII('cat /var/lib/alice/.config')).toBe('cat /var/lib/[REDACTED]/.config')
     })
 
-    it('ignores a single-segment home', () => {
+    it('redacts a single-segment home', () => {
+      setScrubbedHomeDir('/alice')
+      expect(scrubPII('cat /alice/.config')).toBe('cat /[REDACTED]/.config')
+    })
+
+    it('ignores /root and a bare drive', () => {
       setScrubbedHomeDir('/root')
       expect(scrubPII('/root/.cache')).toBe('/root/.cache')
+      setScrubbedHomeDir('C:\\')
+      expect(scrubPII('C:\\ComfyUI')).toBe('C:\\ComfyUI')
     })
   })
 

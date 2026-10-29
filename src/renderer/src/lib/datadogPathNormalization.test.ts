@@ -36,6 +36,12 @@ describe('scrubPII', () => {
     )
   })
 
+  it('redacts doubled-backslash Windows user paths', () => {
+    expect(scrubPII('"C:\\\\Users\\\\JohnDoe\\\\AppData"')).toBe(
+      '"C:\\\\Users\\\\[REDACTED]\\\\AppData"'
+    )
+  })
+
   it('redacts macOS user paths', () => {
     expect(scrubPII('/Users/alice/Library/foo')).toBe('/Users/[REDACTED]/Library/foo')
   })

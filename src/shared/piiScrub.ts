@@ -24,15 +24,16 @@
 // Separators are `[\\/]+` so the same path matches whether it is written
 // plainly (`C:\Users\x`), with forward or mixed slashes (`C:/Users/x`), or
 // escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
-// stops at `"` so a JSON string's closing quote and what follows survive;
-// not at `'`, which is legal in a Windows username.
+// stops at `"` or a line break so a JSON string's closing quote, or the next
+// stderr line, survives; not at `'` or a space, which are legal in a Windows
+// username.
 const PII_PATH_PATTERNS: RegExp[] = [
-  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
-  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
-  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
-  /([\\/]Users[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
-  /([\\/]home[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
-  /(\/mnt\/wsl\/[^/]+\/home\/)[^/]+?(?=[/"]|$)/gi
+  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
+  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
+  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
+  /([\\/]Users[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
+  /([\\/]home[\\/]+)[^\\/\r\n]+?(?=[\\/"\r\n]|$)/gi,
+  /(\/mnt\/wsl\/[^/]+\/home\/)[^/\r\n]+?(?=[/"\r\n]|$)/gi
 ]
 
 // The real home directory, in any separator spelling. Catches a profile
@@ -46,15 +47,15 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 export function setScrubbedHomeDir(homeDir: string): void {
   const segments = homeDir.split(/[\\/]+/).filter(Boolean)
   const last = segments.pop()
-  // A single segment (`/root`) carries no username worth hiding.
-  if (!last || segments.length === 0) {
+  const leading = /^[\\/]/.test(homeDir) ? '[\\\\/]+' : ''
+  // `/root` carries no username worth hiding, and a bare drive (`C:\`) is no home at all.
+  if (!last || (segments.length === 0 && (!leading || last === 'root'))) {
     homeDirPatterns = []
     return
   }
-  const leading = /^[\\/]/.test(homeDir) ? '[\\\\/]+' : ''
-  const parent = segments.map(escapeRegExp).join('[\\\\/]+')
+  const parent = segments.map((segment) => `${escapeRegExp(segment)}[\\\\/]+`).join('')
   const name = escapeRegExp(last)
-  homeDirPatterns = [new RegExp(`(${leading}${parent}[\\\\/]+)${name}(?![\\w$~-])`, 'gi')]
+  homeDirPatterns = [new RegExp(`(${leading}${parent})${name}(?![\\w$~-])`, 'gi')]
 }
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
