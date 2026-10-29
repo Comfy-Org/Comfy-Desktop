@@ -2,6 +2,7 @@
 import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
@@ -28,6 +29,19 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
+
+const brandButtonClass =
+  'inline-flex items-center justify-center rounded-lg border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal appearance-auto transition-[background,border-color,color] duration-[120ms] ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
+const primaryButtonClass =
+  'border-comfy-yellow bg-comfy-yellow text-neutral-900 disabled:hover:border-comfy-yellow disabled:hover:bg-comfy-yellow hover:enabled:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
+const secondaryButtonClass =
+  'border-border bg-secondary text-foreground disabled:hover:border-border disabled:hover:bg-secondary hover:enabled:border-border-strong hover:enabled:bg-accent'
+const ordinaryButtonClass =
+  'inline-flex items-center gap-2 rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 font-sans text-[14px] leading-[1.5] font-normal whitespace-normal appearance-auto transition-none hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40'
+const resultListClass =
+  'grid gap-x-6 m-0 [&>div]:min-w-0 [&_dt]:text-neutral-200 [&_dt]:[text-align:var(--perf-label-align,left)] [&_dd]:mt-[var(--perf-value-margin,4px)] [&_dd]:[overflow-wrap:anywhere] [&_dd]:[color:var(--perf-value-color,var(--text-primary))] [&_dd]:text-[length:var(--perf-value-size,24px)] [&_dd]:leading-[var(--perf-value-leading,1.25)] [&_dd]:[text-align:var(--perf-value-align,left)]'
+const compactResultListClass =
+  'grid-cols-1 gap-y-2 [--perf-value-margin:0px] [--perf-value-size:12px] [--perf-value-leading:1.3] [--perf-value-color:var(--text-muted)] [--perf-value-align:right] [--perf-label-align:left] [&>div]:flex [&>div]:items-baseline [&>div]:justify-between [&>div]:gap-2 [&>div]:pb-1 [&>div]:border-b [&>div]:border-solid [&>div]:border-[var(--chooser-surface-border)] [&_dt]:flex-none [&_dt]:text-[12px]'
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -623,31 +637,50 @@ watch(performanceTestLogs, async () => {
 </script>
 
 <template>
-  <BrandBackground class="performance-test" data-testid="performance-test">
-    <div class="performance-test__layout">
-      <div class="performance-test__intro">
+  <BrandBackground
+    class="performance-test min-h-0 [&_.brand-outer-frame]:min-h-0 [&_.brand-inner-frame]:min-h-0"
+    data-testid="performance-test"
+  >
+    <div
+      class="performance-test__layout relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
+    >
+      <div
+        class="performance-test__intro flex min-h-full w-full flex-col items-start gap-6 text-left"
+      >
         <BrandedPageHeader
           :title="t('performanceTest.title')"
           :description="t('performanceTest.description')"
           logo-test-id="performance-test-logo"
         />
-        <div class="performance-test__content">
-          <div class="performance-test__columns">
-            <section class="performance-test__column">
+        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-6">
+          <div
+            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-6 [@media(max-width:900px)]:grid-cols-1"
+          >
+            <section
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+            >
               <h2>{{ t('performanceTest.selectInstance') }}</h2>
-              <div class="performance-test__selection-row">
-                <span class="performance-test__selection-label">
+              <div class="performance-test__selection-row flex w-full items-center gap-3">
+                <span
+                  class="performance-test__selection-label flex-[0_0_68px] text-[13px] text-neutral-200"
+                >
                   {{ t('performanceTest.workspaceLabel') }}
                 </span>
-                <div class="performance-test__selection-control performance-test__workspace-select">
+                <div
+                  class="performance-test__selection-control min-w-0 w-full max-w-80 flex-auto performance-test__workspace-select [&_.workspace-selector]:w-full [&_.workspace-selector\_\_face]:box-border [&_.workspace-selector\_\_face]:w-full [&_.workspace-selector\_\_face]:min-w-0 [&_.workspace-selector\_\_face]:px-2 [&_.workspace-selector\_\_face]:py-0 [&_.workspace-selector\_\_face]:[--dp-avatar-size:20px]"
+                >
                   <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
                 </div>
               </div>
-              <div class="performance-test__selection-row">
-                <span class="performance-test__selection-label">
+              <div class="performance-test__selection-row flex w-full items-center gap-3">
+                <span
+                  class="performance-test__selection-label flex-[0_0_68px] text-[13px] text-neutral-200"
+                >
                   {{ t('performanceTest.instanceLabel') }}
                 </span>
-                <div class="performance-test__selection-control performance-test__instance-select">
+                <div
+                  class="performance-test__selection-control min-w-0 w-full max-w-80 flex-auto performance-test__instance-select [&_.ui-select-trigger]:h-[30px] [&_.ui-select-trigger]:px-2 [&_.ui-select-trigger]:py-1"
+                >
                   <BaseSelect
                     :model-value="selectedInstallationId ?? ''"
                     :options="instanceOptions"
@@ -660,10 +693,19 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
 
-            <section class="performance-test__column">
+            <section
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+            >
               <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
-              <button
-                class="performance-test__example-workflow brand-secondary"
+              <Button
+                class="performance-test__example-workflow box-border h-[30px] w-full px-2 py-1 text-[length:var(--takeover-fs-caption)]"
+                variant="secondary"
+                size="unset"
+                :class="[
+                  brandButtonClass,
+                  secondaryButtonClass,
+                  'h-[30px] px-2 py-1 text-[length:var(--takeover-fs-caption)]'
+                ]"
                 type="button"
                 :disabled="
                   !selectedInstallationId ||
@@ -678,17 +720,24 @@ watch(performanceTestLogs, async () => {
                     ? t('performanceTest.loadingExampleWorkflows')
                     : t('performanceTest.chooseExampleWorkflow')
                 }}
-              </button>
-              <div class="performance-test__workflow-divider">
+              </Button>
+              <div
+                class="performance-test__workflow-divider flex w-full items-center gap-2.5 text-[11px] text-[var(--text-faint)] uppercase before:h-px before:flex-1 before:bg-[var(--chooser-surface-border)] before:content-[''] after:h-px after:flex-1 after:bg-[var(--chooser-surface-border)] after:content-['']"
+              >
                 <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
               </div>
               <div
-                class="performance-test__drop-zone"
-                :class="{
-                  'performance-test__drop-zone--dragging': isWorkflowDragging,
-                  'performance-test__drop-zone--selected':
-                    workflowFilePath || pendingExampleWorkflowLabel
-                }"
+                class="performance-test__drop-zone relative min-h-[104px] w-full flex-none rounded-lg border border-dotted p-0 text-text-muted transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border-hover)] hover:bg-[var(--chooser-surface-bg-hover)] focus-within:border-[var(--chooser-surface-border-hover)] focus-within:bg-[var(--chooser-surface-bg-hover)] focus-within:outline-none"
+                :class="[
+                  isWorkflowDragging
+                    ? 'border-[var(--chooser-surface-border-hover)] bg-[var(--chooser-surface-bg-hover)]'
+                    : 'border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)]',
+                  {
+                    'performance-test__drop-zone--dragging': isWorkflowDragging,
+                    'performance-test__drop-zone--selected':
+                      workflowFilePath || pendingExampleWorkflowLabel
+                  }
+                ]"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
                 @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
                 @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
@@ -696,8 +745,13 @@ watch(performanceTestLogs, async () => {
                 @drop.prevent="dropWorkflow"
               >
                 <button
-                  class="performance-test__drop-content"
+                  class="performance-test__drop-content flex min-h-[102px] w-full items-center border-0 bg-transparent p-5 font-[inherit] text-[13px] text-inherit cursor-pointer"
                   type="button"
+                  :class="
+                    workflowFilePath || pendingExampleWorkflowLabel
+                      ? 'justify-start pr-14 text-left'
+                      : 'justify-center text-center'
+                  "
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
@@ -708,7 +762,10 @@ watch(performanceTestLogs, async () => {
                         : t('performanceTest.dropWorkflowHint')
                     }}
                   </span>
-                  <span v-else class="performance-test__workflow-file">
+                  <span
+                    v-else
+                    class="performance-test__workflow-file flex min-w-0 flex-col gap-1.5 [&>strong]:truncate [&>strong]:text-[var(--text-primary)] [&>strong]:font-semibold [&>code]:[overflow-wrap:anywhere] [&>code]:text-[var(--text-faint)] [&>code]:text-[11px] [&>code]:font-[inherit]"
+                  >
                     <strong>{{ workflowLabel }}</strong>
                     <code v-if="pendingExampleWorkflowLabel">
                       {{ t('performanceTest.preparingExampleWorkflow') }}
@@ -716,7 +773,7 @@ watch(performanceTestLogs, async () => {
                     <template v-else-if="exampleDownload">
                       <code>{{ exampleDownload.message }}</code>
                       <span
-                        class="performance-test__example-download-bar"
+                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-[var(--accent)] [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
                         role="progressbar"
                         :aria-valuenow="
                           exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
@@ -731,16 +788,18 @@ watch(performanceTestLogs, async () => {
                         />
                         <span
                           v-else
-                          class="performance-test__example-download-bar--indeterminate"
+                          class="performance-test__example-download-bar--indeterminate w-[30%] animate-[performance-test-download-pulse_1.2s_ease-in-out_infinite_alternate]"
                         />
                       </span>
                     </template>
                     <code v-else>{{ workflowFilePath }}</code>
                   </span>
                 </button>
-                <button
+                <Button
                   v-if="workflowFilePath && !isWorkflowLocked"
-                  class="performance-test__delete-workflow"
+                  class="performance-test__delete-workflow absolute top-1/2 right-4 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 text-text-muted cursor-pointer hover:bg-[var(--chooser-surface-bg-hover)] hover:text-[var(--accent-danger,#d92d20)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] appearance-auto font-normal transition-none"
+                  variant="textonly"
+                  size="unset"
                   type="button"
                   :aria-label="
                     exampleDownload
@@ -756,23 +815,33 @@ watch(performanceTestLogs, async () => {
                   @click="deleteWorkflow"
                 >
                   <Trash2 :size="18" aria-hidden="true" />
-                </button>
+                </Button>
               </div>
-              <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
+              <p
+                v-if="workflowImportError"
+                class="performance-test__workflow-error -mt-2 mr-0 mb-0 ml-0 text-[12px] leading-[1.4] text-[var(--accent-danger,#d92d20)]"
+                role="alert"
+              >
                 {{ workflowImportError }}
               </p>
             </section>
 
-            <section class="performance-test__column">
+            <section
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+            >
               <h2>{{ t('performanceTest.measurementSettings') }}</h2>
-              <div class="performance-test__setting">
-                <span class="performance-test__setting-label">
+              <div
+                class="performance-test__setting flex w-full items-center gap-3 [&_label]:text-neutral-200 [&_label]:text-[13px] [&_label]:whitespace-nowrap"
+              >
+                <span class="performance-test__setting-label inline-flex flex-none items-center">
                   <label for="performance-test-warmup-runs">
                     {{ t('performanceTest.warmupRuns') }}
                   </label>
                   <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
                 </span>
-                <div class="brand-input performance-test__setting-input">
+                <div
+                  class="performance-test__setting-input box-border ml-auto flex-[0_1_260px] w-[260px] min-w-[180px] min-h-[30px] rounded-md border border-solid border-border bg-[var(--brand-surface-bg)] px-2 py-1 text-neutral-100 text-[length:var(--takeover-fs-caption)] transition-[border-color,background] duration-[120ms] ease-[ease] flex items-center gap-2.5 hover:bg-[var(--brand-surface-bg-hover)] has-[:focus-visible]:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)] [&_input]:appearance-none [&_input]:rounded-none [&_input]:box-content [&_input]:[border-style:none] [&_input]:[outline-style:none] [&_input]:text-left [&_input]:flex-auto [&_input]:min-w-0 [&_input]:w-auto [&_input]:m-0 [&_input]:p-0 [&_input]:border-0 [&_input]:bg-transparent [&_input]:text-inherit [&_input]:font-[inherit] [&_input]:[font-size:inherit] [&_input]:[line-height:inherit] [&_input]:[font-weight:inherit] [&_input]:cursor-text [&_input]:outline-0 [&_input::placeholder]:text-neutral-400"
+                >
                   <input
                     id="performance-test-warmup-runs"
                     v-model="warmupRuns"
@@ -785,14 +854,18 @@ watch(performanceTestLogs, async () => {
                   />
                 </div>
               </div>
-              <div class="performance-test__setting">
-                <span class="performance-test__setting-label">
+              <div
+                class="performance-test__setting flex w-full items-center gap-3 [&_label]:text-neutral-200 [&_label]:text-[13px] [&_label]:whitespace-nowrap"
+              >
+                <span class="performance-test__setting-label inline-flex flex-none items-center">
                   <label for="performance-test-measured-runs">
                     {{ t('performanceTest.measuredRuns') }}
                   </label>
                   <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
                 </span>
-                <div class="brand-input performance-test__setting-input">
+                <div
+                  class="performance-test__setting-input box-border ml-auto flex-[0_1_260px] w-[260px] min-w-[180px] min-h-[30px] rounded-md border border-solid border-border bg-[var(--brand-surface-bg)] px-2 py-1 text-neutral-100 text-[length:var(--takeover-fs-caption)] transition-[border-color,background] duration-[120ms] ease-[ease] flex items-center gap-2.5 hover:bg-[var(--brand-surface-bg-hover)] has-[:focus-visible]:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)] [&_input]:appearance-none [&_input]:rounded-none [&_input]:box-content [&_input]:[border-style:none] [&_input]:[outline-style:none] [&_input]:text-left [&_input]:flex-auto [&_input]:min-w-0 [&_input]:w-auto [&_input]:m-0 [&_input]:p-0 [&_input]:border-0 [&_input]:bg-transparent [&_input]:text-inherit [&_input]:font-[inherit] [&_input]:[font-size:inherit] [&_input]:[line-height:inherit] [&_input]:[font-weight:inherit] [&_input]:cursor-text [&_input]:outline-0 [&_input::placeholder]:text-neutral-400"
+                >
                   <input
                     id="performance-test-measured-runs"
                     v-model="measuredRuns"
@@ -805,36 +878,53 @@ watch(performanceTestLogs, async () => {
                   />
                 </div>
               </div>
-              <div class="performance-test__run-actions">
-                <button
-                  class="danger-solid performance-test__stop"
+              <div class="performance-test__run-actions mt-auto flex self-end gap-2">
+                <Button
+                  class="performance-test__stop min-w-24"
+                  variant="destructive"
+                  size="unset"
+                  :class="[
+                    ordinaryButtonClass,
+                    'border-danger bg-danger text-bg hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]'
+                  ]"
                   type="button"
                   :disabled="!canStop"
                   @click="stopPerformanceTestFromUser"
                 >
                   {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
-                </button>
-                <button
-                  class="brand-primary performance-test__run"
+                </Button>
+                <Button
+                  class="performance-test__run min-w-24"
+                  variant="inverted"
+                  size="unset"
+                  :class="[brandButtonClass, primaryButtonClass]"
                   type="button"
                   :disabled="!canRun"
                   @click="runPerformanceTest"
                 >
                   {{ isLaunching ? t('performanceTest.running') : t('performanceTest.run') }}
-                </button>
+                </Button>
               </div>
             </section>
           </div>
 
-          <section class="performance-test__results-section">
+          <section class="performance-test__results-section flex w-full flex-none flex-col gap-4">
             <CollapsibleSectionToggle
               :expanded="resultsExpanded"
               :label="t('performanceTest.results')"
               @toggle="resultsExpanded = !resultsExpanded"
             />
-            <div v-show="resultsExpanded" class="performance-test__results">
-              <div v-if="isLaunching && totalProgressRuns > 0" class="performance-test__progress">
-                <div class="performance-test__progress-heading">
+            <div
+              v-show="resultsExpanded"
+              class="performance-test__results rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] p-5 text-[13px] text-text-muted [&>h3]:mt-5 [&>h3]:mb-3 [&>h3]:text-neutral-200 [&>h3]:text-[13px] [&>h3]:font-normal"
+            >
+              <div
+                v-if="isLaunching && totalProgressRuns > 0"
+                class="performance-test__progress grid gap-3"
+              >
+                <div
+                  class="performance-test__progress-heading flex items-center justify-between gap-4 text-neutral-200 [&>span:first-child]:text-[var(--text-primary)]"
+                >
                   <span>{{ t('performanceTest.runProgress') }}</span>
                   <span>
                     {{
@@ -846,7 +936,7 @@ watch(performanceTestLogs, async () => {
                   </span>
                 </div>
                 <div
-                  class="performance-test__progress-track"
+                  class="performance-test__progress-track h-2 overflow-hidden rounded-[999px] bg-[var(--chooser-surface-border)] [&>i]:block [&>i]:h-full [&>i]:rounded-[inherit] [&>i]:bg-comfy-yellow [&>i]:transition-[width] [&>i]:duration-[180ms] [&>i]:ease-[ease]"
                   role="progressbar"
                   :aria-label="t('performanceTest.runProgress')"
                   :aria-valuenow="completedProgressRuns"
@@ -857,24 +947,31 @@ watch(performanceTestLogs, async () => {
                 </div>
               </div>
               <template v-else-if="performanceTestResult?.resultsSummary">
-                <div class="performance-test__summary">
-                  <div class="performance-test__summary-column">
-                    <dl class="performance-test__result-list">
-                      <div class="performance-test__result-workflow">
+                <div
+                  class="performance-test__summary grid grid-cols-2 gap-6 [--perf-label-align:right] [--perf-value-align:right] [@media(max-width:900px)]:grid-cols-1"
+                >
+                  <div
+                    class="performance-test__summary-column [--perf-label-align:left] [--perf-value-align:left]"
+                  >
+                    <dl
+                      class="performance-test__result-list grid-cols-2 gap-y-3"
+                      :class="resultListClass"
+                    >
+                      <div class="performance-test__result-workflow col-span-full">
                         <dt>{{ t('performanceTest.workflowFileName') }}</dt>
                         <dd>{{ performanceTestResult.resultsSummary.workflowName }}</dd>
                       </div>
                     </dl>
                     <div
                       v-if="performanceTestResult.statistics"
-                      class="performance-test__aggregate-chart"
+                      class="performance-test__aggregate-chart mt-8 grid gap-[5px]"
                       role="img"
                       :aria-label="t('performanceTest.runDurationChart')"
                     >
                       <div
                         v-for="aggregate in aggregateChart"
                         :key="aggregate.label"
-                        class="performance-test__aggregate-bar"
+                        class="performance-test__aggregate-bar grid grid-cols-[110px_minmax(40px,1fr)] items-center gap-2 text-[10px] leading-[1.2] text-text-muted [&>div]:h-[5px] [&>div]:overflow-hidden [&>div]:rounded-[999px] [&>div]:bg-[var(--chooser-surface-border)] [&_i]:block [&_i]:h-full [&_i]:rounded-[inherit] [&_i]:bg-comfy-yellow"
                       >
                         <span>{{ aggregate.label }}</span>
                         <div aria-hidden="true">
@@ -883,7 +980,10 @@ watch(performanceTestLogs, async () => {
                       </div>
                     </div>
                   </div>
-                  <dl class="performance-test__result-list performance-test__timing-list">
+                  <dl
+                    class="performance-test__result-list performance-test__timing-list grid-cols-2 gap-y-3 content-start"
+                    :class="resultListClass"
+                  >
                     <div>
                       <dt>{{ t('performanceTest.measuredRunCount') }}</dt>
                       <dd>{{ performanceTestResult.resultsSummary.measuredJobCount }}</dd>
@@ -929,16 +1029,19 @@ watch(performanceTestLogs, async () => {
                   </dl>
                 </div>
               </template>
-              <p v-else class="performance-test__results-placeholder">
+              <p v-else class="performance-test__results-placeholder m-0">
                 {{ t('performanceTest.resultsPlaceholder') }}
               </p>
 
               <template v-if="performanceTestResult?.hardware">
                 <h3>{{ t('performanceTest.systemInformation') }}</h3>
-                <div class="performance-test__system-groups">
-                  <section class="performance-test__system-group">
+                <div class="performance-test__system-groups grid grid-cols-2 gap-3">
+                  <section
+                    class="performance-test__system-group min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg-hover)_45%,transparent)] p-3.5"
+                  >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
+                      :class="[resultListClass, compactResultListClass]"
                     >
                       <div>
                         <dt>{{ t('performanceTest.device') }}</dt>
@@ -965,10 +1068,11 @@ watch(performanceTestLogs, async () => {
 
                   <section
                     v-if="performanceTestResult.systemInfo"
-                    class="performance-test__system-group"
+                    class="performance-test__system-group min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg-hover)_45%,transparent)] p-3.5"
                   >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
+                      :class="[resultListClass, compactResultListClass]"
                     >
                       <div>
                         <dt>{{ t('performanceTest.cpu') }}</dt>
@@ -991,25 +1095,37 @@ watch(performanceTestLogs, async () => {
                 </div>
               </template>
 
-              <div v-if="resultsFolderPath" class="performance-test__results-actions">
-                <span v-if="exportResultsError" class="performance-test__export-error">
+              <div
+                v-if="resultsFolderPath"
+                class="performance-test__results-actions mt-4 flex items-center justify-end gap-2"
+              >
+                <span
+                  v-if="exportResultsError"
+                  class="performance-test__export-error mr-auto text-[12px] text-danger"
+                >
                   {{ exportResultsError }}
                 </span>
-                <button
-                  class="secondary performance-test__open-results"
+                <Button
+                  class="performance-test__open-results inline-flex items-center gap-2"
+                  variant="secondary"
+                  size="unset"
+                  :class="ordinaryButtonClass"
                   type="button"
                   @click="openResultsFolder"
                 >
                   <FolderOpen :size="16" aria-hidden="true" />
                   {{ t('performanceTest.openResultsFolder') }}
-                </button>
-                <button
+                </Button>
+                <Button
                   v-if="
                     performanceTestResult?.statistics &&
                     performanceTestResult.systemInfo &&
                     performanceTestResult.hardware
                   "
-                  class="secondary performance-test__export-results"
+                  class="performance-test__export-results inline-flex items-center gap-2"
+                  variant="secondary"
+                  size="unset"
+                  :class="ordinaryButtonClass"
                   type="button"
                   :disabled="isExportingResults"
                   @click="exportResultsImage"
@@ -1020,12 +1136,12 @@ watch(performanceTestLogs, async () => {
                       ? t('performanceTest.exportingImage')
                       : t('performanceTest.exportResultsImage')
                   }}
-                </button>
+                </Button>
               </div>
             </div>
           </section>
           <section
-            class="performance-test__logs-section"
+            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col gap-4"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
             <CollapsibleSectionToggle
@@ -1036,7 +1152,7 @@ watch(performanceTestLogs, async () => {
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs scroll-visible"
+              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] p-5 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}
@@ -1045,7 +1161,9 @@ watch(performanceTestLogs, async () => {
         </div>
       </div>
 
-      <div class="performance-test__account">
+      <div
+        class="performance-test__account absolute top-0 right-0 z-[2] flex justify-end max-w-[min(340px,45%)]"
+      >
         <DevPlatformAccountChip />
       </div>
     </div>
@@ -1054,7 +1172,7 @@ watch(performanceTestLogs, async () => {
       :open="isExamplePickerOpen"
       size="xl"
       :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
-      content-class="performance-test__example-modal"
+      content-class="performance-test__example-modal [&_h2]:m-0 [&_h2+p]:mt-1.5 [&_h2+p]:mr-0 [&_h2+p]:mb-0 [&_h2+p]:ml-0 [&_h2+p]:text-[13px] [&_h2+p]:text-text-muted"
       @close="isExamplePickerOpen = false"
     >
       <template #header>
@@ -1063,7 +1181,11 @@ watch(performanceTestLogs, async () => {
           <p>{{ t('performanceTest.exampleWorkflowPickerDescription') }}</p>
         </div>
       </template>
-      <p v-if="exampleDiskError" class="performance-test__example-disk-error" role="alert">
+      <p
+        v-if="exampleDiskError"
+        class="performance-test__example-disk-error mt-0 mr-0 mb-3 ml-0 text-[12px] text-[var(--accent-danger,#d92d20)]"
+        role="alert"
+      >
         {{ exampleDiskError }}
       </p>
       <TemplatePickerStep
@@ -1076,605 +1198,39 @@ watch(performanceTestLogs, async () => {
         @select="selectedExampleWorkflowId = $event.value"
       />
       <template #footer>
-        <button class="brand-secondary" type="button" @click="isExamplePickerOpen = false">
+        <Button
+          variant="secondary"
+          size="unset"
+          :class="[brandButtonClass, secondaryButtonClass]"
+          type="button"
+          @click="isExamplePickerOpen = false"
+        >
           {{ t('common.cancel') }}
-        </button>
-        <button
-          class="brand-primary"
+        </Button>
+        <Button
+          variant="inverted"
+          size="unset"
+          :class="[brandButtonClass, primaryButtonClass]"
           type="button"
           :disabled="!selectedExampleWorkflowId || !!exampleDiskError"
+          data-testid="performance-test-use-example"
           @click="prepareExampleWorkflow"
         >
           {{ t('performanceTest.useExampleWorkflow') }}
-        </button>
+        </Button>
       </template>
     </BaseModal>
   </BrandBackground>
 </template>
 
-<style scoped>
-.performance-test {
-  min-height: 0;
-}
-
-.performance-test :deep(.brand-outer-frame),
-.performance-test :deep(.brand-inner-frame) {
-  min-height: 0;
-}
-
-.performance-test__layout {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.performance-test__intro {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  min-height: 100%;
-  gap: 24px;
-  text-align: left;
-}
-
-.performance-test__columns {
-  display: grid;
-  grid-template-columns: minmax(240px, 3fr) repeat(2, minmax(0, 3.5fr));
-  gap: 24px;
-  width: 100%;
-  min-height: 0;
-  flex: 0 0 auto;
-}
-
-.performance-test__content {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  min-height: 0;
-}
-
-.performance-test__column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-  min-height: 0;
-}
-
-.performance-test__column h2 {
-  margin: 0;
-  color: var(--neutral-200);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-.performance-test__setting {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-
-.performance-test__setting-label {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-}
-
-.performance-test__setting label {
-  color: var(--neutral-200);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.performance-test__setting-input {
-  box-sizing: border-box;
-  flex: 0 1 260px;
-  width: 260px;
-  min-width: 180px;
-  min-height: 30px;
-  margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: var(--takeover-fs-caption);
-}
-
-.performance-test__selection-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-
-.performance-test__selection-label {
-  flex: 0 0 68px;
-  color: var(--neutral-200);
-  font-size: 13px;
-}
-
-.performance-test__selection-control {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  max-width: 320px;
-}
-
-.performance-test__workspace-select :deep(.workspace-selector) {
-  width: 100%;
-}
-
-.performance-test__workspace-select :deep(.workspace-selector__face) {
-  --dp-avatar-size: 20px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: 4px 8px;
-}
-
-.performance-test__instance-select :deep(.ui-select-trigger) {
-  height: 30px;
-  padding: 4px 8px;
-}
-
-/* Same height and text size as the workspace and instance selectors beside it. */
-.performance-test__example-workflow {
-  box-sizing: border-box;
-  width: 100%;
-  height: 30px;
-  padding: 4px 8px;
-  font-size: var(--takeover-fs-caption);
-}
-
-.performance-test__workflow-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  color: var(--text-faint);
-  font-size: 11px;
-  text-transform: uppercase;
-}
-
-.performance-test__workflow-divider::before,
-.performance-test__workflow-divider::after {
-  flex: 1;
-  height: 1px;
-  background: var(--chooser-surface-border);
-  content: '';
-}
-
-.performance-test__example-modal h2 {
-  margin: 0;
-}
-
-.performance-test__example-modal h2 + p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.performance-test__example-disk-error {
-  margin: 0 0 12px;
-  color: var(--accent-danger, #d92d20);
-  font-size: 12px;
-}
-
-.performance-test__example-download-bar {
-  display: block;
-  overflow: hidden;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--chooser-surface-border);
-}
-
-.performance-test__example-download-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width 0.4s ease;
-}
-
-.performance-test__example-download-bar > .performance-test__example-download-bar--indeterminate {
-  width: 30%;
-  animation: performance-test-download-pulse 1.2s ease-in-out infinite alternate;
-}
-
+<style>
+/* The indeterminate bar moves by percentages of its own width. */
 @keyframes performance-test-download-pulse {
   from {
     transform: translateX(-100%);
   }
   to {
     transform: translateX(333%);
-  }
-}
-
-.performance-test__drop-zone,
-.performance-test__logs {
-  padding: 20px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--chooser-surface-bg);
-  color: var(--text-muted);
-}
-
-.performance-test__drop-zone {
-  position: relative;
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 104px;
-  padding: 0;
-  border-width: 1px;
-  border-style: dotted;
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-
-.performance-test__drop-zone:hover,
-.performance-test__drop-zone:focus-within,
-.performance-test__drop-zone--dragging {
-  border-color: var(--chooser-surface-border-hover);
-  background: var(--chooser-surface-bg-hover);
-}
-
-.performance-test__drop-zone:focus-within {
-  outline: none;
-}
-
-.performance-test__drop-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 102px;
-  padding: 20px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.performance-test__drop-zone--selected .performance-test__drop-content {
-  justify-content: flex-start;
-  padding-right: 56px;
-  text-align: left;
-}
-
-.performance-test__workflow-file {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.performance-test__workflow-file strong {
-  overflow: hidden;
-  color: var(--text-primary);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.performance-test__workflow-file code {
-  overflow-wrap: anywhere;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-family: inherit;
-}
-
-.performance-test__delete-workflow {
-  position: absolute;
-  top: 50%;
-  right: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transform: translateY(-50%);
-}
-
-.performance-test__delete-workflow:hover {
-  background: var(--chooser-surface-bg-hover);
-  color: var(--accent-danger, #d92d20);
-}
-
-.performance-test__workflow-error {
-  margin: -8px 0 0;
-  color: var(--accent-danger, #d92d20);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.performance-test__run-actions {
-  display: flex;
-  align-self: flex-end;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.performance-test__run,
-.performance-test__stop {
-  min-width: 96px;
-}
-
-.performance-test__logs {
-  flex: 0 0 clamp(210px, 37.5vh, 360px);
-  min-height: 0;
-  overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.performance-test__logs-section {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  min-height: 0;
-}
-
-.performance-test__logs-section--collapsed {
-  flex: 0 0 auto;
-}
-
-.performance-test__results-section {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-}
-
-.performance-test__results {
-  padding: 20px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--chooser-surface-bg);
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.performance-test__results-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.performance-test__progress {
-  display: grid;
-  gap: 12px;
-}
-
-.performance-test__progress-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--neutral-200);
-}
-
-.performance-test__progress-heading span:first-child {
-  color: var(--text-primary);
-}
-
-.performance-test__progress-track {
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--chooser-surface-border);
-}
-
-.performance-test__progress-track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--comfy-yellow);
-  transition: width 180ms ease;
-}
-
-.performance-test__open-results,
-.performance-test__export-results {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.performance-test__export-error {
-  margin-right: auto;
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.performance-test__result-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 24px;
-  margin: 0;
-}
-
-.performance-test__result-list div {
-  min-width: 0;
-}
-
-.performance-test__result-list dt {
-  color: var(--neutral-200);
-}
-
-.performance-test__result-list dd {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-size: 24px;
-  line-height: 1.25;
-}
-
-.performance-test__summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.performance-test__timing-list {
-  align-content: start;
-}
-
-.performance-test__summary-column > .performance-test__result-list {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.performance-test__result-workflow {
-  grid-column: 1 / -1;
-}
-
-.performance-test__summary .performance-test__result-list dt,
-.performance-test__summary .performance-test__result-list dd {
-  text-align: right;
-}
-
-.performance-test__summary-column .performance-test__result-list dt,
-.performance-test__summary-column .performance-test__result-list dd {
-  text-align: left;
-}
-
-.performance-test__aggregate-chart {
-  display: grid;
-  gap: 5px;
-  margin-top: 32px;
-}
-
-.performance-test__aggregate-bar {
-  display: grid;
-  grid-template-columns: 110px minmax(40px, 1fr);
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.2;
-}
-
-.performance-test__aggregate-bar > div {
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--chooser-surface-border);
-}
-
-.performance-test__aggregate-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--comfy-yellow);
-}
-
-.performance-test__result-list--compact {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px 24px;
-}
-
-.performance-test__system-groups {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.performance-test__system-group {
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--chooser-surface-bg-hover) 45%, transparent);
-}
-
-.performance-test__result-list--compact div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--chooser-surface-border);
-}
-
-.performance-test__result-list--compact dt {
-  flex: 0 0 auto;
-  font-size: 12px;
-}
-
-.performance-test__result-list--compact dd {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.3;
-  text-align: right;
-}
-
-.performance-test__results
-  h3
-  + .performance-test__result-list:not(.performance-test__result-list--compact)
-  dd {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: inherit;
-}
-
-.performance-test__results h3 {
-  margin: 20px 0 12px;
-  color: var(--neutral-200);
-  font-size: 13px;
-  font-weight: 400;
-}
-
-.performance-test__results-placeholder {
-  margin: 0;
-}
-
-.performance-test__account {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  justify-content: flex-end;
-  max-width: min(340px, 45%);
-}
-
-@media (max-width: 900px) {
-  .performance-test__columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .performance-test__summary {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .performance-test__result-list--compact {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .performance-test__system-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
