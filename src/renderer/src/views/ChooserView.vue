@@ -22,7 +22,6 @@ import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSele
 import { openInstallManager } from '../lib/openInstallManager'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
-import { providePaletteScope } from '../composables/usePaletteScope'
 
 /**
  * Chooser view - recents grid.
@@ -59,8 +58,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-// The dashboard and what it teleports take the Void palette.
-const paletteScope = providePaletteScope()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
@@ -295,7 +292,7 @@ const gridHandlers = {
 </script>
 
 <template>
-  <BrandBackground v-show="props.visible" class="chooser-bg" :class="paletteScope">
+  <BrandBackground v-show="props.visible" class="chooser-bg">
     <div class="chooser-view chooser-view--workspace" :style="{ '--rows': clusterRows }">
       <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">

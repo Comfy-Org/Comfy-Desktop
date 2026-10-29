@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
 import BaseSelect from './BaseSelect.vue'
-import { PALETTE_VOID_CLASS, providePaletteScope } from '../../composables/usePaletteScope'
 
 const wrappers: VueWrapper[] = []
 const originalInnerHeight = window.innerHeight
@@ -107,32 +105,5 @@ describe('BaseSelect positioning', () => {
     expect(listbox!.style.top).toBe('72px')
     expect(listbox!.style.bottom).toBe('auto')
     expect(listbox!.style.maxHeight).toBe('80px')
-  })
-})
-
-describe('BaseSelect palette', () => {
-  it.each([
-    { opener: 'a Void screen', inVoid: true },
-    { opener: 'a brand screen', inVoid: false }
-  ])('gives the teleported listbox the palette of $opener', async ({ inVoid }) => {
-    const props = {
-      modelValue: 'One',
-      options: [{ value: 'One', label: 'One' }],
-      ariaLabel: 'Test select'
-    }
-    const Screen = defineComponent({
-      setup() {
-        const palette = inVoid ? providePaletteScope() : undefined
-        return () => h('div', { class: palette }, [h(BaseSelect, props)])
-      }
-    })
-    const wrapper = mount(Screen, { attachTo: document.body })
-    wrappers.push(wrapper)
-
-    await wrapper.get('.ui-select-trigger').trigger('click')
-    await flushPromises()
-
-    const listbox = document.querySelector('.ui-select-listbox')
-    expect(listbox?.classList.contains(PALETTE_VOID_CLASS)).toBe(inVoid)
   })
 })

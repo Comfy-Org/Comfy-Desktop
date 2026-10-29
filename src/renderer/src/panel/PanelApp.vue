@@ -17,7 +17,6 @@ import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
-import { providePaletteScope } from '../composables/usePaletteScope'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
@@ -48,7 +47,6 @@ import type { Installation } from '../types/ipc'
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 useTheme()
-providePaletteScope()
 
 const params = new URLSearchParams(window.location.search)
 const installationId = params.get('installationId') || ''

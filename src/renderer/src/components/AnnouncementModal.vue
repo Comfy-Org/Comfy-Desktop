@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { providePaletteScope } from '../composables/usePaletteScope'
 
 /**
  * One-off announcement modal (currently the Comfy API launch).
@@ -35,8 +34,6 @@ const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
-// Dialogs take the Void palette over every screen: one dialog style.
-const paletteScope = providePaletteScope()
 
 const highlights = computed<string[]>(() => {
   const raw = tm('announcement.comfyApi.highlights')
@@ -102,7 +99,6 @@ onUnmounted(() => {
       <div
         ref="overlayRef"
         class="announce-overlay"
-        :class="paletteScope"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"

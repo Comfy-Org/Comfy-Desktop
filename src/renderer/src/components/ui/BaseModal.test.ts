@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import BaseModal from './BaseModal.vue'
-import { PALETTE_VOID_CLASS } from '../../composables/usePaletteScope'
 
 const i18n = createI18n({
   legacy: false,
@@ -101,9 +100,4 @@ describe('BaseModal', () => {
     const wrapper = mountModal({ size: 'xl' })
     expect(wrapper.find('.base-modal-panel').classes()).toContain('is-size-xl')
   })
-})
-
-it('takes the Void palette even when opened from a brand screen', () => {
-  const wrapper = mountModal()
-  expect(wrapper.get('.base-modal-overlay').classes()).toContain(PALETTE_VOID_CLASS)
 })

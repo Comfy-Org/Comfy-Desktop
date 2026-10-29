@@ -32,7 +32,6 @@ import {
 } from '../lib/relativeSpeed'
 import { useDialogs } from '../composables/useDialogs'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
-import { providePaletteScope } from '../composables/usePaletteScope'
 
 type DurationKey =
   | 'fastestJobDurationSeconds'
@@ -48,8 +47,6 @@ interface RelativeSpeedResult {
 }
 
 const { t } = useI18n()
-// Void colors only; the layout and brand background stay.
-const paletteScope = providePaletteScope()
 const dialogs = useDialogs()
 const benchmarks = ref<PerformanceTestBenchmark[]>([])
 const selectedOrderIds = ref<string[]>([])
@@ -800,7 +797,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <BrandBackground class="benchmarks" :class="paletteScope" data-testid="benchmarks">
+  <BrandBackground class="benchmarks" data-testid="benchmarks">
     <div class="benchmarks__layout">
       <BrandedPageHeader
         :title="t('benchmarks.title')"

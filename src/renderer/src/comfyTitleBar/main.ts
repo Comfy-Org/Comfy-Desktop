@@ -6,7 +6,6 @@ import { createApp } from 'vue'
 import TitleBarApp from './TitleBarApp.vue'
 import { initializeRendererBootstrap } from '../lib/rendererBootstrap'
 import { createAppI18n } from '../lib/i18nFactory'
-import { PALETTE_VOID_CLASS } from '../composables/usePaletteScope'
 
 // The title bar survives mode flips (unlike the panel renderer), so bootstrapping
 // telemetry here is what makes RUM/PostHog see steady-state ComfyUI sessions. Main
@@ -16,8 +15,8 @@ initializeRendererBootstrap('title-bar')
 // Default to dark before mount so design tokens resolve immediately; only matters for
 // the brief moment before main's first theme push.
 document.documentElement.setAttribute('data-theme', 'dark')
-// Everything this renderer draws is in the Void palette (assets/palette-void.css).
-document.documentElement.classList.add(PALETTE_VOID_CLASS)
+// Use the Desktop palette; the title bar alone can match the editor background.
+document.documentElement.classList.add('palette-void')
 
 // webContents are isolated JS contexts, so each renderer needs its own vue-i18n
 // instance; the shared factory keeps them on the same en catalog.

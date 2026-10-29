@@ -4,7 +4,6 @@ import { X } from 'lucide-vue-next'
 import { useModalOverlay } from '../../composables/useModalOverlay'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'
-import { providePaletteScope } from '../../composables/usePaletteScope'
 
 // Compact alert primitive. Footer supports up to three actions in order
 // `[Cancel] [Secondary] [Primary]`. Use BaseModal for richer header/footer
@@ -64,8 +63,6 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{ close: []; cancel: []; secondary: [] }>()
-// Dialogs take the Void palette over every screen: one dialog style.
-const paletteScope = providePaletteScope()
 
 const TITLE_ID = 'base-alert-title'
 
@@ -175,7 +172,6 @@ onBeforeUnmount(() => {
         v-if="open"
         ref="dialogRef"
         class="base-alert-overlay"
-        :class="paletteScope"
         role="alertdialog"
         aria-modal="true"
         :aria-label="dialogAriaLabel"

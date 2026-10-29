@@ -3,7 +3,6 @@
 // ComfyUISettingsPanel) reaches functional parity and ships everywhere.
 import { useI18n } from 'vue-i18n'
 import { useModalOverlay } from '../composables/useModalOverlay'
-import { usePaletteScope } from '../composables/usePaletteScope'
 import SnapshotDiffView from './SnapshotDiffView.vue'
 import type { SnapshotDiffData } from '../types/ipc'
 
@@ -20,8 +19,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-// Teleported, so the dialog carries its opener's palette itself.
-const paletteScope = usePaletteScope()
 
 const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
   () => true,
@@ -33,7 +30,6 @@ const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
   <Teleport to="body">
     <div
       class="modal-overlay restore-modal-overlay"
-      :class="paletteScope"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >

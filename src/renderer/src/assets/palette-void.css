@@ -13,8 +13,7 @@
  *    resolves where it is declared, so re-pointing the ramp alone would not
  *    reach it below <html>.
  * 2. Shapes and fills of legacy components, by class.
- *    `:is(:root.palette-void, .palette-void)` has the specificity of
- *    `:root.palette-void` either way, so it beats the components' scoped
+ *    `:root.palette-void` beats the components' scoped
  *    styles whatever the load order. Delete a block when its component is
  *    rebuilt on the design system.
  *
@@ -27,8 +26,7 @@
 /* The launcher stays on the reference's dark palette even when the hosted
  * editor is light. Nested theme roots must redeclare the aliases too. */
 :root.palette-void.desktop-panel,
-.palette-void:not(:root),
-.palette-void [data-theme='dark'] {
+:root.palette-void [data-theme='dark'] {
   /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
   --neutral-950: oklch(0.13 0.004 285);
   --neutral-900: oklch(0.165 0.005 285);
@@ -103,80 +101,74 @@
 /* ── 2. Shared controls ────────────────────────────────────────────── */
 
 /* Selects: translucent fill, hairline border. */
-:is(:root.palette-void, .palette-void) .ui-select-trigger {
+:root.palette-void .ui-select-trigger {
   background: var(--color-secondary);
   border-color: var(--color-border);
   color: var(--text);
   font-size: var(--text-ui);
 }
-:is(:root.palette-void, .palette-void) .ui-select-trigger:hover:not(:disabled) {
+:root.palette-void .ui-select-trigger:hover:not(:disabled) {
   background: oklch(1 0 0 / 0.09);
   border-color: var(--color-border-strong);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.ui-select-trigger:focus-visible, .ui-select-trigger[aria-expanded='true']) {
+:root.palette-void :is(.ui-select-trigger:focus-visible, .ui-select-trigger[aria-expanded='true']) {
   border-color: var(--color-ring);
 }
-/* Teleported, the listbox carries the class on its own root. */
-:is(:root.palette-void, .palette-void) .ui-select-listbox,
-.ui-select-listbox.palette-void {
+:root.palette-void .ui-select-listbox {
   padding: 4px;
   border-radius: var(--radius-card);
   border-color: var(--color-border);
   background: var(--color-popover);
   box-shadow: var(--shadow-popover);
 }
-:is(:root.palette-void, .palette-void) .ui-select-option {
+:root.palette-void .ui-select-option {
   border-radius: var(--radius-control);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.ui-select-option[data-active], .ui-select-option[data-selected]) {
+:root.palette-void :is(.ui-select-option[data-active], .ui-select-option[data-selected]) {
   background: oklch(1 0 0 / 0.07);
 }
 
 /* Switches: white track when on, so the knob turns dark. */
-:is(:root.palette-void, .palette-void) .bt-track {
+:root.palette-void .bt-track {
   background-color: oklch(1 0 0 / 0.14);
 }
-:is(:root.palette-void, .palette-void) .bt-switch[data-state='checked'] .bt-thumb,
-:is(:root.palette-void, .palette-void) .args-page-switch[data-state='checked'] > * {
+:root.palette-void .bt-switch[data-state='checked'] .bt-thumb,
+:root.palette-void .args-page-switch[data-state='checked'] > * {
   background: var(--color-background);
   box-shadow: none;
 }
-:is(:root.palette-void, .palette-void) input[type='checkbox']:checked::after {
+:root.palette-void input[type='checkbox']:checked::after {
   background: var(--color-background);
 }
 
 /* Filled primary buttons: white with dark text. */
-:is(:root.palette-void, .palette-void) :is(button.primary, .dlm-btn-primary) {
+:root.palette-void :is(button.primary, .dlm-btn-primary) {
   color: var(--color-background);
 }
-:is(:root.palette-void, .palette-void) button.primary:hover:not(:disabled) {
+:root.palette-void button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
 /* The brand secondary beside a white primary: a quiet secondary button. */
-:is(:root.palette-void, .palette-void) button.brand-secondary {
+:root.palette-void button.brand-secondary {
   border-color: var(--color-border);
   background: var(--color-secondary);
   color: var(--color-foreground);
 }
-:is(:root.palette-void, .palette-void) button.brand-secondary:hover:not([disabled]) {
+:root.palette-void button.brand-secondary:hover:not([disabled]) {
   border-color: var(--color-border-strong);
   background: var(--color-accent);
 }
 
 /* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
-:is(:root.palette-void, .palette-void) .title-bar.title-bar:not(.is-light) {
+:root.palette-void .title-bar.title-bar:not(.is-light) {
   border-bottom-color: var(--color-border);
 }
 /* Ghost icon buttons: no outline on hover, 8px radius. */
-:is(:root.palette-void, .palette-void)
-  .title-bar:not(.is-light)
-  :is(.title-menu-button, .title-downloads-tray) {
+:root.palette-void .title-bar:not(.is-light) :is(.title-menu-button, .title-downloads-tray) {
   border-radius: var(--radius-control);
 }
-:is(:root.palette-void, .palette-void)
+:root.palette-void
   .title-bar.is-hover-active:not(.is-light)
   :is(
     .title-menu-button,
@@ -187,27 +179,23 @@
   border-color: transparent;
 }
 /* The active-download count sits on the accent, which is white here. */
-:is(:root.palette-void, .palette-void)
-  .title-bar:not(.is-light)
-  .title-downloads-badge:not(.is-unseen, .is-error) {
+:root.palette-void .title-bar:not(.is-light) .title-downloads-badge:not(.is-unseen, .is-error) {
   color: var(--color-background);
 }
 /* The install pill: a quiet field, outlined while its picker is open. */
-:is(:root.palette-void, .palette-void) .title-bar:not(.is-light) .title-install-pill {
+:root.palette-void .title-bar:not(.is-light) .title-install-pill {
   border-color: var(--color-border);
   background: oklch(1 0 0 / 0.04);
   color: var(--text-muted);
 }
-:is(:root.palette-void, .palette-void)
+:root.palette-void
   .title-bar.is-hover-active:not(.is-light)
   .title-install-pill.is-interactive:hover:not(.is-open) {
   border-color: oklch(1 0 0 / 0.12);
   background: oklch(1 0 0 / 0.07);
   color: var(--text);
 }
-:is(:root.palette-void, .palette-void)
-  .title-bar:not(.is-light)
-  .title-install-pill.is-interactive.is-open {
+:root.palette-void .title-bar:not(.is-light) .title-install-pill.is-interactive.is-open {
   border-color: oklch(1 0 0 / 0.3);
   background: oklch(1 0 0 / 0.07);
   color: var(--text);
@@ -216,114 +204,108 @@
 /* ── 4. Popup windows ──────────────────────────────────────────────── */
 /* Hairline border and the inset top highlight; an outer shadow would be
  * clipped by the content-sized window. */
-:is(:root.palette-void, .palette-void) .popup.popup {
+:root.palette-void .popup.popup {
   border-color: var(--color-border);
   box-shadow: var(--shadow-highlight);
 }
 /* Menus and the small downloads list: 12px. */
-:is(:root.palette-void, .palette-void)
-  .popup.popup:not(.is-picker, .is-global-settings, .is-downloads-full) {
+:root.palette-void .popup.popup:not(.is-picker, .is-global-settings, .is-downloads-full) {
   border-radius: var(--radius-card);
 }
-:is(:root.palette-void, .palette-void) .popup.is-menu .item:hover {
+:root.palette-void .popup.is-menu .item:hover {
   background: oklch(1 0 0 / 0.07);
 }
-:is(:root.palette-void, .palette-void) .popup.is-menu .separator {
+:root.palette-void .popup.is-menu .separator {
   background: var(--color-border);
   opacity: 1;
 }
 /* Centered cards (picker, settings, all downloads): 16px panels. */
-:is(:root.palette-void, .palette-void)
-  :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
+:root.palette-void :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
   border-radius: var(--radius-panel);
 }
 
 /* ── 5. Desktop Settings: one surface; the tab list is a quiet nav ──── */
-:is(:root.palette-void, .palette-void) .global-settings .gs-header {
+:root.palette-void .global-settings .gs-header {
   padding: 10px 12px 10px 20px;
   border-bottom-color: var(--color-border);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-title {
+:root.palette-void .global-settings .gs-title {
   font-family: var(--font-sans);
   font-size: var(--text-heading);
   font-weight: 600;
   color: var(--text);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-tabs {
+:root.palette-void .global-settings .gs-tabs {
   gap: 1px;
   padding: 8px;
   background: transparent;
   border-right-color: var(--color-border);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-tab {
+:root.palette-void .global-settings .gs-tab {
   min-height: 32px;
   border-radius: var(--radius-control);
   font-size: var(--text-ui);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-tab:hover {
+:root.palette-void .global-settings .gs-tab:hover {
   background: var(--color-secondary);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-tab.active {
+:root.palette-void .global-settings .gs-tab.active {
   background: var(--color-accent);
   color: var(--text);
 }
-:is(:root.palette-void, .palette-void) .global-settings .gs-close {
+:root.palette-void .global-settings .gs-close {
   background: transparent;
 }
-:is(:root.palette-void, .palette-void)
-  .global-settings
-  :is(.gs-close:hover, .gs-close:focus-visible) {
+:root.palette-void .global-settings :is(.gs-close:hover, .gs-close:focus-visible) {
   background: var(--color-secondary);
   border-color: transparent;
 }
 
 /* ── 6. Instance picker ────────────────────────────────────────────── */
-:is(:root.palette-void, .palette-void) .picker .picker-chip {
+:root.palette-void .picker .picker-chip {
   border-radius: var(--radius-control);
   border-color: var(--color-border);
   background: transparent;
 }
-:is(:root.palette-void, .palette-void) .picker .picker-chip:hover {
+:root.palette-void .picker .picker-chip:hover {
   background: var(--color-secondary);
 }
-:is(:root.palette-void, .palette-void) .picker .picker-chip.is-active {
+:root.palette-void .picker .picker-chip.is-active {
   border-color: transparent;
   background: var(--color-accent);
   color: var(--text);
 }
-:is(:root.palette-void, .palette-void) .picker-row {
+:root.palette-void .picker-row {
   border-radius: var(--radius-control);
 }
-:is(:root.palette-void, .palette-void) .picker-row.is-active {
+:root.palette-void .picker-row.is-active {
   background: var(--color-accent);
 }
 /* Status dots ring against the surface they sit on. */
-:is(:root.palette-void, .palette-void)
-  :is(.picker-row-running-dot, .picker-row-update-dot, .picker-row-op-dot) {
+:root.palette-void :is(.picker-row-running-dot, .picker-row-update-dot, .picker-row-op-dot) {
   border-color: var(--neutral-800);
 }
 
 /* ── 7. Manage: the settings tabs inside the picker ────────────────── */
 /* The active tab took the old surface color, which is now the popup's own. */
-:is(:root.palette-void, .palette-void) .settings-v2-tab {
+:root.palette-void .settings-v2-tab {
   border-radius: var(--radius-control);
 }
-:is(:root.palette-void, .palette-void) .settings-v2-tab:hover {
+:root.palette-void .settings-v2-tab:hover {
   background: var(--color-secondary);
 }
-:is(:root.palette-void, .palette-void) .settings-v2-tab.is-active {
+:root.palette-void .settings-v2-tab.is-active {
   background: var(--color-accent);
   color: var(--text);
 }
-:is(:root.palette-void, .palette-void) .settings-v2-tab.is-active .settings-v2-tab-badge {
+:root.palette-void .settings-v2-tab.is-active .settings-v2-tab-badge {
   border-color: var(--neutral-700);
 }
 
 /* ── 8. Dashboard: account, workspace selector and the tile menu ──── */
 /* Ghost faces; their menus are the floating surface (12px, 4px inset, 32px
  * rows with an 8px radius). */
-:is(:root.palette-void, .palette-void)
-  :is(button.account-chip__face, button.workspace-selector__face) {
+:root.palette-void :is(button.account-chip__face, button.workspace-selector__face) {
   --dp-avatar-size: 20px;
   gap: 8px;
   min-width: 0;
@@ -334,16 +316,15 @@
   background: transparent;
   font-size: var(--text-ui);
 }
-:is(:root.palette-void, .palette-void) :is(.account-chip__email, .workspace-selector__name) {
+:root.palette-void :is(.account-chip__email, .workspace-selector__name) {
   font-size: var(--text-ui);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.account-chip__face, .workspace-selector__face):hover:not(:disabled) {
+:root.palette-void :is(.account-chip__face, .workspace-selector__face):hover:not(:disabled) {
   border-color: transparent;
   background: var(--color-secondary);
 }
 /* Signed out: the one white call to action. */
-:is(:root.palette-void, .palette-void) .account-chip__face.account-chip__signin {
+:root.palette-void .account-chip__face.account-chip__signin {
   height: 28px;
   padding-inline: 10px;
   background: var(--color-foreground);
@@ -351,41 +332,35 @@
   font-size: var(--text-ui);
   font-weight: 500;
 }
-:is(:root.palette-void, .palette-void)
-  .account-chip__face.account-chip__signin:hover:not(:disabled) {
+:root.palette-void .account-chip__face.account-chip__signin:hover:not(:disabled) {
   background: var(--accent-hover);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.account-chip__menu, .workspace-selector__menu, .context-menu),
-.context-menu.palette-void {
+:root.palette-void :is(.account-chip__menu, .workspace-selector__menu, .context-menu) {
   padding: 4px;
   border-color: var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-popover);
   box-shadow: var(--shadow-popover);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.account-chip__item, .workspace-selector__item, .context-menu-item) {
+:root.palette-void :is(.account-chip__item, .workspace-selector__item, .context-menu-item) {
   min-height: 32px;
   border-radius: var(--radius-control);
   font-size: var(--text-ui);
 }
-:is(:root.palette-void, .palette-void)
-  :is(.account-chip__item, .workspace-selector__item):hover:not(:disabled),
-:is(:root.palette-void, .palette-void) .context-menu-item:is(:hover, :focus-within):not(.disabled) {
+:root.palette-void :is(.account-chip__item, .workspace-selector__item):hover:not(:disabled),
+:root.palette-void .context-menu-item:is(:hover, :focus-within):not(.disabled) {
   background: var(--color-secondary);
 }
-:is(:root.palette-void, .palette-void) .context-menu-item-action {
+:root.palette-void .context-menu-item-action {
   padding: 6px 0 6px 10px;
 }
-:is(:root.palette-void, .palette-void) .context-menu-separator {
+:root.palette-void .context-menu-separator {
   margin: 4px -4px;
   background: var(--color-border);
 }
 
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
-:is(:root.palette-void, .palette-void)
-  :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
+:root.palette-void :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
   border-color: var(--color-border);
   border-radius: var(--radius-panel);
 }
@@ -393,13 +368,13 @@
 /* ── 10. Full-window flows ────────────────────────────────────────── */
 /* Keep the existing composition and artwork, but remove the old plum/yellow
  * palette. No new shell, navigation, form structure or content is introduced. */
-.palette-void .brand-background.brand-background {
+:root.palette-void .brand-background.brand-background {
   background: var(--color-background);
 }
-.palette-void .brand-inner-frame.brand-inner-frame {
+:root.palette-void .brand-inner-frame.brand-inner-frame {
   background: var(--color-content-background);
 }
-.palette-void .brand-inner-frame.brand-inner-frame--vignette {
+:root.palette-void .brand-inner-frame.brand-inner-frame--vignette {
   background: radial-gradient(
     circle 196px at 50% 50%,
     var(--neutral-950) 0%,
@@ -407,31 +382,31 @@
     var(--color-content-background) 100%
   );
 }
-.palette-void .brand-beam {
+:root.palette-void .brand-beam {
   filter: grayscale(1);
   opacity: 0.45;
 }
-.palette-void .brand-takeover-root:focus {
+:root.palette-void .brand-takeover-root:focus {
   /* This container receives programmatic entry focus. Interactive controls
    * retain their own visible keyboard rings; avoid the OS accent at its edge. */
   outline: none;
 }
-.palette-void .brand-progress__glyph {
+:root.palette-void .brand-progress__glyph {
   color: var(--color-foreground);
 }
-.palette-void .brand-progress__glyph stop {
+:root.palette-void .brand-progress__glyph stop {
   stop-color: currentColor;
 }
-.palette-void :is(.brand-progress__caption, .brand-progress__substatus) {
+:root.palette-void :is(.brand-progress__caption, .brand-progress__substatus) {
   text-shadow: 0 1px 2px oklch(0 0 0 / 0.65);
 }
-.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
+:root.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
   border-color: var(--color-border);
 }
-.palette-void :is(button.brand-primary, button.brand-secondary, button.brand-tertiary) {
+:root.palette-void :is(button.brand-primary, button.brand-secondary, button.brand-tertiary) {
   border-radius: var(--radius-control);
 }
 /* These forms keep their existing control dimensions during the recolor. */
-.palette-void .brand-background .ui-select-trigger {
+:root.palette-void .brand-background .ui-select-trigger {
   font-size: 14px;
 }

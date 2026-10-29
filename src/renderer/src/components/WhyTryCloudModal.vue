@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, X } from 'lucide-vue-next'
 import heroUrl from '../assets/first-use/why-cloud-hero.svg'
-import { usePaletteScope } from '../composables/usePaletteScope'
 
 const emit = defineEmits<{
   close: []
@@ -11,9 +10,6 @@ const emit = defineEmits<{
 }>()
 
 const { tm } = useI18n()
-// Teleported, so it carries its opener's palette: the dashboard has it, the
-// first-run screen does not.
-const paletteScope = usePaletteScope()
 
 const benefits = computed<string[]>(() => {
   const raw = tm('firstUse.whyCloud.benefits')
@@ -55,7 +51,6 @@ onUnmounted(() => {
       <div
         ref="overlayRef"
         class="why-cloud-overlay"
-        :class="paletteScope"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('firstUse.whyCloud.title')"
