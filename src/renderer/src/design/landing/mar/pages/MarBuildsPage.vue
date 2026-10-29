@@ -38,11 +38,11 @@ import type { ItemStatus } from './MarStatus.vue'
 
 /**
  * Builds (Mar's proposal): where your work runs, each with its own
- * ComfyUI version, custom nodes and models. A card's cover is the build
- * at a glance: the last things made on it, then a small live panel (what
- * it runs on, memory in use or how it wakes, models, node packs, disk or
- * credits an hour). Its button does the one thing the state needs (Open,
- * Start, Update, Try again), always bottom-right of the panel.
+ * ComfyUI version, custom nodes and models. A card is the build at a
+ * glance: the last things made on it, its name and one meta line, then a
+ * small spec grid (GPU, memory, uptime or how it wakes, credits an hour
+ * or disk, models, node packs). Its button does the one thing the state
+ * needs (Open, Start, Update, Try again), right of the name.
  */
 type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 
@@ -138,26 +138,21 @@ const LIVE: Record<string, Live> = {
   'dep-upscale': { rate: 48 },
   cloud: { rate: 42 }
 }
-const DISK_FREE = '412 GB free'
+const DISK_FREE = '412 GB'
 const live = (b: Build): Live => LIVE[b.id] ?? {}
 const memory = (b: Build): string => (b.gpu?.includes(' GB') ? 'VRAM' : 'Memory')
 const gpuName = (b: Build): string =>
   b.gpu?.split(' · ')[0] ?? (b.kind === 'cloud' ? 'Cloud GPU' : 'This computer')
-function stateLine(b: Build): string {
-  if (b.state === 'launching') return b.kind === 'cloud' ? 'Waking up, ~20 s' : 'Starting…'
-  if (b.state === 'running')
-    return [`Up ${live(b).up ?? 'just now'}`, live(b).rate && `${live(b).rate} credits/h`]
-      .filter(Boolean)
-      .join(' · ')
-  if (b.state === 'error') return 'Didn’t start'
-  if (b.kind === 'cloud') return 'Asleep · wakes in ~20 s'
-  return b.state === 'update' ? 'Stopped · new version ready' : 'Stopped'
+// Total memory: the GPU's, or this computer's unified memory.
+const memTotal = (b: Build): string => b.gpu?.split(' · ')[1] ?? '128 GB'
+// One spec cell for how the build is right now: [label, value].
+function stateCell(b: Build): [string, string] {
+  if (b.state === 'running') return ['Uptime', live(b).up ?? 'Just now']
+  if (b.state === 'launching') return ['Status', b.kind === 'cloud' ? 'Waking up' : 'Starting']
+  if (b.state === 'error') return ['Status', 'Didn’t start']
+  if (b.kind === 'cloud') return ['Wakes in', '~20 s']
+  return ['Status', 'Stopped']
 }
-const facts = (b: Build): string[] => [
-  b.models !== undefined ? `${b.models} models` : 'Every model',
-  b.nodes !== undefined ? `${b.nodes} node packs` : 'Core nodes',
-  ...(b.kind === 'local' && b.diskSize ? [b.diskSize] : [])
-]
 
 const STATUS: Record<ProtoInstance['state'], ItemStatus | undefined> = {
   running: 'running',
@@ -308,7 +303,7 @@ const newLabel = computed(() =>
         :selected="lib.sel.has(b.id)"
         :selecting="lib.sel.ids.value.size > 0"
         :renaming="lib.renaming.value === b.id"
-        ratio="16 / 11"
+        ratio="2 / 1"
         class="mar-build"
         @open="open(b)"
         @select="lib.pick(b.id, $event)"
@@ -318,55 +313,11 @@ const newLabel = computed(() =>
         @star="builds.star(b.id)"
       >
         <template #media>
-          <span class="mar-build-face" :class="`is-${b.state}`">
-            <span class="mar-build-made" aria-hidden="true">
-              <img
-                v-for="id in outputs.get(b.id)"
-                :key="id"
-                :src="thumb(id)"
-                alt=""
-                loading="lazy"
-              />
-            </span>
-            <span class="mar-build-panel">
-              <span class="mar-build-row">
-                <span class="mar-build-gpu"
-                  ><LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="14" />{{
-                    gpuName(b)
-                  }}</span
-                >
-                <span class="mar-build-state">{{ stateLine(b) }}</span>
-              </span>
-              <span v-if="b.state === 'error'" class="mar-build-error">{{ b.error }}</span>
-              <span
-                v-else-if="b.state === 'running' && live(b).mem"
-                class="mar-build-meter"
-                :aria-label="`${memory(b)} ${live(b).mem![0]} of ${live(b).mem![1]} GB`"
-              >
-                <span class="mar-build-bar"
-                  ><i :style="{ width: `${(live(b).mem![0] / live(b).mem![1]) * 100}%` }"
-                /></span>
-                <span class="tabular-nums"
-                  >{{ memory(b) }} {{ live(b).mem![0] }} / {{ live(b).mem![1] }} GB</span
-                >
-              </span>
-              <span v-else-if="b.kind === 'local'" class="mar-build-meter is-quiet">
-                <span class="mar-build-bar"><i style="width: 38%" /></span>
-                <span>Disk {{ DISK_FREE }}</span>
-              </span>
-              <span v-else class="mar-build-meter is-quiet">
-                <span
-                  >{{ b.gpu?.split(' · ')[1] ?? '' }} {{ memory(b) }} ·
-                  {{ live(b).rate ?? 40 }} credits/h while it runs</span
-                >
-              </span>
-              <span class="mar-build-facts">
-                <span v-for="f in facts(b)" :key="f">{{ f }}</span>
-              </span>
-            </span>
+          <span class="mar-build-made" :class="`is-${b.state}`" aria-hidden="true">
+            <img v-for="id in outputs.get(b.id)" :key="id" :src="thumb(id)" alt="" loading="lazy" />
           </span>
         </template>
-        <template #overlay>
+        <template #footer>
           <button
             type="button"
             class="mar-build-go"
@@ -377,6 +328,42 @@ const newLabel = computed(() =>
               b.state === 'launching' ? 'Starting…' : primary(b).label
             }}
           </button>
+          <dl class="mar-build-spec">
+            <div>
+              <dt>GPU</dt>
+              <dd>{{ gpuName(b) }}</dd>
+            </div>
+            <div>
+              <dt>{{ memory(b) }}</dt>
+              <dd
+                v-if="b.state === 'running' && live(b).mem"
+                :aria-label="`${live(b).mem![0]} of ${live(b).mem![1]} GB in use`"
+              >
+                <span class="mar-build-bar"
+                  ><i :style="{ width: `${(live(b).mem![0] / live(b).mem![1]) * 100}%` }"
+                /></span>
+                {{ live(b).mem![0] }}/{{ live(b).mem![1] }} GB
+              </dd>
+              <dd v-else>{{ memTotal(b) }}</dd>
+            </div>
+            <div>
+              <dt>{{ stateCell(b)[0] }}</dt>
+              <dd :class="b.state === 'error' && 'is-error'">{{ stateCell(b)[1] }}</dd>
+            </div>
+            <div>
+              <dt>{{ b.kind === 'cloud' ? 'Credits/h' : 'Disk free' }}</dt>
+              <dd>{{ b.kind === 'cloud' ? (live(b).rate ?? 40) : DISK_FREE }}</dd>
+            </div>
+            <div>
+              <dt>Models</dt>
+              <dd>{{ b.models ?? 'All' }}</dd>
+            </div>
+            <div>
+              <dt>Node packs</dt>
+              <dd>{{ b.nodes ?? 'Core' }}</dd>
+            </div>
+            <p v-if="b.state === 'error' && b.error" class="mar-build-error">{{ b.error }}</p>
+          </dl>
         </template>
       </MarItem>
     </div>
@@ -444,21 +431,45 @@ const newLabel = computed(() =>
 </template>
 
 <style>
-.mar-build-face {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
+/* One card: an inset strip of outputs, name and meta with the button,
+   then the specs. A solid surface and a hairline, in light and dark. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build {
+  display: grid;
+  padding: 6px;
+  grid-template-areas: 'media media' 'text go' 'spec spec';
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
   background: var(--color-card-background);
+  backdrop-filter: none;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 11%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
 }
-/* The last things made here: three tiles across the top. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build:is(:hover, .is-menu) {
+  background: var(--color-card-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build.is-selected {
+  box-shadow: 0 0 0 2px var(--color-base-foreground);
+}
+.mar-build > .mar-item-media {
+  grid-area: media;
+  border-radius: max(calc(var(--radius-card) - 6px), 4px);
+}
+.mar-build > .mar-item-text {
+  grid-area: text;
+  padding: 12px 8px 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-build .mar-item-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+/* The last things made here: the newest large, two more stacked. */
 .mar-build-made {
   display: grid;
-  height: 42%;
-  flex-shrink: 0;
-  overflow: hidden;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 2px;
 }
 .mar-item-media .mar-build-made img {
@@ -466,88 +477,74 @@ const newLabel = computed(() =>
   width: 100%;
   height: 100%;
   min-width: 0;
+  min-height: 0;
   object-fit: cover;
 }
-.mar-build-face:is(.is-stopped, .is-update) .mar-build-made img {
-  filter: saturate(0.75) brightness(0.85);
+.mar-build-made img:first-child {
+  grid-row: span 2;
 }
-.mar-build-face.is-error .mar-build-made img {
-  filter: grayscale(1) brightness(0.6);
+.mar-build-made:is(.is-stopped, .is-update) img {
+  filter: saturate(0.75) brightness(0.88);
 }
-/* The live panel: what it runs on and how it is right now. */
-.mar-build-panel {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 12px 14px;
-  color: var(--color-base-foreground);
+.mar-build-made.is-error img {
+  filter: grayscale(1) brightness(0.7);
+}
+/* The specs: two columns, a muted label and its value. */
+.mar-build-spec {
+  display: grid;
+  grid-area: spec;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 20px;
+  margin: 12px 8px 6px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   font-size: 12px;
+  line-height: 18px;
 }
-.mar-build-row {
+.mar-build-spec > div {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-.mar-build-gpu {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.mar-build-gpu svg {
-  color: var(--color-muted-foreground);
-}
-.mar-build-state {
-  color: var(--color-muted-foreground);
-  white-space: nowrap;
-}
-.mar-build-meter {
-  display: flex;
-  align-items: center;
   gap: 10px;
+}
+.mar-build-spec dt {
   color: var(--color-muted-foreground);
   white-space: nowrap;
+}
+.mar-build-spec dd {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--color-base-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mar-build-spec dd.is-error,
+.mar-build-error {
+  color: var(--color-error-foreground, oklch(0.62 0.19 25));
+}
+.mar-build-error {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  line-height: 1.4;
 }
 .mar-build-bar {
   position: relative;
+  width: 24px;
   height: 4px;
-  flex: 1;
+  flex-shrink: 0;
   overflow: hidden;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
 .mar-build-bar i {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
   background: var(--color-base-foreground);
-}
-.mar-build-meter.is-quiet .mar-build-bar i {
-  background: var(--color-muted-foreground);
-}
-.mar-build-error {
-  color: var(--color-error-foreground, oklch(0.72 0.17 25));
-  line-height: 1.35;
-}
-/* Short facts, left of the button. */
-.mar-build-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding-right: 92px;
-  color: var(--color-muted-foreground);
-  white-space: nowrap;
-}
-.mar-build-facts span + span::before {
-  margin: 0 8px 0 0;
-  color: var(--color-subtle-foreground);
-  content: '·';
 }
 .mar-build-glyph {
   display: flex;
@@ -556,15 +553,15 @@ const newLabel = computed(() =>
   align-items: center;
   justify-content: center;
 }
+/* The one action, right of the name, level with the meta line. */
 :root .proto-ui.proto-ui.proto-ui .mar-build-go {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
   display: inline-flex;
-  width: auto;
+  grid-area: go;
+  align-self: end;
   height: 28px;
   align-items: center;
   gap: 6px;
+  margin: 0 6px 0 12px;
   padding: 0 12px;
   border-radius: var(--radius-control);
   background: var(--color-inverted-background);

@@ -179,6 +179,9 @@ function click(e: MouseEvent): void {
         ><slot name="meta">{{ meta }}</slot></span
       >
     </span>
+    <!-- Grid cards only: anything that sits under the name (a button, a
+         few facts); the page lays it out. -->
+    <slot v-if="layout === 'grid'" name="footer" />
 
     <template v-if="layout === 'list'">
       <slot name="cols" />
