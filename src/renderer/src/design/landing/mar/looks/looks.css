@@ -11,15 +11,11 @@
 @import './swiss.css';
 
 /* Shader looks: the app floats over the mesh MarLookFx.vue paints behind
-   it, so the window frame and page photos step aside. */
+   it (z-index -1 inside this stacking context, so every sibling - shell,
+   title bar, graph editor - stays on top), and page photos step aside. */
 :root:is([data-mar-look='liquid'], [data-mar-look='grain']) .proto-ui:has(> .mar-look-fx) {
+  isolation: isolate;
   background: var(--color-titlebar-background);
-}
-:root:is([data-mar-look='liquid'], [data-mar-look='grain'])
-  .proto-ui:has(> .mar-look-fx)
-  > :is(.proto-shell, header) {
-  position: relative;
-  z-index: 1;
 }
 :root:is([data-mar-look='liquid'], [data-mar-look='grain']) .proto-shell.proto-shell,
 :root:is([data-mar-look='liquid'], [data-mar-look='grain']) .glass-titlebar.glass-titlebar {

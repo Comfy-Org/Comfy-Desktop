@@ -1,281 +1,110 @@
 /*
- * Liquid · glass that bends light (visionOS, iOS 26). A slow mesh of
- * colour moves behind the app (MarLookFx.vue); every surface is a pane of
- * glass over it: a refracting backdrop (SVG displacement, #mar-liquid-
- * refract), a specular rim that catches light at the top left and bottom
- * right, and a soft highlight that follows the pointer. Controls are
- * capsules. Dark and light.
+ * Liquid · glass over a slow, neutral mesh (MarLookFx.vue). The Void
+ * palette stays: surfaces keep their own colour tokens and radii (the
+ * Corners tweak), and glass is added on top of them, never instead: a
+ * frosted backdrop, a thin specular rim lit from the top, and a soft
+ * highlight that follows the pointer. Highlights are white or grey only.
+ * Dark and light.
  */
 :root[data-mar-look='liquid'] {
-  --lq-glass: oklch(1 0 0 / 0.07);
-  --lq-glass-hi: oklch(1 0 0 / 0.13);
-  --lq-tint: oklch(0.16 0.02 285 / 0.38);
-  --lq-rim: oklch(1 0 0 / 0.55);
-  --lq-rim-soft: oklch(1 0 0 / 0.12);
-  --lq-shadow: 0 24px 60px -18px oklch(0 0 0 / 0.65), 0 2px 6px oklch(0 0 0 / 0.25);
-  --lq-refract: url(#mar-liquid-refract) blur(14px) saturate(1.9) brightness(1.08);
-  --lq-blur: blur(22px) saturate(1.8) brightness(1.05);
-}
-:root[data-mar-look='liquid'][data-mar-ui]:not([data-ds-theme='light']) {
-  --color-titlebar-background: oklch(0.11 0.01 285);
-  --color-content-background: oklch(0.14 0.01 285 / 0.2);
-  --color-card-background: oklch(1 0 0 / 0.08);
-  --color-card-background-hover: oklch(1 0 0 / 0.13);
-  --color-secondary-background: oklch(1 0 0 / 0.09);
-  --color-secondary-background-hover: oklch(1 0 0 / 0.15);
-  --color-border-default: oklch(1 0 0 / 0.1) !important;
-  --color-border-strong: oklch(1 0 0 / 0.18) !important;
-  --color-border-focus: oklch(0.85 0.09 250 / 0.7);
-  --color-muted-foreground: oklch(0.86 0.01 285);
-  --color-subtle-foreground: oklch(0.74 0.012 285);
+  --lq-pane: oklch(1 0 0 / 0.035);
+  --lq-rim: oklch(1 0 0 / 0.16);
+  --lq-rim-soft: oklch(1 0 0 / 0.06);
+  --lq-hi: oklch(1 0 0 / 0.06);
+  --lq-edge: oklch(1 0 0 / 0.07);
+  --lq-shadow: 0 18px 44px -20px oklch(0 0 0 / 0.7), 0 1px 3px oklch(0 0 0 / 0.3);
+  --lq-blur: blur(24px) saturate(1.1);
 }
 :root[data-mar-look='liquid'][data-ds-theme='light'] {
-  --lq-glass: oklch(1 0 0 / 0.42);
-  --lq-glass-hi: oklch(1 0 0 / 0.62);
-  --lq-tint: oklch(1 0 0 / 0.38);
-  --lq-rim: oklch(1 0 0 / 0.95);
+  --lq-pane: oklch(1 0 0 / 0.6);
+  --lq-rim: oklch(1 0 0 / 0.9);
   --lq-rim-soft: oklch(1 0 0 / 0.5);
-  --lq-shadow: 0 24px 60px -22px oklch(0.35 0.06 270 / 0.35), 0 2px 6px oklch(0.3 0.04 270 / 0.1);
-  --lq-refract: url(#mar-liquid-refract) blur(12px) saturate(1.6) brightness(1.06);
-  --color-titlebar-background: oklch(0.95 0.01 270);
-  --color-content-background: oklch(1 0 0 / 0.2);
-  --color-card-background: oklch(1 0 0 / 0.5);
-  --color-card-background-hover: oklch(1 0 0 / 0.66);
-  --color-secondary-background: oklch(1 0 0 / 0.45);
-  --color-secondary-background-hover: oklch(1 0 0 / 0.65);
-  --color-border-default: oklch(1 0 0 / 0.6) !important;
-  --color-border-strong: oklch(1 0 0 / 0.8) !important;
-  --color-border-focus: oklch(0.55 0.15 265 / 0.6);
+  --lq-hi: oklch(1 0 0 / 0.55);
+  --lq-edge: oklch(0 0 0 / 0.07);
+  --lq-shadow: 0 18px 40px -22px oklch(0 0 0 / 0.22), 0 1px 3px oklch(0 0 0 / 0.06);
 }
 :root[data-mar-look='liquid'][data-mar-ui] {
-  --radius-panel: 30px !important;
-  --radius-card: 24px !important;
-  --radius-control: 14px !important;
-  --radius-min: 8px !important;
   --shadow-elev: var(--lq-shadow);
-  --shadow-elev-hover: var(--lq-shadow);
   --shadow-popover: var(--lq-shadow);
-  --mar-surface-a: 0.08;
-  --mar-surface-hover-a: 0.13;
-}
-:root[data-mar-look='liquid'] .proto-ui {
-  font-family: -apple-system, 'SF Pro Text', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.006em;
 }
 
 /* ── Panes ─────────────────────────────────────────────────────── */
-/* The sidebar and the page are two big panes floating over the colour. */
+/* The sidebar and the page are frosted over the mesh, in place. */
 :root[data-mar-look='liquid'] .proto-sidebar.proto-sidebar,
 :root[data-mar-look='liquid'] .proto-main.proto-main {
-  border-radius: var(--radius-panel);
-  background: linear-gradient(160deg, var(--lq-glass-hi), var(--lq-glass) 40%, var(--lq-tint));
+  background-color: var(--lq-pane);
   backdrop-filter: var(--lq-blur);
   box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 -1px 1px var(--lq-rim-soft),
-    inset 0 0 0 1px var(--lq-rim-soft),
-    var(--lq-shadow);
-}
-:root[data-mar-look='liquid'] .proto-sidebar.proto-sidebar {
-  margin: 10px 0 10px 10px;
-}
-:root[data-mar-look='liquid'] .proto-main.proto-main {
-  margin: 10px;
+    inset 0 1px 0 var(--lq-rim-soft),
+    inset 0 0 0 1px var(--lq-edge);
 }
 :root[data-mar-look='liquid'] .proto-main::before {
   display: none;
 }
 
-/* Cards and tiles: smaller panes, with a specular rim drawn on the
-   edge-shine ring and a highlight under the pointer. */
-:root[data-mar-look='liquid'] .proto-main :is(.edge-shine, .bg-card-background).bg-card-background {
-  background:
-    radial-gradient(
-      260px circle at var(--lx, 30%) var(--ly, 0%),
-      oklch(1 0 0 / 0.14),
-      transparent 70%
-    ),
-    linear-gradient(150deg, var(--lq-glass-hi), var(--lq-glass) 55%, var(--lq-tint));
-  backdrop-filter: var(--lq-blur);
-  border-color: transparent;
-  transition:
-    transform 500ms cubic-bezier(0.2, 0.9, 0.25, 1.15),
-    box-shadow 300ms ease;
-}
-:root[data-mar-look='liquid'] .proto-main .edge-shine.bg-card-background:hover {
-  transform: translateY(-3px) scale(1.012);
+/* Cards: their own fill and corner, with a rim on the edge-shine ring and
+   a highlight under the pointer (a background image, so the fill stays). */
+:root[data-mar-look='liquid'] .proto-main :is(.edge-shine, .bg-card-background).bg-card-background,
+:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid {
+  background-image: radial-gradient(
+    240px circle at var(--lx, 30%) var(--ly, -40%),
+    var(--lq-hi),
+    transparent 70%
+  );
+  box-shadow: inset 0 1px 0 var(--lq-rim-soft);
 }
 :root[data-mar-look='liquid'] .edge-shine::after {
-  padding: 1.2px;
-  background: conic-gradient(
-    from 200deg,
-    var(--lq-rim),
-    var(--lq-rim-soft) 22%,
-    transparent 40%,
-    var(--lq-rim-soft) 55%,
-    var(--lq-rim) 68%,
-    var(--lq-rim-soft) 82%,
-    var(--lq-rim)
-  );
+  padding: 1px;
+  background: linear-gradient(180deg, var(--lq-rim), var(--lq-rim-soft) 35%, transparent 70%);
 }
 
-/* ── Prompt: a thick capsule that refracts what's behind it ──── */
+/* ── Prompt: frosted, refracting a little of what's behind ──────── */
 :root[data-mar-look='liquid'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div {
-  border-radius: 32px;
-  padding: 14px 14px 12px 22px;
-  background:
-    radial-gradient(
-      420px circle at var(--lx, 20%) var(--ly, 0%),
-      oklch(1 0 0 / 0.16),
-      transparent 70%
-    ),
-    linear-gradient(170deg, var(--lq-glass-hi), var(--lq-glass) 60%, var(--lq-tint));
-  backdrop-filter: var(--lq-refract);
+  background-image: radial-gradient(
+    380px circle at var(--lx, 20%) var(--ly, -60%),
+    var(--lq-hi),
+    transparent 70%
+  );
+  backdrop-filter: url(#mar-liquid-refract) var(--lq-blur);
   box-shadow:
-    inset 0 1.5px 1px var(--lq-rim),
-    inset 0 -2px 3px var(--lq-rim-soft),
-    inset 0 0 18px oklch(1 0 0 / 0.05),
+    inset 0 1px 0 var(--lq-rim),
+    inset 0 0 0 1px var(--lq-edge),
     var(--lq-shadow);
-  transition: box-shadow 400ms ease;
 }
 :root[data-mar-look='liquid'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div:focus-within {
   box-shadow:
-    inset 0 1.5px 1px var(--lq-rim),
-    inset 0 -2px 3px var(--lq-rim-soft),
-    inset 0 0 18px oklch(1 0 0 / 0.08),
-    0 0 0 1px var(--color-border-focus),
-    0 0 60px -10px oklch(0.7 0.14 260 / 0.55),
+    inset 0 1px 0 var(--lq-rim),
+    inset 0 0 0 1px var(--color-border-strong),
     var(--lq-shadow);
 }
 
-/* ── Controls: capsules ────────────────────────────────────────── */
+/* ── Controls: a lit top edge, nothing else changes ─────────────── */
 :root[data-mar-look='liquid']
   .proto-ui.proto-ui.proto-ui
-  button:is(.rounded-control, .rounded-min) {
-  border-radius: 999px;
-}
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui button.bg-inverted-background,
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui .bg-inverted-background {
-  background: linear-gradient(180deg, oklch(1 0 0), oklch(0.9 0.015 270));
-  color: oklch(0.15 0.01 285);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0),
-    inset 0 -1px 1px oklch(0.6 0.03 270 / 0.4),
-    0 6px 18px -6px oklch(0 0 0 / 0.5);
+  button:is(.border-border-strong, .bg-secondary-background):not(:disabled),
+:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui :is(.mar-pseg, .mar-pfind) {
+  box-shadow: inset 0 1px 0 var(--lq-rim-soft);
 }
 :root[data-mar-look='liquid']
   .proto-ui.proto-ui.proto-ui
-  button:is(.border-border-strong, .bg-secondary-background) {
-  background: linear-gradient(180deg, var(--lq-glass-hi), var(--lq-glass));
-  backdrop-filter: var(--lq-blur);
-  border-color: transparent;
+  button.bg-inverted-background:not(:disabled) {
   box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 0 0 1px var(--lq-rim-soft);
+    inset 0 1px 0 oklch(1 0 0 / 0.35),
+    0 4px 12px -6px oklch(0 0 0 / 0.5);
 }
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui button:active {
-  transform: scale(0.96);
+:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui .mar-pseg-btn[aria-selected='true'] {
+  box-shadow: inset 0 1px 0 var(--lq-rim-soft);
 }
-
-/* Sidebar rows: the current one is a lit capsule. */
 :root[data-mar-look='liquid']
   .proto-sidebar.proto-sidebar.proto-sidebar
   button[aria-current='page'] {
-  background: linear-gradient(180deg, var(--lq-glass-hi), var(--lq-glass));
-  box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 0 0 1px var(--lq-rim-soft),
-    0 4px 14px -4px oklch(0 0 0 / 0.4);
-}
-:root[data-mar-look='liquid'] .proto-sidebar .mms-split {
-  border-radius: 999px;
-}
-
-/* Counts and chips. */
-:root[data-mar-look='liquid'] .rounded-full.bg-secondary-background {
-  background: var(--lq-glass-hi);
   box-shadow: inset 0 1px 0 var(--lq-rim-soft);
 }
 
-/* ── Menus and toasts: frosted capsules ───────────────────────── */
-:root[data-mar-look='liquid'] .shadow-popover.shadow-popover {
-  border-color: transparent;
-  border-radius: 22px;
-  background: linear-gradient(170deg, var(--lq-glass-hi), var(--lq-tint));
-  background-color: oklch(0.2 0.02 285 / 0.55);
-  backdrop-filter: blur(30px) saturate(1.9);
+/* ── Menus, popovers and dialogs: their own solid fill, lit edge ── */
+:root[data-mar-look='liquid'] .shadow-popover.shadow-popover:not(.bg-inverted-background),
+:root[data-mar-look='liquid'] [role='dialog'].bg-card-background {
   box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 0 0 1px var(--lq-rim-soft),
+    inset 0 1px 0 var(--lq-rim-soft),
     var(--lq-shadow);
-}
-:root[data-mar-look='liquid'][data-ds-theme='light'] .shadow-popover.shadow-popover {
-  background-color: oklch(1 0 0 / 0.55);
-}
-:root[data-mar-look='liquid'] .shadow-popover [role^='menuitem'],
-:root[data-mar-look='liquid'] .shadow-popover [role='option'] {
-  border-radius: 14px;
-}
-:root[data-mar-look='liquid']
-  .shadow-popover
-  :is([role^='menuitem'], [role='option'])[data-highlighted] {
-  background: var(--lq-glass-hi);
-  box-shadow: inset 0 1px 0 var(--lq-rim-soft);
-}
-:root[data-mar-look='liquid'] .shadow-popover.bg-inverted-background {
-  border-radius: 999px;
-}
-
-/* ── Type ─────────────────────────────────────────────────────── */
-:root[data-mar-look='liquid'] .mar-greeting.mar-greeting.mar-greeting {
-  font-size: 46px;
-  line-height: 54px;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  background: linear-gradient(180deg, oklch(1 0 0) 25%, oklch(1 0 0 / 0.6));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: none;
-  filter: drop-shadow(0 8px 30px oklch(0 0 0 / 0.35));
-}
-:root[data-mar-look='liquid'][data-ds-theme='light'] .mar-greeting.mar-greeting.mar-greeting {
-  background: linear-gradient(180deg, oklch(0.22 0.03 280) 25%, oklch(0.4 0.06 280 / 0.8));
-  -webkit-background-clip: text;
-  background-clip: text;
-  filter: drop-shadow(0 6px 20px oklch(1 0 0 / 0.6));
-}
-
-/* ── Library pages: glass tiles, capsule filters ──────────────── */
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid {
-  background:
-    radial-gradient(
-      240px circle at var(--lx, 30%) var(--ly, 0%),
-      oklch(1 0 0 / 0.12),
-      transparent 70%
-    ),
-    linear-gradient(150deg, var(--lq-glass-hi), var(--lq-glass) 55%, var(--lq-tint));
-  backdrop-filter: var(--lq-blur);
-  box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 0 0 1px var(--lq-rim-soft),
-    var(--lq-shadow);
-}
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui :is(.mar-pseg, .mar-pfind) {
-  --mar-tab-radius: 999px;
-  --mar-tab-item-radius: 999px;
-  background: linear-gradient(180deg, var(--lq-glass-hi), var(--lq-glass));
-  backdrop-filter: var(--lq-blur);
-  box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    inset 0 0 0 1px var(--lq-rim-soft);
-}
-:root[data-mar-look='liquid'] .proto-ui.proto-ui.proto-ui .mar-pseg-btn[aria-selected='true'] {
-  background: var(--lq-glass-hi);
-  box-shadow:
-    inset 0 1px 1px var(--lq-rim),
-    0 2px 8px -2px oklch(0 0 0 / 0.35);
-}
-:root[data-mar-look='liquid'] .mar-page h1 {
-  letter-spacing: -0.035em;
 }

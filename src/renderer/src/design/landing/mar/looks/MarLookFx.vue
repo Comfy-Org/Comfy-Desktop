@@ -19,10 +19,11 @@ import { lookOn } from './looks'
 
 const MESH: Record<string, { dark: string[]; light: string[]; grain: number; speed: number }> = {
   liquid: {
-    dark: ['#07060c', '#2c1a7a', '#0c5a78', '#a3346c', '#120e1c'],
-    light: ['#eceff7', '#b7c3ff', '#ffcfe6', '#b9eeff', '#f6f3ff'],
+    // Void neutrals: grey light moving on near-black, one cool hint.
+    dark: ['#09090b', '#26262b', '#1b1d22', '#323238', '#0e0e10'],
+    light: ['#f4f4f5', '#dedee2', '#fbfbfb', '#e6e7eb', '#efeff1'],
     grain: 0,
-    speed: 0.22
+    speed: 0.18
   },
   grain: {
     dark: ['#09080d', '#2a1240', '#6a2766', '#d9952e', '#120f18'],
@@ -139,7 +140,7 @@ onBeforeUnmount(() => {
       <feDisplacementMap
         in="SourceGraphic"
         in2="map"
-        scale="46"
+        scale="14"
         xChannelSelector="R"
         yChannelSelector="G"
       />
@@ -151,7 +152,9 @@ onBeforeUnmount(() => {
 .mar-look-fx {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  /* Under every sibling (shell, title bar, graph editor), above the
+     window's own fill: looks.css isolates the parent. */
+  z-index: -1;
   pointer-events: none;
 }
 .mar-look-fx.is-still {
