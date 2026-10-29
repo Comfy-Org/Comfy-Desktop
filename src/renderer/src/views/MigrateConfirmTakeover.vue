@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
+import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import MigrateConfirmBody, {
   type MigrateDetailGroup,
@@ -98,15 +99,24 @@ defineExpose({ open, update, commit })
   <BrandTakeoverLayout v-if="isOpen">
     <div
       ref="dialogRef"
-      class="brand-hero migrate-takeover"
+      class="migrate-takeover relative z-1 flex w-full max-w-[640px] flex-col items-center gap-[var(--takeover-gap-md)] text-center"
       role="dialog"
       aria-modal="true"
       :aria-label="title"
       tabindex="-1"
     >
-      <h1 class="brand-title">{{ title }}</h1>
-      <div class="migrate-takeover__card">
-        <div v-if="loading" class="migrate-takeover__loading">
+      <h1
+        class="migrate-takeover__title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] opacity-85"
+      >
+        {{ title }}
+      </h1>
+      <div
+        class="migrate-takeover__card w-full rounded-xl border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] p-5"
+      >
+        <div
+          v-if="loading"
+          class="migrate-takeover__loading py-6 text-center text-[length:var(--takeover-fs-body)] text-neutral-300"
+        >
           {{ $t('common.loading') }}
         </div>
         <MigrateConfirmBody
@@ -117,52 +127,29 @@ defineExpose({ open, update, commit })
           @toggle-checkbox="onToggle"
         />
       </div>
-      <div class="migrate-takeover__actions">
-        <button
+      <div class="migrate-takeover__actions flex w-full items-center justify-end gap-3">
+        <Button
+          size="unset"
+          variant="textonly"
           type="button"
-          class="brand-ghost"
+          class="static inline-flex appearance-auto items-center justify-center gap-0 border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 rounded-md border-transparent bg-transparent text-neutral-300 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100"
           data-testid="migrate-takeover-cancel"
           @click="commit(false)"
         >
           {{ $t('common.cancel') }}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="unset"
+          variant="textonly"
           type="button"
-          class="brand-primary"
+          class="static inline-flex appearance-auto items-center justify-center gap-0 border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow [&:focus-visible]:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]"
           data-testid="migrate-takeover-confirm"
           :disabled="loading"
           @click="commit(true)"
         >
           {{ confirmLabel }}
-        </button>
+        </Button>
       </div>
     </div>
   </BrandTakeoverLayout>
 </template>
-
-<style scoped>
-.migrate-takeover {
-  max-width: 640px;
-  gap: var(--takeover-gap-md);
-}
-.migrate-takeover__card {
-  width: 100%;
-  padding: 20px;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 12px;
-  background: var(--brand-surface-bg);
-}
-.migrate-takeover__loading {
-  font-size: var(--takeover-fs-body);
-  color: var(--neutral-300);
-  padding: 24px 0;
-  text-align: center;
-}
-.migrate-takeover__actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-</style>
