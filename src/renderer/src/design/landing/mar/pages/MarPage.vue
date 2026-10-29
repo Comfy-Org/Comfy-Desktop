@@ -64,19 +64,22 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
     :class="embedded ? 'is-embedded' : 'mx-auto w-full max-w-300 px-10 pb-24'"
     :data-state="shown"
   >
-    <header v-if="!embedded" class="mar-page-head">
-      <div class="min-w-0">
-        <div class="flex items-center gap-3">
-          <slot name="lead" />
-          <h1 class="mar-page-title">{{ title }}</h1>
-          <slot name="meta" />
+    <!-- A page about one thing (a project, a space) brings its own header. -->
+    <slot v-if="!embedded" name="header" :state="shown">
+      <header class="mar-page-head">
+        <div class="min-w-0">
+          <div class="flex items-center gap-3">
+            <slot name="lead" />
+            <h1 class="mar-page-title">{{ title }}</h1>
+            <slot name="meta" />
+          </div>
+          <p v-if="description" class="mar-page-desc">{{ description }}</p>
         </div>
-        <p v-if="description" class="mar-page-desc">{{ description }}</p>
-      </div>
-      <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
-        <slot name="actions" :state="shown" />
-      </div>
-    </header>
+        <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
+          <slot name="actions" :state="shown" />
+        </div>
+      </header>
+    </slot>
 
     <slot name="tabs" :state="shown" />
 

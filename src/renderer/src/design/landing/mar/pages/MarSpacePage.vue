@@ -1,15 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  ArrowLeft,
-  ExternalLink,
-  Eye,
-  Pause,
-  Play,
-  Rocket,
-  Trash2,
-  UserPlus
-} from 'lucide-vue-next'
+import { ExternalLink, Eye, Globe, Pause, Play, Rocket, Trash2, UserPlus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import SpaceMark from '../../parts/space/SpaceMark.vue'
 import MembersTable from '../../parts/space/MembersTable.vue'
@@ -23,15 +14,17 @@ import SpaceUsage from '../../pages/spaces/SpaceUsage.vue'
 import { SPACES, goLive, previewSpace } from '../../spaces'
 import { go, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
-import MarSeg from './MarSeg.vue'
-import MarStatus from './MarStatus.vue'
+import MemberAvatar from '../../parts/MemberAvatar.vue'
+import MarEntityHeader from './MarEntityHeader.vue'
+import MarAddress from './MarAddress.vue'
+import MarSplitButton from './MarSplitButton.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 
 /**
- * One space (Mar's proposal): the client's mark, name, state and
- * address, then Pablo's panels (overview, tools, brand, members, usage,
+ * One space (Mar's proposal): the shared header (mark, name, state, the
+ * address, members and last activity; Invite, Open site ▾, ⋯), then Pablo's panels (overview, tools, brand, members, usage,
  * activity, settings) under Mar's tabs, inside the shared page frame so
  * Loading and Error apply here too.
  */
@@ -62,11 +55,40 @@ function setPaused(on: boolean): void {
   s.status = on ? 'paused' : 'live'
   notify(on ? `${s.name} is paused` : `${s.name} is live again`, () => (s.status = before))
 }
+// The primary's menu: the address and the other way to look at the site.
+const liveLines = computed<MenuLine[]>(() => {
+  const s = space.value
+  if (!s) return []
+  return [
+    {
+      label: s.domain,
+      icon: Globe,
+      hint: 'Copy',
+      run: () => {
+        void navigator.clipboard?.writeText(`https://${s.domain}`).catch(() => {})
+        toast('Address copied')
+      }
+    },
+    { label: 'Preview as client', icon: Eye, run: () => previewSpace(s.id) }
+  ]
+})
+const draftLines = computed<MenuLine[]>(() => {
+  const s = space.value
+  if (!s) return []
+  return [
+    { label: 'Go live', icon: Rocket, run: () => goLive(s.id) },
+    { label: `${s.domain}, once live`, icon: Globe, disabled: true }
+  ]
+})
+const lastActive = computed(() => {
+  const m = space.value?.members ?? []
+  return (m.find((x) => x.lastActive === 'Now') ?? m[0])?.lastActive.toLowerCase()
+})
+
 const lines = computed<MenuLine[]>(() => {
   const s = space.value
   if (!s) return []
   return [
-    { label: 'Preview as client', icon: Eye, run: () => previewSpace(s.id) },
     ...(s.status === 'live' ? [{ label: 'Pause', icon: Pause, run: () => setPaused(true) }] : []),
     ...(s.status === 'paused'
       ? [{ label: 'Resume', icon: Play, run: () => setPaused(false) }]
@@ -107,40 +129,72 @@ const lines = computed<MenuLine[]>(() => {
     error-title="Can't load this space"
     error-text="It lives in Comfy Cloud, which is out of reach. Its members can't run anything until it's back either."
   >
-    <template #lead>
-      <button type="button" class="mar-proj-back" aria-label="All spaces" @click="go('spaces')">
-        <ArrowLeft :size="16" />
-      </button>
-      <SpaceMark :brand="space.brand" size="lg" />
-    </template>
-    <template #meta>
-      <MarStatus :status="space.status" />
-    </template>
-
-    <template #actions="{ state }">
-      <template v-if="state === 'live'">
-        <button
-          v-if="space.status !== 'draft'"
-          type="button"
-          class="mar-space-domain"
-          @click="toast(`Opening ${space.domain} ↗`)"
-        >
-          {{ space.domain }}<ExternalLink :size="12" />
-        </button>
-        <Button variant="ghost" @click="invite"><UserPlus :size="15" />Invite</Button>
-        <Button v-if="space.status === 'draft'" variant="primary" @click="goLive(space.id)"
-          ><Rocket :size="15" />Go live</Button
-        >
-        <Button v-else variant="primary" @click="previewSpace(space.id)"
-          ><Eye :size="15" />Preview</Button
-        >
-        <MarItemMenu :lines label="Space actions" />
-      </template>
+    <template #header>
+      <MarEntityHeader
+        back="Spaces"
+        :title="space.name"
+        :status="space.status"
+        @back="go('spaces')"
+      >
+        <template #cover><SpaceMark :brand="space.brand" size="lg" /></template>
+        <template #meta>
+          <MarAddress :address="space.domain" :pending="space.status === 'draft'" />
+          <span class="mar-eh-dot" />
+          <button type="button" class="mar-eh-link" @click="tab = 'members'">
+            <span class="mar-eh-faces">
+              <MemberAvatar
+                v-for="m in space.members.slice(0, 4)"
+                :key="m.email"
+                :name="m.name"
+                size="sm"
+              />
+            </span>
+            {{ space.members.length }} {{ space.members.length === 1 ? 'member' : 'members' }}
+          </button>
+          <template v-if="lastActive">
+            <span class="mar-eh-dot" />
+            <span>Last activity {{ lastActive }}</span>
+          </template>
+        </template>
+        <template #actions>
+          <Button @click="invite"><UserPlus :size="15" />Invite</Button>
+          <MarSplitButton
+            v-if="space.status === 'draft'"
+            label="Preview"
+            :icon="Eye"
+            :lines="draftLines"
+            menu-label="More ways to open"
+            @run="previewSpace(space.id)"
+          />
+          <MarSplitButton
+            v-else
+            label="Open site"
+            :icon="ExternalLink"
+            :lines="liveLines"
+            menu-label="More ways to open"
+            @run="toast(`Opening ${space.domain}`)"
+          />
+          <MarItemMenu :lines label="Space actions" />
+        </template>
+      </MarEntityHeader>
     </template>
 
     <template #tabs="{ state }">
-      <div v-if="state === 'live'" class="mb-2">
-        <MarSeg v-model="tab" :options="TABS" label="Space" />
+      <div v-if="state === 'live'" class="mar-eh-row">
+        <div class="mar-eh-tabs" role="tablist" data-no-pill aria-label="Space">
+          <button
+            v-for="t in TABS"
+            :key="t.value"
+            type="button"
+            role="tab"
+            :aria-selected="tab === t.value"
+            class="mar-eh-tab"
+            @click="tab = t.value"
+          >
+            {{ t.label
+            }}<span v-if="t.count !== undefined" class="mar-eh-count">{{ t.count }}</span>
+          </button>
+        </div>
       </div>
     </template>
 
@@ -156,21 +210,3 @@ const lines = computed<MenuLine[]>(() => {
     <SpaceSettings v-else :space-id="space.id" />
   </MarPage>
 </template>
-
-<style>
-:root .proto-ui.proto-ui.proto-ui .mar-space-domain {
-  display: inline-flex;
-  width: auto;
-  height: 28px;
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-space-domain:hover {
-  color: var(--color-base-foreground);
-}
-</style>

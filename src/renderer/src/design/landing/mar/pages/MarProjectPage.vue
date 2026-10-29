@@ -1,16 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  Archive,
-  ArrowLeft,
-  Copy,
-  FolderX,
-  Pencil,
-  Plus,
-  Trash2,
-  UserPlus,
-  X
-} from 'lucide-vue-next'
+import { Archive, Copy, FolderX, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
@@ -20,6 +10,7 @@ import { go, instances, type Page } from '../../useProto'
 import MarPage from './MarPage.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
+import MarEntityHeader from './MarEntityHeader.vue'
 import MarUndoToast from './MarUndoToast.vue'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
@@ -229,63 +220,62 @@ function removePerson(m: string): void {
     @action="go('projects')"
   />
   <div v-else class="mar-proj mx-auto w-full max-w-300 px-10 pb-24">
-    <button type="button" class="mar-proj-crumb" @click="go('projects' as Page)">
-      <ArrowLeft :size="14" />Projects
-    </button>
-
-    <section class="mar-proj-head">
-      <img :src="p.art" alt="" class="mar-proj-cover" />
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-1.5">
-          <input
-            v-if="renaming"
-            v-model="draft"
-            class="mar-proj-rename"
-            aria-label="Project name"
-            autofocus
-            @keydown.enter.prevent="commit"
-            @keydown.esc.prevent="renaming = false"
-            @blur="commit"
-          />
-          <template v-else>
-            <h1 class="mar-proj-title">{{ p.name }}</h1>
-            <button
-              type="button"
-              class="mar-proj-edit"
-              aria-label="Rename project"
-              @click="startRename"
-            >
-              <Pencil :size="13" />
-            </button>
-          </template>
-          <MarStatus v-if="p.archived" status="paused" label="Archived" />
-        </div>
-        <div class="mar-proj-meta">
-          <button type="button" class="mar-pj-who" @click="tab = 'people'">
-            <span class="mar-proj-faces">
-              <MemberAvatar v-for="m in p.members.slice(0, 4)" :key="m" :name="m" size="sm" />
-            </span>
-            {{ people }}
+    <MarEntityHeader
+      back="Projects"
+      :title="p.name"
+      :status="p.archived ? 'paused' : undefined"
+      :status-label="p.archived ? 'Archived' : undefined"
+      @back="go('projects' as Page)"
+    >
+      <template #cover><img :src="p.art" alt="" /></template>
+      <template #title>
+        <input
+          v-if="renaming"
+          v-model="draft"
+          class="mar-proj-rename"
+          aria-label="Project name"
+          autofocus
+          @keydown.enter.prevent="commit"
+          @keydown.esc.prevent="renaming = false"
+          @blur="commit"
+        />
+        <template v-else>
+          <h1 class="mar-eh-title">{{ p.name }}</h1>
+          <button
+            type="button"
+            class="mar-proj-edit"
+            aria-label="Rename project"
+            @click="startRename"
+          >
+            <Pencil :size="13" />
           </button>
-          <span class="mar-proj-dot" />
-          <Select
-            v-model="envId"
-            :options="BUILDS"
-            label="Runs on"
-            variant="ghost"
-            size="sm"
-            class="mar-proj-build"
-          />
-          <span class="mar-proj-dot" />
-          <span>Updated {{ p.updated.toLowerCase() }}</span>
-        </div>
-      </div>
-      <div class="flex shrink-0 items-center gap-2">
+        </template>
+      </template>
+      <template #meta>
+        <button type="button" class="mar-eh-link" @click="tab = 'people'">
+          <span class="mar-eh-faces">
+            <MemberAvatar v-for="m in p.members.slice(0, 4)" :key="m" :name="m" size="sm" />
+          </span>
+          {{ people }}
+        </button>
+        <span class="mar-eh-dot" />
+        <Select
+          v-model="envId"
+          :options="BUILDS"
+          label="Runs on"
+          variant="ghost"
+          size="sm"
+          class="mar-proj-build"
+        />
+        <span class="mar-eh-dot" />
+        <span>Updated {{ p.updated.toLowerCase() }}</span>
+      </template>
+      <template #actions>
         <Button @click="tab = 'people'"><UserPlus :size="15" />Invite</Button>
         <Button variant="primary" @click="newWorkflow"><Plus :size="15" />Workflow</Button>
         <MarItemMenu :lines label="Project actions" />
-      </div>
-    </section>
+      </template>
+    </MarEntityHeader>
 
     <!-- What it made last, and what happened in it. -->
     <section v-if="showOverview && latest" class="mar-proj-over">
@@ -319,18 +309,18 @@ function removePerson(m: string): void {
     </section>
 
     <!-- One row: the sections left, the open section's filters right. -->
-    <div class="mar-proj-row">
-      <div class="mar-proj-tabs" role="tablist" aria-label="In this project">
+    <div class="mar-eh-row">
+      <div class="mar-eh-tabs" role="tablist" data-no-pill aria-label="In this project">
         <button
           v-for="t in TABS"
           :key="t.value"
           type="button"
           role="tab"
           :aria-selected="tab === t.value"
-          class="mar-proj-tab"
+          class="mar-eh-tab"
           @click="tab = t.value"
         >
-          {{ t.label }}<span class="mar-proj-count">{{ t.count }}</span>
+          {{ t.label }}<span class="mar-eh-count">{{ t.count }}</span>
         </button>
       </div>
       <div id="mar-proj-tools" class="ml-auto flex min-w-0 items-center" />
@@ -393,46 +383,6 @@ function removePerson(m: string): void {
 </template>
 
 <style>
-:root .proto-ui.proto-ui.proto-ui .mar-proj-crumb {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 6px;
-  margin: 36px 0 14px -8px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-crumb:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-base-foreground);
-}
-.mar-proj-head {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding-bottom: 28px;
-}
-.mar-proj-cover {
-  width: 64px;
-  height: 64px;
-  flex-shrink: 0;
-  border-radius: var(--radius-card, 14px);
-  object-fit: cover;
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-title {
-  overflow: hidden;
-  margin: 0;
-  color: var(--color-base-foreground);
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-proj-edit {
   display: inline-flex;
   width: 28px;
@@ -449,7 +399,7 @@ function removePerson(m: string): void {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-proj-head:hover .mar-proj-edit,
+:root .proto-ui.proto-ui.proto-ui .mar-eh-head:hover .mar-proj-edit,
 :root .proto-ui.proto-ui.proto-ui .mar-proj-edit:focus-visible {
   opacity: 1;
 }
@@ -468,49 +418,13 @@ function removePerson(m: string): void {
   letter-spacing: -0.02em;
   outline: none;
 }
-.mar-proj-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  white-space: nowrap;
-}
-.mar-proj-dot {
-  width: 3px;
-  height: 3px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--color-subtle-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-pj-who {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 8px;
-  margin-left: -4px;
-  padding: 0 6px 0 4px;
-  border-radius: var(--radius-control);
-  color: inherit;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-pj-who:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build[data-state='open'] {
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build[data-state='open'] {
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
-.mar-proj-faces {
-  display: flex;
-  padding-left: 6px;
-}
-.mar-proj-faces > * {
-  margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--color-content-background);
-}
 /* Beats the shell's filled selects: this one reads as text until hovered. */
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build {
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build {
   height: 26px;
   margin: 0 -4px;
   backdrop-filter: none;
@@ -592,52 +506,6 @@ function removePerson(m: string): void {
 }
 .mar-proj-event + .mar-proj-event {
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-
-/* The one row of tabs, with the filters docked right */
-.mar-proj-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border-default);
-}
-.mar-proj-row #mar-proj-tools {
-  padding-bottom: 8px;
-}
-.mar-proj-tabs {
-  display: flex;
-  gap: 22px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab {
-  position: relative;
-  display: inline-flex;
-  height: 42px;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-.mar-proj-tab[aria-selected='true']::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--color-base-foreground);
-  content: '';
-}
-.mar-proj-count {
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 /* People */
