@@ -1,25 +1,22 @@
 import { computed, reactive, watch } from 'vue'
 import { isMariana } from '../proposal'
-import '@fontsource/barlow-condensed/600.css'
-import '@fontsource/barlow-condensed/700.css'
-import '@fontsource/instrument-serif/400.css'
-import '@fontsource/instrument-serif/400-italic.css'
 import './looks.css'
 
 /**
- * Looks (UI Playground › Look): four visual languages over the same
- * layout and the Void greys. Each is one stylesheet scoped to
- * `:root[data-mar-look='<id>']` (this folder) plus, for some, effects that
+ * Looks (UI Playground › Look): four treatments of the same product. Type
+ * and colour stay exactly Void's; a look changes only composition, image
+ * treatment and component treatment. Each is one stylesheet scoped to
+ * `:root[data-mar-look='<id>']` (this folder) plus, for some, parts that
  * MarLookFx.vue mounts only while that look is on. Current changes nothing.
  */
 export type MarLook = 'current' | 'liquid' | 'grain' | 'apple' | 'netflix'
 
 export const LOOKS: { value: MarLook; label: string }[] = [
   { value: 'current', label: 'Current · Void as it is' },
-  { value: 'liquid', label: 'Liquid · glass that bends light' },
-  { value: 'grain', label: 'Grain · a living shader gradient' },
-  { value: 'apple', label: 'Apple · vibrancy, hairlines, quiet blue' },
-  { value: 'netflix', label: 'Netflix · cinematic, content first (dark only)' }
+  { value: 'liquid', label: 'Liquid · frosted panes over moving light' },
+  { value: 'grain', label: 'Grain · film grain and vignette on every picture' },
+  { value: 'apple', label: 'Apple · hairlines, soft depth, more air' },
+  { value: 'netflix', label: 'Netflix · latest output edge to edge, big covers' }
 ]
 
 const KEY = 'comfy.design.mar.look'

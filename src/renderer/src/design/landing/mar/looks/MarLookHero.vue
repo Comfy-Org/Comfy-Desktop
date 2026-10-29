@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { FolderOpen, Play } from 'lucide-vue-next'
+import { Play } from 'lucide-vue-next'
+import Button from '../../ui/Button.vue'
 import { LOCAL_ASSET_FOLDERS, thumb } from '../../mock'
 import { go, hostActions, instanceById } from '../../useProto'
 
 /**
  * Netflix's hero (looks/netflix.css): the latest output, edge to edge at
- * the top of Home, with what made it and the two things to do next. It
- * lands inside Home's own column (`.mar-home`, a Teleport) only while that
- * column is on screen, so Home's code stays as it is.
+ * the top of Home, with the image-text treatment Home's launch banner
+ * already uses (white type on a veil, a white CTA). It lands inside Home's
+ * own column (`.mar-home`, a Teleport) only while that column is on
+ * screen, so Home's code stays as it is.
  */
 
 // The newest file in the first build's output folder: a picture that no
@@ -37,25 +39,26 @@ onBeforeUnmount(() => watcher?.disconnect())
   <Teleport v-if="target" :to="target">
     <section class="mar-nf-hero" aria-label="Latest output">
       <img :src alt="" class="mar-nf-hero-img" />
+      <span class="mar-nf-hero-veil" aria-hidden="true" />
       <div class="mar-nf-hero-copy">
-        <p class="mar-nf-hero-kicker">Latest output</p>
-        <h2 class="mar-nf-hero-title">
-          {{ latest.name.replace(/_\d+\.\w+$/, '').replace(/_/g, ' ') }}
-        </h2>
-        <p class="mar-nf-hero-meta">
-          {{ inst?.name ?? 'This computer' }} · {{ latest.modified }} · {{ latest.size }}
-        </p>
-        <div class="mar-nf-hero-actions">
-          <button
-            type="button"
-            class="mar-nf-hero-primary"
+        <p class="text-ui text-white/80">Latest output · {{ inst?.name ?? 'This computer' }}</p>
+        <h3
+          class="mt-1.5 text-[30px] leading-[1.15] font-medium tracking-[-0.015em] text-white drop-shadow-sm"
+        >
+          {{ latest.name }}
+        </h3>
+        <p class="mt-1 text-ui text-white/80">{{ latest.modified }} · {{ latest.size }}</p>
+        <div class="mt-5 flex items-center gap-4">
+          <Button
+            variant="primary"
+            size="lg"
+            class="bg-white text-black hover:bg-white/90"
             @click="inst && hostActions.launch(inst, 'hero-shot-v4')"
+            ><Play :size="14" />Open workflow</Button
           >
-            <Play :size="16" fill="currentColor" />Open workflow
-          </button>
-          <button type="button" class="mar-nf-hero-secondary" @click="go('assets')">
-            <FolderOpen :size="16" />Assets
-          </button>
+          <Button variant="link" class="text-white/80 hover:text-white" @click="go('assets')"
+            >See in Assets</Button
+          >
         </div>
       </div>
     </section>

@@ -1,248 +1,39 @@
 /*
- * Grain · a living shader gradient (editorial, filmic). A slow WebGL mesh
- * of plum and Comfy gold with film grain moves behind the app
- * (MarLookFx.vue). Surfaces are smoked glass with a hairline of warm
- * light; the greeting is set in Instrument Serif, labels in small caps;
- * the one primary action is gold. Dark and light.
+ * Grain · an image treatment only. Every picture in the app (card covers,
+ * library tiles) gets fine film grain and a soft vignette,
+ * like a print; pointing at one develops it (the grain and vignette fade).
+ * Type, colour, layout and components stay Void's.
  */
 :root[data-mar-look='grain'] {
-  --gr-smoke: oklch(0.11 0.012 300 / 0.5);
-  --gr-smoke-hi: oklch(0.16 0.014 300 / 0.55);
-  --gr-hair: oklch(0.92 0.04 70 / 0.12);
-  --gr-hair-hi: oklch(0.92 0.05 70 / 0.28);
-  --gr-gold: oklch(0.8 0.13 75);
-  --gr-gold-deep: oklch(0.68 0.15 60);
-  --gr-ink: oklch(0.96 0.012 75);
-  --gr-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-:root[data-mar-look='grain'][data-mar-ui]:not([data-ds-theme='light']) {
-  --color-titlebar-background: oklch(0.1 0.01 300);
-  --color-content-background: oklch(0.1 0.01 300 / 0.3);
-  --color-card-background: var(--gr-smoke);
-  --color-card-background-hover: var(--gr-smoke-hi);
-  --color-secondary-background: oklch(0.95 0.03 75 / 0.07);
-  --color-secondary-background-hover: oklch(0.95 0.03 75 / 0.12);
-  --color-base-foreground: var(--gr-ink);
-  --color-muted-foreground: oklch(0.84 0.02 70);
-  --color-subtle-foreground: oklch(0.72 0.025 60);
-  --color-border-default: var(--gr-hair) !important;
-  --color-border-strong: var(--gr-hair-hi) !important;
-  --color-border-focus: oklch(0.8 0.13 75 / 0.7);
-}
-:root[data-mar-look='grain'][data-ds-theme='light'] {
-  --gr-smoke: oklch(1 0.005 80 / 0.55);
-  --gr-smoke-hi: oklch(1 0.005 80 / 0.72);
-  --gr-hair: oklch(0.3 0.05 320 / 0.1);
-  --gr-hair-hi: oklch(0.3 0.05 320 / 0.2);
-  --gr-ink: oklch(0.2 0.04 320);
-  --color-titlebar-background: oklch(0.95 0.015 80);
-  --color-content-background: oklch(1 0 0 / 0.25);
-  --color-card-background: var(--gr-smoke);
-  --color-card-background-hover: var(--gr-smoke-hi);
-  --color-base-foreground: var(--gr-ink);
-  --color-muted-foreground: oklch(0.38 0.04 320);
-  --color-subtle-foreground: oklch(0.48 0.04 320);
-  --color-border-default: var(--gr-hair) !important;
-  --color-border-strong: var(--gr-hair-hi) !important;
-  --color-border-focus: oklch(0.45 0.12 330 / 0.6);
-}
-:root[data-mar-look='grain'][data-mar-ui] {
-  --radius-panel: 26px !important;
-  --radius-card: 18px !important;
-  --radius-control: 12px !important;
-  --shadow-elev: 0 30px 60px -30px oklch(0 0 0 / 0.6);
-  --shadow-elev-hover: 0 36px 70px -30px oklch(0 0 0 / 0.7);
-  --shadow-popover: 0 30px 80px -20px oklch(0 0 0 / 0.75);
-  --mar-surface-a: 0.06;
-}
-:root[data-mar-look='grain'][data-ds-theme='light'][data-mar-ui] {
-  --shadow-elev: 0 24px 50px -30px oklch(0.3 0.08 320 / 0.35);
-  --shadow-elev-hover: 0 30px 60px -30px oklch(0.3 0.08 320 / 0.45);
-  --shadow-popover: 0 24px 60px -20px oklch(0.3 0.08 320 / 0.35);
+  --gr-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --gr-vignette: radial-gradient(120% 95% at 50% 45%, transparent 55%, oklch(0 0 0 / 0.38));
 }
 
-/* ── Panes: the gradient stays the hero ───────────────────────── */
-:root[data-mar-look='grain'] .proto-sidebar.proto-sidebar {
-  margin: 10px 0 10px 10px;
-  border-radius: var(--radius-panel);
-  background: var(--gr-noise), var(--gr-smoke);
-  backdrop-filter: blur(28px) saturate(1.2);
-  box-shadow: inset 0 0 0 1px var(--gr-hair);
+/* The pictures: a layer over each image and under its chips (::before
+   paints before the positioned chips that follow it). */
+:root[data-mar-look='grain'] .proto-main .edge-shine.group > .overflow-hidden,
+:root[data-mar-look='grain'] .mar-item-media {
+  isolation: isolate;
 }
-:root[data-mar-look='grain'] .proto-main.proto-main {
-  margin: 10px;
-  border-radius: var(--radius-panel);
-  background:
-    linear-gradient(180deg, transparent 0, oklch(0.08 0.01 300 / 0.55) 640px) fixed,
-    transparent;
-  box-shadow: inset 0 0 0 1px var(--gr-hair);
-}
-:root[data-mar-look='grain'][data-ds-theme='light'] .proto-main.proto-main {
-  background:
-    linear-gradient(180deg, transparent 0, oklch(1 0.005 80 / 0.55) 640px) fixed,
-    transparent;
-}
-:root[data-mar-look='grain'] .proto-main::before {
-  display: none;
-}
-
-/* Smoked-glass cards with a warm hairline. */
-:root[data-mar-look='grain'] .proto-main :is(.edge-shine, .bg-card-background).bg-card-background {
-  background: var(--gr-noise), var(--gr-smoke);
-  backdrop-filter: blur(26px) saturate(1.3);
-  transition:
-    transform 600ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 300ms ease;
-}
-:root[data-mar-look='grain'] .proto-main .edge-shine.bg-card-background:hover {
-  transform: translateY(-4px);
-}
-:root[data-mar-look='grain'] .edge-shine::after {
-  background: linear-gradient(
-    180deg,
-    var(--gr-hair-hi),
-    var(--gr-hair) 40%,
-    oklch(0.92 0.04 70 / 0.03)
-  );
-}
-:root[data-mar-look='grain'] .proto-main .edge-shine .rounded-control {
-  border-radius: 14px;
-}
-
-/* ── Prompt: a smoked lozenge, gold when you type ─────────────── */
-:root[data-mar-look='grain'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div {
-  border-radius: 24px;
-  padding: 14px 14px 12px 22px;
-  background: var(--gr-noise), var(--gr-smoke);
-  backdrop-filter: blur(30px) saturate(1.3);
-  box-shadow:
-    inset 0 1px 0 var(--gr-hair-hi),
-    0 30px 80px -30px oklch(0 0 0 / 0.8);
-}
-:root[data-mar-look='grain'][data-mar-ui] .mar-prompt-slot.mar-prompt-slot > div:focus-within {
-  box-shadow:
-    inset 0 1px 0 var(--gr-hair-hi),
-    0 0 0 1px oklch(0.8 0.13 75 / 0.55),
-    0 0 50px -8px oklch(0.8 0.13 75 / 0.35),
-    0 30px 80px -30px oklch(0 0 0 / 0.8);
-}
-:root[data-mar-look='grain'] .mar-prompt-slot textarea {
-  font-size: 15px;
-  caret-color: var(--gr-gold);
-}
-
-/* ── Buttons: one gold action ─────────────────────────────────── */
-:root[data-mar-look='grain'] .proto-ui.proto-ui.proto-ui :is(button, a).bg-inverted-background {
-  background: linear-gradient(180deg, oklch(0.86 0.12 82), var(--gr-gold-deep));
-  color: oklch(0.2 0.04 50);
-  box-shadow:
-    inset 0 1px 0 oklch(0.95 0.08 90),
-    0 8px 24px -8px oklch(0.68 0.15 60 / 0.6);
+:root[data-mar-look='grain'] .proto-main .edge-shine.group > .overflow-hidden::before,
+:root[data-mar-look='grain'] .mar-item-media:has(img)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--gr-vignette), var(--gr-noise);
+  background-size:
+    100% 100%,
+    180px 180px;
+  mix-blend-mode: overlay;
+  opacity: 0.9;
+  transition: opacity 450ms ease;
 }
 :root[data-mar-look='grain']
-  .proto-ui.proto-ui.proto-ui
-  button:is(.border-border-strong, .bg-secondary-background) {
-  background: var(--gr-smoke-hi);
-  backdrop-filter: blur(20px);
-  border-color: var(--gr-hair);
-  box-shadow: inset 0 1px 0 var(--gr-hair);
-}
-:root[data-mar-look='grain']
-  .proto-ui.proto-ui.proto-ui
-  button:is(.rounded-control):not(.proto-sidebar button) {
-  border-radius: 999px;
-}
-
-/* Sidebar: the current row glows gold at its start. */
-:root[data-mar-look='grain']
-  .proto-sidebar.proto-sidebar.proto-sidebar
-  button[aria-current='page'] {
-  background: radial-gradient(
-    120% 160% at 0% 50%,
-    oklch(0.8 0.13 75 / 0.2),
-    oklch(0.95 0.03 75 / 0.05) 60%
-  );
-  box-shadow: inset 0 0 0 1px var(--gr-hair);
-}
-:root[data-mar-look='grain'] .proto-sidebar button[aria-current='page'] svg {
-  color: var(--gr-gold);
-}
-:root[data-mar-look='grain'][data-ds-theme='light'] .proto-sidebar button[aria-current='page'] svg {
-  color: var(--gr-gold-deep);
-}
-
-/* ── Menus ────────────────────────────────────────────────────── */
-:root[data-mar-look='grain'] .shadow-popover.shadow-popover {
-  border-color: var(--gr-hair);
-  border-radius: 18px;
-  background: var(--gr-noise), oklch(0.13 0.012 300 / 0.78);
-  backdrop-filter: blur(30px) saturate(1.3);
-}
-:root[data-mar-look='grain'][data-ds-theme='light'] .shadow-popover.shadow-popover {
-  background: var(--gr-noise), oklch(1 0.005 80 / 0.8);
-}
-:root[data-mar-look='grain']
-  .shadow-popover
-  :is([role^='menuitem'], [role='option'])[data-highlighted] {
-  background: oklch(0.8 0.13 75 / 0.14);
-}
-:root[data-mar-look='grain'] .shadow-popover.bg-inverted-background {
-  background: linear-gradient(180deg, oklch(0.86 0.12 82), var(--gr-gold-deep));
-  color: oklch(0.2 0.04 50);
-  border-radius: 999px;
-}
-
-/* ── Type: a serif greeting, small-caps labels ────────────────── */
-:root[data-mar-look='grain'] .mar-greeting.mar-greeting.mar-greeting {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: 72px;
-  line-height: 76px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--gr-ink);
-  text-shadow: 0 10px 40px oklch(0.1 0.02 300 / 0.45);
-}
-:root[data-mar-look='grain'] .proto-main h2.text-ui.font-semibold {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--color-muted-foreground);
-}
-:root[data-mar-look='grain'] .proto-sidebar .uppercase,
-:root[data-mar-look='grain'] .proto-sidebar .mar-group-title {
-  letter-spacing: 0.16em;
-  font-size: 11px;
-}
-:root[data-mar-look='grain'] .rounded-full.bg-secondary-background {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--gr-hair-hi);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Library pages: smoked tiles, serif titles ────────────────── */
-:root[data-mar-look='grain'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid {
-  background: var(--gr-noise), var(--gr-smoke);
-  backdrop-filter: blur(26px) saturate(1.3);
-  box-shadow:
-    inset 0 1px 0 var(--gr-hair-hi),
-    inset 0 0 0 1px var(--gr-hair);
-}
-:root[data-mar-look='grain'] .proto-ui.proto-ui.proto-ui :is(.mar-pseg, .mar-pfind) {
-  --mar-tab-radius: 999px;
-  --mar-tab-item-radius: 999px;
-  background: var(--gr-smoke);
-  backdrop-filter: blur(20px);
-  box-shadow: inset 0 0 0 1px var(--gr-hair);
-}
-:root[data-mar-look='grain'] .proto-ui.proto-ui.proto-ui .mar-pseg-btn[aria-selected='true'] {
-  background: oklch(0.8 0.13 75 / 0.18);
-  color: var(--gr-ink);
-}
-:root[data-mar-look='grain'] .mar-page h1 {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-weight: 400;
-  font-size: 64px;
-  line-height: 1;
-  letter-spacing: -0.015em;
+  .proto-main
+  .edge-shine.group:is(:hover, :focus-visible)
+  > .overflow-hidden::before,
+:root[data-mar-look='grain'] .mar-item:is(:hover, :focus-visible) .mar-item-media::before {
+  opacity: 0.25;
 }

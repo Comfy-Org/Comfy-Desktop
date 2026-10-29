@@ -1,6 +1,7 @@
 /*
- * Looks (UI Playground › Look, looks.ts): four visual languages over the
- * same layout. Each file is scoped to `:root[data-mar-look='<id>']`, so
+ * Looks (UI Playground › Look, looks.ts): four treatments of the same
+ * product. Type and colour stay Void's; a look changes only composition,
+ * image treatment and component treatment. Each file is scoped to `:root[data-mar-look='<id>']`, so
  * Current (no attribute) is untouched. Selectors that restyle buttons go
  * through `.proto-ui.proto-ui.proto-ui` to beat the prototype's reset.
  */
@@ -9,22 +10,19 @@
 @import './apple.css';
 @import './netflix.css';
 
-/* Shader looks: the app floats over the mesh MarLookFx.vue paints behind
+/* Liquid: the app floats over the mesh MarLookFx.vue paints behind
    it (z-index -1 inside this stacking context, so every sibling - shell,
    title bar, graph editor - stays on top), and page photos step aside. */
-:root:is([data-mar-look='liquid'], [data-mar-look='grain'], [data-mar-look='apple'])
-  .proto-ui:has(> .mar-look-fx) {
+:root[data-mar-look='liquid'] .proto-ui:has(> .mar-look-fx) {
   isolation: isolate;
   background: var(--color-titlebar-background);
 }
-:root:is([data-mar-look='liquid'], [data-mar-look='grain'], [data-mar-look='apple'])
-  .proto-shell.proto-shell,
-:root:is([data-mar-look='liquid'], [data-mar-look='grain'], [data-mar-look='apple'])
-  .glass-titlebar.glass-titlebar {
+:root[data-mar-look='liquid'] .proto-shell.proto-shell,
+:root[data-mar-look='liquid'] .glass-titlebar.glass-titlebar {
   background: transparent;
   border-bottom-color: transparent;
 }
-:root:is([data-mar-look='liquid'], [data-mar-look='grain'], [data-mar-look='apple']) .mar-backdrop {
+:root[data-mar-look='liquid'] .mar-backdrop {
   display: none;
 }
 

@@ -11,7 +11,7 @@ import MarLookHero from './MarLookHero.vue'
 
 /**
  * The parts of a Look that CSS can't draw (looks.ts): a WebGL mesh
- * gradient behind the app (Liquid, Grain, Apple), the SVG filter Liquid's glass
+ * gradient behind the app (Liquid), the SVG filter Liquid's glass
  * refracts through, the pointer position Liquid lights its surfaces with,
  * and Netflix's hero (MarLookHero.vue). Mounted only while such a look is on; the
  * shader pauses off-screen (ShaderMount) and stands still with reduced
@@ -19,25 +19,12 @@ import MarLookHero from './MarLookHero.vue'
  */
 
 const MESH: Record<string, { dark: string[]; light: string[]; grain: number; speed: number }> = {
+  // Void's own greys, lighter and darker: light moves, the hue doesn't.
   liquid: {
-    // Void neutrals: grey light moving on near-black, one cool hint.
-    dark: ['#09090b', '#26262b', '#1b1d22', '#323238', '#0e0e10'],
-    light: ['#f4f4f5', '#dedee2', '#fbfbfb', '#e6e7eb', '#efeff1'],
+    dark: ['#0b0b0d', '#1f1f23', '#151518', '#29292e', '#0e0e10'],
+    light: ['#f3f3f5', '#e1e1e5', '#fbfbfc', '#e9e9ed', '#f0f0f2'],
     grain: 0,
     speed: 0.18
-  },
-  // A still, low-chroma wallpaper for the sidebar's vibrancy to pick up.
-  apple: {
-    dark: ['#0b0b0d', '#1e2027', '#141519', '#26242b', '#0f0f12'],
-    light: ['#ececef', '#dde2ea', '#f6f6f8', '#e8e4ea', '#f1f1f3'],
-    grain: 0,
-    speed: 0
-  },
-  grain: {
-    dark: ['#09080d', '#2a1240', '#6a2766', '#d9952e', '#120f18'],
-    light: ['#f4efe7', '#e3c4ff', '#ffcf73', '#f6aec6', '#efe8ff'],
-    grain: 0.5,
-    speed: 0.16
   }
 }
 
@@ -140,7 +127,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="mesh" ref="host" class="mar-look-fx" aria-hidden="true" />
-  <MarLookHero v-if="lookOn === 'netflix' && look.theme !== 'light'" />
+  <MarLookHero v-if="lookOn === 'netflix'" />
   <!-- Liquid's refraction: glass panes use it as a backdrop filter. -->
   <svg v-if="lookOn === 'liquid'" class="mar-look-defs" aria-hidden="true" focusable="false">
     <filter id="mar-liquid-refract" x="0" y="0" width="100%" height="100%">
