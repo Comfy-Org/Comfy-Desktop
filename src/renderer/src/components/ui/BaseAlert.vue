@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import { useModalOverlay } from '../../composables/useModalOverlay'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'
@@ -87,6 +88,28 @@ const linkifiedMessage = computed(() => linkify(props.message))
 // A secondary action means two non-cancel buttons, which need a wider panel.
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
+// Keep the existing control dimensions while adopting the shared button.
+// The named variants carry the action semantics; these classes preserve the
+// current Desktop colors until the remaining dialog families migrate.
+const actionButtonClass =
+  '[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
+const actionVariants = { default: 'secondary', primary: 'inverted', danger: 'destructive' } as const
+const actionToneClasses = {
+  default: 'border-[var(--border)] bg-surface text-text hover:bg-[var(--border)]',
+  primary:
+    'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-background font-medium hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease] hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)]',
+  danger:
+    '[--alert-danger:#c8443d] border-[var(--alert-danger)] bg-[var(--alert-danger)] text-white hover:border-[color-mix(in_srgb,var(--alert-danger)_88%,#000)] hover:bg-[color-mix(in_srgb,var(--alert-danger)_88%,#000)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-style:solid] focus-visible:outline-[color-mix(in_srgb,var(--alert-danger)_60%,#fff)]'
+} as const
+
+const panelWidthClass = computed(() => {
+  if (hasWideActions.value) return hasDetails.value ? 'w-[min(540px,100%)]' : 'w-[min(520px,100%)]'
+  return hasDetails.value ? 'w-[min(480px,100%)]' : 'w-[min(440px,100%)]'
+})
+
+const linkClass =
+  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--accent)] [&_.modal-link]:underline'
+
 const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
   () => props.open && props.dismissOnEscape,
   dismiss
@@ -171,7 +194,7 @@ onBeforeUnmount(() => {
       <div
         v-if="open"
         ref="dialogRef"
-        class="base-alert-overlay"
+        class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)] backdrop-blur-[4px]"
         role="alertdialog"
         aria-modal="true"
         :aria-label="dialogAriaLabel"
@@ -182,93 +205,119 @@ onBeforeUnmount(() => {
         @click="onOverlayClick"
       >
         <div
-          class="base-alert-panel modal-fade-panel"
-          :class="{
-            'base-alert-panel--rich': hasDetails,
-            'base-alert-panel--wide-actions': hasWideActions
-          }"
+          class="base-alert-panel modal-fade-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]"
+          :class="[
+            panelWidthClass,
+            hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
+            {
+              'base-alert-panel--rich': hasDetails,
+              'base-alert-panel--wide-actions': hasWideActions
+            }
+          ]"
         >
-          <header class="base-alert-header">
-            <h2 :id="TITLE_ID" class="base-alert-title">{{ title }}</h2>
-            <button
+          <header
+            class="base-alert-header relative -mx-6 mb-3 border-b border-solid border-neutral-100/8 px-6 pb-3"
+          >
+            <h2
+              :id="TITLE_ID"
+              class="base-alert-title m-0 pr-8 text-base leading-[1.3] font-semibold"
+            >
+              {{ title }}
+            </h2>
+            <Button
               v-if="showCloseIcon"
               type="button"
-              class="base-alert-close-icon"
+              variant="textonly"
+              size="unset"
+              class="base-alert-close-icon absolute [appearance:button] -top-1 right-[18px] size-7 rounded-lg border border-solid border-transparent bg-text/4 p-0 text-neutral-100 opacity-70 transition-[background,border-color,opacity] duration-[120ms] ease-[ease] hover:border-neutral-100/44 hover:bg-neutral-950/85 hover:opacity-100 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring,var(--neutral-50))]"
               :aria-label="$t('common.close')"
               :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
               @click="onCloseIconClick"
             >
               <X :size="16" />
-            </button>
+            </Button>
           </header>
           <div
             v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-            class="base-alert-message"
+            class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
           >
             <slot>
               <div
                 v-if="message"
-                class="base-alert-message-text"
+                class="base-alert-message-text whitespace-pre-line [&_strong]:font-semibold [&_strong]:text-text"
+                :class="linkClass"
                 @click="handleModalLinkClick"
                 v-html="linkifiedMessage"
               ></div>
-              <div v-if="hasDetails" class="base-alert-details">
+              <div v-if="hasDetails" class="base-alert-details mt-3 flex flex-col gap-2">
                 <div
                   v-for="(group, gi) in messageDetails"
                   :key="gi"
-                  class="base-alert-detail-group"
+                  class="base-alert-detail-group flex flex-col gap-1"
                 >
-                  <span class="base-alert-detail-label">{{ group.label }}</span>
-                  <div class="base-alert-detail-recessed" @click="handleModalLinkClick">
+                  <span
+                    class="base-alert-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
+                    >{{ group.label }}</span
+                  >
+                  <div
+                    class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+                    @click="handleModalLinkClick"
+                  >
                     <div
                       v-for="(item, ii) in group.items"
                       :key="ii"
-                      class="base-alert-detail-item"
+                      class="base-alert-detail-item text-[13px] leading-[1.45] text-neutral-100"
+                      :class="linkClass"
                       v-html="linkify(item)"
                     ></div>
                   </div>
                 </div>
               </div>
             </slot>
-            <p v-if="hint" class="base-alert-hint">{{ hint }}</p>
+            <p v-if="hint" class="base-alert-hint mt-3 text-xs leading-[1.4] text-text-muted/75">
+              {{ hint }}
+            </p>
             <!-- Sits below message + details (unlike the default slot, which replaces them). -->
-            <div v-if="$slots.extra" class="base-alert-extra">
+            <div v-if="$slots.extra" class="base-alert-extra mt-3">
               <slot name="extra" />
             </div>
           </div>
-          <footer class="base-alert-footer">
+          <footer
+            class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
+          >
             <slot name="footer">
-              <button
+              <Button
                 v-if="showCancel"
                 type="button"
+                variant="secondary"
+                size="unset"
+                :class="[actionButtonClass, actionToneClasses.default]"
                 :data-testid="testIdCancel ?? 'base-alert-cancel'"
                 @click="onCancelClick"
               >
-                {{ cancelLabel ?? $t('common.cancel') }}
-              </button>
-              <button
+                <span class="truncate">{{ cancelLabel ?? $t('common.cancel') }}</span>
+              </Button>
+              <Button
                 v-if="secondaryLabel"
                 type="button"
-                :class="
-                  secondaryTone === 'danger'
-                    ? 'danger-solid'
-                    : secondaryTone === 'primary'
-                      ? 'primary'
-                      : ''
-                "
+                :variant="actionVariants[secondaryTone]"
+                size="unset"
+                :class="[actionButtonClass, actionToneClasses[secondaryTone]]"
                 :data-testid="testIdSecondary ?? 'base-alert-secondary'"
                 @click="onSecondaryClick"
               >
-                {{ secondaryLabel }}
-              </button>
-              <button
+                <span class="truncate">{{ secondaryLabel }}</span>
+              </Button>
+              <Button
                 type="button"
-                :class="tone === 'danger' ? 'danger-solid' : 'primary'"
+                :variant="actionVariants[tone]"
+                size="unset"
+                :class="[actionButtonClass, actionToneClasses[tone]]"
                 :data-testid="testIdAction ?? 'base-alert-action'"
                 @click="onActionClick"
               >
-                {{ buttonLabel ?? $t('modal.ok') }}
-              </button>
+                <span class="truncate">{{ buttonLabel ?? $t('modal.ok') }}</span>
+              </Button>
             </slot>
           </footer>
         </div>
@@ -276,213 +325,3 @@ onBeforeUnmount(() => {
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.base-alert-overlay {
-  position: fixed;
-  inset: 0;
-  /* Alerts sit above other modals so a confirm fired from inside one owns
-   * the foreground; context menus (10000) still win. */
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: clamp(32px, 6vh, 72px) clamp(16px, 4vw, 48px);
-  background: color-mix(in oklab, var(--neutral-800) 60%, transparent);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.base-alert-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(440px, 100%);
-  min-width: 320px;
-  max-height: min(80vh, 560px);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--neutral-800);
-  border: 1px solid var(--chooser-surface-border);
-  box-shadow: var(--modal-surface-shadow);
-  color: var(--neutral-100);
-  padding: 16px 24px;
-}
-
-/* Rich variant widens the panel and lets the body scroll. */
-.base-alert-panel--rich {
-  width: min(480px, 100%);
-  max-height: min(80vh, 640px);
-}
-
-/* Wider panel so two non-cancel actions sit side-by-side on one line. */
-.base-alert-panel--wide-actions {
-  width: min(520px, 100%);
-}
-
-.base-alert-panel--rich.base-alert-panel--wide-actions {
-  width: min(540px, 100%);
-}
-
-.base-alert-header {
-  position: relative;
-  margin: 0 -24px 12px;
-  padding: 0 24px 12px;
-  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-.base-alert-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-  /* Leave room for the ✕ icon when it's rendered (24px button + gap). */
-  padding-right: 32px;
-}
-
-.base-alert-close-icon {
-  position: absolute;
-  top: -4px;
-  right: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border: 1px solid transparent;
-  opacity: 0.7;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.base-alert-close-icon:hover {
-  opacity: 1;
-  background: color-mix(in oklab, var(--neutral-950) 85%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-}
-.base-alert-close-icon:focus-visible {
-  outline: 2px solid var(--focus-ring, var(--neutral-50));
-  outline-offset: 2px;
-}
-
-.base-alert-message-text {
-  white-space: pre-line;
-}
-
-.base-alert-message-text :deep(strong) {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.base-alert-message-text :deep(.modal-link) {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.base-alert-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.base-alert-hint {
-  margin: 12px 0 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: color-mix(in srgb, var(--text-muted) 75%, transparent);
-}
-
-.base-alert-extra {
-  margin-top: 12px;
-}
-
-.base-alert-detail-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.base-alert-detail-label {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.base-alert-detail-recessed {
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--neutral-100) 4%, transparent);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.base-alert-detail-item {
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--neutral-100);
-}
-
-.base-alert-detail-item :deep(.modal-link) {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.base-alert-message {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin-bottom: 20px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  white-space: pre-line;
-  user-select: text;
-}
-
-.base-alert-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: 0 -24px;
-  padding: 12px 24px 0;
-  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-/* Constrain width + nowrap so two long labels sit side-by-side without
- * stretching to 50/50; they ellipsis past the cap. */
-.base-alert-footer > button {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 96px;
-  max-width: 240px;
-}
-
-/* Warmer destructive red, scoped here because the global `--danger` reads
- * muddy against this panel surface (global token left untouched). */
-.base-alert-panel button.danger-solid {
-  --base-alert-danger: #c8443d;
-  background: var(--base-alert-danger);
-  border-color: var(--base-alert-danger);
-  color: #fff;
-}
-.base-alert-panel button.danger-solid:hover {
-  background: color-mix(in srgb, var(--base-alert-danger) 88%, #000);
-  border-color: color-mix(in srgb, var(--base-alert-danger) 88%, #000);
-}
-.base-alert-panel button.danger-solid:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--base-alert-danger) 60%, #fff);
-  outline-offset: 2px;
-}
-</style>

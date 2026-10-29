@@ -123,18 +123,16 @@ describe('BaseAlert', () => {
     expect(wrapper.emitted('close')).toBeUndefined()
   })
 
-  it('applies primary tone class by default', () => {
+  it('uses the inverted action variant by default', () => {
     const wrapper = mountAlert({ showCancel: true })
     const action = wrapper.find('[data-testid="base-alert-action"]')
-    expect(action.classes()).toContain('primary')
-    expect(action.classes()).not.toContain('danger-solid')
+    expect(action.attributes('data-variant')).toBe('inverted')
   })
 
-  it('applies danger tone class when tone="danger"', () => {
+  it('uses the destructive action variant when tone="danger"', () => {
     const wrapper = mountAlert({ showCancel: true, tone: 'danger' })
     const action = wrapper.find('[data-testid="base-alert-action"]')
-    expect(action.classes()).toContain('danger-solid')
-    expect(action.classes()).not.toContain('primary')
+    expect(action.attributes('data-variant')).toBe('destructive')
   })
 
   it('renders a secondary button between Cancel and Primary when secondaryLabel is set', () => {
@@ -162,14 +160,14 @@ describe('BaseAlert', () => {
     expect(wrapper.emitted('cancel')).toBeUndefined()
   })
 
-  it('applies danger tone to the secondary button when secondaryTone="danger"', () => {
+  it('uses the destructive secondary variant when secondaryTone="danger"', () => {
     const wrapper = mountAlert({
       secondaryLabel: 'Close & Launch',
       secondaryTone: 'danger',
       showCancel: false
     })
     const secondary = wrapper.find('[data-testid="base-alert-secondary"]')
-    expect(secondary.classes()).toContain('danger-solid')
+    expect(secondary.attributes('data-variant')).toBe('destructive')
   })
 
   it('renders the header close icon when showCloseIcon is true', () => {
