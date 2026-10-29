@@ -511,19 +511,23 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
 </script>
 
 <template>
-  <div class="picker">
-    <div class="picker-search">
+  <div class="picker flex size-full box-border flex-col bg-[var(--modal-surface-bg)]">
+    <div
+      class="picker-search flex items-center gap-1 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] pt-1.5 pr-2 pb-2 pl-3 [&_.ui-input]:gap-2 [&_.ui-input]:rounded-none [&_.ui-input]:border-none [&_.ui-input]:bg-transparent [&_.ui-input]:p-0 [&_.ui-input:focus-within]:border-transparent [&_.ui-input-leading]:text-text [&_.ui-input-control]:px-0 [&_.ui-input-control]:pt-0.5 [&_.ui-input-control]:pb-0 [&_.ui-input-control]:text-[14px] [&_.ui-input-control]:leading-5 [&_.ui-input-control]:text-text [&_.ui-input-control::placeholder]:text-text [&_.ui-input-control::placeholder]:opacity-60"
+    >
       <BaseInput
         v-model="searchQuery"
-        class="picker-search-input"
+        class="picker-search-input min-w-0 flex-auto"
         :placeholder="$t('chooser.searchPlaceholder')"
         :aria-label="$t('chooser.searchPlaceholder')"
       >
-        <template #leading><Search :size="20" class="picker-search-icon" /></template>
+        <template #leading
+          ><Search :size="20" class="picker-search-icon mt-0.5 text-[var(--accent-label)]"
+        /></template>
       </BaseInput>
       <button
         type="button"
-        class="picker-close"
+        class="picker-close inline-flex size-7 flex-none items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 text-text-muted cursor-pointer transition-[background-color,color,border-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 hover:outline-none focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none"
         :aria-label="$t('common.close')"
         :title="$t('common.close')"
         @click="handleClose"
@@ -532,23 +536,30 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
       </button>
     </div>
 
-    <div class="picker-chips-row">
+    <div
+      class="picker-chips-row flex items-center gap-2 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] px-4 pt-2 pb-2.5"
+    >
       <template v-if="isInstallHost">
         <Tooltip :text="$t('instancePicker.openDashboardHint')" side="bottom">
           <button
             type="button"
-            class="picker-home"
+            class="picker-home inline-flex h-[22px] flex-none items-center justify-center gap-1.5 border-none bg-transparent py-0 pr-1.5 pl-0.5 text-neutral-100 cursor-pointer transition-[color] duration-100 ease-[ease] hover:text-text hover:outline-none focus-visible:text-text focus-visible:outline-none"
             :aria-label="$t('instancePicker.openDashboard')"
             @click="handleOpenDashboard"
           >
             <LayoutDashboard :size="14" />
-            <span class="picker-home-label">{{ $t('instancePicker.openDashboard') }}</span>
+            <span class="picker-home-label text-[11px] leading-4 font-medium whitespace-nowrap">{{
+              $t('instancePicker.openDashboard')
+            }}</span>
           </button>
         </Tooltip>
-        <span class="picker-chips-divider" aria-hidden="true"></span>
+        <span
+          class="picker-chips-divider inline-block h-4 w-px flex-none bg-[var(--brand-surface-border-hover,var(--chooser-surface-border))]"
+          aria-hidden="true"
+        ></span>
       </template>
       <div
-        class="picker-chips"
+        class="picker-chips flex min-w-0 flex-wrap items-center gap-1.5"
         role="tablist"
         :aria-label="$t('chooser.filterLabel', 'Source filter')"
       >
@@ -557,8 +568,12 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           :key="chip.key"
           type="button"
           role="tab"
-          class="picker-chip"
-          :class="{ 'is-active': activeFilter === chip.key }"
+          class="picker-chip inline-flex h-[22px] items-center rounded-lg border border-solid px-2.5 py-0.5 text-[11px] leading-4 font-medium cursor-pointer transition-[background-color,border-color,color] duration-100 ease-[ease] hover:outline-none focus-visible:outline-none"
+          :class="
+            activeFilter === chip.key
+              ? 'is-active border-transparent bg-accent text-text'
+              : 'border-border bg-transparent text-neutral-100 hover:bg-secondary hover:text-text focus-visible:text-text'
+          "
           :aria-selected="activeFilter === chip.key"
           @click="activeFilter = chip.key"
         >
@@ -567,10 +582,14 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
       </div>
     </div>
 
-    <div class="picker-body">
-      <div class="picker-left">
-        <div class="picker-list-section">
-          <div class="picker-list-section-title">
+    <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
+      <div
+        class="picker-left flex min-h-0 min-w-0 flex-col border-r border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)]"
+      >
+        <div class="picker-list-section flex min-h-0 flex-auto flex-col overflow-hidden">
+          <div
+            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-[18px] pb-0 pl-4 text-[14px] leading-5 font-medium text-neutral-100 opacity-70"
+          >
             {{ $t('instancePicker.instances')
             }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
           </div>
@@ -578,7 +597,12 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           <TransitionGroup
             tag="div"
             name="picker-row"
-            class="picker-list"
+            enter-active-class="picker-row-enter-active [transition:opacity_200ms_ease,transform_200ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-[1ms]"
+            enter-from-class="picker-row-enter-from opacity-0 [transform:translateY(8px)_scale(0.98)] motion-reduce:transform-none"
+            leave-active-class="picker-row-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+            leave-to-class="picker-row-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
+            move-class="picker-row-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+            class="picker-list relative flex min-h-0 flex-auto flex-col gap-1 overflow-y-auto"
             role="listbox"
             @before-leave="lockLeavingRowSize"
           >
@@ -595,22 +619,32 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               @select="handleSelect"
             />
 
-            <div v-if="showEmptyHint" key="__empty" class="picker-list-empty">
+            <div
+              v-if="showEmptyHint"
+              key="__empty"
+              class="picker-list-empty px-[18px] py-2 text-[14px] text-neutral-100"
+            >
               {{ $t('chooser.noMatches') }}
             </div>
           </TransitionGroup>
         </div>
 
-        <footer class="picker-left-footer">
-          <button type="button" class="picker-new-install" @click="handleNewInstall">
+        <footer
+          class="picker-left-footer flex shrink-0 items-center border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
+        >
+          <button
+            type="button"
+            class="picker-new-install inline-flex h-8 w-fit flex-none items-center justify-center gap-1 rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 cursor-pointer transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text hover:outline-none focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none"
+            @click="handleNewInstall"
+          >
             <Plus :size="16" />
             <span>{{ $t('instancePicker.newInstance') }}</span>
           </button>
         </footer>
       </div>
 
-      <div class="picker-detail-wrap is-expanded">
-        <div class="picker-detail">
+      <div class="picker-detail-wrap is-expanded flex min-h-0 min-w-0 overflow-hidden p-0">
+        <div class="picker-detail relative flex min-h-0 min-w-0 flex-[1_1_0] flex-col gap-0">
           <template v-if="selectedInstall">
             <ComfyUISettingsContent
               :installation="selectedInstall"
@@ -622,7 +656,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :active-installation-id="snapshot.activeInstallationId"
               :current-view="snapshot.currentView ?? 'dashboard'"
               :current-category="snapshot.currentCategory ?? null"
-              class="picker-expanded-body"
+              class="picker-expanded-body min-h-0 flex-auto [--text-muted:var(--neutral-100)]"
               @show-progress="handleSettingsShowProgress"
               @navigate-list="handleSettingsNavigateList"
               @request-close="handleSettingsNavigateList"
@@ -634,7 +668,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               @op-dismiss="handleInlineProgressDismiss"
             />
           </template>
-          <div v-else class="picker-detail-empty">
+          <div v-else class="picker-detail-empty m-auto text-[14px] text-neutral-100 opacity-70">
             {{ $t('instancePicker.empty') }}
           </div>
         </div>
@@ -642,311 +676,3 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     </div>
   </div>
 </template>
-
-<style scoped>
-.picker {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--modal-surface-bg);
-}
-
-.picker-search {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border-bottom: 1px solid var(--brand-surface-border-hover, var(--chooser-surface-border));
-  padding: 6px 8px 8px 12px;
-}
-.picker-search-input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.picker-search :deep(.ui-input) {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  gap: 8px;
-}
-.picker-close {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    color 100ms ease,
-    border-color 100ms ease;
-}
-.picker-close:hover,
-.picker-close:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-  outline: none;
-}
-.picker-search :deep(.ui-input):focus-within {
-  border-color: transparent;
-}
-.picker-search :deep(.ui-input-leading) {
-  color: var(--text);
-}
-.picker-search :deep(.ui-input-control) {
-  padding: 2px 0 0 0;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--text);
-}
-.picker-search :deep(.ui-input-control::placeholder) {
-  color: var(--text);
-  opacity: 0.6;
-}
-
-.picker-search-icon {
-  color: var(--accent-label);
-  margin-top: 2px;
-}
-.picker-chips-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 10px 16px;
-  border-bottom: 1px solid var(--brand-surface-border-hover, var(--chooser-surface-border));
-}
-.picker-chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-.picker-home {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 6px 0 2px;
-  border: none;
-  background: transparent;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition: color 100ms ease;
-}
-.picker-home-label {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  white-space: nowrap;
-}
-.picker-home:hover,
-.picker-home:focus-visible {
-  color: var(--text);
-  outline: none;
-}
-.picker-chips-divider {
-  flex: 0 0 auto;
-  display: inline-block;
-  width: 1px;
-  height: 16px;
-  background: var(--brand-surface-border-hover, var(--chooser-surface-border));
-}
-.picker-chip {
-  height: 22px;
-  padding: 2px 10px;
-  border-radius: 9999px;
-  border: 1px solid var(--brand-surface-border-hover, var(--chooser-surface-border));
-  background: transparent;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--neutral-100);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease,
-    color 100ms ease;
-}
-.picker-chip:hover,
-.picker-chip:focus-visible {
-  outline: none;
-  color: var(--text);
-}
-.picker-chip.is-active {
-  background: var(--chooser-surface-border);
-  border-color: var(--brand-surface-border-hover);
-  color: var(--text);
-}
-
-.picker-body {
-  flex: 1 1 0;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-}
-
-.picker-left {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--chooser-surface-border);
-  background: var(--modal-surface-bg);
-}
-.picker-left-footer {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-top: 1px solid var(--chooser-surface-border);
-  background: var(--modal-surface-bg);
-}
-.picker-list-section {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.picker-list-section-title {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--neutral-100);
-  opacity: 0.7;
-  padding: 12px 18px 0 16px;
-  margin-bottom: 14px;
-}
-.picker-list {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* Row FLIP: enter rises in, leave fades out of flow so survivors slide into the
- * gap, move uses the app's iOS-derived curve. Transform/opacity only. Mirrors
- * ChooserView's `tile` transition so list and dashboard motion stay consistent. */
-.picker-row-enter-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.picker-row-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.98);
-}
-.picker-row-leave-active {
-  transition:
-    opacity 140ms ease,
-    transform 140ms cubic-bezier(0.32, 0.72, 0, 1);
-  position: absolute;
-}
-.picker-row-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
-.picker-row-move {
-  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .picker-row-enter-active,
-  .picker-row-leave-active,
-  .picker-row-move {
-    /* Non-zero so Vue's transitionend cleanup still fires and leaving nodes get removed. */
-    transition-duration: 1ms;
-  }
-  .picker-row-enter-from,
-  .picker-row-leave-to {
-    transform: none;
-  }
-}
-.picker-list-empty {
-  padding: 8px 18px;
-  font-size: 14px;
-  color: var(--neutral-100);
-}
-
-.picker-new-install {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 32px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  width: fit-content;
-  border: none;
-  background: var(--chooser-surface-border-hover);
-  color: var(--neutral-100);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-.picker-new-install:hover,
-.picker-new-install:focus-visible {
-  background: var(--brand-surface-border-hover);
-  color: var(--text);
-  outline: none;
-}
-
-.picker-detail-wrap {
-  min-width: 0;
-  min-height: 0;
-  padding: 0 8px;
-  display: flex;
-  overflow: hidden;
-}
-.picker-detail {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-.picker-detail-empty {
-  margin: auto;
-  font-size: 14px;
-  color: var(--neutral-100);
-  opacity: 0.7;
-}
-
-.picker-detail-wrap.is-expanded {
-  padding: 0;
-}
-.picker-detail-wrap.is-expanded .picker-detail {
-  gap: 0;
-}
-
-.picker-expanded-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  --text-muted: var(--neutral-100);
-}
-</style>
