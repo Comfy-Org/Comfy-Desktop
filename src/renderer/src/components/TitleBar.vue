@@ -9,50 +9,18 @@ const isMac = computed(() => navigator.userAgent.toLowerCase().includes('mac'))
 </script>
 
 <template>
-  <header class="titlebar" :class="{ 'titlebar--mac': isMac }">
-    <div class="titlebar-drag-region">
-      <span v-if="title" class="titlebar-title">{{ title }}</span>
+  <header
+    class="titlebar relative z-[1000] box-border flex h-[var(--titlebar-height,37px)] shrink-0 items-center border-b border-solid border-[var(--border)] bg-surface"
+    :class="{ 'titlebar--mac': isMac }"
+  >
+    <div
+      class="titlebar-drag-region flex h-full min-w-0 flex-1 items-center pr-[140px] pl-3 [app-region:drag] [.titlebar--mac_&]:pr-3 [.titlebar--mac_&]:pl-[78px]"
+    >
+      <span
+        v-if="title"
+        class="titlebar-title min-w-0 truncate text-[12px] text-text-muted select-none"
+        >{{ title }}</span
+      >
     </div>
   </header>
 </template>
-
-<style scoped>
-.titlebar {
-  height: var(--titlebar-height, 37px);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  background: var(--surface);
-  position: relative;
-  z-index: 1000;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--border);
-}
-
-.titlebar-drag-region {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding-left: 12px;
-  padding-right: 140px;
-  app-region: drag;
-}
-
-/* On macOS, leave room for the traffic light buttons (close/minimize/maximize) */
-.titlebar--mac .titlebar-drag-region {
-  padding-left: 78px;
-  padding-right: 12px;
-}
-
-.titlebar-title {
-  font-size: 12px;
-  color: var(--text-muted);
-  user-select: none;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

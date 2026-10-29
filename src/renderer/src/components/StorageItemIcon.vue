@@ -30,16 +30,9 @@ const resolvedTitle = computed(() =>
   <component
     :is="resolvedIcon"
     :size="14"
-    class="storage-item-icon"
+    class="storage-item-icon shrink-0 text-text-muted"
     :class="{ 'is-shared': shared }"
     :title="resolvedTitle"
     aria-hidden="true"
   />
 </template>
-
-<style scoped>
-.storage-item-icon {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-</style>
