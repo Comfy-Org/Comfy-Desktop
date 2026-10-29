@@ -10,64 +10,23 @@ defineProps<{
 </script>
 
 <template>
-  <section class="gs-micro-section">
-    <h3 class="gs-micro-title">
+  <section class="gs-micro-section flex flex-col gap-2">
+    <h3
+      class="gs-micro-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
+    >
       <span>{{ title }}</span>
       <InfoTooltip v-if="tooltip" :text="tooltip" />
       <!-- Optional right-aligned header controls (e.g. a shared-source toggle),
            inlined with the title to save a row. -->
-      <div v-if="$slots.actions" class="gs-micro-actions">
+      <div
+        v-if="$slots.actions"
+        class="gs-micro-actions ml-auto inline-flex items-center gap-2 text-[12px] font-normal tracking-normal text-text-muted normal-case"
+      >
         <slot name="actions" />
       </div>
     </h3>
-    <div class="gs-micro-body">
+    <div class="gs-micro-body flex flex-col gap-2">
       <slot />
     </div>
   </section>
 </template>
-
-<style scoped>
-.gs-micro-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.gs-micro-title {
-  display: flex;
-  align-items: center;
-  margin: 0;
-  padding: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-/* Header controls: right-aligned, plain body typography (the uppercase
- * heading style would otherwise leak into slotted labels). */
-.gs-micro-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-/* Dim the title text only, not the InfoTooltip: stacking this dim on the
- * tooltip's own 0.6 baseline would nearly hide the `?` icon. */
-.gs-micro-title > span {
-  opacity: 0.55;
-}
-
-.gs-micro-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-</style>

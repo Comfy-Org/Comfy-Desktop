@@ -168,43 +168,6 @@
   opacity: 1;
 }
 
-/* ── 5. Desktop Settings: one surface; the tab list is a quiet nav ──── */
-:root.palette-void .global-settings .gs-header {
-  padding: 10px 12px 10px 20px;
-  border-bottom-color: var(--color-border);
-}
-:root.palette-void .global-settings .gs-title {
-  font-family: var(--font-sans);
-  font-size: var(--text-heading);
-  font-weight: 600;
-  color: var(--text);
-}
-:root.palette-void .global-settings .gs-tabs {
-  gap: 1px;
-  padding: 8px;
-  background: transparent;
-  border-right-color: var(--color-border);
-}
-:root.palette-void .global-settings .gs-tab {
-  min-height: 32px;
-  border-radius: var(--radius-control);
-  font-size: var(--text-ui);
-}
-:root.palette-void .global-settings .gs-tab:hover {
-  background: var(--color-secondary);
-}
-:root.palette-void .global-settings .gs-tab.active {
-  background: var(--color-accent);
-  color: var(--text);
-}
-:root.palette-void .global-settings .gs-close {
-  background: transparent;
-}
-:root.palette-void .global-settings :is(.gs-close:hover, .gs-close:focus-visible) {
-  background: var(--color-secondary);
-  border-color: transparent;
-}
-
 /* ── 6. Instance picker ────────────────────────────────────────────── */
 :root.palette-void .picker .picker-chip {
   border-radius: var(--radius-control);
