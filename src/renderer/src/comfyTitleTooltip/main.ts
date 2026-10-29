@@ -9,8 +9,6 @@ import TitleTooltipApp from './TitleTooltipApp.vue'
 // Renderer telemetry bootstrap is intentionally skipped: this transient
 // hover surface would mint a new session per hover for zero value.
 document.documentElement.setAttribute('data-theme', 'dark')
-// Everything this renderer draws is in the Void palette (assets/palette-void.css).
-document.documentElement.classList.add('palette-void')
 
 loadProprietaryFonts()
 

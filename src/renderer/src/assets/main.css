@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @import '@comfyorg/design-system/components.css';
 @import './design-system-theme.css';
-@import './palette-void.css';
 
 /* Shared components from @comfyorg/design-system: generate the utilities they
  * use and load their scoped styles. Its base.css is not imported: its fonts use
@@ -37,9 +36,9 @@
  * When the font is absent the --font-display stack falls back to Inter. The
  * file is fetched at build time from a private bucket (scripts/fetch-font.mjs). */
 
-/* Exact colors still read directly by legacy components. Keep these separate
- * from the Tailwind aliases, which follow the active theme. Remove each one
- * when its remaining consumers migrate to the design system. */
+/* Fixed heading and fallback colors still read by migrated views. Keep these
+ * separate from the Tailwind aliases, which follow the active theme; the
+ * takeover headings intentionally retain their exact white foreground. */
 :root {
   --legacy-color-text: #ffffff;
   --legacy-color-text-muted: #8a8a8a;
@@ -232,6 +231,83 @@
   --takeover-gap-sm: clamp(0.5rem, 0.1786rem + 0.4464vw, 0.75rem);
   --takeover-gap-md: clamp(0.75rem, 0.1071rem + 0.8929vw, 1.25rem);
   --takeover-gap-lg: clamp(3rem, 1.8571rem + 1.7857vw, 4rem);
+}
+
+/* Desktop runtime colors. Repeat aliases on nested dark surfaces so their
+ * references resolve against that surface's tokens. The panel stays dark even
+ * while the hosted editor uses its independent light theme. */
+:root[data-theme='dark'],
+:root.desktop-panel,
+:root [data-theme='dark'] {
+  /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
+  --neutral-950: oklch(0.13 0.004 285);
+  --neutral-900: oklch(0.165 0.005 285);
+  --neutral-800: oklch(0.2 0.006 285);
+  --neutral-700: oklch(0.23 0.008 285);
+  --neutral-600: oklch(0.23 0.008 285);
+  --neutral-500: oklch(0.36 0.008 285);
+  --neutral-400: oklch(0.48 0.008 285);
+  --neutral-300: oklch(0.6 0.008 285);
+  --neutral-200: oklch(0.76 0.006 285);
+  --neutral-100: oklch(0.9 0.003 285);
+  /* Was brand yellow: the chrome's accent is white now. */
+  --neutral-50: oklch(0.96 0.002 285);
+  --comfy-yellow: var(--neutral-50);
+  --surface-recessed: var(--neutral-900);
+
+  --bg: var(--color-content-background);
+  --overlay-bg-opaque: var(--bg);
+  /* Mirrored in main as TITLEBAR_BG. */
+  --titlebar-bg: var(--color-background);
+  --titlebar-icon: var(--color-muted-foreground);
+  --surface: var(--color-card);
+  --secondary-background: var(--color-secondary);
+  --terminal-bg: oklch(0.1 0.004 285);
+
+  --text: var(--color-foreground);
+  --text-muted: var(--color-muted-foreground);
+  --text-faint: var(--color-subtle-foreground);
+  --accent-label: var(--color-subtle-foreground);
+
+  /* White accent: primary actions, selection, progress. */
+  --accent: var(--color-foreground);
+  --accent-hover: oklch(0.995 0 0);
+  --accent-primary: var(--color-foreground);
+  --brand-accent: var(--color-foreground);
+  --accent-plum: oklch(0.82 0.04 300);
+  --selected: oklch(1 0 0 / 0.85);
+  --focus-ring: var(--color-ring);
+
+  --border: var(--color-border);
+  --border-hover: var(--color-border-strong);
+
+  --danger: var(--color-destructive);
+  --danger-hover: oklch(0.68 0.19 25);
+  --success: var(--color-success);
+  --semantic-danger: var(--color-destructive);
+  --semantic-warning: var(--color-warning);
+  --semantic-success: var(--color-success);
+
+  --brand-surface-bg: oklch(1 0 0 / 0.04);
+  --brand-surface-bg-hover: oklch(1 0 0 / 0.07);
+  --brand-surface-border: var(--color-border);
+  --brand-surface-border-hover: var(--color-border-strong);
+
+  --chooser-surface-bg: oklch(1 0 0 / 0.04);
+  --chooser-surface-bg-hover: oklch(1 0 0 / 0.07);
+  --chooser-surface-border: var(--color-border);
+  --chooser-surface-border-hover: var(--color-border-strong);
+
+  /* Popup windows are sized to their content, so an outer shadow would be
+   * clipped; only the inset top highlight shows. */
+  --modal-surface-bg: var(--neutral-800);
+  --modal-surface-border: var(--color-border);
+  --modal-surface-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07);
+
+  /* Inverted tooltips. Mirrored in main for the title-bar tooltip. */
+  --tooltip-bg: var(--color-foreground);
+  --tooltip-border: transparent;
+  --tooltip-fg: var(--color-background);
 }
 
 /* Document reset and rendering defaults shared by the five Desktop renderers.

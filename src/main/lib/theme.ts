@@ -15,7 +15,7 @@ export const COMFY_BG_LIGHT = '#f5f5f5'
 export const COMFY_BG = '#171717'
 
 /** Title bar background: the Void `--color-background`, oklch(0.19 0.003 285). Must stay in sync
- *  with `--titlebar-bg` in `src/renderer/src/assets/palette-void.css` so the OS window-controls
+ *  with `--titlebar-bg` in `src/renderer/src/assets/main.css` so the OS window-controls
  *  overlay matches the Vue `.title-bar` on every window. */
 export const TITLEBAR_BG = '#141415'
 

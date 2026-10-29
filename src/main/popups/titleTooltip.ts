@@ -55,7 +55,7 @@ export function getTitleTooltipForParent(parentId: number): TitleTooltipPopupEnt
   return titleTooltipPopupsByParent.get(parentId)
 }
 
-/** Hardcoded mirror of the Void `--tooltip-*` tokens (assets/palette-void.css) so the title-bar
+/** Hardcoded mirror of the Void `--tooltip-*` tokens (assets/main.css) so the title-bar
  *  tooltip matches the in-renderer bubbles: inverted, light with dark text. Theme-agnostic until
  *  light brand parity ships. */
 function resolveTooltipTheme(): { bg: string; text: string; border: string } {
