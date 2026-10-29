@@ -80,29 +80,46 @@ watch(
 </script>
 
 <template>
-  <div v-if="installationId" class="view-modal-content">
-    <div class="view-modal-header">
-      <div class="view-modal-title">{{ title }}</div>
-      <button class="view-modal-close" @click="emit('close')">
+  <div
+    v-if="installationId"
+    class="view-modal-content mx-[30px] flex h-[calc(100vh-60px)] w-full max-w-[900px] flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)] [.view-fullscreen_&]:h-full [.view-fullscreen_&]:max-w-none [.view-fullscreen_&]:rounded-none [.view-fullscreen_&]:border-none"
+  >
+    <div
+      class="view-modal-header flex shrink-0 items-center gap-3 border-b border-solid border-[var(--border)] px-5 py-4"
+    >
+      <div
+        class="view-modal-title flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold text-text"
+      >
+        {{ title }}
+      </div>
+      <button
+        class="view-modal-close shrink-0 border-none bg-transparent px-2 py-1 text-[18px] leading-none text-text-muted cursor-pointer hover:bg-transparent hover:text-text"
+        @click="emit('close')"
+      >
         {{ !isExited && !errorInfo ? '−' : '✕' }}
       </button>
     </div>
-    <div class="view-modal-body">
-      <div v-if="errorInfo?.message" class="console-error-message">{{ errorInfo.message }}</div>
+    <div class="view-modal-body flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
+      <div
+        v-if="errorInfo?.message"
+        class="console-error-message max-h-1/2 shrink-0 overflow-y-auto px-3 py-2.5 text-[14px] whitespace-pre-wrap text-[var(--danger)] select-text"
+      >
+        {{ errorInfo.message }}
+      </div>
       <button
         type="button"
-        class="terminal-toggle"
+        class="terminal-toggle flex shrink-0 items-center gap-1.5 border-none bg-transparent p-1.5 text-[14px] text-text-muted select-none cursor-pointer hover:bg-transparent hover:text-text"
         :aria-expanded="terminalExpanded"
         @click="terminalExpanded = !terminalExpanded"
       >
-        <span class="terminal-toggle-icon">{{ terminalExpanded ? '▾' : '▸' }}</span>
+        <span class="terminal-toggle-icon text-[18px]">{{ terminalExpanded ? '▾' : '▸' }}</span>
         <span>{{ $t('list.console') }}</span>
       </button>
       <div
         v-show="terminalExpanded"
         id="console-terminal"
         ref="terminalRef"
-        class="terminal-output"
+        class="terminal-output min-h-0 max-h-none flex-1 overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--terminal-bg)] px-3 py-2.5 text-[13px] whitespace-pre-wrap text-text-muted select-text [font-family:'Cascadia_Mono','Consolas',monospace] [word-break:break-all]"
         @scroll="handleTerminalScroll"
       >
         {{ terminalOutput }}
@@ -110,30 +127,40 @@ watch(
     </div>
 
     <!-- Bottom bar (pinned outside scrollable body) -->
-    <div class="view-modal-footer">
-      <div class="view-bottom">
-        <button v-if="showWindowBtn" class="accent" @click="api.focusComfyWindow(installationId!)">
+    <div class="view-modal-footer shrink-0 border-t border-solid border-[var(--border)] px-5 py-3">
+      <div class="console-actions flex shrink-0 justify-end gap-2.5 pt-0">
+        <button
+          v-if="showWindowBtn"
+          class="console-action--show rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--accent)] bg-[var(--surface)] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"
+          @click="api.focusComfyWindow(installationId!)"
+        >
           {{ $t('running.showWindow') }}
         </button>
-        <button v-if="comfyUrl && runningInfo?.mode === 'console'" @click="api.openPath(comfyUrl)">
+        <button
+          v-if="comfyUrl && runningInfo?.mode === 'console'"
+          class="console-action--browser rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
+          @click="api.openPath(comfyUrl)"
+        >
           {{ $t('console.openInBrowser') }}
         </button>
-        <button v-if="isStopping" class="danger-solid" disabled>
+        <button
+          v-if="isStopping"
+          class="console-action--stop rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]"
+          disabled
+        >
           {{ $t('console.stopping') }}
         </button>
         <button
           v-else-if="!isExited && !errorInfo"
-          class="danger-solid"
+          class="console-action--stop rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]"
           @click="api.stopComfyUI(installationId!)"
         >
           {{ $t('console.stop') }}
         </button>
         <button
           v-if="errorInfo"
-          @click="
-            sessionStore.clearErrorInstance(installationId!)
-            emit('close')
-          "
+          class="console-action--dismiss rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
+          @click="(sessionStore.clearErrorInstance(installationId!), emit('close'))"
         >
           {{ $t('running.dismiss') }}
         </button>
