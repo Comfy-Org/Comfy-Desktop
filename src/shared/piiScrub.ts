@@ -23,14 +23,16 @@
 
 // Separators are `[\\/]+` so the same path matches whether it is written
 // plainly (`C:\Users\x`), with forward or mixed slashes (`C:/Users/x`), or
-// escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`).
+// escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
+// stops at `"` so a JSON string's closing quote and what follows survive;
+// not at `'`, which is legal in a Windows username.
 const PII_PATH_PATTERNS: RegExp[] = [
-  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
-  /([\\/]Users[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
-  /([\\/]home[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
-  /(\/mnt\/wsl\/[^/]+\/home\/)[^/]+?(?=\/|$)/gi
+  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
+  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
+  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
+  /([\\/]Users[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
+  /([\\/]home[\\/]+)[^\\/]+?(?=[\\/"]|$)/gi,
+  /(\/mnt\/wsl\/[^/]+\/home\/)[^/]+?(?=[/"]|$)/gi
 ]
 
 // The real home directory, in any separator spelling. Catches a profile

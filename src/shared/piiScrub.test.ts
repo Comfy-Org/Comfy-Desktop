@@ -33,6 +33,16 @@ describe('piiScrub', () => {
       expect(scrubPII(stderr)).toBe('{"path":"C:\\\\Users\\\\[REDACTED]\\\\ComfyUI\\\\main.py"}')
     })
 
+    it('keeps the JSON framing after a path that ends at the username', () => {
+      expect(scrubPII('{"cwd":"C:\\\\Users\\\\alice","home":"/home/bob","n":1}')).toBe(
+        '{"cwd":"C:\\\\Users\\\\[REDACTED]","home":"/home/[REDACTED]","n":1}'
+      )
+    })
+
+    it('redacts a username containing an apostrophe in full', () => {
+      expect(scrubPII("C:\\Users\\o'brien\\x")).toBe('C:\\Users\\[REDACTED]\\x')
+    })
+
     it('redacts doubled-backslash Windows paths from a Python repr', () => {
       expect(scrubPII("FileNotFoundError: 'D:\\\\Users\\\\alice\\\\models'")).toBe(
         "FileNotFoundError: 'D:\\\\Users\\\\[REDACTED]\\\\models'"
