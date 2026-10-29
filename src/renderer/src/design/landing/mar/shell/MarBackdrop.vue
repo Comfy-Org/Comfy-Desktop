@@ -15,6 +15,7 @@ import { altBackground, bloomOn, heroImage, marDockOn, marNav, marSideOn } from 
 import lastOutput from '../assets/portrait-seaside.jpg'
 import './marShell.css'
 import './panelsNav.css'
+import './light.css'
 import '../menus/layers.css'
 import '../motion/motion.css'
 import '../motion/tabSlide'

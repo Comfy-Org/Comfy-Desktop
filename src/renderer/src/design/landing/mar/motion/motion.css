@@ -8,9 +8,12 @@
   --mar-ease-io: cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
-/* Tabs: one pill slides behind the picked option (tabSlide.ts). */
-:root[data-mar-ui='on'] [data-mar-tabs] {
+/* Tabs: one pill slides behind the picked option (tabSlide.ts). A track
+   that floats (the space's Admin | Member view) keeps its `fixed`. */
+:root[data-mar-ui='on'] [data-mar-tabs]:not(.fixed) {
   position: relative;
+}
+:root[data-mar-ui='on'] [data-mar-tabs] {
   isolation: isolate;
 }
 :root[data-mar-ui='on'] [data-mar-tabs] > button {
