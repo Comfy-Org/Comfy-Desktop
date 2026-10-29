@@ -221,6 +221,26 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
+    def test_missing_origin_remote_leaves_the_install_untouched(self):
+        git(self.repo, "remote", "remove", "origin")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("[ERROR] This ComfyUI install has no 'origin' git remote", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("[WRITING_TARGET]", r.stdout)
+        self.assert_clean_at(self.sha["v1"], V1)
+
+    def test_origin_without_master_leaves_the_install_untouched(self):
+        git(self.origin, "branch", "-m", "master", "main")
+        git(self.repo, "update-ref", "-d", "refs/remotes/origin/master")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("[ERROR] origin has no master branch to update to.", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("[WRITING_TARGET]", r.stdout)
+        self.assert_clean_at(self.sha["v1"], V1)
+        self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+
     def test_failed_fetch_reports_no_write_and_changes_nothing(self):
         # A run that never printed [WRITING_TARGET] moved nothing; when Desktop
         # sees it exit, it drops its update marker, so the user's own files don't

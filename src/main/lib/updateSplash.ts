@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron'
-import { SPLASH_PURPLE } from './theme'
+import { SPLASH_DESKTOP } from './theme'
 import { showSplashPage } from './relaunchPage'
 import * as i18n from './i18n'
 
@@ -41,7 +41,7 @@ export function showUpdateInstallSplash(): UpdateInstallSplash {
     resizable: false,
     center: true,
     show: false,
-    backgroundColor: SPLASH_PURPLE.bg,
+    backgroundColor: SPLASH_DESKTOP.bg,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -60,7 +60,7 @@ export function showUpdateInstallSplash(): UpdateInstallSplash {
   // page while it is still loading (a second loadURL aborts the first, which
   // would reject its promise). The splash is best-effort chrome, so render
   // failures are swallowed rather than propagated into the update flow.
-  let render: Promise<void> = showSplashPage(win.webContents, SPLASH_PURPLE, {
+  let render: Promise<void> = showSplashPage(win.webContents, SPLASH_DESKTOP, {
     title: i18n.t('launch.updateCheckTitle'),
     desc: i18n.t('launch.updateCheckDesc')
   }).catch(() => {})
@@ -71,7 +71,7 @@ export function showUpdateInstallSplash(): UpdateInstallSplash {
       render = render
         .then(() => {
           if (win.isDestroyed()) return
-          return showSplashPage(win.webContents, SPLASH_PURPLE, {
+          return showSplashPage(win.webContents, SPLASH_DESKTOP, {
             title: i18n.t('launch.updateInstallTitle'),
             desc: i18n.t('launch.updateInstallDesc'),
             countdownSeconds: UPDATE_INSTALL_COUNTDOWN_SECONDS

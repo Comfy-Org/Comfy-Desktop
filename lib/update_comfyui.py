@@ -240,6 +240,10 @@ def main():
                 else:
                     print("Check your internet connection and try again.")
                 sys.exit(1)
+    else:
+        print("[ERROR] This ComfyUI install has no 'origin' git remote, so there is "
+              "nothing to update from.")
+        sys.exit(1)
 
     # Resolve the tag before anything moves, so a missing tag exits untouched.
     ref = None
@@ -272,7 +276,11 @@ def main():
     # conflicts and stash-pop conflict markers that can corrupt working-tree
     # files (see issue #245).
     print("Resetting to origin/master…")
-    remote_ref = repo.lookup_reference("refs/remotes/origin/master")
+    try:
+        remote_ref = repo.lookup_reference("refs/remotes/origin/master")
+    except KeyError:
+        print("[ERROR] origin has no master branch to update to.")
+        sys.exit(1)
     remote_id = remote_ref.target
     target_id = remote_id if ref is None else ref.peel(pygit2.Commit).id
     branch = repo.lookup_branch("master")
