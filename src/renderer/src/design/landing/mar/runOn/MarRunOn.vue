@@ -35,6 +35,8 @@ const cloud = computed(() =>
     .filter((i) => i.kind === 'cloud')
     .sort((a, b) => Number(!!a.deployment) - Number(!!b.deployment) || byRecent(a, b))
 )
+const only = computed(() => local.value.length + cloud.value.length === 1)
+const needsLogin = computed(() => activeInstance.value.kind === 'cloud' && !proto.signedIn)
 const filterable = computed(() => local.value.length + cloud.value.length > 6)
 
 const q = computed(() => query.value.trim().toLowerCase())
@@ -79,11 +81,26 @@ function toList(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <DropdownMenuRoot :open="open" :modal="false" @update:open="onOpen">
+  <!-- One build: nothing to pick, so no menu, just where this runs. -->
+  <component
+    :is="needsLogin ? 'button' : 'span'"
+    v-if="only"
+    :type="needsLogin ? 'button' : undefined"
+    class="mar-ro-trigger is-static"
+    @click="needsLogin && requireLogin()"
+  >
+    <span class="mar-ro-glyph">
+      <LocationIcon :kind="activeInstance.kind" :size="15" />
+      <span v-if="activeInstance.state === 'running'" class="mar-ro-dot is-running" />
+    </span>
+    <span class="mar-ro-trigger-name">{{ runOnShort(activeInstance) }}</span>
+    <span v-if="needsLogin" class="mar-ro-quiet">Log in</span>
+  </component>
+  <DropdownMenuRoot v-else :open="open" :modal="false" @update:open="onOpen">
     <DropdownMenuTrigger as-child>
       <button type="button" class="mar-ro-trigger" :aria-label="`Run on ${activeInstance.name}`">
         <span class="mar-ro-glyph">
-          <LocationIcon :kind="activeInstance.kind" :size="16" />
+          <LocationIcon :kind="activeInstance.kind" :size="15" />
           <span
             v-if="activeInstance.state === 'running'"
             class="mar-ro-dot is-running"
@@ -91,10 +108,8 @@ function toList(e: KeyboardEvent): void {
           />
         </span>
         <span class="mar-ro-trigger-name">{{ runOnShort(activeInstance) }}</span>
-        <span v-if="activeInstance.kind === 'cloud' && !proto.signedIn" class="mar-ro-quiet"
-          >Log in</span
-        >
-        <ChevronDown :size="13" class="mar-ro-quiet" />
+        <span v-if="needsLogin" class="mar-ro-quiet">Log in</span>
+        <ChevronDown :size="12" class="mar-ro-quiet" />
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" class="mar-ro-menu w-[340px]">
@@ -217,16 +232,33 @@ function toList(e: KeyboardEvent): void {
 /* Trigger: same corner and pill as the page filters. */
 .mar-ro-trigger {
   display: inline-flex;
-  height: 30px;
+  height: 28px;
+  flex-shrink: 0;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   border-radius: var(--mar-tab-radius, 10px);
-  padding: 0 9px 0 7px;
+  padding: 0 8px 0 7px;
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   color: var(--color-base-foreground);
-  font-size: var(--text-ui, 13px);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
   outline: none;
   transition: background-color 120ms ease;
+}
+/* Beats the prototype's reset on buttons and inputs (.proto-ui x3). */
+:root .proto-ui.proto-ui.proto-ui .mar-ro-trigger {
+  font-size: 13px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-ro-filter input {
+  font-size: 13px;
+}
+/* One build: nothing to pick, so it's just where this runs. */
+.mar-ro-trigger.is-static {
+  padding-right: 9px;
+  background: transparent;
+  cursor: default;
 }
 .mar-ro-trigger:hover,
 .mar-ro-trigger[data-state='open'] {

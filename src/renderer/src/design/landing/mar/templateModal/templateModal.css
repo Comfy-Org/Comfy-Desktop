@@ -616,6 +616,14 @@
     inset 0 0 0 16px var(--color-card-background);
 }
 
+/* One place to open it: nothing to pick, so the row is just a fact. */
+.mar-tpl-row:only-child {
+  cursor: default;
+}
+.mar-tpl-row:only-child .mar-tpl-radio {
+  display: none;
+}
+
 /* Footer: what happens, and the one action. */
 .mar-tpl-foot {
   display: flex;
