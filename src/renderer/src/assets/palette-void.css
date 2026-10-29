@@ -100,34 +100,6 @@
 
 /* ── 2. Shared controls ────────────────────────────────────────────── */
 
-/* Selects: translucent fill, hairline border. */
-:root.palette-void .ui-select-trigger {
-  background: var(--color-secondary);
-  border-color: var(--color-border);
-  color: var(--text);
-  font-size: var(--text-ui);
-}
-:root.palette-void .ui-select-trigger:hover:not(:disabled) {
-  background: oklch(1 0 0 / 0.09);
-  border-color: var(--color-border-strong);
-}
-:root.palette-void :is(.ui-select-trigger:focus-visible, .ui-select-trigger[aria-expanded='true']) {
-  border-color: var(--color-ring);
-}
-:root.palette-void .ui-select-listbox {
-  padding: 4px;
-  border-radius: var(--radius-card);
-  border-color: var(--color-border);
-  background: var(--color-popover);
-  box-shadow: var(--shadow-popover);
-}
-:root.palette-void .ui-select-option {
-  border-radius: var(--radius-control);
-}
-:root.palette-void :is(.ui-select-option[data-active], .ui-select-option[data-selected]) {
-  background: oklch(1 0 0 / 0.07);
-}
-
 /* Switches: white track when on, so the knob turns dark. */
 :root.palette-void .bt-track {
   background-color: oklch(1 0 0 / 0.14);

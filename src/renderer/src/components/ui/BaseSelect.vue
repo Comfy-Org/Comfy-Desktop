@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
   <button
     ref="triggerRef"
     type="button"
-    class="ui-select-trigger"
+    class="ui-select-trigger box-border inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-solid border-border bg-secondary px-2.5 py-2 text-left text-[length:var(--text-ui)] text-text transition-[border-color,background-color] duration-[150ms] ease-[ease] enabled:hover:border-[var(--color-border-strong)] enabled:hover:bg-[oklch(1_0_0/0.09)] focus-visible:border-ring focus-visible:outline-none aria-expanded:border-ring disabled:cursor-not-allowed disabled:opacity-60"
     :class="{ 'ui-select-trigger--compact': compact }"
     role="combobox"
     :aria-expanded="open"
@@ -247,17 +247,31 @@ onBeforeUnmount(() => {
     @click="toggle"
     @keydown="onTriggerKeydown"
   >
-    <span class="ui-select-label">{{ triggerLabel }}</span>
-    <ChevronDown :size="14" class="ui-select-chevron" :data-open="open ? '' : undefined" />
+    <span
+      class="ui-select-label min-w-0 flex-1 truncate"
+      :class="{ 'text-text-muted': !selectedOption && !loading }"
+      >{{ triggerLabel }}</span
+    >
+    <ChevronDown
+      :size="14"
+      class="ui-select-chevron shrink-0 text-text-muted transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] data-[open]:rotate-180 motion-reduce:duration-0"
+      :data-open="open ? '' : undefined"
+    />
   </button>
 
   <Teleport to="body">
-    <Transition name="ui-select-pop">
+    <Transition
+      name="ui-select-pop"
+      enter-active-class="transition-[opacity,transform] duration-[150ms] ease-out motion-reduce:duration-0"
+      leave-active-class="transition-[opacity,transform] duration-[150ms] ease-out motion-reduce:duration-0"
+      enter-from-class="opacity-0 [transform:translateY(-4px)]"
+      leave-to-class="opacity-0 [transform:translateY(-4px)]"
+    >
       <ul
         v-if="open"
         :id="listboxId"
         ref="listboxRef"
-        class="ui-select-listbox"
+        class="ui-select-listbox box-border m-0 list-none overflow-y-auto rounded-card border border-solid border-border bg-popover p-1 shadow-popover outline-none"
         :class="{ 'ui-select-listbox--compact': compact }"
         role="listbox"
         tabindex="-1"
@@ -268,7 +282,12 @@ onBeforeUnmount(() => {
         <li
           v-for="(opt, i) in options"
           :key="opt.value"
-          class="ui-select-option"
+          class="ui-select-option flex cursor-pointer items-center gap-2 rounded-control text-text select-none data-[active]:bg-[oklch(1_0_0/0.07)] data-[selected]:bg-[oklch(1_0_0/0.07)] aria-disabled:cursor-not-allowed aria-disabled:text-text-muted"
+          :class="
+            compact
+              ? 'px-2 py-1.5 text-[length:var(--takeover-fs-caption)]'
+              : 'px-2.5 py-2 text-[14px]'
+          "
           role="option"
           :data-index="i"
           :data-active="i === activeIndex ? '' : undefined"
@@ -278,176 +297,21 @@ onBeforeUnmount(() => {
           @mousemove="activeIndex = i"
           @click="selectIndex(i)"
         >
-          <span class="ui-select-option-body">
-            <span class="ui-select-option-label">{{ opt.label }}</span>
-            <span v-if="opt.description" class="ui-select-option-desc">{{ opt.description }}</span>
+          <span class="ui-select-option-body flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="ui-select-option-label truncate">{{ opt.label }}</span>
+            <span
+              v-if="opt.description"
+              class="ui-select-option-desc text-[length:var(--takeover-fs-caption)] whitespace-normal text-text-muted [overflow-wrap:break-word]"
+              >{{ opt.description }}</span
+            >
           </span>
-          <Check v-if="opt.value === modelValue" :size="14" class="ui-select-option-check" />
+          <Check
+            v-if="opt.value === modelValue"
+            :size="14"
+            class="ui-select-option-check shrink-0 text-[var(--accent-primary)]"
+          />
         </li>
       </ul>
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.ui-select-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  background: var(--neutral-800);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease;
-}
-
-.ui-select-trigger:hover:not(:disabled) {
-  border-color: var(--border-hover);
-  background: color-mix(in srgb, var(--neutral-100) 4%, var(--neutral-800));
-}
-
-.ui-select-trigger:focus-visible {
-  outline: none;
-  border-color: var(--accent-primary);
-}
-
-.ui-select-trigger[aria-expanded='true'] {
-  border-color: var(--accent-primary);
-}
-
-.ui-select-trigger[data-placeholder] .ui-select-label {
-  color: var(--text-muted);
-}
-
-.ui-select-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-select-chevron {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ui-select-chevron[data-open] {
-  transform: rotate(180deg);
-}
-
-.ui-select-trigger:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.ui-select-trigger--compact {
-  font-size: var(--takeover-fs-caption);
-}
-</style>
-
-<style>
-/* Listbox is teleported to <body>, so it can't be scoped. */
-.ui-select-listbox {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  background: var(--neutral-800);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.28),
-    0 2px 6px rgba(0, 0, 0, 0.18);
-  overflow-y: auto;
-  outline: none;
-}
-
-.ui-select-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.ui-select-listbox--compact .ui-select-option {
-  padding: 6px 8px;
-  font-size: var(--takeover-fs-caption);
-}
-
-.ui-select-option[data-active] {
-  background: var(--border-hover);
-}
-
-.ui-select-option[data-selected] {
-  color: var(--text);
-}
-
-.ui-select-option[aria-disabled='true'] {
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-.ui-select-option-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ui-select-option-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-select-option-desc {
-  color: var(--text-muted);
-  font-size: var(--takeover-fs-caption);
-  white-space: normal;
-  overflow-wrap: break-word;
-}
-
-.ui-select-option-check {
-  flex-shrink: 0;
-  color: var(--accent-primary);
-}
-
-.ui-select-pop-enter-active,
-.ui-select-pop-leave-active {
-  transition:
-    opacity 150ms ease-out,
-    transform 150ms ease-out;
-}
-
-.ui-select-pop-enter-from,
-.ui-select-pop-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-select-chevron,
-  .ui-select-pop-enter-active,
-  .ui-select-pop-leave-active {
-    transition-duration: 0ms;
-  }
-}
-</style>
