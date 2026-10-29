@@ -8,6 +8,10 @@ import { i18n } from '../i18n'
 import { initializeRendererBootstrap } from '../lib/rendererBootstrap'
 import { registerE2ERendererHooks } from './e2eRendererHooks'
 
+// Cover the whole launcher document, including overlays teleported to body.
+// The hosted ComfyUI document is a separate webContents and keeps its own theme.
+document.documentElement.classList.add('palette-void', 'desktop-panel')
+
 // Renderer E2E hooks, gated to the `e2e=1` URL flag propagated by main.
 if (new URLSearchParams(window.location.search).get('e2e') === '1') {
   registerE2ERendererHooks()

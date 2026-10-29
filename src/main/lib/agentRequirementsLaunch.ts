@@ -17,6 +17,8 @@ import {
   coreFileInstalled,
   installedConstraints,
   isRevertedFor,
+  corePinsPlaceholderAgent,
+  keepableAgent,
   normalizePackageName,
   overrideSignature,
   parseInstalled,
@@ -570,6 +572,7 @@ export async function installAgentRequirements(
     signature = overrideSignature(pins)
   }
   let deferred = false
+  let kept: string | null = null
   // Everything not in yet, in the order a launch installs it: core's file, then the override.
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
@@ -584,10 +587,10 @@ export async function installAgentRequirements(
     ]
     // Core's file in means the agent starts now, on core's versions, and only the override waits:
     // unless core pins only the placeholder, which is no agent at all.
-    const placeholder = PLACEHOLDER_AGENT.test(
+    const placeholder = corePinsPlaceholderAgent(
       coreText ?? (await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => ''))
     )
-    const deferral: Deferral = coreMissing || placeholder ? 'agent' : 'update'
+    const deferral: Deferral = coreMissing || (placeholder && !kept) ? 'agent' : 'update'
     sendOutput(
       deferral === 'agent'
         ? 'Downloading the agent in the background; it starts on the next launch\n'
@@ -605,7 +608,18 @@ export async function installAgentRequirements(
     prepare
   )
   if (signal?.aborted || decision?.decision === 'applied') return decision
+  // Core's file would put the placeholder over a working agent: keep that agent instead.
+  if (decision && !(decision.decision === 'refused' && decision.reason === 'core_first')) {
+    kept = await installedWorkingAgent(plan, overrideState, signal)
+    if (signal?.aborted) return decision
+  }
   if (decision?.decision === 'deferred') await defer(false)
+  if (kept !== null && decision) {
+    sendOutput(
+      `Keeping the installed agent ${kept} instead: ComfyUI's agent requirements pin only a placeholder\n`
+    )
+    return { ...decision, kept }
+  }
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
   if (!core.ok) {
@@ -624,6 +638,28 @@ export async function installAgentRequirements(
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
+}
+
+/**
+ * The installed agent to keep, as `name==version`, when core's file pins only the placeholder (so
+ * falling back to it would switch the agent off) and a real agent is in the environment. Null
+ * otherwise, or when either can't be read. Never throws.
+ */
+export async function installedWorkingAgent(
+  plan: AgentRequirementsInstall,
+  state: AgentOverrideState | null,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => null)
+  if (coreText === null || !corePinsPlaceholderAgent(coreText)) return null
+  const listed = await listInstalled(plan, signal)
+  if (listed === null) return null
+  try {
+    return keepableAgent(coreText, listed, state)
+  } catch {
+    // Keeping is an optimisation: a version shape it can't read must never stop the launch.
+    return null
+  }
 }
 
 async function checkCache(
@@ -1229,7 +1265,6 @@ async function fetchStep(
 }
 
 const PIP_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+!_-]*$/
-const PLACEHOLDER_AGENT = /^\s*comfy-agent(?:\[[^\]]*\])?\s*==\s*0\.0\.0/m
 
 /**
  * A launch's network try: download what `reqPath` is missing into uv's cache, in parallel and into

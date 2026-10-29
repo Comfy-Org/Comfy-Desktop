@@ -1372,6 +1372,7 @@
     "noLaunchSupport": "This source does not support launching yet.",
     "noEnvFound": "Cannot launch: no Python environment found. Create one first.",
     "managerConfigWriteFailed": "Cannot launch: the Manager security settings for this install could not be written to its config file. Launch was stopped so ComfyUI-Manager does not start with stale security settings. Check that the install folder is writable and try again.",
+    "settingsUnreadable": "Cannot launch: Desktop's settings file (settings.json) could not be read, possibly because another program (such as antivirus or a sync tool) is holding it. Launch was stopped so ComfyUI does not start without your model, input and output folders. Try again in a moment. If it keeps happening, settings.json may need repairing; contact support for help.",
     "alreadyRunning": "ComfyUI is already running. Stop it before launching again.",
     "installDirEmpty": "Instance folder is empty. Delete this instance and reinstall.",
     "installDirNotFound": "Instance folder not found. Reconnect the drive or restore the folder, then try again.",

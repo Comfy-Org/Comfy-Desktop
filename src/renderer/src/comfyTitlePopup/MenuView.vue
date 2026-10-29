@@ -51,15 +51,19 @@ function handleClick(item: MenuItem): void {
 .menu {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 4px;
 }
 
+/* 32px rows with an 8px radius inside the menu's 4px inset, like the design
+ * system's menus. The height is mirrored in main: POPUP_ITEM_HEIGHT in
+ * main/popups/titlePopup.ts. */
 .item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  height: 28px;
+  gap: 10px;
+  padding: 0 10px;
+  height: 32px;
+  border-radius: var(--radius-control);
   box-sizing: border-box;
   cursor: pointer;
   white-space: nowrap;
@@ -67,9 +71,6 @@ function handleClick(item: MenuItem): void {
 }
 .item:hover {
   background: rgba(255, 255, 255, 0.1);
-}
-:global(.popup.is-light) .item:hover {
-  background: rgba(0, 0, 0, 0.07);
 }
 
 .check {
@@ -90,7 +91,7 @@ function handleClick(item: MenuItem): void {
 
 .separator {
   height: 1px;
-  margin: 4px 8px;
+  margin: 4px 6px;
   background: var(--border, #494a50);
   opacity: 0.6;
 }

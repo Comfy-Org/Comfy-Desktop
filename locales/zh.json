@@ -1372,6 +1372,7 @@
     "noLaunchSupport": "此来源尚不支持启动。",
     "noEnvFound": "无法启动：未找到 Python 环境。请先创建一个。",
     "managerConfigWriteFailed": "无法启动：无法将此安装的管理器安全设置写入其配置文件。已停止启动，以避免 ComfyUI-Manager 使用过期的安全设置运行。请检查安装文件夹是否可写后重试。",
+    "settingsUnreadable": "无法启动：无法读取 Desktop 的设置文件（settings.json），可能是其他程序（如杀毒软件或同步工具）正在占用它。已停止启动，以避免 ComfyUI 在没有您的模型、输入和输出文件夹的情况下运行。请稍后重试。如果问题持续出现，settings.json 可能需要修复，请联系支持人员获取帮助。",
     "alreadyRunning": "ComfyUI 已在运行。请先停止再重新启动。",
     "installDirEmpty": "实例文件夹为空。请删除此实例并重新安装。",
     "installDirNotFound": "未找到实例文件夹。请重新连接驱动器或恢复文件夹后再试。",

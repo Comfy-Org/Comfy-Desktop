@@ -102,6 +102,7 @@ import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import {
   installAgentRequirements,
   holdAgentPrefetch,
+  installedWorkingAgent,
   planAgentRequirementsInstall,
   restoreCoreFrontend
 } from '../../agentRequirementsLaunch'
@@ -156,6 +157,7 @@ import {
   appliedPassThrough,
   campaignCandidateGrants,
   campaignPresentArgs,
+  heldArgUnanswered,
   planCampaignArgs
 } from '../../coreBetaCampaigns'
 import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
@@ -483,7 +485,12 @@ async function foldOverrideOutcome(
   try {
     const current = await installations.get(installationId)
     if (!current) return
-    const next = nextOverrideState(readOverrideState(current), pins, outcome)
+    const next = nextOverrideState(
+      readOverrideState(current),
+      pins,
+      outcome,
+      failedBy === 'start_failed'
+    )
     if (!next) return
     await installations.update(installationId, { agentRequirementsOverride: next.state })
     if (next.reverted) {
@@ -517,7 +524,8 @@ export interface StorageLaunchState {
 export function applyStorageLaunchArgs(
   inst: InstallationRecord,
   installationId: string,
-  launchCmd: LaunchCommand
+  launchCmd: LaunchCommand,
+  storage: Pick<settings.Settings, 'modelsDirs' | 'inputDir' | 'outputDir'>
 ): StorageLaunchState {
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
@@ -530,7 +538,7 @@ export function applyStorageLaunchArgs(
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
   if (argsAvailable) {
-    const sharedDirs = (settings.get('modelsDirs') as string[] | undefined) ?? []
+    const sharedDirs = storage.modelsDirs ?? []
     const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
     if (dirs.length > 0) {
       manageModelFolders = true
@@ -562,8 +570,7 @@ export function applyStorageLaunchArgs(
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
     if (useSharedInput) {
-      const inputDir =
-        (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+      const inputDir = storage.inputDir || settings.defaults.inputDir
       fs.mkdirSync(inputDir, { recursive: true })
       launchCmd.args!.push('--input-directory', inputDir)
     } else {
@@ -574,8 +581,7 @@ export function applyStorageLaunchArgs(
       }
     }
     if (useSharedOutput) {
-      const outputDir =
-        (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+      const outputDir = storage.outputDir || settings.defaults.outputDir
       fs.mkdirSync(outputDir, { recursive: true })
       launchCmd.args!.push('--output-directory', outputDir)
     } else {
@@ -1025,6 +1031,8 @@ async function runLaunch(
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   // Desktop's own `--enable-assets`, not the user's: only that one may be dropped on a retry.
   let desktopAddedAssets = false
+  /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
+  let agentUnanswered = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
@@ -1443,6 +1451,13 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+  // Only a launch that passes Desktop's folders needs settings; it must not use stand-in defaults.
+  const storageSettings =
+    !launchCmd.skipSharedPaths && launchCmd.args
+      ? await settings.readSettled(abort.signal)
+      : settings.defaults
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
+  if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
@@ -1542,6 +1557,14 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
+        agentUnanswered =
+          !!campaigns &&
+          heldArgUnanswered(built.beta.campaign.misses, campaigns, '--enable-agent') &&
+          !built.args.includes('--enable-agent') &&
+          // The user's own args too: an opt-out this core doesn't list is filtered from built.args.
+          !built.args.includes('--disable-agent') &&
+          !userArgs.includes('--disable-agent') &&
+          filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
       } catch {
@@ -1578,7 +1601,28 @@ async function runLaunch(
   //
   // An agent version override rides on the same step: when it went in, this launch's output is
   // watched for how the agent's start went, so a version that keeps failing goes back to core's.
-  const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
+  //
+  // A member whose campaign flag didn't answer in time keeps the agent a previous launch installed,
+  // with nothing installed: there is no override to try, and core's file may pin only a placeholder.
+  let kept: string | null = null
+  if (agentUnanswered && launchCmd.args) {
+    const plan = planAgentRequirementsInstall(inst, [...launchCmd.args, '--enable-agent'])
+    kept = plan && (await installedWorkingAgent(plan, readOverrideState(inst), abort.signal))
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (kept) {
+      launchCmd.args.push('--enable-agent')
+      makeSendOutput(
+        sender,
+        installationId
+      )(`\nNo campaign answer in time; keeping the installed agent ${kept}\n`)
+      reportOverrideDecision(installationId, {
+        decision: 'kept_installed',
+        reason: 'no_answer',
+        kept
+      })
+    }
+  }
+  const agentRequirements = kept ? null : planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
   // Started once this launch's own uv work (the install below and any frontend restore after it)
   // is done, and on a cancel before that too, so nothing the launch handed back is dropped. The
@@ -1673,7 +1717,7 @@ async function runLaunch(
   startHandedBack()
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
-    applyStorageLaunchArgs(inst, installationId, launchCmd)
+    applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   /** Gates the `template-models` row: the bar derives "prior steps done" from
    *  the active phase index, so the row stays silent through the real phases and

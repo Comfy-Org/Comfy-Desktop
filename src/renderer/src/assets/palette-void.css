@@ -1,0 +1,412 @@
+/*
+ * The redesign's "Void" palette for screens not yet rebuilt on
+ * @comfyorg/design-system. Values are the redesign's (Pablo's #1752-#1756);
+ * a color comes from design-system-theme.css where one matches.
+ *
+ * Applies to every Desktop renderer, including first-use, installation,
+ * progress, recovery and their teleported dialogs. The embedded ComfyUI
+ * document has its own theme; its light title bar remains light.
+ * This changes presentation only: existing layouts and actions stay in place.
+ *
+ * 1. Desktop's color variables, pointed at Void. Variables defined from other
+ *    variables are re-declared: `--surface-recessed: var(--neutral-900)`
+ *    resolves where it is declared, so re-pointing the ramp alone would not
+ *    reach it below <html>.
+ * 2. Shapes and fills of legacy components, by class.
+ *    `:root.palette-void` beats the components' scoped
+ *    styles whatever the load order. Delete a block when its component is
+ *    rebuilt on the design system.
+ *
+ * White actions use the package's `inverted` pair (foreground fill,
+ * background text), so legacy and rebuilt buttons match.
+ */
+
+/* ── 1. Variables ──────────────────────────────────────────────────── */
+:root.palette-void[data-theme='dark'],
+/* The launcher stays on the reference's dark palette even when the hosted
+ * editor is light. Nested theme roots must redeclare the aliases too. */
+:root.palette-void.desktop-panel,
+:root.palette-void [data-theme='dark'] {
+  /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
+  --neutral-950: oklch(0.13 0.004 285);
+  --neutral-900: oklch(0.165 0.005 285);
+  --neutral-800: oklch(0.2 0.006 285);
+  --neutral-700: oklch(0.23 0.008 285);
+  --neutral-600: oklch(0.23 0.008 285);
+  --neutral-500: oklch(0.36 0.008 285);
+  --neutral-400: oklch(0.48 0.008 285);
+  --neutral-300: oklch(0.6 0.008 285);
+  --neutral-200: oklch(0.76 0.006 285);
+  --neutral-100: oklch(0.9 0.003 285);
+  /* Was brand yellow: the chrome's accent is white now. */
+  --neutral-50: oklch(0.96 0.002 285);
+  --comfy-yellow: var(--neutral-50);
+  --surface-recessed: var(--neutral-900);
+
+  --bg: var(--color-content-background);
+  --overlay-bg-opaque: var(--bg);
+  /* Mirrored in main as TITLEBAR_BG. */
+  --titlebar-bg: var(--color-background);
+  --titlebar-icon: var(--color-muted-foreground);
+  --surface: var(--color-card);
+  --secondary-background: var(--color-secondary);
+  --terminal-bg: oklch(0.1 0.004 285);
+
+  --text: var(--color-foreground);
+  --text-muted: var(--color-muted-foreground);
+  --text-faint: var(--color-subtle-foreground);
+  --accent-label: var(--color-subtle-foreground);
+
+  /* White accent: primary actions, selection, progress. */
+  --accent: var(--color-foreground);
+  --accent-hover: oklch(0.995 0 0);
+  --accent-primary: var(--color-foreground);
+  --brand-accent: var(--color-foreground);
+  --accent-plum: oklch(0.82 0.04 300);
+  --selected: oklch(1 0 0 / 0.85);
+  --focus-ring: var(--color-ring);
+
+  --border: var(--color-border);
+  --border-hover: var(--color-border-strong);
+
+  --danger: var(--color-destructive);
+  --danger-hover: oklch(0.68 0.19 25);
+  --success: var(--color-success);
+  --semantic-danger: var(--color-destructive);
+  --semantic-warning: var(--color-warning);
+  --semantic-success: var(--color-success);
+
+  --brand-surface-bg: oklch(1 0 0 / 0.04);
+  --brand-surface-bg-hover: oklch(1 0 0 / 0.07);
+  --brand-surface-border: var(--color-border);
+  --brand-surface-border-hover: var(--color-border-strong);
+
+  --chooser-surface-bg: oklch(1 0 0 / 0.04);
+  --chooser-surface-bg-hover: oklch(1 0 0 / 0.07);
+  --chooser-surface-border: var(--color-border);
+  --chooser-surface-border-hover: var(--color-border-strong);
+
+  /* Popup windows are sized to their content, so an outer shadow would be
+   * clipped; only the inset top highlight shows. */
+  --modal-surface-bg: var(--neutral-800);
+  --modal-surface-border: var(--color-border);
+  --modal-surface-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07);
+
+  /* Inverted tooltips. Mirrored in main for the title-bar tooltip. */
+  --tooltip-bg: var(--color-foreground);
+  --tooltip-border: transparent;
+  --tooltip-fg: var(--color-background);
+}
+
+/* ── 2. Shared controls ────────────────────────────────────────────── */
+
+/* Selects: translucent fill, hairline border. */
+:root.palette-void .ui-select-trigger {
+  background: var(--color-secondary);
+  border-color: var(--color-border);
+  color: var(--text);
+  font-size: var(--text-ui);
+}
+:root.palette-void .ui-select-trigger:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.09);
+  border-color: var(--color-border-strong);
+}
+:root.palette-void :is(.ui-select-trigger:focus-visible, .ui-select-trigger[aria-expanded='true']) {
+  border-color: var(--color-ring);
+}
+:root.palette-void .ui-select-listbox {
+  padding: 4px;
+  border-radius: var(--radius-card);
+  border-color: var(--color-border);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+}
+:root.palette-void .ui-select-option {
+  border-radius: var(--radius-control);
+}
+:root.palette-void :is(.ui-select-option[data-active], .ui-select-option[data-selected]) {
+  background: oklch(1 0 0 / 0.07);
+}
+
+/* Switches: white track when on, so the knob turns dark. */
+:root.palette-void .bt-track {
+  background-color: oklch(1 0 0 / 0.14);
+}
+:root.palette-void .bt-switch[data-state='checked'] .bt-thumb,
+:root.palette-void .args-page-switch[data-state='checked'] > * {
+  background: var(--color-background);
+  box-shadow: none;
+}
+:root.palette-void input[type='checkbox']:checked::after {
+  background: var(--color-background);
+}
+
+/* Filled primary buttons: white with dark text. */
+:root.palette-void :is(button.primary, .dlm-btn-primary) {
+  color: var(--color-background);
+}
+:root.palette-void button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+/* The brand secondary beside a white primary: a quiet secondary button. */
+:root.palette-void button.brand-secondary {
+  border-color: var(--color-border);
+  background: var(--color-secondary);
+  color: var(--color-foreground);
+}
+:root.palette-void button.brand-secondary:hover:not([disabled]) {
+  border-color: var(--color-border-strong);
+  background: var(--color-accent);
+}
+
+/* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
+:root.palette-void .title-bar.title-bar:not(.is-light) {
+  border-bottom-color: var(--color-border);
+}
+/* Ghost icon buttons: no outline on hover, 8px radius. */
+:root.palette-void .title-bar:not(.is-light) :is(.title-menu-button, .title-downloads-tray) {
+  border-radius: var(--radius-control);
+}
+:root.palette-void
+  .title-bar.is-hover-active:not(.is-light)
+  :is(
+    .title-menu-button,
+    .title-downloads-tray:not(.has-active, .has-unseen, .has-error),
+    .title-zoom-reset
+  ):hover {
+  background: var(--color-secondary);
+  border-color: transparent;
+}
+/* The active-download count sits on the accent, which is white here. */
+:root.palette-void .title-bar:not(.is-light) .title-downloads-badge:not(.is-unseen, .is-error) {
+  color: var(--color-background);
+}
+/* The install pill: a quiet field, outlined while its picker is open. */
+:root.palette-void .title-bar:not(.is-light) .title-install-pill {
+  border-color: var(--color-border);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--text-muted);
+}
+:root.palette-void
+  .title-bar.is-hover-active:not(.is-light)
+  .title-install-pill.is-interactive:hover:not(.is-open) {
+  border-color: oklch(1 0 0 / 0.12);
+  background: oklch(1 0 0 / 0.07);
+  color: var(--text);
+}
+:root.palette-void .title-bar:not(.is-light) .title-install-pill.is-interactive.is-open {
+  border-color: oklch(1 0 0 / 0.3);
+  background: oklch(1 0 0 / 0.07);
+  color: var(--text);
+}
+
+/* ── 4. Popup windows ──────────────────────────────────────────────── */
+/* Hairline border and the inset top highlight; an outer shadow would be
+ * clipped by the content-sized window. */
+:root.palette-void .popup.popup {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-highlight);
+}
+/* Menus and the small downloads list: 12px. */
+:root.palette-void .popup.popup:not(.is-picker, .is-global-settings, .is-downloads-full) {
+  border-radius: var(--radius-card);
+}
+:root.palette-void .popup.is-menu .item:hover {
+  background: oklch(1 0 0 / 0.07);
+}
+:root.palette-void .popup.is-menu .separator {
+  background: var(--color-border);
+  opacity: 1;
+}
+/* Centered cards (picker, settings, all downloads): 16px panels. */
+:root.palette-void :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
+  border-radius: var(--radius-panel);
+}
+
+/* ── 5. Desktop Settings: one surface; the tab list is a quiet nav ──── */
+:root.palette-void .global-settings .gs-header {
+  padding: 10px 12px 10px 20px;
+  border-bottom-color: var(--color-border);
+}
+:root.palette-void .global-settings .gs-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-heading);
+  font-weight: 600;
+  color: var(--text);
+}
+:root.palette-void .global-settings .gs-tabs {
+  gap: 1px;
+  padding: 8px;
+  background: transparent;
+  border-right-color: var(--color-border);
+}
+:root.palette-void .global-settings .gs-tab {
+  min-height: 32px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+}
+:root.palette-void .global-settings .gs-tab:hover {
+  background: var(--color-secondary);
+}
+:root.palette-void .global-settings .gs-tab.active {
+  background: var(--color-accent);
+  color: var(--text);
+}
+:root.palette-void .global-settings .gs-close {
+  background: transparent;
+}
+:root.palette-void .global-settings :is(.gs-close:hover, .gs-close:focus-visible) {
+  background: var(--color-secondary);
+  border-color: transparent;
+}
+
+/* ── 6. Instance picker ────────────────────────────────────────────── */
+:root.palette-void .picker .picker-chip {
+  border-radius: var(--radius-control);
+  border-color: var(--color-border);
+  background: transparent;
+}
+:root.palette-void .picker .picker-chip:hover {
+  background: var(--color-secondary);
+}
+:root.palette-void .picker .picker-chip.is-active {
+  border-color: transparent;
+  background: var(--color-accent);
+  color: var(--text);
+}
+:root.palette-void .picker-row {
+  border-radius: var(--radius-control);
+}
+:root.palette-void .picker-row.is-active {
+  background: var(--color-accent);
+}
+/* Status dots ring against the surface they sit on. */
+:root.palette-void :is(.picker-row-running-dot, .picker-row-update-dot, .picker-row-op-dot) {
+  border-color: var(--neutral-800);
+}
+
+/* ── 7. Manage: the settings tabs inside the picker ────────────────── */
+/* The active tab took the old surface color, which is now the popup's own. */
+:root.palette-void .settings-v2-tab {
+  border-radius: var(--radius-control);
+}
+:root.palette-void .settings-v2-tab:hover {
+  background: var(--color-secondary);
+}
+:root.palette-void .settings-v2-tab.is-active {
+  background: var(--color-accent);
+  color: var(--text);
+}
+:root.palette-void .settings-v2-tab.is-active .settings-v2-tab-badge {
+  border-color: var(--neutral-700);
+}
+
+/* ── 8. Dashboard: account, workspace selector and the tile menu ──── */
+/* Ghost faces; their menus are the floating surface (12px, 4px inset, 32px
+ * rows with an 8px radius). */
+:root.palette-void :is(button.account-chip__face, button.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-ui);
+}
+:root.palette-void :is(.account-chip__email, .workspace-selector__name) {
+  font-size: var(--text-ui);
+}
+:root.palette-void :is(.account-chip__face, .workspace-selector__face):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-secondary);
+}
+/* Signed out: the one white call to action. */
+:root.palette-void .account-chip__face.account-chip__signin {
+  height: 28px;
+  padding-inline: 10px;
+  background: var(--color-foreground);
+  color: var(--color-background);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+:root.palette-void .account-chip__face.account-chip__signin:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+:root.palette-void :is(.account-chip__menu, .workspace-selector__menu, .context-menu) {
+  padding: 4px;
+  border-color: var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+}
+:root.palette-void :is(.account-chip__item, .workspace-selector__item, .context-menu-item) {
+  min-height: 32px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+}
+:root.palette-void :is(.account-chip__item, .workspace-selector__item):hover:not(:disabled),
+:root.palette-void .context-menu-item:is(:hover, :focus-within):not(.disabled) {
+  background: var(--color-secondary);
+}
+:root.palette-void .context-menu-item-action {
+  padding: 6px 0 6px 10px;
+}
+:root.palette-void .context-menu-separator {
+  margin: 4px -4px;
+  background: var(--color-border);
+}
+
+/* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
+:root.palette-void :is(.modal-box, .base-modal-panel, .base-alert-panel, .announce-content) {
+  border-color: var(--color-border);
+  border-radius: var(--radius-panel);
+}
+
+/* ── 10. Full-window flows ────────────────────────────────────────── */
+/* Keep the existing composition and artwork, but remove the old plum/yellow
+ * palette. No new shell, navigation, form structure or content is introduced. */
+:root.palette-void .brand-background.brand-background {
+  background: var(--color-background);
+}
+:root.palette-void .brand-inner-frame.brand-inner-frame {
+  background: var(--color-content-background);
+}
+:root.palette-void .brand-inner-frame.brand-inner-frame--vignette {
+  background: radial-gradient(
+    circle 196px at 50% 50%,
+    var(--neutral-950) 0%,
+    var(--neutral-950) 35%,
+    var(--color-content-background) 100%
+  );
+}
+:root.palette-void .brand-beam {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+:root.palette-void .brand-takeover-root:focus {
+  /* This container receives programmatic entry focus. Interactive controls
+   * retain their own visible keyboard rings; avoid the OS accent at its edge. */
+  outline: none;
+}
+:root.palette-void .brand-progress__glyph {
+  color: var(--color-foreground);
+}
+:root.palette-void .brand-progress__glyph stop {
+  stop-color: currentColor;
+}
+:root.palette-void :is(.brand-progress__caption, .brand-progress__substatus) {
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.65);
+}
+:root.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
+  border-color: var(--color-border);
+}
+:root.palette-void :is(button.brand-primary, button.brand-secondary, button.brand-tertiary) {
+  border-radius: var(--radius-control);
+}
+/* These forms keep their existing control dimensions during the recolor. */
+:root.palette-void .brand-background .ui-select-trigger {
+  font-size: 14px;
+}

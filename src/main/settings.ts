@@ -10,7 +10,12 @@ import {
   setInstallDirResolver
 } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
-import { readFileSafe, writeFileSafe } from './lib/safe-file'
+import {
+  readFileSafe,
+  readFileSafeAsync,
+  writeFileSafe,
+  type SafeReadOutcome
+} from './lib/safe-file'
 
 export interface KnownSettings {
   cacheDir: string
@@ -473,13 +478,17 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+function loadOutcome(preRead?: SafeReadOutcome): {
+  settings: Settings
+  unreadable: boolean
+  defaultsOnly?: true
+} {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
-  const read = readFileSafe(dataPath)
+  const read = preRead ?? readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    return { settings: { ...defaults }, unreadable: true, defaultsOnly: true }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -641,7 +650,8 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result)
+  // A pre-read can predate a save made while it was pending; persisting it would undo that save.
+  if (changed && !unreadable && !preRead) save(result)
   return { settings: result, unreadable }
 }
 
@@ -657,7 +667,10 @@ export const AUTO_LAUNCH_LAST = 'last'
 export function get<K extends KnownSettingKey>(key: K): KnownSettings[K]
 export function get(key: string): unknown
 export function get(key: string): unknown {
-  const value = load()[key]
+  const { settings: loaded, defaultsOnly } = loadOutcome()
+  // Whether first use finished is unknown; skip onboarding this boot rather than replay it from defaults.
+  if (key === 'firstUseCompleted' && defaultsOnly) return true
+  const value = loaded[key]
   // Absence means the default — surface `'none'` to callers so they don't have
   // to special-case undefined everywhere they branch on the auto-launch mode.
   if (key === 'autoLaunchOnStartup' && (value === undefined || value === null)) {
@@ -706,6 +719,33 @@ export function set<K extends string>(
 
 export function getAll(): Settings {
   return load()
+}
+
+const SETTLED_RETRY_DELAYS_MS = [500, 1000, 1500, 2000]
+
+/** Settings, waited for (without blocking) while settings.json and .bak are both unreadable:
+ *  ~5 s of delays plus each attempt's read retries (~8 s worst case). `null` if they stay
+ *  unreadable or `signal` aborts. */
+export async function readSettled(signal?: AbortSignal): Promise<Settings | null> {
+  for (const delayMs of [0, ...SETTLED_RETRY_DELAYS_MS]) {
+    if (delayMs > 0 && !signal?.aborted) {
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          clearTimeout(timer)
+          signal?.removeEventListener('abort', done)
+          resolve()
+        }
+        const timer = setTimeout(done, delayMs)
+        signal?.addEventListener('abort', done, { once: true })
+      })
+    }
+    if (signal?.aborted) return null
+    maybeSeedFromEnv()
+    // No `.bak` restore: a set() during the read would be overwritten by the late copy.
+    const outcome = loadOutcome(await readFileSafeAsync(dataPath, { restore: false }))
+    if (!outcome.defaultsOnly) return outcome.settings
+  }
+  return null
 }
 
 /**

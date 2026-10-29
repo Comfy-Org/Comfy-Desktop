@@ -982,7 +982,7 @@ describe('installAgentRequirements with a version override', () => {
 
   const OVERRIDE = { 'comfy-agent': '0.2.3' }
 
-  it('installs the overridden file once, holding every other installed package where it is', async () => {
+  it('installs the overridden file once, keeping every other installed package from moving down', async () => {
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
     expect(decision).toMatchObject({
@@ -990,7 +990,7 @@ describe('installAgentRequirements with a version override', () => {
       pins: new Map([['comfy-agent', '0.2.3']])
     })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1002,10 +1002,10 @@ describe('installAgentRequirements with a version override', () => {
 
     await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
-    expect(calls[0]!.constraints).toBe('requests==2.32.0\nidna==3.20+qa316\n')
+    expect(calls[0]!.constraints).toBe('requests>=2.32.0\nidna==3.20+qa316\n')
   })
 
-  it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
+  it("pins the frontend from ComfyUI's requirements.txt, freeing only it", async () => {
     fs.writeFileSync(
       path.join(installDir, 'ComfyUI', 'requirements.txt'),
       'comfyui-frontend-package==1.55.18\n'
@@ -1020,12 +1020,12 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
 
-  it('installs a comfy-agent-go pin on its own line, holding everything else', async () => {
+  it('installs a comfy-agent-go pin on its own line, flooring everything else', async () => {
     const sendOutput = vi.fn()
     const go = { 'comfy-agent-go': '0.2.3' }
     const decision = await installAgentRequirements(plan, sendOutput, undefined, go)
@@ -1037,7 +1037,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
@@ -1067,7 +1067,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
@@ -1103,7 +1103,7 @@ describe('installAgentRequirements with a version override', () => {
       { content: CORE_FILE, constraints: null },
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.1.9\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(
@@ -1205,7 +1205,7 @@ describe('installAgentRequirements with a version override', () => {
     })
     expect(calls, "core's file, then the override constrained by what it installed").toEqual([
       { content: CORE_FILE, constraints: null },
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1395,7 +1395,7 @@ describe('installAgentRequirements with a version override', () => {
 
     expect(decision).toMatchObject({ decision: 'applied' })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1592,7 +1592,7 @@ describe('installAgentRequirements with a version override', () => {
           plan,
           steps: [
             { text: CORE_FILE },
-            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
           ],
           signature: 'comfy-agent==0.2.3'
         },
@@ -1623,7 +1623,8 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it.each([
-      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
+      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.0.0.dev0'],
+      ['update', 'the placeholder over a kept agent', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
       ['update', 'a real release', CORE_FILE, '0.2.0']
     ])(
       "hands a deferred override over as '%s' when core's file pins %s",
@@ -2460,6 +2461,146 @@ describe('installAgentRequirements with a version override', () => {
       )
     })
   })
+  describe("keeping a working agent over core's placeholder", () => {
+    const PLACEHOLDER_FILE = 'comfy-agent==0.0.0.dev0\ncomfy-cli==1.21.0\n'
+    const KEPT = 'comfy-agent==0.1.0rc5'
+    const installedAgent = (version: string): void => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([
+          { name: 'comfy-agent', version },
+          { name: 'comfy-cli', version: '1.21.0' },
+          { name: 'requests', version: '2.32.0' }
+        ])
+      })
+    }
+    const failing = (output: string): typeof respond => {
+      return ({ constraints }) => (constraints ? { code: 1, output } : { code: 0, output: '' })
+    }
+    const placeholderRuns = (): number =>
+      calls.filter((call) => call.content === PLACEHOLDER_FILE).length
+
+    beforeEach(() => {
+      fs.writeFileSync(plan.reqPath, PLACEHOLDER_FILE)
+      installedAgent('0.1.0rc5')
+    })
+
+    it('keeps it when the payload is refused, installing nothing', async () => {
+      const sendOutput = vi.fn()
+      const decision = await installAgentRequirements(plan, sendOutput, undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version', kept: KEPT })
+      expect(calls).toEqual([])
+      expect(sendOutput.mock.calls.join('')).toContain(`Keeping the installed agent ${KEPT}`)
+    })
+
+    it('keeps it when the override fails to install', async () => {
+      respond = failing('error: failed to remove file `x.pyd`: Access is denied. (os error 5)\n')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns(), "core's file never ran").toBe(0)
+    })
+
+    it('keeps it when the pinned version is not on the index', async () => {
+      respond = failing(
+        'error: No solution found when resolving dependencies\n  cause: Because there is no version of comfy-agent==0.2.3 and you require comfy-agent==0.2.3, we can conclude that your requirements are unsatisfiable.\n'
+      )
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+    })
+
+    it('keeps it while a not-yet-downloaded override fetches for the next launch', async () => {
+      respond = ({ constraints }) =>
+        constraints ? { code: 2, output: '' } : { code: 0, output: '' }
+      const onDeferred = vi.fn()
+
+      const decision = await installAgentRequirements(
+        plan,
+        vi.fn(),
+        undefined,
+        OVERRIDE,
+        null,
+        onDeferred
+      )
+
+      expect(decision).toMatchObject({ decision: 'deferred', reason: 'not_cached', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+      expect(onDeferred.mock.calls[0]![1], 'the agent runs now; the newer one applies next').toBe(
+        'update'
+      )
+    })
+
+    it('keeps an older agent when the override was retired after failing', async () => {
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).toMatchObject({
+        decision: 'reverted',
+        reason: 'previously_failed',
+        kept: KEPT
+      })
+      expect(calls).toEqual([])
+    })
+
+    it('does not keep the very version that was retired for failing to start', async () => {
+      installedAgent('0.2.3')
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns()).toBe(1)
+    })
+
+    it("lets core's file in first when it lists a package that isn't installed yet", async () => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc5' }])
+      })
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns(), "core's file installs what it is missing").toBeGreaterThan(0)
+    })
+
+    it('falls back to core when nothing but the placeholder is installed', async () => {
+      installedAgent('0.0.0.dev0')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
+    })
+
+    it("falls back to core when core's file pins a real release", async () => {
+      fs.writeFileSync(plan.reqPath, CORE_FILE)
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    })
+
+    it("follows core's file when a valid answer carries no override (a dropped override)", async () => {
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(decision).toBeUndefined()
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
+    })
+  })
 })
 
 describe('restoreCoreFrontend', () => {
@@ -2664,7 +2805,7 @@ describe('prefetchAgentRequirements', () => {
 
   const request = (): PrefetchRequest => ({
     plan,
-    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
     signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
   })
 
@@ -2850,13 +2991,13 @@ describe('prefetchAgentRequirements', () => {
 
     const report = await finish({
       ...request(),
-      steps: [{ ...request().steps[0]!, constraints: 'requests==2.32.0\nidna==3.20+qa316\n' }]
+      steps: [{ ...request().steps[0]!, constraints: 'requests>=2.32.0\nidna==3.20+qa316\n' }]
     })
 
     expect(
       calls[0]!.constraints,
       'no index serves it, so pinning it leaves the compile no solution'
-    ).toBe('requests==2.32.0\n')
+    ).toBe('requests>=2.32.0\n')
     expect(report).toMatchObject({ outcome: 'completed' })
     expect(calls.at(-1)!.content, 'its replacement is not fetched').toBe(
       'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
@@ -3472,7 +3613,7 @@ describe('prepareAgentPrefetch', () => {
   it("prepares the override's text and constraints, as the launch would install them", async () => {
     expect(await prepareAgentPrefetch(plan, { 'comfy-agent': '0.1.0rc3' }, null)).toEqual({
       plan,
-      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
       signature: 'comfy-agent==0.1.0rc3',
       eager: true
     })

@@ -15,6 +15,8 @@ initializeRendererBootstrap('title-bar')
 // Default to dark before mount so design tokens resolve immediately; only matters for
 // the brief moment before main's first theme push.
 document.documentElement.setAttribute('data-theme', 'dark')
+// Use the Desktop palette; the title bar alone can match the editor background.
+document.documentElement.classList.add('palette-void')
 
 // webContents are isolated JS contexts, so each renderer needs its own vue-i18n
 // instance; the shared factory keeps them on the same en catalog.

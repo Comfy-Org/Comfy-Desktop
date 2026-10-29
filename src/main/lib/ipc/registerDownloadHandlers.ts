@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
+import type { IpcMainEvent } from 'electron'
 import path from 'path'
 import { findEntryByComfySender } from '../../host/registry'
 import {
@@ -12,12 +13,32 @@ import {
   retryDownload,
   startModelDownload
 } from '../comfyDownloadManager'
+import { getDeviceId, getIdClass } from '../deviceId'
 import { openModelAccessPageWindow } from '../modelAccessPage'
+import { isTrustedCloudUrl } from '../trustedCloudUrl'
+
+function isTrustedCloudSender({ sender, senderFrame }: IpcMainEvent): boolean {
+  if (findEntryByComfySender(sender)?.sourceCategory !== 'cloud' || !senderFrame) return false
+  const mainFrame = sender.mainFrame
+  return (
+    senderFrame.processId === mainFrame.processId &&
+    senderFrame.routingId === mainFrame.routingId &&
+    isTrustedCloudUrl(senderFrame.url)
+  )
+}
 
 export function registerDownloadHandlers(): void {
   ipcMain.on('desktop2-is-remote', (event) => {
     const entry = findEntryByComfySender(event.sender)
     event.returnValue = entry?.sourceCategory === 'cloud' || entry?.sourceCategory === 'remote'
+  })
+
+  // Per-installation id for cloud attribution (sent as X-Comfy-Install-Id by
+  // the cloud-hosted frontend). Only the main frame of a trusted cloud page
+  // gets it, and only a machine-derived id: a fallback id changes every launch.
+  ipcMain.on('desktop2-get-install-id', (event) => {
+    event.returnValue =
+      isTrustedCloudSender(event) && getIdClass() === 'machine_derived' ? getDeviceId() : undefined
   })
 
   ipcMain.handle('desktop2-open-model-access-page', (event, payload?: { url?: unknown }) =>

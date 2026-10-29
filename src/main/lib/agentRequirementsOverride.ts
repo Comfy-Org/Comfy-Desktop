@@ -253,8 +253,10 @@ function agentPackage(coreText: string): string | undefined {
 }
 
 /**
- * Pins every installed package where it is, so an override that moves one falls back, except the
- * agent file's own: `comfy-cli`, `nodejs-wheel-binaries`, `comfy-agent`, and the comfy-agent*
+ * Holds every installed package at or above its version, so an override that would move one down
+ * falls back. A local build (`+cpu`) stays exact: uv refuses `>=` on one, and the prefetch drops
+ * exactly those `==` lines. The agent file's own are exempt: `comfy-cli`, `nodejs-wheel-binaries`,
+ * `comfy-agent`, and the comfy-agent*
  * package `coreText` (the agent's file) lists. Those are freed whether or not this override pins
  * them, since the install also takes core's lines for them and must be able to land on those.
  * `comfy-agent-go` is among them: the agent's extras pin it to the agent's exact version, so
@@ -273,7 +275,7 @@ export function installedConstraints(
     name === FRONTEND_PACKAGE ? pins.has(name) : OVERRIDABLE.has(name) || name === agent
   const lines = installed
     .filter(({ name }) => !free(normalizePackageName(name)))
-    .map(({ name, version }) => `${name}==${version}`)
+    .map(({ name, version }) => `${name}${version.includes('+') ? '==' : '>='}${version}`)
   return lines.join('\n') + '\n'
 }
 
@@ -335,14 +337,17 @@ export function agentGoBehindAgent(
 export interface AgentOverrideState {
   signature: string
   failures: number
+  /** The failures that were the agent failing to start, not an install or check of the whole
+   *  override. Absent on a record from before it was kept. */
+  startFailures?: number
 }
 
 export function readOverrideState(installation: InstallationRecord): AgentOverrideState | null {
   const state = installation.agentRequirementsOverride
   if (!state || typeof state !== 'object') return null
-  const { signature, failures } = state as Record<string, unknown>
+  const { signature, failures, startFailures } = state as Record<string, unknown>
   if (typeof signature !== 'string' || typeof failures !== 'number') return null
-  return { signature, failures }
+  return { signature, failures, ...(typeof startFailures === 'number' && { startFailures }) }
 }
 
 export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePins): boolean {
@@ -361,12 +366,22 @@ export interface InstallReport {
   errorTail: string | null
 }
 
+/** The installed agent (`name==version`) a launch kept rather than fall back to the placeholder. */
+interface Kept {
+  kept?: string
+}
+
 export type OverrideDecision =
   | { decision: 'applied'; pins: OverridePins }
-  | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
+  | ({ decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins } & Kept)
   /** Not in uv's cache yet: a background download fetches it for a later launch. Never counted. */
-  | { decision: 'deferred'; reason: 'not_cached'; pins: OverridePins; install?: InstallReport }
-  | {
+  | ({
+      decision: 'deferred'
+      reason: 'not_cached'
+      pins: OverridePins
+      install?: InstallReport
+    } & Kept)
+  | ({
       decision: 'reverted'
       reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
@@ -374,7 +389,70 @@ export type OverrideDecision =
       failures?: number
       /** The reverted pins core's file can't take back, whether or not they went in. */
       staysInstalled?: OverridePins
-    }
+    } & Kept)
+  /** A member's campaign flag gave no answer in time, so the launch has no override to try. */
+  | { decision: 'kept_installed'; reason: 'no_answer'; pins?: undefined; kept: string }
+
+const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
+/** A `name==version` line, extras allowed: core's agent line can carry them. */
+const PINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)/
+
+/**
+ * The agent version of an override that failed to start, if any. An install or check failure is
+ * the whole override's, so it says nothing about an agent at that version that is already in.
+ */
+function failedPin(state: AgentOverrideState | null, pattern: RegExp): string | undefined {
+  if (!state || (state.startFailures ?? state.failures) === 0) return undefined
+  return state.signature.match(pattern)?.[1]
+}
+
+const SIGNATURE_AGENT = /(?:^|,)comfy-agent(?:\[[^\]]*\])?==([^,]+)/
+/** The Go carrier stays installed after a failed override (core's file can't take it back), and an
+ *  agent no newer than it selects it again, so a start-failed carrier disqualifies that agent. */
+const SIGNATURE_AGENT_GO = /(?:^|,)comfy-agent-go==([^,]+)/
+
+function sameVersion(a: string, b: string): boolean {
+  return EXACT_VERSION.test(a) && EXACT_VERSION.test(b) ? compareVersions(a, b) === 0 : a === b
+}
+
+/** Whether core's file pins its agent package (whatever its name) at the placeholder. */
+export function corePinsPlaceholderAgent(coreText: string): boolean {
+  const name = agentPackage(coreText)
+  return coreText.split(/\r?\n/).some((line) => {
+    const match = line.match(PINNED_LINE)
+    return (
+      !!match && normalizePackageName(match[1]!) === name && PLACEHOLDER_VERSION.test(match[2]!)
+    )
+  })
+}
+
+/**
+ * The installed agent worth keeping when an override can't apply: the package core's file names
+ * for the agent, at a real version rather than the placeholder, and not the version a recorded
+ * override has seen fail. `name==version`, or null.
+ */
+export function keepableAgent(
+  coreText: string,
+  pipListOutput: string,
+  state: AgentOverrideState | null
+): string | null {
+  const name = agentPackage(coreText)
+  if (name === undefined) return null
+  const installed = parseInstalled(pipListOutput) ?? []
+  const version = installed.find((p) => normalizePackageName(p.name) === name)?.version
+  if (version === undefined || PLACEHOLDER_VERSION.test(version)) return null
+  const failed = failedPin(state, SIGNATURE_AGENT)
+  if (failed !== undefined && sameVersion(version, failed)) return null
+  const failedGo = failedPin(state, SIGNATURE_AGENT_GO)
+  const go = installed.find((p) => normalizePackageName(p.name) === AGENT_GO)?.version
+  // An installed carrier with a local label (`+cu`) can't be ordered: assume the agent may run it.
+  const runsGo =
+    go !== undefined &&
+    (!EXACT_VERSION.test(go) ||
+      !agentGoBehindAgent(new Map([[AGENT_GO, go]]), coreText, pipListOutput))
+  if (failedGo !== undefined && runsGo && sameVersion(go, failedGo)) return null
+  return `${name}==${version}`
+}
 
 /** Which index uv was pointed at, never the URL itself. */
 export type IndexKind = 'pypi' | 'cn_mirror' | 'custom'
@@ -395,6 +473,8 @@ export function reportOverrideDecision(
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
     const install = 'install' in d ? d.install : undefined
+    const kept = 'kept' in d ? (d.kept ?? null) : null
+    // One event per decision: a kept agent rides on the original decision as `kept_agent`.
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
@@ -408,6 +488,7 @@ export function reportOverrideDecision(
       elapsed_ms: install?.elapsedMs ?? null,
       budget_ms: install?.budgetMs ?? null,
       error_tail: install?.errorTail ?? null,
+      kept_agent: kept,
       index
     })
   } catch {
@@ -491,13 +572,21 @@ export function createAgentStartWatcher(onOutcome: (outcome: AgentStartOutcome) 
 export function nextOverrideState(
   previous: AgentOverrideState | null,
   pins: OverridePins,
-  outcome: AgentStartOutcome
+  outcome: AgentStartOutcome,
+  /** False for an install or check failure of the override, counted toward retiring it alone. */
+  agentStart = true
 ): { state: AgentOverrideState; reverted: boolean } | null {
   if (outcome === 'inconclusive') return null
   const signature = overrideSignature(pins)
-  const base = previous?.signature === signature ? previous.failures : 0
+  const same = previous?.signature === signature
+  const base = same ? previous.failures : 0
   const failures = outcome === 'started' ? 0 : base + 1
-  return { state: { signature, failures }, reverted: failures === START_FAILURES_TO_REVERT }
+  const startBase = same ? (previous.startFailures ?? previous.failures) : 0
+  const startFailures = outcome === 'started' ? 0 : startBase + (agentStart ? 1 : 0)
+  return {
+    state: { signature, failures, startFailures },
+    reverted: failures === START_FAILURES_TO_REVERT
+  }
 }
 
 /** ComfyUI's own `==` frontend version, or null when its `requirements.txt` pins none exactly. */

@@ -385,3 +385,26 @@ export function appliedPassThrough(applied: readonly CampaignApplied[], arg: str
   if (!payload || typeof payload !== 'object') return undefined
   return (payload as Record<string, unknown>)[AGENT_PASS_THROUGH_FIELD]
 }
+
+/**
+ * Whether a member's `arg` missed only because its campaign's flag gave no answer at all: the
+ * campaign is still listed for it and has no answer, saved or fetched. An answer that grants it
+ * nothing (`false`, a voided epoch) or an unlisted campaign is a decision, and is not this.
+ */
+export function heldArgUnanswered(
+  misses: readonly CampaignMiss[],
+  campaigns: {
+    registry: readonly CampaignRegistryEntry[]
+    answers: ReadonlyMap<string, CampaignAnswer>
+  },
+  arg: string
+): boolean {
+  return misses.some(
+    (miss) =>
+      miss.member &&
+      miss.arg === arg &&
+      miss.reason === 'no_answer' &&
+      !campaigns.answers.has(miss.key) &&
+      campaigns.registry.some(({ key, args }) => key === miss.key && args.includes(arg))
+  )
+}

@@ -260,6 +260,15 @@ describe('readFileSafeAsync', () => {
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('newer primary')
   })
 
+  it('serves .bak for an absent primary without restoring it when asked not to', async () => {
+    fs.writeFileSync(bakPath, 'backup')
+    expect(await readFileSafeAsync(filePath, { restore: false })).toEqual({
+      kind: 'data',
+      data: 'backup'
+    })
+    expect(fs.existsSync(filePath)).toBe(false)
+  })
+
   it('restores .bak over a genuinely missing primary and counts the fallback', async () => {
     fs.writeFileSync(bakPath, 'backup')
     const before = getSafeFileDiagnostics().bakFallbacks

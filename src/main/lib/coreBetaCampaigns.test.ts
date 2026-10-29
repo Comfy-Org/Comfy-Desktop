@@ -8,6 +8,7 @@ import {
   parseCampaignAnswer,
   parseCampaignRecords,
   parseCampaignRegistry,
+  heldArgUnanswered,
   planCampaignArgs
 } from './coreBetaCampaigns'
 import type { CampaignAnswer, CampaignFacts } from './coreBetaCampaigns'
@@ -522,6 +523,50 @@ describe('planCampaignArgs: members with no answer', () => {
     expect(
       planCampaignArgs(facts({ records: member, registry: [], betaEnabled: false })).misses
     ).toEqual([])
+  })
+})
+
+describe('heldArgUnanswered', () => {
+  const unanswered = (overrides: Partial<CampaignFacts>): boolean => {
+    const f = facts({ records: member, ...overrides })
+    return heldArgUnanswered(planCampaignArgs(f).misses, f, '--enable-agent')
+  }
+
+  it("is true for a member whose listed campaign's flag gave no answer", () => {
+    expect(unanswered({ answers: new Map() })).toBe(true)
+  })
+
+  it.each([
+    ['unlisted from the registry', { registry: [], answers: new Map() }],
+    ['killed: the campaign serves false', { answers: new Map([[KEY, answer(false)]]) }],
+    [
+      'the grant was removed from the payload',
+      { answers: new Map([[KEY, answer('hold', { grants: [] })]]) }
+    ],
+    [
+      'the registry no longer lists its arg',
+      { registry: [{ key: KEY, args: ['--enable-assets'] }], answers: new Map() }
+    ],
+    ['held by a live answer', { answers: new Map([[KEY, answer('hold')]]) }]
+  ])('is false when %s, which is a decision, not a missing answer', (_label, overrides) => {
+    expect(unanswered(overrides)).toBe(false)
+  })
+
+  it("is false when the unanswered member's arg is another one", () => {
+    const misses = [
+      { key: KEY, arg: '--enable-assets', member: true, reason: 'no_answer' as const }
+    ]
+    const campaigns = {
+      registry: [{ key: KEY, args: ['--enable-agent', '--enable-assets'] }],
+      answers: new Map()
+    }
+    expect(heldArgUnanswered(misses, campaigns, '--enable-agent')).toBe(false)
+    expect(heldArgUnanswered(misses, campaigns, '--enable-assets')).toBe(true)
+  })
+
+  it('is false for a machine that never enrolled', () => {
+    const f = facts({ answers: new Map() })
+    expect(heldArgUnanswered(planCampaignArgs(f).misses, f, '--enable-agent')).toBe(false)
   })
 })
 

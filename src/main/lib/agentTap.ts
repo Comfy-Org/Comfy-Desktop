@@ -52,7 +52,13 @@ export const REASONS: ReadonlySet<string> = new Set([
   'data_dir_locked',
   'address_in_use',
   'not_set_up',
-  'config_invalid'
+  'config_invalid',
+  // ComfyUI core's agent_error when the installed comfy-agent lacks this
+  // Core's host protocol (app/agent_host.py load()).
+  'outdated',
+  // The agent's startup_failed when a credential deny path is a link it
+  // cannot open (cloud services/agent/packaging/testdata/startup_reasons.txt).
+  'unreadable_link'
 ])
 
 // The agent's startup step ids: byte-identical to cloud's
@@ -76,6 +82,66 @@ export const STARTUP_STEPS: ReadonlySet<string> = new Set([
   'document_host',
   'listen',
   'other'
+])
+
+// What a failed startup step was refused on and which of the agent's own
+// files it named: byte-identical to cloud's
+// services/agent/packaging/testdata/startup_operations.txt and
+// startup_files.txt, as of Comfy-Org/cloud#16572 at d595cd23054. The host
+// already drops a value outside them.
+export const STARTUP_OPERATIONS: ReadonlySet<string> = new Set([
+  'open',
+  'stat',
+  'mkdir',
+  'readdir',
+  'readlink',
+  'read',
+  'write',
+  'close',
+  'remove',
+  'rename',
+  'chmod',
+  'truncate',
+  'resolve_path',
+  'resolve_open',
+  'resolve_final_name',
+  'resolve_attributes',
+  'dial',
+  'listen',
+  'accept',
+  'bind',
+  'connect',
+  'socket'
+])
+
+export const STARTUP_FILES: ReadonlySet<string> = new Set([
+  'AGENTS.md',
+  'agent.db',
+  'agent.db-journal',
+  'agent.db-shm',
+  'agent.db-wal',
+  'agent.db.legacy-v0',
+  'agent.db.legacy-v0-journal',
+  'agent.db.legacy-v0-shm',
+  'agent.db.legacy-v0-wal',
+  'agent.db.local-v1-new',
+  'agent.db.local-v1-new-journal',
+  'agent.db.local-v1-new-shm',
+  'agent.db.local-v1-new-wal',
+  'agent.db.migration.json',
+  'agent.db.migration.json.tmp',
+  'agent.db.v1.bak',
+  'agent.db.v1.bak-journal',
+  'agent.db.v1.bak-shm',
+  'agent.db.v1.bak-wal',
+  'agent.db.v1.bak.tmp',
+  'agent.json',
+  'agent.lock',
+  'egress-allow.json',
+  'object_info.json',
+  'owner.lock',
+  'permissions.json',
+  'sandbox-grants.json'
 ])
 
 // A Set, not an object literal, so untrusted keys like `constructor` can't hit the prototype.
@@ -104,7 +170,11 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'comfyui_match',
   'shell',
   'sandbox',
-  'assets'
+  'assets',
+  // A failed startup step's diagnostics (startup_step, startup_failed).
+  'op',
+  'file',
+  'win_error'
 ])
 
 // Closed sets for the lifecycle fields that name a state. A value outside its
@@ -123,7 +193,9 @@ const LIFECYCLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
     comfyui_match: ['match', 'mismatch', 'unknown', 'other'],
     shell: ['on', 'off'],
     sandbox: ['none', 'seatbelt', 'appcontainer', 'other'],
-    assets: ['enabled', 'disabled', 'unknown', 'other']
+    assets: ['enabled', 'disabled', 'unknown', 'other'],
+    op: STARTUP_OPERATIONS,
+    file: STARTUP_FILES
   }).map(([name, values]): [string, ReadonlySet<string>] => [name, new Set(values)])
 )
 
@@ -133,7 +205,9 @@ const LIFECYCLE_COUNTS: ReadonlySet<string> = new Set([
   'attempt',
   'count',
   'uptime_ms',
-  'startup_ms'
+  'startup_ms',
+  // A Win32 error number: unsigned.
+  'win_error'
 ])
 
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
@@ -177,17 +251,19 @@ export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
   ['entry_source', oneOf('new_tab existing_thread')],
   ['run_mode', oneOf('ask_approval auto auto_limited')],
   ['engine', oneOf('inline temporal')],
-  ['response_kind', oneOf('message_delta thinking tool_call')],
+  ['response_kind', oneOf('message_delta thinking tool_call refusal')],
   ['event_schema_version', (raw) => (/^\d{1,4}$/.test(raw) ? raw : 'unknown')],
   [
     'error_class',
     oneOf(
-      'cancelled budget_exceeded turn_expired prepare_failed model_failed tool_failed finalize_failed max_tokens_truncated credential_stash_failed internal'
+      'cancelled budget_exceeded turn_expired prepare_failed model_failed tool_failed finalize_failed max_tokens_truncated model_refused credential_stash_failed internal interrupted'
     )
   ],
   [
     'failure_stage',
-    oneOf('cancelled timeout budget turn_deadline prepare model tool finalize auth internal')
+    oneOf(
+      'cancelled timeout budget turn_deadline prepare model tool finalize auth credit rate_limit internal shutdown interrupted'
+    )
   ],
   ...fieldsOfType(
     'time_to_first_response_ms op_count base_version result_version apply_duration_ms duration_ms mutation_count tool_call_count input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens billed_units canvas_node_count_before canvas_node_count_after',
@@ -266,6 +342,8 @@ function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   }
   const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
   if (!Number.isSafeInteger(value) || (LIFECYCLE_COUNTS.has(key) && value < 0)) return undefined
+  // A Win32 error number is a DWORD; the host caps it at 32 bits too.
+  if (key === 'win_error' && value > 0xffffffff) return undefined
   return value
 }
 

@@ -1,8 +1,13 @@
 [agent-event] startup_step step=find_comfyui outcome=ok duration_ms=12
-[agent-event] startup_step step=cli_provision outcome=degraded duration_ms=30500 reason=network_error
+[agent-event] startup_step step=cli_provision outcome=degraded duration_ms=30500 reason=network_error op=dial
 [agent-event] startup_step step=object_info outcome=failed duration_ms=120000 reason=timeout
-[agent-event] startup_stalled step=sandbox_setup duration_ms=95000
+[agent-event] startup_stalled step=sandbox_grants duration_ms=95000
 [agent-event] startup_failed step=object_info reason=timeout
+[agent-event] startup_step step=sandbox_config outcome=failed duration_ms=4 reason=permission_denied op=resolve_open win_error=5
+[agent-event] startup_failed step=sandbox_config reason=permission_denied op=resolve_open win_error=5
+[agent-event] startup_failed step=sandbox_config reason=unreadable_link op=resolve_open win_error=5
+[agent-event] startup_step step=open_data_dir outcome=failed duration_ms=21000 reason=permission_denied op=open file=agent.lock win_error=5
+[agent-event] startup_failed step=open_data_dir reason=permission_denied op=open file=agent.lock win_error=5
 [agent-event] node_fetch_started
 [agent-event] node_fetched duration_ms=41000 node_version=v22.11.0
 [agent-event] node_fetch_failed duration_ms=360000 reason=timeout
