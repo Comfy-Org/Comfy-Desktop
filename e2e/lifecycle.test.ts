@@ -21,7 +21,7 @@
  *   option (CPU on a no-GPU CI runner, NVIDIA on an NVIDIA box, etc.).
  *   So by the time `saveDisabled` flips false, the form is fully
  *   pre-filled — no explicit release / variant picking needed.
- * - The primary CTA is `.brand-primary.config-continue` labelled
+ * - The primary CTA is `.config-continue` labelled
  *   "Continue" (formerly `button.primary` "Add Install").
  * - `handleSave` emits `show-progress` with `autoLaunchOnFinish: true`,
  *   so the install op chains directly into a launch op under the same
@@ -72,7 +72,7 @@ import { byTestId, TID } from './support/testIds'
 let ctx: AppContext
 
 /** Wait until the config takeover's Continue CTA
- *  (`.brand-primary.config-continue`, bound to `:disabled="!canContinue"`)
+ *  (`.config-continue`, bound to `:disabled="!canContinue"`)
  *  is enabled — i.e. the form is fully filled and settled. */
 async function waitForConfigContinueEnabled(message: string): Promise<void> {
   await ctx.panel.waitFor(
@@ -80,7 +80,7 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
       if (!wc) return false
       return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.brand-primary.config-continue')
+        const btn = document.querySelector('.config-continue')
         return !!btn && !btn.disabled
       })()`) as Promise<boolean>
     })),
@@ -452,7 +452,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // Standalone is pre-selected on open. The release + variant fields
   // live inside the Advanced disclosure but are populated eagerly via
   // `loadFieldOptions('release')` → recursive `loadFieldOptions('variant')`.
-  // `.brand-primary.config-continue` is bound to `:disabled="!canContinue"`,
+  // `.config-continue` is bound to `:disabled="!canContinue"`,
   // so once it goes enabled the form is fully pre-filled (release picked,
   // variant picked, no path issues).
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')

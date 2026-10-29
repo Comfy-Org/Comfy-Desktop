@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 
@@ -46,6 +47,31 @@ const emit = defineEmits<{
   /** Configure footer's Back link when opened by the first-use chain; host returns to the FirstUseTakeover localBranch step. */
   'back-to-local-branch': []
 }>()
+
+const buttonClass =
+  'static inline-flex appearance-auto items-center justify-center gap-0 border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
+const primaryClass =
+  'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
+const ghostClass =
+  'rounded-md border-transparent bg-transparent text-neutral-300 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100 disabled:hover:bg-transparent'
+const tertiaryClass =
+  'rounded-[var(--radius-control)] border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-100 enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] disabled:hover:bg-[var(--brand-surface-bg)]'
+const pillClass =
+  'static inline-flex appearance-auto items-center justify-normal gap-1.5 rounded-md border border-solid px-3.5 py-2 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal touch-auto transition-[border-color,background,color] duration-160 ease-[ease] [&]:[appearance:button] hover:border-[var(--brand-surface-border-hover)] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40'
+const selectedPillClass =
+  'config-method--selected border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-neutral-100'
+const unselectedPillClass =
+  'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-200'
+const inputWrapperClass =
+  'config-input flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-normal text-neutral-100 transition-[border-color,background] duration-120 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)]'
+const validInputClass =
+  '[&:has(input:focus-visible)]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
+const invalidInputClass =
+  'config-input--invalid [&:has(input:focus-visible)]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--danger)_35%,transparent)]'
+const textInputClass =
+  'm-0 box-content w-auto min-w-0 flex-auto cursor-text appearance-none rounded-none border-0 bg-transparent p-0 [font:inherit] text-inherit shadow-none outline-0 placeholder:text-neutral-400'
+const spinnerClass =
+  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[""] before:[animation-duration:600ms]'
 
 const props = withDefaults(
   defineProps<{
@@ -1291,94 +1317,131 @@ defineExpose({ open })
 
 <template>
   <BrandTakeoverLayout :scroll-content="step === 'configure'">
-    <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
-      <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">{{ $t('chooser.newInstallDesc') }}</p>
-      <div class="config-card">
-        <div class="config-card__body">
+    <div
+      v-if="step === 'configure'"
+      ref="brandShellRef"
+      class="config-shell mx-auto w-full max-w-[640px] self-stretch pt-[clamp(1.5rem,4vh,3rem)] pb-[max(5rem,8vh)] text-center"
+    >
+      <h1
+        class="wizard-title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] text-center opacity-85"
+      >
+        {{ $t('newInstall.configureTitle') }}
+      </h1>
+      <p
+        class="wizard-lead mt-[var(--takeover-gap-sm)] mb-[var(--takeover-gap-md)] font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 text-center"
+      >
+        {{ $t('chooser.newInstallDesc') }}
+      </p>
+      <div
+        class="config-card w-full overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
+      >
+        <div class="config-card__body flex flex-col gap-[18px] p-5">
           <div
             v-if="authorizingWorkspace"
-            class="workspace-authorization-status with-spinner"
+            class="workspace-authorization-status w-full text-[13px] leading-[1.4] text-neutral-200"
+            :class="spinnerClass"
             role="status"
             data-testid="workspace-authorization-status"
           >
             {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
           </div>
-          <div class="config-field">
-            <label class="config-label" for="inst-name-standalone">{{ $t('common.name') }}</label>
-            <div class="brand-input" :class="{ 'brand-input--invalid': nameError }">
+          <div class="config-field flex flex-col gap-2">
+            <label class="config-label text-[13px] text-neutral-200" for="inst-name-standalone">{{
+              $t('common.name')
+            }}</label>
+            <div :class="[inputWrapperClass, nameError ? invalidInputClass : validInputClass]">
               <input
                 id="inst-name-standalone"
                 :value="instName"
                 type="text"
+                :class="textInputClass"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
                 :aria-invalid="!!nameError"
                 :aria-describedby="nameError ? 'inst-name-error' : undefined"
                 @input="instName = ($event.target as HTMLInputElement).value"
               />
             </div>
-            <div v-if="nameError" id="inst-name-error" class="field-error" role="alert">
+            <div
+              v-if="nameError"
+              id="inst-name-error"
+              class="config-field-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+              role="alert"
+            >
               {{ nameError }}
             </div>
           </div>
 
           <div
             v-if="sources.length > 0"
-            class="config-method-row"
+            class="config-method-row mb-4 flex flex-wrap gap-2"
             role="radiogroup"
             :aria-label="$t('newInstall.chooseMethod')"
             data-testid="install-source-tabs"
           >
             <template v-for="tab in installSourceTabs" :key="tab.key">
-              <button
+              <Button
                 v-if="tab.kind === 'managed'"
+                size="unset"
+                variant="textonly"
                 type="button"
                 role="radio"
                 data-testid="workspace-install-source-managed"
                 :aria-checked="managedBuildMode"
                 :disabled="authorizingWorkspace"
-                :class="['brand-pill', { 'brand-pill--selected': managedBuildMode }]"
+                :class="[pillClass, managedBuildMode ? selectedPillClass : unselectedPillClass]"
                 @click="selectManagedInstallMode"
               >
                 {{ $t('newInstall.managedBuilds') }}
-              </button>
-              <button
+              </Button>
+              <Button
                 v-else
+                size="unset"
+                variant="textonly"
                 type="button"
                 role="radio"
                 :data-testid="`install-source-${tab.source.id}`"
                 :aria-checked="!managedBuildMode && currentSource?.id === tab.source.id"
                 :disabled="authorizingWorkspace"
                 :class="[
-                  'brand-pill',
-                  {
-                    'brand-pill--selected': !managedBuildMode && currentSource?.id === tab.source.id
-                  }
+                  pillClass,
+                  !managedBuildMode && currentSource?.id === tab.source.id
+                    ? selectedPillClass
+                    : unselectedPillClass
                 ]"
                 @click="selectSourceCard(tab.source)"
               >
                 {{
                   tab.source.id === 'standalone' ? $t('newInstall.publicBuilds') : tab.source.label
                 }}
-              </button>
+              </Button>
             </template>
           </div>
 
-          <div v-if="managedBuildMode" class="config-field" data-testid="workspace-build-field">
-            <div class="workspace-build-label-row">
-              <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
-              <div class="workspace-build-actions">
-                <button
+          <div
+            v-if="managedBuildMode"
+            class="config-field flex flex-col gap-2"
+            data-testid="workspace-build-field"
+          >
+            <div class="workspace-build-label-row flex items-center justify-between">
+              <label class="config-label text-[13px] text-neutral-200">{{
+                $t('newInstall.workspaceBuildLabel')
+              }}</label>
+              <div class="workspace-build-actions flex items-center gap-2">
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="workspace-build-online"
+                  class="workspace-build-online static cursor-pointer appearance-auto rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] leading-[inherit] font-normal whitespace-normal text-neutral-300 touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:text-neutral-100 enabled:hover:underline focus-visible:rounded-[2px] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-55"
                   :disabled="initializing"
                   @click="openBuildsPage"
                 >
                   {{ $t('newInstall.viewBuildsOnline') }}
-                </button>
-                <button
+                </Button>
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="workspace-build-refresh"
+                  class="workspace-build-refresh static inline-flex cursor-pointer appearance-auto items-center justify-center rounded-lg border-0 bg-transparent p-0.5 font-sans text-sm leading-[inherit] font-normal text-text-muted touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-40"
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
                   :disabled="authStore.loadingBuilds"
@@ -1386,10 +1449,13 @@ defineExpose({ open })
                 >
                   <RefreshCw
                     :size="14"
-                    :class="{ 'workspace-build-refresh__icon--spinning': authStore.loadingBuilds }"
+                    :class="{
+                      'workspace-build-refresh__icon--spinning animate-spin [animation-duration:800ms]':
+                        authStore.loadingBuilds
+                    }"
                     aria-hidden="true"
                   />
-                </button>
+                </Button>
               </div>
             </div>
             <BaseSelect
@@ -1401,22 +1467,24 @@ defineExpose({ open })
               :disabled="workspaceBuildOptions.length === 0"
               :aria-label="$t('newInstall.workspaceBuildLabel')"
             />
-            <button
+            <Button
               v-if="authStore.buildsError"
+              size="unset"
+              variant="textonly"
               type="button"
-              class="wizard-error wizard-build-retry"
+              class="wizard-build-retry static block cursor-pointer appearance-auto rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] whitespace-normal text-[var(--danger)] touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:underline focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
               :disabled="authStore.loadingBuilds"
               @click="authStore.fetchBuilds()"
             >
               {{ $t('devPlatform.build.loadError') }}
-            </button>
+            </Button>
             <div
               v-else-if="
                 !authorizingWorkspace &&
                 !authStore.loadingBuilds &&
                 workspaceBuildOptions.length === 0
               "
-              class="wizard-loading"
+              class="config-loading py-3 text-sm leading-[inherit] text-text-muted"
             >
               {{ $t('newInstall.noCompatibleBuilds') }}
             </div>
@@ -1424,10 +1492,12 @@ defineExpose({ open })
 
           <div
             v-if="managedBuildMode && selectedBuildTargetOptions.length > 0"
-            class="config-field"
+            class="config-field flex flex-col gap-2"
             data-testid="workspace-build-targets"
           >
-            <label class="config-label">{{ $t('newInstall.buildTarget') }}</label>
+            <label class="config-label text-[13px] text-neutral-200">{{
+              $t('newInstall.buildTarget')
+            }}</label>
             <BrandVariantList
               :options="selectedBuildTargetOptions"
               :selected-value="selectedBuildTargetId"
@@ -1436,30 +1506,48 @@ defineExpose({ open })
             />
           </div>
 
-          <div v-if="!managedBuildMode" class="config-advanced config-advanced--direct is-open">
-            <div class="config-advanced__wrap">
-              <div class="config-advanced__body">
-                <div v-if="sourceError" class="wizard-error">{{ sourceError }}</div>
-                <div v-if="currentSource" id="source-fields">
+          <div
+            v-if="!managedBuildMode"
+            class="config-advanced config-advanced--direct is-open border-0 pt-0"
+          >
+            <div class="config-advanced__wrap block">
+              <div
+                class="config-advanced__body -mx-[3px] mt-0 min-h-0 overflow-hidden px-[3px] opacity-100 [transform:translateY(0)] [transition:opacity_220ms_ease_60ms,transform_260ms_cubic-bezier(0.22,1,0.36,1)_40ms]"
+              >
+                <div
+                  v-if="sourceError"
+                  class="config-error py-3 text-sm leading-[inherit] text-[var(--danger)]"
+                >
+                  {{ sourceError }}
+                </div>
+                <div v-if="currentSource" id="source-fields" class="flex flex-col gap-4">
                   <div
                     v-for="(field, fieldIndex) in currentSource.fields"
                     v-show="!isHiddenWhenEmpty(field)"
                     :key="field.id"
-                    class="field"
+                    class="config-source-field mt-0 flex flex-col gap-2"
                   >
-                    <label class="config-label" :for="`sf-${field.id}`">{{ field.label }}</label>
+                    <label
+                      class="config-label text-[13px] text-neutral-200"
+                      :for="`sf-${field.id}`"
+                      >{{ field.label }}</label
+                    >
 
                     <template v-if="field.type === 'text'">
-                      <div class="path-input">
+                      <div class="config-text-action mt-1.5 flex items-stretch gap-2">
                         <div
-                          class="brand-input config-source-text"
-                          :class="{
-                            'brand-input--invalid': field.id === 'url' && urlFieldError
-                          }"
+                          class="config-source-text min-w-0 flex-auto"
+                          :class="[
+                            inputWrapperClass,
+                            field.id === 'url' && urlFieldError
+                              ? invalidInputClass
+                              : validInputClass
+                          ]"
                         >
                           <input
                             :id="`sf-${field.id}`"
                             type="text"
+                            :class="textInputClass"
                             :value="textFieldValues.get(field.id) ?? ''"
                             :placeholder="field.defaultValue || ''"
                             :aria-invalid="field.id === 'url' && !!urlFieldError"
@@ -1476,23 +1564,28 @@ defineExpose({ open })
                             "
                           />
                         </div>
-                        <button
+                        <Button
                           v-if="field.action"
                           :id="`sf-${field.id}-action`"
+                          size="unset"
+                          variant="textonly"
                           type="button"
-                          class="brand-tertiary"
+                          :class="[buttonClass, tertiaryClass, 'shrink-0']"
                           @click="handleTextAction(field)"
                         >
                           {{ field.action.label }}
-                        </button>
+                        </Button>
                       </div>
-                      <div v-if="fieldErrors.get(field.id)" class="field-error">
+                      <div
+                        v-if="fieldErrors.get(field.id)"
+                        class="config-field-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+                      >
                         {{ fieldErrors.get(field.id) }}
                       </div>
                       <div
                         v-else-if="field.id === 'url' && urlFieldError"
                         :id="`sf-${field.id}-error`"
-                        class="field-error"
+                        class="config-field-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
                         role="alert"
                       >
                         {{ urlFieldError }}
@@ -1500,7 +1593,11 @@ defineExpose({ open })
                     </template>
 
                     <template v-else-if="field.renderAs === 'cards'">
-                      <div v-if="fieldLoading.get(field.id)" class="wizard-loading with-spinner">
+                      <div
+                        v-if="fieldLoading.get(field.id)"
+                        class="config-loading py-3 text-sm leading-[inherit] text-text-muted"
+                        :class="spinnerClass"
+                      >
                         {{ $t('newInstall.loading') }}
                       </div>
                       <BrandVariantList
@@ -1513,7 +1610,10 @@ defineExpose({ open })
                         :aria-label="field.label"
                         @select="(opt) => selectCardOption(field, fieldIndex, opt)"
                       />
-                      <div v-else-if="fieldOptions.has(field.id)" class="wizard-loading">
+                      <div
+                        v-else-if="fieldOptions.has(field.id)"
+                        class="config-loading py-3 text-sm leading-[inherit] text-text-muted"
+                      >
                         {{
                           fieldErrors.get(field.id)
                             ? `Error: ${fieldErrors.get(field.id)}`
@@ -1543,44 +1643,58 @@ defineExpose({ open })
           </div>
 
           <TooltipWrap
-            class="config-field-wrap"
+            class="config-field-wrap w-full flex-col [&.config-field-wrap]:flex"
             side="bottom"
             :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
           >
             <div
-              class="config-field"
-              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
+              class="config-field flex flex-col gap-2"
+              :class="{
+                'config-field--disabled opacity-50 [&_input]:pointer-events-none [&_button]:pointer-events-none [&_.config-input]:pointer-events-none':
+                  currentSource?.skipInstall
+              }"
               data-testid="install-location-field"
             >
-              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
-              <div class="config-path-row">
-                <div class="brand-input config-path-input">
+              <label class="config-label text-[13px] text-neutral-200">{{
+                $t('newInstall.installLocation')
+              }}</label>
+              <div class="config-path-row flex items-stretch gap-2">
+                <div
+                  class="config-path-input min-w-0 flex-auto [&.config-path-input]:h-10 [&.config-path-input]:px-3 [&.config-path-input]:py-0"
+                  :class="inputWrapperClass"
+                >
                   <HardDrive :size="14" aria-hidden="true" />
-                  <button
+                  <Button
                     v-if="!currentSource?.skipInstall && instPath"
+                    size="unset"
+                    variant="textonly"
                     type="button"
-                    class="open-folder-link config-path-open"
+                    class="config-path-open static min-w-0 flex-[0_1_auto] cursor-pointer appearance-auto overflow-hidden rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
                     :title="$t('actions.openDirectory', 'Open Directory')"
                     :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
                   >
                     {{ instPath }}
-                  </button>
-                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
-                    instPath
-                  }}</span>
+                  </Button>
+                  <span
+                    v-else
+                    class="config-path-open config-path-open--static min-w-0 flex-[0_1_auto] cursor-default overflow-hidden border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit"
+                    >{{ instPath }}</span
+                  >
                 </div>
-                <button
-                  class="brand-tertiary"
+                <Button
+                  size="unset"
+                  variant="textonly"
+                  :class="[buttonClass, tertiaryClass, 'h-10 px-3.5 py-0 text-[13px]']"
                   type="button"
                   :disabled="!!currentSource?.skipInstall"
                   @click="handleBrowse"
                 >
                   {{ $t('common.browse') }}
-                </button>
+                </Button>
               </div>
-              <div class="config-install-meta">
-                <div v-if="!currentSource?.skipInstall" class="config-install-disk">
+              <div class="config-install-meta flex items-end gap-1">
+                <div v-if="!currentSource?.skipInstall" class="config-install-disk min-w-0">
                   <PathDiskInfo
                     :path-issues="pathIssues"
                     :disk-space-loading="diskSpaceLoading"
@@ -1590,17 +1704,20 @@ defineExpose({ open })
                 </div>
                 <span
                   v-if="!currentSource?.skipInstall"
-                  class="disk-space-info config-install-separator"
+                  class="config-install-separator mt-1 min-h-[18px] flex-none text-[13px] text-text-muted"
                   aria-hidden="true"
                   >·</span
                 >
-                <div class="disk-space-info config-gpu-value" data-testid="detected-gpu-field">
+                <div
+                  class="config-gpu-value mt-1 min-h-[18px] flex-none text-[13px] text-text-muted"
+                  data-testid="detected-gpu-field"
+                >
                   {{ detectedGpu }}
                 </div>
               </div>
               <div
                 v-if="hardwareWarning && !currentSource?.skipInstall"
-                class="config-gpu-warning"
+                class="config-hardware-warning mt-1.5 text-[12px] leading-[1.4] text-[var(--warning)]"
                 role="alert"
                 data-testid="wizard-hardware-warning"
               >
@@ -1610,36 +1727,64 @@ defineExpose({ open })
           </TooltipWrap>
         </div>
 
-        <div v-if="cameFromLocalBranch" class="config-card__footer">
-          <button
+        <div
+          v-if="cameFromLocalBranch"
+          class="config-card__footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
+        >
+          <Button
+            size="unset"
+            variant="textonly"
             type="button"
-            class="brand-ghost config-back"
+            class="config-back mr-auto"
+            :class="[buttonClass, ghostClass]"
             data-testid="config-back-to-local-branch"
             @click="handleBackToLocalBranch"
           >
             {{ $t('common.back') }}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
 
     <!-- Dedicated starter-template picker step (after Configure, before install). -->
-    <div v-else-if="step === 'template'" class="template-shell">
-      <h1 class="brand-title">{{ $t('standalone.templatePickerTitle') }}</h1>
-      <p class="brand-lead">{{ $t('standalone.templatePickerLead') }}</p>
+    <div
+      v-else-if="step === 'template'"
+      class="template-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[960px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
+    >
+      <h1
+        class="wizard-title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] text-center opacity-85"
+      >
+        {{ $t('standalone.templatePickerTitle') }}
+      </h1>
+      <p
+        class="wizard-lead mt-[var(--takeover-gap-md)] mb-[var(--takeover-gap-lg)] font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 text-center"
+      >
+        {{ $t('standalone.templatePickerLead') }}
+      </p>
       <div
         v-if="hasTemplateAlerts"
         id="tps-alerts"
-        class="template-alerts"
-        :class="{ 'template-alerts--nudge': templateAlertNudge }"
+        class="template-alerts mb-3 flex w-full flex-col gap-2 text-left"
+        :class="{
+          'template-alerts--nudge animate-[install-template-alert-shake_400ms_cubic-bezier(0.36,0.07,0.19,0.97)_both] motion-reduce:animate-none':
+            templateAlertNudge
+        }"
       >
-        <div v-if="templateDiskError" class="template-alert template-alert--error" role="alert">
+        <div
+          v-if="templateDiskError"
+          class="template-alert template-alert--error flex items-start gap-2 rounded-lg bg-[color-mix(in_oklab,var(--danger)_12%,transparent)] px-3 py-2.5 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-[var(--danger)] [box-shadow:inset_0_0_0_1px_color-mix(in_oklab,var(--danger)_28%,transparent)] [&_svg]:mt-px [&_svg]:flex-none"
+          role="alert"
+        >
           <CircleAlert :size="16" aria-hidden="true" />
           <span>{{ templateDiskError }}</span>
         </div>
       </div>
-      <div class="brand-card template-card">
-        <div class="brand-card__body template-card__body">
+      <div
+        class="template-card flex max-h-[min(80vh,100%)] w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
+      >
+        <div
+          class="template-card__body flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           <TemplatePickerStep
             ref="pickerRef"
             :options="templateOptions"
@@ -1650,130 +1795,95 @@ defineExpose({ open })
             @select="selectTemplate"
           />
         </div>
-        <div class="brand-card__footer template-card__footer">
-          <div class="template-card__footer-actions">
-            <button
+        <div
+          class="template-card__footer flex flex-none flex-col items-stretch justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
+        >
+          <div class="template-card__footer-actions flex items-center justify-end gap-3">
+            <Button
+              size="unset"
+              variant="textonly"
               type="button"
-              class="brand-ghost template-skip"
+              class="template-skip"
+              :class="[
+                buttonClass,
+                ghostClass,
+                'h-[34px] border-[var(--brand-surface-border)] px-3.5 py-0 text-[length:var(--takeover-fs-caption)] text-neutral-200 enabled:hover:border-[var(--brand-surface-border-hover)]'
+              ]"
               :aria-label="$t('standalone.templateSkipAndInstallAria')"
               @click="handleTemplateSkip"
             >
               {{ $t('standalone.templateSkipAndInstall') }}
-            </button>
-            <button
+            </Button>
+            <Button
+              size="unset"
+              variant="textonly"
               type="button"
-              class="brand-primary template-install"
-              :class="{ 'template-install--blocked': templateInstallBlocked }"
+              class="template-install"
+              :class="[
+                buttonClass,
+                primaryClass,
+                'h-[34px] min-w-[104px] px-3.5 py-0 text-[length:var(--takeover-fs-caption)]',
+                {
+                  'template-install--blocked cursor-not-allowed opacity-55': templateInstallBlocked
+                }
+              ]"
               :aria-disabled="templateInstallBlocked"
               :aria-describedby="templateInstallBlocked ? 'tps-alerts' : undefined"
               @click="handleTemplateInstall"
             >
               {{ $t('standalone.templateInstall') }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-      <label v-if="hasLocalInstall" class="brand-checkbox template-shell__opt-out">
-        <input v-model="dontShowTemplatePicker" type="checkbox" />
-        <span class="brand-checkbox__text">{{ $t('standalone.templateDontShowAgain') }}</span>
+      <label
+        v-if="hasLocalInstall"
+        class="template-shell__opt-out mt-3.5 flex w-full cursor-pointer items-center justify-center gap-2.5 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-neutral-400"
+      >
+        <input
+          v-model="dontShowTemplatePicker"
+          type="checkbox"
+          class="relative m-0 size-3.5 flex-none cursor-pointer appearance-none rounded border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] bg-size-[14px_14px] bg-center bg-no-repeat transition-[background-color,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] checked:bg-[var(--accent)] checked:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCc+PHBvbHlsaW5lIHBvaW50cz0nMyw5IDcsMTIgMTMsNScvPjwvc3ZnPg==)] after:hidden after:content-[''] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
+        />
+        <span class="template-opt-out-label flex flex-col gap-0.5 leading-[1.4]">{{
+          $t('standalone.templateDontShowAgain')
+        }}</span>
       </label>
     </div>
 
     <template #footer-left>
       <TakeoverBack
         v-if="step === 'template'"
-        class="config-back-to-dashboard"
+        class="config-back-to-dashboard bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2 [&.config-back-to-dashboard]:absolute"
         :label="$t('common.back')"
         @back="step = 'configure'"
       />
       <TakeoverBack
         v-else-if="!hideBackToDashboard"
-        class="config-back-to-dashboard"
+        class="config-back-to-dashboard bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2 [&.config-back-to-dashboard]:absolute"
         :label="$t('common.backToDashboard')"
         @back="emit('close')"
       />
     </template>
     <template #footer>
-      <button
+      <Button
         v-if="step === 'configure'"
-        class="brand-primary config-continue"
+        size="unset"
+        variant="textonly"
+        :class="[buttonClass, primaryClass]"
+        class="config-continue right-[clamp(1.25rem,2vw,2rem)] bottom-[clamp(1.25rem,2vw,2rem)] z-2 min-w-[120px] [&.config-continue]:absolute"
         :disabled="!canContinue"
         @click="handleConfigureContinue"
       >
         {{ $t('common.continue') }}
-      </button>
+      </Button>
     </template>
   </BrandTakeoverLayout>
 </template>
 
-<style scoped>
-.config-shell {
-  align-self: stretch;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-  text-align: center;
-  padding-top: clamp(1.5rem, 4vh, 3rem);
-  padding-bottom: max(5rem, 8vh);
-}
-.config-shell > .brand-lead {
-  margin: var(--takeover-gap-sm) 0 var(--takeover-gap-md);
-}
-
-.template-shell {
-  align-self: stretch;
-  height: 100%;
-  max-height: 100%;
-  width: 100%;
-  max-width: 960px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding-block: clamp(1.5rem, 4vh, 3rem);
-  min-height: 0;
-}
-.template-card {
-  width: 100%;
-  max-height: min(80vh, 100%);
-}
-.template-alerts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  margin-bottom: 12px;
-  text-align: left;
-}
-.template-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: var(--takeover-fs-caption);
-  line-height: 1.4;
-}
-.template-alert svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-.template-alert--error {
-  color: var(--danger);
-  background: color-mix(in oklab, var(--danger) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 28%, transparent);
-}
-.template-alert--warn {
-  color: var(--warning);
-  background: color-mix(in oklab, var(--warning) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warning) 26%, transparent);
-}
-.template-alerts--nudge {
-  animation: template-alert-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
-@keyframes template-alert-shake {
+<style>
+/* The disk-space warning preserves its original asymmetric shake. */
+@keyframes install-template-alert-shake {
   10%,
   90% {
     transform: translateX(-1px);
@@ -1791,329 +1901,5 @@ defineExpose({ open })
   60% {
     transform: translateX(3px);
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .template-alerts--nudge {
-    animation: none;
-  }
-}
-.template-card__footer {
-  flex-direction: column;
-  align-items: stretch;
-}
-.template-card__footer-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-}
-.template-shell__opt-out {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  margin-top: 14px;
-  font-size: var(--takeover-fs-caption);
-  line-height: 1.4;
-  color: var(--neutral-400);
-}
-.template-shell__opt-out input[type='checkbox'] {
-  margin: 0;
-}
-.template-shell__opt-out .brand-checkbox__text {
-  line-height: 1.4;
-}
-.template-card__footer-actions .brand-ghost,
-.template-card__footer-actions .brand-primary {
-  height: 34px;
-  padding-block: 0;
-  padding-inline: 14px;
-  font-size: var(--takeover-fs-caption);
-}
-.template-skip {
-  border: 1px solid var(--brand-surface-border);
-  color: var(--neutral-200);
-}
-.template-skip:hover:not([disabled]) {
-  border-color: var(--brand-surface-border-hover);
-  color: var(--neutral-100);
-  background: var(--brand-surface-bg);
-}
-.template-install {
-  min-width: 104px;
-}
-/* Reads as disabled but stays clickable so the click can shake the disk-error
- *  alert (mirrors the first-use consent gate). */
-.template-install--blocked {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.template-install--blocked:hover {
-  background: var(--comfy-yellow);
-  border-color: var(--comfy-yellow);
-}
-
-.config-card {
-  width: 100%;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-  backdrop-filter: blur(var(--brand-surface-blur));
-  overflow: hidden;
-  text-align: left;
-}
-
-.config-card__body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.workspace-authorization-status {
-  width: 100%;
-  color: var(--neutral-200);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.config-card__footer {
-  flex: 0 0 auto;
-  padding: 14px 20px;
-  border-top: 1px solid var(--brand-surface-border);
-  background: var(--brand-surface-bg);
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-}
-.config-back {
-  margin-right: auto;
-}
-
-.config-back-to-dashboard {
-  position: absolute;
-  left: clamp(1.25rem, 2vw, 2rem);
-  bottom: clamp(1.25rem, 2vw, 2rem);
-  z-index: 2;
-}
-
-.config-field,
-#source-fields > .field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.config-field--disabled {
-  opacity: 0.5;
-}
-/* Keep the wrap hoverable for TooltipWrap; block interaction on controls only. */
-.config-field--disabled input,
-.config-field--disabled button,
-.config-field--disabled .brand-input {
-  pointer-events: none;
-}
-/* TooltipWrap defaults to `display: inline-flex`; promote to block-level
- * so the wrapped .config-field still fills the card width. */
-.config-field-wrap {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-.config-field-wrap > .config-field--disabled {
-  cursor: not-allowed;
-}
-.config-label {
-  font-size: 13px;
-  color: var(--neutral-200);
-}
-
-.workspace-build-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.workspace-build-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.workspace-build-online {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--neutral-300);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.workspace-build-online:hover:not(:disabled) {
-  color: var(--neutral-100);
-  text-decoration: underline;
-}
-.workspace-build-online:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-.workspace-build-online:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-.workspace-build-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.workspace-build-refresh:hover:not(:disabled) {
-  color: var(--text);
-}
-.workspace-build-refresh:disabled {
-  cursor: wait;
-}
-.workspace-build-refresh__icon--spinning {
-  animation: workspace-build-spin 800ms linear infinite;
-}
-@keyframes workspace-build-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Takes the row's flex 1 so the input and any sibling action button line up. */
-.config-source-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.config-install-meta {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-}
-.config-install-disk {
-  min-width: 0;
-}
-.config-install-separator {
-  flex: 0 0 auto;
-}
-.config-gpu-value {
-  flex: 0 0 auto;
-}
-
-.wizard-build-retry {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.wizard-build-retry:hover:not(:disabled) {
-  text-decoration: underline;
-}
-.config-path-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.config-path-row > .config-path-input,
-.config-path-row > button.brand-tertiary {
-  height: 40px;
-  padding-block: 0;
-  display: flex;
-  align-items: center;
-}
-.config-path-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-inline: 12px;
-}
-/* Path text replaces the old readonly <input>; clicking it opens the selected
- *  install directory in the OS file manager. Inherits .open-folder-link; only
- *  the row-specific sizing/inheritance differ. */
-.config-path-open {
-  flex: 0 1 auto;
-  color: inherit;
-  font: inherit;
-}
-.config-path-open--static {
-  cursor: default;
-}
-.config-path-open--static:hover {
-  color: inherit;
-  text-decoration: none;
-}
-.config-path-row > button.brand-tertiary {
-  padding-inline: 14px;
-  font-size: 13px;
-}
-
-.config-advanced {
-  border-top: 1px solid var(--brand-surface-border);
-  padding-top: var(--takeover-gap-md);
-}
-.config-advanced__wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 280ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.config-advanced.is-open .config-advanced__wrap {
-  grid-template-rows: 1fr;
-}
-.config-advanced__body {
-  min-height: 0;
-  overflow: hidden;
-  padding-inline: 3px;
-  margin-inline: -3px;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition:
-    opacity 220ms ease 60ms,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1) 40ms;
-}
-.config-advanced.is-open .config-advanced__body {
-  margin-top: var(--takeover-gap-md);
-  opacity: 1;
-  transform: translateY(0);
-}
-.config-advanced--direct {
-  border-top: 0;
-  padding-top: 0;
-}
-.config-advanced--direct .config-advanced__wrap {
-  display: block;
-}
-.config-advanced--direct.config-advanced.is-open .config-advanced__body {
-  margin-top: 0;
-}
-
-#source-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-#source-fields > .field {
-  margin-top: 0;
-}
-
-.config-method-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.config-continue {
-  position: absolute;
-  right: clamp(1.25rem, 2vw, 2rem);
-  bottom: clamp(1.25rem, 2vw, 2rem);
-  z-index: 2;
-  min-width: 120px;
 }
 </style>
