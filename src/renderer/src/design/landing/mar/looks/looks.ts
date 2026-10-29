@@ -3,20 +3,16 @@ import { isMariana } from '../proposal'
 import './looks.css'
 
 /**
- * Looks (UI Playground › Look): four treatments of the same product. Type
- * and colour stay exactly Void's; a look changes only composition, image
- * treatment and component treatment. Each is one stylesheet scoped to
- * `:root[data-mar-look='<id>']` (this folder) plus, for some, parts that
- * MarLookFx.vue mounts only while that look is on. Current changes nothing.
+ * Looks (UI Playground › Look): Void as it is, or Grain. Type and colour
+ * stay exactly Void's; Grain changes only the image treatment. Its
+ * stylesheet is scoped to `:root[data-mar-look='grain']`. Current changes
+ * nothing.
  */
-export type MarLook = 'current' | 'liquid' | 'grain' | 'apple' | 'netflix'
+export type MarLook = 'current' | 'grain'
 
 export const LOOKS: { value: MarLook; label: string }[] = [
   { value: 'current', label: 'Current · Void as it is' },
-  { value: 'liquid', label: 'Liquid · frosted panes over moving light' },
-  { value: 'grain', label: 'Grain · film grain and vignette on every picture' },
-  { value: 'apple', label: 'Apple · hairlines, soft depth, more air' },
-  { value: 'netflix', label: 'Netflix · latest output edge to edge, big covers' }
+  { value: 'grain', label: 'Grain · film grain and vignette on every picture' }
 ]
 
 const KEY = 'comfy.design.mar.look'

@@ -14,9 +14,6 @@ importers:
       '@datadog/browser-rum':
         specifier: 6.28.1
         version: 6.28.1
-      '@paper-design/shaders':
-        specifier: 0.0.82
-        version: 0.0.82
       '@todesktop/runtime':
         specifier: ^2.1.3
         version: 2.1.3
@@ -907,9 +904,6 @@ packages:
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
-
-  '@paper-design/shaders@0.0.82':
-    resolution: {integrity: sha512-eCxYQrrCxRVc4KG8sLSQecsq8Ymstbaq/FqZjq/fhOa6UiR1ZZfdMO5IJpHmwL0GYmfzvZVQ4l8ZOLux0uLVdg==}
 
   '@pinia/testing@1.0.3':
     resolution: {integrity: sha512-g+qR49GNdI1Z8rZxKrQC3GN+LfnGTNf5Kk8Nz5Cz6mIGva5WRS+ffPXQfzhA0nu6TveWzPNYTjGl4nJqd3Cu9Q==}
@@ -4634,8 +4628,6 @@ snapshots:
 
   '@opentelemetry/api@1.9.1':
     optional: true
-
-  '@paper-design/shaders@0.0.82': {}
 
   '@pinia/testing@1.0.3(pinia@3.0.4(typescript@5.9.3)(vue@3.5.29(typescript@5.9.3)))':
     dependencies:

@@ -21,7 +21,6 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
-import MarLookFx from './looks/MarLookFx.vue'
 import PabloPortsTuner from './PabloPortsTuner.vue'
 
 /** The UI tuner panel (Prototype menu › UI Playground): whose proposal
@@ -440,6 +439,4 @@ function set(key: keyof Tuning, value: string): void {
       <Button variant="ghost" size="sm" class="self-start" @click="reset">Reset</Button>
     </aside>
   </Teleport>
-  <!-- Look (looks/): the shader and pointer light, only while a look needs them. -->
-  <MarLookFx v-if="isMariana" />
 </template>

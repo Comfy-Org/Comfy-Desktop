@@ -100,7 +100,7 @@ export const PAGES: DsPage[] = [
     label: 'Looks',
     group: 'Put together',
     title: 'Looks',
-    source: 'mar/looks/ (looks.ts, one stylesheet per look, MarLookFx.vue)',
+    source: 'mar/looks/ (looks.ts, grain.css)',
     use: 'To compare a whole visual language; Current is the default.',
     component: lazy(() => import('./pages/LooksPage.vue'))
   },
