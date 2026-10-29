@@ -132,9 +132,6 @@
 /* ── 10. Full-window flows ────────────────────────────────────────── */
 /* Keep the existing composition and artwork, but remove the old plum/yellow
  * palette. No new shell, navigation, form structure or content is introduced. */
-:root.palette-void :is(.brand-progress__caption, .brand-progress__substatus) {
-  text-shadow: 0 1px 2px oklch(0 0 0 / 0.65);
-}
 :root.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
   border-color: var(--color-border);
 }

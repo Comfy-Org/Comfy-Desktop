@@ -164,9 +164,9 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
     })
     .toBe(false)
   await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
-  // Back (the ghost button; Reboot is the primary) returns to the chooser
+  // Back returns to the chooser
   // without a confirm for a finished op.
-  expect(await ctx.panel.click('.brand-progress__error-actions .brand-ghost')).toBe(true)
+  expect(await ctx.panel.click(byTestId(TID.progressBack))).toBe(true)
   await expectChooserVisible(ctx.panel)
 })
 

@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 
 import ProgressModal from './ProgressModal.vue'
 import { useProgressStore } from '../stores/progressStore'
@@ -851,26 +849,13 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
   })
 })
 
-describe('ProgressModal — error message styling (regression for #582)', () => {
-  // jsdom can't compute layout, so parse the .vue `<style>` directly to
-  // assert `.brand-progress__error-message` keeps its `max-height` +
-  // `overflow-y` rules that stop long tracebacks stretching the takeover.
-
-  // Resolved against cwd (not import.meta.url, which jsdom can mangle).
-  const vueSource = readFileSync(path.resolve('src/renderer/src/views/ProgressModal.vue'), 'utf8')
-
-  function extractRule(selector: string): string {
-    // Anchor on a line start so we match the base rule, not a descendant override.
-    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const re = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`)
-    const match = vueSource.match(re)
-    if (!match) throw new Error(`CSS rule for "${selector}" not found in ProgressModal.vue`)
-    return match[1]
-  }
-
-  it('bounds .brand-progress__error-message height so long errors do not stretch the takeover', () => {
-    const body = extractRule('.brand-progress__error-message')
-    expect(body).toMatch(/max-height:/)
-    expect(body).toMatch(/overflow-y:\s*auto/)
+describe('ProgressModal — bounded error details (regression for #582)', () => {
+  it('keeps a long error message inside the bounded scroll region', async () => {
+    const error = 'Traceback detail\n'.repeat(200)
+    const { body } = await mountWithOp('inst-long-error', { finished: true, error })
+    const classes = body.classList('.brand-progress__error-message')
+    expect(classes).toContain('max-h-[clamp(120px,22vh,240px)]')
+    expect(classes).toContain('overflow-y-auto')
+    expect(body.selectorText('.brand-progress__error-message')).toBe(error)
   })
 })

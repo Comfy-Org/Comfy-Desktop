@@ -72,6 +72,7 @@ export const TID = {
   progressErrorMessage: 'progress-error-message',
   progressLogs: 'progress-logs',
   progressReboot: 'progress-reboot',
+  progressBack: 'progress-back',
   /** Rendered in place of the generic error banner when the op returned
    *  `result.portConflict`. */
   progressPortConflictBanner: 'progress-port-conflict-banner',
