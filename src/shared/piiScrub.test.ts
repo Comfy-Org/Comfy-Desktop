@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { normalizeExceptionContext, scrubAll, scrubPII, scrubSecrets } from './piiScrub'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  normalizeExceptionContext,
+  scrubAll,
+  scrubPII,
+  scrubSecrets,
+  setScrubbedHomeDir
+} from './piiScrub'
 
 describe('piiScrub', () => {
   describe('scrubPII', () => {
@@ -21,8 +27,74 @@ describe('piiScrub', () => {
       )
     })
 
+    it('redacts doubled-backslash Windows paths from JSON-escaped text', () => {
+      const stderr = JSON.stringify({ path: 'C:\\Users\\alice\\ComfyUI\\main.py' })
+      expect(stderr).toContain('C:\\\\Users\\\\alice')
+      expect(scrubPII(stderr)).toBe('{"path":"C:\\\\Users\\\\[REDACTED]\\\\ComfyUI\\\\main.py"}')
+    })
+
+    it('redacts doubled-backslash Windows paths from a Python repr', () => {
+      expect(scrubPII("FileNotFoundError: 'D:\\\\Users\\\\alice\\\\models'")).toBe(
+        "FileNotFoundError: 'D:\\\\Users\\\\[REDACTED]\\\\models'"
+      )
+    })
+
+    it.each([
+      ['forward slashes', 'C:/Users/alice/ComfyUI', 'C:/Users/[REDACTED]/ComfyUI'],
+      ['mixed separators', 'C:\\Users/alice\\ComfyUI', 'C:\\Users/[REDACTED]\\ComfyUI'],
+      ['another drive letter', 'e:\\Users\\alice\\x', 'e:\\Users\\[REDACTED]\\x'],
+      ['lowercase users', 'c:\\users\\alice\\x', 'c:\\users\\[REDACTED]\\x'],
+      ['8.3 short name', 'C:\\Users\\ALICEB~1\\AppData', 'C:\\Users\\[REDACTED]\\AppData'],
+      [
+        'legacy profile root',
+        'C:\\Documents and Settings\\alice\\x',
+        'C:\\Documents and Settings\\[REDACTED]\\x'
+      ],
+      ['path ending at the username', 'cwd=C:\\Users\\alice', 'cwd=C:\\Users\\[REDACTED]'],
+      [
+        'JSON-escaped forward slashes',
+        '"\\/Users\\/jane\\/Library"',
+        '"\\/Users\\/[REDACTED]\\/Library"'
+      ],
+      [
+        'doubled-backslash UNC',
+        '\\\\\\\\fileserver\\\\Users\\\\alice\\\\x',
+        '\\\\\\\\fileserver\\\\Users\\\\[REDACTED]\\\\x'
+      ],
+      ['doubled-backslash Linux home', '\\\\home\\\\bob\\\\x', '\\\\home\\\\[REDACTED]\\\\x']
+    ])('redacts Windows user directories with %s', (_label, input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
     it('leaves paths without user segments untouched', () => {
       expect(scrubPII('/opt/comfy/bin/comfyui')).toBe('/opt/comfy/bin/comfyui')
+    })
+  })
+
+  describe('setScrubbedHomeDir', () => {
+    afterEach(() => setScrubbedHomeDir(''))
+
+    it('redacts a relocated profile directory in every separator spelling', () => {
+      setScrubbedHomeDir('D:\\Profiles\\alice')
+      expect(scrubPII('D:\\Profiles\\alice\\ComfyUI')).toBe('D:\\Profiles\\[REDACTED]\\ComfyUI')
+      expect(scrubPII('d:/profiles/ALICE/ComfyUI')).toBe('d:/profiles/[REDACTED]/ComfyUI')
+      expect(scrubPII('"D:\\\\Profiles\\\\alice\\\\x"')).toBe('"D:\\\\Profiles\\\\[REDACTED]\\\\x"')
+      expect(scrubPII("open 'D:\\Profiles\\alice'")).toBe("open 'D:\\Profiles\\[REDACTED]'")
+    })
+
+    it('does not redact a different directory sharing the name as a prefix', () => {
+      setScrubbedHomeDir('D:\\Profiles\\alice')
+      expect(scrubPII('D:\\Profiles\\alicebrown\\x')).toBe('D:\\Profiles\\alicebrown\\x')
+    })
+
+    it('redacts a POSIX home outside /home', () => {
+      setScrubbedHomeDir('/var/lib/alice')
+      expect(scrubPII('cat /var/lib/alice/.config')).toBe('cat /var/lib/[REDACTED]/.config')
+    })
+
+    it('ignores a single-segment home', () => {
+      setScrubbedHomeDir('/root')
+      expect(scrubPII('/root/.cache')).toBe('/root/.cache')
     })
   })
 
