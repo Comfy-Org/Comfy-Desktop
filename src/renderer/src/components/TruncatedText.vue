@@ -14,17 +14,8 @@ const { isTruncated, check } = useTruncation(labelRef)
 
 <template>
   <Tooltip :text="text" :disabled="!isTruncated">
-    <span ref="labelRef" class="truncated-text" @mouseenter="check" @focusin="check">
+    <span ref="labelRef" class="truncated-text block truncate" @mouseenter="check" @focusin="check">
       <slot>{{ text }}</slot>
     </span>
   </Tooltip>
 </template>
-
-<style scoped>
-.truncated-text {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-</style>
