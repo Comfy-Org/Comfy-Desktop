@@ -32,6 +32,7 @@ const props = withDefaults(
 
 const resolvedOpacity = computed<Opacity>(() => props.opacity ?? (props.binding ? 'opaque' : 'dim'))
 
+// Width defaults have zero specificity so contentClass can override them with a utility.
 const emit = defineEmits<{
   close: []
 }>()
@@ -68,23 +69,35 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="inline" class="view-modal-content view-modal-inline" :class="contentClass">
+  <div
+    v-if="inline"
+    data-modal-content="inline"
+    class="mx-[30px] flex h-full max-w-none w-full flex-col overflow-hidden rounded-none border-none bg-[var(--bg)]"
+    :class="contentClass"
+  >
     <slot />
   </div>
   <Teleport v-else to="body">
     <div
       ref="overlayRef"
-      class="view-modal active"
-      :class="{
-        'view-modal--heavy-dim': resolvedOpacity === 'heavy-dim',
-        'view-modal--opaque': resolvedOpacity === 'opaque'
-      }"
+      class="view-modal active fixed inset-0 z-50 flex items-center justify-center"
+      :class="
+        resolvedOpacity === 'heavy-dim'
+          ? 'view-modal--heavy-dim bg-[var(--overlay-bg-heavy)]'
+          : resolvedOpacity === 'opaque'
+            ? 'view-modal--opaque bg-[var(--overlay-bg-opaque)]'
+            : 'bg-[var(--overlay-bg)]'
+      "
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >
       <div
-        class="view-modal-content"
-        :class="[{ 'view-modal-content--regular': width === 'regular' }, contentClass]"
+        :data-modal-content="width"
+        class="mx-[30px] flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)]"
+        :class="[
+          width === 'regular' ? '[:where(&)]:max-w-[600px]' : '[:where(&)]:max-w-[900px]',
+          contentClass
+        ]"
       >
         <slot />
       </div>
