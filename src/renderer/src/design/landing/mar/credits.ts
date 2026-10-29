@@ -11,15 +11,11 @@ export const CREDITS_STYLES: { value: CreditsStyle; label: string }[] = [
 
 const KEY = 'comfy.design.mar.credits'
 
+/** Mar settled on the Row (above the workspace); the tweak is gone, so a
+ *  stored Meter or Chip pick no longer applies. The other styles stay in
+ *  code in case she wants them back. */
 export const creditsStyle = reactive<{ id: CreditsStyle }>({
-  id: (() => {
-    try {
-      const v = localStorage.getItem(KEY)
-      return v === 'meter' || v === 'chip' ? v : 'row'
-    } catch {
-      return 'row'
-    }
-  })()
+  id: 'row'
 })
 
 watch(
