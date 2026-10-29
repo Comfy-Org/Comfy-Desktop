@@ -101,10 +101,6 @@
 /* ── 2. Shared controls ────────────────────────────────────────────── */
 
 /* Switches: white track when on, so the knob turns dark. */
-:root.palette-void .args-page-switch[data-state='checked'] > * {
-  background: var(--color-background);
-  box-shadow: none;
-}
 :root.palette-void input[type='checkbox']:checked::after {
   background: var(--color-background);
 }

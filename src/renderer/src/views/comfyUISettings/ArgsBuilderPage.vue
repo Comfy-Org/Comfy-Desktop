@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTimeoutFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
@@ -24,6 +25,10 @@ interface Props {
    *  apply until a restart; mirrors the tag other settings fields show. */
   pendingRestart?: boolean
 }
+
+// Preserve the clear button’s own sizing inside BaseInput’s trailing slot.
+const searchClearClass =
+  '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-[22px] [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-[120ms] [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:[outline-style:solid] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-[var(--accent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
 
 const props = withDefaults(defineProps<Props>(), {
   pendingRestart: false
@@ -370,27 +375,39 @@ function onRawChange(value: string): void {
 </script>
 
 <template>
-  <div class="args-page">
-    <header class="args-page-header">
-      <button
+  <div class="args-page flex min-w-0 flex-col gap-5 px-1 pt-1 pb-3">
+    <header class="args-page-header flex flex-col items-start gap-2 pb-1">
+      <Button
+        variant="textonly"
+        size="unset"
         type="button"
-        class="args-page-back"
+        class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-[1.5] font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:[transform:scale(0.97)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 focus-visible:ring-0"
         :aria-label="t('common.back', 'Back')"
         @click="emit('back')"
       >
         <ArrowLeft :size="16" />
         <span>{{ t('common.back', 'Back') }}</span>
-      </button>
-      <div class="args-page-title-row">
-        <h2 class="args-page-title">{{ t('comfyUISettings.argsTitle', 'Startup Arguments') }}</h2>
-        <span v-if="pendingRestart" class="args-page-restart-tag" role="status">
+      </Button>
+      <div class="args-page-title-row flex flex-wrap items-center gap-2">
+        <h2
+          class="args-page-title m-0 text-[18px] leading-[1.2] font-semibold tracking-[-0.01em] text-text"
+        >
+          {{ t('comfyUISettings.argsTitle', 'Startup Arguments') }}
+        </h2>
+        <span
+          v-if="pendingRestart"
+          class="args-page-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+          role="status"
+        >
           {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
         </span>
       </div>
     </header>
 
-    <div class="args-page-raw">
-      <label class="args-page-raw-label">{{
+    <div
+      class="args-page-raw flex flex-col gap-1.5 [&_.ui-input-control]:text-[13px] [&_.ui-input-control]:tracking-[-0.01em]"
+    >
+      <label class="args-page-raw-label text-[12px] font-medium text-text-muted">{{
         t('comfyUISettings.argsRawLabel', 'Raw arguments')
       }}</label>
       <ArgsRawInput
@@ -401,13 +418,16 @@ function onRawChange(value: string): void {
         @update:model-value="onRawInput"
         @change="onRawChange"
       />
-      <p class="args-page-raw-hint">
+      <p
+        class="args-page-raw-hint mt-0.5 mr-0 mb-0 ml-0 text-[11px] leading-[1.4] text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]"
+      >
         {{ t('comfyUISettings.argsRawHint', 'Edit directly, or toggle individual flags below.') }}
       </p>
     </div>
 
     <BaseInput
-      class="args-page-search"
+      class="args-page-search [&_.ui-input-leading]:text-[color-mix(in_srgb,var(--text-muted)_75%,transparent)]"
+      :class="searchClearClass"
       :model-value="search"
       :placeholder="t('comfyUISettings.argsSearchPlaceholder', 'Search arguments…')"
       :aria-label="t('comfyUISettings.argsSearchPlaceholder', 'Search arguments')"
@@ -417,28 +437,45 @@ function onRawChange(value: string): void {
         <Search :size="14" />
       </template>
       <template v-if="search.length > 0" #trailing>
-        <button
+        <Button
+          variant="textonly"
+          size="unset"
           type="button"
-          class="args-page-search-clear"
+          class="args-page-search-clear static inline-flex gap-0 rounded-[4px] border-none p-0 font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0"
           :aria-label="t('common.clear', 'Clear')"
           @click="search = ''"
         >
           <X :size="14" />
-        </button>
+        </Button>
       </template>
     </BaseInput>
 
-    <div v-if="loading" class="args-page-state">
-      <Loader2 :size="18" class="args-page-state-spinner" aria-hidden="true" />
-      <p class="args-page-state-text">{{ t('common.loading', 'Loading…') }}</p>
+    <div
+      v-if="loading"
+      class="args-page-state flex flex-col items-center gap-2 px-4 py-6 text-center text-text-muted"
+    >
+      <Loader2
+        :size="18"
+        class="args-page-state-spinner animate-spin [animation-duration:900ms] motion-reduce:[animation-duration:2400ms]"
+        aria-hidden="true"
+      />
+      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
+        {{ t('common.loading', 'Loading…') }}
+      </p>
     </div>
-    <div v-else-if="loadError" class="args-page-state args-page-state-error">
+    <div
+      v-else-if="loadError"
+      class="args-page-state flex flex-col items-center gap-2 px-4 py-6 text-center args-page-state-error text-danger"
+    >
       <AlertCircle :size="18" aria-hidden="true" />
-      <p class="args-page-state-text">{{ loadError }}</p>
+      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">{{ loadError }}</p>
     </div>
-    <div v-else-if="!hasResults" class="args-page-state">
+    <div
+      v-else-if="!hasResults"
+      class="args-page-state flex flex-col items-center gap-2 px-4 py-6 text-center text-text-muted"
+    >
       <SearchX :size="18" aria-hidden="true" />
-      <p class="args-page-state-text">
+      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
         {{ t('comfyUISettings.argsNoMatches', 'No arguments match your search.') }}
       </p>
     </div>
@@ -447,17 +484,30 @@ function onRawChange(value: string): void {
       <section
         v-for="[category, items] in structuredGroups"
         :key="category"
-        class="args-page-category"
+        class="args-page-category flex flex-col gap-1.5 [&+.args-page-category]:mt-3"
       >
-        <header class="args-page-category-title">{{ categoryLabel(category) }}</header>
+        <header
+          class="args-page-category-title mt-0 mr-0 mb-1 ml-0 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase"
+        >
+          {{ categoryLabel(category) }}
+        </header>
 
-        <div v-for="(item, idx) in items" :key="idx" class="args-page-item">
+        <div
+          v-for="(item, idx) in items"
+          :key="idx"
+          class="args-page-item flex min-w-0 flex-col [&+.args-page-item]:mt-0.5"
+        >
           <!-- Exclusive cluster as a compact dropdown; the label lists the members so you can see the choices before opening, and a synthetic "None" option clears the group. -->
           <template v-if="item.kind === 'exclusive' && item.args && item.group">
-            <div class="args-page-cluster">
-              <span class="args-page-cluster-label">
+            <div class="args-page-cluster flex min-w-0 flex-col gap-1">
+              <span
+                class="args-page-cluster-label my-0.5 mx-0 px-0.5 text-[11px] font-medium tracking-[0.06em] text-text-muted uppercase"
+              >
                 {{ t('comfyUISettings.argsExclusiveLabel', 'Choose one') }}:
-                <span class="args-page-cluster-options">{{ clusterSummary(item.args) }}</span>
+                <span
+                  class="args-page-cluster-options [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] normal-case tracking-normal text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]"
+                  >{{ clusterSummary(item.args) }}</span
+                >
               </span>
               <BaseSelect
                 :model-value="activeInGroup(item.group)"
@@ -468,7 +518,7 @@ function onRawChange(value: string): void {
               />
               <BaseInput
                 v-if="activeValueDefInGroup(item.group)"
-                class="args-page-value-input"
+                class="args-page-value-input mt-2"
                 :model-value="getValue(activeValueDefInGroup(item.group)!.name)"
                 :placeholder="
                   activeValueDefInGroup(item.group)!.type === 'multi-value'
@@ -478,7 +528,10 @@ function onRawChange(value: string): void {
                 "
                 @change="(v) => setValue(activeValueDefInGroup(item.group!)!, v)"
               />
-              <p v-if="activeDefInGroup(item.group)?.help" class="args-page-cluster-help">
+              <p
+                v-if="activeDefInGroup(item.group)?.help"
+                class="args-page-cluster-help mt-1.5 mr-0 mb-0 ml-0 text-[12px] leading-[1.45] text-text-muted [overflow-wrap:anywhere]"
+              >
                 {{ activeDefInGroup(item.group)!.help }}
               </p>
             </div>
@@ -486,21 +539,43 @@ function onRawChange(value: string): void {
 
           <!-- Single arg row: switch + flag/help stack, optional value input indented below. -->
           <template v-else-if="item.kind === 'arg' && item.arg">
-            <div class="args-page-arg-row">
-              <button
+            <div
+              class="args-page-arg-row grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2.5 -mx-2.5 rounded-lg px-2.5 py-2 transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"
+            >
+              <Button
+                variant="textonly"
+                size="unset"
                 type="button"
                 role="switch"
-                class="args-page-switch"
+                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                :class="
+                  isActive(item.arg.name)
+                    ? 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary)]'
+                    : 'bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)]'
+                "
                 :data-state="isActive(item.arg.name) ? 'checked' : 'unchecked'"
                 :aria-checked="isActive(item.arg.name)"
                 :aria-label="`--${item.arg.name}`"
                 @click="toggleFlag(item.arg)"
               >
-                <span class="args-page-switch-thumb" aria-hidden="true"></span>
-              </button>
-              <div class="args-page-arg-body">
-                <span class="args-page-flag">--{{ item.arg.name }}</span>
-                <p class="args-page-help">{{ item.arg.help }}</p>
+                <span
+                  class="args-page-switch-thumb absolute top-0.5 left-0.5 size-4 rounded-[50%] transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:duration-0"
+                  :class="
+                    isActive(item.arg.name)
+                      ? '[transform:translateX(16px)] bg-background shadow-none'
+                      : '[transform:translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
+                  "
+                  aria-hidden="true"
+                ></span>
+              </Button>
+              <div class="args-page-arg-body flex min-w-0 flex-col gap-0.5">
+                <span
+                  class="args-page-flag [font:13px_ui-monospace,SFMono-Regular,Menlo,monospace] text-text [overflow-wrap:anywhere] [word-break:break-word]"
+                  >--{{ item.arg.name }}</span
+                >
+                <p class="args-page-help m-0 text-[12px] leading-[1.45] text-text-muted">
+                  {{ item.arg.help }}
+                </p>
                 <BaseInput
                   v-if="
                     isActive(item.arg.name) &&
@@ -508,7 +583,7 @@ function onRawChange(value: string): void {
                       item.arg.type === 'optional-value' ||
                       item.arg.type === 'multi-value')
                   "
-                  class="args-page-value-input"
+                  class="args-page-value-input mt-2"
                   :model-value="getValue(item.arg.name)"
                   :placeholder="
                     item.arg.type === 'multi-value'
@@ -528,338 +603,3 @@ function onRawChange(value: string): void {
     </template>
   </div>
 </template>
-
-<style scoped>
-.args-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 4px 4px 12px;
-  min-width: 0;
-}
-
-.args-page-header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding-bottom: 4px;
-}
-
-.args-page-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 8px;
-  margin-left: -4px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 6px;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease,
-    transform 80ms ease;
-}
-
-.args-page-back:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-.args-page-back:active {
-  transform: scale(0.97);
-}
-
-.args-page-back:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.args-page-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.args-page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-}
-
-/* Mirrors SettingsSectionList's restart tag so the args page reads as the same family. */
-.args-page-restart-tag {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning) 36%, transparent);
-  white-space: nowrap;
-}
-
-.args-page-raw {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.args-page-raw-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.args-page-raw :deep(.ui-input-control) {
-  font-size: 13px;
-  letter-spacing: -0.01em;
-}
-
-.args-page-raw-hint {
-  margin: 2px 0 0;
-  font-size: 11px;
-  line-height: 1.4;
-  color: color-mix(in srgb, var(--text-muted) 80%, transparent);
-}
-
-.args-page-search :deep(.ui-input-leading) {
-  color: color-mix(in srgb, var(--text-muted) 75%, transparent);
-}
-
-.args-page-search-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  border-radius: 4px;
-  cursor: pointer;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
-}
-
-.args-page-search-clear:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.args-page-search-clear:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.args-page-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 24px 16px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.args-page-state-text {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.args-page-state-error {
-  color: var(--danger);
-}
-
-.args-page-state-spinner {
-  animation: args-page-spin 900ms linear infinite;
-}
-
-@keyframes args-page-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .args-page-state-spinner {
-    animation-duration: 2400ms;
-  }
-}
-
-.args-page-category {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.args-page-category + .args-page-category {
-  margin-top: 12px;
-}
-
-.args-page-category-title {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.args-page-item {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.args-page-item + .args-page-item {
-  margin-top: 2px;
-}
-
-/* Switch in column 1, flag + help + value stacked in column 2. */
-.args-page-arg-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px 12px;
-  align-items: start;
-  padding: 8px 10px;
-  margin: 0 -10px;
-  border-radius: 8px;
-  transition: background-color 120ms ease;
-}
-
-.args-page-arg-row:hover {
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-}
-
-.args-page-arg-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.args-page-flag {
-  font:
-    13px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  color: var(--text);
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.args-page-help {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.args-page-value-input {
-  margin-top: 8px;
-}
-
-/* Matches the BooleanToggle primitive so the inner page reads as the same family. */
-.args-page-switch {
-  flex-shrink: 0;
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-  margin-top: 2px;
-  padding: 0;
-  background-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background-color 200ms ease;
-}
-
-.args-page-switch[data-state='checked'] {
-  background-color: var(--accent-primary);
-}
-
-.args-page-switch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.args-page-switch-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: #ffffff;
-  border-radius: 50%;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.2),
-    0 1px 1px rgba(0, 0, 0, 0.08);
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  transform: translateX(0);
-}
-
-.args-page-switch[data-state='checked'] .args-page-switch-thumb {
-  transform: translateX(16px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .args-page-switch,
-  .args-page-switch-thumb {
-    transition-duration: 0ms;
-  }
-}
-
-/* "Choose one" cluster: label (with member preview) above a compact dropdown. */
-.args-page-cluster {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.args-page-cluster-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin: 2px 0 2px;
-  padding: 0 2px;
-}
-
-/* Member preview: monospaced and slightly dimmer so it reads as the option list. */
-.args-page-cluster-options {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  text-transform: none;
-  letter-spacing: 0;
-  color: color-mix(in srgb, var(--text-muted) 85%, transparent);
-}
-
-/* Full help text for the selected cluster member; wraps freely (no clamping). */
-.args-page-cluster-help {
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-</style>
