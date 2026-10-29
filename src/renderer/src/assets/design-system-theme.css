@@ -37,6 +37,8 @@
   --color-subtle-foreground: oklch(0.6 0.008 285);
   --color-border-strong: oklch(1 0 0 / 0.14);
   --color-media-overlay: oklch(0 0 0 / 0.55);
+  --color-snapshot-chip: #202020;
+  --color-snapshot-ring: #262729;
 
   --text-ui: 13px;
   --text-ui--line-height: 20px;

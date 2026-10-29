@@ -41,10 +41,8 @@
  * from the Tailwind aliases, which follow the active theme. Remove each one
  * when its remaining consumers migrate to the design system. */
 :root {
-  --legacy-color-bg: #202020;
   --legacy-color-text: #ffffff;
   --legacy-color-text-muted: #8a8a8a;
-  --legacy-color-surface: #262729;
 }
 
 /* Theme definitions — matched to ComfyUI frontend design system */
