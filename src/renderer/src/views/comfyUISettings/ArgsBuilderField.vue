@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { Settings } from 'lucide-vue-next'
 import ArgsRawInput from './ArgsRawInput.vue'
 import BetaArgsPill from './BetaArgsPill.vue'
@@ -88,13 +89,16 @@ function handleChange(value: string): void {
         :args-value="stringValue"
         :schema-version="schemaVersion"
       />
-      <button
+      <Button
         type="button"
+        variant="textonly"
+        size="unset"
+        class="appearance-auto focus-visible:ring-0"
         :aria-label="t('comfyUISettings.configureArgs', 'Configure arguments')"
         @click="handleEdit"
       >
         <Settings :size="14" />
-      </button>
+      </Button>
     </template>
   </ArgsRawInput>
 </template>

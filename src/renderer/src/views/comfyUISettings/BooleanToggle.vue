@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import type { DetailField } from '../../types/ipc'
 
 /**
@@ -51,10 +52,12 @@ function handleClick(): void {
 </script>
 
 <template>
-  <button
+  <Button
     type="button"
     role="switch"
-    class="bt-switch"
+    variant="textonly"
+    size="unset"
+    class="bt-switch inline-flex shrink-0 items-center rounded-lg border-none bg-transparent p-0 hover:bg-transparent appearance-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-[0.45] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
     :data-state="visualOn ? 'checked' : 'unchecked'"
     :aria-checked="visualOn"
     :aria-label="field.label"
@@ -63,86 +66,24 @@ function handleClick(): void {
     :title="blockedReason"
     @click="handleClick"
   >
-    <span class="bt-track" :aria-hidden="true">
-      <span class="bt-thumb"></span>
+    <span
+      class="bt-track relative inline-block h-5 w-9 rounded-[999px] transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0"
+      :class="visualOn ? 'bg-[var(--accent-primary)]' : 'bg-[oklch(1_0_0/0.14)]'"
+      :aria-hidden="true"
+    >
+      <span
+        class="bt-thumb absolute top-0.5 left-0.5 size-4 rounded-full transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:duration-0"
+        :class="
+          visualOn
+            ? '[transform:translateX(16px)] bg-background shadow-none'
+            : '[transform:translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
+        "
+      ></span>
     </span>
     <!-- `title` is mouse-only, so the reason is repeated here for the accessibility tree.
          `aria-label` above owns the accessible NAME, so this text cannot leak into it. -->
-    <span v-if="blocked && blockedReason" :id="descriptionId" class="bt-blocked-reason">
+    <span v-if="blocked && blockedReason" :id="descriptionId" class="bt-blocked-reason sr-only">
       {{ blockedReason }}
     </span>
-  </button>
+  </Button>
 </template>
-
-<style scoped>
-.bt-switch {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-/* Keys on aria-disabled, not :disabled — the control stays focusable, so the native
-   pseudo-class no longer matches and the blocked state would otherwise look enabled. */
-.bt-switch[aria-disabled='true'] {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-/* Reachable by screen readers via aria-describedby, without adding visible copy to a row
-   whose blocked state is already conveyed by the dimming and the tooltip. */
-.bt-blocked-reason {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.bt-track {
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-  border-radius: 999px;
-  background-color: rgba(120, 120, 128, 0.32);
-  transition: background-color 200ms ease;
-}
-
-.bt-switch[data-state='checked'] .bt-track {
-  background-color: var(--accent-primary);
-}
-
-.bt-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: #ffffff;
-  border-radius: 50%;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.2),
-    0 1px 1px rgba(0, 0, 0, 0.08);
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  transform: translateX(0);
-}
-
-.bt-switch[data-state='checked'] .bt-thumb {
-  transform: translateX(16px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bt-track,
-  .bt-thumb {
-    transition-duration: 0ms;
-  }
-}
-</style>

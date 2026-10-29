@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { FolderOpen } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import StorageDirRow from './StorageDirRow.vue'
@@ -56,9 +57,16 @@ function handleOpen(): void {
     @change="handleChange"
   >
     <template #trailing>
-      <button type="button" :aria-label="t('common.browse', 'Browse')" @click="handleBrowse">
+      <Button
+        type="button"
+        variant="textonly"
+        size="unset"
+        class="appearance-auto focus-visible:ring-0"
+        :aria-label="t('common.browse', 'Browse')"
+        @click="handleBrowse"
+      >
         <FolderOpen :size="14" />
-      </button>
+      </Button>
     </template>
   </BaseInput>
 </template>
