@@ -27,8 +27,6 @@ const trackStyle = computed(() => ({
   transform: `translateY(${(Math.floor(VISIBLE_ROWS / 2) - activeIndex.value) * ROW_H}px)`
 }))
 
-const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
-
 function rowOpacity(index: number): number {
   const dist = Math.abs(index - activeIndex.value)
   if (dist === 0) return 1
@@ -40,8 +38,7 @@ function rowOpacity(index: number): number {
 <template>
   <div
     v-if="steps.length"
-    class="bpv relative mx-auto w-full max-w-[38rem] overflow-hidden [mask-image:linear-gradient(to_bottom,transparent_0%,#000_18%,#000_82%,transparent_100%)]"
-    :style="viewportStyle"
+    class="bpv relative mx-auto h-[138px] w-full max-w-[38rem] overflow-hidden [mask-image:linear-gradient(to_bottom,transparent_0%,#000_18%,#000_82%,transparent_100%)]"
     aria-live="polite"
   >
     <ul
