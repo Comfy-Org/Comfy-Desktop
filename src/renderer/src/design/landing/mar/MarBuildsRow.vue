@@ -24,7 +24,11 @@ const shown = computed(() => recentInstances.value.slice(0, 3))
         >
       </template>
     </SectionHeader>
-    <div class="grid grid-cols-3 gap-3.5">
+    <!-- One, two or three builds always fill the row. -->
+    <div
+      class="grid gap-3.5"
+      :style="{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }"
+    >
       <Card
         v-for="i in shown"
         :key="i.id"
