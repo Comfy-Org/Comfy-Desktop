@@ -538,6 +538,10 @@ describe('keepableAgent', () => {
       keepableAgent(CORE, withGo('0.1.0rc6'), { ...goFailed, startFailures: 0 }),
       'it only failed to install'
     ).toBe('comfy-agent==0.1.0rc5')
+    expect(
+      keepableAgent(CORE, withGo('0.1.0rc6+local'), goFailed),
+      'a local carrier build is not the failed pin, and must not throw'
+    ).toBe('comfy-agent==0.1.0rc5')
     const olderFailed = { signature: 'comfy-agent-go==0.1.0rc4', failures: 2, startFailures: 2 }
     expect(
       keepableAgent(CORE, withGo('0.1.0rc4'), olderFailed),

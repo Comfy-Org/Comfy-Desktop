@@ -653,7 +653,13 @@ export async function installedWorkingAgent(
   const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => null)
   if (coreText === null || !corePinsPlaceholderAgent(coreText)) return null
   const listed = await listInstalled(plan, signal)
-  return listed === null ? null : keepableAgent(coreText, listed, state)
+  if (listed === null) return null
+  try {
+    return keepableAgent(coreText, listed, state)
+  } catch {
+    // Keeping is an optimisation: a version shape it can't read must never stop the launch.
+    return null
+  }
 }
 
 async function checkCache(

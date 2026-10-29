@@ -445,8 +445,11 @@ export function keepableAgent(
   if (failed !== undefined && sameVersion(version, failed)) return null
   const failedGo = failedPin(state, SIGNATURE_AGENT_GO)
   const go = installed.find((p) => normalizePackageName(p.name) === AGENT_GO)?.version
+  // An installed carrier with a local label (`+cu`) can't be ordered: assume the agent may run it.
   const runsGo =
-    go !== undefined && !agentGoBehindAgent(new Map([[AGENT_GO, go]]), coreText, pipListOutput)
+    go !== undefined &&
+    (!EXACT_VERSION.test(go) ||
+      !agentGoBehindAgent(new Map([[AGENT_GO, go]]), coreText, pipListOutput))
   if (failedGo !== undefined && runsGo && sameVersion(go, failedGo)) return null
   return `${name}==${version}`
 }
