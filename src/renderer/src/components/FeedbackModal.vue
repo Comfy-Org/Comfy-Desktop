@@ -82,16 +82,21 @@ onBeforeUnmount(() => {
     :open="open"
     size="xl"
     :aria-label="t('feedback.modalLabel', 'Send Feedback')"
-    content-class="feedback-modal-panel"
+    content-class="feedback-modal-panel [&.base-modal-panel]:min-h-0 [&_.base-modal-body]:overflow-hidden [&_.base-modal-body]:p-0"
     @close="onClose"
   >
-    <div class="feedback-modal-body">
-      <div v-if="loading" class="feedback-modal-loading" role="status" aria-live="polite">
+    <div class="feedback-modal-body relative h-[clamp(520px,76vh,820px)] w-full overflow-hidden">
+      <div
+        v-if="loading"
+        class="feedback-modal-loading pointer-events-none absolute inset-0 grid place-items-center text-[13px] text-[color:color-mix(in_oklab,var(--neutral-100,#fff)_65%,transparent)]"
+        role="status"
+        aria-live="polite"
+      >
         {{ t('feedback.loading', 'Loading feedback form…') }}
       </div>
       <iframe
         v-if="open && url"
-        class="feedback-modal-frame"
+        class="feedback-modal-frame absolute inset-0 size-full border-0 bg-transparent"
         :src="url"
         :title="t('feedback.modalLabel', 'Send Feedback')"
         loading="eager"
@@ -101,43 +106,3 @@ onBeforeUnmount(() => {
     </div>
   </BaseModal>
 </template>
-
-<style scoped>
-/* The typeform page is dark, so let the BaseModal's default dark chrome
- * show through — the previous white override left the close X invisible
- * against the dark form. Only the body padding override remains so the
- * iframe sits flush against the panel edge. */
-:global(.base-modal-panel.feedback-modal-panel) {
-  min-height: 0;
-}
-:global(.feedback-modal-panel .base-modal-body) {
-  padding: 0;
-  overflow: hidden;
-}
-
-.feedback-modal-body {
-  position: relative;
-  width: 100%;
-  height: clamp(520px, 76vh, 820px);
-  overflow: hidden;
-}
-
-.feedback-modal-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: transparent;
-}
-
-.feedback-modal-loading {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  color: color-mix(in oklab, var(--neutral-100, #fff) 65%, transparent);
-  pointer-events: none;
-}
-</style>
