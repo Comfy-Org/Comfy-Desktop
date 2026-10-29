@@ -3,6 +3,7 @@
 // ComfyUISettingsPanel) reaches functional parity and ships everywhere.
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import { useActionGuard } from '../composables/useActionGuard'
 import { ChevronDown } from 'lucide-vue-next'
@@ -120,6 +121,29 @@ watch(
   },
   { immediate: true }
 )
+
+function triggerTone(trigger: string, background = false): string {
+  const colors = background
+    ? {
+        muted: 'bg-text-muted',
+        success: 'bg-[var(--success)]',
+        warning: 'bg-[var(--warning)]',
+        info: 'bg-[var(--info)]',
+        fallback: 'bg-[var(--text-faint)]'
+      }
+    : {
+        muted: 'text-text-muted',
+        success: 'text-[var(--success)]',
+        warning: 'text-[var(--warning)]',
+        info: 'text-[var(--info)]',
+        fallback: ''
+      }
+  if (trigger === 'boot' || trigger === 'copy') return colors.muted
+  if (trigger === 'manual' || trigger === 'pre-update') return colors.success
+  if (trigger === 'post-update' || trigger === 'post-restore') return colors.warning
+  if (trigger === 'restart') return colors.info
+  return colors.fallback
+}
 
 const triggerLabel = (trigger: string): string => _triggerLabel(trigger, t)
 const formatRelative = (iso: string): string => _formatRelative(iso, t)
@@ -378,132 +402,219 @@ async function confirmImportPreview(): Promise<void> {
 </script>
 
 <template>
-  <div class="snapshot-tab">
-    <div v-if="!loading && snapshots.length === 0" class="snapshot-empty">
+  <div class="snapshot-tab py-2">
+    <div
+      v-if="!loading && snapshots.length === 0"
+      class="snapshot-empty px-5 py-10 text-center text-[14px] text-text-muted"
+    >
       {{ t('snapshots.empty') }}
     </div>
 
-    <div v-if="snapshots.length > 0 || !loading" class="snapshot-header">
-      <button class="snapshot-save-btn" @click="saveSnapshot">
+    <div
+      v-if="snapshots.length > 0 || !loading"
+      class="snapshot-header flex justify-end gap-2 px-1 pt-0 pb-3"
+    >
+      <Button
+        variant="textonly"
+        size="unset"
+        class="snapshot-save-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text"
+        @click="saveSnapshot"
+      >
         {{ t('snapshots.createSnapshot') }}
-      </button>
-      <button class="snapshot-header-btn" @click="handleImport">
+      </Button>
+      <Button
+        variant="textonly"
+        size="unset"
+        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-muted"
+        @click="handleImport"
+      >
         {{ t('snapshots.importSnapshots') }}
-      </button>
-      <button v-if="snapshots.length > 0" class="snapshot-header-btn" @click="handleExportAll">
+      </Button>
+      <Button
+        v-if="snapshots.length > 0"
+        variant="textonly"
+        size="unset"
+        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-muted"
+        @click="handleExportAll"
+      >
         {{ t('snapshots.exportAllSnapshots') }}
-      </button>
+      </Button>
     </div>
 
-    <div v-if="loading" class="snapshot-loading with-spinner">{{ t('common.loading') }}</div>
+    <div
+      v-if="loading"
+      class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+    >
+      {{ t('common.loading') }}
+    </div>
 
-    <div v-if="!loading && snapshots.length > 0" class="snapshot-timeline">
+    <div v-if="!loading && snapshots.length > 0" class="snapshot-timeline flex flex-col">
       <template
         v-for="(item, index) in timelineItems"
         :key="
           item.kind === 'snapshot' ? item.snapshot.filename : `copy-${item.event.installationId}`
         "
       >
-        <div v-if="item.kind === 'copy'" class="timeline-entry">
-          <div class="timeline-gutter">
-            <div class="timeline-line timeline-line-top" :class="{ invisible: index === 0 }" />
-            <div class="timeline-dot trigger-copy" />
+        <div
+          v-if="item.kind === 'copy'"
+          class="timeline-entry grid grid-cols-[24px_1fr] gap-x-2.5 gap-y-0"
+        >
+          <div class="timeline-gutter col-start-1 row-start-1 flex flex-col items-center">
             <div
-              class="timeline-line-rest"
+              class="timeline-line w-0.5 bg-[var(--border)] timeline-line-top h-4 shrink-0"
+              :class="{ invisible: index === 0 }"
+            />
+            <div
+              class="timeline-dot box-content size-2.5 shrink-0 rounded-full border-2 border-solid border-[var(--surface)] trigger-copy bg-text-muted"
+            />
+            <div
+              class="timeline-line-rest w-0.5 flex-1 bg-[var(--border)]"
               :class="{ invisible: index === timelineItems.length - 1 }"
             />
           </div>
-          <div class="timeline-content">
-            <div class="timeline-copy-card">
-              <span class="timeline-trigger trigger-copy">{{
-                copyReasonLabel(item.event.copyReason)
-              }}</span>
-              <button
+          <div class="timeline-content col-start-2 row-start-1 min-w-0">
+            <div
+              class="timeline-copy-card mb-1.5 flex items-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-[12px]"
+            >
+              <span
+                class="timeline-trigger rounded-[3px] bg-[var(--bg)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.3px] trigger-copy text-text-muted"
+                >{{ copyReasonLabel(item.event.copyReason) }}</span
+              >
+              <Button
                 v-if="item.event.exists"
-                class="timeline-copy-name clickable"
+                variant="textonly"
+                size="unset"
+                class="timeline-copy-name clickable static inline-block min-w-0 truncate rounded-lg border-none bg-transparent p-0 [font:inherit] text-[var(--accent)] appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] hover:bg-transparent hover:underline"
                 @click="emit('navigate-installation', item.event.installationId)"
               >
                 {{ item.event.installationName }}
-              </button>
-              <span v-else class="timeline-copy-name">{{ item.event.installationName }}</span>
-              <span class="timeline-time" :title="formatDate(item.event.copiedAt)">{{
-                formatRelative(item.event.copiedAt)
+              </Button>
+              <span v-else class="timeline-copy-name min-w-0 truncate text-text-muted">{{
+                item.event.installationName
               }}</span>
+              <span
+                class="timeline-time ml-auto text-[12px] text-text-muted"
+                :title="formatDate(item.event.copiedAt)"
+                >{{ formatRelative(item.event.copiedAt) }}</span
+              >
             </div>
           </div>
         </div>
 
         <div
           v-else
-          class="timeline-entry"
+          class="timeline-entry grid grid-cols-[24px_1fr] gap-x-2.5 gap-y-0"
           :class="{ selected: selectedFilename === item.snapshot.filename }"
         >
-          <div class="timeline-gutter">
-            <div class="timeline-line timeline-line-top" :class="{ invisible: index === 0 }" />
-            <div class="timeline-dot" :class="triggerClass(item.snapshot.trigger)" />
+          <div class="timeline-gutter col-start-1 row-start-1 flex flex-col items-center">
             <div
-              class="timeline-line-rest"
+              class="timeline-line w-0.5 bg-[var(--border)] timeline-line-top h-4 shrink-0"
+              :class="{ invisible: index === 0 }"
+            />
+            <div
+              class="timeline-dot box-content size-2.5 shrink-0 rounded-full border-2 border-solid border-[var(--surface)]"
+              :class="[
+                triggerClass(item.snapshot.trigger),
+                triggerTone(item.snapshot.trigger, true)
+              ]"
+            />
+            <div
+              class="timeline-line-rest w-0.5 flex-1 bg-[var(--border)]"
               :class="{ invisible: index === timelineItems.length - 1 }"
             />
           </div>
 
-          <div class="timeline-content">
-            <div class="timeline-card" @click="selectSnapshot(item.snapshot.filename)">
-              <div class="timeline-card-header">
-                <span class="timeline-trigger" :class="triggerClass(item.snapshot.trigger)">{{
-                  triggerLabel(item.snapshot.trigger)
-                }}</span>
-                <span v-if="item.snapshotIndex === 0" class="timeline-current-tag">{{
-                  t('snapshots.current')
-                }}</span>
-                <span class="timeline-time" :title="formatDate(item.snapshot.createdAt)">{{
-                  formatRelative(item.snapshot.createdAt)
-                }}</span>
+          <div class="timeline-content col-start-2 row-start-1 min-w-0">
+            <div
+              :class="
+                selectedFilename === item.snapshot.filename
+                  ? 'selected mb-0 rounded-t-lg border-[var(--selected)] border-b-transparent'
+                  : 'mb-1.5 rounded-lg border-[var(--border)] hover:border-[var(--border-hover)]'
+              "
+              class="timeline-card group/card cursor-pointer border border-solid bg-[var(--surface)] px-3.5 py-2.5 transition-[border-color] duration-150 ease-[ease]"
+              @click="selectSnapshot(item.snapshot.filename)"
+            >
+              <div class="timeline-card-header mb-1 flex items-center gap-2">
+                <span
+                  class="timeline-trigger rounded-[3px] bg-[var(--bg)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.3px]"
+                  :class="[triggerClass(item.snapshot.trigger), triggerTone(item.snapshot.trigger)]"
+                  >{{ triggerLabel(item.snapshot.trigger) }}</span
+                >
+                <span
+                  v-if="item.snapshotIndex === 0"
+                  class="timeline-current-tag rounded-[3px] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold text-[var(--accent)]"
+                  >{{ t('snapshots.current') }}</span
+                >
+                <span
+                  class="timeline-time ml-auto text-[12px] text-text-muted"
+                  :title="formatDate(item.snapshot.createdAt)"
+                  >{{ formatRelative(item.snapshot.createdAt) }}</span
+                >
               </div>
-              <div v-if="isDisplayableLabel(item.snapshot.label)" class="timeline-label">
+              <div
+                v-if="isDisplayableLabel(item.snapshot.label)"
+                class="timeline-label mb-1 text-[13px] font-medium text-text"
+              >
                 {{ item.snapshot.label }}
               </div>
-              <div class="timeline-card-body">
-                <div class="timeline-meta">
+              <div class="timeline-card-body flex items-center gap-2">
+                <div
+                  class="timeline-meta flex min-w-0 flex-1 items-center gap-1 text-[12px] text-text-muted"
+                >
                   <span>{{ item.snapshot.comfyuiVersion }}</span>
-                  <span class="timeline-meta-sep">·</span>
+                  <span class="timeline-meta-sep text-text-muted">·</span>
                   <span>{{ t('snapshots.nodesCount', { count: item.snapshot.nodeCount }) }}</span>
-                  <span class="timeline-meta-sep">·</span>
+                  <span class="timeline-meta-sep text-text-muted">·</span>
                   <span>{{
                     t('snapshots.packagesCount', { count: item.snapshot.pipPackageCount })
                   }}</span>
                 </div>
-                <button
+                <Button
                   v-if="item.snapshotIndex > 0"
-                  class="timeline-action-btn timeline-restore-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="timeline-action-btn timeline-restore-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--accent)]"
+                  :class="selectedFilename === item.snapshot.filename ? 'opacity-100' : 'opacity-0'"
                   @click.stop="handleRestore(item.snapshot.filename)"
                 >
                   {{ t('snapshots.restore') }}
-                </button>
-                <button
-                  class="timeline-action-btn timeline-export-btn"
+                </Button>
+                <Button
+                  variant="textonly"
+                  size="unset"
+                  class="timeline-action-btn timeline-export-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--accent)]"
+                  :class="selectedFilename === item.snapshot.filename ? 'opacity-100' : 'opacity-0'"
                   @click.stop="handleExport(item.snapshot.filename)"
                 >
                   {{ t('snapshots.exportSnapshot') }}
-                </button>
-                <button
+                </Button>
+                <Button
                   v-if="item.snapshot.trigger === 'manual'"
-                  class="timeline-action-btn timeline-delete-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="timeline-action-btn timeline-delete-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-1.5 py-[3px] text-[11px] font-normal leading-none whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-transparent hover:text-danger hover:border-[var(--danger)]"
+                  :class="selectedFilename === item.snapshot.filename ? 'opacity-100' : 'opacity-0'"
                   @click.stop="handleDelete(item.snapshot.filename)"
                 >
                   ✕
-                </button>
+                </Button>
                 <ChevronDown
                   :size="14"
-                  class="timeline-expand-icon"
-                  :class="{ expanded: selectedFilename === item.snapshot.filename }"
+                  class="timeline-expand-icon ml-auto shrink-0 text-text-muted transition-transform duration-150 ease-[ease]"
+                  :class="{
+                    'expanded [transform:rotate(180deg)]':
+                      selectedFilename === item.snapshot.filename
+                  }"
                 />
               </div>
-              <div v-if="changeSummary(item.snapshot).length > 0" class="timeline-changes">
+              <div
+                v-if="changeSummary(item.snapshot).length > 0"
+                class="timeline-changes mt-1.5 flex flex-wrap gap-1.5"
+              >
                 <span
                   v-for="part in changeSummary(item.snapshot)"
                   :key="part"
-                  class="timeline-change-badge"
+                  class="timeline-change-badge rounded-[3px] bg-[var(--bg)] px-1.5 py-px text-[11px] text-text-muted"
                   >{{ part }}</span
                 >
               </div>
@@ -543,335 +654,3 @@ async function confirmImportPreview(): Promise<void> {
     />
   </div>
 </template>
-
-<style scoped>
-.snapshot-tab {
-  padding: 8px 0;
-}
-
-.snapshot-header {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 4px 12px;
-}
-
-.snapshot-save-btn {
-  padding: 6px 16px;
-  font-size: 13px;
-  border-radius: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.snapshot-save-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.snapshot-header-btn {
-  padding: 6px 16px;
-  font-size: 13px;
-  border-radius: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.snapshot-header-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.snapshot-empty {
-  text-align: center;
-  color: var(--text-muted);
-  padding: 40px 20px;
-  font-size: 14px;
-}
-
-.snapshot-loading {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 16px 0;
-}
-
-/* Timeline */
-.snapshot-timeline {
-  display: flex;
-  flex-direction: column;
-}
-
-.timeline-entry {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 0 10px;
-}
-
-.timeline-gutter {
-  grid-column: 1;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.timeline-content {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-}
-
-.timeline-line {
-  width: 2px;
-  background: var(--border);
-}
-.timeline-line-top {
-  width: 2px;
-  height: 16px;
-  background: var(--border);
-  flex-shrink: 0;
-}
-.timeline-line-rest {
-  width: 2px;
-  flex: 1;
-  background: var(--border);
-}
-.timeline-line.invisible,
-.timeline-line-top.invisible,
-.timeline-line-rest.invisible {
-  visibility: hidden;
-}
-
-.timeline-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-faint);
-  border: 2px solid var(--surface);
-  box-sizing: content-box;
-}
-.timeline-dot.trigger-boot {
-  background: var(--text-muted);
-}
-.timeline-dot.trigger-manual {
-  background: var(--success);
-}
-.timeline-dot.trigger-preupdate {
-  background: var(--success);
-}
-.timeline-dot.trigger-postupdate {
-  background: var(--warning);
-}
-.timeline-dot.trigger-postrestore {
-  background: var(--warning);
-}
-.timeline-dot.trigger-restart {
-  background: var(--info);
-}
-.timeline-dot.trigger-copy {
-  background: var(--text-muted);
-}
-
-.timeline-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.timeline-card:hover {
-  border-color: var(--border-hover);
-}
-.timeline-entry.selected .timeline-card {
-  border-color: var(--selected);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom-color: transparent;
-  margin-bottom: 0;
-}
-
-.timeline-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.timeline-trigger {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--bg);
-}
-.timeline-trigger.trigger-boot {
-  color: var(--text-muted);
-}
-.timeline-trigger.trigger-manual {
-  color: var(--success);
-}
-.timeline-trigger.trigger-preupdate {
-  color: var(--success);
-}
-.timeline-trigger.trigger-postupdate {
-  color: var(--warning);
-}
-.timeline-trigger.trigger-postrestore {
-  color: var(--warning);
-}
-.timeline-trigger.trigger-restart {
-  color: var(--info);
-}
-.timeline-trigger.trigger-copy {
-  color: var(--text-muted);
-}
-
-.timeline-copy-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  margin-bottom: 6px;
-  border-radius: 8px;
-  border: 1px dashed var(--border);
-  background: var(--surface);
-  font-size: 12px;
-}
-
-.timeline-copy-name {
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.timeline-copy-name.clickable {
-  background: none;
-  border: none;
-  font: inherit;
-  color: var(--accent);
-  cursor: pointer;
-  padding: 0;
-  text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.timeline-copy-name.clickable:hover {
-  text-decoration: underline;
-}
-
-.timeline-current-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-}
-
-.timeline-time {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
-.timeline-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.timeline-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-
-.timeline-meta-sep {
-  color: var(--text-muted);
-}
-
-.timeline-changes {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.timeline-change-badge {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-.timeline-card-body {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.timeline-action-btn {
-  padding: 3px 10px;
-  font-size: 11px;
-  border-radius: 4px;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.timeline-card:hover .timeline-action-btn,
-.timeline-entry.selected .timeline-action-btn,
-.timeline-action-btn:focus-visible {
-  opacity: 1;
-}
-.timeline-restore-btn:hover,
-.timeline-export-btn:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-.timeline-delete-btn {
-  padding: 3px 6px;
-  border-color: transparent;
-  line-height: 1;
-}
-.timeline-delete-btn:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.timeline-expand-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  margin-left: auto;
-  transition: transform 0.15s;
-}
-.timeline-expand-icon.expanded {
-  transform: rotate(180deg);
-}
-.timeline-card:hover .timeline-expand-icon {
-  color: var(--text-muted);
-}
-</style>

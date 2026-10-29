@@ -1860,21 +1860,7 @@ button.add-btn {
   cursor: pointer;
 }
 
-/* Snapshot detail layout (ls- prefix) — used by LoadSnapshotModal, ImportPreviewModal, ModalDialog, SnapshotTab */
-.ls-section {
-  margin-bottom: 16px;
-}
-.ls-section:last-child {
-  margin-bottom: 0;
-}
-.ls-section-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  margin-bottom: 8px;
-}
+/* Snapshot layout still shared by the load, import-preview, and legacy dialogs. */
 .ls-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1895,9 +1881,6 @@ button.add-btn {
   font-size: 14px;
   color: var(--text);
   user-select: text;
-}
-.ls-value-loading {
-  color: var(--text-muted);
 }
 .ls-timeline {
   display: flex;
