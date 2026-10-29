@@ -332,7 +332,9 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
     productEvent('thread_id turn_id workflow_id', 'error_class failure_stage retryable duration_ms')
   ],
   // Up to AGENT_MAX_RUNS_PER_TURN per turn: one per submitted job and at most
-  // one completion each, so the once-a-turn cap scaled by the run limit.
+  // one completion each, so the once-a-turn cap scaled by the run limit. Like
+  // agent_mutation_applied, a run-heavy process spends the shared
+  // PRODUCT_EVENTS_PER_PROCESS budget sooner, and later turn events go unsent.
   [
     'agent_run_submitted',
     productEvent(
