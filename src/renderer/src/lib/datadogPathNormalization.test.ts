@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RumErrorEvent } from '@datadog/browser-rum'
-import {
-  normalizeDatadogBundlePaths,
-  normalizeRumErrorEvent,
-  scrubPII
-} from './datadogPathNormalization'
+import { normalizeDatadogBundlePaths, normalizeRumErrorEvent } from './datadogPathNormalization'
+import { scrubPII } from '../../../shared/piiScrub'
 
 describe('normalizeDatadogBundlePaths', () => {
   it('rewrites renderer file URLs to the synthetic Datadog bundle prefix', () => {
@@ -71,6 +68,16 @@ describe('scrubPII', () => {
 })
 
 describe('normalizeRumErrorEvent', () => {
+  it('scrubs a doubled-backslash user path from the error message', () => {
+    const event = {
+      error: { message: 'open "C:\\\\Users\\\\alice\\\\x" failed', source: 'custom' }
+    } as unknown as RumErrorEvent
+
+    normalizeRumErrorEvent(event)
+
+    expect(event.error.message).toBe('open "C:\\\\Users\\\\[REDACTED]\\\\x" failed')
+  })
+
   it('updates the main stack, cause stacks, and resource URL when they point at built bundles', () => {
     const event = {
       error: {

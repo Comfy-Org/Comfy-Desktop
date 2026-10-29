@@ -49,6 +49,32 @@ describe('piiScrub', () => {
       expect(scrubPII('C:\\Users\\Alice Smith\\x')).toBe('C:\\Users\\[REDACTED]\\x')
     })
 
+    it('keeps the JSON framing after a /Users/ path', () => {
+      expect(scrubPII('{"home":"/Users/alice","n":1}')).toBe('{"home":"/Users/[REDACTED]","n":1}')
+    })
+
+    it('leaves a quoted path that ends at the profile root intact', () => {
+      expect(scrubPII('{"path":"C:\\\\Users\\\\","n":1}')).toBe('{"path":"C:\\\\Users\\\\","n":1}')
+    })
+
+    it('redacts a non-ASCII username written as JSON \\u escapes', () => {
+      expect(scrubPII('"C:\\\\Users\\\\Bj\\u00f6rn\\\\AppData"')).toBe(
+        '"C:\\\\Users\\\\[REDACTED]\\\\AppData"'
+      )
+    })
+
+    it('leaves a nested Windows home or users folder alone', () => {
+      expect(scrubPII('C:\\ComfyUI\\custom_nodes\\x\\home\\config.json')).toBe(
+        'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json'
+      )
+    })
+
+    it('redacts the segment after a /users/ URL path', () => {
+      expect(scrubPII('https://api.example.com/users/me/keys')).toBe(
+        'https://api.example.com/users/[REDACTED]/keys'
+      )
+    })
+
     it('redacts a username containing an apostrophe in full', () => {
       expect(scrubPII("C:\\Users\\o'brien\\x")).toBe('C:\\Users\\[REDACTED]\\x')
     })
@@ -80,8 +106,7 @@ describe('piiScrub', () => {
         'doubled-backslash UNC',
         '\\\\\\\\fileserver\\\\Users\\\\alice\\\\x',
         '\\\\\\\\fileserver\\\\Users\\\\[REDACTED]\\\\x'
-      ],
-      ['doubled-backslash Linux home', '\\\\home\\\\bob\\\\x', '\\\\home\\\\[REDACTED]\\\\x']
+      ]
     ])('redacts Windows user directories with %s', (_label, input, expected) => {
       expect(scrubPII(input)).toBe(expected)
     })
@@ -102,9 +127,19 @@ describe('piiScrub', () => {
       expect(scrubPII("open 'D:\\Profiles\\alice'")).toBe("open 'D:\\Profiles\\[REDACTED]'")
     })
 
-    it('does not redact a different directory sharing the name as a prefix', () => {
+    it.each(['alicebrown', 'alice.smith', 'alice-old', 'alice~1', 'alice$'])(
+      'does not redact the sibling directory %s',
+      (sibling) => {
+        setScrubbedHomeDir('D:\\Profiles\\alice')
+        expect(scrubPII(`D:\\Profiles\\${sibling}\\x`)).toBe(`D:\\Profiles\\${sibling}\\x`)
+      }
+    )
+
+    it('redacts the home directory at the end of a sentence', () => {
       setScrubbedHomeDir('D:\\Profiles\\alice')
-      expect(scrubPII('D:\\Profiles\\alicebrown\\x')).toBe('D:\\Profiles\\alicebrown\\x')
+      expect(scrubPII('cannot open D:\\Profiles\\alice.')).toBe(
+        'cannot open D:\\Profiles\\[REDACTED].'
+      )
     })
 
     it('redacts a POSIX home outside /home', () => {
@@ -112,9 +147,10 @@ describe('piiScrub', () => {
       expect(scrubPII('cat /var/lib/alice/.config')).toBe('cat /var/lib/[REDACTED]/.config')
     })
 
-    it('redacts a single-segment home', () => {
-      setScrubbedHomeDir('/alice')
-      expect(scrubPII('cat /alice/.config')).toBe('cat /[REDACTED]/.config')
+    it('redacts a single-segment home only at a path root', () => {
+      setScrubbedHomeDir('/data')
+      expect(scrubPII('cat /data/.config')).toBe('cat /[REDACTED]/.config')
+      expect(scrubPII('ls /mnt/data/x')).toBe('ls /mnt/data/x')
     })
 
     it('ignores /root and a bare drive', () => {

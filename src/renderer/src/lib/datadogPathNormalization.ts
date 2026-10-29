@@ -1,4 +1,5 @@
 import type { RumErrorEvent } from '@datadog/browser-rum'
+// The shared scrubber, so RUM errors get every spelling the other off-box paths do.
 import { scrubPII } from '../../../shared/piiScrub'
 
 // Synthetic bundle URLs used only for Datadog path matching.
@@ -22,9 +23,6 @@ export function normalizeDatadogBundlePaths(value: string | undefined): string |
 
   return normalized
 }
-
-// The shared scrubber, so RUM errors get every spelling the other off-box paths do.
-export { scrubPII }
 
 export function normalizeRumErrorEvent(event: RumErrorEvent): void {
   event.error.message = scrubPII(event.error.message)
