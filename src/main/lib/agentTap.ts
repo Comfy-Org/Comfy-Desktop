@@ -242,15 +242,22 @@ const fieldsOfType = (names: string, type: FieldValue): Array<[string, FieldValu
 // The local agent's product events: ComfyUI logs them as its own records from
 // the agent's output. They keep the names Cloud uses for the same events.
 export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
-  ...fieldsOfType('thread_id session_id turn_id workflow_id', matching(UUID)),
+  ...fieldsOfType('thread_id session_id turn_id workflow_id job_id', matching(UUID)),
   ['mutation_id', matching(HEX64)],
   ...fieldsOfType('occurred_at timestamp accepted_at', timestamp),
   ['agent_version', matching(VERSION)],
   ...fieldsOfType('feature_flag_cohort model', matching(TOKEN)),
-  ...fieldsOfType('is_resume retryable is_blank_canvas_start', bool),
+  ...fieldsOfType('is_resume retryable is_blank_canvas_start has_api_nodes', bool),
   ['entry_source', oneOf('new_tab existing_thread')],
   ['run_mode', oneOf('ask_approval auto auto_limited')],
   ['engine', oneOf('inline temporal')],
+  ['job_kind', oneOf('workflow_submit')],
+  ['target', oneOf('cloud local')],
+  ['approval', oneOf('auto approved')],
+  [
+    'status',
+    oneOf('completed failed cancelled timed_out interrupted not_found unreachable unknown')
+  ],
   ['response_kind', oneOf('message_delta thinking tool_call refusal')],
   ['event_schema_version', (raw) => (/^\d{1,4}$/.test(raw) ? raw : 'unknown')],
   [
@@ -266,15 +273,26 @@ export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
     )
   ],
   ...fieldsOfType(
-    'time_to_first_response_ms op_count base_version result_version apply_duration_ms duration_ms mutation_count tool_call_count input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens billed_units canvas_node_count_before canvas_node_count_after',
+    'time_to_first_response_ms op_count base_version result_version apply_duration_ms duration_ms mutation_count tool_call_count input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens billed_units canvas_node_count_before canvas_node_count_after api_node_count api_node_class_count',
     count
   )
 ])
 
 type ProductEvent = { required: readonly string[]; optional: readonly string[]; hourlyCap: number }
 
+// The default cap: 120 turns an hour, for an event the agent writes once a turn.
+const TURNS_PER_HOUR = 120
+
+// The agent's per-turn run limit: AGENT_MAX_RUNS_PER_TURN, default 10 (cloud
+// services/agent config). A turn submits at most that many jobs.
+const AGENT_MAX_RUNS_PER_TURN = 10
+
 // occurred_at and agent_version are allowed on every product event.
-const productEvent = (required: string, optional: string, hourlyCap = 120): ProductEvent => ({
+const productEvent = (
+  required: string,
+  optional: string,
+  hourlyCap = TURNS_PER_HOUR
+): ProductEvent => ({
   required: required.split(' '),
   optional: `${optional} occurred_at agent_version`.split(' '),
   hourlyCap
@@ -312,6 +330,24 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
   [
     'agent_turn_failed',
     productEvent('thread_id turn_id workflow_id', 'error_class failure_stage retryable duration_ms')
+  ],
+  // Up to AGENT_MAX_RUNS_PER_TURN per turn: one per submitted job and at most
+  // one completion each, so the once-a-turn cap scaled by the run limit.
+  [
+    'agent_run_submitted',
+    productEvent(
+      'session_id thread_id turn_id workflow_id job_id',
+      'event_schema_version timestamp job_kind target run_mode approval has_api_nodes api_node_count api_node_class_count',
+      TURNS_PER_HOUR * AGENT_MAX_RUNS_PER_TURN
+    )
+  ],
+  [
+    'agent_run_completed',
+    productEvent(
+      'session_id thread_id turn_id workflow_id job_id',
+      'event_schema_version timestamp status duration_ms target',
+      TURNS_PER_HOUR * AGENT_MAX_RUNS_PER_TURN
+    )
   ]
 ])
 

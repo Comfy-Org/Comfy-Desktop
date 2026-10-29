@@ -567,6 +567,7 @@ const PRODUCT_FIXTURE = fs
 const THREAD = '0b6f2a8e-2f4c-4c55-9a43-6a1d2f0e7c11'
 const TURN = '5e1d9c3a-8b7f-4e2d-a1c6-3f9b0d4e8a72'
 const WORKFLOW = 'd3a8f1c6-7e2b-4a9d-8c5f-2b1e9a0d6c34'
+const JOB = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 
 // What ComfyUI prints for an agent line it logs as its own record: ANSI level
 // tag, the line, the installed agent's version, CRLF on Windows.
@@ -621,7 +622,7 @@ describe('agentTap product events', () => {
     )
   }
 
-  it('captures the six fixture events from ComfyUI’s relay under their Cloud names', () => {
+  it('captures the eight fixture events from ComfyUI’s relay under their Cloud names', () => {
     ingest(PRODUCT_FIXTURE.map(relayed).join(''))
     expect(captured.map((c) => c.event)).toEqual([...PRODUCT_EVENTS.keys()])
     expect(emitted, 'product events are captured, not emitted with a Datadog mirror').toEqual([])
@@ -650,6 +651,40 @@ describe('agentTap product events', () => {
       error_class: 'internal',
       retryable: true,
       duration_ms: 800
+    })
+    expect(captured[6]?.ctx).toEqual({
+      api_node_class_count: 1,
+      api_node_count: 2,
+      approval: 'approved',
+      event_schema_version: '1',
+      has_api_nodes: true,
+      job_id: JOB,
+      job_kind: 'workflow_submit',
+      occurred_at: '2026-10-09T12:00:04Z',
+      run_mode: 'auto',
+      session_id: THREAD,
+      target: 'local',
+      thread_id: THREAD,
+      timestamp: '2026-10-09T12:00:04Z',
+      turn_id: TURN,
+      workflow_id: WORKFLOW,
+      agent_version: '0.0.1',
+      ...context
+    })
+    expect(captured[7]?.ctx).toEqual({
+      duration_ms: 1500,
+      event_schema_version: '1',
+      job_id: JOB,
+      occurred_at: '2026-10-09T12:00:05Z',
+      session_id: THREAD,
+      status: 'completed',
+      target: 'local',
+      thread_id: THREAD,
+      timestamp: '2026-10-09T12:00:05Z',
+      turn_id: TURN,
+      workflow_id: WORKFLOW,
+      agent_version: '0.0.1',
+      ...context
     })
   })
 
@@ -689,7 +724,9 @@ describe('agentTap product events', () => {
       ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'mutation_id']
     ],
     ['agent_turn_completed', ['session_id', 'thread_id', 'turn_id', 'workflow_id']],
-    ['agent_turn_failed', ['thread_id', 'turn_id', 'workflow_id']]
+    ['agent_turn_failed', ['thread_id', 'turn_id', 'workflow_id']],
+    ['agent_run_submitted', ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'job_id']],
+    ['agent_run_completed', ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'job_id']]
   ])('drops %s missing any of its ids', (event, ids) => {
     const line = PRODUCT_FIXTURE.find((l) => l.startsWith(`[agent-event] ${event} `))!
     for (const id of ids) ingest(relayed(line.replace(new RegExp(` ${id}=[^ ]+`), '')))
@@ -709,6 +746,92 @@ describe('agentTap product events', () => {
       )
     )
     expect(captured).toEqual([])
+  })
+
+  const runSubmitted = (tail: string): string =>
+    relayed(
+      `[agent-event] agent_run_submitted job_id=${JOB} session_id=${THREAD} thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW}${tail}`
+    )
+  const runCompleted = (tail: string): string =>
+    relayed(
+      `[agent-event] agent_run_completed job_id=${JOB} session_id=${THREAD} thread_id=${THREAD} turn_id=${TURN} workflow_id=${WORKFLOW}${tail}`
+    )
+
+  it.each([
+    ['submitted', runSubmitted],
+    ['completed', runCompleted]
+  ])('drops a run %s event whose job id is not a lowercase UUID', (_label, line) => {
+    ingest(line('').replace(JOB, JOB.toUpperCase()))
+    ingest(line('').replace(JOB, '0123456789'))
+    expect(captured).toEqual([])
+  })
+
+  it('keeps a run event without its optional fields, carrying deployment=local', () => {
+    ingest(runSubmitted('') + runCompleted(''))
+    const ids = { job_id: JOB, session_id: THREAD, thread_id: THREAD, turn_id: TURN }
+    const ctx = { ...ids, workflow_id: WORKFLOW, agent_version: '0.0.1', ...context }
+    expect(captured).toEqual([
+      { event: 'agent_run_submitted', ctx },
+      { event: 'agent_run_completed', ctx }
+    ])
+  })
+
+  it.each(['ask_approval', 'auto', 'auto_limited'])('forwards run_mode=%s as itself', (mode) => {
+    ingest(runSubmitted(` run_mode=${mode}`))
+    expect(captured[0]?.ctx['run_mode']).toBe(mode)
+  })
+
+  it.each([
+    'completed',
+    'failed',
+    'cancelled',
+    'timed_out',
+    'interrupted',
+    'not_found',
+    'unreachable',
+    'unknown'
+  ])('forwards status=%s as itself', (status) => {
+    ingest(runCompleted(` status=${status}`))
+    expect(captured[0]?.ctx['status']).toBe(status)
+  })
+
+  it('forwards a run enum value it doesn’t know as unknown, keeping the event', () => {
+    ingest(
+      runSubmitted(' job_kind=node_test target=remote run_mode=yolo approval=denied') +
+        runCompleted(' status=exploded target=edge')
+    )
+    expect(captured.map((c) => c.event)).toEqual(['agent_run_submitted', 'agent_run_completed'])
+    expect(captured[0]?.ctx).toMatchObject({
+      job_kind: 'unknown',
+      target: 'unknown',
+      run_mode: 'unknown',
+      approval: 'unknown'
+    })
+    expect(captured[1]?.ctx).toMatchObject({ status: 'unknown', target: 'unknown' })
+  })
+
+  it('omits api_node_names and the other event’s fields, keeping the run event', () => {
+    ingest(runSubmitted(' api_node_names=OpenAIDalle3 status=completed duration_ms=5'))
+    ingest(runCompleted(' has_api_nodes=true approval=auto api_node_count=1'))
+    expect(captured).toHaveLength(2)
+    for (const { ctx } of captured) {
+      for (const name of [
+        'api_node_names',
+        'status',
+        'duration_ms',
+        'has_api_nodes',
+        'approval',
+        'api_node_count'
+      ])
+        expect(Object.hasOwn(ctx, name), name).toBe(false)
+    }
+  })
+
+  it('accepts the edges of each run count', () => {
+    ingest(runSubmitted(' api_node_count=0 api_node_class_count=9007199254740991'))
+    ingest(runCompleted(' duration_ms=0'))
+    expect(captured[0]?.ctx).toMatchObject({ api_node_count: 0, api_node_class_count: 2 ** 53 - 1 })
+    expect(captured[1]?.ctx).toMatchObject({ duration_ms: 0 })
   })
 
   const firstResponse = (tail: string): string =>
@@ -736,6 +859,10 @@ describe('agentTap product events', () => {
     ['a non-ASCII model', turnStarted(' model=caf\u00e9')],
     ['a model past 128 characters', turnStarted(` model=${'m'.repeat(129)}`)],
     ['a cohort holding an email', sessionStarted(' feature_flag_cohort=a@b.com')],
+    ['a run with a non-boolean has_api_nodes', runSubmitted(' has_api_nodes=True')],
+    ['a negative api_node_count', runSubmitted(' api_node_count=-1')],
+    ['an api_node_class_count past 2^53-1', runSubmitted(' api_node_class_count=9007199254740992')],
+    ['a fractional run duration', runCompleted(' duration_ms=1.5')],
     [
       'a malformed agent_version',
       sessionStarted(' agent_version=latest').replace(' agent_version=0.0.1', '')
@@ -864,7 +991,7 @@ describe('agentTap product events', () => {
     })
     ingest(PRODUCT_FIXTURE.map(relayed).join(''))
     expect(captured, 'undelivered events (no consent yet) must not use up the budget').toHaveLength(
-      6
+      PRODUCT_FIXTURE.length
     )
   })
 
@@ -879,6 +1006,22 @@ describe('agentTap product events', () => {
     tap.ingest(mutation.repeat(601) + relayed(PRODUCT_FIXTURE[1]!).repeat(121), 'stderr')
     expect(captured.filter((c) => c.event === 'agent_mutation_applied')).toHaveLength(600)
     expect(captured.filter((c) => c.event === 'agent_turn_started')).toHaveLength(120)
+  })
+
+  it('caps each run event at 1200 per hour: 120 turns at the agent’s 10-runs-a-turn limit', () => {
+    const tap = createAgentTap(baseOpts)
+    tap.ingest(runSubmitted('').repeat(1201), 'stderr')
+    expect(captured.filter((c) => c.event === 'agent_run_submitted')).toHaveLength(1200)
+    _resetProductEventBudgetForTest()
+    tap.ingest(runCompleted('').repeat(1201), 'stderr')
+    expect(captured.filter((c) => c.event === 'agent_run_completed')).toHaveLength(1200)
+    vi.useFakeTimers({ now: Date.now() + 60 * 60_000 })
+    _resetProductEventBudgetForTest()
+    tap.ingest(runSubmitted(''), 'stderr')
+    expect(
+      captured.filter((c) => c.event === 'agent_run_submitted'),
+      'the window resets after an hour'
+    ).toHaveLength(1201)
   })
 
   it('caps product events at 1500 per Desktop process, across launches', () => {
