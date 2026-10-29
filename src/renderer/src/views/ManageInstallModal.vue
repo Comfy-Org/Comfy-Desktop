@@ -63,7 +63,10 @@ function handleUpdateInstallation(inst: Installation) {
     @close="handleClose"
   >
     <!-- The 20px gutter wrapper gives DetailModal's action bar (`margin: 0 -20px`) a body edge to align with. -->
-    <div v-if="installation" class="manage-install-body">
+    <div
+      v-if="installation"
+      class="manage-install-body flex h-full min-h-0 flex-col overflow-hidden px-5 py-0"
+    >
       <DetailModal
         :installation="installation"
         :initial-tab="initialTab"
@@ -76,20 +79,3 @@ function handleUpdateInstallation(inst: Installation) {
     </div>
   </BaseModal>
 </template>
-
-<style scoped>
-/* Zero BaseModal's default body padding — the embedded DetailModal paints to the edges. */
-:deep(.manage-install-modal-content) .base-modal-body {
-  padding: 0;
-}
-
-/* 20px gutter is load-bearing: DetailModal's action bar uses `margin: 0 -20px` to span full width. */
-.manage-install-body {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  padding: 0 20px;
-  overflow: hidden;
-}
-</style>
