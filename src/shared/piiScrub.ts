@@ -21,14 +21,38 @@
  * is safe to bundle into either side.
  */
 
+// Separators are `[\\/]+` so the same path matches whether it is written
+// plainly (`C:\Users\x`), with forward or mixed slashes (`C:/Users/x`), or
+// escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`).
 const PII_PATH_PATTERNS: RegExp[] = [
-  /([A-Za-z]:[\\/]Users[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\(?:wsl\$|wsl\.localhost)[\\/][^\\/]+[\\/]home[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\[^\\/]+[\\/](?:Users|home)[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\/Users\/)[^\\/]+?(?=\/|$)/gi,
-  /(\/home\/)[^\\/]+?(?=\/|$)/gi,
+  /([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
+  /(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
+  /(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
+  /([\\/]Users[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
+  /([\\/]home[\\/]+)[^\\/]+?(?=[\\/]|$)/gi,
   /(\/mnt\/wsl\/[^/]+\/home\/)[^/]+?(?=\/|$)/gi
 ]
+
+// The real home directory, in any separator spelling. Catches a profile
+// that lives outside `Users` / `home` (a relocated `%USERPROFILE%`, e.g.
+// `D:\Profiles\x`). Set from the main process; empty in the renderer.
+let homeDirPatterns: RegExp[] = []
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Register the user's home directory so every spelling of it is scrubbed. */
+export function setScrubbedHomeDir(homeDir: string): void {
+  const segments = homeDir.split(/[\\/]+/).filter(Boolean)
+  // A single segment (`/root`) carries no username worth hiding.
+  if (segments.length < 2) {
+    homeDirPatterns = []
+    return
+  }
+  const leading = /^[\\/]/.test(homeDir) ? '[\\\\/]+' : ''
+  const parent = segments.slice(0, -1).map(escapeRegExp).join('[\\\\/]+')
+  const name = escapeRegExp(segments[segments.length - 1])
+  homeDirPatterns = [new RegExp(`(${leading}${parent}[\\\\/]+)${name}(?![\\w$~-])`, 'gi')]
+}
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
@@ -51,7 +75,7 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
 export function scrubPII(value: string): string {
   let scrubbed = value
-  for (const pattern of PII_PATH_PATTERNS) {
+  for (const pattern of [...homeDirPatterns, ...PII_PATH_PATTERNS]) {
     scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')

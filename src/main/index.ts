@@ -11,9 +11,11 @@ import {
 } from 'electron'
 import type { WebContentsView } from 'electron'
 import type { Tray } from 'electron'
+import os from 'os'
 import path from 'path'
 import fs from 'fs'
 import { normaliseFirstUseMode } from '../shared/firstUseMode'
+import { setScrubbedHomeDir } from '../shared/piiScrub'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
@@ -182,6 +184,10 @@ import {
 } from './host/panelView'
 
 export type { ComfyPanelKey } from './host/registry'
+
+// Scrub every spelling of the real home directory from off-box telemetry,
+// including profiles relocated outside `Users` / `home`.
+setScrubbedHomeDir(os.homedir())
 
 // Collect native crash minidumps (GPU / renderer / V8 OOM segfaults that
 // never reach a JS handler) into app.getPath('crashDumps'). Kept local — we
