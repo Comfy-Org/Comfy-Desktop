@@ -137,8 +137,11 @@ function open(i: Item): void {
       @click="search.open = true"
     >
       <Search :size="15" />
-      <span class="sidebar-label flex-1 text-left">Search</span>
-      <kbd class="sidebar-label text-[11px] text-subtle-foreground">⌘K</kbd>
+      <span class="sidebar-label text-left">Search</span>
+      <kbd
+        class="sidebar-label ml-auto rounded-[5px] bg-secondary-background px-1.5 py-px font-sans text-[11px] leading-4 text-subtle-foreground"
+        >⌘K</kbd
+      >
     </Button>
     <template v-for="i in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
       <div
