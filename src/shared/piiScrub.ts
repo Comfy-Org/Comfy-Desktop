@@ -43,14 +43,15 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 /** Register the user's home directory so every spelling of it is scrubbed. */
 export function setScrubbedHomeDir(homeDir: string): void {
   const segments = homeDir.split(/[\\/]+/).filter(Boolean)
+  const last = segments.pop()
   // A single segment (`/root`) carries no username worth hiding.
-  if (segments.length < 2) {
+  if (!last || segments.length === 0) {
     homeDirPatterns = []
     return
   }
   const leading = /^[\\/]/.test(homeDir) ? '[\\\\/]+' : ''
-  const parent = segments.slice(0, -1).map(escapeRegExp).join('[\\\\/]+')
-  const name = escapeRegExp(segments[segments.length - 1])
+  const parent = segments.map(escapeRegExp).join('[\\\\/]+')
+  const name = escapeRegExp(last)
   homeDirPatterns = [new RegExp(`(${leading}${parent}[\\\\/]+)${name}(?![\\w$~-])`, 'gi')]
 }
 
