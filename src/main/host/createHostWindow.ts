@@ -17,6 +17,7 @@ import {
 import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
+  isExternalBrowserUrl,
   isLikelyDownloadUrl,
   shouldOpenInPopup
 } from '../lib/allowedPopups'
@@ -1181,7 +1182,7 @@ export function buildComfyView(
     // open-external IPC handler enforces the same scheme allowlist, and page
     // content must not be able to push file:, smb: or app protocol URLs to
     // the OS handler.
-    if (/^https?:\/\//i.test(childUrl)) {
+    if (isExternalBrowserUrl(childUrl)) {
       shell.openExternal(childUrl)
     }
     return { action: 'deny' }
