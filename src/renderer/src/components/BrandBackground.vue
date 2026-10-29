@@ -15,17 +15,29 @@ withDefaults(
 </script>
 
 <template>
-  <div class="brand-background" data-theme="dark">
-    <div class="brand-outer-frame">
+  <div class="brand-background flex h-full w-full flex-auto bg-background" data-theme="dark">
+    <div class="brand-outer-frame relative flex flex-auto">
       <div
-        class="brand-inner-frame"
-        :class="{
-          'brand-inner-frame--vignette': vignette,
-          'brand-inner-frame--scroll-content': scrollContent
-        }"
+        class="brand-inner-frame relative isolate flex flex-auto flex-col items-center overflow-hidden rounded-lg p-[clamp(2rem,5vw,48px)]"
+        :class="[
+          vignette
+            ? 'brand-inner-frame--vignette bg-[radial-gradient(circle_196px_at_50%_50%,var(--neutral-950)_0%,var(--neutral-950)_35%,var(--color-content-background)_100%)]'
+            : 'bg-content-background',
+          scrollContent
+            ? 'brand-inner-frame--scroll-content justify-start overflow-y-auto'
+            : 'justify-center'
+        ]"
       >
-        <div class="brand-beam" aria-hidden="true" v-html="beamSvg" />
-        <div class="brand-beam brand-beam--2" aria-hidden="true" v-html="beam2Svg" />
+        <div
+          class="brand-beam pointer-events-none absolute -top-[17%] -z-1 overflow-visible opacity-45 grayscale [position-anchor:--brand-beam-torch] [left:anchor(center,clamp(39%,calc(52.5vw_-_135px),44%))] [transform:translateX(-50%)] [&_svg]:block [&_svg]:overflow-visible"
+          aria-hidden="true"
+          v-html="beamSvg"
+        />
+        <div
+          class="brand-beam brand-beam--2 pointer-events-none absolute -top-[10%] -z-1 overflow-visible opacity-45 grayscale [position-anchor:--brand-beam-target] [anchor-name:--brand-beam-torch] [left:anchor(end,clamp(45%,calc(56vw_-_115px),50%))] [transform:translateX(-50%)] [&_svg]:block [&_svg]:overflow-visible"
+          aria-hidden="true"
+          v-html="beam2Svg"
+        />
         <slot />
       </div>
       <slot name="footer-left" />
@@ -33,64 +45,3 @@ withDefaults(
     </div>
   </div>
 </template>
-
-<style scoped>
-.brand-background {
-  display: flex;
-  flex: 1 1 auto;
-  width: 100%;
-  height: 100%;
-  background: var(--neutral-900);
-}
-
-.brand-outer-frame {
-  position: relative;
-  flex: 1 1 auto;
-  display: flex;
-}
-
-.brand-beam {
-  position: absolute;
-  position-anchor: --brand-beam-torch;
-  top: -17%;
-  left: anchor(center, clamp(39%, calc(52.5vw - 135px), 44%));
-  pointer-events: none;
-  z-index: -1;
-  overflow: visible;
-  transform: translateX(-50%);
-}
-.brand-beam--2 {
-  position-anchor: --brand-beam-target;
-  anchor-name: --brand-beam-torch;
-  top: -10%;
-  left: anchor(end, clamp(45%, calc(56vw - 115px), 50%));
-}
-.brand-beam :deep(svg) {
-  display: block;
-  overflow: visible;
-}
-
-.brand-inner-frame {
-  position: relative;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(2rem, 5vw, 48px);
-  border-radius: 8px;
-  background: var(--neutral-800);
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.brand-inner-frame--vignette {
-  background:
-    radial-gradient(circle 196px at 50% 50%, #151317 0%, #151317 35%, var(--neutral-800) 100%),
-    var(--neutral-800);
-}
-.brand-inner-frame--scroll-content {
-  justify-content: flex-start;
-  overflow-y: auto;
-}
-</style>
