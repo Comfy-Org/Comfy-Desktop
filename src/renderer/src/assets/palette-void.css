@@ -256,30 +256,6 @@
   border-color: var(--neutral-700);
 }
 
-/* ── 8. Tile context menu ──────────────────────────────────────── */
-:root.palette-void .context-menu {
-  padding: 4px;
-  border-color: var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-popover);
-  box-shadow: var(--shadow-popover);
-}
-:root.palette-void .context-menu-item {
-  min-height: 32px;
-  border-radius: var(--radius-control);
-  font-size: var(--text-ui);
-}
-:root.palette-void .context-menu-item:is(:hover, :focus-within):not(.disabled) {
-  background: var(--color-secondary);
-}
-:root.palette-void .context-menu-item-action {
-  padding: 6px 0 6px 10px;
-}
-:root.palette-void .context-menu-separator {
-  margin: 4px -4px;
-  background: var(--color-border);
-}
-
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
 :root.palette-void :is(.modal-box, .announce-content) {
   border-color: var(--color-border);

@@ -75,18 +75,31 @@ function handleClick(item: ContextMenuItem): void {
     <div
       v-if="open && items.length > 0"
       ref="menuRef"
-      class="context-menu"
+      class="context-menu fixed z-10000 min-w-[200px] rounded-card border border-solid border-border bg-popover p-1 shadow-popover"
       :style="{ left: adjustedX + 'px', top: adjustedY + 'px' }"
     >
       <template v-for="(item, i) in items" :key="item.id">
-        <div v-if="item.separator && i > 0" class="context-menu-separator" />
         <div
-          class="context-menu-item"
-          :class="{ disabled: item.disabled, 'is-danger': item.style === 'danger' }"
+          v-if="item.separator && i > 0"
+          class="context-menu-separator -mx-1 my-1 h-px bg-border"
+        />
+        <div
+          class="context-menu-item flex min-h-8 w-full items-center rounded-lg bg-transparent text-[length:var(--text-ui)] transition-[background-color,opacity] duration-100 ease-[ease]"
+          :class="[
+            item.disabled ? 'disabled opacity-50' : 'hover:bg-secondary focus-within:bg-secondary',
+            item.style === 'danger'
+              ? [
+                  'is-danger text-danger',
+                  item.disabled ? '' : 'hover:text-danger-hover focus-within:text-danger-hover'
+                ]
+              : item.disabled
+                ? 'text-text-muted'
+                : 'text-neutral-100 hover:text-text focus-within:text-text'
+          ]"
         >
           <button
-            class="context-menu-item-action"
-            :class="{ disabled: item.disabled }"
+            class="context-menu-item-action flex-1 border-none bg-transparent py-1.5 pr-0 pl-2.5 text-left [font:inherit] whitespace-nowrap text-inherit hover:bg-transparent focus-visible:outline-none"
+            :class="item.disabled ? 'disabled cursor-default' : 'cursor-pointer'"
             :aria-disabled="item.disabled || undefined"
             :title="item.disabled ? item.title : undefined"
             :data-testid="TID.contextMenuItem(item.id)"
@@ -96,7 +109,7 @@ function handleClick(item: ContextMenuItem): void {
           </button>
           <InfoTooltip
             v-if="item.hint"
-            class="context-menu-item-info"
+            class="context-menu-item-info ml-auto py-2 pr-3.5 pl-3"
             :text="item.hint"
             :link-url="item.hintUrl"
             :link-label="item.hintLinkLabel"

@@ -242,7 +242,7 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
   <button
     ref="trigger"
     type="button"
-    class="ui-menu-trigger"
+    class="ui-menu-trigger inline-flex h-8 items-center gap-2 rounded-lg border-none bg-[var(--pick-bg-active,color-mix(in_srgb,var(--text)_10%,transparent))] py-2 pr-2 pl-4 text-[12px] leading-4 font-medium text-neutral-100 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--pick-bg-hover,color-mix(in_srgb,var(--text)_14%,transparent))] hover:outline-none focus-visible:bg-[var(--pick-bg-hover,color-mix(in_srgb,var(--text)_14%,transparent))] focus-visible:outline-none aria-expanded:bg-[var(--pick-bg-hover,color-mix(in_srgb,var(--text)_14%,transparent))]"
     :aria-expanded="open"
     :aria-controls="menuId"
     aria-haspopup="menu"
@@ -254,23 +254,55 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
   </button>
 
   <Teleport to="body">
-    <Transition name="ui-menu-pop">
+    <Transition
+      name="ui-menu-pop"
+      enter-active-class="ui-menu-pop-enter-active transition-[opacity,transform] duration-150 ease-[ease-out] motion-reduce:duration-0"
+      leave-active-class="ui-menu-pop-leave-active transition-[opacity,transform] duration-150 ease-[ease-out] motion-reduce:duration-0"
+      enter-from-class="ui-menu-pop-enter-from opacity-0 [transform:translateY(-4px)]"
+      leave-to-class="ui-menu-pop-leave-to opacity-0 [transform:translateY(-4px)]"
+    >
       <ul
         v-if="open"
         :id="menuId"
         ref="menu"
-        :class="['ui-menu-list', listClass]"
+        :class="[
+          'ui-menu-list m-0 min-w-[200px] list-none overflow-y-auto rounded-[10px] border border-solid border-[var(--border)] bg-surface p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.18)] outline-none',
+          listClass
+        ]"
         role="menu"
         tabindex="-1"
         :style="popoverStyle"
         :aria-label="triggerAriaLabel"
         @keydown="onMenuKeydown"
       >
-        <li v-if="heading" class="ui-menu-heading" role="presentation">{{ heading }}</li>
+        <li
+          v-if="heading"
+          class="ui-menu-heading px-3.5 pt-1.5 pb-1 text-[11px] tracking-[0.04em] text-text-muted uppercase"
+          role="presentation"
+        >
+          {{ heading }}
+        </li>
         <template v-for="(item, i) in items" :key="item.id">
-          <li v-if="item.separator && i > 0" class="ui-menu-separator" role="separator" />
           <li
-            class="ui-menu-item"
+            v-if="item.separator && i > 0"
+            class="ui-menu-separator pointer-events-none mx-1.5 my-1 h-px list-none bg-[var(--border)]"
+            role="separator"
+          />
+          <li
+            class="ui-menu-item flex items-center gap-2.5 rounded-md px-3.5 py-2 text-[14px] whitespace-nowrap select-none"
+            :class="[
+              item.disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+              item.style === 'danger' && i === activeIndex
+                ? 'text-danger-hover bg-[color-mix(in_srgb,var(--danger)_14%,transparent)]'
+                : [
+                    item.disabled
+                      ? 'text-text-muted'
+                      : item.style === 'danger'
+                        ? 'text-danger'
+                        : 'text-text',
+                    i === activeIndex ? 'bg-border-hover' : ''
+                  ]
+            ]"
             role="menuitem"
             :data-index="i"
             :data-active="i === activeIndex ? '' : undefined"
@@ -280,129 +312,14 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
             @click="pickIndex(i)"
           >
             <span class="ui-menu-item-label">{{ item.label }}</span>
-            <span v-if="item.detail" class="ui-menu-item-detail">{{ item.detail }}</span>
+            <span
+              v-if="item.detail"
+              class="ui-menu-item-detail min-w-0 whitespace-normal text-text-muted [overflow-wrap:anywhere]"
+              >{{ item.detail }}</span
+            >
           </li>
         </template>
       </ul>
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-/* Single-class specificity so consumer class overrides land cleanly. */
-.ui-menu-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 8px 8px 8px 16px;
-  border-radius: 8px;
-  border: none;
-  background: var(--pick-bg-active, color-mix(in srgb, var(--text) 10%, transparent));
-  color: var(--neutral-100, var(--text));
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-.ui-menu-trigger:hover,
-.ui-menu-trigger:focus-visible {
-  background: var(--pick-bg-hover, color-mix(in srgb, var(--text) 14%, transparent));
-  outline: none;
-}
-.ui-menu-trigger[aria-expanded='true'] {
-  background: var(--pick-bg-hover, color-mix(in srgb, var(--text) 14%, transparent));
-}
-</style>
-
-<style>
-/* Listbox is teleported to <body>, so it can't be scoped. */
-.ui-menu-list {
-  min-width: 200px;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.28),
-    0 2px 6px rgba(0, 0, 0, 0.18);
-  overflow-y: auto;
-  outline: none;
-}
-
-.ui-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.ui-menu-item[data-active] {
-  background: var(--border-hover);
-}
-
-.ui-menu-item[data-danger] {
-  color: var(--danger);
-}
-.ui-menu-item[data-danger][data-active] {
-  color: var(--danger-hover);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-}
-
-.ui-menu-item[aria-disabled='true'] {
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-.ui-menu-heading {
-  padding: 6px 14px 4px;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.ui-menu-item-detail {
-  min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  color: var(--text-muted);
-}
-
-.ui-menu-separator {
-  list-style: none;
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-  pointer-events: none;
-}
-
-.ui-menu-pop-enter-active,
-.ui-menu-pop-leave-active {
-  transition:
-    opacity 150ms ease-out,
-    transform 150ms ease-out;
-}
-
-.ui-menu-pop-enter-from,
-.ui-menu-pop-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-menu-pop-enter-active,
-  .ui-menu-pop-leave-active {
-    transition-duration: 0ms;
-  }
-}
-</style>
