@@ -31,113 +31,51 @@ const starCountLabel = computed(() => {
 </script>
 
 <template>
-  <button type="button" class="github-link-card" @click="emit('open', url)">
-    <span class="github-link-main">
+  <button
+    type="button"
+    class="github-link-card flex w-full items-center justify-between gap-3 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5 text-left text-neutral-100 cursor-pointer transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:outline-none focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none"
+    @click="emit('open', url)"
+  >
+    <span class="github-link-main inline-flex min-w-0 items-center gap-2">
       <Github :size="16" aria-hidden="true" />
-      <span class="github-link-label">{{ label }}</span>
-      <ExternalLink :size="12" class="github-link-external" aria-hidden="true" />
+      <span class="github-link-label text-[13px] leading-[19px] font-medium">{{ label }}</span>
+      <ExternalLink
+        :size="12"
+        class="github-link-external shrink-0 opacity-50"
+        aria-hidden="true"
+      />
     </span>
-    <span v-if="loading" class="github-link-stars github-link-stars--skeleton" aria-hidden="true">
-      <span class="github-link-skeleton-bar" />
+    <span
+      v-if="loading"
+      class="github-link-stars github-link-stars--skeleton inline-flex shrink-0 items-center gap-1 rounded-[999px] border border-solid border-[color-mix(in_oklab,var(--neutral-100)_14%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)] px-2 py-0.5 text-[11px] leading-4 tabular-nums min-w-11 justify-center"
+      aria-hidden="true"
+    >
+      <span
+        class="github-link-skeleton-bar h-2.5 w-8 rounded-[999px] bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,color-mix(in_oklab,var(--neutral-100)_16%,transparent)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] [background-size:200%_100%] animate-[github-stars-shimmer_1.4s_linear_infinite] motion-reduce:animate-none"
+      />
     </span>
-    <span v-else-if="stars != null" class="github-link-stars" :aria-label="`${stars} GitHub stars`">
-      <Star :size="12" class="github-link-stars-icon" aria-hidden="true" />
+    <span
+      v-else-if="stars != null"
+      class="github-link-stars inline-flex shrink-0 items-center gap-1 rounded-[999px] border border-solid border-[color-mix(in_oklab,var(--neutral-100)_14%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)] px-2 py-0.5 text-[11px] leading-4 tabular-nums"
+      :aria-label="`${stars} GitHub stars`"
+    >
+      <Star
+        :size="12"
+        class="github-link-stars-icon fill-current text-[var(--warning)]"
+        aria-hidden="true"
+      />
       <span>{{ starCountLabel }}</span>
     </span>
   </button>
 </template>
 
-<style scoped>
-.github-link-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 100ms ease;
-}
-
-.github-link-card:hover,
-.github-link-card:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.github-link-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.github-link-label {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 19px;
-}
-
-.github-link-external {
-  flex-shrink: 0;
-  opacity: 0.5;
-}
-
-.github-link-stars {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 14%, transparent);
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--neutral-100) 4%, transparent);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  line-height: 16px;
-}
-
-.github-link-stars-icon {
-  color: var(--warning);
-  fill: currentColor;
-}
-
-.github-link-stars--skeleton {
-  min-width: 44px;
-  justify-content: center;
-}
-
-.github-link-skeleton-bar {
-  width: 32px;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--neutral-100) 6%, transparent) 0%,
-    color-mix(in oklab, var(--neutral-100) 16%, transparent) 50%,
-    color-mix(in oklab, var(--neutral-100) 6%, transparent) 100%
-  );
-  background-size: 200% 100%;
-  animation: github-stars-shimmer 1.4s linear infinite;
-}
-
+<style>
 @keyframes github-stars-shimmer {
   0% {
     background-position: 200% 0;
   }
   100% {
     background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .github-link-skeleton-bar {
-    animation: none;
   }
 }
 </style>
