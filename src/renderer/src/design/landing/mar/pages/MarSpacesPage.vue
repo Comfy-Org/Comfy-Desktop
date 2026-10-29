@@ -19,6 +19,7 @@ import SpaceMark from '../../parts/space/SpaceMark.vue'
 import { SPACES, goLive, previewSpace, type Space } from '../../spaces'
 import { go, proto, toast, type Page } from '../../useProto'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -135,6 +136,7 @@ function lines(s: Space): MenuLine[] {
       icon: Globe2,
       title: 'Give a client their own space',
       text: 'Their brand, their address, the tools you publish for them, and a budget you control. They never see a graph.',
+      pics: EMPTY_PICS.spaces,
       action: 'New space'
     }"
     error-text="Spaces live in Comfy Cloud, which is out of reach. Members can't run anything until it's back."

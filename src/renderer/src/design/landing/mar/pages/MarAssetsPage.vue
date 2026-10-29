@@ -21,6 +21,7 @@ import { go, toast } from '../../useProto'
 import AssetViewMenu from '../assets/AssetViewMenu.vue'
 import { assetView } from '../assets/assetView'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -180,6 +181,7 @@ function lines(a: MarAsset): MenuLine[] {
       text: fixedProject
         ? 'What this project’s workflows make lands here. Run one, or upload references to work from.'
         : 'Every image, video and sound your runs make lands here, with the workflow that made it. Run a template to see your first one.',
+      pics: EMPTY_PICS.assets,
       action: fixedProject ? 'Upload files' : 'Run a template',
       second: fixedProject ? undefined : 'Upload files'
     }"

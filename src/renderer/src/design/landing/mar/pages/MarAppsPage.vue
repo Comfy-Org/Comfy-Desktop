@@ -33,6 +33,7 @@ import {
   type LibApp
 } from '../../appFlow'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -169,6 +170,7 @@ function lines(a: LibApp): MenuLine[] {
       icon: Sparkles,
       title: 'Turn a workflow into an app',
       text: 'Pick the few inputs that matter, name it, share a link. People run it without seeing a node.',
+      pics: EMPTY_PICS.apps,
       action: 'Make your first app',
       second: 'Describe it to Comfy Agent'
     }"

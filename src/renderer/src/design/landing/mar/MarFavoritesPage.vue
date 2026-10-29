@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Star } from 'lucide-vue-next'
-import Button from '../ui/Button.vue'
 import PageHeader from '../ui/PageHeader.vue'
 import AssetTile from '../parts/AssetTile.vue'
 import TemplateCard from '../parts/TemplateCard.vue'
@@ -10,12 +9,13 @@ import { allAssets } from '../gallery'
 import { go, toast, type Page } from '../useProto'
 import FavoriteStar from './FavoriteStar.vue'
 import { favoriteIds } from './favorites'
+import MarEmpty from './pages/MarEmpty.vue'
 
 /**
  * Favorites (Mar's proposal), rescued from her usertest-home prototype:
  * one tab per place a star comes from, each with its count. The page opens
- * on a tab that has something and follows the newest star. Empty, a fan of
- * pieces with a star says what starring saves here.
+ * on a tab that has something and follows the newest star. Empty, the
+ * shared MarEmpty (born here) says what starring saves here.
  */
 type Tab = 'templates' | 'apps' | 'assets'
 
@@ -109,29 +109,15 @@ const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2
       <p v-else class="py-16 text-center text-ui text-subtle-foreground">Nothing here yet.</p>
     </template>
 
-    <section v-else class="flex flex-col items-center gap-6 py-24 text-center">
-      <div class="relative h-32 w-56" aria-hidden="true">
-        <img
-          v-for="(src, i) in FAN"
-          :key="src"
-          :src
-          alt=""
-          class="mar-fav-fan"
-          :class="`is-${i}`"
-        />
-        <span class="mar-fav-badge"><Star :size="16" fill="currentColor" /></span>
-      </div>
-      <div class="flex flex-col gap-1.5">
-        <h2 class="m-0 text-lg/tight font-semibold text-base-foreground">
-          Star things to keep them here
-        </h2>
-        <p class="m-0 max-w-sm text-ui text-muted-foreground">
-          Star a template, an app or an asset and it shows up here and in your sidebar, one click
-          away.
-        </p>
-      </div>
-      <Button @click="go('explore')">Browse Explore</Button>
-    </section>
+    <MarEmpty
+      v-else
+      :icon="Star"
+      title="Star things to keep them here"
+      text="Star a template, an app or an asset and it shows up here and in your sidebar, one click away."
+      :pics="FAN"
+      action="Browse Explore"
+      @action="go('explore')"
+    />
   </div>
 </template>
 
@@ -170,42 +156,5 @@ const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2
   position: absolute;
   top: 8px;
   right: 8px;
-}
-.mar-fav-fan {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  width: 96px;
-  height: 112px;
-  border-radius: 12px;
-  object-fit: cover;
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.08),
-    0 12px 32px rgb(0 0 0 / 0.4);
-}
-.mar-fav-fan.is-0 {
-  transform: translateX(-92%) rotate(-8deg);
-}
-.mar-fav-fan.is-1 {
-  transform: translate(-50%, -6px);
-}
-.mar-fav-fan.is-2 {
-  transform: translateX(-8%) rotate(8deg);
-}
-.mar-fav-badge {
-  position: absolute;
-  bottom: -4px;
-  left: 50%;
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-card-background);
-  box-shadow:
-    0 0 0 1px var(--color-border-default, rgb(255 255 255 / 0.1)),
-    0 8px 20px rgb(0 0 0 / 0.35);
-  color: var(--color-base-foreground);
-  transform: translateX(-50%);
 }
 </style>

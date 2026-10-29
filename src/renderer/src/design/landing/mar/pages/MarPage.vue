@@ -4,6 +4,7 @@ import { CloudOff, RotateCw, SearchX } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { retry, shownState, type PageState } from './pageState'
 import MarUndoToast from './MarUndoToast.vue'
+import MarEmpty from './MarEmpty.vue'
 
 /**
  * The frame every library page in Mar's proposal shares: the title and
@@ -11,7 +12,7 @@ import MarUndoToast from './MarUndoToast.vue'
  * Loading keeps the toolbar and shows skeletons in the page's own shape;
  * Empty drops the toolbar and invites the one action that fills the page;
  * Error says what's unreachable and what still works, with Retry; a filter
- * that matches nothing offers to clear it.
+ * that matches nothing offers to clear it. All three are MarEmpty.
  */
 export interface EmptyCopy {
   icon: Component
@@ -20,6 +21,8 @@ export interface EmptyCopy {
   action: string
   /** A quieter second way in, e.g. "Browse templates". */
   second?: string
+  /** Three pictures of what will live here, fanned above the title. */
+  pics?: string[]
 }
 
 const {
@@ -127,41 +130,43 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
     </div>
 
     <!-- Empty: first use. What lives here, and the one thing that fills it. -->
-    <section v-else-if="shown === 'empty' && empty" class="mar-page-empty">
-      <slot name="empty-art">
-        <span class="mar-empty-icon"><component :is="empty.icon" :size="22" /></span>
-      </slot>
-      <div class="flex flex-col gap-1.5">
-        <h2 class="mar-empty-title">{{ empty.title }}</h2>
-        <p class="mar-empty-text">{{ empty.text }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <Button variant="primary" @click="emit('action')">{{ empty.action }}</Button>
-        <Button v-if="empty.second" variant="ghost" @click="emit('second')">{{
-          empty.second
-        }}</Button>
-      </div>
-    </section>
+    <MarEmpty
+      v-else-if="shown === 'empty' && empty"
+      :icon="empty.icon"
+      :title="empty.title"
+      :text="empty.text"
+      :action="empty.action"
+      :second="empty.second"
+      :pics="empty.pics"
+      :compact="embedded"
+      @action="emit('action')"
+      @second="emit('second')"
+    />
 
     <!-- Error: what's out of reach, what still works, and a retry. -->
-    <section v-else-if="shown === 'error'" class="mar-page-empty is-error" role="alert">
-      <span class="mar-empty-icon"><CloudOff :size="22" /></span>
-      <div class="flex flex-col gap-1.5">
-        <h2 class="mar-empty-title">{{ errorTitle }}</h2>
-        <p class="mar-empty-text">{{ errorText }}</p>
-      </div>
-      <Button @click="retry"><RotateCw :size="14" />Try again</Button>
-    </section>
+    <div v-else-if="shown === 'error'" role="alert">
+      <MarEmpty
+        :icon="CloudOff"
+        :title="errorTitle"
+        :text="errorText"
+        :compact="embedded"
+        tone="error"
+      >
+        <Button @click="retry"><RotateCw :size="14" />Try again</Button>
+      </MarEmpty>
+    </div>
 
     <!-- Live, but the filters leave nothing. -->
-    <section v-else-if="noResults" class="mar-page-empty is-small">
-      <span class="mar-empty-icon"><SearchX :size="20" /></span>
-      <div class="flex flex-col gap-1.5">
-        <h2 class="mar-empty-title">Nothing matches</h2>
-        <p class="mar-empty-text">Try another word, or clear the filters to see everything.</p>
-      </div>
-      <Button @click="emit('clear')">Clear filters</Button>
-    </section>
+    <MarEmpty
+      v-else-if="noResults"
+      :icon="SearchX"
+      title="Nothing matches"
+      text="Try another word, or clear the filters to see everything."
+      compact
+      tone="error"
+      action="Clear filters"
+      @action="emit('clear')"
+    />
 
     <slot v-else />
 
@@ -176,9 +181,6 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   justify-content: space-between;
   gap: 24px;
   padding: 48px 0 24px;
-}
-.mar-page.is-embedded .mar-page-empty {
-  padding: 56px 0 40px;
 }
 .mar-page-title {
   margin: 0;
@@ -290,48 +292,5 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   .mar-sk {
     animation: none;
   }
-}
-
-/* Empty, error, no results */
-.mar-page-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  padding: 88px 0 64px;
-  text-align: center;
-}
-.mar-page-empty.is-small {
-  padding: 56px 0;
-}
-.mar-empty-icon {
-  display: inline-flex;
-  width: 56px;
-  height: 56px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-.is-small .mar-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-}
-.mar-empty-title {
-  margin: 0;
-  color: var(--color-base-foreground);
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.25;
-}
-.mar-empty-text {
-  max-width: 400px;
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  line-height: 1.5;
 }
 </style>

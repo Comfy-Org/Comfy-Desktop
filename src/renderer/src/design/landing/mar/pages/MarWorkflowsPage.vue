@@ -17,6 +17,7 @@ import { ComfyWorkflow } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, hostActions, instanceById, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -175,6 +176,7 @@ function lines(w: MarWorkflow): MenuLine[] {
       text: fixedProject
         ? 'Start one here, or move one in from Workflows with Move to project.'
         : 'Every workflow you save, on this computer and in Comfy Cloud. Start from a template; it lands here the first time you save it.',
+      pics: EMPTY_PICS.workflows,
       action: fixedProject ? 'New workflow' : 'Browse templates',
       second: fixedProject ? undefined : 'Blank workflow'
     }"

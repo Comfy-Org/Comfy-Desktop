@@ -30,7 +30,8 @@ const itemClass = (active: boolean): string =>
       <span v-else class="text-ui font-medium tracking-wider text-subtle-foreground uppercase"
         >Spaces</span
       >
-      <Tooltip content="New space">
+      <!-- Mar's proposal: with none yet, the invitation below is the one way to add. -->
+      <Tooltip v-if="!isMariana || SPACES.length" content="New space">
         <Button
           variant="ghost"
           size="icon-xs"

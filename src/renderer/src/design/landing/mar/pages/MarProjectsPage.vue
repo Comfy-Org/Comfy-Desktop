@@ -17,6 +17,7 @@ import Select from '../../ui/Select.vue'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import { go, instances, toast, type Page } from '../../useProto'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -135,6 +136,7 @@ function lines(p: MarProject): MenuLine[] {
       icon: FolderKanban,
       title: 'Keep a piece of work together',
       text: 'A project holds its workflows and assets, runs on one build, and can be shared with the people working on it.',
+      pics: EMPTY_PICS.projects,
       action: 'New project'
     }"
     error-text="Shared projects are out of reach. Workflows on this computer still open from Workflows."

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Archive, Copy, FolderX, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-vue-next'
+import { Archive, Copy, FolderX, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
@@ -11,6 +11,8 @@ import MarPage from './MarPage.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
 import MarEntityHeader from './MarEntityHeader.vue'
+import MarEmpty from './MarEmpty.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarUndoToast from './MarUndoToast.vue'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
@@ -375,6 +377,14 @@ function removePerson(m: string): void {
             </button>
           </template>
         </div>
+        <MarEmpty
+          v-if="p.members.length === 1"
+          :icon="Users"
+          title="Work on this with someone"
+          text="Invite people by email above. They see this project’s workflows and assets, nothing else."
+          :pics="EMPTY_PICS.people"
+          compact
+        />
       </div>
     </MarPage>
 

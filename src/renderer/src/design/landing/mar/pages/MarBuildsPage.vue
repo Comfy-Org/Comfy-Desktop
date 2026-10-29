@@ -23,6 +23,7 @@ import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -267,6 +268,7 @@ const newLabel = computed(() =>
       icon: Plus,
       title: 'Set up where your work runs',
       text: 'A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.',
+      pics: EMPTY_PICS.builds,
       action: newLabel,
       second: surface.id === 'desktop' ? 'Use Comfy Cloud' : undefined
     }"

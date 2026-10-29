@@ -341,7 +341,11 @@ function newChat(): void {
       <template v-if="proto.mode === 'create' && can.spaces">
         <div class="mar-side-label">
           <template v-if="open"
-            ><span class="flex-1">Spaces</span><Plus :size="14" class="text-subtle-foreground"
+            ><span class="flex-1">Spaces</span
+            ><!-- None yet: the invitation below is the one way to add. --><Plus
+              v-if="SPACES.length"
+              :size="14"
+              class="text-subtle-foreground"
           /></template>
           <span v-else class="mar-side-sep" />
         </div>

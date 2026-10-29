@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ExternalLink, Eye, Globe, Pause, Play, Rocket, Trash2, UserPlus } from 'lucide-vue-next'
+import { computed, reactive, ref } from 'vue'
+import {
+  Activity,
+  ExternalLink,
+  Eye,
+  Globe,
+  Pause,
+  Play,
+  Rocket,
+  Trash2,
+  UserPlus,
+  Users,
+  Wrench
+} from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import SpaceMark from '../../parts/space/SpaceMark.vue'
 import MembersTable from '../../parts/space/MembersTable.vue'
@@ -14,6 +26,8 @@ import SpaceUsage from '../../pages/spaces/SpaceUsage.vue'
 import { SPACES, goLive, previewSpace } from '../../spaces'
 import { go, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
+import MarEmpty from './MarEmpty.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import MarEntityHeader from './MarEntityHeader.vue'
 import MarAddress from './MarAddress.vue'
@@ -44,8 +58,11 @@ const TABS = computed(() => [
   { value: 'settings' as Tab, label: 'Settings' }
 ])
 
+// An empty tab shows its invitation until you act on it.
+const opened = reactive({ catalog: false, members: false })
 function invite(): void {
   tab.value = 'members'
+  opened.members = true
   setTimeout(() => members.value?.invite())
 }
 function setPaused(on: boolean): void {
@@ -199,13 +216,43 @@ const lines = computed<MenuLine[]>(() => {
     </template>
 
     <SpaceOverview v-if="tab === 'overview'" :space @tab="(t: Tab) => (tab = t)" />
+    <MarEmpty
+      v-else-if="tab === 'catalog' && !space.catalog.length && !opened.catalog"
+      :icon="Wrench"
+      title="No tools in this space yet"
+      text="Publish an app or a workflow here and its members can run it, in their brand, without seeing a graph."
+      :pics="EMPTY_PICS.tools"
+      action="Add a tool"
+      compact
+      @action="opened.catalog = true"
+    />
     <SpaceCatalog v-else-if="tab === 'catalog'" :space-id="space.id" />
     <SpaceHomeBrand v-else-if="tab === 'home'" :space-id="space.id" />
+    <MarEmpty
+      v-else-if="tab === 'members' && !space.members.length && !opened.members"
+      :icon="Users"
+      title="Nobody in this space yet"
+      text="Invite the client’s team. They sign in at the space’s address and only ever see this space."
+      :pics="EMPTY_PICS.people"
+      action="Invite people"
+      compact
+      @action="invite"
+    />
     <div v-else-if="tab === 'members'" class="mt-8 flex flex-col gap-3.5">
       <MembersTable ref="members" :space-id="space.id" />
       <SpaceAccess :space-id="space.id" />
     </div>
     <SpaceUsage v-else-if="tab === 'usage'" :space-id="space.id" />
+    <MarEmpty
+      v-else-if="tab === 'activity' && (space.status === 'draft' || !space.members.length)"
+      :icon="Activity"
+      title="Nothing has happened here yet"
+      text="Runs, invites and requests from members show up here once the space is live and people use it."
+      :pics="EMPTY_PICS.activity"
+      :action="space.status === 'draft' ? 'Go live' : 'Invite people'"
+      compact
+      @action="space.status === 'draft' ? goLive(space.id) : invite()"
+    />
     <SpaceActivity v-else-if="tab === 'activity'" :space />
     <SpaceSettings v-else :space-id="space.id" />
   </MarPage>
