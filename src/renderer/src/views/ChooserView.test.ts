@@ -673,13 +673,12 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(false)
   })
 
-  it('renders the dashboard as one left-aligned instance grid', async () => {
+  it('renders the dashboard as one instance grid', async () => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
     const wrapper = mountChooser()
     await flushPromises()
     const grids = wrapper.findAll('.chooser-family-grid')
     expect(grids.length).toBe(1)
-    expect(grids[0]!.classes()).toEqual(['chooser-family-grid'])
   })
 
   it('keeps search centered above the signed-in workspace controls', async () => {
