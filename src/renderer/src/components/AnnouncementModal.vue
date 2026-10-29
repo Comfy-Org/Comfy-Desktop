@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
@@ -98,7 +99,7 @@ onUnmounted(() => {
     <Transition name="modal-fade" appear>
       <div
         ref="overlayRef"
-        class="announce-overlay"
+        class="announce-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70 backdrop-blur-[8px] backdrop-saturate-[115%]"
         role="dialog"
         aria-modal="true"
         :aria-label="$t('announcement.comfyApi.title')"
@@ -106,9 +107,11 @@ onUnmounted(() => {
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
       >
-        <div class="announce-content modal-fade-panel">
+        <div
+          class="announce-content modal-fade-panel relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-border bg-neutral-900 max-[800px]:h-full max-[800px]:aspect-auto"
+        >
           <button
-            class="announce-close"
+            class="announce-close absolute top-4 right-4 z-2 inline-flex size-8 items-center justify-center rounded-lg border border-solid border-[var(--border)] bg-text/4 p-0 text-neutral-100 opacity-70 cursor-pointer transition-[border-color,opacity] duration-120 ease-[ease] hover:border-neutral-100/44 hover:opacity-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] [&_svg]:size-[18px] [&_svg]:flex-none [&_svg]:stroke-current"
             type="button"
             :aria-label="$t('common.close')"
             data-testid="announcement-close"
@@ -116,11 +119,15 @@ onUnmounted(() => {
           >
             <X :size="18" />
           </button>
-          <div class="announce-grid">
-            <div class="announce-media-wrap">
+          <div
+            class="announce-grid flex-auto grid size-full grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))] overflow-y-auto max-[800px]:grid-rows-[minmax(0,1fr)_auto]"
+          >
+            <div
+              class="announce-media-wrap relative aspect-video w-full self-center max-[800px]:min-h-0 max-[800px]:aspect-auto max-[800px]:self-stretch"
+            >
               <video
                 ref="videoRef"
-                class="announce-media"
+                class="announce-media block size-full object-cover bg-[linear-gradient(135deg,var(--neutral-800)_0%,var(--neutral-900)_100%)]"
                 :poster="HERO_POSTER_URL"
                 autoplay
                 muted
@@ -131,7 +138,7 @@ onUnmounted(() => {
                 <source :src="HERO_VIDEO_URL" type="video/mp4" />
               </video>
               <button
-                class="announce-sound"
+                class="announce-sound absolute bottom-4 left-4 z-2 inline-flex size-8 items-center justify-center rounded-lg border border-solid border-[var(--border)] bg-neutral-900/55 p-0 text-neutral-100 opacity-85 cursor-pointer transition-[border-color,opacity] duration-120 ease-[ease] hover:border-neutral-100/44 hover:opacity-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] [&_svg]:size-4 [&_svg]:flex-none [&_svg]:stroke-current"
                 type="button"
                 :aria-label="
                   isMuted ? $t('announcement.comfyApi.unmute') : $t('announcement.comfyApi.mute')
@@ -144,28 +151,47 @@ onUnmounted(() => {
                 <Volume2 v-else :size="16" />
               </button>
             </div>
-            <div class="announce-body">
-              <div class="announce-body-main">
-                <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.comfyApi.title') }}</h2>
+            <div
+              class="announce-body flex flex-col justify-between overflow-auto p-[clamp(1.5rem,2.5vw,2.5rem)] max-[800px]:overflow-visible"
+            >
+              <div
+                class="announce-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
+              >
+                <header class="announce-header flex flex-wrap items-center gap-3">
+                  <h2
+                    class="announce-title m-0 font-display text-[length:var(--takeover-fs-h2)] leading-8 font-extrabold tracking-normal text-neutral-100"
+                  >
+                    {{ $t('announcement.comfyApi.title') }}
+                  </h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.comfyApi.lead') }}</p>
-                <ul v-if="highlights.length" class="announce-list">
+                <p
+                  class="announce-lead m-0 font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-300"
+                >
+                  {{ $t('announcement.comfyApi.lead') }}
+                </p>
+                <ul
+                  v-if="highlights.length"
+                  class="announce-list mt-1 mr-0 mb-0 ml-0 flex list-none flex-col gap-2.5 p-0 [&>li]:grid [&>li]:grid-cols-[auto_1fr] [&>li]:items-start [&>li]:gap-3 [&>li]:text-[length:var(--takeover-fs-lead)] [&>li]:leading-[normal] [&>li]:text-neutral-100"
+                >
                   <li v-for="h in highlights" :key="h">
-                    <Check :size="16" class="announce-check" />
+                    <Check :size="16" class="announce-check mt-[3px] text-comfy-yellow" />
                     <span>{{ h }}</span>
                   </li>
                 </ul>
               </div>
-              <footer class="announce-footer">
-                <button
-                  class="brand-primary"
+              <footer
+                class="announce-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"
+              >
+                <Button
+                  size="unset"
+                  variant="textonly"
+                  class="announce-primary static inline-flex touch-auto items-center justify-center gap-0 rounded-[var(--radius-control)] border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-900 cursor-pointer transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55"
                   type="button"
                   data-testid="announcement-primary-cta"
                   @click="openCta('learn_more', PRIMARY_CTA_URL)"
                 >
                   {{ $t('announcement.comfyApi.primaryCta') }}
-                </button>
+                </Button>
               </footer>
             </div>
           </div>
@@ -174,226 +200,3 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-/* Mirrors WhyTryCloudModal.vue, keep the two visually consistent. */
-.announce-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: clamp(72px, 10vh, 132px) clamp(32px, 5vw, 80px) clamp(80px, 11vh, 140px);
-  background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
-  backdrop-filter: blur(8px) saturate(115%);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
-}
-
-.announce-content {
-  position: relative;
-  display: flex;
-  width: min(100%, calc((100vh - clamp(152px, 21vh, 272px)) * (916 / 445)));
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 916 / 445;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--neutral-900);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-.announce-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  opacity: 0.7;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.announce-close:hover {
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  opacity: 1;
-}
-.announce-close:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.announce-close :deep(svg) {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  stroke: currentColor;
-}
-
-.announce-grid {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  width: 100%;
-  height: 100%;
-  /* The 916/445 card ratio assumes two columns. Whenever the grid stacks, the
-     16:9 media is taller than the whole card on its own, so scroll here rather
-     than let .announce-content clip the copy and the CTAs. */
-  overflow-y: auto;
-}
-
-.announce-media-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  align-self: center;
-}
-.announce-media {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
-}
-
-/* Sound toggle, mirrors .announce-close, pinned to the video's lower-left. */
-.announce-sound {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--neutral-900) 55%, transparent);
-  opacity: 0.85;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.announce-sound:hover {
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  opacity: 1;
-}
-.announce-sound:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.announce-sound :deep(svg) {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  stroke: currentColor;
-}
-
-.announce-body {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: clamp(1.5rem, 2.5vw, 2.5rem);
-  overflow: auto;
-}
-.announce-body-main {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: clamp(0.75rem, 1.2vw, 1.25rem);
-}
-
-.announce-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.announce-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--takeover-fs-h2);
-  font-weight: 800;
-  letter-spacing: 0;
-  color: var(--neutral-100);
-  line-height: 32px;
-}
-.announce-lead {
-  margin: 0;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-300);
-  font-weight: 400;
-  font-family: var(--font-sans);
-  line-height: normal;
-}
-
-.announce-list {
-  list-style: none;
-  margin: 4px 0 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.announce-list li {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: start;
-  gap: 12px;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-100);
-  line-height: normal;
-}
-.announce-check {
-  color: var(--comfy-yellow);
-  margin-top: 3px;
-}
-
-.announce-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 16px;
-  padding-top: clamp(1rem, 1.5vw, 1.5rem);
-  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-.announce-fine {
-  margin: 12px 0 4px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
-  font-family: var(--font-sans);
-}
-
-/* One column, which the grid drops to below 720px of card width. Drop the
-   two-column card ratio, and let the media take what the copy and CTAs leave
-   rather than 16:9, which on its own is taller than the whole card. */
-@media (width < 800px) {
-  .announce-content {
-    height: 100%;
-    aspect-ratio: auto;
-  }
-  .announce-grid {
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-  .announce-media-wrap {
-    aspect-ratio: auto;
-    align-self: stretch;
-    min-height: 0;
-  }
-  .announce-body {
-    overflow: visible;
-  }
-}
-</style>
