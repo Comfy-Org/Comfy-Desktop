@@ -13,6 +13,7 @@ process.env.VITE_DATADOG_RUM_VERSION = resolveDatadogReleaseVersion(process.env)
 
 export default defineConfig({
   main: {
+    plugins: [tailwindcss()],
     build: {
       sourcemap: 'hidden',
       rollupOptions: {
