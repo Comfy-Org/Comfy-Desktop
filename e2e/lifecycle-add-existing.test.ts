@@ -22,6 +22,7 @@ import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let stagedPath: string
@@ -112,7 +113,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
 
   // Browse — the stubbed OS dialog returns the staged path; TrackModal
   // then fires the real probe against it.
-  expect(await ctx.panel.click('.track-path-row .brand-tertiary')).toBe(true)
+  expect(await ctx.panel.click(byTestId(TID.trackBrowse))).toBe(true)
   await ctx.panel.waitFor(
     async () => (await ctx.panel.allText('.track-path-open')).some((t) => t.includes(stagedPath)),
     { timeout: 10_000, message: 'picked directory never appeared in the path field' },
@@ -123,7 +124,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
   // manifest's raw ref string without ComfyUI/.git).
   await ctx.panel.waitFor(
     async () => {
-      const values = await ctx.panel.allText('.brand-summary__value')
+      const values = await ctx.panel.allText('.track-summary-value')
       return values.length > 0 && values.some((v) => v.trim().length > 0)
     },
     { timeout: 15_000, message: 'probe never populated the detected-install summary' },

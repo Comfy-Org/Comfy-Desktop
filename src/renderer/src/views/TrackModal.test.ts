@@ -92,6 +92,12 @@ function mountTrack() {
   })
 }
 
+function browseButton(wrapper: ReturnType<typeof mountTrack>) {
+  const button = wrapper.findAll('button').find((button) => button.text() === 'Browse')
+  if (!button) throw new Error('Browse button not found')
+  return button
+}
+
 function trackButton(wrapper: ReturnType<typeof mountTrack>) {
   return wrapper.get('button.track-save')
 }
@@ -130,7 +136,7 @@ describe('TrackModal — browse-only install directory', () => {
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    await wrapper.get('button.brand-tertiary').trigger('click')
+    await browseButton(wrapper).trigger('click')
     await flushPromises()
 
     const pathBtn = wrapper.get('button.track-path-open')
@@ -149,7 +155,7 @@ describe('TrackModal — browse-only install directory', () => {
 
     expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
 
-    await wrapper.get('button.brand-tertiary').trigger('click')
+    await browseButton(wrapper).trigger('click')
     await flushPromises()
 
     expect(api.probeInstallation).toHaveBeenCalledWith('/Users/jo/ComfyUI')
@@ -165,7 +171,7 @@ describe('TrackModal — browse-only install directory', () => {
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    await wrapper.get('button.brand-tertiary').trigger('click')
+    await browseButton(wrapper).trigger('click')
     await flushPromises()
 
     expect(api.probeInstallation).toHaveBeenCalledWith('/tmp/not-comfy')
@@ -194,7 +200,7 @@ describe('TrackModal — install path resolution on save', () => {
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    await wrapper.get('button.brand-tertiary').trigger('click')
+    await browseButton(wrapper).trigger('click')
     await flushPromises()
 
     await trackButton(wrapper).trigger('click')
@@ -214,7 +220,7 @@ describe('TrackModal — install path resolution on save', () => {
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    await wrapper.get('button.brand-tertiary').trigger('click')
+    await browseButton(wrapper).trigger('click')
     await flushPromises()
 
     await trackButton(wrapper).trigger('click')
