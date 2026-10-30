@@ -8,6 +8,7 @@ import { createApp, type Component } from 'vue'
  *   page    one component page in one theme (an iframe per theme)
  *   stage   one component opened (a menu, a tooltip), inside a page
  *   app     the whole prototype on one page, state or knob (kit/AppShot.vue)
+ *   play    one component with props from the Playground (kit/PlayFrame.vue)
  *
  * `?seed={"key":"value"}` starts a frame with those prototype settings
  * (the in-memory storage, main.ts), so it can show any knob's value.
@@ -20,7 +21,7 @@ const frame = url.get('frame')
 
 async function boot(): Promise<void> {
   let root: Component
-  if (frame === 'page' || frame === 'stage' || frame === 'app') {
+  if (frame === 'page' || frame === 'stage' || frame === 'app' || frame === 'play') {
     for (const [k, v] of Object.entries(JSON.parse(url.get('seed') ?? '{}')))
       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v))
     const theme = url.get('theme') === 'light' ? 'light' : 'dark'
@@ -29,17 +30,22 @@ async function boot(): Promise<void> {
     html.dataset.dsTheme = theme
     html.classList.add('ds-frame')
     if (frame === 'app') html.classList.add('ds-app-frame')
+    if (frame === 'play') html.classList.add('ds-play-frame')
     // The same modules the prototype loads for Mar's proposal, so every
     // knob sets its <html> attribute and stylesheet at its default.
     await import('./defaults')
     const { installForcedStates } = await import('./kit/force')
     installForcedStates()
+    const { installPlayback } = await import('./kit/playback')
+    installPlayback()
     root =
       frame === 'page'
         ? (await import('./kit/PageFrame.vue')).default
         : frame === 'stage'
           ? (await import('./kit/StageFrame.vue')).default
-          : (await import('./kit/AppFrame.vue')).default
+          : frame === 'play'
+            ? (await import('./kit/PlayFrame.vue')).default
+            : (await import('./kit/AppFrame.vue')).default
   } else {
     root = (await import('./DsApp.vue')).default
   }

@@ -11,7 +11,8 @@ import AboutPage from './pages/AboutPage.vue'
  */
 const current = ref(readHash())
 function readHash(): string {
-  const id = location.hash.replace(/^#\/?/, '')
+  // A page can keep its own state after `?` (the Playground).
+  const id = location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
   return PAGES.some((p) => p.id === id) ? id : PAGES[0]!.id
 }
 const onHash = (): void => void (current.value = readHash())
@@ -89,7 +90,7 @@ const src = (theme: string): string =>
         </template>
       </nav>
       <main ref="main" class="ds-main" :data-page="page.id">
-        <AboutPage v-if="!page.component" />
+        <AboutPage v-if="!page.component && !page.custom" />
         <template v-else>
           <header class="ds-page-head">
             <h1>{{ page.title }}</h1>
@@ -98,7 +99,9 @@ const src = (theme: string): string =>
               From <code>{{ page.source }}</code>
             </p>
           </header>
-          <div :class="['ds-themes', themes.length > 1 && 'is-both']">
+          <component :is="page.custom" v-if="page.custom" />
+          <component :is="page.bar" v-if="page.bar" />
+          <div v-if="!page.custom" :class="['ds-themes', themes.length > 1 && 'is-both']">
             <div v-for="t in themes" :key="`${current}-${t}`" class="ds-theme">
               <span class="ds-theme-label">{{ t === 'dark' ? 'Dark' : 'Light' }}</span>
               <iframe

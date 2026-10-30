@@ -26,4 +26,6 @@ import '../pabloPorts'
 // her proposal.
 import '../shell/marShell.css'
 import '../shell/panelsNav.css'
+// The app loads it with MarBackdrop, under Mar's proposal.
+import '../motion/motion.css'
 import '../menus/layers.css'

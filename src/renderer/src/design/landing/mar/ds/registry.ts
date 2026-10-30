@@ -15,6 +15,10 @@ export interface DsPage {
   component?: Component
   /** Docs that don't change with the theme, under the theme frames. */
   doc?: Component
+  /** Controls for every frame, above them (pages/MotionBar.vue). */
+  bar?: Component
+  /** A page drawn by itself, without theme frames (the Playground). */
+  custom?: Component
 }
 
 const lazy = (load: () => Promise<{ default: Component }>): Component => defineAsyncComponent(load)
@@ -80,6 +84,15 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 export const PAGES: DsPage[] = [
   { id: 'about', label: 'About', group: 'Docs', title: "Mar's design system" },
   {
+    id: 'playground',
+    label: 'Playground',
+    group: 'Docs',
+    title: 'Playground',
+    source: 'the components named on each one; specs in mar/ds/play.ts',
+    use: 'Try a component with any props, in either theme, Corners and Look; copy its usage or a link.',
+    custom: lazy(() => import('./pages/PlaygroundPage.vue'))
+  },
+  {
     id: 'materials-blur',
     label: 'Materials · Blur',
     group: 'Foundations',
@@ -89,6 +102,27 @@ export const PAGES: DsPage[] = [
     use: 'How blur is used, level by level, so it can be built exactly: the values, who uses them, the rules and the CSS.',
     component: lazy(() => import('./pages/MaterialsPage.vue')),
     doc: lazy(() => import('./pages/MaterialsDoc.vue'))
+  },
+  {
+    id: 'motion',
+    label: 'Motion',
+    group: 'Foundations',
+    title: 'Motion',
+    source:
+      'mar/motion/motion.css, ui/tokens.css, and each component’s own transitions (named on each)',
+    use: 'Every animation in the default view: trigger, duration, easing, what moves, and what reduced motion does.',
+    component: lazy(() => import('./pages/MotionPage.vue')),
+    bar: lazy(() => import('./pages/MotionBar.vue'))
+  },
+  {
+    id: 'interactions',
+    label: 'Interactions',
+    group: 'Foundations',
+    title: 'Interactions',
+    source:
+      'mar/pages/library.ts, collection.ts, undo.ts, MarItem.vue, MarItemMenu.vue, MarSeg.vue; mar/search/MarSearch.vue; mar/graph/MarGraph.vue; mar/uiTuner.ts',
+    use: 'Keyboard and pointer: focus, menus, tabs, selection, rename, undo, ⌘K, ⌘., the graph.',
+    component: lazy(() => import('./pages/InteractionsPage.vue'))
   },
   {
     id: 'default-view',

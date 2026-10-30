@@ -21,7 +21,12 @@ const url = `${location.origin}${location.pathname}`
     </p>
     <ul>
       <li>
-        <strong>Foundations</strong>: materials (blur), with their values read live from the CSS.
+        <strong>Playground</strong>: any component with any props, theme, Corners and Look; copy its
+        usage or a link to that exact state.
+      </li>
+      <li>
+        <strong>Foundations</strong>: materials (blur), motion (every animation, replayable, with a
+        speed and a reduced-motion preview) and interactions (keyboard and pointer, live).
       </li>
       <li><strong>Put together</strong>: the whole app, Home's spotlight, the looks, users.</li>
       <li><strong>Shell, Home, Controls</strong>: components on their own, each state forced.</li>
