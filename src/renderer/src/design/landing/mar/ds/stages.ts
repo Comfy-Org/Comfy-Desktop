@@ -69,7 +69,7 @@ export const STAGES = {
   },
   'workspace-menu': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
-    height: 400,
+    height: 560,
     place: 'bottom-left',
     on: 'sidebar',
     // The workspace, not Credits (the row above it opens its own flyout).
@@ -77,7 +77,7 @@ export const STAGES = {
   },
   'workspace-menu-hover': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
-    height: 400,
+    height: 560,
     place: 'bottom-left',
     on: 'sidebar',
     open: pressMenu(WORKSPACE, 1)
