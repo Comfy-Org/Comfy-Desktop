@@ -1507,7 +1507,9 @@ describe('PanelApp', () => {
   async function chooseExampleWorkflow(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
     await wrapper.get('.performance-test__example-workflow').trigger('click')
     await flushPromises()
-    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    ;(
+      document.querySelector('[data-testid="performance-test-use-example"]') as HTMLButtonElement
+    ).click()
     await flushPromises()
   }
 
@@ -1521,7 +1523,9 @@ describe('PanelApp', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       'Missing models will be downloaded automatically.'
     )
-    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    ;(
+      document.querySelector('[data-testid="performance-test-use-example"]') as HTMLButtonElement
+    ).click()
     await flushPromises()
 
     expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalledWith(
@@ -1844,7 +1848,8 @@ describe('PanelApp', () => {
 
     expect(document.querySelector('.performance-test__example-disk-error')).not.toBeNull()
     expect(
-      (document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).disabled
+      (document.querySelector('[data-testid="performance-test-use-example"]') as HTMLButtonElement)
+        .disabled
     ).toBe(true)
   })
 
