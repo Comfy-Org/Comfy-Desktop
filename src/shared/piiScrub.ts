@@ -90,10 +90,11 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
-// `\uXXXX` is an escape only in escaped text, i.e. after an escaped separator;
-// in a raw path `\u1234` is a folder, so the name ends at its backslash.
+// `\uXXXX` is a JSON escape (non-ASCII name) unless the separator before the
+// name is a single raw `\`; there `\u1234` is a folder, so the name ends at its
+// backslash. (A `/\` prefix is `/` plus the first escape's backslash.)
 function redactName(match: string, prefix: string): string {
-  const escaped = prefix.endsWith('\\\\') || prefix.endsWith('\\/')
+  const escaped = !/(?:^|[^\\/])\\$/.test(prefix)
   const name = match.slice(prefix.length)
   const end = escaped ? -1 : name.indexOf('\\')
   return `${prefix}[REDACTED]${end === -1 ? '' : name.slice(end)}`
