@@ -215,6 +215,7 @@ const sources = (src: [string, string][]): { where: string; code: string }[] =>
 }
 .ds-motion-replay {
   position: absolute;
+  white-space: nowrap;
   right: 8px;
   bottom: 8px;
   display: inline-flex;

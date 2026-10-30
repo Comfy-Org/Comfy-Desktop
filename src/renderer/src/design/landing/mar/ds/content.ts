@@ -20,6 +20,8 @@ export interface Prop {
 export interface Content {
   /** Which section and cell make the large example (default: the first). */
   hero?: [number, number]
+  /** The example's width when it isn't its own (rows, bars: the column). */
+  heroWidth?: string
   when?: string[]
   whenNot?: string[]
   /** At most five. */
@@ -43,7 +45,7 @@ export const CONTENT: Record<string, Content> = {
     when: ['An action on this surface.', 'Ghost for rows, toolbars and icon-only actions.'],
     whenNot: ['Going to another page: a nav row or a link.', 'Picking one of a few options: tabs.'],
     rules: [
-      'One primary (white) per surface.',
+      'One primary (inverted: white in dark, near-black in light) per surface.',
       'Destructive only for what can’t be undone, and muted.',
       'Icon-only buttons have a tooltip.',
       'Pressed scales to 0.98; nothing else moves.'
@@ -65,7 +67,7 @@ export const CONTENT: Record<string, Content> = {
     when: ['Naming an icon-only control.', 'Saying why something is disabled.'],
     whenNot: ['Text already on screen.', 'Help longer than a line or two: a popover.'],
     rules: [
-      'A small dark glass label, 8px corners.',
+      'A small glass label, 8px corners (dark in dark mode, light in light).',
       'Wraps at 256px.',
       'Fades in over 160ms; never moves.'
     ],
@@ -84,9 +86,9 @@ export const CONTENT: Record<string, Content> = {
     when: ['The state of a run, build or item, next to its name or on its picture.'],
     whenNot: ['Progress percentages: they live in the queue.', 'Decoration or categories.'],
     rules: [
-      'Running spins, Completed is a check, Failed an octagon, Unsaved a hollow dot.',
+      'Running spins, Completed is a check, Failed an octagon, Draft a hollow dot.',
       'Colour means status; nothing else is coloured.',
-      'On a picture: dark glass, light words, the colour in the icon.',
+      'On a picture: dark glass in both themes, light words, the colour in the icon.',
       'On cards: top-left, moving right for the select check.'
     ],
     tokens: [
@@ -101,6 +103,7 @@ export const CONTENT: Record<string, Content> = {
     play: 'status'
   },
   items: {
+    heroWidth: '280px',
     pairs: [{ id: 'hover', do: 'Hover lightens the surface.', dont: 'The card grows on hover.' }],
     when: ['One thing in a library page, as a card or a list row.'],
     whenNot: ['Home’s recent work (Cards).', 'A short list of places or builds (Row cards).'],
@@ -119,6 +122,7 @@ export const CONTENT: Record<string, Content> = {
     play: 'item'
   },
   cards: {
+    heroWidth: '320px',
     hero: [1, 0],
     when: ['Home’s recent work and spaces, picture first.'],
     whenNot: ['A library page: Items.', 'Places or builds to pick from: Row cards.'],
@@ -127,9 +131,17 @@ export const CONTENT: Record<string, Content> = {
       'Hover lightens the surface; nothing grows.',
       'The Draft chip only where a workflow is in no space.'
     ],
-    tokens: [fg('--radius-card', 'Card corner'), fg('--color-card-background', 'Card surface')]
+    tokens: [
+      { name: 'border-radius', selector: "[role='button']", use: '--radius-card' },
+      {
+        name: 'background-color',
+        selector: "[role='button']",
+        use: 'The foreground at 5% (solid card colour with Crit feedback On)'
+      }
+    ]
   },
   'row-cards': {
+    heroWidth: '100%',
     when: ['A short list of places or builds, each with its action at the end.'],
     whenNot: ['More than a handful of items: a library page.'],
     rules: [
@@ -165,14 +177,15 @@ export const CONTENT: Record<string, Content> = {
     ]
   },
   'tabs-filters': {
-    pairs: [{ id: 'corner', do: 'Controls share one corner.', dont: 'Pill-shaped controls.' }],
+    heroWidth: '100%',
+    pairs: [{ id: 'corner', do: 'Controls share one corner.', dont: 'Fully rounded controls.' }],
     when: ['Narrowing a page: its scopes as tabs; filters, Sort, search and view on the right.'],
     whenNot: ['Moving between pages: the sidebar.', 'Settings: a select or a switch.'],
     rules: [
       'Tabs left, the rest grouped right.',
-      'A pill slides to the picked tab; counts hidden.',
-      'Every control shares one corner (Corners: Soft 10/7, Default 6/3).',
-      'No pill-shaped controls; Sort is an icon.'
+      'An indicator slides to the picked tab; counts hidden.',
+      'Tabs, filters, sort, search and view share one corner (Corners: Soft 10/7, Default 6/3); buttons keep --radius-control.',
+      'No fully rounded controls; Sort is an icon.'
     ],
     tokens: [
       fg('--mar-tab-radius', 'Track and controls'),
@@ -183,6 +196,7 @@ export const CONTENT: Record<string, Content> = {
     play: 'tabs'
   },
   empty: {
+    heroWidth: '100%',
     pairs: [{ id: 'one', do: 'One action fills it.', dont: 'A row of competing actions.' }],
     when: ['A place with nothing in it yet, no results, or an error.'],
     whenNot: ['A loading state: skeletons in the content’s shape.'],
@@ -194,11 +208,12 @@ export const CONTENT: Record<string, Content> = {
     play: 'empty'
   },
   prompt: {
+    heroWidth: '720px',
     when: ['Home’s one place to type: what to make, and on which build.'],
     whenNot: ['Searching: ⌘K.'],
     rules: [
       'One line; three while typing, over the content.',
-      'A very faint edge: 7%, 12% while typing.',
+      'A very faint edge: a 9% outline, 14% while typing.',
       'The build picker shows the build itself.'
     ],
     tokens: [
@@ -220,9 +235,11 @@ export const CONTENT: Record<string, Content> = {
     ]
   },
   search: {
+    hero: [1, 0],
+    heroWidth: '100%',
     when: ['Finding anything or running a quick action: ⌘K, or the sidebar’s first row.'],
     whenNot: ['Narrowing one page: its own search field.'],
-    rules: ['⌘K sits on the row as a key chip.', 'Pictures first, little text.']
+    rules: ['Opens from ⌘K anywhere, or the sidebar’s first row.', 'Pictures first, little text.']
   },
   icons: {
     pairs: [
@@ -237,10 +254,13 @@ export const CONTENT: Record<string, Content> = {
     ]
   },
   banner: {
+    play: 'banner',
+    heroWidth: '100%',
     when: ['One launch at a time on Home.'],
     rules: ['A wide banner, no section title.', 'Dots step through; the active one fills over 7s.']
   },
   activity: {
+    heroWidth: '720px',
     when: ['What happened lately in a space or project, newest first.'],
     rules: ['Milestones on a vertical line: time · dot · who did what.']
   }

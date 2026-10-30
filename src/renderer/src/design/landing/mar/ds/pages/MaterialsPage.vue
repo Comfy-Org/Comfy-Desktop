@@ -95,7 +95,7 @@ const low = (n: number): boolean => n < 4.5
     <Section
       v-if="overview"
       title="Every level"
-      note="Blur only on what floats over content; cards on the page stay solid."
+      note="Blur on what floats over content. Cards on the page blur too today; with UI Playground › Crit feedback On they are solid."
     >
       <Cells :min="200">
         <Cell v-for="l in LEVELS" :key="l.id" :label="l.name" fill>

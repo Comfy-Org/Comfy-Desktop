@@ -10,17 +10,12 @@ import Section from '../kit/Section.vue'
     title="What's new"
     note="Video loops with the dots inside the banner. Live: it advances on its own; hover pauses it, a dot jumps."
   >
-    <Cells :min="560">
+    <Cells :min="960">
       <Cell label="playing" fill><LaunchBanner /></Cell>
-      <Cell
-        label="hover · paused"
-        fill
-        force="hover"
-        target="section, [class*='rounded']:first-child"
-      >
+      <Cell label="hover · paused" fill force="hover" target="[class*='aspect-[5/1]']">
         <LaunchBanner />
       </Cell>
-      <Cell label="Try it hover" fill force="hover" target="button">
+      <Cell label="Try it hover" fill force="hover" target="button::text(Try it)">
         <LaunchBanner />
       </Cell>
     </Cells>

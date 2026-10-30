@@ -94,10 +94,27 @@ const nav = computed(() =>
   })).filter((g) => g.pages.length)
 )
 
+// Pages whose hero is their only example (kit/PageFrame.vue says so):
+// as patterns they need no tabs.
+const single = ref<Record<string, boolean>>({})
+function onMeta(e: MessageEvent): void {
+  if (e.data?.type === 'mar-ds:meta')
+    single.value = { ...single.value, [e.data.page]: e.data.single }
+}
+const bare = computed(
+  () => page.value.group === 'Patterns' && single.value[page.value.id] && tabs.value.length === 1
+)
+
 const main = ref<HTMLElement>()
 watch(current, () => main.value?.scrollTo({ top: 0 }))
-onMounted(() => window.addEventListener('hashchange', onHash))
-onBeforeUnmount(() => window.removeEventListener('hashchange', onHash))
+onMounted(() => {
+  window.addEventListener('hashchange', onHash)
+  window.addEventListener('message', onMeta)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', onHash)
+  window.removeEventListener('message', onMeta)
+})
 </script>
 
 <template>
@@ -186,7 +203,7 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHash))
             </div>
           </template>
 
-          <template v-if="kind === 'component' || kind === 'foundation'">
+          <template v-if="(kind === 'component' && !bare) || kind === 'foundation'">
             <div class="ds-tabs" role="tablist">
               <button
                 v-for="t in tabs"

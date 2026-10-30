@@ -47,6 +47,35 @@ const USE: Record<string, string> = {
   '--text-display': 'Home’s greeting'
 }
 
+// Colours the code writes by hand, not as tokens (yet).
+const LOOSE: Tok[] =
+  kind === 'colour'
+    ? [
+        {
+          name: 'credit gold',
+          use: 'Credits’ coin: #ddbd31 (parts/WorkspaceMenu.vue); light oklch(0.66 0.13 85) (mar/shell/marShell.css)'
+        },
+        {
+          name: 'status amber',
+          use: 'Update, changes: oklch(0.8 0.14 75) (mar/pages/MarStatus.vue)'
+        }
+      ]
+    : []
+const LOOSE_COLOUR: Record<string, string> = {
+  'credit gold': '#ddbd31',
+  'status amber': 'oklch(0.8 0.14 75)'
+}
+
+/** A variable written as calc() or var() reads as its length, measured. */
+function measure(name: string, raw: string): string {
+  if (!/calc\(|var\(/.test(raw)) return raw
+  const el = document.body.appendChild(document.createElement('div'))
+  el.style.width = `var(${name})`
+  const px = getComputedStyle(el).width
+  el.remove()
+  return px
+}
+
 const tokens = ref<Tok[]>([...parsed, ...MAR])
 onMounted(() =>
   setTimeout(() => {
@@ -54,7 +83,7 @@ onMounted(() =>
     tokens.value = tokens.value.map((t) => ({
       ...t,
       use: t.use || USE[t.name] || '',
-      value: css.getPropertyValue(t.name).trim(),
+      value: measure(t.name, css.getPropertyValue(t.name).trim()),
       lh: kind === 'type' ? css.getPropertyValue(`${t.name}--line-height`).trim() : undefined
     }))
   }, 500)
@@ -67,9 +96,16 @@ const GROUPS: [string, RegExp][] = [
   ['Lines', /border/],
   ['Status and media', /status|overlay/]
 ]
-const groups = computed(() =>
-  GROUPS.map(([label, re]) => ({ label, items: tokens.value.filter((t) => re.test(t.name)) }))
-)
+const groups = computed(() => [
+  ...GROUPS.map(([label, re]) => ({ label, items: tokens.value.filter((t) => re.test(t.name)) })),
+  { label: 'Not tokens yet', items: LOOSE }
+])
+const swatch = (t: Tok): string => LOOSE_COLOUR[t.name] ?? `var(${t.name})`
+const NOTES: Record<string, string> = {
+  Surfaces: 'Grey scale: pictures carry the colour.',
+  Lines: 'Transparent by default (UI Playground › Borders: None); the swatches show the token.',
+  'Not tokens yet': 'Written by hand in the code; candidates for tokens.'
+}
 
 const copied = ref('')
 async function copy(t: Tok): Promise<void> {
@@ -117,15 +153,10 @@ const short = (n: string): string => n.replace(PREFIX, '').replace('--mar-', 'ma
   </Section>
 
   <template v-else-if="kind === 'colour'">
-    <Section
-      v-for="g in groups"
-      :key="g.label"
-      :title="g.label"
-      :note="g.label === 'Surfaces' ? 'Grey scale: pictures carry the colour.' : undefined"
-    >
+    <Section v-for="g in groups" :key="g.label" :title="g.label" :note="NOTES[g.label]">
       <div class="ds-tok-swatches">
         <figure v-for="t in g.items" :key="t.name">
-          <i :style="{ background: `var(${t.name})` }" />
+          <i :style="{ background: swatch(t) }" />
           <figcaption>{{ short(t.name) }}</figcaption>
         </figure>
       </div>

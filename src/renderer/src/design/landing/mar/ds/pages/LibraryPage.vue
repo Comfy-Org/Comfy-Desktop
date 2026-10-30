@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import AppShot from '../kit/AppShot.vue'
 import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
@@ -11,6 +12,18 @@ const STATES = [
   { value: 'empty', note: 'First use, with the one action that fills it.' },
   { value: 'error', note: 'Offline, with Retry.' }
 ] as const
+// Pages that don't follow Page state: Favorites is empty when nothing is
+// starred; Settings has no states of its own.
+const shown = computed(() =>
+  page === 'settings'
+    ? STATES.slice(0, 1).map((s) => ({ ...s, seed: undefined }))
+    : page === 'favorites'
+      ? [
+          { ...STATES[0], seed: undefined },
+          { ...STATES[2], seed: { 'comfy.design.mar.favorites.v2': [] } }
+        ]
+      : STATES.map((s) => ({ ...s, seed: undefined }))
+)
 </script>
 
 <template>
@@ -20,12 +33,13 @@ const STATES = [
   >
     <Cells :min="520">
       <AppShot
-        v-for="s in STATES"
+        v-for="s in shown"
         :key="s.value"
         :label="`${s.value} · ${s.note}`"
         :page
         :mode
-        :page-state="s.value"
+        :page-state="s.seed ? undefined : s.value"
+        :seed="s.seed"
       />
     </Cells>
   </Section>

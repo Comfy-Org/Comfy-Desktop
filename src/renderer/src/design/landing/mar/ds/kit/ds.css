@@ -442,7 +442,7 @@ html.ds-app-frame #app {
 /* At the component's own width: wide ones (rows, headers) take the
    column, small ones sit centred with room around them. */
 .ds-cells.is-hero > .ds-cell {
-  width: fit-content;
+  width: var(--ds-hero-w, fit-content);
   min-width: min(100%, 480px);
   max-width: 100%;
 }
@@ -526,4 +526,36 @@ html.ds-app-frame #app {
 
 .ds-more-all {
   margin-top: 20px;
+}
+
+/* Stages sit on the same plain surface as the cells. */
+.ds-stage-root.proto-main.proto-main.proto-main {
+  background: var(--color-content-background);
+}
+.ds-stage-root.proto-main.proto-main.proto-main::before,
+.ds-stage-root.proto-main.proto-main.proto-main::after {
+  display: none;
+}
+/* The DS's own buttons, past the prototype's button reset. */
+:root .proto-ui.proto-ui .ds-more {
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui .ds-more:hover {
+  color: var(--color-base-foreground);
+}
+.ds-play-code-head button,
+.ds-play-code-head a {
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui .ds-motion-replay {
+  width: auto;
+  height: auto;
+  white-space: nowrap;
 }

@@ -12,7 +12,7 @@ const typed = ref("Put this product in a model's hand, soft daylight, shallow de
 <template>
   <Section
     title="Prompt box"
-    note="One line with the build picker, the mic and send. A very faint edge: foreground 7%, 12% while typing."
+    note="One line with the build picker, the mic and send. A very faint edge: a 9% outline, 14% while typing."
   >
     <Cells :min="520">
       <Cell label="idle" fill :height="120">

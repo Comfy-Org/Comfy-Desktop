@@ -7,9 +7,10 @@ const url = `${location.origin}${location.pathname}`
   <article class="ds-doc">
     <h1>Mar's design system</h1>
     <p>
-      Every component in Mar's proposal for Comfy Desktop, in every state, dark and light side by
-      side. It renders the prototype's real components with their real styles, so it can't drift:
-      when a component changes in the prototype, it changes here.
+      Every component in Mar's proposal for Comfy Desktop, in its states, dark by default (light or
+      both from the header). It renders the prototype's real components, so it can't drift.
+      Components show when to use them and their rules; Do / Don't, Specs and Playground where they
+      apply.
     </p>
 
     <h2>How it's organised</h2>
@@ -62,15 +63,15 @@ const url = `${location.origin}${location.pathname}`
         <li>
           Grey scale UI: pictures and outputs carry the colour. Colour means status or progress.
         </li>
-        <li>One primary (white) button per surface. Credits keep their production gold.</li>
+        <li>One primary (inverted) button per surface. Credits keep their production gold.</li>
       </ul>
 
       <h3>Glass</h3>
       <ul>
         <li>
           <strong>Blur only on what floats over content</strong> (menus, tooltips, the palette,
-          modals and their scrim, chips on pictures); cards on the page stay solid. No blur inside
-          blur. Levels, values and CSS: Foundations › Materials · Blur.
+          modals and their scrim, chips on pictures). Cards on the page are solid with Crit feedback
+          On. No blur inside blur. Levels, values and CSS: Foundations › Materials · Blur.
         </li>
         <li>Chips on pictures: grey at 60% over a blur, 11px.</li>
         <li>Text on glass passes contrast against the busiest picture behind it.</li>
@@ -87,7 +88,7 @@ const url = `${location.origin}${location.pathname}`
           current pick raised. The Run on picker groups builds by where they run.
         </li>
         <li><strong>A menu with one option is a button</strong> (or plain text).</li>
-        <li>Tooltips are small dark glass labels with 8px corners.</li>
+        <li>Tooltips are small glass labels with 8px corners.</li>
       </ul>
 
       <h3>Surfaces and cards</h3>
@@ -100,7 +101,8 @@ const url = `${location.origin}${location.pathname}`
         <li>
           <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
           <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from
-          UI Playground › Corners (Soft 10 / 7 by default, Default 6 / 3). No pills in filter bars.
+          UI Playground › Corners (Soft 10 / 7 by default, Default 6 / 3). No fully rounded controls
+          in filter bars; buttons keep --radius-control.
         </li>
         <li>
           Row cards (Home's builds, Where should Comfy run): one card, 72 tall, 16px corners, a 40px
@@ -117,8 +119,8 @@ const url = `${location.origin}${location.pathname}`
       <h3>Layout</h3>
       <ul>
         <li>
-          A page's toolbar: tabs on the left, with a pill that slides to the pick (counts hidden);
-          filters, Sort (an icon), search and view on the right.
+          A page's toolbar: tabs on the left, with an indicator that slides to the pick (counts
+          hidden); filters, Sort (an icon), search and view on the right.
         </li>
         <li>
           <strong>Page header</strong> (project, space): cover, title, state and one meta line on
@@ -146,7 +148,7 @@ const url = `${location.origin}${location.pathname}`
         </li>
         <li>
           <strong>Global search</strong> opens with <code>⌘K</code> anywhere and from the sidebar's
-          first row, where ⌘K sits as a key chip. (Notion still says “no global search for now”.)
+          first row. (Notion still says “no global search for now”.)
         </li>
         <li>The graph editor goes back Home from the Comfy logo heading its rail.</li>
       </ul>
@@ -160,7 +162,7 @@ const url = `${location.origin}${location.pathname}`
         </li>
         <li>
           <strong>Run states follow production</strong>: Running spins, Completed is a check, Failed
-          an octagon, Unsaved a hollow dot. No percentages on items.
+          an octagon, Draft a hollow dot. No percentages on items.
         </li>
         <li>Graph nodes follow ComfyUI's Vue node anatomy.</li>
         <li>Credits flyout: Alex's 13 states, as designed (the Row; no style picker).</li>
@@ -179,7 +181,7 @@ const url = `${location.origin}${location.pathname}`
     <p>
       With the prototype's dev server running (<code>pnpm dev</code>), open
       <a :href="url">{{ url }}</a
-      >. The header switches between dark and light side by side, or one of them. Pages are links
+      >. Dark by default; the header switches to light or both. Pages are links
       (<code>#/sidebar</code>).
     </p>
     <p>

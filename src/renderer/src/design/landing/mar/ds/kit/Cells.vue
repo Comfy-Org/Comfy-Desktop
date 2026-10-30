@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Comment, Fragment, computed, ref, useSlots, type VNode } from 'vue'
+import { Comment, Fragment, computed, onMounted, ref, useSlots, type VNode } from 'vue'
 import { KEY_STATES, useMode, useSection } from './mode'
 
 /**
@@ -29,6 +29,10 @@ const shown = computed(() => {
 })
 // Large cells (whole-app shots) fill two rows sooner.
 const cap = min >= 400 ? 2 : KEY_STATES
+// The hero's row tells the frame how many examples it has.
+onMounted(() => {
+  if (heroRow) ctx.heroCount = cells.value.length
+})
 const more = computed(() => (ctx.mode === 'states' ? cells.value.length - cap : 0))
 const Render = (): VNode[] => shown.value
 </script>

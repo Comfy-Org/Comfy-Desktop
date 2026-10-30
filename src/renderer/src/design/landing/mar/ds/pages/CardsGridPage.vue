@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ShotsPage, { type Shot } from './ShotsPage.vue'
 
-const GRID: [number, number, number, number] = [250, 110, 1030, 560]
+const GRID: [number, number, number, number] = [276, 263, 972, 520]
 const SHOTS: Shot[] = [
   { label: 'Workflows', page: 'workflows', crop: GRID },
   { label: 'Assets', page: 'assets', crop: GRID },

@@ -24,7 +24,7 @@ const props = computed(
             : c.kind === 'bool'
               ? 'boolean'
               : 'string',
-        default: c.default === '' ? '—' : String(c.default),
+        default: c.cd !== undefined ? String(c.cd) : c.required ? 'required' : '—',
         use: ''
       })) ??
     []

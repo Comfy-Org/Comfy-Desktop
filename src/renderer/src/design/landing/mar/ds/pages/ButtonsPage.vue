@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowUp, Bell, Mic, Plus } from 'lucide-vue-next'
 import Button from '../../../ui/Button.vue'
+import portraitSun from '../../assets/portrait-sun.jpg'
 import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
@@ -10,7 +11,9 @@ const VARIANTS = [
   { v: 'secondary', label: 'Invite', note: 'A lifted surface (Invite, Connect, Docs).' },
   { v: 'ghost', label: 'Credits', note: 'Rows and icon buttons: no fill until hovered.' },
   { v: 'subtle', label: 'Filter', note: 'A soft fill.' },
-  { v: 'link', label: 'See all', note: 'Section links.' }
+  { v: 'link', label: 'See all', note: 'Section links.' },
+  { v: 'destructive', label: 'Delete', note: 'Irreversible actions only; muted, never bright.' },
+  { v: 'overlay', label: 'Open', note: 'On a picture.' }
 ] as const
 const STATES = [
   { label: 'idle', force: '' },
@@ -29,15 +32,26 @@ const STATES = [
   >
     <Cells :min="120">
       <Cell v-for="s in STATES" :key="s.label" :label="s.label" :force="s.force" target="button">
-        <Button :variant="b.v">{{ b.label }}</Button>
+        <div
+          :class="b.v === 'overlay' && 'ds-photo ds-btn-photo'"
+          :style="b.v === 'overlay' ? { backgroundImage: `url(${portraitSun})` } : undefined"
+        >
+          <Button :variant="b.v">{{ b.label }}</Button>
+        </div>
       </Cell>
-      <Cell label="disabled"
-        ><Button :variant="b.v" disabled>{{ b.label }}</Button></Cell
-      >
+      <Cell label="disabled">
+        <div
+          :class="b.v === 'overlay' && 'ds-photo ds-btn-photo'"
+          :style="b.v === 'overlay' ? { backgroundImage: `url(${portraitSun})` } : undefined"
+        >
+          <Button :variant="b.v" disabled>{{ b.label }}</Button>
+        </div>
+      </Cell>
     </Cells>
   </Section>
-  <Section title="Sizes and icons" note="md 32, lg 36; icon buttons are square.">
+  <Section title="Sizes and icons" note="sm 28, md 32, lg 36; icon buttons are square.">
     <Cells :min="140">
+      <Cell label="sm"><Button variant="secondary" size="sm">Invite</Button></Cell>
       <Cell label="md · with icon"
         ><Button variant="primary"><Plus :size="14" />Create</Button></Cell
       >
@@ -58,3 +72,11 @@ const STATES = [
     </Cells>
   </Section>
 </template>
+
+<style>
+.ds-btn-photo {
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+}
+</style>

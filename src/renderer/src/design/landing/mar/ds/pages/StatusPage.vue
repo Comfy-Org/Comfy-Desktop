@@ -30,7 +30,7 @@ const OTHERS: ItemStatus[] = [
   </Section>
   <Section
     title="On a picture"
-    note="Dark glass instead of a tint, the same in both themes. On cards they sit top-left, and shift right when the select check shows."
+    note="Dark glass instead of a tint, in both themes. On cards they sit top-left, and shift right when the select check shows."
   >
     <Cells :min="140">
       <Cell v-for="s in RUNS" :key="s" :label="s" on="bare">

@@ -12,6 +12,16 @@ const rows = ref<{ name: string; value: string; use: string }[]>([])
 const probe = ref<HTMLElement>()
 const copied = ref('')
 
+/** A variable written as calc() or var() reads as its length, measured. */
+function resolve(name: string, raw: string): string {
+  if (!/calc\(|var\(/.test(raw)) return raw
+  const el = document.body.appendChild(document.createElement('div'))
+  el.style.width = `var(${name})`
+  const px = getComputedStyle(el).width
+  el.remove()
+  return px
+}
+
 onMounted(() =>
   setTimeout(() => {
     const doc = document.documentElement
@@ -19,7 +29,7 @@ onMounted(() =>
       if (t.name.startsWith('--') && !t.selector)
         return {
           name: t.name,
-          value: getComputedStyle(doc).getPropertyValue(t.name).trim(),
+          value: resolve(t.name, getComputedStyle(doc).getPropertyValue(t.name).trim()),
           use: t.use
         }
       const el =

@@ -125,7 +125,7 @@ export const PAGES: DsPage[] = [
     group: 'Foundations',
     title: 'Type',
     source: 'ui/tokens.css',
-    use: 'Four sizes; navigation reads one size down from the page.',
+    use: 'Four sizes: 13px for body, navigation and controls; 16, 22 and 34 above it.',
     component: tokens('type')
   },
   {

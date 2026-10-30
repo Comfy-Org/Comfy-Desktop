@@ -12,6 +12,10 @@ export interface Control {
   default: Value
   /** Not a prop: what the frame turns into one (a picture, the label). */
   role?: 'slot' | 'picture' | 'options'
+  /** The component's own default, when it has one: usage leaves it out. */
+  cd?: Value
+  /** A required prop: usage always writes it. */
+  required?: boolean
 }
 
 export interface PlaySpec {
@@ -46,16 +50,17 @@ export const SPECS: PlaySpec[] = [
     id: 'button',
     name: 'Button',
     from: 'ui/Button.vue',
-    note: 'One primary (white) per surface; ghost for rows and icons.',
+    note: 'One primary per surface; ghost for rows and icons.',
     controls: [
       { name: 'label', kind: 'text', default: 'Create', role: 'slot' },
       {
         name: 'variant',
         kind: 'select',
         options: ['primary', 'secondary', 'ghost', 'subtle', 'overlay', 'link', 'destructive'],
-        default: 'primary'
+        default: 'primary',
+        cd: 'secondary'
       },
-      { name: 'size', kind: 'select', options: ['sm', 'md', 'lg'], default: 'md' },
+      { name: 'size', kind: 'select', options: ['sm', 'md', 'lg'], default: 'md', cd: 'md' },
       { name: 'disabled', kind: 'bool', default: false }
     ]
   },
@@ -63,9 +68,9 @@ export const SPECS: PlaySpec[] = [
     id: 'status',
     name: 'Status chip',
     from: 'mar/pages/MarStatus.vue',
-    note: 'The state of a run, build or item. On a picture: dark glass.',
+    note: 'The state of a run, build or item. On a picture: dark glass in both themes.',
     controls: [
-      { name: 'status', kind: 'select', options: STATUSES, default: 'executing' },
+      { name: 'status', kind: 'select', options: STATUSES, default: 'executing', required: true },
       { name: 'label', kind: 'text', default: '' },
       { name: 'on-media', kind: 'bool', default: false }
     ]
@@ -77,9 +82,9 @@ export const SPECS: PlaySpec[] = [
     note: 'One thing in a library page. Hover it, select it, double-click its name.',
     fixed: ':icon="ComfyWorkflow" :lines="lines"',
     controls: [
-      { name: 'name', kind: 'text', default: 'Product shots' },
+      { name: 'name', kind: 'text', default: 'Product shots', required: true },
       { name: 'meta', kind: 'text', default: 'Local · 2h ago' },
-      { name: 'layout', kind: 'select', options: ['grid', 'list'], default: 'grid' },
+      { name: 'layout', kind: 'select', options: ['grid', 'list'], default: 'grid', cd: 'grid' },
       { name: 'status', kind: 'select', options: ['', ...STATUSES], default: '' },
       { name: 'picture', kind: 'bool', default: true, role: 'picture' },
       { name: 'selecting', kind: 'bool', default: false },
@@ -94,11 +99,12 @@ export const SPECS: PlaySpec[] = [
     note: 'Every place with nothing in it, no results or an error.',
     fixed: ':icon="ComfyWorkflow"',
     controls: [
-      { name: 'title', kind: 'text', default: 'No workflows yet' },
+      { name: 'title', kind: 'text', default: 'No workflows yet', required: true },
       {
         name: 'text',
         kind: 'text',
-        default: 'Start from a template, or open ComfyUI and save what you make.'
+        default: 'Start from a template, or open ComfyUI and save what you make.',
+        required: true
       },
       { name: 'action', kind: 'text', default: 'Browse templates' },
       { name: 'second', kind: 'text', default: '' },
@@ -111,11 +117,11 @@ export const SPECS: PlaySpec[] = [
     id: 'tabs',
     name: 'Tabs',
     from: 'mar/pages/MarSeg.vue',
-    note: 'A page’s scopes; the pill slides to the pick. Click a tab.',
+    note: 'A page’s scopes; the indicator slides to the pick. Click a tab.',
     fixed: 'v-model="tab"',
     controls: [
       { name: 'tabs', kind: 'text', default: 'All, Mine, Shared with me', role: 'options' },
-      { name: 'label', kind: 'text', default: 'Scope' }
+      { name: 'label', kind: 'text', default: 'Scope', required: true }
     ]
   },
   {
@@ -132,12 +138,13 @@ export const SPECS: PlaySpec[] = [
     from: 'ui/Tooltip.vue',
     note: 'Names an icon-only control. Hover the button.',
     controls: [
-      { name: 'content', kind: 'text', default: 'Notifications' },
+      { name: 'content', kind: 'text', default: 'Notifications', required: true },
       {
         name: 'side',
         kind: 'select',
         options: ['top', 'bottom', 'left', 'right'],
-        default: 'bottom'
+        default: 'bottom',
+        cd: 'top'
       }
     ]
   },
@@ -184,7 +191,7 @@ export function usage(spec: PlaySpec, values: Record<string, Value>): string {
         .filter(Boolean)
         .map((l) => `{ value: '${l.toLowerCase().replace(/\W+/g, '-')}', label: '${l}' }`)
       attrs.push(`:options="[${opts.join(', ')}]"`)
-    } else if (x === c.default || x === '') continue
+    } else if (!c.required && (x === '' || x === false || x === c.cd)) continue
     else if (typeof x === 'boolean') attrs.push(x ? c.name : `:${c.name}="false"`)
     else attrs.push(`${c.name}="${x}"`)
   }

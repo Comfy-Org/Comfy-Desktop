@@ -23,6 +23,8 @@ export interface StageDef {
   open?: (root: HTMLElement) => void
 }
 
+const WORKSPACE = '[aria-haspopup="menu"]:not(.mar-credits-row)'
+
 function pressMenu(selector = '[aria-haspopup="menu"]', highlight?: number) {
   return (root: HTMLElement): void => {
     root.querySelector<HTMLElement>(selector)?.click()
@@ -67,17 +69,18 @@ export const STAGES = {
   },
   'workspace-menu': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
-    height: 560,
+    height: 400,
     place: 'bottom-left',
     on: 'sidebar',
-    open: pressMenu()
+    // The workspace, not Credits (the row above it opens its own flyout).
+    open: pressMenu(WORKSPACE)
   },
   'workspace-menu-hover': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
-    height: 560,
+    height: 400,
     place: 'bottom-left',
     on: 'sidebar',
-    open: pressMenu(undefined, 1)
+    open: pressMenu(WORKSPACE, 1)
   },
   'run-on-menu': {
     component: defineComponent(
@@ -88,7 +91,7 @@ export const STAGES = {
           h(PromptBox, { target: true, class: 'mar-prompt' })
         )
     ),
-    height: 470,
+    height: 600,
     place: 'top-center',
     open: pressMenu()
   },

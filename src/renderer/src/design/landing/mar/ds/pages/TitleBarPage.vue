@@ -13,7 +13,7 @@ import Stage from '../kit/Stage.vue'
   >
     <Cells :min="560">
       <Cell label="idle" on="bare" fill><DesktopTitleBar /></Cell>
-      <Cell label="Home hover" on="bare" fill force="hover" target="header button:first-of-type">
+      <Cell label="Home hover" on="bare" fill force="hover" target="header button::text(Home)">
         <DesktopTitleBar />
       </Cell>
       <Cell
@@ -21,7 +21,7 @@ import Stage from '../kit/Stage.vue'
         on="bare"
         fill
         force="focus"
-        target="header button:nth-of-type(3)"
+        target="header button::text(Open a build)"
       >
         <DesktopTitleBar />
       </Cell>

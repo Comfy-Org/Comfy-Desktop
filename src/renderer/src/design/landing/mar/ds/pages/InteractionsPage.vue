@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Copy, FolderInput, Pencil, Search, Trash2 } from 'lucide-vue-next'
+import { Copy, FolderInput, Pencil, Trash2 } from 'lucide-vue-next'
 import { thumb } from '../../../mock'
 import Button from '../../../ui/Button.vue'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
@@ -18,11 +18,14 @@ import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 import Stage from '../kit/Stage.vue'
 import KeysBlock from '../kit/KeysBlock.vue'
+import { useMode } from '../kit/mode'
 
 /**
  * Interactions: keyboard and pointer, each a live demo with the real
  * component and the keys it answers to (read from its code).
  */
+// Details: the keys alone, without the demos.
+const details = useMode().mode === 'details'
 const tab = ref('all')
 const TABS = [
   { value: 'all', label: 'All' },
@@ -72,7 +75,7 @@ const KEYS = {
   ],
   tabs: [
     ['Tab', 'Each tab is its own stop.'],
-    ['Enter / Space', 'Pick the focused tab; the pill slides to it.']
+    ['Enter / Space', 'Pick the focused tab; the indicator slides to it.']
   ],
   menu: [
     ['Enter / Space / ↓', 'Open the menu on its trigger.'],
@@ -131,9 +134,9 @@ const KEYS = {
   <div class="ds-ia">
     <Section
       title="Focus rings"
-      note="Keyboard only: a 2px ring in --color-border-focus (focus-visible), never on click. Click a demo, then press Tab."
+      note="Keyboard only: a 2px ring in --color-border-focus (focus-visible), never on click."
     >
-      <Cells :min="300">
+      <Cells v-if="!details" :min="300">
         <Cell label="live: press Tab" fill>
           <div class="ds-ia-row">
             <Button variant="primary">Create</Button>
@@ -157,7 +160,7 @@ const KEYS = {
       title="Tabs"
       note="A tablist of buttons. Today each tab is its own Tab stop; there are no arrow keys between tabs yet (the ARIA tabs pattern uses ← →)."
     >
-      <Cells :min="300">
+      <Cells v-if="!details" :min="300">
         <Cell label="live" fill><MarSeg v-model="tab" :options="TABS" label="Scope" /></Cell>
       </Cells>
       <KeysBlock>
@@ -170,13 +173,13 @@ const KEYS = {
 
     <Section
       title="Menus"
-      note="Every menu is reka's DropdownMenu: roving focus, type-ahead and submenus come with it. Open the ⋯ and use the keys."
+      note="Every menu is reka's DropdownMenu: roving focus, type-ahead and submenus come with it."
     >
-      <Cells :min="300">
+      <Cells v-if="!details" :min="300">
         <Cell label="live: the item menu (⋯)" fill :height="300">
           <div class="ds-ia-row"><MarItemMenu :lines="MENU" /></div>
         </Cell>
-        <Stage id="run-on-menu" label="live: Run on (type to filter)" />
+        <Stage v-if="!details" id="run-on-menu" label="live: Run on (type to filter)" />
       </Cells>
       <KeysBlock>
         <template v-for="[k, v] in KEYS.menu" :key="k"
@@ -194,7 +197,7 @@ const KEYS = {
       title="Select, rename, delete, undo"
       note="The library pages' own wiring (useLibrary). Nothing asks first: a delete happens, and the toast offers it back."
     >
-      <div class="ds-ia-lib proto-ui">
+      <div v-if="!details" class="ds-ia-lib proto-ui">
         <div class="ds-ia-grid">
           <MarItem
             v-for="w in col.items"
@@ -229,9 +232,9 @@ const KEYS = {
 
     <Section
       title="⌘K search and ⌘. UI Playground"
-      note="Live in a frame of the app: click into it, then press ⌘K (or click Search in the sidebar)."
+      note="Opens anywhere with ⌘K, or from the sidebar’s first row."
     >
-      <Cells :min="520">
+      <Cells v-if="!details" :min="520">
         <AppShot label="live: the app" page="overview" />
       </Cells>
       <KeysBlock>
@@ -248,9 +251,9 @@ const KEYS = {
 
     <Section
       title="Graph editor"
-      note="Live in a frame of the app: drag the canvas and the nodes, select, and try the keys."
+      note="Pan, move, link and select with the pointer; the rest from the keyboard."
     >
-      <Cells :min="520">
+      <Cells v-if="!details" :min="520">
         <AppShot label="live: a build's graph" page="overview" run="graph" />
       </Cells>
       <KeysBlock>
@@ -260,7 +263,6 @@ const KEYS = {
         >
       </KeysBlock>
     </Section>
-    <p class="ds-ia-foot"><Search :size="12" /> Keys are read from each component's code.</p>
   </div>
 </template>
 

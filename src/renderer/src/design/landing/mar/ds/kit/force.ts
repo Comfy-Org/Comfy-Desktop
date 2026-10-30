@@ -89,6 +89,23 @@ export function installForcedStates(): void {
   }).observe(document.head, { childList: true, subtree: true, characterData: true })
 }
 
+/**
+ * The elements `target` names inside `root`. Each comma-separated part is a
+ * selector, optionally ending in `::text(Label)`: then only those whose
+ * text or aria-label is that label (so a cell keeps hitting “Explore” when
+ * the rows above it change).
+ */
+function find(root: HTMLElement, target: string): HTMLElement[] {
+  return target.split(/,(?![^(]*\))/).flatMap((part) => {
+    const m = /^(.*)::text\((.+)\)$/.exec(part.trim())
+    const els = Array.from(root.querySelectorAll<HTMLElement>(m ? m[1]! : part))
+    if (!m) return els
+    return els.filter(
+      (el) => el.textContent?.trim() === m[2] || el.getAttribute('aria-label') === m[2]
+    )
+  })
+}
+
 /** Puts `states` on every element matching `target` inside `root` (or on
  *  everything in it with no target), and keeps them through re-renders. */
 export function forceStates(
@@ -98,7 +115,7 @@ export function forceStates(
   attrs?: Record<string, string>
 ): () => void {
   const apply = (): void => {
-    const els = target ? Array.from(root.querySelectorAll<HTMLElement>(target)) : [root]
+    const els = target ? find(root, target) : [root]
     for (const el of els) {
       const name = target ? 'data-ds-force' : 'data-ds-force-all'
       if (states && el.getAttribute(name) !== states) el.setAttribute(name, states)

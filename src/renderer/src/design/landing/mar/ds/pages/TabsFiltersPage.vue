@@ -32,7 +32,7 @@ const grid = ref<'grid' | 'list'>('grid')
 const list = ref<'grid' | 'list'>('list')
 const TUNING = 'comfy.design.uiTuning.v4'
 // The Workflows toolbar, in app pixels.
-const TOOLBAR: [number, number, number, number] = [250, 318, 1030, 64]
+const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 </script>
 
 <template>
@@ -59,7 +59,7 @@ const TOOLBAR: [number, number, number, number] = [250, 318, 1030, 64]
 
   <Section
     title="Tabs"
-    note="A soft track, no border; a pill slides to the picked tab. Counts are hidden for now."
+    note="A soft track, no border; an indicator slides to the picked tab. Counts are hidden for now."
   >
     <Cells :min="320">
       <Cell label="idle"><MarSeg v-model="where" :options="WHERE" label="Where" /></Cell>
@@ -90,7 +90,7 @@ const TOOLBAR: [number, number, number, number] = [250, 318, 1030, 64]
 
   <Section
     title="Search and view"
-    note="Search is the same pill with its icon. The view toggle is a small track: grid or list."
+    note="Search is the same control with its icon. The view toggle is a small track: grid or list."
   >
     <Cells :min="220">
       <Cell label="search · idle"

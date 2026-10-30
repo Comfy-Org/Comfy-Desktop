@@ -17,6 +17,8 @@ export interface ModeContext {
   sections: number
   /** The hero's row has rendered (a section may hold several rows). */
   heroTaken?: boolean
+  /** How many cells the hero's row has (one means the hero is everything). */
+  heroCount?: number
   /** States: how many sections the page has, and whether all show. */
   total: Ref<number>
   showAll: Ref<boolean>

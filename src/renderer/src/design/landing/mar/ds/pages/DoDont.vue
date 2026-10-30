@@ -5,6 +5,7 @@ import portraitSun from '../../assets/portrait-sun.jpg'
 import Button from '../../../ui/Button.vue'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
 import MarEmpty from '../../pages/MarEmpty.vue'
+import { EMPTY_PICS } from '../../pages/emptyArt'
 import MarItem from '../../pages/MarItem.vue'
 import MarSeg from '../../pages/MarSeg.vue'
 import MarStatus from '../../pages/MarStatus.vue'
@@ -81,6 +82,7 @@ const TABS = [
             title="No workflows yet"
             text="Start from a template."
             :action="side === 'do' ? 'Browse templates' : undefined"
+            :pics="side === 'do' ? EMPTY_PICS.workflows : []"
             compact
           >
             <template v-if="side === 'dont'">

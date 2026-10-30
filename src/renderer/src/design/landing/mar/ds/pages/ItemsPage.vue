@@ -15,13 +15,20 @@ const LINES: MenuLine[] = [
   { label: 'Delete', icon: Trash2, danger: true }
 ]
 const PIC = thumb('image_flux2')
-const base = { name: 'Product shots', meta: 'Local · 2h ago', icon: ComfyWorkflow, lines: LINES }
+const base = {
+  name: 'Product shots',
+  meta: 'Local · 2h ago',
+  icon: ComfyWorkflow,
+  lines: LINES,
+  favId: 'image_flux2',
+  favKind: 'template' as const
+}
 
 const GRID = [
   { label: 'idle', props: { thumb: PIC } },
-  { label: 'hover', props: { thumb: PIC, fav: false }, force: 'hover' },
+  { label: 'hover', props: { thumb: PIC }, force: 'hover' },
   { label: 'running', props: { thumb: PIC, status: 'executing' } },
-  { label: 'unsaved (hollow dot)', props: { thumb: PIC, status: 'draft' } },
+  { label: 'draft (hollow dot)', props: { thumb: PIC, status: 'draft' } },
   { label: 'selecting', props: { thumb: PIC, selecting: true } },
   {
     label: 'selected',
@@ -32,7 +39,7 @@ const GRID = [
 ] as const
 const LIST = [
   { label: 'idle', props: { thumb: PIC } },
-  { label: 'hover', props: { thumb: PIC, fav: false }, force: 'hover' },
+  { label: 'hover', props: { thumb: PIC }, force: 'hover' },
   {
     label: 'selected (check over the thumbnail)',
     props: { thumb: PIC, selecting: true, selected: true }

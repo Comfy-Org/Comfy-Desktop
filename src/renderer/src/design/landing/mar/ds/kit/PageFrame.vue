@@ -14,21 +14,48 @@ const id = url.get('page')
 const mode = (url.get('mode') ?? 'states') as DsMode
 const page = PAGES.find((p) => p.id === id)
 const content = CONTENT[id ?? ''] ?? {}
+// Patterns are whole pages and app frames: their example takes the column.
+const heroWidth = content.heroWidth ?? (page?.group === 'Patterns' ? '100%' : undefined)
 const total = ref(0)
 const showAll = ref(false)
-provideMode({ mode, hero: content.hero ?? [0, 0], sections: 0, total, showAll })
+const ctx = {
+  mode,
+  hero: content.hero ?? ([0, 0] as [number, number]),
+  sections: 0,
+  total,
+  showAll
+}
+provideMode(ctx)
 
 const root = ref<HTMLElement>()
 onMounted(() => {
   const post = (): void =>
     parent.postMessage({ type: 'mar-ds:height', h: Math.ceil(root.value!.offsetHeight) }, '*')
   new ResizeObserver(post).observe(root.value!)
+  // The hero tells the page whether it is the whole page (one example).
+  if (mode === 'hero')
+    setTimeout(
+      () =>
+        parent.postMessage(
+          {
+            type: 'mar-ds:meta',
+            page: id,
+            single: total.value <= 1 && (ctx as { heroCount?: number }).heroCount === 1
+          },
+          '*'
+        ),
+      600
+    )
 })
 </script>
 
 <template>
   <TooltipProvider :delay-duration="300">
-    <div ref="root" :class="['proto-ui ds-frame-page', `is-${mode}`]">
+    <div
+      ref="root"
+      :class="['proto-ui ds-frame-page', `is-${mode}`]"
+      :style="heroWidth ? { '--ds-hero-w': heroWidth } : undefined"
+    >
       <DoDont v-if="mode === 'dodont' && id" :page="id" />
       <template v-else>
         <component :is="page.component" v-if="page?.component" />

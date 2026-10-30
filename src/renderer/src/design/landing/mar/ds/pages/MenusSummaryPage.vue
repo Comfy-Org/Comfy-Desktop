@@ -9,7 +9,7 @@ import Stage from '../kit/Stage.vue'
     title="Summary first"
     note="Where you are, or what you have, on a raised panel; then the actions."
   >
-    <Cells :min="300">
+    <Cells :min="560">
       <Stage id="workspace-menu" label="workspace" />
       <Stage id="credits-flyout" label="credits" />
     </Cells>

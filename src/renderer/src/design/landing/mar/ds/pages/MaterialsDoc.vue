@@ -181,7 +181,7 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
           at low opacity or the card colour, no <code>backdrop-filter</code>.
         </li>
         <li>
-          <strong>Cards on the page stay solid.</strong> Today they blur:
+          <strong>Cards on the page: solid with Crit feedback On.</strong> By default they blur:
           <code>.proto-main .bg-card-background</code> and <code>.mar-surface</code> at 24px,
           <code>.mar-item.is-grid</code> at 20px. Proposal: drop it, so a grid stops paying for a
           blur per card while it scrolls.

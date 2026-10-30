@@ -55,13 +55,23 @@ const agent = ref('agent')
       <Cell label="agent picked" on="sidebar"
         ><MarModeSwitch v-model="agent" :options="MODES"
       /></Cell>
-      <Cell label="segment hover" on="sidebar" force="hover" target=".mms-seg:nth-child(2)">
+      <Cell
+        label="segment hover"
+        on="sidebar"
+        force="hover"
+        target=".mms-seg:not([aria-checked='true'])"
+      >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
       <Cell label="agent hover" on="sidebar" force="hover" target=".mms-agent">
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
-      <Cell label="segment focus" on="sidebar" force="focus" target=".mms-seg:nth-child(2)">
+      <Cell
+        label="segment focus"
+        on="sidebar"
+        force="focus"
+        target=".mms-seg:not([aria-checked='true'])"
+      >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
     </Cells>
@@ -75,7 +85,7 @@ const agent = ref('agent')
         on="sidebar"
         fill
         force="hover"
-        target="button:nth-of-type(2), a:nth-of-type(2)"
+        target="button::text(Explore), a::text(Explore)"
       >
         <ModeNav mode="create" />
       </Cell>
@@ -84,7 +94,7 @@ const agent = ref('agent')
         on="sidebar"
         fill
         force="focus"
-        target="button:nth-of-type(2), a:nth-of-type(2)"
+        target="button::text(Explore), a::text(Explore)"
       >
         <ModeNav mode="create" />
       </Cell>
@@ -109,7 +119,12 @@ const agent = ref('agent')
   >
     <Cells :min="240">
       <Cell label="three starred" on="sidebar" fill><MarFavoritesGroup /></Cell>
-      <Cell label="row hover" on="sidebar" fill force="hover" target="a, button:not(:first-child)"
+      <Cell
+        label="row hover"
+        on="sidebar"
+        fill
+        force="hover"
+        target=".mar-fav-row:nth-child(2), .mar-fav-row:nth-child(2) > button:first-child"
         ><MarFavoritesGroup
       /></Cell>
     </Cells>
@@ -137,14 +152,20 @@ const agent = ref('agent')
       <Cell label="credits focus" on="sidebar" fill force="focus" target=".mar-credits-row">
         <WorkspaceMenu />
       </Cell>
-      <Cell label="workspace hover" on="sidebar" fill force="hover" target="[aria-haspopup='menu']">
+      <Cell
+        label="workspace hover"
+        on="sidebar"
+        fill
+        force="hover"
+        target="[aria-haspopup='menu']:not(.mar-credits-row)"
+      >
         <WorkspaceMenu />
       </Cell>
       <Cell
         label="workspace open"
         on="sidebar"
         fill
-        target="[aria-haspopup='menu']"
+        target="[aria-haspopup='menu']:not(.mar-credits-row)"
         :attrs="{ 'data-state': 'open' }"
       >
         <WorkspaceMenu />
