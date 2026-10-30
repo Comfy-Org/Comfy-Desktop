@@ -36,6 +36,22 @@ const { visible, show, hide, bubbleStyle, resolvedSide, arrowStyle } = useToolti
   }
 )
 
+// Keep the arrow pointed at the trigger after placement flips or clamps.
+const arrowClasses: Record<TooltipSide, string> = {
+  top: '-bottom-[5px] h-[6px] w-3 -translate-x-1/2 before:[clip-path:polygon(50%_100%,0_0,100%_0)]',
+  bottom:
+    '-top-[5px] h-[6px] w-3 -translate-x-1/2 before:[clip-path:polygon(50%_0,0_100%,100%_100%)]',
+  left: '-right-[5px] h-3 w-[6px] -translate-y-1/2 before:[clip-path:polygon(100%_50%,0_0,0_100%)]',
+  right:
+    '-left-[5px] h-3 w-[6px] -translate-y-1/2 before:[clip-path:polygon(0_50%,100%_0,100%_100%)]'
+}
+const arrowFillClasses: Record<TooltipSide, string> = {
+  top: '-top-px right-0 bottom-0 left-0 [clip-path:polygon(50%_85%,8%_0,92%_0)]',
+  bottom: 'top-0 right-0 -bottom-px left-0 [clip-path:polygon(50%_15%,8%_100%,92%_100%)]',
+  left: 'top-0 right-0 bottom-0 -left-px [clip-path:polygon(85%_50%,0_8%,0_92%)]',
+  right: 'top-0 -right-px bottom-0 left-0 [clip-path:polygon(15%_50%,100%_8%,100%_92%)]'
+}
+
 const describedBy = computed(() => (visible.value ? bubbleId : undefined))
 
 let openTimer: ReturnType<typeof setTimeout> | null = null
@@ -103,7 +119,7 @@ onBeforeUnmount(() => {
 <template>
   <span
     ref="triggerRef"
-    class="tooltip-wrap"
+    class="tooltip-wrap inline-flex"
     :aria-describedby="describedBy"
     @mouseenter="onEnter"
     @mouseleave="onLeave"
@@ -117,8 +133,10 @@ onBeforeUnmount(() => {
         v-if="visible"
         :id="bubbleId"
         ref="bubbleRef"
-        class="tooltip-bubble"
-        :class="{ 'tooltip-bubble--interactive': interactive }"
+        class="tooltip-bubble fixed z-[var(--z-tooltip)] max-w-[260px] rounded-[var(--primitive-border-radius-rounded-lg,8px)] border border-solid border-[var(--tooltip-border)] bg-[var(--tooltip-bg)] px-4 py-2 text-left text-xs leading-[1.4] font-normal whitespace-normal text-[var(--tooltip-fg)] shadow-[0_4px_12px_rgba(0,0,0,0.35)]"
+        :class="
+          interactive ? 'tooltip-bubble--interactive pointer-events-auto' : 'pointer-events-none'
+        "
         :data-side="resolvedSide"
         :style="bubbleStyle"
         :role="interactive ? 'dialog' : 'tooltip'"
@@ -130,103 +148,18 @@ onBeforeUnmount(() => {
         @keydown="onKeydown"
       >
         <slot name="content">{{ text }}</slot>
-        <span class="tooltip-arrow" :style="arrowStyle" aria-hidden="true">
-          <span class="tooltip-arrow__fill" />
+        <span
+          class="tooltip-arrow pointer-events-none absolute before:absolute before:inset-0 before:bg-[var(--tooltip-border)] before:content-['']"
+          :class="arrowClasses[resolvedSide]"
+          :style="arrowStyle"
+          aria-hidden="true"
+        >
+          <span
+            class="tooltip-arrow__fill absolute bg-[var(--tooltip-bg)]"
+            :class="arrowFillClasses[resolvedSide]"
+          />
         </span>
       </span>
     </Teleport>
   </span>
 </template>
-
-<style scoped>
-.tooltip-wrap {
-  display: inline-flex;
-}
-</style>
-
-<style>
-.tooltip-bubble {
-  position: fixed;
-  z-index: var(--z-tooltip);
-  padding: 8px 16px;
-  border-radius: var(--primitive-border-radius-rounded-lg, 8px);
-  border: 1px solid var(--tooltip-border);
-  background: var(--tooltip-bg);
-  color: var(--tooltip-fg);
-  font-size: 12px;
-  line-height: 1.4;
-  font-weight: 400;
-  max-width: 260px;
-  pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  white-space: normal;
-  text-align: left;
-}
-.tooltip-bubble--interactive {
-  pointer-events: auto;
-}
-
-.tooltip-arrow {
-  position: absolute;
-  width: 12px;
-  height: 6px;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.tooltip-bubble[data-side='top'] .tooltip-arrow {
-  bottom: -5px;
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow {
-  top: -5px;
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow,
-.tooltip-bubble[data-side='right'] .tooltip-arrow {
-  width: 6px;
-  height: 12px;
-  transform: translateY(-50%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow {
-  right: -5px;
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow {
-  left: -5px;
-}
-
-.tooltip-arrow::before,
-.tooltip-arrow__fill {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-.tooltip-arrow::before {
-  background: var(--tooltip-border);
-  clip-path: polygon(50% 100%, 0 0, 100% 0);
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow::before {
-  clip-path: polygon(50% 0, 0 100%, 100% 100%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow::before {
-  clip-path: polygon(100% 50%, 0 0, 0 100%);
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow::before {
-  clip-path: polygon(0 50%, 100% 0, 100% 100%);
-}
-
-.tooltip-arrow__fill {
-  background: var(--tooltip-bg);
-  inset: -1px 0 0 0;
-  clip-path: polygon(50% 85%, 8% 0, 92% 0);
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow__fill {
-  inset: 0 0 -1px 0;
-  clip-path: polygon(50% 15%, 8% 100%, 92% 100%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow__fill {
-  inset: 0 0 0 -1px;
-  clip-path: polygon(85% 50%, 0 8%, 0 92%);
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow__fill {
-  inset: 0 -1px 0 0;
-  clip-path: polygon(15% 50%, 100% 8%, 100% 92%);
-}
-</style>
