@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { ChevronDown, Tag, Boxes, Package } from 'lucide-vue-next'
 import type { SnapshotSummary } from '../../types/ipc'
 import {
@@ -97,265 +98,128 @@ const hasTitlePill = computed(() => !!titlePillText.value)
 </script>
 
 <template>
-  <div class="snapshot-row" :class="{ 'is-expanded': expanded }">
+  <div class="snapshot-row flex flex-col gap-2" :class="{ 'is-expanded': expanded }">
     <!-- Whole header is the expand toggle. -->
-    <button
+    <Button
       type="button"
-      class="snapshot-row-head"
+      variant="textonly"
+      size="unset"
+      class="snapshot-row-head static flex w-full flex-col items-stretch justify-normal gap-1.5 rounded-lg border-none bg-transparent p-0 text-left text-inherit whitespace-normal [font:inherit] appearance-auto hover:bg-transparent focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent-primary)] focus-visible:ring-0"
       :aria-expanded="expanded"
       :data-testid="toggleTestId"
       @click="emit('toggle')"
     >
-      <div class="snapshot-row-head-top">
-        <div class="snapshot-row-head-left">
-          <span class="snapshot-row-trigger" :data-tone="triggerTone">{{ triggerCopy }}</span>
-          <span v-if="isLatest" class="snapshot-row-latest">
+      <div class="snapshot-row-head-top flex items-center justify-between gap-2.5">
+        <div class="snapshot-row-head-left flex min-w-0 items-center gap-2">
+          <span
+            class="snapshot-row-trigger text-[12px] text-neutral-100 data-[tone=state]:text-[var(--warning)]"
+            :data-tone="triggerTone"
+            >{{ triggerCopy }}</span
+          >
+          <span
+            v-if="isLatest"
+            class="snapshot-row-latest shrink-0 rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-px text-[11px] leading-[16.5px] font-medium text-text-muted"
+          >
             {{ t('snapshots.latestBadge', 'Latest') }}
           </span>
         </div>
-        <div class="snapshot-row-head-right">
-          <span class="snapshot-row-time" :title="absoluteCopy">{{ relativeCopy }}</span>
-          <ChevronDown :size="14" class="snapshot-row-chevron" />
+        <div class="snapshot-row-head-right flex min-w-0 items-center gap-2">
+          <span
+            class="snapshot-row-time shrink-0 text-[12px] whitespace-nowrap text-text-muted"
+            :title="absoluteCopy"
+            >{{ relativeCopy }}</span
+          >
+          <ChevronDown
+            :size="14"
+            class="snapshot-row-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+            :class="{ '[transform:rotate(180deg)]': expanded }"
+          />
         </div>
       </div>
       <!-- At-a-glance pills: version/name pill + node deltas vs previous. -->
-      <div v-if="hasTitlePill || hasNodeChanges || hasPipChanges" class="snapshot-row-pills">
+      <div
+        v-if="hasTitlePill || hasNodeChanges || hasPipChanges"
+        class="snapshot-row-pills flex flex-wrap items-center gap-1.5"
+      >
         <span
           v-if="hasTitlePill"
-          class="snap-pill snap-pill--version"
-          :class="{ 'is-change': comfyuiChanged }"
+          class="snap-pill snap-pill--version inline-flex min-w-0 max-w-full items-center gap-1 rounded-[999px] border border-solid bg-[var(--brand-surface-bg)] px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-neutral-100 tabular-nums [&>svg]:shrink-0 [&>svg]:opacity-70 [&>span]:min-w-0 [&>span]:truncate"
+          :class="
+            comfyuiChanged
+              ? 'is-change border-[color-mix(in_srgb,var(--comfy-yellow,#f0ff41)_45%,var(--chooser-surface-border))]'
+              : 'border-[var(--chooser-surface-border)]'
+          "
           :title="titlePillText"
         >
           <Tag :size="11" aria-hidden="true" />
           <span>{{ titlePillText }}</span>
         </span>
-        <span v-if="hasNodeChanges" class="snap-pill snap-pill--nodes">
+        <span
+          v-if="hasNodeChanges"
+          class="snap-pill snap-pill--nodes inline-flex items-center gap-1 rounded-[999px] bg-snapshot-chip px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-text-muted [&>svg]:shrink-0 [&>svg]:opacity-70"
+        >
           <Boxes :size="11" aria-hidden="true" />
-          <span v-if="nodeDelta.added" class="snap-delta is-add">+{{ nodeDelta.added }}</span>
-          <span v-if="nodeDelta.removed" class="snap-delta is-remove"
+          <span
+            v-if="nodeDelta.added"
+            class="snap-delta is-add font-semibold text-[#22c55e] tabular-nums"
+            >+{{ nodeDelta.added }}</span
+          >
+          <span
+            v-if="nodeDelta.removed"
+            class="snap-delta is-remove font-semibold text-danger tabular-nums"
             >−{{ nodeDelta.removed }}</span
           >
-          <span v-if="nodeDelta.changed" class="snap-delta is-change"
+          <span
+            v-if="nodeDelta.changed"
+            class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
             >~{{ nodeDelta.changed }}</span
           >
-          <span class="snap-pill-label">{{ t('snapshots.nodesLabel', 'nodes') }}</span>
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel', 'nodes') }}</span>
         </span>
-        <span v-if="hasPipChanges" class="snap-pill snap-pill--pkgs">
+        <span
+          v-if="hasPipChanges"
+          class="snap-pill snap-pill--pkgs inline-flex items-center gap-1 rounded-[999px] bg-snapshot-chip px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-text-muted [&>svg]:shrink-0 [&>svg]:opacity-70"
+        >
           <Package :size="11" aria-hidden="true" />
-          <span v-if="pipDelta.added" class="snap-delta is-add">+{{ pipDelta.added }}</span>
-          <span v-if="pipDelta.removed" class="snap-delta is-remove">−{{ pipDelta.removed }}</span>
-          <span v-if="pipDelta.changed" class="snap-delta is-change">~{{ pipDelta.changed }}</span>
-          <span class="snap-pill-label">{{ t('snapshots.pkgsLabel', 'pkgs') }}</span>
+          <span
+            v-if="pipDelta.added"
+            class="snap-delta is-add font-semibold text-[#22c55e] tabular-nums"
+            >+{{ pipDelta.added }}</span
+          >
+          <span
+            v-if="pipDelta.removed"
+            class="snap-delta is-remove font-semibold text-danger tabular-nums"
+            >−{{ pipDelta.removed }}</span
+          >
+          <span
+            v-if="pipDelta.changed"
+            class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
+            >~{{ pipDelta.changed }}</span
+          >
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel', 'pkgs') }}</span>
         </span>
       </div>
-    </button>
+    </Button>
 
     <!-- Body card animates open/closed via BaseAccordion. -->
     <BaseAccordion :open="expanded">
-      <div class="snapshot-row-card">
+      <div
+        class="snapshot-row-card flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5"
+      >
         <!-- Composition totals; version omitted (already in the header pill). -->
-        <div class="snapshot-row-meta">
+        <div
+          class="snapshot-row-meta flex flex-wrap items-center gap-1.5 px-1.5 py-px text-[11px] text-text-muted [overflow-wrap:anywhere]"
+        >
           <span>{{ t('snapshots.nodesCount', { count: snapshot.nodeCount }) }}</span>
-          <span class="snapshot-row-meta-dot">·</span>
+          <span class="snapshot-row-meta-dot opacity-50">·</span>
           <span>{{ t('snapshots.packagesCount', { count: snapshot.pipPackageCount }) }}</span>
         </div>
-        <div class="snapshot-row-expanded">
+        <div
+          class="snapshot-row-expanded mt-1 flex flex-col gap-2.5 border-t border-solid border-border-hover pt-3"
+        >
           <slot name="expanded" />
         </div>
       </div>
     </BaseAccordion>
   </div>
 </template>
-
-<style scoped>
-.snapshot-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Full strip is the click target; resets global button chrome. */
-.snapshot-row-head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: inherit;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  width: 100%;
-}
-
-.snapshot-row-head-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.snapshot-row-head:hover .snapshot-row-trigger {
-  text-decoration: none;
-}
-
-.snapshot-row-head:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 4px;
-  border-radius: 4px;
-}
-
-.snapshot-row-head-left,
-.snapshot-row-head-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.snapshot-row-trigger {
-  font-size: 12px;
-  color: var(--neutral-100);
-}
-
-.snapshot-row-trigger[data-tone='state'] {
-  color: var(--warning);
-}
-
-.snapshot-row-latest {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  border-radius: 999px;
-  line-height: 16.5px;
-}
-
-/* Collapsed-state summary pills (version + node deltas). */
-.snapshot-row-pills {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.snap-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 16px;
-  background: var(--legacy-color-bg);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.snap-pill > svg {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-.snap-pill--version {
-  color: var(--neutral-100);
-  background: var(--brand-surface-bg);
-  border: 1px solid var(--chooser-surface-border);
-  font-variant-numeric: tabular-nums;
-  /* Cap at row width and ellipsis only in the extreme so a long pill never overflows the popover. */
-  min-width: 0;
-  max-width: 100%;
-}
-.snap-pill--version > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-/* Version change → subtle brand-tinted border to flag it's a transition. */
-.snap-pill--version.is-change {
-  border-color: color-mix(in srgb, var(--comfy-yellow, #f0ff41) 45%, var(--chooser-surface-border));
-}
-.snap-delta {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-.snap-delta.is-add {
-  color: #22c55e;
-}
-.snap-delta.is-remove {
-  color: var(--danger);
-}
-.snap-delta.is-change {
-  color: var(--warning);
-}
-.snap-pill-label {
-  opacity: 0.7;
-}
-
-.snapshot-row-time {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.snapshot-row-chevron {
-  color: var(--text-muted);
-  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.snapshot-row.is-expanded .snapshot-row-chevron {
-  transform: rotate(180deg);
-}
-
-.snapshot-row-card {
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px;
-  background: var(--brand-surface-bg);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-}
-
-.snapshot-row-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.snapshot-row-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--legacy-color-bg);
-  border-radius: 3px;
-  white-space: nowrap;
-}
-
-.snapshot-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-  padding: 1px 6px;
-}
-
-.snapshot-row-meta-dot {
-  opacity: 0.5;
-}
-
-.snapshot-row-expanded {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-hover);
-}
-</style>

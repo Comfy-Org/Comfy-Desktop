@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
 import { TID } from '../../../../shared/testIds'
 import { MSG_CANCELLED } from '../../../../shared/operationStatus'
@@ -66,6 +67,13 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const dialogs = useDialogs()
 const actionGuard = useActionGuard()
+
+const railNodeClass =
+  "relative min-h-3 pl-6 before:absolute before:top-3 before:left-[5px] before:z-0 before:h-[calc(100%+12px)] before:w-0.5 before:rounded-[1px] before:bg-[var(--border)] before:content-[''] last:before:hidden"
+const toolButtonClass =
+  'snapshots-view-toolbtn static inline-flex min-h-7 items-center justify-normal gap-[5px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--brand-surface-bg)]'
+const detailButtonClass =
+  'snapshots-view-detail-btn static inline-flex min-h-8 items-center justify-normal gap-[5px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-2 text-[12px] leading-[1.5] font-medium whitespace-normal appearance-auto transition-[background-color,border-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50'
 
 const listData = ref<SnapshotListData | null>(null)
 const loading = ref(true)
@@ -590,9 +598,9 @@ async function handleImport(): Promise<void> {
 </script>
 
 <template>
-  <div class="snapshots-view">
-    <header class="snapshots-view-header">
-      <span class="snapshots-view-latest">
+  <div class="snapshots-view flex flex-col gap-4">
+    <header class="snapshots-view-header flex items-center justify-between gap-3">
+      <span class="snapshots-view-latest text-[12px] leading-4 text-text-muted">
         <template v-if="latestRelative">
           {{ t('snapshots.latestLabel', 'Latest:') }}
           {{ latestRelative }}
@@ -601,20 +609,24 @@ async function handleImport(): Promise<void> {
           {{ t('snapshots.noneYet', 'No snapshots yet') }}
         </template>
       </span>
-      <div class="snapshots-view-toolbar">
-        <button
+      <div class="snapshots-view-toolbar inline-flex flex-wrap gap-2">
+        <Button
           type="button"
-          class="snapshots-view-toolbtn"
+          variant="textonly"
+          size="unset"
+          :class="toolButtonClass"
           :aria-label="t('snapshots.importSnapshots', 'Import')"
           :data-testid="TID.snapshotsImport"
           @click="handleImport"
         >
           <Upload :size="14" aria-hidden="true" />
           <span>{{ t('snapshots.importSnapshots', 'Import') }}</span>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          class="snapshots-view-toolbtn"
+          variant="textonly"
+          size="unset"
+          :class="toolButtonClass"
           :disabled="snapshots.length === 0"
           :aria-label="t('snapshots.exportAll', 'Export All')"
           :data-testid="TID.snapshotsExportAll"
@@ -622,42 +634,67 @@ async function handleImport(): Promise<void> {
         >
           <Download :size="14" aria-hidden="true" />
           <span>{{ t('snapshots.exportAll', 'Export All') }}</span>
-        </button>
+        </Button>
       </div>
     </header>
 
-    <p v-if="loading" class="snapshots-view-status">{{ t('common.loading', 'Loading…') }}</p>
-    <div v-else-if="loadError" class="snapshots-view-status is-error">
+    <p
+      v-if="loading"
+      class="snapshots-view-status m-0 text-[length:var(--takeover-fs-body)] text-text-muted"
+    >
+      {{ t('common.loading', 'Loading…') }}
+    </p>
+    <div
+      v-else-if="loadError"
+      class="snapshots-view-status is-error m-0 flex flex-col items-start gap-2 text-[length:var(--takeover-fs-body)] text-danger [&_p]:m-0"
+    >
       <p>{{ loadError }}</p>
-      <button type="button" class="snapshots-view-toolbtn" @click="load()">
+      <Button
+        type="button"
+        variant="textonly"
+        size="unset"
+        :class="toolButtonClass"
+        @click="load()"
+      >
         {{ t('common.retry', 'Retry') }}
-      </button>
+      </Button>
     </div>
 
     <!-- Timeline rail: first node is the "Save New Snapshot" CTA, then
          snapshots + copy events, newest first. -->
-    <ul class="snapshots-rail" :class="{ 'is-empty': timeline.length === 0 }">
+    <ul
+      class="snapshots-rail relative m-0 flex list-none flex-col gap-3 p-0"
+      :class="{ 'is-empty': timeline.length === 0 }"
+    >
       <li
         ref="topCardRef"
         class="snapshots-rail-node is-save"
-        :class="{
-          'is-op-inflight': restoreInFlight,
-          'is-op-success': restoreTerminal === 'ok',
-          'is-op-error': restoreTerminal === 'error'
-        }"
+        :class="[
+          railNodeClass,
+          {
+            'is-op-inflight': restoreInFlight,
+            'is-op-success': restoreTerminal === 'ok',
+            'is-op-error': restoreTerminal === 'error'
+          }
+        ]"
       >
         <span
-          class="snapshots-rail-dot"
-          :class="{
-            'is-pending': !showRestoreCard,
-            'is-spinning': restoreInFlight,
-            'is-restored': restoreTerminal === 'ok',
-            'is-error': restoreTerminal === 'error'
-          }"
+          class="snapshots-rail-dot absolute top-1 left-0 z-[1] size-[14px] rounded-[7px] border-2"
+          :class="
+            !showRestoreCard
+              ? 'is-pending border-dashed border-neutral-400 bg-[var(--titlebar-bg)]'
+              : restoreInFlight
+                ? 'is-spinning border-solid border-snapshot-ring bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:0.8s]'
+                : restoreTerminal === 'ok'
+                  ? 'is-restored border-solid border-snapshot-ring bg-[var(--success,#34c759)]'
+                  : restoreTerminal === 'error'
+                    ? 'is-error border-solid border-snapshot-ring bg-[var(--danger,#ef4444)]'
+                    : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
+          "
           :aria-hidden="true"
         ></span>
-        <div class="snapshots-rail-content">
-          <span class="snapshots-rail-label">
+        <div class="snapshots-rail-content flex flex-col gap-1.5">
+          <span class="snapshots-rail-label text-[12px] text-neutral-100">
             <template v-if="restoreInFlight">{{
               t('snapshots.restoringStatus', 'Restoring snapshot')
             }}</template>
@@ -673,68 +710,95 @@ async function handleImport(): Promise<void> {
             <template v-else>{{ t('snapshots.createLabel', 'Create Snapshot') }}</template>
           </span>
           <div
-            class="snapshots-rail-save-box"
-            :class="{
-              'is-op-inflight': restoreInFlight,
-              'is-op-success': restoreTerminal === 'ok',
-              'is-op-error': restoreTerminal === 'error'
-            }"
+            class="snapshots-rail-save-box flex flex-col rounded-lg border"
+            :class="[
+              restoreInFlight || restoreTerminal === 'ok' || restoreTerminal === 'error'
+                ? 'border-solid p-3.5'
+                : 'border-dashed p-3',
+              restoreTerminal === 'ok'
+                ? 'is-op-success border-[var(--success,#34c759)] bg-[color-mix(in_srgb,var(--success,#34c759)_8%,transparent)]'
+                : restoreTerminal === 'error'
+                  ? 'is-op-error border-[var(--danger,#ef4444)] bg-[color-mix(in_srgb,var(--danger,#ef4444)_8%,transparent)]'
+                  : 'border-[var(--chooser-surface-border)]',
+              { 'is-op-inflight': restoreInFlight }
+            ]"
           >
             <div
               v-if="restoreInFlight"
-              class="snapshots-op-card"
+              class="snapshots-op-card flex flex-col gap-2.5"
               role="status"
               aria-live="polite"
               :data-testid="TID.snapshotsOpCard"
             >
-              <p v-if="restoreFromLabel" class="snapshots-op-card-target">
+              <p
+                v-if="restoreFromLabel"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoringFrom', { label: restoreFromLabel }) }}
               </p>
               <div
-                class="snapshots-op-bar-wrap"
+                class="snapshots-op-bar-wrap flex flex-col gap-1.5"
                 role="progressbar"
                 :aria-valuenow="restorePercent ?? undefined"
                 aria-valuemin="0"
                 aria-valuemax="100"
               >
-                <div class="snapshots-op-bar-header">
-                  <span class="snapshots-op-bar-status">{{ restorePhase }}</span>
-                  <span v-if="restorePercent !== null" class="snapshots-op-bar-pct">
+                <div
+                  class="snapshots-op-bar-header flex items-center justify-between text-[length:var(--takeover-fs-caption)]"
+                >
+                  <span class="snapshots-op-bar-status text-neutral-100">{{ restorePhase }}</span>
+                  <span
+                    v-if="restorePercent !== null"
+                    class="snapshots-op-bar-pct text-text-muted tabular-nums"
+                  >
                     {{ restorePercent }}%
                   </span>
                 </div>
-                <div class="snapshots-op-bar-track">
+                <div
+                  class="snapshots-op-bar-track relative h-1 overflow-hidden rounded-[2px] bg-[color-mix(in_srgb,var(--neutral-100)_8%,transparent)]"
+                >
                   <div
-                    class="snapshots-op-bar-fill"
-                    :class="{ 'is-indeterminate': restorePercent === null }"
+                    class="snapshots-op-bar-fill h-full bg-[var(--brand-accent,#f5c518)] transition-[width] duration-[120ms] ease-[ease]"
+                    :class="{
+                      'is-indeterminate w-[40%] animate-[snapshots-op-bar-indet_1.2s_ease-in-out_infinite]':
+                        restorePercent === null
+                    }"
                     :style="restorePercent === null ? {} : { width: `${restorePercent}%` }"
                   />
                 </div>
               </div>
-              <button
+              <Button
                 v-if="restoreCancellable"
                 type="button"
-                class="snapshots-op-ghost-btn"
+                variant="textonly"
+                size="unset"
+                class="snapshots-op-ghost-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
                 :data-testid="TID.snapshotsOpCardCancel"
                 @click="cancelRestore"
               >
                 {{ t('common.cancel', 'Cancel') }}
-              </button>
+              </Button>
             </div>
 
             <!-- Success: auto-dismisses after ~1.8s. -->
             <div
               v-else-if="restoreTerminal === 'ok'"
-              class="snapshots-op-card is-success"
+              class="snapshots-op-card is-success flex flex-col gap-2.5"
               role="status"
               :data-testid="TID.snapshotsOpCard"
             >
               <!-- A successful import is an apply, not a rollback; "Rolled
                    back to {label}" is only for restores of local history. -->
-              <p v-if="restoreOpIsImport" class="snapshots-op-card-target">
+              <p
+                v-if="restoreOpIsImport"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoredImported', 'Applied imported snapshot') }}
               </p>
-              <p v-else-if="restoreFromLabel" class="snapshots-op-card-target">
+              <p
+                v-else-if="restoreFromLabel"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoredFrom', { label: restoreFromLabel }) }}
               </p>
             </div>
@@ -743,7 +807,7 @@ async function handleImport(): Promise<void> {
                  import keeps the retry action but renders neutrally. -->
             <div
               v-else-if="restoreTerminal === 'error' || restoreTerminal === 'cancelled'"
-              class="snapshots-op-card"
+              class="snapshots-op-card flex flex-col gap-2.5"
               :class="{ 'is-error': restoreTerminal === 'error' }"
               :role="restoreTerminal === 'error' ? 'alert' : 'status'"
               :data-testid="TID.snapshotsOpCard"
@@ -752,40 +816,49 @@ async function handleImport(): Promise<void> {
                 v-if="restoreTerminal === 'error' && restoreErrorMessage"
                 :error="restoreErrorMessage"
               />
-              <p v-else-if="restoreTerminal === 'cancelled'" class="snapshots-op-card-target">
+              <p
+                v-else-if="restoreTerminal === 'cancelled'"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoreCancelledBody', 'The imported snapshot was not applied.') }}
               </p>
-              <div class="snapshots-op-actions">
-                <button
+              <div class="snapshots-op-actions flex gap-2">
+                <Button
                   type="button"
-                  class="snapshots-op-primary-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="snapshots-op-primary-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--brand-accent,#f5c518)] bg-[var(--brand-accent,#f5c518)] px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-[#1a1a1a] whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--brand-accent,#f5c518)_88%,white)] focus-visible:bg-[color-mix(in_srgb,var(--brand-accent,#f5c518)_88%,white)] focus-visible:outline-none focus-visible:ring-0"
                   :data-testid="TID.snapshotsOpCardRetry"
                   @click="retryRestore"
                 >
                   {{ t('snapshots.tryAgain', 'Try again') }}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  class="snapshots-op-ghost-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="snapshots-op-ghost-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
                   :data-testid="TID.snapshotsOpCardDismiss"
                   @click="dismissRestoreCard"
                 >
                   {{ t('common.dismiss', 'Dismiss') }}
-                </button>
+                </Button>
               </div>
             </div>
 
             <!-- Idle: the Save CTA. -->
-            <button
+            <Button
               v-else
               type="button"
-              class="snapshots-rail-cta"
+              variant="textonly"
+              size="unset"
+              class="snapshots-rail-cta static inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 text-[length:var(--takeover-fs-body)] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
               :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
               :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
               <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>
-            </button>
+            </Button>
           </div>
         </div>
       </li>
@@ -794,22 +867,26 @@ async function handleImport(): Promise<void> {
         v-for="(item, i) in timeline"
         :key="item.kind === 'snapshot' ? `s-${item.snapshot.filename}` : `c-${i}`"
         class="snapshots-rail-node"
-        :class="{
-          'is-snapshot': item.kind === 'snapshot',
-          'is-copy': item.kind === 'copy'
-        }"
+        :class="[
+          railNodeClass,
+          {
+            'is-snapshot': item.kind === 'snapshot',
+            'is-copy': item.kind === 'copy'
+          }
+        ]"
       >
         <span
-          class="snapshots-rail-dot"
-          :class="{
-            'is-state':
-              item.kind === 'snapshot' &&
-              (item.snapshot.trigger === 'post-update' || item.snapshot.trigger === 'post-restore'),
-            'is-muted': item.kind === 'copy'
-          }"
+          class="snapshots-rail-dot absolute top-1 left-0 z-[1] size-[14px] rounded-[7px] border-2"
+          :class="
+            item.kind === 'copy'
+              ? 'is-muted border-solid border-snapshot-ring bg-[color-mix(in_srgb,var(--text-muted)_55%,transparent)]'
+              : item.snapshot.trigger === 'post-update' || item.snapshot.trigger === 'post-restore'
+                ? 'is-state border-solid border-snapshot-ring bg-[var(--warning)]'
+                : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
+          "
           :aria-hidden="true"
         ></span>
-        <div class="snapshots-rail-content">
+        <div class="snapshots-rail-content flex flex-col gap-1.5">
           <template v-if="item.kind === 'snapshot'">
             <SnapshotRow
               :snapshot="item.snapshot"
@@ -820,31 +897,47 @@ async function handleImport(): Promise<void> {
               @toggle="toggleExpand(item.snapshot.filename)"
             >
               <template #expanded>
-                <p v-if="item.snapshot.label" class="snapshots-view-label">
+                <p
+                  v-if="item.snapshot.label"
+                  class="snapshots-view-label mt-0 mr-0 mb-1.5 ml-0 text-[length:var(--takeover-fs-caption)] font-medium text-text"
+                >
                   {{ item.snapshot.label }}
                 </p>
 
                 <!-- "Release notes": changes vs the previous snapshot.
                      Hidden for the oldest snapshot (no predecessor); copy
                      events interleaved in the timeline don't count. -->
-                <div v-if="item.snapshotIndex < snapshots.length - 1" class="snap-diff-accordion">
-                  <button
+                <div
+                  v-if="item.snapshotIndex < snapshots.length - 1"
+                  class="snap-diff-accordion mt-2 flex flex-col"
+                >
+                  <Button
                     type="button"
-                    class="snap-diff-trigger"
+                    variant="textonly"
+                    size="unset"
+                    class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-lg border-none bg-transparent pt-0.5 pr-1 pb-0.5 pl-0 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:bg-transparent focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
                     :class="{ 'is-open': isDiffOpen(item.snapshot.filename, 'previous') }"
                     :aria-expanded="isDiffOpen(item.snapshot.filename, 'previous')"
                     @click="toggleDiff(item.snapshot.filename, 'previous')"
                   >
-                    <ChevronDown :size="13" class="snap-diff-chevron" />
+                    <ChevronDown
+                      :size="13"
+                      class="snap-diff-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+                      :class="{
+                        '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'previous')
+                      }"
+                    />
                     <span>{{
                       t('snapshots.changesInSnapshot', 'What changed in this snapshot')
                     }}</span>
-                  </button>
+                  </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'previous')">
-                    <div class="snapshots-view-diff">
+                    <div
+                      class="snapshots-view-diff mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-solid border-border-hover bg-transparent px-3 py-2.5"
+                    >
                       <div
                         v-if="isDiffLoading(item.snapshot.filename, 'previous')"
-                        class="snapshots-view-diff-loading"
+                        class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
                         {{ t('common.loading', 'Loading…') }}
                       </div>
@@ -856,7 +949,7 @@ async function handleImport(): Promise<void> {
                             !diffFor(item.snapshot.filename, 'previous') ||
                             !diffHasChanges(diffFor(item.snapshot.filename, 'previous')!.diff)
                           "
-                          class="snapshots-view-diff-empty"
+                          class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
                           {{
                             t('snapshots.diffNoChanges', 'No changes from the previous snapshot.')
@@ -874,24 +967,34 @@ async function handleImport(): Promise<void> {
                 <!-- "Restore preview": changes vs live state. Hidden for the
                      newest snapshot (restoring it is a no-op); copy events
                      interleaved in the timeline don't count. -->
-                <div v-if="item.snapshotIndex !== 0" class="snap-diff-accordion">
-                  <button
+                <div v-if="item.snapshotIndex !== 0" class="snap-diff-accordion mt-2 flex flex-col">
+                  <Button
                     type="button"
-                    class="snap-diff-trigger"
+                    variant="textonly"
+                    size="unset"
+                    class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-lg border-none bg-transparent pt-0.5 pr-1 pb-0.5 pl-0 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:bg-transparent focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
                     :class="{ 'is-open': isDiffOpen(item.snapshot.filename, 'current') }"
                     :aria-expanded="isDiffOpen(item.snapshot.filename, 'current')"
                     @click="toggleDiff(item.snapshot.filename, 'current')"
                   >
-                    <ChevronDown :size="13" class="snap-diff-chevron" />
+                    <ChevronDown
+                      :size="13"
+                      class="snap-diff-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+                      :class="{
+                        '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'current')
+                      }"
+                    />
                     <span>{{
                       t('snapshots.ifYouRestore', 'What restoring this would change')
                     }}</span>
-                  </button>
+                  </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'current')">
-                    <div class="snapshots-view-diff">
+                    <div
+                      class="snapshots-view-diff mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-solid border-border-hover bg-transparent px-3 py-2.5"
+                    >
                       <div
                         v-if="isDiffLoading(item.snapshot.filename, 'current')"
-                        class="snapshots-view-diff-loading"
+                        class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
                         {{ t('common.loading', 'Loading…') }}
                       </div>
@@ -903,7 +1006,7 @@ async function handleImport(): Promise<void> {
                             !diffFor(item.snapshot.filename, 'current') ||
                             !diffHasChanges(diffFor(item.snapshot.filename, 'current')!.diff)
                           "
-                          class="snapshots-view-diff-empty"
+                          class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
                           {{
                             t(
@@ -923,11 +1026,15 @@ async function handleImport(): Promise<void> {
 
                 <!-- Actions live in the expanded detail so the collapsed
                      row stays a clean tap target. -->
-                <div class="snapshots-view-detail-actions">
-                  <button
+                <div
+                  class="snapshots-view-detail-actions mt-1 flex flex-wrap justify-end gap-2 border-t border-solid border-border-hover pt-3"
+                >
+                  <Button
                     v-if="item.snapshotIndex !== 0"
                     type="button"
-                    class="snapshots-view-detail-btn"
+                    variant="textonly"
+                    size="unset"
+                    :class="[detailButtonClass, 'text-neutral-100']"
                     :aria-label="t('snapshots.restore', 'Restore')"
                     :data-testid="TID.snapshotRowRestore(item.snapshot.filename)"
                     :disabled="restoreInFlight"
@@ -935,10 +1042,12 @@ async function handleImport(): Promise<void> {
                   >
                     <RotateCcw :size="13" />
                     <span>{{ t('snapshots.restore', 'Restore') }}</span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    class="snapshots-view-detail-btn"
+                    variant="textonly"
+                    size="unset"
+                    :class="[detailButtonClass, 'text-neutral-100']"
                     :aria-label="t('snapshots.exportSnapshot', 'Export')"
                     :data-testid="TID.snapshotRowExport(item.snapshot.filename)"
                     :disabled="restoreInFlight"
@@ -946,26 +1055,36 @@ async function handleImport(): Promise<void> {
                   >
                     <Download :size="13" />
                     <span>{{ t('snapshots.exportSnapshot', 'Export') }}</span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    class="snapshots-view-detail-btn snapshots-view-detail-btn-danger"
+                    variant="destructive-textonly"
+                    size="unset"
+                    :class="[
+                      detailButtonClass,
+                      'snapshots-view-detail-btn-danger text-danger hover:text-danger hover:border-[var(--danger)] focus-visible:text-danger focus-visible:border-[var(--danger)]'
+                    ]"
                     :aria-label="t('snapshots.delete', 'Delete')"
                     :disabled="restoreInFlight"
                     @click="handleDelete(item.snapshot.filename)"
                   >
                     <Trash2 :size="13" />
                     <span>{{ t('snapshots.delete', 'Delete') }}</span>
-                  </button>
+                  </Button>
                 </div>
               </template>
             </SnapshotRow>
           </template>
-          <div v-else class="snapshots-view-copy-event">
-            <span class="snapshots-view-copy-icon" :aria-hidden="true">{{
-              item.event.direction === 'in' ? '←' : '→'
-            }}</span>
-            <span class="snapshots-view-copy-label">
+          <div
+            v-else
+            class="snapshots-view-copy-event flex items-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] bg-transparent px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
+          >
+            <span
+              class="snapshots-view-copy-icon text-[var(--accent-primary)]"
+              :aria-hidden="true"
+              >{{ item.event.direction === 'in' ? '←' : '→' }}</span
+            >
+            <span class="snapshots-view-copy-label min-w-0 flex-1">
               {{
                 item.event.direction === 'in'
                   ? t('snapshots.copyEventLabelIncoming', {
@@ -976,7 +1095,9 @@ async function handleImport(): Promise<void> {
                     })
               }}
             </span>
-            <span class="snapshots-view-copy-time">{{ formatDate(item.event.copiedAt) }}</span>
+            <span class="snapshots-view-copy-time text-[11px] opacity-70">{{
+              formatDate(item.event.copiedAt)
+            }}</span>
           </div>
         </div>
       </li>
@@ -984,414 +1105,8 @@ async function handleImport(): Promise<void> {
   </div>
 </template>
 
-<style scoped>
-.snapshots-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.snapshots-view-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.snapshots-view-latest {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
-
-.snapshots-view-toolbar {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.snapshots-view-toolbtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--neutral-100);
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-
-.snapshots-view-toolbtn:hover:not(:disabled),
-.snapshots-view-toolbtn:focus-visible:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-toolbtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.snapshots-view-status {
-  margin: 0;
-  font-size: var(--takeover-fs-body);
-  color: var(--text-muted);
-}
-
-.snapshots-view-status.is-error {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
-  color: var(--danger);
-}
-
-.snapshots-view-status.is-error p {
-  margin: 0;
-}
-
-.snapshots-rail {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* Per-node connector from this dot's center to the next. Last node has
- * none, so the rail doesn't overshoot the bottom. */
-.snapshots-rail-node:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 12px;
-  height: calc(100% + 12px);
-  width: 2px;
-  background: var(--border);
-  border-radius: 1px;
-  z-index: 0;
-}
-
-.snapshots-rail-node {
-  position: relative;
-  padding-left: 24px;
-  min-height: 12px;
-}
-
-/* Dot marker. Color reflects the trigger semantic: .is-state = orange
- * (post-update/restore), .is-muted = copy events, .is-pending = Save CTA. */
-.snapshots-rail-dot {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  width: 14px;
-  height: 14px;
-  border: none;
-  z-index: 1;
-  border-radius: 7px;
-  border: 2px solid #262729;
-  background: linear-gradient(0deg, #8a8a8a 0%, #8a8a8a 100%), #fd9903;
-}
-
-.snapshots-rail-dot.is-state {
-  background: var(--warning);
-  border-radius: 7px;
-  border: 2px solid var(--legacy-color-surface);
-}
-
-.snapshots-rail-dot.is-muted {
-  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
-}
-
-/* Restore in-flight — rotating conic ring, matching the picker row's spinner. */
-.snapshots-rail-dot.is-spinning {
-  background: conic-gradient(var(--brand-accent, #f5c518) 270deg, transparent 270deg);
-  border: 2px solid var(--legacy-color-surface);
-  animation: snapshots-rail-dot-spin 0.8s linear infinite;
-}
-.snapshots-rail-dot.is-restored {
-  background: var(--success, #34c759);
-  border: 2px solid var(--legacy-color-surface);
-}
-.snapshots-rail-dot.is-error {
-  background: var(--danger, #ef4444);
-  border: 2px solid var(--legacy-color-surface);
-}
-@keyframes snapshots-rail-dot-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.snapshots-rail-dot.is-pending {
-  border-radius: 7px;
-  border: 2px dashed var(--neutral-400);
-  background: var(--titlebar-bg);
-}
-
-.snapshots-rail-content {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.snapshots-rail-save-box {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  border: 1px dashed var(--chooser-surface-border);
-  border-radius: 8px;
-}
-
-.snapshots-rail-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  font-size: var(--takeover-fs-body);
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-
-.snapshots-rail-cta:hover,
-.snapshots-rail-cta:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-rail-node.is-save .snapshots-rail-label {
-  font-size: 12px;
-  color: var(--neutral-100);
-}
-
-.snapshots-view-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  background: color-mix(in srgb, var(--surface) 60%, var(--titlebar-bg));
-  border: 1px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  margin-top: -4px;
-}
-
-.snapshots-view-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-hover);
-}
-
-.snapshots-view-detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease;
-}
-
-.snapshots-view-detail-btn:hover,
-.snapshots-view-detail-btn:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-detail-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.snapshots-view-detail-btn.is-active {
-  background: var(--brand-surface-bg-hover);
-  border-color: color-mix(in oklab, var(--neutral-100) 28%, transparent);
-}
-
-.snapshots-view-detail-btn-danger {
-  color: var(--danger);
-}
-
-.snapshots-view-detail-btn-danger:hover,
-.snapshots-view-detail-btn-danger:focus-visible {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.snapshots-view-diff {
-  padding: 10px 12px;
-  margin-top: 8px;
-  /* Cap height so long diffs scroll internally instead of pushing the
-   * action row off-screen. */
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid var(--border-hover);
-  border-radius: 8px;
-  background: transparent;
-}
-
-.snapshots-view-diff-empty {
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.snapshots-view-diff-loading {
-  padding: 8px 12px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-
-.snap-diff-accordion {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-.snap-diff-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 2px 4px 2px 0;
-  background: transparent;
-  border: none;
-  color: var(--neutral-100);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.snap-diff-trigger:hover,
-.snap-diff-trigger:focus-visible {
-  color: var(--text);
-  outline: none;
-}
-.snap-diff-chevron {
-  color: var(--text-muted);
-  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.snap-diff-trigger.is-open .snap-diff-chevron {
-  transform: rotate(180deg);
-}
-.snap-diff-accordion .snapshots-view-diff {
-  margin-top: 6px;
-}
-
-.snapshots-view-label {
-  margin: 0 0 6px;
-  font-size: var(--takeover-fs-caption);
-  font-weight: 500;
-  color: var(--text);
-}
-
-.snapshots-view-changes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.snapshots-view-changes li {
-  line-height: 16px;
-}
-
-.snapshots-view-no-changes {
-  margin: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-/* Top-card restore feedback: in-flight (percent bar), success (green
- * tint), error (red tint). */
-.snapshots-rail-save-box.is-op-inflight,
-.snapshots-rail-save-box.is-op-success,
-.snapshots-rail-save-box.is-op-error {
-  border-style: solid;
-  padding: 14px;
-}
-.snapshots-rail-save-box.is-op-success {
-  border-color: var(--success, #34c759);
-  background: color-mix(in srgb, var(--success, #34c759) 8%, transparent);
-}
-.snapshots-rail-save-box.is-op-error {
-  border-color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
-}
-
-.snapshots-op-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.snapshots-op-card-target {
-  margin: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-.snapshots-op-bar-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.snapshots-op-bar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--takeover-fs-caption);
-}
-.snapshots-op-bar-status {
-  color: var(--neutral-100);
-}
-.snapshots-op-bar-pct {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.snapshots-op-bar-track {
-  position: relative;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--neutral-100) 8%, transparent);
-  overflow: hidden;
-}
-.snapshots-op-bar-fill {
-  height: 100%;
-  background: var(--brand-accent, #f5c518);
-  transition: width 120ms ease;
-}
-.snapshots-op-bar-fill.is-indeterminate {
-  width: 40%;
-  animation: snapshots-op-bar-indet 1.2s ease-in-out infinite;
-}
+<style>
+/* The indeterminate progress fill travels beyond both ends of its track. */
 @keyframes snapshots-op-bar-indet {
   0% {
     transform: translateX(-100%);
@@ -1399,69 +1114,5 @@ async function handleImport(): Promise<void> {
   100% {
     transform: translateX(250%);
   }
-}
-
-.snapshots-op-actions {
-  display: flex;
-  gap: 8px;
-}
-.snapshots-op-primary-btn,
-.snapshots-op-ghost-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-.snapshots-op-primary-btn {
-  background: var(--brand-accent, #f5c518);
-  color: #1a1a1a;
-  border: 1px solid var(--brand-accent, #f5c518);
-}
-.snapshots-op-primary-btn:hover,
-.snapshots-op-primary-btn:focus-visible {
-  background: color-mix(in srgb, var(--brand-accent, #f5c518) 88%, white);
-  outline: none;
-}
-.snapshots-op-ghost-btn {
-  background: transparent;
-  color: var(--neutral-100);
-  border: 1px solid var(--chooser-surface-border);
-}
-.snapshots-op-ghost-btn:hover,
-.snapshots-op-ghost-btn:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-copy-event {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-
-.snapshots-view-copy-icon {
-  color: var(--accent-primary);
-}
-
-.snapshots-view-copy-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.snapshots-view-copy-time {
-  font-size: 11px;
-  opacity: 0.7;
 }
 </style>
