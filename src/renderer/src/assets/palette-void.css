@@ -110,7 +110,7 @@
 }
 
 /* Filled primary buttons: white with dark text. */
-:root.palette-void :is(button.primary, .dlm-btn-primary) {
+:root.palette-void :is(button.primary) {
   color: var(--color-background);
 }
 :root.palette-void button.primary:hover:not(:disabled) {
