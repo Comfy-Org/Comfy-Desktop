@@ -227,6 +227,23 @@ const bridge = (window as unknown as { __comfyTitleBar?: Bridge }).__comfyTitleB
 const titleMenuButtonClass =
   '[-webkit-app-region:no-drag] inline-flex items-center gap-0 rounded-[4px] border border-solid border-transparent bg-transparent px-1.5 py-1 [font:inherit] text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity,border-color] duration-[120ms] ease-[ease] [.title-bar:not(.is-light)_&]:rounded-control [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent'
 
+const titleInstallPillClass = [
+  '[-webkit-app-region:no-drag] inline-flex h-7 items-center gap-2 [inline-size:fit-content] [min-inline-size:200px] [max-inline-size:clamp(200px,22cqi,360px)] rounded-[999px] border border-solid border-transparent bg-[var(--chooser-surface-bg)] py-[5px] pr-2.5 pl-3 [font-family:inherit] text-[12px] leading-[inherit] font-normal text-neutral-100 cursor-default transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
+  '[&.is-interactive]:cursor-pointer',
+  '[&.is-interactive:focus-visible]:outline-none [&.is-interactive:focus-visible]:outline-current',
+  '[&.is-install-less]:opacity-85',
+  '[.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
+  '[&.is-interactive:focus-visible:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [&.is-interactive:focus-visible:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
+  '[&.is-interactive.is-open]:border-neutral-50 [&.is-interactive.is-open]:text-neutral-50',
+  '[.title-bar.is-light_&]:bg-[rgba(0,0,0,0.04)] [.title-bar.is-light_&]:text-neutral-700',
+  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted',
+  '[.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-neutral-700',
+  '[.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:text-neutral-700',
+  '[.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:border-[oklch(1_0_0/0.12)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:bg-[oklch(1_0_0/0.07)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:text-text',
+  '[.title-bar:not(.is-light)_&.is-interactive.is-open]:border-[oklch(1_0_0/0.3)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:bg-[oklch(1_0_0/0.07)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:text-text',
+  '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
+].join(' ')
+
 const isMac = ref(bridge?.isMac() ?? false)
 /** Active body-mode pill, mirrored from main. Drives the native Install
  *  menu's checkmark for install-scoped pages (Install Settings /
@@ -945,11 +962,14 @@ onUnmounted(() => {
         v-if="!isFirstUseLockdown"
         ref="installPill"
         class="title-install-pill is-interactive"
-        :class="{
-          'is-open': isInstancePickerOpen,
-          'is-coachmark': coachmark.isShowing.value,
-          'is-install-less': isInstallLess
-        }"
+        :class="[
+          titleInstallPillClass,
+          {
+            'is-open': isInstancePickerOpen,
+            'is-coachmark': coachmark.isShowing.value,
+            'is-install-less': isInstallLess
+          }
+        ]"
         role="button"
         tabindex="0"
         aria-haspopup="dialog"
@@ -961,25 +981,33 @@ onUnmounted(() => {
         <!-- Leading mark: the Comfy logo only on the bare dashboard; on an
              actual instance the pill leads with that install's source/type
              icon so the brand logo isn't repeated on every window. -->
-        <div class="title-install-slot title-install-slot--leading">
-          <ComfyCLogo v-if="showBrandMark" class="title-install-brand-mark" :size="16" />
+        <div
+          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
+        >
+          <ComfyCLogo
+            v-if="showBrandMark"
+            class="title-install-brand-mark shrink-0 text-current"
+            :size="16"
+          />
           <component
             :is="installTypeMeta.icon"
             v-else-if="showInstallTypeIcon"
             :size="16"
-            class="title-install-type-icon"
+            class="title-install-type-icon shrink-0 opacity-85"
             v-bind="tooltipAttrs(installTypeLabel)"
           />
         </div>
-        <div class="title-install-slot title-install-slot--center">
-          <span class="title-install-name">{{ installLabel }}</span>
+        <div
+          class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
+        >
+          <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
           <!-- Instance update CTA, inline after the name. Its own click
                target — stops propagation so it updates without also
                opening the picker; the rest of the pill still opens it. -->
           <button
             v-if="showInstallUpdatePill"
             type="button"
-            class="title-install-update-chip"
+            class="title-install-update-chip [-webkit-app-region:no-drag] ml-1 inline-flex shrink-0 items-center rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_12%,transparent)] px-2 py-px [font-family:inherit] text-[11px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_20%,transparent)] [.title-bar.is-hover-active_&]:hover:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_22%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_70%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
             v-bind="tooltipAttrs(installUpdatePillLabel)"
             @click.stop="handleInstallUpdatePill"
             @keydown.enter.stop
@@ -990,25 +1018,41 @@ onUnmounted(() => {
         </div>
         <!-- Trailing slot: dropdown caret. Marks the pill as an
              interactive opener so the user reads it as actionable. -->
-        <div class="title-install-slot title-install-slot--trailing">
-          <ChevronDown :size="12" class="title-install-caret" aria-hidden="true" />
+        <div
+          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
+        >
+          <ChevronDown
+            :size="12"
+            class="title-install-caret shrink-0 text-current opacity-70"
+            aria-hidden="true"
+          />
         </div>
       </div>
-      <div v-else ref="installPill" class="title-install-pill">
-        <div class="title-install-slot title-install-slot--leading">
-          <ComfyCLogo v-if="showBrandMark" class="title-install-brand-mark" :size="16" />
+      <div v-else ref="installPill" class="title-install-pill" :class="titleInstallPillClass">
+        <div
+          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
+        >
+          <ComfyCLogo
+            v-if="showBrandMark"
+            class="title-install-brand-mark shrink-0 text-current"
+            :size="16"
+          />
           <component
             :is="installTypeMeta.icon"
             v-else-if="showInstallTypeIcon"
             :size="16"
-            class="title-install-type-icon"
+            class="title-install-type-icon shrink-0 opacity-85"
             v-bind="tooltipAttrs(installTypeLabel)"
           />
         </div>
-        <div class="title-install-slot title-install-slot--center">
-          <span class="title-install-name">{{ installLabel }}</span>
+        <div
+          class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
+        >
+          <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
         </div>
-        <div class="title-install-slot title-install-slot--trailing"></div>
+        <div
+          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
+        ></div>
       </div>
     </div>
 
@@ -1132,136 +1176,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* --- App / hamburger menu button --- */
-/* Subtle unread marker on the bell, a small accent dot at the icon's upper
-   right, cleared once the announcement is opened. */
-.title-install-pill {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  /* Explicit gap (not space-between) so the leading icon ↔ name ↔ caret
-     keep a guaranteed minimum separation even when the pill hits its
-     min-width floor — the cramped short-name case. The flex:1 center
-     slot still absorbs slack and stays centered. */
-  gap: 8px;
-  /* Shrink-to-content with bounded floor + ceiling. `inline-size:
-     fit-content` lets the pill tighten around short install names
-     (e.g. "ComfyUI") so the layout budget isn't held hostage by a
-     220px reservation that the content doesn't need. The min keeps
-     the pill from looking puny on a wide bar; the max preserves the
-     fluid 22cqi growth up to a 360px ceiling, with ellipsis on the
-     name beyond that — matching the dashboard pill. */
-  inline-size: fit-content;
-  min-inline-size: 200px;
-  max-inline-size: clamp(200px, 22cqi, 360px);
-  height: 28px;
-  /* Slightly tighter on the right: the ChevronDown glyph carries a little
-     baked-in whitespace on its right edge, so an equal 12px both sides reads
-     right-heavy. 10px on the right optically balances the inset. */
-  padding: 5px 10px 5px 12px;
-  border-radius: 999px;
-  /* Transparent border at base so the .is-open state can lift it to brand
-     yellow without a layout shift (border-color alone paints nothing). */
-  border: 1px solid transparent;
-  background: var(--chooser-surface-bg);
-  color: var(--neutral-100);
-  font: inherit;
-  font-size: 12px;
-  cursor: default;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-/* Interactive variant — install-backed hosts. The pill is an actionable
- * picker opener (a div with role=button so it can hold the nested update
- * chip): hover repaints to the brand-surface hover token, open state
- * lifts border/text/logo to brand yellow (--neutral-50) so the pill
- * reads as engaged. */
-.title-install-pill.is-interactive {
-  cursor: pointer;
-}
-/* Hover/focus: a restrained lift that previews — but doesn't fully commit to —
- * the open state. Surface warms, the transparent base border picks up a faint
- * yellow, and the muted resting text/icons (`--neutral-100`) step toward brand
- * yellow. Gated behind `.is-hover-active` so it matches every sibling titlebar
- * control and stays suppressed during window drag / when unfocused. The full
- * yellow border + text is reserved for `.is-open`. */
-.title-install-pill.is-interactive:focus-visible {
-  outline: none;
-}
-.title-bar.is-hover-active .title-install-pill.is-interactive:hover:not(.is-open),
-.title-install-pill.is-interactive:focus-visible:not(.is-open) {
-  background: var(--chooser-surface-bg-hover);
-  border-color: color-mix(in srgb, var(--neutral-50) 35%, transparent);
-  color: color-mix(in srgb, var(--neutral-50) 70%, var(--neutral-100));
-}
-.title-install-pill.is-interactive.is-open {
-  /* Lift border + text to brand yellow when the picker is showing.
-   * The brand mark + caret both use `currentColor` so they inherit
-   * this lift automatically — one source of truth for the open tint. */
-  border-color: var(--neutral-50);
-  color: var(--neutral-50);
-}
-/* Light comfy theme: the resting surface (`rgba(255,255,255,.04)`) and text
- * (`--neutral-100`, light grey) vanish on a white bar. Swap to a faint dark
- * film + dark text so the pill — and its `currentColor` brand mark / caret —
- * stay legible. Mirrors the `.is-light` treatment on the update chip. */
-.title-bar.is-light .title-install-pill {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--neutral-700);
-}
-.title-bar.is-light.is-hover-active .title-install-pill.is-interactive:hover:not(.is-open),
-.title-bar.is-light .title-install-pill.is-interactive:focus-visible:not(.is-open) {
-  background: rgba(0, 0, 0, 0.07);
-  border-color: color-mix(in srgb, var(--neutral-700) 35%, transparent);
-  color: var(--neutral-700);
-}
-/* Open state: the dark-theme yellow lift (`--neutral-50`) is near-invisible on
- * a white bar, so commit border + text (and the `currentColor` mark / caret)
- * to full-strength dark instead. */
-.title-bar.is-light .title-install-pill.is-interactive.is-open {
-  border-color: color-mix(in srgb, var(--neutral-700) 55%, transparent);
-  color: var(--neutral-700);
-}
-
-/* Inline instance-update CTA, sitting just after the install name inside
- * the identity pill. Brand-yellow chip so it reads as the actionable
- * "there is an update" affordance without competing with the name. */
-.title-install-update-chip {
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-  /* A little extra breathing room from the name (on top of the slot's
-     6px gap) so the chip doesn't read as crammed against it. */
-  margin-left: 4px;
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--comfy-yellow) 55%, transparent);
-  background: color-mix(in srgb, var(--comfy-yellow) 12%, transparent);
-  color: var(--comfy-yellow);
-  font: inherit;
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-  transition:
-    background-color 0.12s,
-    border-color 0.12s;
-}
-.title-bar.is-hover-active .title-install-update-chip:hover {
-  background: color-mix(in srgb, var(--comfy-yellow) 20%, transparent);
-  border-color: var(--comfy-yellow);
-}
-.title-install-update-chip:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-.title-bar.is-light .title-install-update-chip {
-  background: color-mix(in srgb, var(--comfy-yellow) 22%, transparent);
-  border-color: color-mix(in srgb, var(--comfy-yellow) 70%, var(--neutral-700));
-  color: var(--neutral-700);
-}
 .title-zoom-fade-enter-active,
 .title-zoom-fade-leave-active {
   transition:
@@ -1272,56 +1186,6 @@ onUnmounted(() => {
 .title-zoom-fade-leave-to {
   opacity: 0;
   transform: scale(0.9);
-}
-
-.title-install-caret {
-  color: currentColor;
-  opacity: 0.7;
-  flex-shrink: 0;
-}
-/* Install-less host windows: identity-only `Comfy Desktop` label. */
-.title-install-pill.is-install-less {
-  opacity: 0.85;
-}
-
-/* Leading + trailing slots are equal fixed width and center their icon,
-   so the icon-to-pill-edge inset is identical on both sides regardless of
-   the icon's own size (16px home mark vs 12px caret). Mirrored side slots
-   keep the pill visually symmetric — equal left/right insets, centered
-   name — at any content width. */
-.title-install-slot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 18px;
-}
-.title-install-slot--center {
-  flex: 1 1 auto;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-}
-/* Brand-mark tracks the pill's `color` token so it lifts to brand
-   yellow alongside the border / name / caret when the picker opens.
-   `currentColor` keeps it in sync without a separate hover/open rule. */
-.title-install-brand-mark {
-  flex-shrink: 0;
-  color: currentColor;
-}
-
-.title-install-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-/* Install-type icon. Sized to fit the 36px content area of the title
-   bar without growing it; opacity matches the caret so the icon
-   reads as a calm visual cue rather than competing with the install
-   name. */
-.title-install-type-icon {
-  flex-shrink: 0;
-  opacity: 0.85;
 }
 
 /* --- Status pills (app-update + install-update) ---
