@@ -5,6 +5,7 @@ import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 import { LEVELS } from '../materials'
+import { useMode } from '../kit/mode'
 import MaterialsGlass from './MaterialsGlass.vue'
 
 /**
@@ -23,6 +24,9 @@ interface Reading {
 }
 const readings = ref<Record<string, Reading>>({})
 const root = ref<HTMLElement>()
+// Overview: every level at a glance, over a picture. Details: the table
+// and each level over a picture and the plain page.
+const overview = useMode().mode === 'overview'
 
 // Composites a colour over white or black on a canvas (it parses oklch
 // and color-mix results), then reads it back as sRGB.
@@ -89,8 +93,22 @@ const low = (n: number): boolean => n < 4.5
 <template>
   <div ref="root" class="ds-mat">
     <Section
+      v-if="overview"
+      title="Every level"
+      note="Blur only on what floats over content; cards on the page stay solid."
+    >
+      <Cells :min="200">
+        <Cell v-for="l in LEVELS" :key="l.id" :label="l.name" fill>
+          <div class="ds-photo ds-mat-photo" :style="{ backgroundImage: `url(${portraitGarden})` }">
+            <MaterialsGlass :id="l.id" />
+          </div>
+        </Cell>
+      </Cells>
+    </Section>
+    <Section
+      v-if="!overview"
       title="Levels in use"
-      note="Read from the specimens below in this theme: the computed backdrop-filter, surface, ring and shadow, and corner. Contrast is the specimen's text on its surface with pure white, then pure black, behind it (blur only averages what is behind, so these are the extremes)."
+      note="Computed in this theme. Contrast: the text on its surface with pure white, then pure black, behind."
     >
       <div class="ds-mat-table" role="table">
         <div class="ds-mat-tr is-head" role="row">
@@ -129,7 +147,7 @@ const low = (n: number): boolean => n < 4.5
       </div>
     </Section>
 
-    <Section v-for="l in LEVELS" :key="l.id" :title="l.name" :note="l.usedBy">
+    <Section v-for="l in overview ? [] : LEVELS" :key="l.id" :title="l.name" :note="l.usedBy">
       <Cells :min="240">
         <Cell label="over a busy picture" fill>
           <div class="ds-photo ds-mat-photo" :style="{ backgroundImage: `url(${portraitGarden})` }">

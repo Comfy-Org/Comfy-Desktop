@@ -13,13 +13,17 @@ export interface DsPage {
   source?: string
   use?: string
   component?: Component
-  /** Docs that don't change with the theme, under the theme frames. */
+  /** Foundations: docs under Details, and a Code tab (top level). */
   doc?: Component
+  code?: Component
   /** Controls for every frame, above them (pages/MotionBar.vue). */
   bar?: Component
   /** A page drawn by itself, without theme frames (the Playground). */
   custom?: Component
 }
+
+/** Where a page sits in the nav, in this order. */
+export const GROUPS = ['', 'Foundations', 'Components', 'Patterns', 'Playground'] as const
 
 const lazy = (load: () => Promise<{ default: Component }>): Component => defineAsyncComponent(load)
 
@@ -28,6 +32,20 @@ const library = (page: string): Component =>
   defineAsyncComponent(async () => {
     const { default: LibraryPage } = await import('./pages/LibraryPage.vue')
     return defineComponent(() => () => h(LibraryPage, { page }))
+  })
+
+/** Materials · Blur's docs, by tab (pages/MaterialsDoc.vue). */
+const part = (which: 'details' | 'code'): Component =>
+  defineAsyncComponent(async () => {
+    const { default: MaterialsDoc } = await import('./pages/MaterialsDoc.vue')
+    return defineComponent(() => () => h(MaterialsDoc, { part: which }))
+  })
+
+/** Colour, Type and Radius (pages/FoundationTokens.vue). */
+const tokens = (kind: 'colour' | 'type' | 'radius'): Component =>
+  defineAsyncComponent(async () => {
+    const { default: FoundationTokens } = await import('./pages/FoundationTokens.vue')
+    return defineComponent(() => () => h(FoundationTokens, { kind }))
   })
 
 const LIBRARY: { page: string; label: string; source: string; use: string }[] = [
@@ -82,15 +100,42 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 ]
 
 export const PAGES: DsPage[] = [
-  { id: 'about', label: 'About', group: 'Docs', title: "Mar's design system" },
+  { id: 'about', label: 'About', group: '', title: "Mar's design system" },
   {
     id: 'playground',
     label: 'Playground',
-    group: 'Docs',
+    group: 'Playground',
     title: 'Playground',
     source: 'the components named on each one; specs in mar/ds/play.ts',
     use: 'Try a component with any props, in either theme, Corners and Look; copy its usage or a link.',
     custom: lazy(() => import('./pages/PlaygroundPage.vue'))
+  },
+  {
+    id: 'colour',
+    label: 'Colour',
+    group: 'Foundations',
+    title: 'Colour',
+    source: 'ui/tokens.css (light: ui/looks/light.css; Mar’s overrides in mar/shell/marShell.css)',
+    use: 'Grey scale UI; colour only for status and progress.',
+    component: tokens('colour')
+  },
+  {
+    id: 'type',
+    label: 'Type',
+    group: 'Foundations',
+    title: 'Type',
+    source: 'ui/tokens.css',
+    use: 'Four sizes; navigation reads one size down from the page.',
+    component: tokens('type')
+  },
+  {
+    id: 'radius',
+    label: 'Radius',
+    group: 'Foundations',
+    title: 'Radius',
+    source: 'ui/tokens.css, mar/uiTuner.ts (Corners)',
+    use: 'Soft corners; inner = outer − padding.',
+    component: tokens('radius')
   },
   {
     id: 'materials-blur',
@@ -101,7 +146,8 @@ export const PAGES: DsPage[] = [
       'mar/menus/layers.css, mar/shell/marShell.css, mar/search/search.css, mar/templateModal/templateModal.css, mar/pages/ (MarStatus, MarItem, MarSelectBar), ui/tokens.css',
     use: 'How blur is used, level by level, so it can be built exactly: the values, who uses them, the rules and the CSS.',
     component: lazy(() => import('./pages/MaterialsPage.vue')),
-    doc: lazy(() => import('./pages/MaterialsDoc.vue'))
+    doc: part('details'),
+    code: part('code')
   },
   {
     id: 'motion',
@@ -126,8 +172,8 @@ export const PAGES: DsPage[] = [
   },
   {
     id: 'default-view',
-    label: 'Default view',
-    group: 'Put together',
+    label: 'Home',
+    group: 'Patterns',
     title: 'Default view',
     source: 'LandingPrototypes.vue with Proposal: Mar',
     use: 'To check a component in place, next to everything around it.',
@@ -136,7 +182,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'background',
     label: 'Home spotlight',
-    group: 'Put together',
+    group: 'Patterns',
     title: 'Home spotlight',
     source: 'mar/shell/MarBackdrop.vue, .is-spotlight in mar/shell/marShell.css',
     use: 'Behind Home only; other pages stay plain or take their page photo.',
@@ -145,7 +191,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'looks',
     label: 'Looks',
-    group: 'Put together',
+    group: 'Patterns',
     title: 'Looks',
     source: 'mar/looks/ (looks.ts, looks.css)',
     use: 'Current (Void as it is, the default) or Grain over every picture.',
@@ -154,7 +200,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'user',
     label: 'User',
-    group: 'Put together',
+    group: 'Patterns',
     title: 'First-time and Returning',
     source: 'mar/userStates/ (userState.ts, ExampleFan.vue, MarSpacesEmpty.vue)',
     use: 'Check every page for someone who has made nothing yet.',
@@ -163,7 +209,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'title-bar',
     label: 'Title bar',
-    group: 'Shell',
+    group: 'Components',
     title: 'Title bar',
     source:
       'parts/DesktopTitleBar.vue, parts/nav/TitleBarBreadcrumb.vue, parts/nav/SwitcherMenu.vue',
@@ -173,7 +219,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'sidebar',
     label: 'Sidebar',
-    group: 'Shell',
+    group: 'Components',
     title: 'Sidebar',
     source:
       'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
@@ -183,7 +229,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'search',
     label: 'Search',
-    group: 'Shell',
+    group: 'Components',
     title: 'Global search',
     source: 'mar/search/MarSearch.vue (search.ts), parts/env/ModeNav.vue (the sidebar row)',
     use: "Find anything or run a quick action: ⌘K anywhere, or the sidebar's first row.",
@@ -192,7 +238,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'tooltip',
     label: 'Tooltip',
-    group: 'Shell',
+    group: 'Components',
     title: 'Tooltip',
     source: 'ui/Tooltip.vue (.mar-tip in mar/shell/marShell.css)',
     use: 'Name an icon-only control or explain a state; never for text already on screen.',
@@ -201,7 +247,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'icons',
     label: 'Icons',
-    group: 'Shell',
+    group: 'Components',
     title: 'Production icons',
     source: 'mar/icons/ (comfyIcons.ts, kindIcons.ts, agentChat.ts)',
     use: 'Where production already has the concept, use its icon; otherwise lucide.',
@@ -210,7 +256,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'prompt',
     label: 'Prompt box',
-    group: 'Home',
+    group: 'Components',
     title: 'Prompt box',
     source: 'parts/PromptBox.vue with .mar-prompt (mar/shell/marShell.css)',
     use: "Home's one place to type: what to make, and on which build.",
@@ -219,7 +265,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'cards',
     label: 'Cards',
-    group: 'Home',
+    group: 'Components',
     title: 'Cards',
     source:
       'ui/SectionHeader.vue, mar/WorkflowCard.vue (ui/MediaCard.vue), parts/space/SpaceCard.vue, parts/space/DeployedTo.vue',
@@ -229,7 +275,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'row-cards',
     label: 'Row cards',
-    group: 'Home',
+    group: 'Components',
     title: 'Row cards',
     source: 'mar/MarStartWhere.vue, mar/MarBuildsRow.vue (.mar-row-card in mar/shell/marShell.css)',
     use: 'A short list of places or builds, each with its action at the end.',
@@ -238,7 +284,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'banner',
     label: "What's new",
-    group: 'Home',
+    group: 'Components',
     title: "What's new",
     source: 'mar/LaunchBanner.vue',
     use: 'One launch at a time on Home; the dots step through the others.',
@@ -247,7 +293,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'buttons',
     label: 'Buttons',
-    group: 'Controls',
+    group: 'Components',
     title: 'Buttons',
     source: 'ui/Button.vue, ui/button.variants.ts',
     use: 'Primary once per surface; ghost for rows and icons; link for section links.',
@@ -256,7 +302,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'menus',
     label: 'Menus',
-    group: 'Controls',
+    group: 'Components',
     title: 'Menus',
     source:
       'mar/CreateMenu.vue, mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue, mar/runOn/MarRunOn.vue, parts/PromptBox.vue, parts/nav/SwitcherMenu.vue (menu family in mar/shell/marShell.css, layers in mar/menus/layers.css)',
@@ -265,9 +311,9 @@ export const PAGES: DsPage[] = [
   },
   {
     id: 'tabs-filters',
-    label: 'Tabs and filters',
-    group: 'Controls',
-    title: 'Tabs and filters',
+    label: 'Filters bar',
+    group: 'Patterns',
+    title: 'Filters bar',
     source:
       'mar/pages/MarSeg.vue, ui/Select.vue, mar/pages/MarSearchField.vue, mar/pages/MarViewToggle.vue, mar/assets/AssetViewMenu.vue',
     use: 'Narrow a page: tabs for its scopes on the left; filters, sort, search and view on the right.',
@@ -276,7 +322,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'status',
     label: 'Status chips',
-    group: 'Controls',
+    group: 'Components',
     title: 'Status chips',
     source: 'mar/pages/MarStatus.vue',
     use: 'The state of a run, build or item, next to its name or on its picture.',
@@ -285,7 +331,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'items',
     label: 'Items',
-    group: 'Controls',
+    group: 'Components',
     title: 'Items',
     source: 'mar/pages/MarItem.vue (MarItemMenu.vue, MarStatus.vue, FavoriteStar.vue)',
     use: 'One thing in a library page, as a card or a list row: open, select, star, rename.',
@@ -293,17 +339,35 @@ export const PAGES: DsPage[] = [
   },
   {
     id: 'empty',
-    label: 'Empty state',
-    group: 'Controls',
-    title: 'Empty state',
+    label: 'Empty states',
+    group: 'Patterns',
+    title: 'Empty states',
     source: 'mar/pages/MarEmpty.vue (pictures in mar/pages/emptyArt.ts)',
     use: 'Every place with nothing in it, no results, or an error: one design everywhere.',
     component: lazy(() => import('./pages/EmptyPage.vue'))
   },
   {
+    id: 'cards-grid',
+    label: 'Cards grid',
+    group: 'Patterns',
+    title: 'Cards grid',
+    source: 'mar/pages/MarItem.vue in mar/pages/MarWorkflowsPage.vue, MarAssetsPage.vue',
+    use: 'A library page’s items as a grid of cards, the toolbar above.',
+    component: lazy(() => import('./pages/CardsGridPage.vue'))
+  },
+  {
+    id: 'menus-summary',
+    label: 'Menus with summary',
+    group: 'Patterns',
+    title: 'Menus with summary',
+    source: 'mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue (mar/menus/layers.css)',
+    use: 'A menu that first says where you are or what you have, then offers what to do.',
+    component: lazy(() => import('./pages/MenusSummaryPage.vue'))
+  },
+  {
     id: 'activity',
     label: 'Recent activity',
-    group: 'Controls',
+    group: 'Components',
     title: 'Recent activity',
     source: 'mar/activity/MarActivityTimeline.vue',
     use: 'What happened lately in a space or project, newest first.',
@@ -311,18 +375,18 @@ export const PAGES: DsPage[] = [
   },
   ...LIBRARY.map((l) => ({
     id: `lib-${l.page}`,
-    label: l.label,
-    group: 'Library pages',
-    title: l.label,
+    label: `Library · ${l.label}`,
+    group: 'Patterns',
+    title: `Library · ${l.label}`,
     source: `${l.source} (shell: mar/pages/MarPage.vue, MarStateGate.vue, pageState.ts)`,
     use: l.use,
     component: library(l.page)
   })),
   {
     id: 'project-space',
-    label: 'Project and space',
-    group: 'Library pages',
-    title: 'Project and space pages',
+    label: 'Page header',
+    group: 'Patterns',
+    title: 'Page header',
     source:
       'mar/pages/MarProjectPage.vue, mar/pages/MarSpacePage.vue, mar/pages/MarEntityHeader.vue, mar/pages/MarAddress.vue, mar/pages/MarSplitButton.vue',
     use: 'One project or one space: what it holds, its latest output and activity.',
@@ -331,7 +395,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'template-modal',
     label: 'Template modal',
-    group: 'Flows',
+    group: 'Patterns',
     title: 'Template modal',
     source: 'mar/templateModal/ (MarTemplateModal.vue, TplGraph.vue, templateModal.css)',
     use: 'Opening any example or template: see what it makes, then open it where it runs.',
@@ -340,7 +404,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'build',
     label: 'Build and deploy',
-    group: 'Flows',
+    group: 'Patterns',
     title: 'Build and deploy',
     source: 'mar/build/ (MarBuildStart.vue, MarModelsPage.vue), mar/deploy/MarDeployModal.vue',
     use: 'The Build lens: a first call, the models, and shipping a build as an API.',
@@ -349,7 +413,7 @@ export const PAGES: DsPage[] = [
   {
     id: 'graph',
     label: 'Graph editor',
-    group: 'Flows',
+    group: 'Patterns',
     title: 'Graph editor',
     source: 'mar/graph/ (MarGraph.vue, CanvasNode.vue, canvasData.ts)',
     use: 'A build’s tab: the workflow’s graph, with the way back Home.',

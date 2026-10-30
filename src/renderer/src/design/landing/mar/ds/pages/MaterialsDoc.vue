@@ -53,6 +53,8 @@ const SNIPPETS: Record<string, Ref[]> = {
   ],
   toast: [['ui/Toaster.vue', 'bg-inverted-background', 0, false]]
 }
+/** Details: who uses what, rules, performance. Code: the CSS. */
+const { part = 'details' } = defineProps<{ part?: 'details' | 'code' }>()
 const snippets = (id: string): (Snippet | { missing: string })[] =>
   (SNIPPETS[id] ?? []).map(
     ([file, needle, nth, whole]) =>
@@ -159,141 +161,144 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
 
 <template>
   <article class="ds-doc ds-mat-doc">
-    <h2>Who uses which level</h2>
-    <div class="ds-mat-uses">
-      <template v-for="l in LEVELS" :key="l.id">
-        <strong>{{ l.name }}</strong>
-        <span
-          >{{ l.usedBy }}<br /><code>{{ l.defined }}</code></span
-        >
-      </template>
-    </div>
-
-    <h2>Rules</h2>
-    <ul>
-      <li>
-        <strong>Blur only on what floats over content</strong>: menus, selects, popovers, tooltips,
-        the ⌘K palette, modals and their scrim, the select bar, chips on a picture. What sits in the
-        page (cards, rows, sections, the toolbar) is a solid surface: the foreground at low opacity
-        or the card colour, no <code>backdrop-filter</code>.
-      </li>
-      <li>
-        <strong>Cards on the page stay solid.</strong> Today they blur:
-        <code>.proto-main .bg-card-background</code> and <code>.mar-surface</code> at 24px,
-        <code>.mar-item.is-grid</code> at 20px. Proposal: drop it, so a grid stops paying for a blur
-        per card while it scrolls.
-      </li>
-      <li>
-        <strong>40px is the ceiling</strong> (palette, sidebar). Past it nothing looks different and
-        it costs more. Saturate goes with the blur: 1.2–1.3 for surfaces, 1.8 only for menus and the
-        palette (1.6 in light).
-      </li>
-      <li>
-        <strong>Glass is mostly opaque</strong>: 74% (menus, dark) to 94% (tooltips). Below that,
-        text can't hold its contrast over a bright picture. Chips on pictures use
-        <code>--color-media-overlay</code>, a dark 60% (Mar's value over Pablo's black 55%), in both
-        themes. Its coloured status words fall to about 3.5:1 over a white picture; the words could
-        go white there, with the colour kept in the icon.
-      </li>
-      <li>
-        <strong>No blur inside blur.</strong> What sits on glass (the menu's raised panel
-        <code>.mar-menu-panel</code>, its current pick, the palette's list) is a tint only, with
-        <code>backdrop-filter: none</code> (as <code>.mar-search-list</code> does). A blur inside a
-        blur samples what is already blurred: twice the cost and a muddy edge.
-      </li>
-      <li>
-        <strong>Contrast</strong>: text on glass ≥ 4.5:1 (3:1 for icons and text from 18px), checked
-        with pure white and pure black behind it. The frames above show each level's numbers;
-        anything under 4.5 is red.
-      </li>
-      <li>
-        <strong>Pablo's shell glass is painted, not blurred</strong> (<code>ui/surfaces.css</code>:
-        gradients on the page and title bar). In the shipped app, Electron's macOS
-        <code>vibrancy</code> and Windows <code>acrylic</code> do the window's glass.
-      </li>
-    </ul>
-
-    <h2>Performance</h2>
-    <ul>
-      <li>
-        A <code>backdrop-filter</code> redraws whenever what's behind it moves. Keep it on small
-        layers that float (menus, chips, bars), never on large or scrolling areas: full-height
-        panels over moving content, list rows, every card of a grid.
-      </li>
-      <li>
-        Animate the glass's <code>opacity</code> and <code>transform</code> (the menus' entry does),
-        never the blur radius.
-      </li>
-      <li>
-        <code>will-change: transform</code> only on glass that animates, and only while it does. On
-        static glass it holds a layer for nothing. Nothing in the code sets it today, which is
-        right.
-      </li>
-      <li>
-        Chromium (Electron) needs no <code>-webkit-backdrop-filter</code>. Add it only if these
-        styles ever ship to Safari.
-      </li>
-    </ul>
-
-    <h2>Fallback: no blur, reduced transparency</h2>
-    <p>
-      The code has neither today: no <code>@supports not (backdrop-filter)</code> and no
-      <code>prefers-reduced-transparency</code>. With the variables below, both are a few lines.
-    </p>
-    <pre class="ds-mat-code"><code>{{ FALLBACK }}</code></pre>
-
-    <h2>The CSS today, per level</h2>
-    <p>
-      Pulled from the source files as they are now, with their line numbers. Copy from here, or
-      better, from the proposal below once it exists.
-    </p>
-    <section v-for="l in LEVELS" :key="l.id" class="ds-mat-snips">
-      <h3>{{ l.name }}</h3>
-      <template v-for="(s, i) in snippets(l.id)" :key="i">
-        <p v-if="'missing' in s" class="ds-mat-missing">{{ s.missing }}</p>
-        <figure v-else>
-          <figcaption>
-            <code>{{ s.file }}:{{ s.line }}</code>
-          </figcaption>
-          <pre class="ds-mat-code"><code>{{ s.code }}</code></pre>
-        </figure>
-      </template>
-    </section>
-
-    <h2>Duplicated values</h2>
-    <p>
-      Every <code>backdrop-filter</code> (and Tailwind <code>backdrop-blur-*</code>) in Mar's
-      proposal and Pablo's parts, grouped by value, parsed from the source now ({{
-        inDefault.length
-      }}
-      uses; {{ elsewhere }} more in explorations behind other knobs: p20, graph, agent, explore,
-      learn). The same value is typed in several files.
-    </p>
-    <div class="ds-mat-dups">
-      <template v-for="g in repeated" :key="g.value">
-        <code class="ds-mat-dup-v">{{ g.value }} × {{ g.uses.length }}</code>
-        <span>
-          <code v-for="u in g.uses" :key="`${u.file}:${u.line}`" :title="u.selector"
-            >{{ u.file }}:{{ u.line }}</code
+    <template v-if="part === 'details'">
+      <h2>Who uses which level</h2>
+      <div class="ds-mat-uses">
+        <template v-for="l in LEVELS" :key="l.id">
+          <strong>{{ l.name }}</strong>
+          <span
+            >{{ l.usedBy }}<br /><code>{{ l.defined }}</code></span
           >
-        </span>
-      </template>
-    </div>
+        </template>
+      </div>
 
-    <h2>Proposal: consolidate into variables</h2>
-    <p>
-      Not done in the app; this documents it. One file holds the scale and each level's tint,
-      opacity, saturate, ring and shadow, dark and light, and each component uses its level. The
-      values are today's, so nothing changes on screen except where a comment says it rounds.
-    </p>
-    <pre class="ds-mat-code"><code>{{ PROPOSAL }}</code></pre>
+      <h2>Rules</h2>
+      <ul>
+        <li>
+          <strong>Blur only on what floats over content</strong>: menus, selects, popovers,
+          tooltips, the ⌘K palette, modals and their scrim, the select bar, chips on a picture. What
+          sits in the page (cards, rows, sections, the toolbar) is a solid surface: the foreground
+          at low opacity or the card colour, no <code>backdrop-filter</code>.
+        </li>
+        <li>
+          <strong>Cards on the page stay solid.</strong> Today they blur:
+          <code>.proto-main .bg-card-background</code> and <code>.mar-surface</code> at 24px,
+          <code>.mar-item.is-grid</code> at 20px. Proposal: drop it, so a grid stops paying for a
+          blur per card while it scrolls.
+        </li>
+        <li>
+          <strong>40px is the ceiling</strong> (palette, sidebar). Past it nothing looks different
+          and it costs more. Saturate goes with the blur: 1.2–1.3 for surfaces, 1.8 only for menus
+          and the palette (1.6 in light).
+        </li>
+        <li>
+          <strong>Glass is mostly opaque</strong>: 74% (menus, dark) to 94% (tooltips). Below that,
+          text can't hold its contrast over a bright picture. Chips on pictures use
+          <code>--color-media-overlay</code>, a dark 60% (Mar's value over Pablo's black 55%), in
+          both themes. Its coloured status words fall to about 3.5:1 over a white picture; the words
+          could go white there, with the colour kept in the icon.
+        </li>
+        <li>
+          <strong>No blur inside blur.</strong> What sits on glass (the menu's raised panel
+          <code>.mar-menu-panel</code>, its current pick, the palette's list) is a tint only, with
+          <code>backdrop-filter: none</code> (as <code>.mar-search-list</code> does). A blur inside
+          a blur samples what is already blurred: twice the cost and a muddy edge.
+        </li>
+        <li>
+          <strong>Contrast</strong>: text on glass ≥ 4.5:1 (3:1 for icons and text from 18px),
+          checked with pure white and pure black behind it. The frames above show each level's
+          numbers; anything under 4.5 is red.
+        </li>
+        <li>
+          <strong>Pablo's shell glass is painted, not blurred</strong>
+          (<code>ui/surfaces.css</code>: gradients on the page and title bar). In the shipped app,
+          Electron's macOS <code>vibrancy</code> and Windows <code>acrylic</code> do the window's
+          glass.
+        </li>
+      </ul>
+
+      <h2>Performance</h2>
+      <ul>
+        <li>
+          A <code>backdrop-filter</code> redraws whenever what's behind it moves. Keep it on small
+          layers that float (menus, chips, bars), never on large or scrolling areas: full-height
+          panels over moving content, list rows, every card of a grid.
+        </li>
+        <li>
+          Animate the glass's <code>opacity</code> and <code>transform</code> (the menus' entry
+          does), never the blur radius.
+        </li>
+        <li>
+          <code>will-change: transform</code> only on glass that animates, and only while it does.
+          On static glass it holds a layer for nothing. Nothing in the code sets it today, which is
+          right.
+        </li>
+        <li>
+          Chromium (Electron) needs no <code>-webkit-backdrop-filter</code>. Add it only if these
+          styles ever ship to Safari.
+        </li>
+      </ul>
+    </template>
+    <template v-else>
+      <h2>Fallback: no blur, reduced transparency</h2>
+      <p>
+        The code has neither today: no <code>@supports not (backdrop-filter)</code> and no
+        <code>prefers-reduced-transparency</code>. With the variables below, both are a few lines.
+      </p>
+      <pre class="ds-mat-code"><code>{{ FALLBACK }}</code></pre>
+
+      <h2>The CSS today, per level</h2>
+      <p>
+        Pulled from the source files as they are now, with their line numbers. Copy from here, or
+        better, from the proposal below once it exists.
+      </p>
+      <section v-for="l in LEVELS" :key="l.id" class="ds-mat-snips">
+        <h3>{{ l.name }}</h3>
+        <template v-for="(s, i) in snippets(l.id)" :key="i">
+          <p v-if="'missing' in s" class="ds-mat-missing">{{ s.missing }}</p>
+          <figure v-else>
+            <figcaption>
+              <code>{{ s.file }}:{{ s.line }}</code>
+            </figcaption>
+            <pre class="ds-mat-code"><code>{{ s.code }}</code></pre>
+          </figure>
+        </template>
+      </section>
+
+      <h2>Duplicated values</h2>
+      <p>
+        Every <code>backdrop-filter</code> (and Tailwind <code>backdrop-blur-*</code>) in Mar's
+        proposal and Pablo's parts, grouped by value, parsed from the source now ({{
+          inDefault.length
+        }}
+        uses; {{ elsewhere }} more in explorations behind other knobs: p20, graph, agent, explore,
+        learn). The same value is typed in several files.
+      </p>
+      <div class="ds-mat-dups">
+        <template v-for="g in repeated" :key="g.value">
+          <code class="ds-mat-dup-v">{{ g.value }} × {{ g.uses.length }}</code>
+          <span>
+            <code v-for="u in g.uses" :key="`${u.file}:${u.line}`" :title="u.selector"
+              >{{ u.file }}:{{ u.line }}</code
+            >
+          </span>
+        </template>
+      </div>
+
+      <h2>Proposal: consolidate into variables</h2>
+      <p>
+        Not done in the app; this documents it. One file holds the scale and each level's tint,
+        opacity, saturate, ring and shadow, dark and light, and each component uses its level. The
+        values are today's, so nothing changes on screen except where a comment says it rounds.
+      </p>
+      <pre class="ds-mat-code"><code>{{ PROPOSAL }}</code></pre>
+    </template>
   </article>
 </template>
 
 <style>
 .ds-mat-doc {
   max-width: 980px;
-  margin-top: 32px;
 }
 .ds-mat-doc h3 {
   margin-top: 6px;

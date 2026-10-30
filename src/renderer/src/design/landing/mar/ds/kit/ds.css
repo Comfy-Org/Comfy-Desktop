@@ -347,3 +347,168 @@ html.ds-app-frame #app {
   align-items: flex-end;
   justify-content: flex-start;
 }
+
+
+/* ── The page template (DsApp.vue) ────────────────────────────────── */
+.ds-main > * {
+  max-width: 1120px;
+}
+.ds-nav-search {
+  height: 30px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.06);
+  color: #ececee;
+  outline: none;
+}
+.ds-nav-none {
+  padding: 6px 10px;
+  color: #6e6e76;
+}
+/* Text reads in a column; examples go wider. */
+.ds-read {
+  max-width: 720px;
+}
+.ds-hero {
+  margin-bottom: 28px;
+}
+.ds-block {
+  margin: 0 0 28px;
+}
+.ds-when {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.ds-when h2,
+.ds-rules h2 {
+  margin-bottom: 8px;
+  color: #ececee;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ds-when ul,
+.ds-rules ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 18px;
+  color: #c8c8cd;
+  list-style: disc;
+}
+.ds-rules {
+  margin-bottom: 32px;
+}
+.ds-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+}
+.ds-tabs button {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: #a1a1a8;
+}
+.ds-tabs button[aria-selected='true'] {
+  border-bottom-color: #ececee;
+  color: #ececee;
+}
+/* The hero: one example, centred, with room around it. */
+.ds-section.is-hero {
+  gap: 0;
+}
+.ds-cells.is-hero {
+  display: flex;
+  justify-content: center;
+}
+.ds-cells.is-hero > .ds-cell {
+  width: min(100%, 720px);
+}
+.ds-frame-page.is-hero .ds-cell-surface {
+  min-height: 280px;
+}
+.ds-frame-page.is-hero .ds-cell-stage {
+  padding: 40px;
+}
+.ds-more {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.ds-more:hover {
+  color: var(--color-base-foreground);
+}
+
+.ds-play-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+}
+
+.ds-play-code {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #16161a;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+
+.ds-play-code-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.ds-play-code-head span {
+  margin-right: auto;
+  color: #6e6e76;
+}
+
+.ds-play-code-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.ds-play-code-head button:hover {
+  background: rgb(255 255 255 / 0.07);
+}
+
+.ds-play-code pre {
+  overflow-x: auto;
+  padding: 12px 14px;
+  color: #d4d4d8;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ds-fold summary {
+  margin-top: 14px;
+  color: #ececee;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ds-fold[open] summary {
+  margin-bottom: 8px;
+}
+
+.ds-frame-page.is-hero .ds-cell-label {
+  display: none;
+}
+
+.ds-more-all {
+  margin-top: 20px;
+}

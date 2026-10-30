@@ -17,6 +17,7 @@ import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 import Stage from '../kit/Stage.vue'
+import KeysBlock from '../kit/KeysBlock.vue'
 
 /**
  * Interactions: keyboard and pointer, each a live demo with the real
@@ -144,12 +145,12 @@ const KEYS = {
           <div class="ds-ia-row"><Button variant="primary">Create</Button></div>
         </Cell>
       </Cells>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.focus" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
 
     <Section
@@ -159,12 +160,12 @@ const KEYS = {
       <Cells :min="300">
         <Cell label="live" fill><MarSeg v-model="tab" :options="TABS" label="Scope" /></Cell>
       </Cells>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.tabs" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
 
     <Section
@@ -177,7 +178,7 @@ const KEYS = {
         </Cell>
         <Stage id="run-on-menu" label="live: Run on (type to filter)" />
       </Cells>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.menu" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
@@ -186,7 +187,7 @@ const KEYS = {
           ><dt>Run on · {{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
 
     <Section
@@ -214,7 +215,7 @@ const KEYS = {
         </div>
         <MarUndoToast />
       </div>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.select" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
@@ -223,7 +224,7 @@ const KEYS = {
           ><dt>Rename · {{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
 
     <Section
@@ -233,7 +234,7 @@ const KEYS = {
       <Cells :min="520">
         <AppShot label="live: the app" page="overview" />
       </Cells>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.search" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
@@ -242,7 +243,7 @@ const KEYS = {
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
 
     <Section
@@ -252,12 +253,12 @@ const KEYS = {
       <Cells :min="520">
         <AppShot label="live: a build's graph" page="overview" run="graph" />
       </Cells>
-      <dl class="ds-ia-keys">
+      <KeysBlock>
         <template v-for="[k, v] in KEYS.graph" :key="k"
           ><dt>{{ k }}</dt>
           <dd>{{ v }}</dd></template
         >
-      </dl>
+      </KeysBlock>
     </Section>
     <p class="ds-ia-foot"><Search :size="12" /> Keys are read from each component's code.</p>
   </div>

@@ -297,46 +297,8 @@ const knob = (k: (typeof KNOBS)[number]['key'], v: string): void => {
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
 }
 .ds-play-note code,
-.ds-play-code code {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
-}
 .ds-play-note code {
   color: #6e6e76;
-}
-.ds-play-code {
-  overflow: hidden;
-  border-radius: 10px;
-  background: #16161a;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
-}
-.ds-play-code-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
-}
-.ds-play-code-head span {
-  margin-right: auto;
-  color: #6e6e76;
-}
-.ds-play-code-head button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-.ds-play-code-head button:hover {
-  background: rgb(255 255 255 / 0.07);
-}
-.ds-play-code pre {
-  overflow-x: auto;
-  padding: 12px 14px;
-  color: #d4d4d8;
-  line-height: 1.5;
-  white-space: pre-wrap;
 }
 .ds-play-props-title {
   margin-bottom: 6px;

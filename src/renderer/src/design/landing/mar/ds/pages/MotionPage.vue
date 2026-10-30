@@ -5,6 +5,7 @@ import Section from '../kit/Section.vue'
 import { snippet } from '../materials'
 import { EASES, MOTIONS } from '../motion'
 import { onPlayback, readPlayback } from '../kit/playback'
+import { useMode } from '../kit/mode'
 import MotionSpecimen from './MotionSpecimen.vue'
 
 /**
@@ -12,6 +13,9 @@ import MotionSpecimen from './MotionSpecimen.vue'
  * its specimen, its values and the rule that makes it. The bar above the
  * frames sets the speed and previews reduced motion (kit/playback.ts).
  */
+// Overview: every animation playing, one line each. Details: the values
+// and the rule that makes each one.
+const overview = useMode().mode === 'overview'
 const specimens = ref<Record<string, InstanceType<typeof MotionSpecimen>>>({})
 const reduced = ref(readPlayback().reduced)
 let stop: (() => void) | undefined
@@ -56,7 +60,33 @@ const sources = (src: [string, string][]): { where: string; code: string }[] =>
       </div>
     </Section>
 
-    <Section v-for="m in MOTIONS" :key="m.id" :title="m.name" :note="m.trigger">
+    <Section
+      v-if="overview"
+      title="Every animation"
+      note="Short and quiet; reduced motion turns each one off or to a fade."
+    >
+      <div class="ds-motion-grid">
+        <figure v-for="m in MOTIONS" :key="m.id" class="ds-motion-card">
+          <div class="ds-motion-stage">
+            <MotionSpecimen
+              :id="m.id"
+              :ref="(el) => el && (specimens[m.id] = el as InstanceType<typeof MotionSpecimen>)"
+            />
+            <button type="button" class="ds-motion-replay" @click="specimens[m.id]?.replay()">
+              <RotateCcw :size="12" />Replay
+            </button>
+          </div>
+          <figcaption>
+            <b>{{ m.name }}</b>
+            <span
+              >{{ m.duration }} · <code>{{ m.easing }}</code></span
+            >
+          </figcaption>
+        </figure>
+      </div>
+    </Section>
+
+    <Section v-for="m in overview ? [] : MOTIONS" :key="m.id" :title="m.name" :note="m.trigger">
       <div class="ds-motion-item">
         <div class="ds-motion-stage">
           <MotionSpecimen
@@ -98,6 +128,31 @@ const sources = (src: [string, string][]): { where: string; code: string }[] =>
 </template>
 
 <style>
+.ds-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.ds-motion-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.ds-motion-card figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.ds-motion-card figcaption b {
+  font-weight: 500;
+}
+.ds-motion-card figcaption span,
+.ds-motion-card figcaption code {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
 .ds-motion {
   display: flex;
   flex-direction: column;
