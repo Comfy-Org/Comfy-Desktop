@@ -2,6 +2,7 @@
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Crown, HardDriveDownload } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import {
@@ -142,48 +143,70 @@ defineExpose({ shownDiskError })
 </script>
 
 <template>
-  <div :class="['tps', { 'tps--compact': compact }]">
+  <div :class="['tps w-full text-center', { 'tps--compact': compact }]">
     <div
       v-if="tabs.length > 1"
-      class="tps__tabs"
+      class="tps__tabs mb-[clamp(16px,3vh,28px)] flex flex-wrap justify-center gap-2"
       role="tablist"
       :aria-label="t('standalone.templateTabsAria')"
     >
-      <button
+      <Button
         v-for="tab in tabs"
         :key="tab.modality"
+        size="unset"
+        variant="textonly"
         type="button"
         role="tab"
         :aria-selected="activeModality === tab.modality"
-        :class="['brand-pill', { 'brand-pill--selected': activeModality === tab.modality }]"
+        :class="[
+          'tps__tab static inline-flex appearance-auto items-center justify-normal gap-1.5 rounded-md border border-solid px-3.5 py-2 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal touch-auto transition-[border-color,background,color] duration-160 ease-[ease] [&]:[appearance:button] hover:border-[var(--brand-surface-border-hover)] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2',
+          activeModality === tab.modality
+            ? 'tps__tab--selected border-[color-mix(in_oklab,var(--neutral-100)_45%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] text-neutral-100 hover:border-[color-mix(in_oklab,var(--neutral-100)_45%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)]'
+            : 'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-200'
+        ]"
         @click="selectTab(tab.modality)"
       >
         <component :is="tab.glyph" :size="16" aria-hidden="true" />
         {{ tab.label }}
-      </button>
+      </Button>
     </div>
 
     <div
       ref="listRef"
-      class="tps__grid"
+      class="tps__grid grid w-full gap-[clamp(12px,1.4vw,20px)]"
+      :class="
+        compact
+          ? 'grid-cols-[repeat(auto-fill,minmax(180px,220px))] justify-center'
+          : 'grid-cols-[repeat(auto-fit,minmax(180px,1fr))]'
+      "
       role="radiogroup"
       :aria-label="t('standalone.templatePickerTitle')"
     >
-      <button
+      <Button
         v-for="(opt, index) in visibleCards"
         :key="opt.value"
+        size="unset"
+        variant="textonly"
         type="button"
         role="radio"
         :aria-checked="selectedValue === opt.value"
         :title="opt.description || undefined"
-        :class="['tps__card', { 'tps__card--selected': selectedValue === opt.value }]"
+        :class="[
+          'tps__card group/template relative isolate flex appearance-auto flex-col items-stretch justify-normal gap-0 overflow-hidden rounded-xl border border-solid bg-[var(--chooser-surface-bg)] p-0 font-sans text-sm leading-[inherit] font-normal whitespace-normal text-text touch-auto transition-[border-color,box-shadow] duration-140 ease-[ease] [&]:[appearance:button] hover:bg-[var(--chooser-surface-bg)] hover:border-[var(--brand-surface-border-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2',
+          selectedValue === opt.value
+            ? 'tps__card--selected border-neutral-100 [box-shadow:0_0_0_1px_var(--neutral-100),0_8px_24px_color-mix(in_oklab,var(--neutral-950)_45%,transparent)] [&[aria-checked=true]:focus-visible]:[box-shadow:0_0_0_1px_var(--neutral-100),0_8px_24px_color-mix(in_oklab,var(--neutral-950)_45%,transparent)]'
+            : 'border-[var(--brand-surface-border)]'
+        ]"
         @click="emit('select', opt)"
         @keydown="onRowKeydown($event, index)"
       >
-        <span class="tps__card-media" aria-hidden="true">
+        <span class="tps__card-media relative aspect-4/3 text-neutral-500" aria-hidden="true">
           <span
-            class="tps__card-fallback"
-            :class="{ 'tps__card-fallback--loading': isThumbLoading(opt) }"
+            class="tps__card-fallback absolute inset-0 flex items-center justify-center text-neutral-300 [background:radial-gradient(120%_120%_at_50%_0%,color-mix(in_oklab,var(--neutral-700)_55%,transparent)_0%,transparent_70%),var(--chooser-surface-bg)]"
+            :class="{
+              'tps__card-fallback--loading animate-[template-preview-pulse_1.6s_ease-in-out_infinite] motion-reduce:animate-none':
+                isThumbLoading(opt)
+            }"
           >
             <ComfyCLogo :size="44" />
           </span>
@@ -192,277 +215,90 @@ defineExpose({ shownDiskError })
             :src="thumbnailOf(opt)!"
             :alt="opt.label"
             draggable="false"
-            :class="['tps__card-img', { 'tps__card-img--ready': thumbLoaded[opt.value] }]"
+            :class="[
+              'tps__card-img absolute inset-0 size-full object-cover [transition:opacity_200ms_ease,transform_260ms_ease] motion-reduce:transition-none',
+              thumbLoaded[opt.value]
+                ? 'tps__card-img--ready opacity-100 group-hover/template:[transform:scale(1.05)] motion-reduce:group-hover/template:[transform:none]'
+                : 'opacity-0'
+            ]"
             @load="thumbLoaded[opt.value] = true"
             @error="thumbFailed[opt.value] = true"
           />
 
-          <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
+          <span
+            v-if="selectedValue === opt.value"
+            class="tps__check absolute top-2.5 right-2.5 z-1 inline-flex size-[22px] items-center justify-center rounded-[999px] bg-neutral-50 text-neutral-950 [box-shadow:0_2px_8px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
+            aria-hidden="true"
+          >
             <Check :size="13" :stroke-width="3" />
           </span>
-          <span v-if="opt.recommended" class="tps__recommended">
+          <span
+            v-if="opt.recommended"
+            class="tps__recommended absolute top-2 left-2 z-1 rounded-md bg-[color-mix(in_oklab,var(--neutral-950)_30%,transparent)] px-2 py-1 text-xs leading-[normal] font-normal tracking-normal text-neutral-100 backdrop-blur-[20px]"
+          >
             {{ t('newInstall.recommended') }}
           </span>
         </span>
 
         <!-- Outside the aria-hidden media span so the cost reaches the accessible name. -->
-        <span v-if="isApiNodeTemplate(opt)" class="tps__api">
+        <span
+          v-if="isApiNodeTemplate(opt)"
+          class="tps__api absolute top-2 left-2 z-1 inline-flex items-center gap-1 rounded-[999px] bg-neutral-900 px-[9px] py-1 text-[9px] font-bold tracking-[0.06em] whitespace-nowrap text-[var(--upgrade)] uppercase [box-shadow:0_2px_10px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
+        >
           <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
           {{ t('standalone.templateApiBadge') }}
         </span>
 
-        <span class="tps__card-footer">
-          <span class="tps__card-text">
-            <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
-            <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
+        <span
+          class="tps__card-footer flex items-baseline justify-between gap-2.5 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5 text-left"
+        >
+          <span class="tps__card-text flex min-w-0 flex-auto flex-col gap-px">
+            <TruncatedText
+              class="tps__card-title min-w-0 text-[length:var(--takeover-fs-body)] leading-[1.3] font-semibold text-neutral-100"
+              :text="nameOf(opt)"
+            />
+            <span
+              v-if="taskOf(opt)"
+              class="tps__card-task truncate text-[length:var(--takeover-fs-caption)] text-neutral-400"
+              >{{ taskOf(opt) }}</span
+            >
             <span v-if="modelsPresentOf(opt)" class="sr-only">{{ presentLabelOf(opt) }}</span>
           </span>
           <Tooltip
             v-if="modelsPresentOf(opt)"
             :text="presentLabelOf(opt)"
-            class="tps__card-present"
+            class="tps__card-present inline-flex flex-none items-center text-neutral-300"
           >
             <HardDriveDownload :size="14" :stroke-width="2" aria-hidden="true" />
           </Tooltip>
           <!-- Decorative: the badge above already names the cost. -->
           <Crown
             v-else-if="hasNothingToDownload(opt)"
-            class="tps__card-crown"
+            class="tps__card-crown flex-none text-[var(--upgrade)]"
             :size="14"
             :stroke-width="2.5"
             :aria-hidden="true"
           />
-          <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
+          <span
+            v-else-if="sizeLabelOf(opt)"
+            class="tps__card-size flex-none text-[11px] font-semibold tracking-[0.01em] text-neutral-300"
+            >{{ sizeLabelOf(opt) }}</span
+          >
         </span>
-      </button>
+      </Button>
     </div>
   </div>
 </template>
 
-<style scoped>
-.tps {
-  width: 100%;
-  text-align: center;
-}
-
-.tps__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: clamp(16px, 3vh, 28px);
-}
-.tps__tabs .brand-pill--selected {
-  border-color: color-mix(in oklab, var(--neutral-100) 45%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 12%, transparent);
-  color: var(--neutral-100);
-}
-
-.tps__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: clamp(12px, 1.4vw, 20px);
-  width: 100%;
-}
-
-.tps--compact .tps__grid {
-  grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
-  justify-content: center;
-}
-
-.tps__card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 12px;
-  background: var(--chooser-surface-bg);
-  padding: 0;
-  overflow: hidden;
-  cursor: pointer;
-  isolation: isolate;
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
-}
-.tps__card:hover {
-  border-color: var(--brand-surface-border-hover);
-}
-.tps__card:hover .tps__card-img--ready {
-  transform: scale(1.05);
-}
-.tps__card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.tps__card--selected {
-  border-color: var(--neutral-100);
-  box-shadow:
-    0 0 0 1px var(--neutral-100),
-    0 8px 24px color-mix(in oklab, var(--neutral-950) 45%, transparent);
-}
-
-.tps__card-media {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  color: var(--neutral-500);
-}
-.tps__card-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition:
-    opacity 200ms ease,
-    transform 260ms ease;
-}
-.tps__card-img--ready {
-  opacity: 1;
-}
-
-.tps__card-fallback {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--neutral-300);
-  background:
-    radial-gradient(
-      120% 120% at 50% 0%,
-      color-mix(in oklab, var(--neutral-700) 55%, transparent) 0%,
-      transparent 70%
-    ),
-    var(--chooser-surface-bg);
-}
-.tps__card-fallback--loading {
-  animation: tps-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes tps-pulse {
+<style>
+/* The thumbnail placeholder keeps the original 45%–85% pulse. */
+@keyframes template-preview-pulse {
   0%,
   100% {
     opacity: 0.45;
   }
   50% {
     opacity: 0.85;
-  }
-}
-
-.tps__card-footer {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--brand-surface-border);
-  background: var(--brand-surface-bg);
-  text-align: left;
-}
-.tps__card-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.tps__card-title {
-  min-width: 0;
-  font-size: var(--takeover-fs-body);
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--neutral-100);
-}
-.tps__card-task {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: var(--takeover-fs-caption);
-  color: var(--neutral-400);
-}
-.tps__card-size {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--neutral-300);
-}
-.tps__card-present {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--neutral-300);
-}
-
-.tps__check {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  color: var(--neutral-950);
-  background: var(--neutral-50);
-  box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
-}
-
-.tps__recommended {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: normal;
-  letter-spacing: 0;
-  color: var(--neutral-100);
-  background: color-mix(in oklab, var(--neutral-950) 30%, transparent);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-}
-
-.tps__api {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  color: var(--upgrade);
-  background: var(--neutral-900);
-  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
-}
-
-.tps__card-crown {
-  flex: 0 0 auto;
-  color: var(--upgrade);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tps__card-img {
-    transition: none;
-  }
-  .tps__card:hover .tps__card-img--ready {
-    transform: none;
-  }
-  .tps__card-fallback--loading {
-    animation: none;
   }
 }
 </style>
