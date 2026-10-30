@@ -333,12 +333,18 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="global-settings">
-    <header class="gs-header">
-      <h2 class="gs-title">{{ t('settingsModal.tabGlobal', 'Desktop Settings') }}</h2>
+  <div
+    class="global-settings flex size-full flex-col text-[14px] text-neutral-100 [&_.ui-input]:min-h-7 [&_.ui-input]:rounded-md [&_.ui-select-trigger]:min-h-7 [&_.ui-select-trigger]:rounded-md [&_.ui-select-trigger]:text-[13px] [&_.ui-input-control]:text-[13px] [&_.ui-input-trailing_button]:size-[26px]"
+  >
+    <header
+      class="gs-header flex flex-none items-center justify-between border-b border-solid border-border py-2.5 pr-3 pl-5"
+    >
+      <h2 class="gs-title m-0 font-sans text-[length:var(--text-heading)] font-semibold text-text">
+        {{ t('settingsModal.tabGlobal', 'Desktop Settings') }}
+      </h2>
       <button
         type="button"
-        class="gs-close"
+        class="gs-close inline-flex size-7 items-center justify-center rounded-lg border border-solid border-transparent bg-transparent p-0 text-neutral-100 opacity-70 cursor-pointer transition-[background,border-color,opacity] duration-[120ms] ease-[ease] hover:border-transparent hover:bg-secondary hover:opacity-100 hover:outline-none focus-visible:border-transparent focus-visible:bg-secondary focus-visible:opacity-100 focus-visible:outline-none"
         :aria-label="t('common.close', 'Close')"
         @click="bridge?.close()"
       >
@@ -346,15 +352,24 @@ onMounted(() => {
       </button>
     </header>
 
-    <div class="gs-body">
-      <nav class="gs-tabs" role="tablist" aria-orientation="vertical" @keydown="handleTabKey">
+    <div class="gs-body flex min-h-0 flex-auto">
+      <nav
+        class="gs-tabs flex w-40 flex-[0_0_160px] flex-col gap-px overflow-y-auto border-r border-solid border-border bg-transparent p-2"
+        role="tablist"
+        aria-orientation="vertical"
+        @keydown="handleTabKey"
+      >
         <button
           v-for="tab in tabs"
           :id="`gs-tab-${tab.id}`"
           :key="tab.id"
           type="button"
-          class="gs-tab"
-          :class="{ active: activeTab === tab.id }"
+          class="gs-tab inline-flex h-8 min-h-8 items-center gap-2.5 rounded-lg border-none px-2.5 py-0 text-left text-[length:var(--text-ui)] cursor-pointer transition-[background-color,opacity] duration-100 ease-[ease] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:[outline-style:solid]"
+          :class="
+            activeTab === tab.id
+              ? 'active bg-accent text-text opacity-100'
+              : 'bg-transparent text-neutral-100 opacity-[0.72] hover:bg-secondary hover:opacity-100'
+          "
           role="tab"
           :aria-selected="activeTab === tab.id"
           :aria-controls="`gs-panel-${tab.id}`"
@@ -368,7 +383,7 @@ onMounted(() => {
 
       <section
         :id="`gs-panel-${activeTab}`"
-        class="gs-pane"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-[gs-field-flash_2.2s_ease-out] motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--accent)]"
         role="tabpanel"
         :aria-labelledby="`gs-tab-${activeTab}`"
       >
@@ -463,7 +478,11 @@ onMounted(() => {
 
         <template v-else-if="activeTab === 'logs'">
           <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
-            <button type="button" class="gs-logs-btn" @click="handleOpenLogsFolder">
+            <button
+              type="button"
+              class="gs-logs-btn inline-flex items-center gap-2 rounded-lg border border-solid border-[color-mix(in_oklab,var(--text)_12%,transparent)] bg-[color-mix(in_oklab,var(--text)_4%,transparent)] px-3 py-2 text-[13px] text-neutral-100 cursor-pointer hover:bg-[color-mix(in_oklab,var(--text)_8%,transparent)]"
+              @click="handleOpenLogsFolder"
+            >
               <FileText :size="14" aria-hidden="true" />
               <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
             </button>
@@ -474,183 +493,8 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
-.global-settings {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  color: var(--neutral-100);
-  font-size: 14px;
-}
-
-.gs-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  flex: 0 0 auto;
-}
-
-.gs-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 700;
-  color: color-mix(in oklab, var(--text) 90%, transparent);
-}
-
-.gs-logs-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.gs-logs-btn:hover {
-  background: color-mix(in oklab, var(--text) 8%, transparent);
-}
-
-.gs-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  opacity: 0.7;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-
-.gs-close:hover,
-.gs-close:focus-visible {
-  opacity: 1;
-  background: color-mix(in oklab, var(--neutral-950) 85%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  outline: none;
-}
-
-.gs-body {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.gs-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 0 0 160px;
-  width: 160px;
-  padding: 6px 4px;
-  background: var(--neutral-800);
-  border-right: 1px solid var(--chooser-surface-border);
-  overflow-y: auto;
-}
-
-.gs-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 32px;
-  padding: 0 10px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  color: var(--neutral-100);
-  opacity: 0.72;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    opacity 100ms ease;
-}
-
-.gs-tab:hover {
-  opacity: 1;
-  background: var(--brand-surface-bg-hover);
-}
-
-.gs-tab:focus-visible {
-  outline: 2px solid var(--focus-ring, var(--neutral-50));
-  outline-offset: -2px;
-}
-
-.gs-tab.active {
-  opacity: 1;
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-}
-
-.gs-pane {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Compress the SettingsSectionList stack inside the Global Settings
- * panel. The component's scoped defaults (gap: 32px between sections,
- * 16px within, 44px min-height per boolean row) are tuned for the
- * full-width install Settings surface; the dense popup needs less air.
- * Targeting via :deep so we don't have to fork the component. */
-.gs-pane :deep(.settings-v2-sections) {
-  gap: 8px;
-}
-.gs-pane :deep(.settings-v2-section) {
-  gap: 4px;
-}
-.gs-pane :deep(.settings-v2-boolean-row) {
-  min-height: 28px;
-  padding: 0;
-}
-.gs-pane :deep(.settings-v2-field) {
-  gap: 4px;
-}
-
-.global-settings :deep(.ui-input),
-.global-settings :deep(.ui-select-trigger) {
-  min-height: 28px;
-  border-radius: 6px;
-}
-
-.global-settings :deep(.ui-input-control),
-.global-settings :deep(.ui-select-trigger) {
-  font-size: 13px;
-}
-
-.global-settings :deep(.ui-input-trailing button) {
-  width: 26px;
-  height: 26px;
-}
-
-/* Deep-link flash — a settings link (e.g. the beta activation notice) scrolls
-   its target row into view and adds this class for a couple of seconds. Ring +
-   tint only, no layout change, so nothing under the row shifts while it pulses.
-   `:deep` because the row is rendered by DetailSection, not this component. */
-.gs-pane :deep(.gs-field-flash) {
-  border-radius: 6px;
-  animation: gs-field-flash 2.2s ease-out;
-}
+<style>
+/* Deep-linked controls keep their timed highlight without affecting layout. */
 @keyframes gs-field-flash {
   0%,
   55% {
@@ -660,14 +504,6 @@ onMounted(() => {
   100% {
     box-shadow: 0 0 0 2px transparent;
     background: transparent;
-  }
-}
-/* Reduced motion still needs the row found — hold a static ring instead of
-   pulsing, and let the scroll jump rather than smooth-scroll. */
-@media (prefers-reduced-motion: reduce) {
-  .gs-pane :deep(.gs-field-flash) {
-    animation: none;
-    box-shadow: 0 0 0 2px var(--accent);
   }
 }
 </style>
