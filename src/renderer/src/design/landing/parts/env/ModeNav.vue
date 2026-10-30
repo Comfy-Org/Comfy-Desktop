@@ -129,17 +129,18 @@ function open(i: Item): void {
     <span>{{ label }}</span>
   </div>
   <nav class="flex flex-col gap-px" :aria-label="mode === 'create' ? 'Create' : 'Build'">
-    <!-- Mar's proposal: the global search (⌘K) heads the nav, by default. -->
-    <Button
-      v-if="isMariana"
-      variant="ghost"
-      class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
-      @click="search.open = true"
-    >
-      <Search :size="15" />
-      <span class="sidebar-label text-left">Search</span>
-    </Button>
-    <template v-for="i in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
+    <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
+      <!-- Mar's proposal: the global search (⌘K) right under the first
+           place (Home), by default. -->
+      <Button
+        v-if="isMariana && idx === 1"
+        variant="ghost"
+        class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
+        @click="search.open = true"
+      >
+        <Search :size="15" />
+        <span class="sidebar-label text-left">Search</span>
+      </Button>
       <div
         v-if="i.section"
         class="mt-5.5 flex h-6.5 items-center px-3 text-ui font-medium tracking-wider text-subtle-foreground uppercase"
