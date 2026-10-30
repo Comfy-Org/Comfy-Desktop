@@ -348,7 +348,6 @@ html.ds-app-frame #app {
   justify-content: flex-start;
 }
 
-
 /* ── The page template (DsApp.vue) ────────────────────────────────── */
 .ds-main > * {
   max-width: 1120px;
