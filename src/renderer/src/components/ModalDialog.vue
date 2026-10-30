@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { useModal, type ModalOption } from '../composables/useModal'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
@@ -70,9 +71,31 @@ const localOptions = reactive<(ModalOption & { checked: boolean })[]>([])
 
 const anyChecked = computed(() => localOptions.some((o) => o.checked))
 
-const confirmClass = computed(() =>
-  state.confirmStyle === 'danger' ? 'danger-solid' : state.confirmStyle
-)
+// Preserve the legacy actions' geometry and focus affordance on the shared button.
+const actionClass =
+  'static inline-block rounded-lg border border-solid px-4 py-2 text-[14px] leading-[1.5] appearance-auto whitespace-normal transition-none disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]'
+const neutralActionClass =
+  actionClass +
+  ' border-[var(--border)] bg-[var(--surface)] font-normal text-text hover:bg-[var(--border)]'
+const primaryActionClass =
+  actionClass +
+  ' border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-[var(--color-background)] hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:border-[var(--accent-hover)] enabled:hover:bg-[var(--accent-hover)] hover:[transition:background_120ms_ease,border-color_120ms_ease]'
+const confirmClass = computed(() => {
+  if (state.confirmStyle === 'primary') return primaryActionClass
+  if (state.confirmStyle === 'danger' || state.confirmStyle === 'danger-solid') {
+    return (
+      actionClass +
+      ' border-[var(--danger)] bg-[var(--danger)] font-normal text-[var(--bg)] hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]'
+    )
+  }
+  if (state.confirmStyle === 'accent') {
+    return (
+      actionClass +
+      ' border-[var(--accent)] bg-[var(--surface)] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]'
+    )
+  }
+  return [neutralActionClass, state.confirmStyle]
+})
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div')
@@ -227,36 +250,64 @@ onUnmounted(() => {
     <div
       v-if="state.visible && !usesBaseAlert"
       ref="overlayRef"
-      class="modal-overlay"
+      class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center [-webkit-backdrop-filter:blur(2px)]"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >
       <!-- Rich confirm; simple confirms fall through to BaseAlert above. -->
       <div
         v-if="state.type === 'confirm'"
-        class="modal-box"
-        :class="{
-          'modal-box-wide':
-            state.snapshotPreview ||
-            state.loading ||
-            state.variantLoading ||
-            state.variantCards.length > 0,
-          'modal-box--brand mig-modal': isMigrateConfirm
-        }"
+        class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
+        :class="
+          isMigrateConfirm
+            ? 'mig-modal w-[min(100%,600px)] max-w-[600px] border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+            : [
+                'border-[var(--border)] py-4',
+                state.snapshotPreview ||
+                state.loading ||
+                state.variantLoading ||
+                state.variantCards.length > 0
+                  ? 'w-[720px] max-w-[720px]'
+                  : 'max-w-[400px]'
+              ]
+        "
       >
-        <div class="modal-title">{{ state.title }}</div>
-        <div class="modal-body">
+        <div
+          class="dialog-title -mx-6 border-b border-solid px-6"
+          :class="
+            isMigrateConfirm
+              ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+              : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+          "
+        >
+          {{ state.title }}
+        </div>
+        <div
+          class="dialog-body mb-0 overflow-y-auto"
+          :class="
+            isMigrateConfirm
+              ? 'flex max-h-[70vh] flex-col gap-3.5'
+              : state.loading || state.variantLoading || state.variantCards.length > 0
+                ? 'max-h-[70vh]'
+                : 'max-h-[50vh]'
+          "
+        >
           <!-- Hidden when message is empty (migrate flow sets none) to
                avoid a stray empty box at the top. -->
           <div
             v-if="state.message"
-            class="modal-prompt-card"
+            class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
             @click="handleMessageClick"
             v-html="linkifiedMessage"
           ></div>
 
-          <div v-if="state.loading" class="modal-loading">
-            <div class="modal-loading-spinner" />
+          <div
+            v-if="state.loading"
+            class="dialog-loading flex items-center justify-center gap-2.5 py-6 text-[14px] text-text-muted"
+          >
+            <div
+              class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-[var(--accent)] [animation-duration:0.6s]"
+            />
             <span>{{ $t('common.loading') }}</span>
           </div>
 
@@ -272,71 +323,112 @@ onUnmounted(() => {
 
           <!-- Detailed snapshot preview; gated off for the migrate flow. -->
           <template v-if="!isMigrateConfirm && !state.loading && state.snapshotPreview">
-            <div class="ls-grid">
-              <div class="ls-field">
-                <span class="ls-label">{{ $t('snapshots.comfyuiVersion') }}</span>
-                <span class="ls-value">{{ state.snapshotPreview.comfyuiVersion }}</span>
+            <div class="dialog-grid mb-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <div class="dialog-field mb-1 flex flex-col gap-0.5">
+                <span class="dialog-label text-[13px] text-text-muted">{{
+                  $t('snapshots.comfyuiVersion')
+                }}</span>
+                <span class="dialog-value text-[14px] text-text select-text">{{
+                  state.snapshotPreview.comfyuiVersion
+                }}</span>
               </div>
-              <div class="ls-field">
-                <span class="ls-label">{{ $t('snapshots.variant') }}</span>
-                <span class="ls-value">{{ state.snapshotPreview.comfyui.variant || '—' }}</span>
+              <div class="dialog-field mb-1 flex flex-col gap-0.5">
+                <span class="dialog-label text-[13px] text-text-muted">{{
+                  $t('snapshots.variant')
+                }}</span>
+                <span class="dialog-value text-[14px] text-text select-text">{{
+                  state.snapshotPreview.comfyui.variant || '—'
+                }}</span>
               </div>
-              <div v-if="state.snapshotPreview.pythonVersion" class="ls-field">
-                <span class="ls-label">{{ $t('snapshots.pythonVersion') }}</span>
-                <span class="ls-value">{{ state.snapshotPreview.pythonVersion }}</span>
+              <div
+                v-if="state.snapshotPreview.pythonVersion"
+                class="dialog-field mb-1 flex flex-col gap-0.5"
+              >
+                <span class="dialog-label text-[13px] text-text-muted">{{
+                  $t('snapshots.pythonVersion')
+                }}</span>
+                <span class="dialog-value text-[14px] text-text select-text">{{
+                  state.snapshotPreview.pythonVersion
+                }}</span>
               </div>
             </div>
 
-            <div class="ls-subsection">
-              <div class="ls-subsection-title" @click="spNodesExpanded = !spNodesExpanded">
+            <div class="dialog-subsection mt-2.5">
+              <div
+                class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between text-[13px] font-semibold text-text-muted"
+                @click="spNodesExpanded = !spNodesExpanded"
+              >
                 <span
                   >{{ $t('snapshots.customNodes') }} ({{
                     state.snapshotPreview.customNodes.length
                   }})<InfoTooltip :text="t('tooltips.customNodes')" side="bottom"
                 /></span>
-                <span class="ls-collapse">{{ spNodesExpanded ? '▾' : '▸' }}</span>
+                <span class="dialog-collapse text-[14px]">{{ spNodesExpanded ? '▾' : '▸' }}</span>
               </div>
               <template v-if="spNodesExpanded">
-                <div v-if="state.snapshotPreview.customNodes.length > 0" class="recessed-list">
+                <div
+                  v-if="state.snapshotPreview.customNodes.length > 0"
+                  class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                >
                   <div
                     v-for="node in state.snapshotPreview.customNodes"
                     :key="node.id"
-                    class="ls-node-row"
+                    class="dialog-node-row flex items-center gap-2 py-0.5 text-[13px]"
                   >
                     <span
-                      class="ls-node-status"
-                      :class="node.enabled ? 'ls-node-enabled' : 'ls-node-disabled'"
+                      class="dialog-node-status size-[7px] shrink-0 rounded-[50%]"
+                      :class="node.enabled ? 'bg-[var(--info)]' : 'bg-[var(--text-muted)]'"
                     />
-                    <span class="ls-node-name">{{ node.id }}</span>
-                    <span class="ls-node-type">{{ node.type }}</span>
-                    <span class="ls-node-version">{{ formatNodeVersion(node) }}</span>
+                    <span class="dialog-node-name min-w-0 flex-1 truncate text-text select-text">{{
+                      node.id
+                    }}</span>
+                    <span
+                      class="dialog-node-type shrink-0 rounded-[3px] border border-solid border-[var(--border)] px-[5px] py-px text-[11px] font-semibold text-text-muted uppercase"
+                      >{{ node.type }}</span
+                    >
+                    <span
+                      class="dialog-node-version shrink-0 text-[13px] text-text-muted [font-family:monospace] select-text"
+                      >{{ formatNodeVersion(node) }}</span
+                    >
                   </div>
                 </div>
-                <div v-else class="ls-empty">—</div>
+                <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
               </template>
             </div>
 
-            <div class="ls-subsection">
-              <div class="ls-subsection-title" @click="spPipExpanded = !spPipExpanded">
+            <div class="dialog-subsection mt-2.5">
+              <div
+                class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between text-[13px] font-semibold text-text-muted"
+                @click="spPipExpanded = !spPipExpanded"
+              >
                 <span
                   >{{ $t('snapshots.pipPackages') }} ({{
                     state.snapshotPreview.pipPackageCount
                   }})<InfoTooltip :text="t('tooltips.pipPackages')" side="bottom"
                 /></span>
-                <span class="ls-collapse">{{ spPipExpanded ? '▾' : '▸' }}</span>
+                <span class="dialog-collapse text-[14px]">{{ spPipExpanded ? '▾' : '▸' }}</span>
               </div>
               <template v-if="spPipExpanded">
-                <div v-if="state.snapshotPreview.pipPackageCount > 0" class="recessed-list">
+                <div
+                  v-if="state.snapshotPreview.pipPackageCount > 0"
+                  class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                >
                   <div
                     v-for="(version, name) in state.snapshotPreview.pipPackages"
                     :key="name"
-                    class="ls-pip-row"
+                    class="dialog-pip-row flex items-center justify-between py-0.5 text-[13px]"
                   >
-                    <span class="ls-pip-name">{{ name }}</span>
-                    <span class="ls-pip-version" :title="version">{{ version }}</span>
+                    <span class="dialog-pip-name min-w-0 flex-1 truncate text-text select-text">{{
+                      name
+                    }}</span>
+                    <span
+                      class="dialog-pip-version ml-3 max-w-1/2 truncate text-text-muted [font-family:monospace] select-text"
+                      :title="version"
+                      >{{ version }}</span
+                    >
                   </div>
                 </div>
-                <div v-else class="ls-empty">—</div>
+                <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
               </template>
             </div>
           </template>
@@ -344,32 +436,68 @@ onUnmounted(() => {
           <!-- Generic details + checkboxes; the migrate layout renders its
                own, so skip when migrate is active. -->
           <template v-if="!isMigrateConfirm">
-            <div v-if="state.messageDetails.length" class="modal-details">
-              <div v-for="(group, gi) in state.messageDetails" :key="gi" class="modal-detail-group">
-                <span class="modal-detail-label">{{ group.label }}</span>
-                <div class="modal-detail-recessed" @click="handleMessageClick">
+            <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
+              <div
+                v-for="(group, gi) in state.messageDetails"
+                :key="gi"
+                class="dialog-detail-group mb-1.5"
+              >
+                <span
+                  class="dialog-detail-label mb-1.5 block text-[13px] font-semibold text-text uppercase"
+                  >{{ group.label }}</span
+                >
+                <div
+                  class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                  @click="handleMessageClick"
+                >
                   <div
                     v-for="(item, ii) in group.items"
                     :key="ii"
-                    class="modal-detail-item"
+                    class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--accent)] [&_a]:underline"
                     v-html="linkify(item)"
                   ></div>
                 </div>
               </div>
             </div>
-            <div v-if="state.checkboxes.length" class="modal-options">
-              <label v-for="cb in state.checkboxes" :key="cb.id" class="modal-option">
-                <input v-model="cb.checked" type="checkbox" />
+            <div
+              v-if="state.checkboxes.length"
+              class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+            >
+              <label
+                v-for="cb in state.checkboxes"
+                :key="cb.id"
+                class="dialog-option inline-flex cursor-pointer select-none items-center gap-2 text-[14px] text-text-muted"
+              >
+                <input
+                  v-model="cb.checked"
+                  type="checkbox"
+                  class="relative mt-0 size-4 shrink-0 cursor-pointer appearance-auto rounded-[3px] accent-[var(--accent)] [background:none] checked:[background:none] [transition:background_0.2s] after:content-none"
+                />
                 <span>{{ cb.label }}</span>
               </label>
             </div>
           </template>
         </div>
-        <div class="modal-actions">
-          <button :data-testid="TID.modalCancel" @click="close(false)">
+        <div
+          class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid px-6"
+          :class="
+            isMigrateConfirm
+              ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-3.5'
+              : 'border-[var(--border)] pt-3'
+          "
+        >
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="neutralActionClass"
+            :data-testid="TID.modalCancel"
+            @click="close(false)"
+          >
             {{ $t('common.cancel') }}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            size="unset"
             :class="confirmClass"
             :disabled="
               state.loading ||
@@ -380,94 +508,192 @@ onUnmounted(() => {
             @click="close(true)"
           >
             {{ state.confirmLabel }}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div v-else-if="state.type === 'confirmWithOptions'" class="modal-box">
-        <div class="modal-title">{{ state.title }}</div>
-        <div class="modal-message">{{ state.message }}</div>
-        <div class="modal-options">
-          <label v-for="opt in localOptions" :key="opt.id" class="modal-option">
-            <input v-model="opt.checked" type="checkbox" />
+      <div
+        v-else-if="state.type === 'confirmWithOptions'"
+        class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      >
+        <div
+          class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        >
+          {{ state.title }}
+        </div>
+        <div
+          class="dialog-message mb-5 max-h-[50vh] overflow-y-auto text-[14px] whitespace-pre-line text-text-muted select-text"
+        >
+          {{ state.message }}
+        </div>
+        <div
+          class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+        >
+          <label
+            v-for="opt in localOptions"
+            :key="opt.id"
+            class="dialog-option inline-flex cursor-pointer select-none items-center gap-2 text-[14px] text-text-muted"
+          >
+            <input
+              v-model="opt.checked"
+              type="checkbox"
+              class="relative mt-0 size-4 shrink-0 cursor-pointer appearance-auto rounded-[3px] accent-[var(--accent)] [background:none] checked:[background:none] [transition:background_0.2s] after:content-none"
+            />
             <span>{{ opt.label }}</span>
           </label>
         </div>
-        <div class="modal-actions">
-          <button @click="close(null)">{{ $t('common.cancel') }}</button>
-          <button :class="confirmClass" :disabled="!anyChecked" @click="submitOptions()">
+        <div
+          class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        >
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="neutralActionClass"
+            @click="close(null)"
+            >{{ $t('common.cancel') }}</Button
+          >
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="confirmClass"
+            :disabled="!anyChecked"
+            @click="submitOptions()"
+          >
             {{ state.confirmLabel }}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div
         v-else-if="state.type === 'prompt'"
-        class="modal-box"
-        :class="{ 'modal-box-wide': state.messageDetails.length > 0 }"
+        class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+        :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-[720px]' : 'max-w-[400px]'"
       >
-        <div class="modal-title">{{ state.title }}</div>
-        <div class="modal-body">
-          <div class="modal-prompt-card" v-html="linkify(state.message)"></div>
-          <div v-if="state.messageDetails.length" class="modal-details">
-            <div v-for="(group, gi) in state.messageDetails" :key="gi" class="modal-detail-group">
-              <span class="modal-detail-label">{{ group.label }}</span>
-              <div class="modal-detail-recessed" @click="handleMessageClick">
+        <div
+          class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        >
+          {{ state.title }}
+        </div>
+        <div
+          class="dialog-body mb-0 overflow-y-auto"
+          :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
+        >
+          <div
+            class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+            v-html="linkify(state.message)"
+          ></div>
+          <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
+            <div
+              v-for="(group, gi) in state.messageDetails"
+              :key="gi"
+              class="dialog-detail-group mb-1.5"
+            >
+              <span
+                class="dialog-detail-label mb-1.5 block text-[13px] font-semibold text-text uppercase"
+                >{{ group.label }}</span
+              >
+              <div
+                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                @click="handleMessageClick"
+              >
                 <div
                   v-for="(item, ii) in group.items"
                   :key="ii"
-                  class="modal-detail-item"
+                  class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--accent)] [&_a]:underline"
                   v-html="linkify(item)"
                 ></div>
               </div>
             </div>
           </div>
-          <div class="modal-input-wrap">
-            <label class="modal-input-label">{{ $t('common.name') }}</label>
+          <div class="dialog-input-wrap mb-3">
+            <label class="dialog-input-label mb-1 block text-[13px] font-semibold text-text">{{
+              $t('common.name')
+            }}</label>
             <input
               ref="inputRef"
               v-model="inputValue"
               type="text"
-              class="modal-input"
+              class="dialog-input mt-1.5 w-full rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-[14px] text-text outline-none focus:border-[var(--accent)] disabled:opacity-40"
               :data-testid="TID.modalPromptInput"
               :placeholder="state.placeholder"
               @keydown.enter="submitPrompt"
             />
           </div>
-          <div v-if="error" class="modal-error">{{ error }}</div>
+          <div v-if="error" class="dialog-error mb-0 min-h-3 text-[13px] text-[var(--danger)]">
+            {{ error }}
+          </div>
         </div>
-        <div class="modal-actions">
-          <button :data-testid="TID.modalCancel" @click="close(null)">
+        <div
+          class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        >
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="neutralActionClass"
+            :data-testid="TID.modalCancel"
+            @click="close(null)"
+          >
             {{ $t('common.cancel') }}
-          </button>
-          <button class="primary" :data-testid="TID.modalConfirm" @click="submitPrompt">
+          </Button>
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="primaryActionClass"
+            :data-testid="TID.modalConfirm"
+            @click="submitPrompt"
+          >
             {{ state.confirmLabel }}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div v-else-if="state.type === 'select'" class="modal-box modal-select-box">
-        <div class="modal-title">{{ state.title }}</div>
-        <div v-if="state.message" class="modal-message">{{ state.message }}</div>
-        <div class="modal-select-list">
-          <button
+      <div
+        v-else-if="state.type === 'select'"
+        class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      >
+        <div
+          class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        >
+          {{ state.title }}
+        </div>
+        <div
+          v-if="state.message"
+          class="dialog-message mb-5 max-h-[50vh] overflow-y-auto text-[14px] whitespace-pre-line text-text-muted select-text"
+        >
+          {{ state.message }}
+        </div>
+        <div
+          class="dialog-select-list mb-4 flex max-h-[40vh] flex-col gap-1 overflow-y-auto text-[var(--neutral-100)]"
+        >
+          <Button
             v-for="item in state.items"
             :key="item.value"
-            class="modal-select-item"
+            variant="secondary"
+            size="unset"
+            class="dialog-select-item static flex w-full items-center gap-2 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-left text-[14px] leading-[1.5] font-normal whitespace-normal text-text appearance-auto hover:border-[var(--accent)] hover:bg-[var(--surface)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
             @click="close(item.value)"
           >
-            <span class="modal-select-item-label">{{ item.label }}</span>
-            <span v-if="item.description" class="modal-select-item-desc">
+            <span class="dialog-select-item-label flex-1 font-medium">{{ item.label }}</span>
+            <span
+              v-if="item.description"
+              class="dialog-select-item-desc text-[12px] text-text-muted"
+            >
               {{ item.description }}
             </span>
-          </button>
+          </Button>
         </div>
-        <div class="modal-actions">
-          <button @click="close(null)">{{ $t('common.cancel') }}</button>
+        <div
+          class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        >
+          <Button
+            variant="secondary"
+            size="unset"
+            :class="neutralActionClass"
+            @click="close(null)"
+            >{{ $t('common.cancel') }}</Button
+          >
         </div>
       </div>
     </div>
   </Teleport>
 </template>
-
-<style scoped></style>
