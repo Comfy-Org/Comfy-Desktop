@@ -205,7 +205,7 @@ const filteredPipPackages = computed(() => {
             <input
               v-if="detail.customNodes.length > 5"
               v-model="nodeSearch"
-              class="inspector-search mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
+              class="inspector-search mt-1.5 mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
               type="text"
               :placeholder="t('snapshots.searchNodes')"
             />
@@ -261,7 +261,7 @@ const filteredPipPackages = computed(() => {
           >
             <input
               v-model="pipSearch"
-              class="inspector-search mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
+              class="inspector-search mt-1.5 mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
               type="text"
               :placeholder="t('snapshots.searchPackages')"
             />

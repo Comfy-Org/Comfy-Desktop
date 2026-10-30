@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
   <button
     ref="triggerRef"
     type="button"
-    class="ui-select-trigger box-border inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-solid border-border bg-secondary px-2.5 py-2 text-left text-[length:var(--text-ui)] text-text transition-[border-color,background-color] duration-[150ms] ease-[ease] enabled:hover:border-[var(--color-border-strong)] enabled:hover:bg-[oklch(1_0_0/0.09)] focus-visible:border-ring focus-visible:outline-none aria-expanded:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+    class="ui-select-trigger [.brand-background_&]:text-[14px] box-border inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-solid border-border bg-secondary px-2.5 py-2 text-left text-[length:var(--text-ui)] text-text transition-[border-color,background-color] duration-[150ms] ease-[ease] enabled:hover:border-[var(--color-border-strong)] enabled:hover:bg-[oklch(1_0_0/0.09)] focus-visible:border-ring focus-visible:outline-none aria-expanded:border-ring disabled:cursor-not-allowed disabled:opacity-60"
     :class="{ 'ui-select-trigger--compact': compact }"
     role="combobox"
     :aria-expanded="open"

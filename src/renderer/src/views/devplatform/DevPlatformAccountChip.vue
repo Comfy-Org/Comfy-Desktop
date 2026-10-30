@@ -54,7 +54,7 @@ async function onSignOut(): Promise<void> {
       <button
         ref="faceRef"
         type="button"
-        class="account-chip__face inline-flex h-7 min-w-0 max-w-80 items-center gap-2 rounded-lg border border-solid border-transparent bg-transparent px-2 py-0 text-neutral-100 text-[length:var(--text-ui)] [--dp-avatar-size:20px] transition-[background,border-color] duration-[120ms] ease-[ease] hover:border-transparent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:cursor-wait disabled:opacity-65"
+        class="account-chip__face cursor-pointer inline-flex h-7 min-w-0 max-w-80 items-center gap-2 rounded-lg border border-solid border-transparent bg-transparent px-2 py-0 text-neutral-100 text-[length:var(--text-ui)] [--dp-avatar-size:20px] transition-[background,border-color] duration-[120ms] ease-[ease] hover:border-transparent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:cursor-wait disabled:opacity-65"
         data-testid="devplatform-account-chip"
         :aria-expanded="menuOpen"
         @click="toggleMenu"

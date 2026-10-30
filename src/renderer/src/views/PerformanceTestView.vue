@@ -745,7 +745,7 @@ watch(performanceTestLogs, async () => {
                 @drop.prevent="dropWorkflow"
               >
                 <button
-                  class="performance-test__drop-content flex min-h-[102px] w-full items-center border-0 bg-transparent p-5 font-[inherit] text-[13px] text-inherit cursor-pointer"
+                  class="performance-test__drop-content rounded-lg disabled:opacity-40 flex min-h-[102px] w-full items-center border-0 bg-transparent p-5 font-[inherit] text-[13px] text-inherit cursor-pointer"
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
