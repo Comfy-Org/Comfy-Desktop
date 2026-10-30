@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
+  isExternalBrowserUrl,
   isLikelyDownloadUrl,
   POPUP_ALLOWED_PREFIXES,
   shouldOpenInPopup
@@ -132,5 +133,27 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
 
   it('matching is case-insensitive (.ZIP works too)', () => {
     expect(isLikelyDownloadUrl('https://example.com/FILE.ZIP')).toBe(true)
+  })
+})
+
+describe('isExternalBrowserUrl (window-open fallback scheme gate)', () => {
+  it('allows http and https URLs through to the system browser', () => {
+    expect(isExternalBrowserUrl('http://example.com/page')).toBe(true)
+    expect(isExternalBrowserUrl('https://example.com/page')).toBe(true)
+    expect(isExternalBrowserUrl('HTTPS://example.com/page')).toBe(true)
+  })
+
+  it('denies file:, smb: and app-protocol URLs', () => {
+    expect(isExternalBrowserUrl('file:///etc/passwd')).toBe(false)
+    expect(isExternalBrowserUrl('smb://server/share')).toBe(false)
+    expect(isExternalBrowserUrl('comfy://open/something')).toBe(false)
+    expect(isExternalBrowserUrl('vscode://file/home/user/project')).toBe(false)
+  })
+
+  it('denies near-miss schemes and malformed http(s) URLs', () => {
+    expect(isExternalBrowserUrl('httpx://example.com/')).toBe(false)
+    expect(isExternalBrowserUrl('https:example.com')).toBe(false)
+    expect(isExternalBrowserUrl(' https://example.com/')).toBe(false)
+    expect(isExternalBrowserUrl('')).toBe(false)
   })
 })
