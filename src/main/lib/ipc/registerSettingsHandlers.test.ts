@@ -20,7 +20,7 @@ vi.mock('./shared', async () => {
     nativeTheme: {},
     sources: [],
     settings: {
-      getAll: () => mockSettings,
+      getAll: vi.fn(() => mockSettings),
       get: (key: string) => mockSettings[key],
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
@@ -28,7 +28,9 @@ vi.mock('./shared', async () => {
     },
     i18n: {
       t: (key: string) => lookupEnMessage(key),
-      getLocale: () => 'en',
+      getLocale: vi.fn(() => 'en'),
+      init: vi.fn(),
+      getMessages: () => ({}),
       getAvailableLocales: () => [{ value: 'en', label: 'English' }]
     },
     getAppVersion: () => '0.0.0-test',
@@ -40,6 +42,7 @@ vi.mock('./shared', async () => {
 })
 vi.mock('../titleBarOverlay', () => ({ updateTitleBarOverlay: vi.fn() }))
 vi.mock('../telemetry', () => ({
+  capture: vi.fn(),
   setConsentState: vi.fn(),
   registerPersonProperties: vi.fn()
 }))
@@ -52,6 +55,8 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 // Values mirror src/main/settings.ts; mocked because the real module imports electron.
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
+import * as mainTelemetry from '../telemetry'
+import { i18n, settings } from './shared'
 import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
@@ -208,5 +213,111 @@ describe('applySettingSet beta enrolment consent', () => {
 
     expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
     expect(mockSettings.betaFeaturesEnabled).toBe(false)
+  })
+})
+
+describe('applySettingSet settings.changed telemetry', () => {
+  const capture = vi.mocked(mainTelemetry.capture)
+  const changedEvents = (): unknown[] =>
+    capture.mock.calls.filter(([event]) => event === 'comfy.desktop.settings.changed')
+
+  beforeEach(() => {
+    resetMockSettings()
+    capture.mockClear()
+  })
+
+  it('emits the key and new boolean for a user edit', () => {
+    mockSettings.autoUpdate = true
+
+    applySettingSet('autoUpdate', false, true)
+
+    expect(changedEvents()).toEqual([
+      [
+        'comfy.desktop.settings.changed',
+        { install_id: undefined, setting_key: 'autoUpdate', bool_value: false }
+      ]
+    ])
+  })
+
+  it('emits nothing when a user edit leaves the value unchanged', () => {
+    mockSettings.autoUpdate = true
+
+    applySettingSet('autoUpdate', true, true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing when a user re-picks the default an unset setting shows', () => {
+    // Language is unset, so the field shows the app locale ('en' here); picking it again
+    // stores it but is not a change from what the user saw.
+    applySettingSet('language', 'en', true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('still writes when building the shown value throws', () => {
+    vi.mocked(settings.getAll).mockImplementationOnce(() => {
+      throw new Error('sections broke')
+    })
+
+    expect(() => applySettingSet('autoUpdate', false, true)).not.toThrow()
+    expect(mockSettingsSet).toHaveBeenCalledWith('autoUpdate', false)
+  })
+
+  it.each([
+    ['language', 'en'],
+    ['confirmBeforeClosingWindow', true],
+    ['pypiMirror', 'https://mirror.example/simple']
+  ])('emits nothing when the store refuses a write to unset %s', (key, value) => {
+    // An unreadable settings.json makes `set` a no-op; the field still shows what it showed.
+    mockSettingsSet.mockImplementationOnce(() => {})
+
+    applySettingSet(key, value, true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing for a refused Language write even though the locale switches', () => {
+    // i18n.init runs after the refused write; an unset Language would then show the new locale.
+    let locale = 'en'
+    vi.mocked(i18n.getLocale).mockImplementation(() => locale)
+    vi.mocked(i18n.init).mockImplementationOnce((next?: string) => {
+      locale = next ?? locale
+    })
+    mockSettingsSet.mockImplementationOnce(() => {})
+
+    try {
+      applySettingSet('language', 'zh', true)
+    } finally {
+      vi.mocked(i18n.getLocale).mockImplementation(() => 'en')
+    }
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing when whitespace in an empty text field leaves it unset', () => {
+    // The field shows '' for an unset mirror; `set` keeps it unset, which still shows ''.
+    mockSettingsSet.mockImplementationOnce((key: string) => {
+      delete mockSettings[key]
+    })
+
+    applySettingSet('pypiMirror', '   ', true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing for a write that is not a user edit', () => {
+    // The bare set-setting IPC: first-use, announcement and coachmark flags.
+    applySettingSet('comfyApiAnnouncementSeen', true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing for the consent toggle', () => {
+    mockSettings.telemetryEnabled = true
+
+    applySettingSet('telemetryEnabled', false, true)
+
+    expect(changedEvents()).toEqual([])
   })
 })
