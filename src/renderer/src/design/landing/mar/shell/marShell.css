@@ -790,13 +790,13 @@
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 /* Light: on the pale sidebar the 5% tint reads as dirt and the gold coin
-   washes out. A white tile with a hairline and a soft lift, and the
+   washes out. A white tile lifted by a soft shadow (no outline), and the
    credit gold a step deeper (production's #ddbd31 is tuned for dark). */
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row {
   background: var(--color-card-background, #fff);
   box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.04);
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 2px 8px -2px rgb(0 0 0 / 0.06);
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
   background: var(--color-card-background-hover, #fafafa);
@@ -1657,4 +1657,34 @@
     [role='group'] > button[data-state] > .tabular-nums
   ) {
   display: none;
+}
+
+/* Text links (See all, All builds, All spaces, Learn more): the focus
+   ring sits around the label with room, not on its letters, at the
+   controls' corner; the arrow nudges right on hover. The padding is taken
+   back with negative margins, so the link doesn't move. */
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control {
+  margin-block: -2px;
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: var(--mar-tab-item-radius, 7px);
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:not(.ml-auto) {
+  margin-left: -6px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control > svg {
+  transition: translate 160ms ease;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+  translate: 2px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+    translate: none;
+  }
 }
