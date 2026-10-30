@@ -695,6 +695,29 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
   })
 
+  it('toggles overlay transparency and clears it when the panel unmounts', async () => {
+    const signalOverlayReady = vi.fn()
+    window.api.signalOverlayReady = signalOverlayReady
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    for (const panel of ['feedback', 'announcement']) {
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
+      await flushPromises()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+      expect(signalOverlayReady).toHaveBeenCalledTimes(panel === 'feedback' ? 1 : 2)
+
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+      await flushPromises()
+      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+    }
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
+    await flushPromises()
+    wrapper.unmount()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
+  })
+
   it('ignores unknown panel keys from onPanelSwitch', async () => {
     const wrapper = mountPanel()
     await flushPromises()

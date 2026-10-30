@@ -551,14 +551,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="panel-shell">
-    <main class="panel-content">
+  <div
+    class="panel-shell flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg)] text-text [body.panel-overlay-mode_&]:bg-transparent"
+  >
+    <main
+      class="panel-content flex min-h-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
+    >
       <!-- `showPanelBody` — chooser when main/IPC says first-use is done;
            hidden while the first-use takeover is mounted (no chooser
            bleed-through during BrandTakeoverLayout's fade-in). Flow
            takeovers keep the chooser mounted underneath by design. -->
-      <div v-if="showPanelBody" class="panel-body">
-        <div v-if="activePanel === 'comfy-lifecycle'" class="panel-comfy-lifecycle">
+      <div v-if="showPanelBody" class="panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          v-if="activePanel === 'comfy-lifecycle'"
+          class="panel-comfy-lifecycle flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
           <ComfyLifecycleView
             :installation="installation"
             :installation-id="installationId"
@@ -566,7 +573,10 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
+        <div
+          v-else-if="activePanel === 'chooser'"
+          class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
           <ChooserView
             @pick="handleChooserPick"
             @show-new-install="handleChooserShowNewInstall"
@@ -574,14 +584,17 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
+        <div
+          v-else-if="activePanel === 'benchmarks'"
+          class="panel-benchmarks flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
           <BenchmarksView />
         </div>
 
         <KeepAlive>
           <PerformanceTestView
             v-if="activePanel === 'performance-test'"
-            class="panel-performance-test"
+            class="panel-performance-test flex min-h-0 flex-col overflow-hidden [&.panel-performance-test]:flex-1"
           />
         </KeepAlive>
       </div>
@@ -655,87 +668,3 @@ onUnmounted(() => {
     <MigrateConfirmTakeover ref="migrateTakeoverRef" />
   </div>
 </template>
-
-<!-- Non-scoped: targets `body` and overrides main.css's `body { background:
-     var(--bg) }` only while the drawer is open. Specificity
-     (`body.panel-overlay-mode` vs `body`) wins regardless of CSS load
-     order. -->
-<style>
-body.panel-overlay-mode {
-  background: transparent;
-}
-body.panel-overlay-mode .panel-shell {
-  background: transparent;
-}
-</style>
-
-<style scoped>
-.panel-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  background: var(--bg);
-  color: var(--text);
-  overflow: hidden;
-}
-
-.panel-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  /* Match the launcher window's `.content` padding so tab-mode views
-   * (SettingsView etc.) have the same gutter as in the standalone window. */
-  padding: 24px 28px;
-  overflow: hidden;
-}
-
-/* The comfy-lifecycle view fills its own background and the chooser
- * owns its own filter / grid padding (and needs the full panel height
- * so its grid can scroll vertically) — negate the panel-content
- * gutter for those branches. */
-.panel-content:has(.panel-comfy-lifecycle),
-.panel-content:has(.panel-chooser),
-.panel-content:has(.panel-performance-test),
-.panel-content:has(.panel-benchmarks) {
-  padding: 0;
-}
-
-/* The gated body wrapper must transparently inherit the panel-content
- * flex behaviour so the chooser / lifecycle branches keep filling the
- * shell. Without `min-height: 0` the chooser grid overflows the host. */
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.panel-comfy-lifecycle,
-.panel-chooser,
-.panel-performance-test,
-.panel-benchmarks {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.panel-placeholder {
-  padding: 24px;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.panel-placeholder code {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-</style>
