@@ -76,7 +76,7 @@ describe('no new Vue style blocks', () => {
   })
 
   it('accepts CRLF checkout line endings', () => {
-    expect(lint(frozenSource.replace(/\n/g, '\r\n'), frozenFile)).toEqual([])
+    expect(lint(frozenSource.replace(/\r?\n/g, '\r\n'), frozenFile)).toEqual([])
   })
 
   it('allows changing the template around an unchanged block', () => {
