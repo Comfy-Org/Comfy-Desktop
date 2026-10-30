@@ -63,6 +63,10 @@ describe('piiScrub', () => {
       )
     })
 
+    it('keeps a raw folder whose name looks like a JSON escape', () => {
+      expect(scrubPII('C:\\Users\\alice\\u1234\\x')).toBe('C:\\Users\\[REDACTED]\\u1234\\x')
+    })
+
     it.each([
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',

@@ -90,10 +90,19 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
+// `\uXXXX` is an escape only in escaped text, i.e. after an escaped separator;
+// in a raw path `\u1234` is a folder, so the name ends at its backslash.
+function redactName(match: string, prefix: string): string {
+  const escaped = prefix.endsWith('\\\\') || prefix.endsWith('\\/')
+  const name = match.slice(prefix.length)
+  const end = escaped ? -1 : name.indexOf('\\')
+  return `${prefix}[REDACTED]${end === -1 ? '' : name.slice(end)}`
+}
+
 export function scrubPII(value: string): string {
   let scrubbed = value
   for (const pattern of [...homeDirPatterns, ...PII_PATH_PATTERNS]) {
-    scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
+    scrubbed = scrubbed.replace(pattern, redactName)
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')
 }
