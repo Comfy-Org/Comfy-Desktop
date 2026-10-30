@@ -23,7 +23,11 @@ import {
   waitForWebContents,
   type WebContentsPage,
 } from './support/cdpPages'
-import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import {
+  expectNoBetaArgsPill,
+  openWithBetaArgsAnswers,
+  type BetaArgsOpen,
+} from './support/betaArgsAnswers'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
 
@@ -124,17 +128,19 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-async function openStartupArgs(): Promise<WebContentsPage> {
+async function openStartupArgs(): Promise<BetaArgsOpen> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  await ctx.panel.evaluate(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
+  return openWithBetaArgsAnswers(ctx.app, async () => {
+    await ctx.panel.evaluate(
+      `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
+    )
+    await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+    const popup = titlePopupPage(ctx.app)
+    await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
+    await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
+    return popup
+  })
 }
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
@@ -142,46 +148,22 @@ const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
   )
 
-/** Open with the request count reset, so absence can be read against this open's own answers. */
-async function openCounted(): Promise<WebContentsPage> {
-  await resetIpcInvocations(ctx.app, 'get-core-beta-args')
-  return openStartupArgs()
-}
-
-/**
- * The pill renders nothing both before its answer and for an empty one, so absence only means
- * something once the answers are in. A fresh open asks twice (on mount, and again once the args
- * field's schema load settles), so wait for both, then require no pill and no loading placeholder
- * for long enough that a late answer would have shown.
- */
-async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string): Promise<void> {
-  await expect
-    .poll(async () => (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length, {
-      timeout: 15_000,
-      intervals: [100, 200],
-    })
-    .toBeGreaterThanOrEqual(2)
-  const deadline = Date.now() + 2_000
-  while (Date.now() < deadline) {
-    expect(await pillLabel(popup), message).toBeNull()
-    expect(await popup.exists(`${ARGS_FIELD} .beta-args-loading`), message).toBe(false)
-    await new Promise((resolve) => setTimeout(resolve, 200))
-  }
-}
-
 test('a commit grant whose range contains HEAD shows before any launch @linux', async () => {
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument eligible for the next launch, show details')
 })
 
 test('moving HEAD below the range hides it @linux', async () => {
   git('reset', '-q', '--hard', sha.base!)
-  const popup = await openCounted()
-  await expectAnsweredWithNoPill(popup, 'the grant was still shown with HEAD below its range')
+  await expectNoBetaArgsPill(
+    ctx.app,
+    await openStartupArgs(),
+    'the grant was still shown with HEAD below its range',
+  )
   git('reset', '-q', '--hard', sha.head!)
-  const back = await openStartupArgs()
-  await back.waitForVisible(PILL, { timeout: 15_000 })
+  const { popup } = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 15_000 })
 })
 
 test('an object store git cannot read hides the grant, and the settings view still loads @linux', async () => {
@@ -191,7 +173,7 @@ test('an object store git cannot read hides the grant, and the settings view sti
   for (const entry of await readdir(objects)) {
     if (entry !== 'info') await rm(path.join(objects, entry), { recursive: true, force: true })
   }
-  const popup = await openCounted()
-  await expectAnsweredWithNoPill(popup, 'the grant was shown though git could not prove it')
-  expect(await popup.exists(`${ARGS_FIELD} input`)).toBe(true)
+  const opened = await openStartupArgs()
+  await expectNoBetaArgsPill(ctx.app, opened, 'the grant was shown though git could not prove it')
+  expect(await opened.popup.exists(`${ARGS_FIELD} input`)).toBe(true)
 })

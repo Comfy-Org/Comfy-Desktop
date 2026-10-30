@@ -25,9 +25,13 @@ import {
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents,
-  type WebContentsPage,
 } from './support/cdpPages'
 import { clearRunningSessions, seedRunningSession } from './support/devHooks'
+import {
+  expectNoBetaArgsPill,
+  openWithBetaArgsAnswers,
+  type BetaArgsOpen,
+} from './support/betaArgsAnswers'
 import { byTestId, TID } from './support/testIds'
 
 test.describe.configure({ mode: 'serial' })
@@ -73,31 +77,33 @@ test.afterAll(async () => {
 })
 
 /** Open the picker on the install's Startup Args and wait until its args field has rendered. */
-async function openStartupArgs(): Promise<WebContentsPage> {
+async function openStartupArgs(): Promise<BetaArgsOpen> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  const opened = await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })
-      return true
-    })()`,
-  )
-  expect(opened).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
+  return openWithBetaArgsAnswers(ctx.app, async () => {
+    const opened = await ctx.panel.evaluate<boolean>(
+      `(() => {
+        window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })
+        return true
+      })()`,
+    )
+    expect(opened).toBe(true)
+    await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+    const popup = titlePopupPage(ctx.app)
+    await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
+    await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
+    return popup
+  })
 }
 
 // This fixture has no interpreter, so the settings view's schema discovery fails and the next-launch
 // preview (which only reads a cached schema) cannot be computed: the pill must stay away rather than
 // guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`.
 test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
-  const popup = await openStartupArgs()
-  // The args field is on screen (waited above), so the pill's absence is a real answer.
-  expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
-    false,
+  await expectNoBetaArgsPill(
+    ctx.app,
+    await openStartupArgs(),
+    'a pill was shown for a next launch that cannot be predicted',
   )
 })
 
@@ -110,7 +116,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
       { arg: '--enable-asset-hashing', name: null },
     ],
   })
-  const popup = await openStartupArgs()
+  const { popup } = await openStartupArgs()
 
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   const pill = await popup.evaluate<{ text: string; expanded: string | null }>(
