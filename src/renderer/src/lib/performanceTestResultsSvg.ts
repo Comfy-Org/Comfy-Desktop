@@ -116,7 +116,7 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   ${informationCard(margin, systemY + 24, cardWidth, cardHeight, data.hardware)}
   ${informationCard(margin + cardWidth + cardGap, systemY + 24, cardWidth, cardHeight, data.system)}
   <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
-    <path d="${COMFY_WORDMARK_PATH}" fill="#ffffff" />
+    <path d="${COMFY_WORDMARK_PATH}" fill="#F2FF59" />
   </g>
   ${text(width - margin, height - 28, data.testDateTime, 'footer-date', 'end')}
 </svg>`

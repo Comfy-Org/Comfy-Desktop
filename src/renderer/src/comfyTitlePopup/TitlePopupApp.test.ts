@@ -267,26 +267,23 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     wrapper.unmount()
   })
 
-  it.each(['menu', 'downloads'] as const)(
-    'keeps %s on the Desktop palette when the editor theme changes',
-    async (kind) => {
-      const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
-      const wrapper = mount(TitlePopupApp)
-      await flushPromises()
-      for (const theme of [
-        { bg: '#1f2024', text: '#eeeeee' },
-        { bg: '#f5f5f5', text: '#333333' }
-      ]) {
-        bridgeState.configCallbacks.forEach((cb) => cb({ kind, items: [], theme }))
-        await flushPromises()
-        const popup = wrapper.get('.popup')
-        expect(popup.classes()).not.toContain('is-light')
-        expect(popup.attributes('style')).toBeUndefined()
-        expect(wrapper.find(kind === 'menu' ? '.menu' : '.downloads').exists()).toBe(true)
-      }
-      wrapper.unmount()
-    }
-  )
+  it('applies theme colors to the popup card', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp)
+    await flushPromises()
+    bridgeState.configCallbacks.forEach((cb) =>
+      cb({
+        kind: 'menu',
+        items: [],
+        theme: { bg: '#1f2024', text: '#eeeeee' }
+      })
+    )
+    await flushPromises()
+    const style = wrapper.find('.popup').attributes('style') ?? ''
+    // Browsers normalize hex to rgb in inline styles.
+    expect(style).toMatch(/background:\s*(#1f2024|rgb\(31,\s*32,\s*36\))/i)
+    expect(style).toMatch(/color:\s*(#eeeeee|rgb\(238,\s*238,\s*238\))/i)
+  })
 
   it('re-keys the popup root when the will-show event fires, resetting per-open transient state', async () => {
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')

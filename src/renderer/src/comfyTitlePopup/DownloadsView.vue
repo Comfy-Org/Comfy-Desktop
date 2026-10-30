@@ -261,8 +261,8 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
 <style scoped>
 .downloads {
   /* Local design tokens, only consumed by this view. */
-  --downloads-card: var(--color-card-hover);
-  --downloads-bar-rest: var(--color-card);
+  --downloads-card: #322c3d;
+  --downloads-bar-rest: #2a2332;
   --downloads-border: rgba(255, 255, 255, 0.1);
   --downloads-text: var(--neutral-100);
   --downloads-text-muted: var(--text-muted);

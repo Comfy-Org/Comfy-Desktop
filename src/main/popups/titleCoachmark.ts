@@ -58,10 +58,9 @@ export interface CoachmarkConfig {
   configToken: string
 }
 
-/** Hardcoded mirror of the Void palette (assets/palette-void.css); the popup renderer has no
- *  app stylesheet. Card surface, foreground text, and white where the brand yellow was. */
+/** Hardcoded mirror of the brand tokens; the popup renderer has no app stylesheet. */
 function resolveCoachmarkTheme(): CoachmarkTheme {
-  return { bg: '#1c1c21', text: '#f0f0f1', border: '#2d2d31', accent: '#f0f0f1' }
+  return { bg: '#211927', text: '#ffffff', border: '#38303d', accent: '#e3ff3c' }
 }
 
 export function buildCoachmarkConfig(opts: {

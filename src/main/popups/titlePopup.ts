@@ -606,14 +606,14 @@ const popupBackdropsByWebContents = new Map<number, number /* parentId */>()
 /** Inline HTML loaded into the backdrop view. Fixed `position: fixed`
  *  scrim — translucent dim over the host body with a 14px backdrop
  *  blur so the underlying chrome reads as a frosted-glass background
- *  behind the centred-card popup. Scrim color (`#0a0a0b`) is the Void
- *  palette's near-black; opacity is low (40%) so the blur is the dominant
+ *  behind the centred-card popup. Scrim color (`#211927`) matches the
+ *  app's neutral-800; opacity is low (40%) so the blur is the dominant
  *  effect, not the dim. A click anywhere fires the dismiss IPC; main
  *  routes it through to hide the picker / global-settings popup. */
 const POPUP_BACKDROP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none}
-  .scrim{position:fixed;inset:0;width:100%;height:100%;background:rgba(10,10,11,0.4);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);cursor:default}
+  .scrim{position:fixed;inset:0;width:100%;height:100%;background:rgba(33,25,39,0.4);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);cursor:default}
 </style></head><body>
 <div class="scrim" id="s"></div>
 <script>
@@ -717,8 +717,7 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-/** Mirrors `.item` in comfyTitlePopup/MenuView.vue: 32px rows, like the design system's menus. */
-const POPUP_ITEM_HEIGHT = 32
+const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8 // 4px top + 4px bottom on the <ul>
 const POPUP_VBORDER = 2 // 1px top + 1px bottom from the .popup card

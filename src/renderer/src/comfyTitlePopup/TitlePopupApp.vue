@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import MenuView from './MenuView.vue'
 import DownloadsView from './DownloadsView.vue'
 import DownloadsFullView from './DownloadsFullView.vue'
@@ -13,12 +13,11 @@ import { popupLocaleSource } from './pickerSettingsApiShim'
 import { useAppLocale } from '../lib/useAppLocale'
 import type { DetailSection, SnapshotListData } from '../types/ipc'
 import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
+import { isColorLight } from '../lib/colorScheme'
 
 // Title-bar dropdown popup shell. Hosts every title-bar dropdown in one
 // reused transparent WebContentsView attached to the host window. Each open
-// arrives as a `comfy-titlepopup:set-config` IPC. The theme field is kept for
-// IPC compatibility; only the title bar follows the embedded editor's theme.
-// All Desktop popup content uses the document's fixed palette.
+// arrives as a `comfy-titlepopup:set-config` IPC carrying kind + theme.
 
 interface MenuItem {
   id?: string
@@ -159,6 +158,8 @@ const bridge = (window as unknown as { __comfyTitlePopup?: Bridge }).__comfyTitl
 
 const kind = ref<PopupConfig['kind']>('menu')
 const items = ref<MenuItem[]>([])
+const themeBg = ref<string>('#262729')
+const themeText = ref<string>('#dddddd')
 /** App-level so both the initial set-config state and subsequent live
  *  pushes land here regardless of whether InstancePickerView is mounted. */
 const pickerSnapshot = ref<PickerSnapshot>({
@@ -211,6 +212,9 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
 /** App-level so the initial downloads push lands even though DownloadsView
  *  isn't mounted yet (its mount is gated on a later set-config). */
 const downloadsState = ref<DownloadsState>({ active: [], recent: [] })
+
+/** Body-luminance test driving is-light styling; matches TitleBarApp.vue. */
+const isLight = computed(() => isColorLight(themeBg.value))
 
 function handleActivate(id: string): void {
   bridge?.activate(id)
@@ -291,6 +295,8 @@ onMounted(() => {
     } else if (cfg.kind === 'global-settings') {
       globalSettingsSnapshot.value = cfg.snapshot
     }
+    themeBg.value = cfg.theme.bg
+    themeText.value = cfg.theme.text
     const seq = ++renderSeq
     // Ack after Vue flushes the DOM and the browser paints it; main keeps
     // the view hidden until then so no frame of the previous open shows.
@@ -375,11 +381,13 @@ onUnmounted(() => {
   <div
     class="popup"
     :class="{
+      'is-light': isLight,
       'is-menu': kind === 'menu',
       'is-picker': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full'
     }"
+    :style="{ background: themeBg, color: themeText }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
@@ -404,8 +412,6 @@ onUnmounted(() => {
 }
 
 .popup {
-  background: var(--neutral-800);
-  color: var(--text);
   margin: 0;
   border: 1px solid var(--chooser-surface-border);
   border-radius: 8px;
@@ -416,7 +422,11 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
+/* `!important` overrides the inline background/color on `.popup` so the
+ * menu surface stays consistent across hosts. */
 .popup.is-menu {
+  background: var(--neutral-800) !important;
+  color: var(--neutral-100) !important;
   border-color: var(--chooser-surface-border);
   font-size: 13px;
 }
@@ -425,7 +435,7 @@ onUnmounted(() => {
 .popup.is-picker,
 .popup.is-global-settings,
 .popup.is-downloads-full {
-  background: var(--modal-surface-bg);
+  background: var(--modal-surface-bg) !important;
   border: 1px solid var(--modal-surface-border);
   border-radius: 14px;
   box-shadow: var(--modal-surface-shadow);
