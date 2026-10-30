@@ -26,6 +26,7 @@ import {
   Maximize,
   Minus,
   PanelRight,
+  PanelsTopLeft,
   MousePointer2,
   Pause,
   Play,
@@ -54,6 +55,14 @@ import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
 import CanvasNode from './CanvasNode.vue'
 import AssetsPanel from './AssetsPanel.vue'
+import JobsPanel from './panels/JobsPanel.vue'
+import NodesPanel from './panels/NodesPanel.vue'
+import ModelsPanel from './panels/ModelsPanel.vue'
+import ModelBrowser from './panels/ModelBrowser.vue'
+import WorkflowsPanel from './panels/WorkflowsPanel.vue'
+import ShortcutsPanel from './panels/ShortcutsPanel.vue'
+import TemplatesDialog from './panels/TemplatesDialog.vue'
+import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import MediaViewer from './MediaViewer.vue'
 import AgentPanel from './AgentPanel.vue'
@@ -699,9 +708,18 @@ function onKey(e: KeyboardEvent): void {
   else if (k === 'backspace' || k === 'delete') {
     if (selectedLink.value) removeLink(selectedLink.value)
     else remove(selection.value)
-  } else if (k === '/' || (!mod && !e.altKey && k === 'n')) openMenuAtCentre()
-  else if (!mod && !e.altKey && k === 'a') assets.value = !assets.value
+  } else if (k === '/') openMenuAtCentre()
+  else if (mod && e.shiftKey && k === 'k') shortcuts.value = !shortcuts.value
+  else if (mod && k === ',') openSettings()
+  else if (!mod && !e.altKey && k === 'n') onRail('nodes')
+  else if (!mod && !e.altKey && k === 'm') onRail('models')
+  else if (!mod && !e.altKey && k === 'w') onRail('workflows')
+  else if (!mod && !e.altKey && k === 'a') onRail('assets')
   else if (k === 'escape') {
+    if (panel.value || shortcuts.value) {
+      panel.value = ''
+      shortcuts.value = false
+    }
     menu.value = undefined
     selection.value = []
     selectedLink.value = ''
@@ -714,6 +732,15 @@ function onDrop(e: DragEvent): void {
   const dt = e.dataTransfer
   if (!dt) return
   const at = toWorld(local(e))
+  // A node dragged from the Nodes panel lands where it is dropped.
+  const kind = dt.getData('text/x-mg-node') as NodeKind
+  if (kind) {
+    e.preventDefault()
+    pending = undefined
+    menu.value = { x: 0, y: 0, at }
+    add(kind)
+    return
+  }
   const asset = dt.getData('text/x-mg-asset')
   const file = [...dt.files].find((f) => f.type.startsWith('image/'))
   const src = asset || (file ? URL.createObjectURL(file) : '')
@@ -771,8 +798,27 @@ watch(
   () => [graphStyle.id, onCloud.value],
   () => nextTick(fit)
 )
-const assets = ref(false)
+// ── The rail's panels (ComfyUI's sidebar tabs): one open at a time
+// beside the rail; Templates, Settings and Cloud's Model Library open as
+// dialogs; Shortcuts as a panel along the bottom. ──
+type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 'apps'
+const panel = ref<RailPanelId>('')
+const dialog = ref<'' | 'templates' | 'settings' | 'models'>('')
+const settingsAt = ref<string>()
+const shortcuts = ref(false)
+const assets = computed({
+  get: () => panel.value === 'assets',
+  set: (on: boolean) => {
+    if (on) panel.value = 'assets'
+    else if (panel.value === 'assets') panel.value = ''
+  }
+})
+/** The workflow on show: the tab's, or one opened from Workflows. */
+const shownWorkflow = ref(workflow)
 const agent = ref(false)
+// The Agent and a rail panel share the left edge: one at a time.
+watch(panel, (id) => id && (agent.value = false))
+watch(agent, (on) => on && (panel.value = ''))
 const viewing = ref<string>()
 
 // ── Running. The UI only talks to the engine (runEngine.ts): today a mock
@@ -1063,14 +1109,21 @@ onBeforeUnmount(() => {
   clearTimeout(textTimer)
 })
 
-// Shortcuts are ComfyUI's defaults (platform/keybindings/defaults.ts).
-const RAIL: { icon: Component; label: string; keys?: string }[] = [
-  { icon: History, label: 'Queue' },
-  { icon: ComfyNode, label: 'Nodes', keys: 'N' },
-  { icon: ComfyModel, label: 'Models', keys: 'M' },
-  { icon: ComfyWorkflow, label: 'Workflows', keys: 'W' },
-  { icon: ComfyTemplate, label: 'Templates' },
-  { icon: ComfyAssets, label: 'Assets', keys: 'A' }
+// The rail as ComfyUI's SideToolbar orders it; shortcuts are its defaults
+// (platform/keybindings/defaults.ts).
+const RAIL: {
+  id: Exclude<RailPanelId, ''> | 'templates'
+  icon: Component
+  label: string
+  keys?: string
+}[] = [
+  { id: 'queue', icon: History, label: 'Job History' },
+  { id: 'assets', icon: ComfyAssets, label: 'Assets', keys: 'A' },
+  { id: 'nodes', icon: ComfyNode, label: 'Nodes', keys: 'N' },
+  { id: 'models', icon: ComfyModel, label: 'Models', keys: 'M' },
+  { id: 'workflows', icon: ComfyWorkflow, label: 'Workflows', keys: 'W' },
+  { id: 'apps', icon: PanelsTopLeft, label: 'Apps' },
+  { id: 'templates', icon: ComfyTemplate, label: 'Templates' }
 ]
 const tip = (label: string, keys?: string): string => (keys ? `${label} (${keys})` : label)
 /** Out of the graph, back to the app's Home: the Comfy logo, as at the
@@ -1078,15 +1131,36 @@ const tip = (label: string, keys?: string): string => (keys ? `${label} (${keys}
 function goHome(): void {
   proto.activeTab = 'home'
 }
-function onRail(label: string): void {
-  if (label === 'Assets') assets.value = !assets.value
-  else if (label === 'Nodes') openMenuAtCentre()
-  else if (label === 'Queue' && jobs.value.length) jobsOpen.value = !jobsOpen.value
+function onRail(id: (typeof RAIL)[number]['id']): void {
+  menu.value = undefined
+  if (id === 'templates') dialog.value = 'templates'
+  // Comfy Cloud opens its Model Library as the Asset Browser dialog.
+  else if (id === 'models' && onCloud.value) dialog.value = 'models'
+  else panel.value = panel.value === id ? '' : id
+}
+const railOn = (id: string): boolean =>
+  panel.value === id ||
+  (id === 'templates' && dialog.value === 'templates') ||
+  (id === 'models' && dialog.value === 'models')
+function openSettings(at?: string): void {
+  settingsAt.value = at
+  dialog.value = 'settings'
+}
+/** A node from the Nodes panel: in the middle of the view. */
+function addFromPanel(kind: NodeKind): void {
+  pending = undefined
+  menu.value = { x: 0, y: 0, at: toWorld({ x: size.w / 2, y: size.h / 2 }) }
+  add(kind)
 }
 </script>
 
 <template>
-  <div ref="host" class="mg" :class="`is-${graphStyle.id}`" :style="{ '--mg-top': `${top}px` }">
+  <div
+    ref="host"
+    class="mg"
+    :class="[`is-${graphStyle.id}`, (panel || agent) && 'has-panel']"
+    :style="{ '--mg-top': `${top}px` }"
+  >
     <!-- Current: ComfyUI's top bar, its menu and its workflow tabs. -->
     <div v-if="current" class="mg-topbar">
       <Tooltip content="Home" side="bottom">
@@ -1094,7 +1168,7 @@ function onRail(label: string): void {
           <ComfyCLogo class="mg-logo-mark" />
         </button>
       </Tooltip>
-      <span class="mg-tab is-on">{{ workflow }}<X :size="12" /></span>
+      <span class="mg-tab is-on">{{ shownWorkflow }}<X :size="12" /></span>
       <span class="mg-tab">Untitled<X :size="12" /></span>
       <Plus :size="14" class="mg-tab-add" />
     </div>
@@ -1112,7 +1186,7 @@ function onRail(label: string): void {
       </template>
       <Tooltip
         v-for="r in RAIL"
-        :key="r.label"
+        :key="r.id"
         :content="tip(r.label, r.keys)"
         side="right"
         :disabled="current && !r.keys"
@@ -1120,10 +1194,11 @@ function onRail(label: string): void {
         <button
           type="button"
           class="mg-rail-btn"
-          :class="((r.label === 'Assets' && assets) || (r.label === 'Nodes' && menu)) && 'is-on'"
+          :class="railOn(r.id) && 'is-on'"
           :aria-label="r.label"
           :aria-keyshortcuts="r.keys"
-          @click="onRail(r.label)"
+          :aria-expanded="railOn(r.id)"
+          @click="onRail(r.id)"
         >
           <component :is="r.icon" :size="current ? 18 : 17" :stroke-width="1.75" />
           <span v-if="current" class="mg-rail-label">{{ r.label }}</span>
@@ -1131,12 +1206,27 @@ function onRail(label: string): void {
       </Tooltip>
       <span class="mg-rail-gap" />
       <Tooltip :content="tip('Shortcuts', '⌘⇧K')" side="right">
-        <button type="button" class="mg-rail-btn" aria-label="Shortcuts">
+        <button
+          type="button"
+          class="mg-rail-btn"
+          :class="shortcuts && 'is-on'"
+          aria-label="Shortcuts"
+          aria-keyshortcuts="Control+Shift+K"
+          :aria-expanded="shortcuts"
+          @click="shortcuts = !shortcuts"
+        >
           <Keyboard :size="17" :stroke-width="1.75" />
         </button>
       </Tooltip>
       <Tooltip :content="tip('Settings', '⌘,')" side="right">
-        <button type="button" class="mg-rail-btn" aria-label="Settings">
+        <button
+          type="button"
+          class="mg-rail-btn"
+          :class="dialog === 'settings' && 'is-on'"
+          aria-label="Settings"
+          aria-keyshortcuts="Control+Comma"
+          @click="openSettings()"
+        >
           <Settings :size="17" :stroke-width="1.75" />
         </button>
       </Tooltip>
@@ -1353,7 +1443,45 @@ function onRail(label: string): void {
       />
     </div>
 
-    <AssetsPanel v-if="assets" @close="assets = false" />
+    <!-- The rail's panels, one at a time beside it. -->
+    <JobsPanel
+      v-if="panel === 'queue'"
+      :jobs="jobs"
+      :cloud="onCloud"
+      @close="panel = ''"
+      @cancel="(id) => engine.cancel(id)"
+      @clear-queue="engine.clearQueue()"
+      @view="panel = 'assets'"
+    />
+    <AssetsPanel v-else-if="panel === 'assets'" :cloud="onCloud" @close="panel = ''" />
+    <NodesPanel
+      v-else-if="panel === 'nodes'"
+      :cloud="onCloud"
+      @close="panel = ''"
+      @add="addFromPanel"
+    />
+    <ModelsPanel v-else-if="panel === 'models'" @close="panel = ''" />
+    <WorkflowsPanel
+      v-else-if="panel === 'workflows' || panel === 'apps'"
+      :key="panel"
+      :kind="panel"
+      :active="shownWorkflow"
+      @close="panel = ''"
+      @open="(name) => (shownWorkflow = name)"
+    />
+    <ShortcutsPanel
+      v-if="shortcuts"
+      @close="shortcuts = false"
+      @manage="((shortcuts = false), openSettings('Keybinding'))"
+    />
+    <TemplatesDialog v-if="dialog === 'templates'" @close="dialog = ''" @pick="dialog = ''" />
+    <ModelBrowser v-else-if="dialog === 'models'" @close="dialog = ''" />
+    <SettingsDialog
+      v-else-if="dialog === 'settings'"
+      :cloud="onCloud"
+      :start="settingsAt"
+      @close="dialog = ''"
+    />
     <AgentPanel v-if="agent" @build="build" @close="agent = false" />
     <button v-else type="button" class="mg-agent-btn" @click="agent = true">
       <Bot :size="15" />Agent
@@ -1494,7 +1622,13 @@ function onRail(label: string): void {
         </template>
       </div>
     </div>
-    <button v-if="current" type="button" class="mg-search" aria-label="Search nodes">
+    <button
+      v-if="current && !panel"
+      type="button"
+      class="mg-search"
+      aria-label="Search nodes"
+      @click="openMenuAtCentre()"
+    >
       <Search :size="14" />
     </button>
 
