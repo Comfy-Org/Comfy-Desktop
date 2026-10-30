@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { ExternalLink, Folder, FolderOpen, RotateCcw } from 'lucide-vue-next'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
@@ -40,39 +41,53 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const actionClass =
+  'storage-dir-action static inline-flex size-7 items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0'
 </script>
 
 <template>
-  <div class="storage-dir-field">
-    <label v-if="label" class="storage-dir-label">{{ label }}</label>
-    <div class="storage-dir-row">
+  <div class="storage-dir-field flex flex-col gap-1.5">
+    <label v-if="label" class="storage-dir-label text-[12px] text-text-muted">{{ label }}</label>
+    <div
+      class="storage-dir-row flex min-w-0 items-center gap-2 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-2.5 py-2"
+    >
       <StorageItemIcon :icon="Folder" :shared="shared" />
-      <div class="storage-dir-main">
-        <button
+      <div class="storage-dir-main flex min-w-0 flex-auto items-center">
+        <Button
           type="button"
-          class="storage-dir-name"
+          variant="textonly"
+          size="unset"
+          class="storage-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left font-normal text-[13px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
           :title="t('models.openDir', 'Open folder')"
           @click="emit('open')"
         >
           {{ path }}
-        </button>
+        </Button>
       </div>
-      <span v-if="tag" class="storage-dir-tag">{{ tag }}</span>
-      <div class="storage-dir-actions">
-        <button
+      <span
+        v-if="tag"
+        class="storage-dir-tag shrink-0 rounded-[999px] border border-solid border-[var(--chooser-surface-border)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-text-muted uppercase"
+        >{{ tag }}</span
+      >
+      <div class="storage-dir-actions inline-flex shrink-0 items-center gap-0.5">
+        <Button
           v-if="browsable"
           type="button"
-          class="storage-dir-action"
+          variant="textonly"
+          size="unset"
+          :class="actionClass"
           :aria-label="t('common.browse', 'Browse')"
           :title="t('common.browse', 'Browse')"
           @click="emit('browse')"
         >
           <FolderOpen :size="14" aria-hidden="true" />
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="manageable"
           type="button"
-          class="storage-dir-action"
+          variant="textonly"
+          size="unset"
+          :class="actionClass"
           :aria-label="
             t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings')
           "
@@ -82,118 +97,20 @@ const { t } = useI18n()
           @click="emit('manage')"
         >
           <ExternalLink :size="14" aria-hidden="true" />
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="resettable"
           type="button"
-          class="storage-dir-action"
+          variant="textonly"
+          size="unset"
+          :class="actionClass"
           :aria-label="t('common.resetDefault', 'Reset to default')"
           :title="t('common.resetDefault', 'Reset to default')"
           @click="emit('reset')"
         >
           <RotateCcw :size="14" aria-hidden="true" />
-        </button>
+        </Button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.storage-dir-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.storage-dir-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.storage-dir-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-}
-
-/* Flex spacer so the actions stay right-aligned while the clickable path stays
- *  sized to its text (matching the models-dir row). */
-.storage-dir-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.storage-dir-name {
-  min-width: 0;
-  max-width: 100%;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--neutral-100);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.storage-dir-name:hover,
-.storage-dir-name:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
-}
-
-.storage-dir-tag {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-  border: 1px solid var(--chooser-surface-border);
-}
-
-.storage-dir-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.storage-dir-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    color 100ms ease;
-}
-
-.storage-dir-action:hover,
-.storage-dir-action:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-  outline: none;
-}
-</style>

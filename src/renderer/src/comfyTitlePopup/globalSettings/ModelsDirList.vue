@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import {
   ChevronRight,
   FileText,
@@ -54,6 +55,11 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const actionClass =
+  'models-dir-action static inline-flex size-7 items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0'
+const menuItemClass =
+  'static block w-full rounded-md border-none bg-transparent px-2.5 py-1.5 text-left text-[12px] leading-[1.5] font-normal whitespace-normal appearance-auto hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0'
+
 const openMenuIndex = ref<number | null>(null)
 const menuToggleRefs = new Map<number, HTMLButtonElement>()
 const menuRefs = new Map<number, HTMLDivElement>()
@@ -164,12 +170,18 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="models-dir-list" @click="closeMenu()">
+  <div
+    class="models-dir-list flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
+    @click="closeMenu()"
+  >
     <div
       v-for="row in rows"
       :key="row.path"
-      class="models-dir-row"
-      :class="{ 'is-just-promoted': row.path === justPromotedPath }"
+      class="models-dir-row flex min-w-0 items-center gap-2 border-t border-solid border-border-hover px-2.5 py-2 first:border-t-0"
+      :class="{
+        'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
+          row.path === justPromotedPath
+      }"
     >
       <StorageItemIcon
         :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
@@ -180,10 +192,12 @@ const rows = computed(() =>
             : undefined
         "
       />
-      <div class="models-dir-main">
-        <button
+      <div class="models-dir-main flex min-w-0 flex-auto items-center">
+        <Button
           type="button"
-          class="models-dir-name"
+          variant="textonly"
+          size="unset"
+          class="models-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left text-[13px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
           :title="
             row.isExtra
               ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details')
@@ -192,13 +206,19 @@ const rows = computed(() =>
           @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
         >
           {{ row.path }}
-        </button>
+        </Button>
       </div>
-      <span v-if="row.isPrimary" class="models-dir-tag tag-primary">
+      <span
+        v-if="row.isPrimary"
+        class="models-dir-tag tag-primary inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)]"
+      >
         {{ t('models.primary', 'Downloads') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
       </span>
-      <span v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
+      <span
+        v-if="row.locked || row.isExtra"
+        class="models-dir-tag tag-local inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] text-text-muted"
+      >
         {{
           row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance')
         }}
@@ -208,32 +228,37 @@ const rows = computed(() =>
           "
         />
       </span>
-      <div class="models-dir-actions">
-        <button
+      <div class="models-dir-actions inline-flex shrink-0 items-center gap-0.5">
+        <Button
           v-if="row.isExtra"
           type="button"
-          class="models-dir-action"
+          variant="textonly"
+          size="unset"
+          :class="actionClass"
           :aria-label="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
           :title="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
           @click.stop="emit('details', row.index)"
         >
           <ChevronRight :size="14" aria-hidden="true" />
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="!row.locked && !row.isExtra && !row.readonly"
           type="button"
-          class="models-dir-action"
+          variant="textonly"
+          size="unset"
+          :class="actionClass"
           :aria-label="t('common.browse', 'Browse')"
           :title="t('common.browse', 'Browse')"
           @click.stop="handleChange(row.index)"
         >
           <FolderOpen :size="14" aria-hidden="true" />
-        </button>
-        <div v-if="row.showMenu" class="models-dir-menu-wrap">
+        </Button>
+        <div v-if="row.showMenu" class="models-dir-menu-wrap relative">
+          <!-- Keep a native ref: closing the menu restores focus to this element. -->
           <button
             :ref="(el) => setMenuToggleRef(row.index, el as Element | null)"
             type="button"
-            class="models-dir-action"
+            :class="actionClass"
             :aria-label="t('models.moreActions', 'More actions')"
             :aria-expanded="openMenuIndex === row.index"
             aria-haspopup="menu"
@@ -245,69 +270,55 @@ const rows = computed(() =>
           <div
             v-if="openMenuIndex === row.index"
             :ref="(el) => setMenuRef(row.index, el as Element | null)"
-            class="models-dir-menu"
+            class="models-dir-menu absolute top-[calc(100%+4px)] right-0 z-10 min-w-[140px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-1 shadow-[0_8px_24px_color-mix(in_oklab,var(--neutral-950)_40%,transparent)]"
             role="menu"
             @click.stop
             @keydown.esc.stop.prevent="closeMenu(true)"
             @keydown.down.stop.prevent="handleMenuArrow(row.index, 1, $event)"
             @keydown.up.stop.prevent="handleMenuArrow(row.index, -1, $event)"
           >
-            <button
+            <Button
               v-if="row.canPromote"
               type="button"
               role="menuitem"
+              variant="textonly"
+              size="unset"
+              :class="[menuItemClass, 'text-neutral-100']"
               @click="handleMakePrimary(row.index)"
             >
               {{ t('models.makePrimary', 'Use for Model Downloads') }}
-            </button>
-            <button
+            </Button>
+            <Button
               v-if="row.canRemove"
               type="button"
               role="menuitem"
-              class="danger"
+              variant="destructive-textonly"
+              size="unset"
+              :class="[menuItemClass, 'text-danger']"
               @click="handleRemove(row.index)"
             >
               {{ t('models.removeDir', 'Remove') }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
     </div>
 
-    <button type="button" class="models-dir-add" @click="emit('add')">
+    <Button
+      type="button"
+      variant="textonly"
+      size="unset"
+      class="models-dir-add static inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border-0 border-t border-solid border-border-hover bg-transparent px-2.5 py-2 text-[13px] leading-[1.5] font-medium text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
+      @click="emit('add')"
+    >
       <Plus :size="14" aria-hidden="true" />
       <span>{{ props.addLabel ?? t('models.addDir', 'Add Shared Directory') }}</span>
-    </button>
+    </Button>
   </div>
 </template>
 
-<style scoped>
-.models-dir-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-}
-
-.models-dir-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border-hover);
-}
-
-.models-dir-row:first-child {
-  border-top: none;
-}
-
-/* Make-primary feedback: brief yellow pulse on the just-promoted row. */
-.models-dir-row.is-just-promoted {
-  animation: models-dir-promote 1200ms ease-out;
-}
-
+<style>
+/* The promotion pulse has multiple stops; layout and state styling use utilities. */
 @keyframes models-dir-promote {
   0% {
     background: transparent;
@@ -321,161 +332,5 @@ const rows = computed(() =>
   100% {
     background: transparent;
   }
-}
-
-.models-dir-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.models-dir-name {
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--neutral-100);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  max-width: 100%;
-  /* Reset button chrome — this is a clickable path that opens the folder. */
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.models-dir-name:hover,
-.models-dir-name:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
-}
-
-.models-dir-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.models-dir-tag.tag-primary {
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-/* Marks the install's own models dir: always used, never shared. */
-.models-dir-tag.tag-local {
-  color: var(--text-muted);
-  border: 1px solid var(--chooser-surface-border);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-.models-dir-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.models-dir-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    color 100ms ease;
-}
-
-.models-dir-action:hover,
-.models-dir-action:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-  outline: none;
-}
-
-.models-dir-menu-wrap {
-  position: relative;
-}
-
-.models-dir-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 10;
-  min-width: 140px;
-  padding: 4px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--neutral-800);
-  box-shadow: 0 8px 24px color-mix(in oklab, var(--neutral-950) 40%, transparent);
-}
-
-.models-dir-menu button {
-  display: block;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--neutral-100);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.models-dir-menu button:hover,
-.models-dir-menu button:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.models-dir-menu button.danger {
-  color: var(--danger);
-}
-
-.models-dir-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 36px;
-  padding: 8px 10px;
-  border: none;
-  border-top: 1px solid var(--border-hover);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    color 100ms ease;
-}
-
-.models-dir-add:hover,
-.models-dir-add:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-  outline: none;
 }
 </style>

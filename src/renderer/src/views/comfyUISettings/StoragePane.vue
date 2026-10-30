@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { AlertTriangle } from 'lucide-vue-next'
 import { useModal } from '../../composables/useModal'
 import GlobalSettingsMicroSection from '../../comfyTitlePopup/globalSettings/GlobalSettingsMicroSection.vue'
@@ -422,12 +423,20 @@ function handleRevealPath(path: string): void {
 </script>
 
 <template>
-  <div class="storage-pane">
+  <div class="storage-pane flex flex-col gap-4">
     <!-- Only shown when a change is pending; sharing scope is conveyed inline
          (shared badges, header toggles, manage actions), not by a banner. -->
-    <div v-if="showRestartWarning" class="storage-note is-warning" role="status">
-      <AlertTriangle :size="14" class="storage-note-icon" aria-hidden="true" />
-      <p class="storage-note-text">
+    <div
+      v-if="showRestartWarning"
+      class="storage-note is-warning m-0 flex items-center gap-2 rounded-lg border border-solid border-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-3 py-2.5 font-medium text-[var(--warning)] transition-[color,background-color,border-color] duration-[160ms] ease-[ease]"
+      role="status"
+    >
+      <AlertTriangle
+        :size="14"
+        class="storage-note-icon shrink-0 text-[var(--warning)] opacity-100"
+        aria-hidden="true"
+      />
+      <p class="storage-note-text m-0 text-[12px] leading-[1.45]">
         {{
           t(
             'comfyUISettings.storageRestartNote',
@@ -445,7 +454,9 @@ function handleRevealPath(path: string): void {
       :tooltip="t('tooltips.instanceModels')"
     >
       <template v-if="useSharedModelsField" #actions>
-        <label class="storage-header-toggle">
+        <label
+          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+        >
           <span>{{ t('comfyUISettings.includeSharedDirs', 'Include Shared Directories') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
           <BooleanToggle
@@ -467,14 +478,16 @@ function handleRevealPath(path: string): void {
       />
 
       <!-- Shared dirs are read-only here; they're managed globally. -->
-      <button
+      <Button
         v-if="useSharedModelsEnabled && canManageSharedDirs"
         type="button"
-        class="storage-manage-link"
+        variant="textonly"
+        size="unset"
+        class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--accent)] focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-0"
         @click="handleManageSharedDirs"
       >
         {{ t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings') }}
-      </button>
+      </Button>
     </GlobalSettingsMicroSection>
 
     <!-- Input / Output: one compact section each, with the shared toggle
@@ -482,7 +495,9 @@ function handleRevealPath(path: string): void {
          opens Global Desktop Settings); per-instance rows stay browsable. -->
     <GlobalSettingsMicroSection :title="t('settings.inputStorage', 'Input')">
       <template v-if="useSharedInputField" #actions>
-        <label class="storage-header-toggle">
+        <label
+          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+        >
           <span>{{ t('comfyUISettings.useSharedInput', 'Use Shared Input') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
           <BooleanToggle
@@ -515,7 +530,9 @@ function handleRevealPath(path: string): void {
 
     <GlobalSettingsMicroSection :title="t('settings.outputStorage', 'Output')">
       <template v-if="useSharedOutputField" #actions>
-        <label class="storage-header-toggle">
+        <label
+          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+        >
           <span>{{ t('comfyUISettings.useSharedOutput', 'Use Shared Output') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
           <BooleanToggle
@@ -559,86 +576,3 @@ function handleRevealPath(path: string): void {
     />
   </div>
 </template>
-
-<style scoped>
-.storage-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.storage-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-  border: 1px solid var(--chooser-surface-border);
-  color: var(--text-muted);
-  transition:
-    color 160ms ease,
-    background-color 160ms ease,
-    border-color 160ms ease;
-}
-
-.storage-note-icon {
-  flex-shrink: 0;
-  opacity: 0.85;
-}
-
-.storage-note-text {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-/* Warning state. Icon `color` is explicit to override the base 0.85 opacity. */
-.storage-note.is-warning {
-  color: var(--warning);
-  border-color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-  font-weight: 500;
-}
-
-.storage-note.is-warning .storage-note-icon {
-  color: var(--warning);
-  opacity: 1;
-}
-
-/* Use-Shared-* toggle inlined in a section header (right-aligned there). */
-.storage-header-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.storage-header-toggle > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Link-style affordance to the global Desktop Settings storage surface. */
-.storage-manage-link {
-  align-self: flex-start;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  color: var(--text-muted);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.storage-manage-link:hover,
-.storage-manage-link:focus-visible {
-  color: var(--accent);
-  outline: none;
-}
-</style>
