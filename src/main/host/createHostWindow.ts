@@ -21,6 +21,7 @@ import {
   shouldOpenInPopup
 } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
+import { standaloneWindowStyles } from '../lib/standaloneStyles'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
@@ -328,20 +329,13 @@ function wireCheckoutPopup(
 /** Inline ✕ button overlaid on the (frameless) checkout popup. The
  *  checkout page renders its own back/✕ for in-flow navigation, but a
  *  frameless window has no OS close control, so we float our own in the
- *  top-right corner that closes the window on click. */
+ *  top-right corner that closes the window on click. The transparent document
+ *  ignores pointer events so only the button captures clicks. Its dark chip
+ *  colors target the checkout's white right pane. */
 const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><style>
-  /* Body ignores pointer events so only the button itself is clickable —
-     the rest of this overlay strip lets the checkout page underneath
-     receive clicks. */
-  html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;pointer-events:none}
-  /* The checkout's right pane is white, so the close chip is tuned for a
-     light background: dark glyph on a faint dark chip, deepening on hover. */
-  button{position:fixed;top:10px;right:10px;width:28px;height:28px;border:0;border-radius:8px;cursor:pointer;
-    pointer-events:auto;display:grid;place-items:center;color:rgba(0,0,0,0.55);background:rgba(0,0,0,0.06);font:16px/1 system-ui}
-  button:hover{background:rgba(0,0,0,0.12);color:rgba(0,0,0,0.85)}
-</style></head><body>
-<button id="x" aria-label="Close">✕</button>
+<html class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent"><head><meta charset="utf-8"><style>${standaloneWindowStyles}</style></head>
+<body class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent">
+<button id="x" class="pointer-events-auto fixed top-2.5 right-2.5 grid size-7 cursor-pointer place-items-center rounded-lg border-0 border-none border-current bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)] [font:16px/1_system-ui] hover:bg-[rgba(0,0,0,0.12)] hover:text-[rgba(0,0,0,0.85)]" aria-label="Close">✕</button>
 <script>
   const { ipcRenderer } = require('electron');
   document.getElementById('x').addEventListener('click', () => ipcRenderer.send('comfy-checkout:close'));
