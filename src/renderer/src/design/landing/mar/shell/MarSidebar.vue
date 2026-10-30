@@ -39,9 +39,9 @@ import {
 import { agent, resetAgent } from '../../agent'
 import { flow, resetFlow } from '../../appFlow'
 import { can, landingPage } from '../../milestones'
-import { PROJECTS, TEMPLATES, USER, thumb } from '../../mock'
+import { PROJECTS, TEMPLATES, thumb } from '../../mock'
 import { favorites } from '../favorites'
-import { creditsStyle } from '../credits'
+import { creditsShort, creditsStyle, creditsTotal } from '../credits'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
 import MarCreditsFlyout from '../MarCreditsFlyout.vue'
 import RailFlyout from '../p20/RailFlyout.vue'
@@ -153,10 +153,6 @@ function lens(m: Mode): void {
   goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
 }
 const open = computed(() => !marNav.collapsed)
-const shortCredits = computed(() => {
-  const n = Number(USER.credits.replace(/,/g, ''))
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-})
 
 // Agent lens: a new chat and the recent ones, as in Pablo's AgentNav.
 const currentChat = computed(
@@ -203,8 +199,8 @@ function newChat(): void {
         </button>
       </div>
       <MarCreditsFlyout v-if="open && creditsStyle.id === 'chip'" side="bottom" align="start">
-        <button type="button" class="mar-side-chip" :title="`${USER.credits} credits`">
-          <Coins :size="13" />{{ shortCredits }}
+        <button type="button" class="mar-side-chip" :title="`${creditsTotal} credits`">
+          <Coins :size="13" />{{ creditsShort }}
         </button>
       </MarCreditsFlyout>
       <button
@@ -380,7 +376,7 @@ function newChat(): void {
     >
       <button type="button" class="mar-side-credits" :title="open ? undefined : 'Credits'">
         <Coins :size="16" /><template v-if="open"
-          ><span class="flex-1 text-left">Credits</span><span>{{ USER.credits }}</span></template
+          ><span class="flex-1 text-left">Credits</span><span>{{ creditsTotal }}</span></template
         >
       </button>
     </MarCreditsFlyout>
@@ -392,7 +388,7 @@ function newChat(): void {
       <MarCreditsFlyout v-if="open && creditsStyle.id === 'meter'">
         <button type="button" class="mar-side-meter">
           <span class="flex items-center justify-between">
-            <span>{{ USER.credits }} credits</span
+            <span>{{ creditsTotal }} credits</span
             ><span class="text-subtle-foreground">Top up</span>
           </span>
           <span class="mar-side-bar"><span :style="{ width: '62%' }" /></span>
