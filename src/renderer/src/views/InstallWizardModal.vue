@@ -1669,7 +1669,7 @@ defineExpose({ open })
                     size="unset"
                     variant="textonly"
                     type="button"
-                    class="config-path-open static min-w-0 flex-[0_1_auto] cursor-pointer appearance-auto overflow-hidden rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                    class="config-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer appearance-auto overflow-hidden rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
                     :title="$t('actions.openDirectory', 'Open Directory')"
                     :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
