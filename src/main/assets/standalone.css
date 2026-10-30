@@ -1,0 +1,8 @@
+/* Standalone BrowserWindow documents keep their native element defaults. */
+@layer theme, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+
+@source '../lib/logsPopoutWindow.ts';
+@source '../lib/terminalPopoutWindow.ts';
+@source '../host/createHostWindow.ts';
