@@ -61,7 +61,10 @@ import { proto } from '../../useProto'
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  box-shadow: 0 0 0 1.5px var(--color-base-background, #000);
+  /* The cut-out ring takes the card's own colour (its tint over the
+     sidebar), so it never reads as an outline, in light or dark. */
+  box-shadow: 0 0 0 1.5px
+    color-mix(in oklab, var(--color-secondary-background) 50%, var(--color-app-background));
 }
 .mar-spaces-orbs i:nth-child(1) {
   left: 0;
