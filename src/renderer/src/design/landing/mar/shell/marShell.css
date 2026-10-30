@@ -1630,11 +1630,12 @@
   border-radius: 10px;
 }
 
-/* Tab tracks and search fields follow UI Playground › Corners: Soft (the
-   default) gives 10 / 7; Default gives 6 / 3. The item nests inside the
-   track's 3px padding (inner = outer - padding). */
+/* Tab tracks and search fields follow UI Playground › Corners: Default
+   gives 10 / 7, Soft 14 / 11. Every tab group (the Create / Build switch
+   included) uses these, so all tabs share one corner. The item nests
+   inside the track's 3px padding (inner = outer - padding). */
 :root[data-mar-ui='on'] {
-  --mar-tab-radius: calc(var(--radius-control) - 2px);
+  --mar-tab-radius: calc(var(--radius-control) + 2px);
   --mar-tab-item-radius: calc(var(--mar-tab-radius) - 3px);
 }
 
