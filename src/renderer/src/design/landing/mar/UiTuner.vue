@@ -52,12 +52,11 @@ function reset(): void {
 
 const LOCAL_OPTIONS = MAR_LOCALS.map((l) => ({
   value: l.value,
-  label:
-    l.value === 'none' ? 'No local install' : l.value === 'one' ? 'One install' : 'Several installs'
+  label: l.value === 'none' ? 'No install' : l.value === 'one' ? '1 install' : '3 installs'
 }))
 const HOME_BUILD_OPTIONS = HOME_BUILDS.map((b) => ({
   value: b.value,
-  label: b.value === 'on' ? 'On Home' : 'Not on Home'
+  label: b.value === 'on' ? 'Row on Home' : 'No row'
 }))
 const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }))
 
