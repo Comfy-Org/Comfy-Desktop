@@ -171,10 +171,7 @@ const url = `${location.origin}${location.pathname}`
 
       <h3>Themes</h3>
       <ul>
-        <li>
-          Light and dark only; every pair is tuned in both. Look: Current (default) or Grain over
-          pictures.
-        </li>
+        <li>Light and dark only; every pair is tuned in both.</li>
       </ul>
     </details>
 

@@ -181,15 +181,6 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/BackgroundPage.vue'))
   },
   {
-    id: 'looks',
-    label: 'Looks',
-    group: 'Patterns',
-    title: 'Looks',
-    source: 'mar/looks/ (looks.ts, looks.css)',
-    use: 'Current (Void as it is, the default) or Grain over every picture.',
-    component: lazy(() => import('./pages/LooksPage.vue'))
-  },
-  {
     id: 'user',
     label: 'User',
     group: 'Patterns',

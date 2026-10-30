@@ -6,7 +6,7 @@ import type { Value } from '../play'
  * A component page's Playground tab: the playground itself is a frame of
  * Mar's components (kit/PlayFrame.vue), in its own theme. This keeps the
  * state in the address (#/buttons?tab=playground&p=…), so a link shares it.
- * Theme, corners and look rebuild the frame; props and background don't.
+ * Theme and corners rebuild the frame; props and background don't.
  */
 const { page, spec } = defineProps<{ page: string; spec: string }>()
 
@@ -15,7 +15,6 @@ interface State {
   bg: string
   theme: string
   corners: string
-  look: string
 }
 function read(): State {
   const q = new URLSearchParams(location.hash.split('?')[1] ?? '')
@@ -30,8 +29,7 @@ function read(): State {
     p,
     bg: q.get('bg') === 'image' ? 'image' : 'page',
     theme: q.get('theme') === 'light' ? 'light' : 'dark',
-    corners: q.get('corners') === 'default' ? 'default' : 'soft',
-    look: q.get('look') === 'grain' ? 'grain' : 'current'
+    corners: q.get('corners') === 'default' ? 'default' : 'soft'
   }
 }
 const state = ref<State>(read())
@@ -43,7 +41,6 @@ function write(s: State): void {
     tab: 'playground',
     theme: s.theme,
     corners: s.corners,
-    look: s.look,
     bg: s.bg
   })
   if (Object.keys(s.p).length) q.set('p', JSON.stringify(s.p))
@@ -60,10 +57,9 @@ function onMessage(e: MessageEvent): void {
     p: e.data.p,
     bg: e.data.bg,
     theme: e.data.theme,
-    corners: e.data.corners,
-    look: e.data.look
+    corners: e.data.corners
   }
-  const rebuild = ['theme', 'corners', 'look'].some(
+  const rebuild = ['theme', 'corners'].some(
     (k) => next[k as keyof State] !== state.value[k as keyof State]
   )
   state.value = next
@@ -76,8 +72,7 @@ onBeforeUnmount(() => window.removeEventListener('message', onMessage))
 const src = computed(() => {
   const s = start.value
   const seed = {
-    'comfy.design.uiTuning.v4': { radius: s.corners },
-    'comfy.design.mar.look': s.look
+    'comfy.design.uiTuning.v4': { radius: s.corners }
   }
   return `?${new URLSearchParams({
     frame: 'play',
@@ -87,8 +82,7 @@ const src = computed(() => {
     c: spec,
     p: JSON.stringify(s.p),
     bg: s.bg,
-    corners: s.corners,
-    look: s.look
+    corners: s.corners
   })}`
 })
 </script>

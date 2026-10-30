@@ -35,7 +35,7 @@ import {
  * A component's Playground tab (pages/PlaygroundTab.vue), drawn with Mar's
  * own components in this frame's theme: the knobs, the component on a
  * stage, an inspector for its props, and its usage. The page keeps the
- * state (and the link); theme, corners and look rebuild this frame, props
+ * state (and the link); theme and corners rebuild this frame, props
  * and background reach it as messages.
  */
 const url = new URLSearchParams(location.search)
@@ -44,7 +44,6 @@ const values = ref<Record<string, Value>>(JSON.parse(url.get('p') ?? '{}'))
 const bg = ref(url.get('bg') === 'image' ? 'image' : 'page')
 const theme = ref(url.get('theme') === 'light' ? 'light' : 'dark')
 const corners = ref(url.get('corners') === 'default' ? 'default' : 'soft')
-const look = ref(url.get('look') === 'grain' ? 'grain' : 'current')
 
 const spec = computed(() => SPECS.find((s) => s.id === id) ?? SPECS[0]!)
 const v = computed(() => filled(spec.value, values.value))
@@ -59,13 +58,12 @@ function post(): void {
       p: { ...values.value },
       bg: bg.value,
       theme: theme.value,
-      corners: corners.value,
-      look: look.value
+      corners: corners.value
     },
     '*'
   )
 }
-watch([values, bg, theme, corners, look], post, { deep: true })
+watch([values, bg, theme, corners], post, { deep: true })
 function set(name: string, value: Value): void {
   values.value = { ...values.value, [name]: value }
 }
@@ -73,7 +71,6 @@ function set(name: string, value: Value): void {
 const KNOBS = [
   { key: 'theme', label: 'Theme', model: theme, options: ['dark', 'light'] },
   { key: 'corners', label: 'Corners', model: corners, options: ['soft', 'default'] },
-  { key: 'look', label: 'Look', model: look, options: ['current', 'grain'] },
   { key: 'bg', label: 'Background', model: bg, options: ['page', 'image'] }
 ] as const
 const opts = (o: readonly string[]): { value: string; label: string }[] =>
