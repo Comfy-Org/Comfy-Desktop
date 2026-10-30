@@ -50,6 +50,15 @@ function reset(): void {
   crit.id = 'off'
 }
 
+const LOCAL_OPTIONS = MAR_LOCALS.map((l) => ({
+  value: l.value,
+  label:
+    l.value === 'none' ? 'No local install' : l.value === 'one' ? 'One install' : 'Several installs'
+}))
+const HOME_BUILD_OPTIONS = HOME_BUILDS.map((b) => ({
+  value: b.value,
+  label: b.value === 'on' ? 'On Home' : 'Not on Home'
+}))
 const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }))
 
 const THEMES = [
@@ -180,28 +189,16 @@ function set(key: keyof Tuning, value: string): void {
         </div>
       </div>
 
+      <!-- Local builds: what's installed on this computer and whether Home
+           shows a Builds row, side by side since both are about builds.
+           On Cloud (a browser) there is no local install. -->
       <div v-if="isMariana" class="flex flex-col gap-1.5">
         <span class="text-ui text-subtle-foreground"
-          >Local install<template v-if="onCloud"> · none in a browser</template></span
+          >Local builds<template v-if="onCloud"> · none in a browser</template></span
         >
-        <div class="mar-seg flex gap-1 rounded-control bg-secondary-background p-0.5">
-          <button
-            v-for="l in MAR_LOCALS"
-            :key="l.value"
-            type="button"
-            :aria-pressed="marUser.local === l.value"
-            :disabled="onCloud"
-            :class="[
-              onCloud && 'opacity-50',
-              'h-7 flex-1 rounded-[7px] px-2 text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
-              marUser.local === l.value
-                ? 'bg-secondary-background-hover font-medium text-base-foreground'
-                : 'text-muted-foreground hover:text-base-foreground'
-            ]"
-            @click="marUser.local = l.value"
-          >
-            {{ l.label }}
-          </button>
+        <div class="flex items-center gap-1.5" :class="onCloud && 'pointer-events-none opacity-50'">
+          <Select v-model="marUser.local" :options="LOCAL_OPTIONS" class="min-w-0 flex-1" />
+          <Select v-model="homeBuilds.id" :options="HOME_BUILD_OPTIONS" class="min-w-0 flex-1" />
         </div>
       </div>
       <div class="flex flex-col gap-1.5">
@@ -345,27 +342,6 @@ function set(key: keyof Tuning, value: string): void {
       <div v-if="isMariana" class="flex flex-col gap-1.5">
         <span class="text-ui text-subtle-foreground">Home background</span>
         <Select v-model="homeBackground.id" :options="BACKGROUNDS" class="w-full" />
-      </div>
-
-      <div v-if="isMariana" class="flex flex-col gap-1.5">
-        <span class="text-ui text-subtle-foreground">Build on Home</span>
-        <div class="mar-seg flex gap-1 rounded-control bg-secondary-background p-0.5">
-          <button
-            v-for="b in HOME_BUILDS"
-            :key="b.value"
-            type="button"
-            :aria-pressed="homeBuilds.id === b.value"
-            :class="[
-              'h-7 flex-1 rounded-[7px] px-2 text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
-              homeBuilds.id === b.value
-                ? 'bg-secondary-background-hover font-medium text-base-foreground'
-                : 'text-muted-foreground hover:text-base-foreground'
-            ]"
-            @click="homeBuilds.id = b.value"
-          >
-            {{ b.label }}
-          </button>
-        </div>
       </div>
 
       <PabloPortsTuner v-if="isMariana" />
