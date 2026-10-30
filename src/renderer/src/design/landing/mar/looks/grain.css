@@ -5,8 +5,8 @@
  * Type, colour, layout and components stay Void's.
  */
 :root[data-mar-look='grain'] {
-  --gr-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --gr-vignette: radial-gradient(120% 95% at 50% 45%, transparent 55%, oklch(0 0 0 / 0.38));
+  --gr-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --gr-vignette: radial-gradient(115% 90% at 50% 45%, transparent 45%, oklch(0 0 0 / 0.55));
 }
 
 /* The pictures: a layer over each image and under its chips (::before
@@ -26,8 +26,8 @@
   background-size:
     100% 100%,
     180px 180px;
-  mix-blend-mode: overlay;
-  opacity: 0.9;
+  mix-blend-mode: hard-light;
+  opacity: 0.85;
   transition: opacity 450ms ease;
 }
 :root[data-mar-look='grain']
