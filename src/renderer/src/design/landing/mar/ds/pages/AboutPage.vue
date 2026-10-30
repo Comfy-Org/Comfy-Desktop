@@ -21,6 +21,9 @@ const url = `${location.origin}${location.pathname}`
     </p>
     <ul>
       <li>
+        <strong>Foundations</strong>: materials (blur), with their values read live from the CSS.
+      </li>
+      <li>
         <strong>Put together</strong>: the whole app, Home's spotlight, the five looks, users.
       </li>
       <li><strong>Shell, Home, Controls</strong>: components on their own, each state forced.</li>
@@ -64,6 +67,11 @@ const url = `${location.origin}${location.pathname}`
         a raised panel at the top, and the current pick raised.
       </li>
       <li>Tooltips are small dark glass labels, like the menus, with 8px corners.</li>
+      <li>
+        <strong>Blur only on what floats over content</strong> (menus, tooltips, the palette,
+        modals, chips on pictures); cards on the page stay solid. Levels, values and CSS are in
+        Foundations › Materials · Blur.
+      </li>
       <li>The prompt box has a very faint edge: foreground 7%, 12% while typing.</li>
       <li>
         <strong>Nested corners run parallel</strong>: inner = outer − padding. The mode switch is 10

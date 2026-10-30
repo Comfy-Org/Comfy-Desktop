@@ -13,6 +13,8 @@ export interface DsPage {
   source?: string
   use?: string
   component?: Component
+  /** Docs that don't change with the theme, under the theme frames. */
+  doc?: Component
 }
 
 const lazy = (load: () => Promise<{ default: Component }>): Component => defineAsyncComponent(load)
@@ -77,6 +79,17 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 
 export const PAGES: DsPage[] = [
   { id: 'about', label: 'About', group: 'Docs', title: "Mar's design system" },
+  {
+    id: 'materials-blur',
+    label: 'Materials · Blur',
+    group: 'Foundations',
+    title: 'Materials · Blur',
+    source:
+      'mar/menus/layers.css, mar/shell/marShell.css, mar/search/search.css, mar/templateModal/templateModal.css, mar/pages/ (MarStatus, MarItem, MarSelectBar), ui/tokens.css',
+    use: 'How blur is used, level by level, so it can be built exactly: the values, who uses them, the rules and the CSS.',
+    component: lazy(() => import('./pages/MaterialsPage.vue')),
+    doc: lazy(() => import('./pages/MaterialsDoc.vue'))
+  },
   {
     id: 'default-view',
     label: 'Default view',

@@ -111,6 +111,7 @@ const src = (theme: string): string =>
               />
             </div>
           </div>
+          <component :is="page.doc" v-if="page.doc" />
         </template>
       </main>
     </div>
