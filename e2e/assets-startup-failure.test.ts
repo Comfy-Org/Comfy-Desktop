@@ -46,7 +46,7 @@ async function launchAndReadError(stderr: string): Promise<string | null> {
   await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 30_000 }).toBe(false)
   const text = await ctx!.panel.textOf(byTestId(TID.progressErrorMessage))
   // Back to the chooser for the next case.
-  expect(await ctx!.panel.click('.brand-progress__error-actions .brand-ghost')).toBe(true)
+  expect(await ctx!.panel.click(byTestId(TID.progressBack))).toBe(true)
   await expectChooserVisible(ctx!.panel)
   return text
 }
