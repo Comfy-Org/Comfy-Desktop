@@ -51,7 +51,7 @@
 
 /* A page under a photo: its title sits low on the photo, larger. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
-  padding-top: 126px;
+  padding-top: 88px;
 }
 /* Home's greeting sits a quarter higher, so less of the top is empty. */
 :root[data-mar-ui='on'] .mar-home > section:first-child {

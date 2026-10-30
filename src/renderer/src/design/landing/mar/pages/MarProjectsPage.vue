@@ -131,7 +131,15 @@ function lines(p: MarProject): MenuLine[] {
     description="A shared place for a piece of work. Each runs on one build, so everyone gets the same result."
     skeleton="grid"
     :no-results="shown.length === 0 && !!query"
-    :state="shownState === 'live' && projects.items.length === 0 ? 'empty' : undefined"
+    :state="
+      projects.items.length === 0
+        ? shownState === 'live'
+          ? 'empty'
+          : undefined
+        : shownState === 'empty'
+          ? 'live'
+          : undefined
+    "
     :empty="{
       icon: FolderKanban,
       title: 'Keep a piece of work together',
