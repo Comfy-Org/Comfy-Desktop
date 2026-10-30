@@ -152,6 +152,12 @@
   font-size: 15px;
   font-weight: 600;
 }
+.ds-doc h3 {
+  margin-top: 6px;
+  color: #ececee;
+  font-size: 13px;
+  font-weight: 600;
+}
 .ds-doc ul {
   display: flex;
   flex-direction: column;

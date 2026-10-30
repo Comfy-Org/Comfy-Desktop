@@ -8,7 +8,7 @@ const SHOTS = LOOKS.map((l) => ({ label: l.label, seed: { 'comfy.design.mar.look
 <template>
   <ShotsPage
     title="Looks"
-    note="UI Playground › Look: five bold visual languages over the same layout and the Void greys. Current is the default."
+    note="UI Playground › Look: Current (Void as it is, the default) or Grain. Type and colour stay Void’s; Grain changes only the pictures."
     :shots="SHOTS"
   />
 </template>

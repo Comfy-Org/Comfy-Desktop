@@ -1,5 +1,5 @@
 import { TEMPLATES } from '../../mock'
-import { deployEnv, instances, openDetail } from '../../useProto'
+import { deployEnv, hostActions, instances, openDetail } from '../../useProto'
 import { search } from '../search/search'
 
 /**
@@ -16,6 +16,7 @@ export type AppAction =
   | 'search-scoped'
   | 'search-tab'
   | 'search-empty-keys'
+  | 'graph'
 
 const later = (ms: number, fn: () => void): void => void setTimeout(fn, ms)
 
@@ -54,5 +55,10 @@ export const APP_ACTIONS: Record<AppAction, () => void> = {
   'search-none': searchFor(['zzqx']),
   'search-scoped': searchFor(['w ', 're']),
   'search-tab': searchFor(['temp', '\t', 'video']),
-  'search-empty-keys': searchFor([], 3)
+  'search-empty-keys': searchFor([], 3),
+  // A local build's tab, which shows Mar's graph editor.
+  graph: () => {
+    const local = instances.value.find((i) => i.kind === 'local')
+    if (local) hostActions.launch(local, 'Portrait relight')
+  }
 }

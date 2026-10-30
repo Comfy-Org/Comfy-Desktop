@@ -113,8 +113,8 @@ export const PAGES: DsPage[] = [
     label: 'Looks',
     group: 'Put together',
     title: 'Looks',
-    source: 'mar/looks/ (looks.ts, grain.css)',
-    use: 'To compare a whole visual language; Current is the default.',
+    source: 'mar/looks/ (looks.ts, looks.css)',
+    use: 'Current (Void as it is, the default) or Grain over every picture.',
     component: lazy(() => import('./pages/LooksPage.vue'))
   },
   {
@@ -142,7 +142,7 @@ export const PAGES: DsPage[] = [
     group: 'Shell',
     title: 'Sidebar',
     source:
-      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
+      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
     use: 'Navigation between lenses, pages, projects and spaces; credits and the workspace at the foot.',
     component: lazy(() => import('./pages/SidebarPage.vue'))
   },
@@ -225,7 +225,7 @@ export const PAGES: DsPage[] = [
     group: 'Controls',
     title: 'Menus',
     source:
-      'mar/CreateMenu.vue, mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue, parts/PromptBox.vue, parts/nav/SwitcherMenu.vue (menu family in mar/shell/marShell.css, layers in mar/menus/layers.css)',
+      'mar/CreateMenu.vue, mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue, mar/runOn/MarRunOn.vue, parts/PromptBox.vue, parts/nav/SwitcherMenu.vue (menu family in mar/shell/marShell.css, layers in mar/menus/layers.css)',
     use: 'Any list of actions or choices that opens from a trigger.',
     component: lazy(() => import('./pages/MenusPage.vue'))
   },
@@ -249,6 +249,24 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/StatusPage.vue'))
   },
   {
+    id: 'items',
+    label: 'Items',
+    group: 'Controls',
+    title: 'Items',
+    source: 'mar/pages/MarItem.vue (MarItemMenu.vue, MarStatus.vue, FavoriteStar.vue)',
+    use: 'One thing in a library page, as a card or a list row: open, select, star, rename.',
+    component: lazy(() => import('./pages/ItemsPage.vue'))
+  },
+  {
+    id: 'empty',
+    label: 'Empty state',
+    group: 'Controls',
+    title: 'Empty state',
+    source: 'mar/pages/MarEmpty.vue (pictures in mar/pages/emptyArt.ts)',
+    use: 'Every place with nothing in it, no results, or an error: one design everywhere.',
+    component: lazy(() => import('./pages/EmptyPage.vue'))
+  },
+  {
     id: 'activity',
     label: 'Recent activity',
     group: 'Controls',
@@ -267,6 +285,16 @@ export const PAGES: DsPage[] = [
     component: library(l.page)
   })),
   {
+    id: 'project-space',
+    label: 'Project and space',
+    group: 'Library pages',
+    title: 'Project and space pages',
+    source:
+      'mar/pages/MarProjectPage.vue, mar/pages/MarSpacePage.vue, mar/pages/MarEntityHeader.vue, mar/pages/MarAddress.vue, mar/pages/MarSplitButton.vue',
+    use: 'One project or one space: what it holds, its latest output and activity.',
+    component: lazy(() => import('./pages/ProjectSpacePage.vue'))
+  },
+  {
     id: 'template-modal',
     label: 'Template modal',
     group: 'Flows',
@@ -283,5 +311,14 @@ export const PAGES: DsPage[] = [
     source: 'mar/build/ (MarBuildStart.vue, MarModelsPage.vue), mar/deploy/MarDeployModal.vue',
     use: 'The Build lens: a first call, the models, and shipping a build as an API.',
     component: lazy(() => import('./pages/BuildPage.vue'))
+  },
+  {
+    id: 'graph',
+    label: 'Graph editor',
+    group: 'Flows',
+    title: 'Graph editor',
+    source: 'mar/graph/ (MarGraph.vue, CanvasNode.vue, canvasData.ts)',
+    use: 'A build’s tab: the workflow’s graph, with the way back Home.',
+    component: lazy(() => import('./pages/GraphPage.vue'))
   }
 ]

@@ -23,14 +23,16 @@ const url = `${location.origin}${location.pathname}`
       <li>
         <strong>Foundations</strong>: materials (blur), with their values read live from the CSS.
       </li>
-      <li>
-        <strong>Put together</strong>: the whole app, Home's spotlight, the five looks, users.
-      </li>
+      <li><strong>Put together</strong>: the whole app, Home's spotlight, the looks, users.</li>
       <li><strong>Shell, Home, Controls</strong>: components on their own, each state forced.</li>
       <li>
-        <strong>Library pages</strong>: each page in its four Page states, live frames of the app.
+        <strong>Library pages</strong>: each page in its four Page states, and a project and a
+        space, live frames of the app.
       </li>
-      <li><strong>Flows</strong>: the template modal, Build's Get started and Models, Deploy.</li>
+      <li>
+        <strong>Flows</strong>: the template modal, Build's Get started and Models, Deploy, the
+        graph editor.
+      </li>
     </ul>
 
     <h2>Where things come from</h2>
@@ -52,60 +54,124 @@ const url = `${location.origin}${location.pathname}`
     <p>Each page names its source files and when to use the component.</p>
 
     <h2>Rules</h2>
+    <p>
+      The shared conventions are in Notion, “Desktop UI: visual decisions”. These are the ones this
+      page shows.
+    </p>
+
+    <h3>Colour</h3>
     <ul>
       <li>
-        <strong>Hover never makes a card bigger.</strong> No lift, no scale, no zoom on the card or
-        its picture. A card answers to hover with its surface only, one step lighter.
+        Grey scale UI: pictures and outputs carry the colour. Colour means status or progress.
+      </li>
+      <li>One primary (white) button per surface. Credits keep their production gold.</li>
+    </ul>
+
+    <h3>Glass</h3>
+    <ul>
+      <li>
+        <strong>Blur only on what floats over content</strong> (menus, tooltips, the palette, modals
+        and their scrim, chips on pictures); cards on the page stay solid. No blur inside blur.
+        Levels, values and CSS: Foundations › Materials · Blur.
+      </li>
+      <li>Chips on pictures: grey at 60% over a blur, 11px.</li>
+      <li>Text on glass passes contrast against the busiest picture behind it.</li>
+    </ul>
+
+    <h3>Menus and tooltips</h3>
+    <ul>
+      <li>
+        <strong>One family</strong>: smoked glass a step lighter than the page, radius 14 around 6
+        of padding so items nest at 8, quiet labels, inset hairlines; each grows from its trigger.
       </li>
       <li>
-        <strong>Menus, popovers and selects are one family</strong>: a hairline edge (7%, 8% in
-        light), radius 14 around 6 of padding so items nest at 8, quiet 11.5px labels, inset
-        separators, and an entry that grows from the trigger.
+        <strong>Layered</strong>: a summary (workspace, credits) on a raised panel at the top; the
+        current pick raised. The Run on picker groups builds by where they run.
+      </li>
+      <li><strong>A menu with one option is a button</strong> (or plain text).</li>
+      <li>Tooltips are small dark glass labels with 8px corners.</li>
+    </ul>
+
+    <h3>Surfaces and cards</h3>
+    <ul>
+      <li>
+        <strong>Cards never grow on hover</strong>: no lift, move or zoom. Hover lightens the
+        surface and shows the star and ⋯. No borders, no lit top edge.
+      </li>
+      <li><strong>Nested corners run parallel</strong>: inner = outer − padding.</li>
+      <li>
+        <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
+        <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from UI
+        Playground › Corners (Soft 10 / 7 by default, Default 6 / 3). No pills in filter bars.
       </li>
       <li>
-        <strong>Menus are layered</strong>: more blur behind them, a summary (workspace, credits) on
-        a raised panel at the top, and the current pick raised.
-      </li>
-      <li>Tooltips are small dark glass labels, like the menus, with 8px corners.</li>
-      <li>
-        <strong>Blur only on what floats over content</strong> (menus, tooltips, the palette,
-        modals, chips on pictures); cards on the page stay solid. Levels, values and CSS are in
-        Foundations › Materials · Blur.
-      </li>
-      <li>The prompt box has a very faint edge: foreground 7%, 12% while typing.</li>
-      <li>
-        <strong>Nested corners run parallel</strong>: inner = outer − padding. The mode switch is 10
-        around 3, so its segment is 7.
+        Row cards (Home's builds, Where should Comfy run): one card, 72 tall, 16px corners, a 40px
+        icon tile. Build cards on the Builds page: outputs, then specs on an 8px rhythm.
       </li>
       <li>
-        <strong>Tabs, filters, sort, search and view share one corner</strong>:
-        <code>--mar-tab-radius</code> on the track, <code>--mar-tab-item-radius</code> on what sits
-        in it. They follow UI Playground › Corners: Soft 10 / 7 (default), Default 6 / 3.
+        <strong>State chips sit top-left</strong> on a card and move right when the select check
+        shows. In a list the check sits over the thumbnail. With no picture yet, a card shows the
+        canvas's dot grid.
+      </li>
+      <li>Progress for an item in flight is the bottom edge of its cover.</li>
+    </ul>
+
+    <h3>Layout</h3>
+    <ul>
+      <li>
+        A page's toolbar: tabs on the left, with a pill that slides to the pick (counts hidden);
+        filters, Sort (an icon), search and view on the right.
       </li>
       <li>
-        A page's toolbar: tabs on the left, with a pill that slides to the pick (counts hidden for
-        now); filters, Sort (an icon), search and view on the right.
+        <strong>Page header</strong> (project, space): cover, title, state and one meta line on the
+        left; one action group on the right: a single primary, then secondary, ⋯ last.
       </li>
+      <li>Activity: milestones on a vertical line, time · dot · who did what.</li>
       <li>
-        <strong>Global search</strong> opens with <code>⌘K</code> anywhere and from the sidebar's
-        first row: templates, workflows, projects and spaces in one palette.
-      </li>
-      <li>
-        <strong>Status chips follow production</strong>: Running spins, Completed is a check, Failed
-        an octagon. No percentages. On cards they sit top-left, and shift right when the select
-        check shows.
-      </li>
-      <li>
-        <strong>Production icons where the product has the concept</strong>: the Comfy workflow
-        graph, panels-top-left for an App, the Agent's chat with a corner sparkle. Lucide for the
-        rest.
+        <strong>One empty state everywhere</strong> (<code>MarEmpty</code>): three pictures, the
+        place's icon, one line, the one action that fills it. No results and errors use it too.
       </li>
       <li>
         Every library page has four states: Live, Loading (skeletons in the content's shape), Empty
-        (the one action that fills it) and Error (Retry). The shell never changes.
+        and Error (Try again). The shell never changes.
       </li>
-      <li>One primary (white) button per surface.</li>
-      <li>Colour is for status only; surfaces are the foreground at low opacity.</li>
+    </ul>
+
+    <h3>Navigation</h3>
+    <ul>
+      <li>Sidebar items 13px in rows of 32, 15px icons. Credits and the workspace at the foot.</li>
+      <li>
+        Empty sidebar groups don't show. Favorites appears once something is starred (up to four).
+        Each group has a single way to add.
+      </li>
+      <li>
+        <strong>Global search</strong> opens with <code>⌘K</code> anywhere and from the sidebar's
+        first row, where ⌘K sits as a key chip. (Notion still says “no global search for now”.)
+      </li>
+      <li>The graph editor goes back Home from the Comfy logo heading its rail.</li>
+    </ul>
+
+    <h3>Fidelity to the product</h3>
+    <ul>
+      <li>
+        <strong>Production icons</strong> where the product has the concept: the Comfy workflow
+        graph, panels-top-left for an App, coins in credit gold, the Agent's chat with a corner
+        sparkle. Lucide for the rest.
+      </li>
+      <li>
+        <strong>Run states follow production</strong>: Running spins, Completed is a check, Failed
+        an octagon, Unsaved a hollow dot. No percentages on items.
+      </li>
+      <li>Graph nodes follow ComfyUI's Vue node anatomy.</li>
+      <li>Credits flyout: Alex's 13 states, as designed (the Row; no style picker).</li>
+    </ul>
+
+    <h3>Themes</h3>
+    <ul>
+      <li>
+        Light and dark only; every pair is tuned in both. Look: Current (default) or Grain over
+        pictures.
+      </li>
     </ul>
 
     <h2>How to open it</h2>
