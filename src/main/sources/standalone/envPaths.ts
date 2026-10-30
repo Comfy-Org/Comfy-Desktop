@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { app } from 'electron'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
 import type { InstalledTorchTuple } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
@@ -77,6 +78,13 @@ export function variantMatchesHostArch(variantId: string): boolean {
   if (process.arch === 'arm64') return isArm64
   if (process.arch === 'x64') return !isArm64
   return false
+}
+
+/** True on Windows on Arm, including from the x64 app under emulation, where
+ *  `process.arch` reports x64. */
+export function isWindowsArm64Host(): boolean {
+  if (process.platform !== 'win32') return false
+  return process.arch === 'arm64' || app.runningUnderARM64Translation === true
 }
 
 /** True when a vendor id targets the running platform, with or without the
