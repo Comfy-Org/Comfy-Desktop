@@ -180,7 +180,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding: 48px 0 24px;
+  padding: 36px 0 24px;
 }
 .mar-page-title {
   margin: 0;

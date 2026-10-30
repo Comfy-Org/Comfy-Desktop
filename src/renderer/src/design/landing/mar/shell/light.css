@@ -68,18 +68,19 @@
   color: var(--mar-meter-fill);
 }
 
-/* The blurred photo behind a page's title: at dark's 70% under a thin
-   veil it turns into a grey smudge on white. In light it is fainter,
-   keeps its colour, and the veil is the page's white. */
+/* The photo behind a page's title: its dark tones read as a grey smudge
+   on white. In light only its colour stays: blurred much further and
+   lifted to a pastel, under a thin white veil. */
 :root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom) img {
-  opacity: 0.5;
-  filter: blur(18px) saturate(1.15);
+  opacity: 0.55;
+  filter: blur(70px) saturate(1.8) brightness(1.45);
+  transform: scale(1.4);
 }
 :root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom)::after {
   background: linear-gradient(
     180deg,
-    color-mix(in oklch, var(--color-content-background) 70%, transparent),
-    color-mix(in oklch, var(--color-content-background) 58%, transparent) 45%,
+    color-mix(in oklch, var(--color-content-background) 35%, transparent),
+    color-mix(in oklch, var(--color-content-background) 55%, transparent) 50%,
     var(--color-content-background) 100%
   );
 }
