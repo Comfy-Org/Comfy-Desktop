@@ -48,6 +48,7 @@
  */
 import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
 import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import ModalShell from '../components/ModalShell.vue'
 import ChoiceCard from '../components/ChoiceCard.vue'
@@ -59,6 +60,19 @@ import InlineRichText from '../components/InlineRichText.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { GpuTier } from '../../../shared/gpuTier'
 import type { CloudUserTier, SystemInfo } from '../../../types/ipc'
+
+// These native-control adapters retain the existing onboarding dimensions,
+// wrapping and focus outlines while using the shared button component.
+const buttonClass =
+  'touch-auto appearance-auto [&]:[appearance:button] whitespace-normal focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto'
+const legalLinkClass = `${buttonClass} static inline border-0 rounded-[2px] bg-transparent p-0 [font:inherit] text-neutral-100 underline transition-none hover:bg-transparent hover:text-comfy-yellow`
+const checkboxClass =
+  "relative size-3.5 flex-none appearance-none cursor-pointer rounded border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] bg-size-[14px_14px] bg-center bg-no-repeat transition-[background-color,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] checked:border-[var(--color-border)] checked:bg-[var(--accent)] checked:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCc+PHBvbHlsaW5lIHBvaW50cz0nMyw5IDcsMTIgMTMsNScvPjwvc3ZnPg==)] after:hidden after:content-[''] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
+const modifierClass =
+  'inline-flex cursor-pointer items-start gap-2 text-[13px] text-neutral-300 transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none'
+const consentClass =
+  'flex cursor-pointer items-center gap-2.5 text-[13px] leading-[1.5] text-neutral-200'
+const branchCardClass = `${buttonClass} static flex w-full items-center justify-normal gap-3 rounded-md border border-solid border-transparent bg-[rgba(138,134,136,0.05)] p-4 [font:inherit] text-left text-neutral-200 backdrop-blur-[75px] transition-[background,border-color,color] duration-120 ease-[ease] hover:border-[rgba(194,191,185,0.09)] hover:bg-[rgba(138,134,136,0.1)] hover:text-neutral-100`
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -903,12 +917,25 @@ defineExpose({ open, resetContinue })
          radio cards in the middle, Express-Install opt-out modifier,
          then the legal/telemetry checkboxes and the Continue / Cancel
          action row. T&C must be accepted before Continue activates. -->
-    <div v-if="step === 'start'" class="start-screen">
-      <div class="brand-hero start-hero">
-        <h1 class="brand-title">{{ $t('firstUse.pickTitle') }}</h1>
-        <p class="brand-lead">{{ $t('firstUse.pickLead') }}</p>
+    <div
+      v-if="step === 'start'"
+      class="start-screen flex h-full w-full max-w-[760px] flex-col items-center gap-2"
+    >
+      <div
+        class="start-hero relative z-1 flex w-full max-w-[760px] flex-auto flex-col items-center justify-center gap-[var(--takeover-gap-md)] text-center"
+      >
+        <h1
+          class="first-use-title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] text-center opacity-85"
+        >
+          {{ $t('firstUse.pickTitle') }}
+        </h1>
+        <p
+          class="first-use-lead mt-[var(--takeover-gap-md)] mb-[var(--takeover-gap-lg)] font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 text-center"
+        >
+          {{ $t('firstUse.pickLead') }}
+        </p>
         <div
-          class="start-cards"
+          class="start-cards grid w-full grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-8"
           role="radiogroup"
           :aria-label="$t('firstUse.pickTitle')"
           @keydown="onStartCardsKeydown"
@@ -918,9 +945,10 @@ defineExpose({ open, resetContinue })
                entirely and, with Continue gated on an explicit pick,
                keyboard users are stuck. -->
           <ChoiceCard
-            class="start-card-cloud"
+            class="start-card-cloud [anchor-name:--brand-beam-target]"
             :class="{
-              'start-card-cloud--reco-dimmed': hardwareRecommendsCloud && pickedChoice === 'local'
+              'start-card-cloud--reco-dimmed [&_.start-cloud-reco]:opacity-70':
+                hardwareRecommendsCloud && pickedChoice === 'local'
             }"
             selectable
             :selected="pickedChoice === 'cloud'"
@@ -935,15 +963,18 @@ defineExpose({ open, resetContinue })
           >
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
-                <button
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="start-cloud-info"
+                  class="start-cloud-info static inline-flex size-[22px] items-center justify-center rounded-[999px] border-0 bg-transparent p-0 text-[color-mix(in_oklab,var(--neutral-100)_65%,transparent)] transition-[color,background] duration-120 ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100"
+                  :class="buttonClass"
                   :aria-label="$t('firstUse.whyTryCloud')"
                   data-testid="first-use-why-cloud"
                   @click.stop="openWhyCloud"
                 >
                   <Info :size="14" />
-                </button>
+                </Button>
               </Tooltip>
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud — the
@@ -955,7 +986,7 @@ defineExpose({ open, resetContinue })
                    because free tier isn't live yet. -->
               <span
                 v-if="cloudFreeRunsEnabled && cloudUserTier === 'unknown'"
-                class="start-cloud-runs-pill"
+                class="start-cloud-runs-pill inline-flex items-center rounded-[999px] bg-comfy-yellow px-2 py-[3px] text-[10px] leading-[normal] font-bold tracking-[0.02em] whitespace-nowrap text-neutral-900 uppercase"
                 data-testid="first-use-cloud-runs-pill"
                 >{{ $t('firstUse.cloudFreeRunsPill') }}</span
               >
@@ -965,9 +996,16 @@ defineExpose({ open, resetContinue })
                    *why* Cloud is recommended. Tooltip carries the reason
                    instead of lengthening the badge text itself. -->
               <Tooltip :text="$t('firstUse.cloudRecommendedForHardwareTooltip')">
-                <span class="start-cloud-reco" data-testid="first-use-cloud-reco">
+                <span
+                  class="start-cloud-reco inline-flex cursor-default items-center gap-1 rounded-[999px] bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] px-[9px] py-[5px] text-xs leading-[normal] font-semibold text-neutral-100"
+                  data-testid="first-use-cloud-reco"
+                >
                   {{ $t('firstUse.cloudRecommendedForHardware') }}
-                  <Info :size="12" class="start-cloud-reco__info" aria-hidden="true" />
+                  <Info
+                    :size="12"
+                    class="start-cloud-reco__info shrink-0 opacity-70"
+                    aria-hidden="true"
+                  />
                 </span>
               </Tooltip>
             </template>
@@ -985,7 +1023,7 @@ defineExpose({ open, resetContinue })
         <span
           v-if="hardwareRecommendsCloud"
           :id="CLOUD_RECO_REASON_ID"
-          class="start-cloud-reco__reason"
+          class="start-cloud-reco__reason absolute -m-px size-px overflow-hidden border-0 p-0 whitespace-nowrap [clip-path:inset(50%)]"
         >
           {{ $t('firstUse.cloudRecommendedForHardwareTooltip') }}
         </span>
@@ -995,57 +1033,77 @@ defineExpose({ open, resetContinue })
              wrapper, each label was an `inline-flex` that centered
              independently, so a longer description text would push
              one row off-axis from the other. -->
-        <div class="start-modifiers">
+        <div class="start-modifiers mx-auto mt-1 flex w-fit flex-col gap-2">
           <label
             v-if="hasLegacyDesktop"
-            class="brand-checkbox start-migrate-existing"
-            :class="{ 'start-migrate-existing--hidden': !showMigrateExisting }"
+            class="start-migrate-existing"
+            :class="[
+              modifierClass,
+              showMigrateExisting
+                ? 'opacity-100 [transform:translateY(0)]'
+                : 'start-migrate-existing--hidden pointer-events-none opacity-0 [transform:translateY(-4px)]'
+            ]"
             :aria-hidden="!showMigrateExisting"
             data-testid="first-use-migrate-existing"
           >
             <input
               v-model="migrateExisting"
               type="checkbox"
+              :class="[checkboxClass, 'mt-1 mr-0 mb-0 ml-0']"
               :tabindex="showMigrateExisting ? 0 : -1"
             />
-            <span class="start-migrate-existing__body">
-              <span class="start-migrate-existing__label">
+            <span class="start-migrate-existing__body flex min-w-0 flex-col items-start gap-0.5">
+              <span class="start-migrate-existing__label leading-[1.4]">
                 {{ $t('firstUse.migrateExistingLine') }}
               </span>
-              <span class="start-migrate-existing__desc">
+              <span
+                class="start-migrate-existing__desc text-xs leading-[1.4] text-neutral-400 [&_strong]:font-medium [&_strong]:text-neutral-100"
+              >
                 <InlineRichText :text="$t('firstUse.migrateExistingDesc')" />
               </span>
             </span>
           </label>
           <label
-            class="brand-checkbox start-express"
-            :class="{ 'start-express--hidden': pickedChoice !== 'local' }"
+            class="start-express"
+            :class="[
+              modifierClass,
+              pickedChoice === 'local'
+                ? 'opacity-100 [transform:translateY(0)]'
+                : 'start-express--hidden pointer-events-none opacity-0 [transform:translateY(-4px)]'
+            ]"
             :aria-hidden="pickedChoice !== 'local'"
             data-testid="first-use-express-install"
           >
             <input
               v-model="expressInstall"
               type="checkbox"
+              :class="[checkboxClass, 'mt-1 mr-0 mb-0 ml-0']"
               :tabindex="pickedChoice === 'local' ? 0 : -1"
             />
-            <span class="start-express__body">
-              <span class="start-express__label">{{ $t('firstUse.expressInstallLine') }}</span>
+            <span class="start-express__body flex min-w-0 flex-col items-start gap-0.5">
+              <span class="start-express__label leading-[1.4]">{{
+                $t('firstUse.expressInstallLine')
+              }}</span>
               <span
-                class="start-express__gpu-hint"
-                :class="{ 'start-express__gpu-hint--hidden': !showGpuHint }"
+                class="start-express__gpu-hint min-h-[1.4em] text-xs leading-[1.4] text-neutral-400 transition-opacity duration-180 ease-out"
+                :class="{
+                  'start-express__gpu-hint--hidden pointer-events-none opacity-0': !showGpuHint
+                }"
                 :aria-hidden="!showGpuHint"
                 data-testid="first-use-express-gpu-hint"
               >
                 <template v-if="detectedGpuLabel">
                   {{ $t('firstUse.expressGpuHintPrefix')
-                  }}<span class="start-express__gpu-vendor">{{ detectedGpuLabel }}</span
+                  }}<span class="start-express__gpu-vendor font-medium text-neutral-100">{{
+                    detectedGpuLabel
+                  }}</span
                   >{{ $t('firstUse.expressGpuHintSuffix') }}
                 </template>
                 <template v-else>&nbsp;</template>
               </span>
               <span
                 v-if="showHardwareWarning"
-                class="start-express__hardware-warning"
+                class="start-express__hardware-warning text-xs leading-[1.4] text-[var(--warning)]"
                 role="alert"
                 data-testid="first-use-hardware-warning"
               >
@@ -1055,66 +1113,94 @@ defineExpose({ open, resetContinue })
           </label>
         </div>
       </div>
-      <div class="start-bottom">
-        <div class="start-consent-strip">
-          <div class="start-consent-rows">
+      <div class="start-bottom w-[95%] flex-none">
+        <div
+          class="start-consent-strip flex w-full items-center justify-between gap-3 rounded-[10px] border border-solid border-[rgba(194,191,185,0.08)] bg-[rgba(138,134,136,0.06)] px-5 py-4 backdrop-blur-[40px]"
+        >
+          <div class="start-consent-rows flex min-w-0 flex-col gap-2">
             <label
-              class="brand-checkbox start-consent-row"
-              :class="{ 'start-consent-row--nudge': tosNudge }"
+              class="start-consent-row"
+              :class="[
+                consentClass,
+                {
+                  'start-consent-row--nudge animate-[first-use-consent-shake_400ms_cubic-bezier(0.36,0.07,0.19,0.97)_both] motion-reduce:animate-none':
+                    tosNudge
+                }
+              ]"
               data-testid="first-use-consent-tos"
             >
-              <input v-model="acceptedTos" type="checkbox" />
-              <span class="start-consent-row__text">
+              <input
+                v-model="acceptedTos"
+                type="checkbox"
+                :class="[
+                  checkboxClass,
+                  'm-0',
+                  {
+                    '[&[type=checkbox]]:border-comfy-yellow [box-shadow:0_0_0_2px_color-mix(in_oklab,var(--comfy-yellow)_30%,transparent)] [&[type=checkbox]]:transition-[border-color,box-shadow] [&[type=checkbox]]:duration-150 [&[type=checkbox]]:ease-[ease]':
+                      tosNudge
+                  }
+                ]"
+              />
+              <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTosHintPrefix') }}
-                <button
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="brand-checkbox__link"
+                  :class="legalLinkClass"
                   data-testid="first-use-eula-link"
                   @click.prevent="termsDoc = 'eula'"
                 >
                   {{ $t('firstUse.eulaLinkLabel') }}
-                </button>
+                </Button>
                 {{ $t('firstUse.consentTosHintSep') }}
-                <button
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="brand-checkbox__link"
+                  :class="legalLinkClass"
                   data-testid="first-use-tos-link"
                   @click.prevent="termsDoc = 'tos'"
                 >
-                  {{ $t('firstUse.tosLinkLabel') }}</button
+                  {{ $t('firstUse.tosLinkLabel') }}</Button
                 >{{ $t('firstUse.consentTosHintSuffix') }}
               </span>
             </label>
             <label
-              class="brand-checkbox start-consent-row"
+              class="start-consent-row"
+              :class="consentClass"
               data-testid="first-use-consent-telemetry"
             >
-              <input v-model="telemetryEnabled" type="checkbox" />
-              <span class="start-consent-row__text">
+              <input v-model="telemetryEnabled" type="checkbox" :class="[checkboxClass, 'm-0']" />
+              <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTelemetryHint') }}
-                <button
+                <Button
+                  size="unset"
+                  variant="textonly"
                   type="button"
-                  class="brand-checkbox__link"
+                  :class="legalLinkClass"
                   data-testid="first-use-telemetry-learn-more"
                   @click.prevent="termsDoc = 'privacy'"
                 >
                   {{ $t('common.learnMore') }}
-                </button>
+                </Button>
               </span>
             </label>
             <label
-              class="brand-checkbox start-consent-row"
+              class="start-consent-row"
+              :class="consentClass"
               data-testid="first-use-consent-beta"
               :title="betaBlocked ? $t('tooltips.betaFeaturesNeedTelemetry') : undefined"
             >
               <input
                 type="checkbox"
+                :class="[checkboxClass, 'm-0']"
                 :checked="betaFeaturesEnabled"
                 :aria-disabled="betaBlocked"
                 :aria-describedby="betaBlocked ? betaBlockedReasonId : undefined"
                 @change="onBetaFeaturesToggle"
               />
-              <span class="start-consent-row__text">
+              <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentBetaHint') }}
               </span>
               <span v-if="betaBlocked" :id="betaBlockedReasonId" class="sr-only">
@@ -1122,9 +1208,16 @@ defineExpose({ open, resetContinue })
               </span>
             </label>
           </div>
-          <button
-            class="brand-primary start-continue"
-            :class="{ 'start-continue--locked': !acceptedTos }"
+          <Button
+            size="unset"
+            variant="textonly"
+            class="start-continue static inline-flex min-w-40 shrink-0 items-center justify-center gap-2 rounded-lg border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium text-neutral-900 transition-[background,border-color,color] duration-120 ease-[ease] [&:focus-visible]:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-comfy-yellow disabled:hover:bg-comfy-yellow"
+            :class="[
+              buttonClass,
+              acceptedTos
+                ? 'enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)]'
+                : 'start-continue--locked cursor-not-allowed opacity-45 hover:border-comfy-yellow hover:bg-comfy-yellow'
+            ]"
             type="button"
             data-testid="first-use-continue"
             :disabled="isContinuing || pickedChoice === null"
@@ -1135,13 +1228,13 @@ defineExpose({ open, resetContinue })
             <Loader2
               v-if="isContinuing"
               :size="16"
-              class="start-continue__spinner"
+              class="start-continue__spinner shrink-0 animate-spin [animation-duration:750ms]"
               aria-hidden="true"
             />
             <span>{{
               isContinuing ? $t('firstUse.startContinueBusy') : $t('firstUse.startContinue')
             }}</span>
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -1151,56 +1244,97 @@ defineExpose({ open, resetContinue })
          the only place this dense full-width stacked variant ships,
          so a new component or variant prop on ChoiceCard would be
          over-engineering. -->
-    <div v-else-if="step === 'localBranch'" class="brand-hero local-branch-hero">
-      <h1 class="brand-title">{{ $t('firstUse.localBranchTitle') }}</h1>
-      <p class="brand-lead">{{ $t('firstUse.localBranchLead') }}</p>
+    <div
+      v-else-if="step === 'localBranch'"
+      class="local-branch-hero relative z-1 flex w-full max-w-[820px] flex-col items-center text-center"
+    >
+      <h1
+        class="first-use-title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] text-center opacity-85"
+      >
+        {{ $t('firstUse.localBranchTitle') }}
+      </h1>
+      <p
+        class="first-use-lead mt-[var(--takeover-gap-md)] mb-[var(--takeover-gap-lg)] font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 text-center"
+      >
+        {{ $t('firstUse.localBranchLead') }}
+      </p>
       <div
-        class="local-branch-list"
+        class="local-branch-list flex w-full flex-col gap-4"
         role="radiogroup"
         :aria-label="$t('firstUse.localBranchTitle')"
       >
-        <button
+        <Button
+          size="unset"
+          variant="textonly"
           type="button"
-          class="lb-card lb-card--recommended"
+          class="lb-card lb-card--recommended [&]:border-[rgba(194,191,185,0.09)] [&]:bg-[rgba(138,134,136,0.1)] [&]:text-neutral-100 [box-shadow:0_1px_0_0_rgba(255,255,255,0.1)_inset]"
+          :class="branchCardClass"
           data-testid="first-use-local-migrate"
           @click="chooseMigrate"
         >
-          <span class="lb-card__icon" aria-hidden="true">
+          <span
+            class="lb-card__icon inline-flex size-8 flex-none items-center justify-center rounded-md bg-[var(--chooser-surface-bg)] text-text"
+            aria-hidden="true"
+          >
             <FolderInput :size="16" :stroke-width="1.75" />
           </span>
-          <span class="lb-card__text">
-            <span class="lb-card__label">{{ $t('firstUse.localBranchMigrateLabel') }}</span>
-            <span class="lb-card__desc">{{ $t('firstUse.localBranchMigrateDesc') }}</span>
+          <span class="lb-card__text flex min-w-0 flex-auto flex-col gap-0.5">
+            <span class="lb-card__label text-[length:var(--takeover-fs-body)] text-neutral-100">{{
+              $t('firstUse.localBranchMigrateLabel')
+            }}</span>
+            <span class="lb-card__desc text-[length:var(--takeover-fs-body)] text-neutral-100">{{
+              $t('firstUse.localBranchMigrateDesc')
+            }}</span>
           </span>
-          <Check class="lb-card__check" :size="16" :stroke-width="2" aria-hidden="true" />
-        </button>
-        <button
+          <Check
+            class="lb-card__check flex-none text-neutral-100"
+            :size="16"
+            :stroke-width="2"
+            aria-hidden="true"
+          />
+        </Button>
+        <Button
+          size="unset"
+          variant="textonly"
           type="button"
           class="lb-card"
+          :class="branchCardClass"
           data-testid="first-use-local-install-new"
           @click="chooseInstallNew"
         >
-          <span class="lb-card__icon" aria-hidden="true">
+          <span
+            class="lb-card__icon inline-flex size-8 flex-none items-center justify-center rounded-md bg-[var(--chooser-surface-bg)] text-text"
+            aria-hidden="true"
+          >
             <Copy :size="16" :stroke-width="1.75" />
           </span>
-          <span class="lb-card__text lb-card__text--install-new">
-            <span class="lb-card__label">{{ $t('firstUse.localBranchInstallNewLabel') }}</span>
-            <span class="lb-card__desc">{{ $t('firstUse.localBranchInstallNewDesc') }}</span>
+          <span
+            class="lb-card__text lb-card__text--install-new flex min-w-0 flex-auto flex-col gap-0.5 opacity-50 hover:text-text hover:opacity-100 hover:transition-colors hover:duration-120 hover:ease-[ease]"
+          >
+            <span class="lb-card__label text-[length:var(--takeover-fs-body)] text-neutral-100">{{
+              $t('firstUse.localBranchInstallNewLabel')
+            }}</span>
+            <span class="lb-card__desc text-[length:var(--takeover-fs-body)] text-neutral-100">{{
+              $t('firstUse.localBranchInstallNewDesc')
+            }}</span>
           </span>
-        </button>
+        </Button>
       </div>
     </div>
 
     <template #footer-left>
-      <button
+      <Button
         v-if="step === 'localBranch'"
-        class="pick-why-cloud"
+        size="unset"
+        variant="textonly"
+        class="pick-why-cloud absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2 inline-flex items-center justify-normal gap-1.5 rounded-lg border-0 bg-transparent px-1 py-1.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-normal text-[color-mix(in_oklab,var(--neutral-100)_70%,transparent)] transition-none hover:bg-transparent hover:text-neutral-100 hover:transition-colors hover:duration-120 hover:ease-[ease] focus-visible:rounded"
+        :class="buttonClass"
         data-testid="first-use-local-branch-back"
         type="button"
         @click="step = 'start'"
       >
         ← {{ $t('common.back') }}
-      </button>
+      </Button>
     </template>
 
     <WhyTryCloudModal
@@ -1215,38 +1349,50 @@ defineExpose({ open, resetContinue })
       @close="termsDoc = null"
     />
   </BrandTakeoverLayout>
-  <ModalShell v-else binding hide-close content-class="first-use-takeover">
+  <ModalShell v-else binding hide-close content-class="first-use-takeover flex flex-col">
     <!-- Mirrors step retains the legacy ModalShell chrome until it gets
          the brand treatment. First-use is binding — no ✕ close. -->
     <template #header>
       <TakeoverHeader :title="$t('firstUse.grandTitle')" :subtitle="$t('firstUse.grandSubtitle')" />
     </template>
-    <div class="view-scroll">
+    <div class="first-use-scroll min-h-0 flex-1 overflow-y-auto pr-2">
       <template v-if="step === 'mirrors'">
-        <h3 class="first-use-step-title">{{ $t('settings.chineseMirrorsSuggestTitle') }}</h3>
-        <p class="first-use-mirrors-lead">{{ $t('settings.chineseMirrorsSuggestMessage') }}</p>
+        <h3
+          class="first-use-step-title mt-0 mr-0 mb-3 ml-0 text-lg leading-[1.5] font-semibold text-text"
+        >
+          {{ $t('settings.chineseMirrorsSuggestTitle') }}
+        </h3>
+        <p class="first-use-mirrors-lead mb-3 text-[15px] leading-[1.6] text-text">
+          {{ $t('settings.chineseMirrorsSuggestMessage') }}
+        </p>
       </template>
     </div>
 
-    <div class="wizard-footer">
+    <div
+      class="first-use-footer grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 pt-4 [&>:last-child]:justify-self-end"
+    >
       <div class="wizard-back-placeholder"></div>
       <div></div>
       <template v-if="step === 'mirrors'">
-        <div class="first-use-mirror-buttons">
-          <button
-            class="secondary"
+        <div class="first-use-mirror-buttons flex gap-2">
+          <Button
+            size="unset"
+            variant="textonly"
+            class="static touch-auto block appearance-auto [&]:[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
             data-testid="first-use-mirrors-skip"
             @click="chooseMirrors(false)"
           >
             {{ $t('firstUse.notNow') }}
-          </button>
-          <button
-            class="primary"
+          </Button>
+          <Button
+            size="unset"
+            variant="textonly"
+            class="static touch-auto block appearance-auto [&]:[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-background hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-120 hover:ease-[ease]"
             data-testid="first-use-mirrors-accept"
             @click="chooseMirrors(true)"
           >
             {{ $t('settings.chineseMirrorsSuggestConfirm') }}
-          </button>
+          </Button>
         </div>
       </template>
       <template v-else>
@@ -1256,337 +1402,10 @@ defineExpose({ open, resetContinue })
   </ModalShell>
 </template>
 
-<style scoped>
-/* Layout for the legacy first-use modal body (mirrors step only). */
-.first-use-takeover {
-  display: flex;
-  flex-direction: column;
-}
-
-.first-use-mirrors-lead {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--text);
-  margin-bottom: 12px;
-}
-
-.first-use-step-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 12px 0;
-  color: var(--text);
-}
-
-/* Merged start step.
- *
- * Layout: `.start-screen` fills the inner-frame as a vertical flex
- * column. `.start-hero` (title + lead + cards + express) flexes to
- * fill the available space and centres its content vertically so the
- * cards still land on the original `pick`-step beam target.
- * `.start-bottom` (consent rows + Continue) is the natural bottom of
- * the column — no `position: absolute`, so window resizing keeps the
- * two sections from overlapping. */
-.start-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  max-width: 760px;
-  gap: 8px;
-}
-.start-hero {
-  flex: 1 1 auto;
-  justify-content: center;
-  gap: var(--takeover-gap-md);
-  max-width: 760px;
-}
-.start-cards {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-  gap: 32px;
-}
-/* Cloud card anchors the brand beam — keep the spotlight on the
- * Cloud card the same way the original pick step did. */
-.start-card-cloud {
-  anchor-name: --brand-beam-target;
-}
-/* The card border's only job is showing which card is selected (Choice
- * Card's `--selected` state) — it never carries the hardware-recommendation
- * signal, so there's nothing recommendation-specific to add here. When the
- * user picks Local instead of the recommended Cloud, the reco badge dims
- * to 70% instead: still visible, de-emphasized rather than nagging. */
-.start-card-cloud--reco-dimmed .start-cloud-reco {
-  opacity: 0.7;
-}
-.start-cloud-info {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: color-mix(in oklab, var(--neutral-100) 65%, transparent);
-  cursor: pointer;
-  transition:
-    color 120ms ease,
-    background 120ms ease;
-}
-.start-cloud-info:hover {
-  color: var(--neutral-100);
-  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
-}
-.start-cloud-info:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-/* "5 FREE RUNS" trial pill. Same solid-chip shape as the Why-Cloud modal's
- * credits pill (.why-cloud-pill), scaled down for the label row, but in
- * the brand-yellow CTA color instead of neutral — Deep's thread feedback
- * was that this needed to "pop" more; yellow is otherwise reserved for the
- * primary Continue button, so borrowing it here is a deliberate way to
- * make the incentive read as the one other "notice me" element on the
- * card. Surfaces the trial up front per nav's thread feedback, without
- * waiting for the user to open the info tooltip to learn Cloud is free to
- * try. */
-.start-cloud-runs-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--comfy-yellow);
-  color: var(--neutral-900);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: normal;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* Hardware-recommendation badge — GPU-Aware Cloud Upsell. Tinted fill only,
- * no stroke — reads as a soft chip rather than an outlined pill. No check
- * glyph, and the card border itself is selection-only (see
- * `.start-card-cloud--reco-dimmed` above) — this badge is the sole carrier
- * of the "recommended" signal. Neutral-100, matching the card border,
- * rather than a success-green accent. Copy is intentionally generic (no
- * GPU model/VRAM claim) pending the DES-548 design/copy pass referenced in
- * the Notion plan. */
-.start-cloud-reco {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  /* No margin-top here — `.choice-card__desc-trailing` (ChoiceCard.vue)
-     owns the separation from the description above. A margin on the badge
-     itself sits *inside* the wrapping Tooltip's trigger element, which
-     inflates the box the tooltip measures against and pushes the bubble
-     noticeably further from the badge than intended. */
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--neutral-100) 12%, transparent);
-  color: var(--neutral-100);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: normal;
-  cursor: default;
-}
-.start-cloud-reco__info {
-  opacity: 0.7;
-  flex-shrink: 0;
-}
-.start-cloud-reco__reason {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* Modifier-checkbox container. Both rows (Migrate + Express) live
- * inside this so they share the same left edge: the wrapper itself is
- * `width: fit-content` (shrinks to the WIDEST child) and centred in
- * the start-hero column via `margin-inline: auto`. The labels inside
- * are then plain block-level rows with no centring of their own, so a
- * shorter row no longer floats to its own centre — they all start at
- * the wrapper's left edge. */
-.start-modifiers {
-  display: flex;
-  flex-direction: column;
-  width: fit-content;
-  margin-inline: auto;
-  gap: 8px;
-  margin-top: 4px;
-}
-/* Express Install — intentionally low-weight: left-aligned single
- * line with the standard brand-checkbox box, smaller font + muted
- * text colour so it reads as an opt-out modifier, not a primary
- * decision. */
-.start-express {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--neutral-300);
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 180ms ease-out,
-    transform 180ms ease-out;
-}
-.start-express__body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 0;
-}
-.start-express__gpu-hint {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--neutral-400);
-  min-height: 1.4em;
-  transition: opacity 180ms ease-out;
-}
-.start-express__gpu-hint--hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-.start-express__gpu-vendor {
-  font-weight: 500;
-  color: var(--neutral-100);
-}
-.start-express__hardware-warning {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--warning);
-}
-/* Cloud pick: reserve the row's space (no layout shift on swap) but
- * fade + nudge the content out and disable pointer/keyboard access. */
-.start-express--hidden {
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-}
-.start-express__label {
-  line-height: 1.4;
-}
-@media (prefers-reduced-motion: reduce) {
-  .start-express {
-    transition: none;
-  }
-}
-
-/* Peer checkbox sibling of `.start-express`. Rendered ABOVE Express
- * on the legacy-detected path so the primary action for a returning
- * Desktop user (bring the existing install over) reads first — and so
- * Express below it doesn't look like a sub-option being nested under
- * it. Body has a primary label + a description sub-line mirroring
- * Express's GPU hint so the two read as a row of equal-weight
- * modifiers carrying the same amount of detail. */
-.start-migrate-existing {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--neutral-300);
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 180ms ease-out,
-    transform 180ms ease-out;
-}
-.start-migrate-existing--hidden {
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-}
-.start-migrate-existing__body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 0;
-}
-.start-migrate-existing__label {
-  line-height: 1.4;
-}
-.start-migrate-existing__desc {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--neutral-400);
-}
-.start-migrate-existing__desc :deep(strong) {
-  color: var(--neutral-100);
-  font-weight: 500;
-}
-@media (prefers-reduced-motion: reduce) {
-  .start-migrate-existing {
-    transition: none;
-  }
-}
-
-/* Bottom strip: consent checkboxes + Continue grouped into a single
- * glass panel so they read as one cohesive action block instead of
- * scattered centre-aligned lines. Left-aligned text (checkboxes
- * should never centre-align) with the CTA docked to the right. */
-.start-bottom {
-  flex: 0 0 auto;
-  width: 95%;
-}
-.start-consent-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 16px 20px;
-  border-radius: 10px;
-  background: rgba(138, 134, 136, 0.06);
-  backdrop-filter: blur(40px);
-  border: 1px solid rgba(194, 191, 185, 0.08);
-}
-.start-consent-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.start-consent-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--neutral-200);
-  line-height: 1.5;
-}
-
-.start-consent-row input[type='checkbox'] {
-  margin-top: 0;
-}
-.start-consent-row__text {
-  white-space: normal;
-}
-
-/* Shake nudge when the user clicks Continue without accepting ToS. */
-.start-consent-row--nudge {
-  animation: consent-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
-.start-consent-row--nudge input[type='checkbox'] {
-  border-color: var(--comfy-yellow) !important;
-  box-shadow: 0 0 0 2px color-mix(in oklab, var(--comfy-yellow) 30%, transparent);
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
-}
-@keyframes consent-shake {
+<style>
+/* The consent nudge follows its original asymmetric shake; Tailwind's stock
+ * animations do not express these steps. Reduced motion is handled in markup. */
+@keyframes first-use-consent-shake {
   10%,
   90% {
     transform: translateX(-1px);
@@ -1604,151 +1423,5 @@ defineExpose({ open, resetContinue })
   60% {
     transform: translateX(3px);
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .start-consent-row--nudge {
-    animation: none;
-  }
-}
-
-.start-continue {
-  flex-shrink: 0;
-  min-width: 160px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.start-continue--locked {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.start-continue--locked:hover {
-  background: var(--comfy-yellow);
-  border-color: var(--comfy-yellow);
-}
-.start-continue__spinner {
-  animation: start-continue-spin 750ms linear infinite;
-  flex-shrink: 0;
-}
-@keyframes start-continue-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.pick-why-cloud {
-  position: absolute;
-  left: clamp(1.25rem, 2vw, 2rem);
-  bottom: clamp(1.25rem, 2vw, 2rem);
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: none;
-  padding: 6px 4px;
-  color: color-mix(in oklab, var(--neutral-100) 70%, transparent);
-  font: inherit;
-  font-size: var(--takeover-fs-body);
-  cursor: pointer;
-}
-.pick-why-cloud:hover {
-  color: var(--neutral-100);
-  transition: color 120ms ease;
-}
-.pick-why-cloud:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.local-branch-hero {
-  max-width: 820px;
-}
-.local-branch-list {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 16px;
-}
-.lb-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 16px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: rgba(138, 134, 136, 0.05);
-  backdrop-filter: blur(75px);
-  color: var(--neutral-200);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-.lb-card:hover {
-  background: rgba(138, 134, 136, 0.1);
-  border-color: rgba(194, 191, 185, 0.09);
-  color: var(--neutral-100);
-}
-.lb-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.lb-card--recommended {
-  background: rgba(138, 134, 136, 0.1);
-  border-color: rgba(194, 191, 185, 0.09);
-  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.1) inset;
-  color: var(--neutral-100);
-}
-.lb-card__icon {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--chooser-surface-bg);
-  color: var(--text);
-}
-.lb-card__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.lb-card__label {
-  font-size: var(--takeover-fs-body);
-  color: var(--neutral-100);
-}
-.lb-card__desc {
-  font-size: var(--takeover-fs-body);
-  color: var(--neutral-100);
-}
-.lb-card__text--install-new {
-  opacity: 0.5;
-}
-.lb-card__text--install-new:hover {
-  color: var(--text);
-  transition: color 120ms ease;
-  opacity: 1;
-}
-
-.lb-card__check {
-  flex: 0 0 auto;
-  color: var(--neutral-100);
-}
-
-.first-use-mirror-buttons {
-  display: flex;
-  gap: 8px;
 }
 </style>
