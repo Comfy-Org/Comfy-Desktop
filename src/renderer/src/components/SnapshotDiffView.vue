@@ -31,37 +31,74 @@ function formatVersion(v: { formattedVersion: string }): string {
 </script>
 
 <template>
-  <div v-if="diff.comfyuiChanged && diff.comfyui" class="diff-section">
-    <div class="diff-section-title">{{ t('snapshots.comfyuiVersion') }}</div>
-    <div class="diff-line diff-changed">
+  <div v-if="diff.comfyuiChanged && diff.comfyui" class="diff-section mb-2 last:mb-0">
+    <div
+      class="diff-section-title mb-1 text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
+    >
+      {{ t('snapshots.comfyuiVersion') }}
+    </div>
+    <div
+      class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-changed text-text-muted"
+    >
       {{ formatVersion(diff.comfyui.from) }} → {{ formatVersion(diff.comfyui.to) }}
     </div>
   </div>
 
-  <div v-if="diff.updateChannelChanged && diff.updateChannel" class="diff-section">
-    <div class="diff-section-title">{{ t('snapshots.updateChannel') }}</div>
-    <div class="diff-line diff-changed">
+  <div v-if="diff.updateChannelChanged && diff.updateChannel" class="diff-section mb-2 last:mb-0">
+    <div
+      class="diff-section-title mb-1 text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
+    >
+      {{ t('snapshots.updateChannel') }}
+    </div>
+    <div
+      class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-changed text-text-muted"
+    >
       {{ diff.updateChannel.from }} → {{ diff.updateChannel.to }}
     </div>
   </div>
 
-  <div v-if="nodeChangeCount > 0" class="diff-section">
+  <div v-if="nodeChangeCount > 0" class="diff-section mb-2 last:mb-0">
     <div
-      class="diff-section-title"
-      :class="{ 'is-toggle': collapsible, 'is-open': nodesOpen }"
+      class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
+      :class="
+        collapsible
+          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
+          : 'mb-1'
+      "
       @click="collapsible ? (nodesOpen = !nodesOpen) : null"
     >
-      <ChevronDown v-if="collapsible" :size="12" class="diff-section-chevron" />
+      <ChevronDown
+        v-if="collapsible"
+        :size="12"
+        class="diff-section-chevron shrink-0 transition-transform duration-[160ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+        :class="{ '[transform:rotate(180deg)]': nodesOpen }"
+      />
       <span>{{ t('snapshots.customNodes') }} ({{ nodeChangeCount }})</span>
     </div>
-    <div v-show="!collapsible || nodesOpen" class="diff-section-lines">
-      <div v-for="n in diff.nodesAdded" :key="'add-' + n.id" class="diff-line diff-added">
+    <div
+      v-show="!collapsible || nodesOpen"
+      class="diff-section-lines"
+      :class="{ 'mt-0.5 pl-4': collapsible }"
+    >
+      <div
+        v-for="n in diff.nodesAdded"
+        :key="'add-' + n.id"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-added text-[color-mix(in_oklab,var(--success)_60%,var(--text))]"
+      >
         + {{ n.id }} {{ formatNodeVersion(n) }}
       </div>
-      <div v-for="n in diff.nodesRemoved" :key="'rem-' + n.id" class="diff-line diff-removed">
+      <div
+        v-for="n in diff.nodesRemoved"
+        :key="'rem-' + n.id"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-removed text-[color-mix(in_oklab,var(--danger)_60%,var(--text))]"
+      >
         − {{ n.id }} {{ formatNodeVersion(n) }}
       </div>
-      <div v-for="n in diff.nodesChanged" :key="'chg-' + n.id" class="diff-line diff-changed">
+      <div
+        v-for="n in diff.nodesChanged"
+        :key="'chg-' + n.id"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-changed text-text-muted"
+      >
         ~ {{ n.id }}: {{ n.from.version || (n.from.commit ? n.from.commit.slice(0, 7) : '?') }} →
         {{ n.to.version || (n.to.commit ? n.to.commit.slice(0, 7) : '?') }}
         <template v-if="n.from.enabled !== n.to.enabled"
@@ -72,90 +109,50 @@ function formatVersion(v: { formattedVersion: string }): string {
     </div>
   </div>
 
-  <div v-if="pipChangeCount > 0" class="diff-section">
+  <div v-if="pipChangeCount > 0" class="diff-section mb-2 last:mb-0">
     <div
-      class="diff-section-title"
-      :class="{ 'is-toggle': collapsible, 'is-open': pipsOpen }"
+      class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
+      :class="
+        collapsible
+          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
+          : 'mb-1'
+      "
       @click="collapsible ? (pipsOpen = !pipsOpen) : null"
     >
-      <ChevronDown v-if="collapsible" :size="12" class="diff-section-chevron" />
+      <ChevronDown
+        v-if="collapsible"
+        :size="12"
+        class="diff-section-chevron shrink-0 transition-transform duration-[160ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+        :class="{ '[transform:rotate(180deg)]': pipsOpen }"
+      />
       <span>{{ t('snapshots.pipPackages') }} ({{ pipChangeCount }})</span>
     </div>
-    <div v-show="!collapsible || pipsOpen" class="diff-section-lines">
-      <div v-for="p in diff.pipsAdded" :key="'padd-' + p.name" class="diff-line diff-added">
+    <div
+      v-show="!collapsible || pipsOpen"
+      class="diff-section-lines"
+      :class="{ 'mt-0.5 pl-4': collapsible }"
+    >
+      <div
+        v-for="p in diff.pipsAdded"
+        :key="'padd-' + p.name"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-added text-[color-mix(in_oklab,var(--success)_60%,var(--text))]"
+      >
         + {{ p.name }} {{ p.version }}
       </div>
-      <div v-for="p in diff.pipsRemoved" :key="'prem-' + p.name" class="diff-line diff-removed">
+      <div
+        v-for="p in diff.pipsRemoved"
+        :key="'prem-' + p.name"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-removed text-[color-mix(in_oklab,var(--danger)_60%,var(--text))]"
+      >
         − {{ p.name }} {{ p.version }}
       </div>
-      <div v-for="p in diff.pipsChanged" :key="'pchg-' + p.name" class="diff-line diff-changed">
+      <div
+        v-for="p in diff.pipsChanged"
+        :key="'pchg-' + p.name"
+        class="diff-line overflow-hidden text-ellipsis whitespace-nowrap py-px text-[12px] [font-family:var(--font-mono,ui-monospace,monospace)] select-text diff-changed text-text-muted"
+      >
         ~ {{ p.name }}: {{ p.from }} → {{ p.to }}
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.diff-section {
-  margin-bottom: 8px;
-}
-.diff-section:last-child {
-  margin-bottom: 0;
-}
-
-.diff-section-title {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-}
-/* Collapsible variant: the title becomes a click target with a chevron. */
-.diff-section-title.is-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  user-select: none;
-  margin-bottom: 0;
-  padding: 3px 0;
-}
-.diff-section-title.is-toggle:hover {
-  color: var(--text);
-}
-.diff-section-chevron {
-  flex-shrink: 0;
-  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.diff-section-title.is-open .diff-section-chevron {
-  transform: rotate(180deg);
-}
-.diff-section-title.is-toggle + .diff-section-lines {
-  margin-top: 2px;
-  padding-left: 16px;
-}
-
-.diff-line {
-  font-size: 12px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  padding: 1px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: text;
-  color: var(--text);
-}
-
-/* The +/−/~ prefixes already encode the change, so color stays a muted
- * hint; `changed` is neutral as it's the most common line. */
-.diff-added {
-  color: color-mix(in oklab, var(--success) 60%, var(--text));
-}
-.diff-removed {
-  color: color-mix(in oklab, var(--danger) 60%, var(--text));
-}
-.diff-changed {
-  color: var(--text-muted);
-}
-</style>
