@@ -1386,31 +1386,6 @@ button.add-btn {
 .detail-section {
   margin-bottom: 16px;
 }
-.detail-section-title.spaced {
-  margin-top: 16px;
-}
-.detail-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-.detail-section-title.collapsible {
-  display: inline-block;
-  cursor: pointer;
-  user-select: none;
-}
-.detail-section-title.collapsible::before {
-  content: '▸';
-  display: inline-block;
-  margin-right: 4px;
-  transition: transform 0.15s;
-}
-.detail-section-title.collapsible[data-collapsed='false']::before {
-  transform: rotate(90deg);
-}
 .detail-fields {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1427,16 +1402,6 @@ button.add-btn {
 .detail-field-value {
   font-size: 14px;
   margin-top: 1px;
-}
-.detail-field-input {
-  width: 100%;
-  margin-top: 4px;
-  padding: 6px 8px;
-  font-size: 14px;
-}
-.detail-field-input[type='text'] {
-  margin-top: 6px;
-  padding: 8px 10px;
 }
 /* Inline filesystem path rendered as a button that opens the folder in the OS
  *  file manager. Resets the button chrome to plain text, truncates with an
@@ -1469,134 +1434,13 @@ button.add-btn {
 
 /* Browse-only path: boxed row whose text opens the folder in the OS file
  *  manager (replaces the old readonly <input>). Only the text is clickable. */
-.detail-path-open-wrap {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  margin-top: 4px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-}
-.detail-path-open {
-  max-width: 100%;
-}
 /* Clickable non-editable path value (wraps instead of truncating). */
-.detail-field-value-open {
-  margin-top: 1px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-.detail-field-value-open:hover,
-.detail-field-value-open:focus-visible {
-  background: transparent;
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
-}
-.detail-section-desc {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
 
 /* Channel cards */
-.channel-select {
-  max-width: 360px;
-}
-.channel-select-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 6px;
-}
-.channel-preview {
-  margin-top: 10px;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.channel-preview-empty {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.channel-preview-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-}
-.channel-preview-label {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.channel-preview-value {
-  font-size: 13px;
-  color: var(--text);
-}
-.channel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.channel-switch-hint {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-right: 4px;
-}
 .dashboard-empty-hint {
   font-size: 14px;
   color: var(--text-muted);
   padding: 12px 0;
-}
-.detail-item-list {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-.detail-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-}
-.detail-item + .detail-item {
-  border-top: 1px solid var(--border);
-}
-.detail-item.active .detail-item-label {
-  font-weight: 600;
-}
-.detail-item-label {
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.detail-item-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 3px;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-.detail-item-actions {
-  display: flex;
-  gap: 6px;
-}
-.detail-item-actions button {
-  font-size: 13px;
-  padding: 3px 10px;
 }
 .detail-actions {
   display: flex;
