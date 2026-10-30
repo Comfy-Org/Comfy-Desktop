@@ -15,7 +15,7 @@ import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
 import { homeBuilds } from './homeBuilds'
 import { firstTime } from './userStates/userState'
-import ExampleFan from './userStates/ExampleFan.vue'
+import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
@@ -178,7 +178,8 @@ const recent = computed(() =>
     <MarStart v-if="firstRun" />
     <div v-else>
       <!-- A first-time user with a build: nothing of theirs yet, so the
-           examples take Recently used's place, as a fan, not a row. -->
+           examples take Recently used's place (UI Playground › First-time
+           examples). -->
       <section v-if="firstTime && !recent.length" class="mt-10">
         <SectionHeader
           title="Start from an example"
@@ -192,7 +193,7 @@ const recent = computed(() =>
             >
           </template>
         </SectionHeader>
-        <ExampleFan />
+        <ExampleShowcase />
       </section>
       <section v-if="parts.examples === 'mar'" class="mx-auto mt-8 w-full max-w-180">
         <SectionHeader

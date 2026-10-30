@@ -3,14 +3,14 @@ import { go } from '../useProto'
 import { can } from '../milestones'
 import SectionHeader from '../ui/SectionHeader.vue'
 import MarStartWhere from './MarStartWhere.vue'
-import ExampleFan from './userStates/ExampleFan.vue'
+import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 
 /**
  * First run · Stage (UI Playground › First run): the sections of the
  * returning Home, under the same greeting and prompt (MarHomeV10.vue).
- * Where Recently used goes, examples to run in a click, fanned like a
- * hand of cards so they never read as your own work (ExampleFan.vue);
+ * Where Recently used goes, examples to run in a click, in the look from
+ * UI Playground › First-time examples (ExampleShowcase.vue);
  * where Builds go, where Comfy runs, Cloud or this computer, each saying
  * what it takes.
  */
@@ -30,7 +30,7 @@ import { EXAMPLES } from './userStates/examples'
         >
       </template>
     </SectionHeader>
-    <ExampleFan />
+    <ExampleShowcase />
   </section>
 
   <section class="mar-rise mt-10" style="--i: 1">
