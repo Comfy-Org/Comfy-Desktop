@@ -47,37 +47,15 @@ const gradient = computed(() => {
 <template>
   <!-- Decorative: the subject's name is always rendered beside this avatar. -->
   <span
-    class="dp-avatar"
-    :class="{ 'dp-avatar--neutral': neutral }"
+    class="dp-avatar inline-flex size-[var(--dp-avatar-size,32px)] flex-none items-center justify-center overflow-hidden rounded-md text-[length:calc(var(--dp-avatar-size,32px)*0.42)] leading-none font-semibold text-white select-none"
+    :class="
+      neutral
+        ? 'dp-avatar--neutral bg-neutral-400 [text-shadow:none]'
+        : '[text-shadow:0_1px_2px_rgba(0,0,0,0.2)]'
+    "
     :style="neutral ? undefined : { background: gradient }"
     aria-hidden="true"
   >
     {{ neutral ? '' : letter }}
   </span>
 </template>
-
-<style scoped>
-.dp-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: var(--dp-avatar-size, 32px);
-  height: var(--dp-avatar-size, 32px);
-  border-radius: 6px;
-  overflow: hidden;
-  /* Paired to the generated gradient, not the app palette: same values as
-   * the frontend component this is ported from. */
-  color: #fff;
-  /* Scales with the box so the letter keeps the same optical weight at any size. */
-  font-size: calc(var(--dp-avatar-size, 32px) * 0.42);
-  font-weight: 600;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  user-select: none;
-}
-.dp-avatar--neutral {
-  background: var(--neutral-400);
-  text-shadow: none;
-}
-</style>
