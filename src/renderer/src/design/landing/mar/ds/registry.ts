@@ -100,7 +100,7 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 ]
 
 export const PAGES: DsPage[] = [
-  { id: 'about', label: 'About', group: '', title: "Mar's design system" },
+  { id: 'about', label: 'About', group: '', title: 'Comfy Desktop · Design system' },
   {
     id: 'playground',
     label: 'Playground',
@@ -115,7 +115,8 @@ export const PAGES: DsPage[] = [
     label: 'Colour',
     group: 'Foundations',
     title: 'Colour',
-    source: 'ui/tokens.css (light: ui/looks/light.css; Mar’s overrides in mar/shell/marShell.css)',
+    source:
+      'ui/tokens.css (light: ui/looks/light.css; the New UI overrides in mar/shell/marShell.css)',
     use: 'Grey scale UI; colour only for status and progress.',
     component: tokens('colour')
   },
@@ -175,7 +176,7 @@ export const PAGES: DsPage[] = [
     label: 'Home',
     group: 'Patterns',
     title: 'Default view',
-    source: 'LandingPrototypes.vue with Proposal: Mar',
+    source: 'LandingPrototypes.vue with Proposal › New UI',
     use: 'To check a component in place, next to everything around it.',
     component: lazy(() => import('./pages/DefaultViewPage.vue'))
   },

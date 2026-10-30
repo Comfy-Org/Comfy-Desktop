@@ -194,9 +194,9 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
         <li>
           <strong>Glass is mostly opaque</strong>: 74% (menus, dark) to 94% (tooltips). Below that,
           text can't hold its contrast over a bright picture. Chips on pictures use
-          <code>--color-media-overlay</code>, a dark 60% (Mar's value over Pablo's black 55%), in
-          both themes. Its coloured status words fall to about 3.5:1 over a white picture; the words
-          could go white there, with the colour kept in the icon.
+          <code>--color-media-overlay</code>, a dark 60% (the New UI value over the base 55% black),
+          in both themes. Its coloured status words fall to about 3.5:1 over a white picture; the
+          words could go white there, with the colour kept in the icon.
         </li>
         <li>
           <strong>No blur inside blur.</strong> What sits on glass (the menu's raised panel
@@ -267,7 +267,7 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
 
       <h2>Duplicated values</h2>
       <p>
-        Every <code>backdrop-filter</code> (and Tailwind <code>backdrop-blur-*</code>) in Mar's
+        Every <code>backdrop-filter</code> (and Tailwind <code>backdrop-blur-*</code>) in the New UI
         proposal and Pablo's parts, grouped by value, parsed from the source now ({{
           inDefault.length
         }}

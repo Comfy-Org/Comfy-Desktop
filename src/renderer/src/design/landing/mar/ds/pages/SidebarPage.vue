@@ -24,7 +24,7 @@ const agent = ref('agent')
 </script>
 
 <template>
-  <Section title="Put together" note="Pablo's sidebar with Mar's styles, as Home shows it.">
+  <Section title="Put together" note="The sidebar with the New UI styles, as Home shows it.">
     <Cells :min="260">
       <Cell on="sidebar" class="ds-sidebar">
         <div class="flex w-55 flex-col">

@@ -21,7 +21,7 @@ const SHOTS: Shot[] = [
 <template>
   <ShotsPage
     title="Graph editor"
-    note="A build's tab in Mar's proposal. Nodes follow ComfyUI's Vue node anatomy; the Comfy logo goes back Home; rail tooltips carry their shortcuts."
+    note="A build's tab in the New UI. Nodes follow ComfyUI's Vue node anatomy; the Comfy logo goes back Home; rail tooltips carry their shortcuts."
     :shots="SHOTS"
   />
 </template>

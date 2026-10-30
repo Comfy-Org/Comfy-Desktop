@@ -73,7 +73,7 @@ export const LEVELS: Level[] = [
     usedBy:
       'Status chips, the star, the kebab and the select check on a picture; media and category chips.',
     defined:
-      'mar/pages/MarStatus.vue (.on-media), mar/FavoriteStar.vue, mar/pages/MarItemMenu.vue, mar/pages/MarItem.vue, mar/MediaChip.vue, mar/CategoryChip.vue; token --color-media-overlay (ui/tokens.css, Mar’s value in mar/shell/marShell.css)',
+      'mar/pages/MarStatus.vue (.on-media), mar/FavoriteStar.vue, mar/pages/MarItemMenu.vue, mar/pages/MarItem.vue, mar/MediaChip.vue, mar/CategoryChip.vue; token --color-media-overlay (ui/tokens.css, the New UI value in mar/shell/marShell.css)',
     prefix: '--mar-glass-chip'
   },
   {
@@ -102,7 +102,7 @@ export const LEVELS: Level[] = [
     id: 'panel',
     name: 'Glass · sidebar',
     usedBy:
-      'Mar’s floating sidebar (UI Playground › Navigation). The default (Classic) sidebar is solid.',
+      'The floating sidebar (UI Playground › Navigation). The default (Classic) sidebar is solid.',
     defined: 'mar/shell/MarSidebar.vue (.mar-side, scoped)',
     prefix: '--mar-glass-panel',
     note: 'Not in the default view.'

@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="ds-app">
     <header class="ds-header">
-      <span class="font-semibold">Mar DS</span>
+      <span class="font-semibold">Desktop DS</span>
       <span class="text-subtle-foreground">{{ page.label }}</span>
       <div
         v-if="kind !== 'about' && kind !== 'custom'"

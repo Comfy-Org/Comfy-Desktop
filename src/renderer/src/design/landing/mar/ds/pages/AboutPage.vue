@@ -5,12 +5,12 @@ const url = `${location.origin}${location.pathname}`
 
 <template>
   <article class="ds-doc">
-    <h1>Mar's design system</h1>
+    <h1>Comfy Desktop · Design system</h1>
     <p>
-      Every component in Mar's proposal for Comfy Desktop, in its states, dark by default (light or
-      both from the header). It renders the prototype's real components, so it can't drift.
-      Components show when to use them and their rules; Do / Don't, Specs and Playground where they
-      apply.
+      Every component in the New UI proposal for Comfy Desktop, in its states, dark by default
+      (light or both from the header). It renders the prototype's real components, so it can't
+      drift. Components show when to use them and their rules; Do / Don't, Specs and Playground
+      where they apply.
     </p>
 
     <h2>How it's organised</h2>
@@ -27,7 +27,7 @@ const url = `${location.origin}${location.pathname}`
       <li><strong>Playground</strong>: any component with any props; copy its usage.</li>
     </ul>
     <p>
-      The default view: Proposal Mar, every UI Playground knob at its default. Dark by default;
+      The default view: Proposal › New UI, every UI Playground knob at its default. Dark by default;
       Light or Both from the header.
     </p>
 
@@ -43,9 +43,10 @@ const url = `${location.origin}${location.pathname}`
           Tooltip, Select, SectionHeader, MediaCard…) and his parts in <code>landing/parts/</code>.
         </li>
         <li>
-          <strong>Mar's pieces</strong>: <code>landing/mar/</code>. Her look over all of it is
-          <code>mar/shell/marShell.css</code>, scoped to <code>[data-mar-ui='on']</code>; light is
-          <code>[data-ds-theme='light']</code>. Production icons are in <code>mar/icons/</code>.
+          <strong>The New UI pieces</strong>: <code>landing/mar/</code>. The New UI look over all of
+          it is <code>mar/shell/marShell.css</code>, scoped to <code>[data-mar-ui='on']</code>;
+          light is <code>[data-ds-theme='light']</code>. Production icons are in
+          <code>mar/icons/</code>.
         </li>
       </ul>
       <p>Each page names its source files and when to use the component.</p>
