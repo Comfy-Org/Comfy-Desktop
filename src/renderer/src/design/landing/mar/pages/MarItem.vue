@@ -368,7 +368,11 @@ function click(e: MouseEvent): void {
 .mar-item.is-list:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-media img {
   opacity: 0.45;
 }
-.mar-item:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-check {
+/* Same weight as the reset that hides it, or the check never shows. */
+:root
+  .proto-ui.proto-ui.proto-ui
+  .mar-item:is(:hover, :focus-within, .is-selecting, .is-selected)
+  .mar-item-check {
   opacity: 1;
 }
 .mar-item.is-selected .mar-item-check {

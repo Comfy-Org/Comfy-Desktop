@@ -56,19 +56,16 @@
   animation: mar-fade 420ms ease-out both;
 }
 
-/* Pills lift a touch under the pointer. Cards don't: their image zooms in
-   instead, so a grid stays still. */
+/* Surfaces never move under the pointer (Mar: cards never grow or lift);
+   hover only lightens them. A press still answers with a slight scale. */
 @media (hover: hover) and (pointer: fine) {
   :root[data-mar-ui='on'] .proto-main .mar-surface {
     transition:
       transform 240ms var(--mar-ease),
       background-color 200ms ease;
   }
-  :root[data-mar-ui='on'] .proto-main .mar-surface:hover {
-    transform: translateY(-2px);
-  }
   :root[data-mar-ui='on'] .proto-main .mar-surface:active {
-    transform: translateY(0) scale(0.99);
+    transform: scale(0.99);
   }
 }
 

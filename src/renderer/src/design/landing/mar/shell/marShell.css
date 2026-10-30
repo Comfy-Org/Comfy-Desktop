@@ -1654,6 +1654,7 @@
     .mar-ex-count,
     .mar-fav-count,
     .mar-proj-count,
+    .mar-eh-count,
     [role='group'] > button[data-state] > .tabular-nums
   ) {
   display: none;
