@@ -164,20 +164,6 @@
   opacity: 1;
 }
 
-/* ── 6. Instance picker ────────────────────────────────────────────── */
-:root.palette-void .picker .picker-chip {
-  border-radius: var(--radius-control);
-  border-color: var(--color-border);
-  background: transparent;
-}
-:root.palette-void .picker .picker-chip:hover {
-  background: var(--color-secondary);
-}
-:root.palette-void .picker .picker-chip.is-active {
-  border-color: transparent;
-  background: var(--color-accent);
-  color: var(--text);
-}
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
 :root.palette-void :is(.modal-box, .announce-content) {
   border-color: var(--color-border);
