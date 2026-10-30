@@ -1950,6 +1950,18 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
   })
 }
 
+/** Parent for the general-download Save dialog. A hidden source window — a
+ *  reserved blank tab whose navigation became a download (#1729) — is skipped:
+ *  a dialog sheet on an invisible window can never be seen or answered. */
+export function pickSaveDialogParent(
+  sourceWin: BrowserWindow | null,
+  focusedWin: BrowserWindow | null,
+  allWindows: readonly BrowserWindow[]
+): BrowserWindow | null {
+  if (sourceWin?.isVisible()) return sourceWin
+  return focusedWin ?? allWindows[0] ?? null
+}
+
 export function attachSessionDownloadHandler(sess: Electron.Session): void {
   if (attachedSessions.has(sess)) return
   attachedSessions.add(sess)
@@ -2015,9 +2027,11 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       // `webContents` is null for `session.downloadURL(...)`-initiated downloads
       // (Electron only sets it for page-initiated ones), so fall back to the
       // focused window for the Save dialog parent.
-      const sourceWin = webContents ? BrowserWindow.fromWebContents(webContents) : null
-      const win =
-        sourceWin ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
+      const win = pickSaveDialogParent(
+        webContents ? BrowserWindow.fromWebContents(webContents) : null,
+        BrowserWindow.getFocusedWindow(),
+        BrowserWindow.getAllWindows()
+      )
 
       let savePath: string | undefined
       if (win) {
