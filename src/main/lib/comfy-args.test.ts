@@ -12,12 +12,14 @@ vi.mock('./git', () => ({ readGitHead: vi.fn() }))
 
 import {
   clearSchemaCache,
+  dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyArgsSchema,
   peekComfyArgsSchema,
   parseHelpOutput,
   validateArgs
 } from './comfy-args'
+import type { ComfyArgsSchema } from './comfy-args'
 
 const mockedExecFile = vi.mocked(execFile)
 const mockedReadGitHead = vi.mocked(readGitHead)
@@ -357,6 +359,91 @@ describe('validateArgs', () => {
       schema
     )
     expect(unsupported).toEqual([])
+  })
+})
+
+describe('dropValuelessArgs', () => {
+  const schema: ComfyArgsSchema = {
+    args: [
+      { name: 'cuda-device', flag: '--cuda-device', help: '', type: 'value', category: 'gpuVram' },
+      { name: 'listen', flag: '--listen', help: '', type: 'optional-value', category: 'network' },
+      { name: 'lowvram', flag: '--lowvram', help: '', type: 'boolean', category: 'gpuVram' },
+      {
+        name: 'extra-model-paths-config',
+        flag: '--extra-model-paths-config',
+        help: '',
+        type: 'multi-value',
+        category: 'paths'
+      }
+    ],
+    knownFlags: new Set(['cuda-device', 'listen', 'lowvram', 'extra-model-paths-config'])
+  }
+
+  it.each([
+    ['last with no value', ['--lowvram', '--cuda-device'], ['--lowvram']],
+    ['before another flag', ['--cuda-device', '--lowvram'], ['--lowvram']],
+    ['with an empty inline value', ['--cuda-device=', '--lowvram'], ['--lowvram']]
+  ])('drops a flag that needs a value %s', (_case, args, kept) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(
+        dropValuelessArgs(args, schema),
+        'a bare --cuda-device makes argparse exit; an empty one hides every GPU'
+      ).toEqual(kept)
+      expect(warn, 'the app log names what was dropped').toHaveBeenCalledWith(
+        expect.stringContaining('--cuda-device')
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it.each([
+    [['--tls-keyfile', '--tls-certfile', 'c.pem']],
+    [['--tls-keyfile', 'k.pem', '--tls-certfile']]
+  ])(
+    'keeps a TLS flag with no value, so ComfyUI refuses to start instead of serving plain HTTP: %j',
+    (args) => {
+      const tls =
+        parseHelpOutput(`usage: main.py [-h] [--tls-keyfile TLS_KEYFILE] [--tls-certfile TLS_CERTFILE]
+
+options:
+  --tls-keyfile TLS_KEYFILE
+                        Path to TLS (SSL) key file.
+  --tls-certfile TLS_CERTFILE
+                        Path to TLS (SSL) certificate file.
+`)
+      expect(tls.args.map((a) => a.type)).toEqual(['value', 'value'])
+      expect(dropValuelessArgs(args, tls), 'ComfyUI enables TLS only with both files').toEqual(args)
+    }
+  )
+
+  it('keeps a bare variadic flag, which may take zero values', () => {
+    const fast = parseHelpOutput(`usage: main.py [-h] [--fast [FAST ...]] [--lowvram]
+
+options:
+  --fast [FAST ...]     Enable fast optimisations; with no arguments, all of them.
+  --lowvram             Use less VRAM.
+`)
+    expect(
+      dropValuelessArgs(['--fast', '--lowvram'], fast),
+      '--fast with no values is how ComfyUI enables every fast optimisation'
+    ).toEqual(['--fast', '--lowvram'])
+  })
+
+  it('keeps flags that have their value, optional values and booleans', () => {
+    const args = [
+      '--cuda-device',
+      '0',
+      '--cuda-device=1',
+      '--listen',
+      '--lowvram',
+      '--extra-model-paths-config',
+      'a.yaml',
+      '--cuda-device',
+      './cuda-device'
+    ]
+    expect(dropValuelessArgs(args, schema)).toEqual(args)
   })
 })
 

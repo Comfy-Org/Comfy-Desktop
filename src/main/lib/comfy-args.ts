@@ -469,6 +469,24 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
+/** Drop a single-value flag with no value (`--cuda-device` last or before another flag, or
+ *  `--cuda-device=`): ComfyUI would exit or lose its GPUs. Variadic flags are kept, since the
+ *  parser types `--fast` (zero values allowed) like one that needs a value. TLS flags are kept so
+ *  a half-set TLS config fails to start rather than serving plain HTTP. */
+export function dropValuelessArgs(args: string[], schema: ComfyArgsSchema): string[] {
+  const needsValue = new Set(
+    schema.args.filter((a) => a.type === 'value' && !a.name.startsWith('tls-')).map((a) => a.name)
+  )
+  return args.filter((arg, i) => {
+    if (!arg.startsWith('--')) return true
+    const [name, inline] = arg.slice(2).split(/=(.*)/s)
+    if (!needsValue.has(name!)) return true
+    const valueless = inline === undefined ? (args[i + 1]?.startsWith('--') ?? true) : inline === ''
+    if (valueless) console.warn(`launch: dropped ${arg}, which needs a value and has none`)
+    return !valueless
+  })
+}
+
 /** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)
