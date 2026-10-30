@@ -1,11 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import {
-  normalizeExceptionContext,
-  scrubAll,
-  scrubPII,
-  scrubSecrets,
-  setScrubbedHomeDir
-} from './piiScrub'
+import { describe, expect, it } from 'vitest'
+import { normalizeExceptionContext, scrubAll, scrubPII, scrubSecrets } from './piiScrub'
 
 describe('piiScrub', () => {
   describe('scrubPII', () => {
@@ -71,6 +65,50 @@ describe('piiScrub', () => {
       const scrubbed = scrubPII(input)
       expect(scrubbed).toContain('[REDACTED]')
       expect(scrubbed).not.toContain(tail)
+    })
+
+    it.each([
+      ['"C:\\\\Users\\\\\\u5f20\\u4e09\\\\x"', '"C:\\\\Users\\\\[REDACTED]\\\\x"'],
+      ['"C:/Users/\\u674e\\u5c0f/x"', '"C:/Users/[REDACTED]/x"']
+    ])('keeps a leading JSON escape inside the name: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it.each([
+      ['C:\\Users\\u1234\\x', 'C:\\Users\\[REDACTED]\\x'],
+      ['"C:\\\\Users\\\\u1234\\\\x"', '"C:\\\\Users\\\\[REDACTED]\\\\x"']
+    ])('redacts a literal username that looks like an escape: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it.each([
+      ['\\\\wsl$\\Ubuntu\\home\\alice\\x', '\\\\wsl$\\Ubuntu\\home\\[REDACTED]\\x'],
+      [
+        '"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\alice\\\\x"',
+        '"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\[REDACTED]\\\\x"'
+      ],
+      ['\\\\?\\UNC\\srv\\c$\\Users\\gina\\x', '\\\\?\\UNC\\srv\\c$\\Users\\[REDACTED]\\x']
+    ])('redacts a share path %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('keeps a Windows line ending after a path', () => {
+      expect(scrubPII('at C:\\Users\\alice\r\nnext')).toBe('at C:\\Users\\[REDACTED]\r\nnext')
+    })
+
+    it('drops same-line text after a path that ends at the username', () => {
+      // A space is legal in a username, so the name runs to the next separator.
+      expect(scrubPII('open /home/bob failed')).toBe('open /home/[REDACTED]')
+    })
+
+    it('leaves paths outside a user directory unchanged', () => {
+      expect(scrubPII('D:\\Program Files\\foo')).toBe('D:\\Program Files\\foo')
+    })
+
+    it('redacts different path families in one string', () => {
+      expect(scrubPII('/Users/alice/foo and /home/bob/bar')).toBe(
+        '/Users/[REDACTED]/foo and /home/[REDACTED]/bar'
+      )
     })
 
     it('redacts every occurrence of the same spelling', () => {
@@ -140,11 +178,6 @@ describe('piiScrub', () => {
       ['another drive letter', 'e:\\Users\\alice\\x', 'e:\\Users\\[REDACTED]\\x'],
       ['lowercase users', 'c:\\users\\alice\\x', 'c:\\users\\[REDACTED]\\x'],
       ['8.3 short name', 'C:\\Users\\ALICEB~1\\AppData', 'C:\\Users\\[REDACTED]\\AppData'],
-      [
-        'legacy profile root',
-        'C:\\Documents and Settings\\alice\\x',
-        'C:\\Documents and Settings\\[REDACTED]\\x'
-      ],
       ['path ending at the username', 'cwd=C:\\Users\\alice', 'cwd=C:\\Users\\[REDACTED]'],
       [
         'JSON-escaped forward slashes',
@@ -162,73 +195,6 @@ describe('piiScrub', () => {
 
     it('leaves paths without user segments untouched', () => {
       expect(scrubPII('/opt/comfy/bin/comfyui')).toBe('/opt/comfy/bin/comfyui')
-    })
-  })
-
-  describe('setScrubbedHomeDir', () => {
-    afterEach(() => setScrubbedHomeDir(''))
-
-    it('redacts a relocated profile directory in every separator spelling', () => {
-      setScrubbedHomeDir('D:\\Profiles\\alice')
-      expect(scrubPII('D:\\Profiles\\alice\\ComfyUI')).toBe('D:\\Profiles\\[REDACTED]\\ComfyUI')
-      expect(scrubPII('d:/profiles/ALICE/ComfyUI')).toBe('d:/profiles/[REDACTED]/ComfyUI')
-      expect(scrubPII('"D:\\\\Profiles\\\\alice\\\\x"')).toBe('"D:\\\\Profiles\\\\[REDACTED]\\\\x"')
-      expect(scrubPII("open 'D:\\Profiles\\alice'")).toBe("open 'D:\\Profiles\\[REDACTED]'")
-    })
-
-    it.each(['alicebrown', 'alice.smith', 'alice-old', 'alice~1', 'alice$'])(
-      'does not redact the sibling directory %s',
-      (sibling) => {
-        setScrubbedHomeDir('D:\\Profiles\\alice')
-        expect(scrubPII(`D:\\Profiles\\${sibling}\\x`)).toBe(`D:\\Profiles\\${sibling}\\x`)
-      }
-    )
-
-    it.each([
-      ['cwd=D:\\Profiles\\alice', 'cwd=D:\\Profiles\\[REDACTED]'],
-      ['open D:\\Profiles\\alice failed', 'open D:\\Profiles\\[REDACTED] failed'],
-      ['cannot open <D:\\Profiles\\alice>', 'cannot open <D:\\Profiles\\[REDACTED]>'],
-      ['`D:\\Profiles\\alice`', '`D:\\Profiles\\[REDACTED]`'],
-      ['D:\\Profiles\\alice|x', 'D:\\Profiles\\[REDACTED]|x'],
-      ['D:\\Profiles\\alice>dir', 'D:\\Profiles\\[REDACTED]>dir'],
-      ['D:\\Profiles\\alice&&x', 'D:\\Profiles\\[REDACTED]&&x'],
-      ['D:\\Profiles\\alice!', 'D:\\Profiles\\[REDACTED]!'],
-      ['D:\\Profiles\\alice*', 'D:\\Profiles\\[REDACTED]*']
-    ])('redacts the home directory in %s', (input, expected) => {
-      setScrubbedHomeDir('D:\\Profiles\\alice')
-      expect(scrubPII(input)).toBe(expected)
-    })
-
-    it('redacts every occurrence of the registered home directory', () => {
-      setScrubbedHomeDir('D:\\Profiles\\alice')
-      expect(scrubPII('D:\\Profiles\\alice\\a and D:\\Profiles\\alice\\b')).toBe(
-        'D:\\Profiles\\[REDACTED]\\a and D:\\Profiles\\[REDACTED]\\b'
-      )
-    })
-
-    it('redacts the home directory at the end of a sentence', () => {
-      setScrubbedHomeDir('D:\\Profiles\\alice')
-      expect(scrubPII('cannot open D:\\Profiles\\alice.')).toBe(
-        'cannot open D:\\Profiles\\[REDACTED].'
-      )
-    })
-
-    it('redacts a POSIX home outside /home', () => {
-      setScrubbedHomeDir('/var/lib/alice')
-      expect(scrubPII('cat /var/lib/alice/.config')).toBe('cat /var/lib/[REDACTED]/.config')
-    })
-
-    it('redacts a single-segment home only at a path root', () => {
-      setScrubbedHomeDir('/data')
-      expect(scrubPII('cat /data/.config')).toBe('cat /[REDACTED]/.config')
-      expect(scrubPII('ls /mnt/data/x')).toBe('ls /mnt/data/x')
-    })
-
-    it('ignores /root and a bare drive', () => {
-      setScrubbedHomeDir('/root')
-      expect(scrubPII('/root/.cache')).toBe('/root/.cache')
-      setScrubbedHomeDir('C:\\')
-      expect(scrubPII('C:\\ComfyUI')).toBe('C:\\ComfyUI')
     })
   })
 

@@ -26,50 +26,30 @@
 // escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
 // stops at `"` or a line break so a JSON string's closing quote, or the next
 // stderr line, survives; not at `'` or a space, which are legal in a Windows
-// username. A `\uXXXX` escape is part of the name (non-ASCII JSON).
-const NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
+// username.
+//
+// The separator before the name decides whether `\uXXXX` belongs to it: after
+// `/` or an escaped `\\` it is a JSON escape (non-ASCII name), so it is part of
+// the name; after a single raw `\` it is a folder (`C:\Users\x\u1234`). Escaped
+// separators are matched in pairs so a leading escape keeps its backslash.
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
+const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
 // A `\\` share root must not follow a path character: escaped, a nested
 // `x\\Users` folder would otherwise read as share `x`.
+const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
 const PII_PATH_PATTERNS: RegExp[] = [
-  String.raw`([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)`,
-  String.raw`(?<![\w.~$-])(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)`,
-  String.raw`(?<![\w.~$-])(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)`,
-  String.raw`(?<![\w.~$-])(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users[\\/]+)`,
-  String.raw`(?<![\w.~$-])(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+[\\/]+Users[\\/]+)`,
-  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users[\\/]+)`,
+  String.raw`([A-Za-z]:[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+(?:Users|home))`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
   // A backslash `\Users\` only at a path root (`\Users\x`): nested, it is usually a project folder.
-  String.raw`((?<![\w.~$\\/-])\\+Users[\\/]+)`,
+  String.raw`((?<![\w.~$\\/-])\\+Users)`,
   // Forward-slash roots for the rest: a backslash `\home\` is usually a nested project folder.
-  String.raw`(\/Users[\\/]+)`,
-  String.raw`(\/home[\\/]+)`,
-  String.raw`(\/mnt\/wsl\/[^/]+\/home\/)`
-].map((prefix) => new RegExp(`${prefix}${NAME}`, 'gi'))
-
-// The real home directory, in any separator spelling. Catches a profile
-// that lives outside `Users` / `home` (a relocated `%USERPROFILE%`, e.g.
-// `D:\Profiles\x`). Set from the main process; empty in the renderer.
-let homeDirPatterns: RegExp[] = []
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-/** Register the user's home directory so every spelling of it is scrubbed. */
-export function setScrubbedHomeDir(homeDir: string): void {
-  const segments = homeDir.split(/[\\/]+/).filter(Boolean)
-  const last = segments.pop()
-  const leading = /^[\\/]/.test(homeDir) ? '[\\\\/]+' : ''
-  // `/root` carries no username worth hiding, and a bare drive (`C:\`) is no home at all.
-  if (!last || (segments.length === 0 && (!leading || last === 'root'))) {
-    homeDirPatterns = []
-    return
-  }
-  const parent = segments.map((segment) => `${escapeRegExp(segment)}[\\\\/]+`).join('')
-  const name = escapeRegExp(last)
-  // Not inside a longer component (`/mnt/data` for home `/data`), and not a
-  // prefix of a sibling (`alice.smith`); any other following character ends the name.
-  homeDirPatterns = [
-    new RegExp(`(?<![\\w.~$-])(${leading}${parent})${name}(?![\\w$~-])(?!\\.[\\w-])`, 'gi')
-  ]
-}
+  String.raw`(\/Users)`,
+  String.raw`(\/home)`
+].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
@@ -90,20 +70,14 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
-// `\uXXXX` is a JSON escape (non-ASCII name) unless the separator before the
-// name is a single raw `\`; there `\u1234` is a folder, so the name ends at its
-// backslash. (A `/\` prefix is `/` plus the first escape's backslash.)
-function redactName(match: string, prefix: string): string {
-  const escaped = !/(?:^|[^\\/])\\$/.test(prefix)
-  const name = match.slice(prefix.length)
-  const end = escaped ? -1 : name.indexOf('\\')
-  return `${prefix}[REDACTED]${end === -1 ? '' : name.slice(end)}`
-}
-
 export function scrubPII(value: string): string {
   let scrubbed = value
-  for (const pattern of [...homeDirPatterns, ...PII_PATH_PATTERNS]) {
-    scrubbed = scrubbed.replace(pattern, redactName)
+  for (const pattern of PII_PATH_PATTERNS) {
+    scrubbed = scrubbed.replace(
+      pattern,
+      (_match, root: string, escapedSep?: string, rawSep?: string) =>
+        `${root}${escapedSep ?? rawSep ?? ''}[REDACTED]`
+    )
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')
 }
