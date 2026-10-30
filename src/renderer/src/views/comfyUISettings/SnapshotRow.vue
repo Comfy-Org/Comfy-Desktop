@@ -249,7 +249,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
   border-radius: 999px;
   font-size: 11px;
   line-height: 16px;
-  background: var(--color-bg);
+  background: var(--legacy-color-bg);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -330,7 +330,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
   padding: 1px 6px;
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--color-bg);
+  background: var(--legacy-color-bg);
   border-radius: 3px;
   white-space: nowrap;
 }

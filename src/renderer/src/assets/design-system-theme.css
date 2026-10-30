@@ -11,6 +11,8 @@
 
 @theme static {
   --font-inter: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'PP Formula', 'Inter', system-ui, sans-serif;
 
   --color-background: oklch(0.19 0.003 285);
   --color-foreground: oklch(0.955 0.002 285);
@@ -93,4 +95,36 @@
       background-position: -50% 0;
     }
   }
+}
+
+/* Legacy Tailwind color names follow the same runtime variables as the
+ * remaining component CSS. `inline` resolves them on the styled element,
+ * including nested dark surfaces and the launcher's forced-dark panel.
+ * New components can use the design-system roles above directly. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent-hover: var(--accent-hover);
+  --color-selected: var(--selected);
+  --color-surface: var(--surface);
+  --color-border-hover: var(--border-hover);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-terminal-bg: var(--terminal-bg);
+
+  --color-neutral-50: var(--neutral-50);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-400: var(--neutral-400);
+  --color-neutral-500: var(--neutral-500);
+  --color-neutral-600: var(--neutral-600);
+  --color-neutral-700: var(--neutral-700);
+  --color-neutral-800: var(--neutral-800);
+  --color-neutral-900: var(--neutral-900);
+  --color-neutral-950: var(--neutral-950);
+
+  --color-comfy-yellow: var(--comfy-yellow);
+  --color-focus-ring: var(--focus-ring);
 }
