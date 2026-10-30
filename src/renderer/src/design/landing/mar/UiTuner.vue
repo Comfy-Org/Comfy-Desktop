@@ -128,6 +128,30 @@ function set(key: keyof Tuning, value: string): void {
         </div>
       </div>
 
+      <!-- Who is looking, and what is on this computer: two axes. A
+           first-time user starts with no local install; a returning one
+           may have none either (they work on Cloud). -->
+      <div v-if="isMariana" class="flex flex-col gap-1.5">
+        <span class="text-ui text-subtle-foreground">User</span>
+        <div class="mar-seg flex gap-1 rounded-control bg-secondary-background p-0.5">
+          <button
+            v-for="u in MAR_USERS"
+            :key="u.value"
+            type="button"
+            :aria-pressed="marUser.user === u.value"
+            :class="[
+              'h-7 flex-1 rounded-[7px] px-2 text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
+              marUser.user === u.value
+                ? 'bg-secondary-background-hover font-medium text-base-foreground'
+                : 'text-muted-foreground hover:text-base-foreground'
+            ]"
+            @click="setUser(u.value)"
+          >
+            {{ u.label }}
+          </button>
+        </div>
+      </div>
+
       <!-- Mar's proposal: Surface on its own row; palette and light/dark
            share the next one, since both set the colour. -->
       <div v-if="isMariana" class="flex flex-col gap-1.5">
@@ -152,30 +176,6 @@ function set(key: keyof Tuning, value: string): void {
               {{ sf.value === 'desktop' ? 'Desktop' : 'Cloud' }}
             </button>
           </div>
-        </div>
-      </div>
-
-      <!-- Who is looking, and what is on this computer: two axes. A
-           first-time user starts with no local install; a returning one
-           may have none either (they work on Cloud). -->
-      <div v-if="isMariana" class="flex flex-col gap-1.5">
-        <span class="text-ui text-subtle-foreground">User</span>
-        <div class="mar-seg flex gap-1 rounded-control bg-secondary-background p-0.5">
-          <button
-            v-for="u in MAR_USERS"
-            :key="u.value"
-            type="button"
-            :aria-pressed="marUser.user === u.value"
-            :class="[
-              'h-7 flex-1 rounded-[7px] px-2 text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
-              marUser.user === u.value
-                ? 'bg-secondary-background-hover font-medium text-base-foreground'
-                : 'text-muted-foreground hover:text-base-foreground'
-            ]"
-            @click="setUser(u.value)"
-          >
-            {{ u.label }}
-          </button>
         </div>
       </div>
 
