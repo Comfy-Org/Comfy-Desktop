@@ -48,7 +48,14 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <Transition name="modal-fade" appear>
+    <Transition
+      name="modal-fade"
+      appear
+      enter-active-class="modal-fade-enter-active transition-opacity duration-180 ease-[ease] [&_.modal-fade-panel]:[transition:opacity_180ms_ease,transform_180ms_cubic-bezier(0.2,0.8,0.2,1)]"
+      leave-active-class="modal-fade-leave-active transition-opacity duration-180 ease-[ease] [&_.modal-fade-panel]:[transition:opacity_180ms_ease,transform_180ms_cubic-bezier(0.2,0.8,0.2,1)]"
+      enter-from-class="modal-fade-enter-from opacity-0 [&_.modal-fade-panel]:opacity-0 [&_.modal-fade-panel]:[transform:scale(0.98)]"
+      leave-to-class="modal-fade-leave-to opacity-0 [&_.modal-fade-panel]:opacity-0 [&_.modal-fade-panel]:[transform:scale(0.98)]"
+    >
       <div
         ref="overlayRef"
         class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70 backdrop-blur-[8px] backdrop-saturate-[115%]"
