@@ -62,6 +62,7 @@ import {
   SOCKETS,
   canvasNodeHeight,
   nodeWidth,
+  settingsOpen,
   createCanvas,
   createNode,
   uid,
@@ -996,7 +997,11 @@ function setText(n: SNode, text: string): void {
 function act(n: SNode, key: string): void {
   if (key === 'save') save(n)
   else if (key === 'collapse') collapse([n.id])
-  else if (key === 'run') runOnly([n.id])
+  else if (key === 'settings') {
+    // Remembered per node: once you open or fold them, they stay so.
+    n.settings = !settingsOpen(n)
+    commit()
+  } else if (key === 'run') runOnly([n.id])
   else if (key === 'duplicate') duplicate([n.id])
   else if (key === 'delete') remove([n.id])
 }

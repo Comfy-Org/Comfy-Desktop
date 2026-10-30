@@ -790,11 +790,11 @@
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 /* Light: on the pale sidebar the 5% tint reads as dirt and the gold coin
-   washes out. A plain white tile (no outline, no shadow), and the
+   washes out. A white tile with a barely-there hairline (4%), and the
    credit gold a step deeper (production's #ddbd31 is tuned for dark). */
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row {
   background: var(--color-card-background, #fff);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
   background: var(--color-card-background-hover, #fafafa);

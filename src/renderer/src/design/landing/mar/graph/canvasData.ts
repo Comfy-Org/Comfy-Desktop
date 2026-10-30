@@ -104,6 +104,9 @@ export interface SNode {
   mode?: 'bypass' | 'mute'
   /** Folded to its title bar. */
   collapsed?: boolean
+  /** Its settings open under the result. Unset: open until it has made
+   *  something, then folded so the result leads. */
+  settings?: boolean
 }
 
 export interface Link {
@@ -575,9 +578,39 @@ export function controlsHeight(n: SNode, g: CanvasGeometry): number {
   return c ? c * g.control + (c - 1) * g.gap : 0
 }
 
+// ── Output first (Willie Falloon's node in Node Banana): once a node has
+// made something, its result is the node; its settings fold into one row
+// under it, the model and its values, and open on a click. Before the
+// first run they stay open over an empty preview. ──
+
+/** It made a result: a run left one, or it opens with one. */
+export const hasResult = (n: SNode): boolean =>
+  n.history.length > 0 || (n.ins.length > 0 && !!(n.image || n.video))
+
+/** A node with settings shows them under its result. A button is an
+ *  action, not a setting: it stays out of the fold. */
+export const hasSettings = (n: SNode): boolean => n.controls.some((c) => c.kind !== 'button')
+
+const rows = (count: number, g: CanvasGeometry): number =>
+  count ? count * g.control + (count - 1) * g.gap : 0
+
+export const settingsOpen = (n: SNode): boolean => n.settings ?? !hasResult(n)
+
+/** Earlier results, stepped through in a row under the preview. */
+export const hasCycler = (n: SNode): boolean =>
+  n.history.length > 1 && (mediaOf(n) === 'image' || mediaOf(n) === 'video')
+
 export function canvasNodeHeight(n: SNode, g: CanvasGeometry): number {
   if (n.collapsed) return g.head
-  const parts = [slotsHeight(n, g), controlsHeight(n, g), n.body].filter((h) => h > 0)
+  const fields = n.controls.filter((c) => c.kind !== 'button').length
+  const actions = n.controls.length - fields
+  const settings = hasSettings(n)
+    ? g.control +
+      (settingsOpen(n) ? g.gap + rows(fields, g) : 0) +
+      (actions ? g.gap + rows(actions, g) : 0)
+    : controlsHeight(n, g)
+  const cycler = hasCycler(n) ? g.control : 0
+  const parts = [slotsHeight(n, g), n.body, cycler, settings].filter((h) => h > 0)
   const inner = parts.reduce((a, h) => a + h, 0) + (parts.length - 1) * g.gap
   return g.head + g.gap + inner + g.foot
 }
