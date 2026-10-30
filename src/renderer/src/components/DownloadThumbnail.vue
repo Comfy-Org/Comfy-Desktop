@@ -31,7 +31,7 @@ watch(thumbnail, () => {
     v-if="thumbnail && !failed"
     :src="thumbnail"
     :alt="t('downloadsPopup.thumbnailAlt', { name: entry.filename })"
-    class="download-thumb"
+    class="download-thumb block size-full object-cover"
     loading="lazy"
     decoding="async"
     draggable="false"
@@ -39,12 +39,3 @@ watch(thumbnail, () => {
   />
   <slot v-else name="fallback" />
 </template>
-
-<style scoped>
-.download-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-</style>
