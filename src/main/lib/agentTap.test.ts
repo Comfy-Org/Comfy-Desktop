@@ -732,8 +732,8 @@ describe('agentTap product events', () => {
     ],
     ['agent_turn_completed', ['session_id', 'thread_id', 'turn_id', 'workflow_id']],
     ['agent_turn_failed', ['thread_id', 'turn_id', 'workflow_id']],
-    ['agent_run_submitted', ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'job_id']],
-    ['agent_run_completed', ['session_id', 'thread_id', 'turn_id', 'workflow_id', 'job_id']]
+    ['agent_run_submitted', ['session_id', 'thread_id', 'turn_id', 'job_id']],
+    ['agent_run_completed', ['session_id', 'thread_id', 'turn_id', 'job_id']]
   ])('drops %s missing any of its ids', (event, ids) => {
     const line = PRODUCT_FIXTURE.find((l) => l.startsWith(`[agent-event] ${event} `))!
     for (const id of ids) ingest(relayed(line.replace(new RegExp(` ${id}=[^ ]+`), '')))
@@ -771,6 +771,24 @@ describe('agentTap product events', () => {
     ingest(line('').replace(JOB, JOB.toUpperCase()))
     ingest(line('').replace(JOB, '0123456789'))
     expect(captured).toEqual([])
+  })
+
+  it.each([
+    ['submitted', runSubmitted],
+    ['completed', runCompleted]
+  ])('keeps a run %s event without a valid workflow_id, omitting the field', (_label, line) => {
+    ingest(line('').replace(` workflow_id=${WORKFLOW}`, ''))
+    ingest(line('').replace(WORKFLOW, 'workflow-1'))
+    ingest(line('').replace(WORKFLOW, WORKFLOW.toUpperCase()))
+    expect(captured.map((c) => c.event)).toEqual([
+      `agent_run_${_label}`,
+      `agent_run_${_label}`,
+      `agent_run_${_label}`
+    ])
+    for (const { ctx } of captured) {
+      expect(Object.hasOwn(ctx, 'workflow_id'), 'workflow_id must be omitted').toBe(false)
+      expect(ctx).toMatchObject({ job_id: JOB, turn_id: TURN })
+    }
   })
 
   it('keeps a run event without its optional fields, carrying deployment=local', () => {

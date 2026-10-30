@@ -344,16 +344,16 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
   [
     'agent_run_submitted',
     productEvent(
-      'session_id thread_id turn_id workflow_id job_id',
-      'event_schema_version timestamp job_kind target run_mode approval has_api_nodes api_node_count api_node_class_count',
+      'session_id thread_id turn_id job_id',
+      'workflow_id event_schema_version timestamp job_kind target run_mode approval has_api_nodes api_node_count api_node_class_count',
       TURNS_PER_HOUR * AGENT_MAX_RUNS_PER_TURN
     )
   ],
   [
     'agent_run_completed',
     productEvent(
-      'session_id thread_id turn_id workflow_id job_id',
-      'event_schema_version timestamp status duration_ms target',
+      'session_id thread_id turn_id job_id',
+      'workflow_id event_schema_version timestamp status duration_ms target',
       TURNS_PER_HOUR * AGENT_MAX_RUNS_PER_TURN
     )
   ]
@@ -420,7 +420,12 @@ function parseProductFields(
   const names = new Set([...event.required, ...event.optional])
   const fields = parseFields(tail, (key, rawValue) => {
     const value = names.has(key) ? PRODUCT_FIELDS.get(key) : undefined
-    return value ? value(rawValue) : null
+    if (!value) return null
+    const parsed = value(rawValue)
+    // workflow_id is optional on the run events: an invalid value omits the
+    // field instead of dropping the line. Everywhere else it stays required.
+    if (parsed === undefined && key === 'workflow_id' && !event.required.includes(key)) return null
+    return parsed
   })
   return fields && event.required.every((key) => Object.hasOwn(fields, key)) ? fields : null
 }
