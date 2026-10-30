@@ -23,7 +23,7 @@ export interface DsPage {
 }
 
 /** Where a page sits in the nav, in this order. */
-export const GROUPS = ['', 'Foundations', 'Components', 'Patterns', 'Playground'] as const
+export const GROUPS = ['', 'Foundations', 'Components', 'Patterns'] as const
 
 const lazy = (load: () => Promise<{ default: Component }>): Component => defineAsyncComponent(load)
 
@@ -101,15 +101,6 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 
 export const PAGES: DsPage[] = [
   { id: 'about', label: 'About', group: '', title: 'Comfy Desktop · Design system' },
-  {
-    id: 'playground',
-    label: 'Playground',
-    group: 'Playground',
-    title: 'Playground',
-    source: 'the components named on each one; specs in mar/ds/play.ts',
-    use: 'Try a component with any props, in either theme, Corners and Look; copy its usage or a link.',
-    custom: lazy(() => import('./pages/PlaygroundPage.vue'))
-  },
   {
     id: 'colour',
     label: 'Colour',

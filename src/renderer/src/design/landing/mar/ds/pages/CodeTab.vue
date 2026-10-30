@@ -42,7 +42,7 @@ async function copy(): Promise<void> {
     <div v-if="code" class="ds-play-code">
       <div class="ds-play-code-head">
         <span>Usage</span>
-        <a v-if="spec" :href="`#/playground?c=${spec.id}`">Open in Playground</a>
+        <a v-if="spec" :href="`#/${page}?tab=playground`">Open in Playground</a>
         <button type="button" @click="copy">
           <component :is="copied ? Check : Copy" :size="13" />Copy
         </button>

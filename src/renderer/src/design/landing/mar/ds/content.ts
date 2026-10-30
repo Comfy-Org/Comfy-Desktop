@@ -122,6 +122,7 @@ export const CONTENT: Record<string, Content> = {
     play: 'item'
   },
   cards: {
+    play: 'card',
     heroWidth: '320px',
     hero: [1, 0],
     when: ['Home’s recent work and spaces, picture first.'],

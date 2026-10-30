@@ -16,6 +16,8 @@ export interface Control {
   cd?: Value
   /** A required prop: usage always writes it. */
   required?: boolean
+  /** Its inspector group, when the kind doesn't say (kit/PlayFrame.vue). */
+  group?: Group
 }
 
 export interface PlaySpec {
@@ -72,7 +74,7 @@ export const SPECS: PlaySpec[] = [
     controls: [
       { name: 'status', kind: 'select', options: STATUSES, default: 'executing', required: true },
       { name: 'label', kind: 'text', default: '' },
-      { name: 'on-media', kind: 'bool', default: false }
+      { name: 'on-media', kind: 'bool', default: false, group: 'Appearance' }
     ]
   },
   {
@@ -109,7 +111,7 @@ export const SPECS: PlaySpec[] = [
       { name: 'action', kind: 'text', default: 'Browse templates' },
       { name: 'second', kind: 'text', default: '' },
       { name: 'pictures', kind: 'bool', default: true, role: 'picture' },
-      { name: 'compact', kind: 'bool', default: false },
+      { name: 'compact', kind: 'bool', default: false, group: 'Appearance' },
       { name: 'tone', kind: 'select', options: ['', 'error'], default: '' }
     ]
   },
@@ -125,12 +127,16 @@ export const SPECS: PlaySpec[] = [
     ]
   },
   {
-    id: 'search-field',
-    name: 'Search field',
-    from: 'mar/pages/MarSearchField.vue',
-    note: 'A page’s search, in the toolbar’s right group.',
-    fixed: 'v-model="query"',
-    controls: [{ name: 'placeholder', kind: 'text', default: 'Search workflows' }]
+    id: 'card',
+    name: 'Card',
+    from: 'mar/WorkflowCard.vue',
+    note: 'Home’s recent work: the picture, the name, where it ran and when.',
+    controls: [
+      { name: 'title', kind: 'text', default: 'hero-shot-v4', required: true },
+      { name: 'meta', kind: 'text', default: 'My Local 1', required: true },
+      { name: 'right', kind: 'text', default: '12 min ago' }
+    ],
+    fixed: ':src="picture"'
   },
   {
     id: 'tooltip',
@@ -168,7 +174,7 @@ const TAGS: Record<string, string> = {
   item: 'MarItem',
   empty: 'MarEmpty',
   tabs: 'MarSeg',
-  'search-field': 'MarSearchField',
+  card: 'WorkflowCard',
   tooltip: 'Tooltip',
   banner: 'LaunchBanner'
 }
@@ -203,3 +209,43 @@ export function usage(spec: PlaySpec, values: Record<string, Value>): string {
 
 export const importLine = (spec: PlaySpec): string =>
   `import ${TAGS[spec.id]} from '@renderer/design/landing/${spec.from}'`
+
+/** The inspector's groups, in order. */
+export const GROUPS = ['Content', 'Appearance', 'State'] as const
+export type Group = (typeof GROUPS)[number]
+
+/** Text is content, choices are appearance, switches are state. */
+export function groupOf(c: Control): Group {
+  if (c.group) return c.group
+  if (c.kind === 'text' || c.role === 'picture') return 'Content'
+  if (c.kind === 'select') return 'Appearance'
+  return 'State'
+}
+
+/** “on-media” → “On media”. */
+export const labelOf = (c: Control): string => {
+  const words = c.name.replace(/-/g, ' ')
+  return words[0]!.toUpperCase() + words.slice(1)
+}
+
+const esc = (t: string): string =>
+  t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** A light highlight for usage, in one pass: keywords, tags, attributes,
+ *  strings. */
+export function highlight(code: string): string {
+  const span = (cls: string, t: string): string => `<span class="${cls}">${t}</span>`
+  return esc(code).replace(
+    /\b(import|from)\b|(&lt;\/?)([A-Z]\w*)|(\s)(:?[a-z][\w-]*)(?==)|("[^"]*"|'[^']*')/g,
+    (m, kw, open, tag, sp, attr, str) =>
+      kw
+        ? span('t-kw', kw)
+        : tag
+          ? open + span('t-tag', tag)
+          : attr
+            ? sp + span('t-attr', attr)
+            : str
+              ? span('t-str', str)
+              : m
+  )
+}

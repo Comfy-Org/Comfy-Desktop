@@ -4,6 +4,7 @@ import { CONTENT } from './content'
 import { GROUPS, PAGES } from './registry'
 import AboutPage from './pages/AboutPage.vue'
 import CodeTab from './pages/CodeTab.vue'
+import PlaygroundTab from './pages/PlaygroundTab.vue'
 import ThemeFrames from './kit/ThemeFrames.vue'
 
 /**
@@ -15,6 +16,13 @@ import ThemeFrames from './kit/ThemeFrames.vue'
  */
 function readHash(): { id: string; tab: string } {
   const [path, query] = location.hash.replace(/^#\/?/, '').split('?')
+  // The Playground was a page of its own: its links open the tab.
+  if (path === 'playground') {
+    const c = new URLSearchParams(query ?? '').get('c') ?? 'button'
+    const to = Object.keys(CONTENT).find((k) => CONTENT[k]!.play === c) ?? 'buttons'
+    history.replaceState(null, '', `#/${to}?tab=playground`)
+    return { id: to, tab: 'playground' }
+  }
   const id = PAGES.some((p) => p.id === path) ? path! : PAGES[0]!.id
   return { id, tab: new URLSearchParams(query ?? '').get('tab') ?? '' }
 }
@@ -47,11 +55,9 @@ const content = computed(() => CONTENT[current.value] ?? {})
 const kind = computed(() =>
   page.value.group === 'Foundations'
     ? 'foundation'
-    : page.value.group === 'Playground'
-      ? 'custom'
-      : page.value.group === ''
-        ? 'about'
-        : 'component'
+    : page.value.group === ''
+      ? 'about'
+      : 'component'
 )
 
 // Tabs: what the page has.
@@ -64,6 +70,8 @@ const tabs = computed(() => {
     ]
   const c = content.value
   return [
+    { id: 'overview', label: 'Overview' },
+    ...(c.play ? [{ id: 'playground', label: 'Playground' }] : []),
     { id: 'states', label: 'States' },
     ...(c.tokens?.length ? [{ id: 'specs', label: 'Specs' }] : []),
     ...(page.value.group === 'Components' || c.play || c.snippet
@@ -102,7 +110,10 @@ function onMeta(e: MessageEvent): void {
     single.value = { ...single.value, [e.data.page]: e.data.single }
 }
 const bare = computed(
-  () => page.value.group === 'Patterns' && single.value[page.value.id] && tabs.value.length === 1
+  () =>
+    page.value.group === 'Patterns' &&
+    single.value[page.value.id] &&
+    tabs.value.every((t) => t.id === 'overview' || t.id === 'states')
 )
 
 const main = ref<HTMLElement>()
@@ -123,7 +134,7 @@ onBeforeUnmount(() => {
       <span class="font-semibold">Desktop DS</span>
       <span class="text-subtle-foreground">{{ page.label }}</span>
       <div
-        v-if="kind !== 'about' && kind !== 'custom'"
+        v-if="kind !== 'about' && active !== 'playground'"
         class="ds-views"
         role="radiogroup"
         aria-label="Theme"
@@ -171,10 +182,35 @@ onBeforeUnmount(() => {
             <p v-if="page.use">{{ page.use }}</p>
           </header>
 
-          <component :is="page.custom" v-if="kind === 'custom'" />
+          <!-- Components and patterns: tabs, Overview first (the example and
+               the decisions). Foundations: Overview, Details, Code. -->
+          <div v-if="!bare" class="ds-tabs" role="tablist">
+            <button
+              v-for="t in tabs"
+              :key="t.id"
+              type="button"
+              role="tab"
+              :aria-selected="active === t.id"
+              @click="pick(t.id)"
+            >
+              {{ t.label }}
+            </button>
+          </div>
 
-          <!-- Components and patterns: the example, then the decisions. -->
-          <template v-else-if="kind === 'component'">
+          <template v-if="kind === 'foundation'">
+            <template v-if="active === 'overview'">
+              <component :is="page.bar" v-if="page.bar" />
+              <ThemeFrames :page="page.id" mode="overview" :themes />
+            </template>
+            <template v-else-if="active === 'details'">
+              <component :is="page.bar" v-if="page.bar" />
+              <ThemeFrames :page="page.id" mode="details" :themes />
+              <div v-if="page.doc" class="ds-block"><component :is="page.doc" /></div>
+            </template>
+            <component :is="page.code" v-else />
+          </template>
+
+          <template v-else-if="active === 'overview'">
             <div class="ds-hero">
               <ThemeFrames :page="page.id" mode="hero" :themes />
             </div>
@@ -202,38 +238,15 @@ onBeforeUnmount(() => {
               </ul>
             </div>
           </template>
-
-          <template v-if="(kind === 'component' && !bare) || kind === 'foundation'">
-            <div class="ds-tabs" role="tablist">
-              <button
-                v-for="t in tabs"
-                :key="t.id"
-                type="button"
-                role="tab"
-                :aria-selected="active === t.id"
-                @click="pick(t.id)"
-              >
-                {{ t.label }}
-              </button>
-            </div>
-            <template v-if="kind === 'foundation'">
-              <template v-if="active === 'overview'">
-                <component :is="page.bar" v-if="page.bar" />
-                <ThemeFrames :page="page.id" mode="overview" :themes />
-              </template>
-              <template v-else-if="active === 'details'">
-                <component :is="page.bar" v-if="page.bar" />
-                <ThemeFrames :page="page.id" mode="details" :themes />
-                <div v-if="page.doc" class="ds-block"><component :is="page.doc" /></div>
-              </template>
-              <component :is="page.code" v-else />
-            </template>
-            <template v-else>
-              <ThemeFrames v-if="active === 'states'" :page="page.id" mode="states" :themes />
-              <ThemeFrames v-else-if="active === 'specs'" :page="page.id" mode="specs" :themes />
-              <CodeTab v-else :page="page.id" :source="page.source" />
-            </template>
-          </template>
+          <PlaygroundTab
+            v-else-if="active === 'playground' && content.play"
+            :key="page.id"
+            :page="page.id"
+            :spec="content.play"
+          />
+          <ThemeFrames v-else-if="active === 'states'" :page="page.id" mode="states" :themes />
+          <ThemeFrames v-else-if="active === 'specs'" :page="page.id" mode="specs" :themes />
+          <CodeTab v-else :page="page.id" :source="page.source" />
         </template>
       </main>
     </div>
