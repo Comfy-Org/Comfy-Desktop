@@ -3,7 +3,13 @@
 // ComfyUISettingsPanel + EnvVarsField) reaches functional parity and
 // ships everywhere.
 import { ref, watch, computed } from 'vue'
+import Button from '@comfyorg/design-system/button/Button'
 import { ShieldAlert } from 'lucide-vue-next'
+
+const inputClass =
+  'env-var-input mt-0 w-full rounded-md border border-solid bg-[var(--bg)] px-2 py-1.5 [font-family:monospace] text-[14px] leading-[inherit] text-text outline-none select-text'
+const buttonClass =
+  'static appearance-auto gap-0 border border-solid font-sans text-[14px] leading-[inherit] whitespace-normal touch-auto transition-none [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
 
 const props = defineProps<{
   modelValue: Record<string, string>
@@ -83,127 +89,56 @@ function onValueChange(index: number, val: string): void {
 
 <template>
   <div class="env-vars-editor">
-    <div v-if="entries.length" class="env-vars-list">
-      <div class="env-vars-notice">
-        <ShieldAlert :size="14" class="env-vars-notice-icon" />{{ $t('envVars.securityWarning') }}
+    <div v-if="entries.length" class="env-vars-list mb-2 flex flex-col gap-1.5">
+      <div class="env-vars-notice mb-1 flex items-center gap-1 text-[12px] text-[var(--info)]">
+        <ShieldAlert :size="14" class="env-vars-notice-icon shrink-0" />{{
+          $t('envVars.securityWarning')
+        }}
       </div>
-      <div v-for="(entry, i) in entries" :key="i" class="env-var-row">
+      <div v-for="(entry, i) in entries" :key="i" class="env-var-row flex items-center gap-1.5">
         <input
           type="text"
-          class="env-var-input env-var-key"
-          :class="{ 'env-var-duplicate': isDuplicate(i) }"
+          :class="[
+            inputClass,
+            'env-var-key flex-[2]',
+            isDuplicate(i) ? 'env-var-duplicate border-[var(--danger)]' : 'border-[var(--border)]'
+          ]"
           :value="entry.key"
           :placeholder="$t('envVars.namePlaceholder')"
           @change="onKeyChange(i, ($event.target as HTMLInputElement).value)"
         />
         <input
           type="text"
-          class="env-var-input env-var-value"
+          :class="[inputClass, 'env-var-value flex-[3] border-[var(--border)]']"
           :value="entry.value"
           :placeholder="$t('envVars.valuePlaceholder')"
           @change="onValueChange(i, ($event.target as HTMLInputElement).value)"
         />
-        <button
-          class="env-var-remove"
+        <Button
+          size="unset"
+          variant="textonly"
+          :class="[
+            buttonClass,
+            'env-var-remove flex w-7 shrink-0 items-center justify-center rounded-md border-[var(--border)] bg-surface px-0 py-1.5 font-normal text-text-muted hover:border-[var(--danger)] hover:bg-surface hover:text-[var(--danger)]'
+          ]"
           :title="$t('common.cancel')"
           aria-label="Remove variable"
           @click="removeEntry(i)"
         >
           ✕
-        </button>
+        </Button>
       </div>
     </div>
-    <button class="env-var-add" @click="addEntry">+ {{ $t('envVars.add') }}</button>
+    <Button
+      size="unset"
+      variant="textonly"
+      :class="[
+        buttonClass,
+        'env-var-add inline-flex items-center justify-normal gap-1 self-start rounded-lg border-[var(--border)] bg-[rgba(255,255,255,0.1)] py-2 pr-4 pl-2 font-medium text-neutral-100 hover:bg-[rgba(255,255,255,0.15)] hover:text-text'
+      ]"
+      @click="addEntry"
+    >
+      + {{ $t('envVars.add') }}
+    </Button>
   </div>
 </template>
-
-<style scoped>
-.env-vars-notice {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--info);
-  margin-bottom: 4px;
-}
-
-.env-vars-notice-icon {
-  flex-shrink: 0;
-}
-
-.env-vars-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.env-var-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.env-var-input {
-  font-size: 14px;
-  padding: 6px 8px;
-  margin-top: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--text);
-  user-select: text;
-}
-
-.env-var-key {
-  flex: 2;
-  font-family: monospace;
-}
-
-.env-var-key.env-var-duplicate {
-  border-color: var(--danger);
-}
-
-.env-var-value {
-  flex: 3;
-  font-family: monospace;
-}
-
-.env-var-remove {
-  flex-shrink: 0;
-  width: 28px;
-  padding: 6px 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.env-var-remove:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.env-var-add {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 16px 8px 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.env-var-add:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.15);
-}
-</style>

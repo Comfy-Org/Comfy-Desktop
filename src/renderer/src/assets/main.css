@@ -773,18 +773,6 @@ button.loading::after {
   flex-direction: column;
   margin-top: 16px;
 }
-.path-input {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-.path-input input[type='text'] {
-  flex: 1;
-  margin-top: 0;
-}
-.path-input button {
-  flex-shrink: 0;
-}
 
 /* Shared drag handles */
 .drag-handle {

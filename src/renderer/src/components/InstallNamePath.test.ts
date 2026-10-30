@@ -38,7 +38,9 @@ describe('InstallNamePath', () => {
 
   it('emits browse when the Browse button is clicked', async () => {
     const wrapper = mountComponent()
-    const browseBtn = wrapper.findAll('.path-input button').find((b) => b.text().includes('Browse'))
+    const browseBtn = wrapper
+      .findAll('.install-path-input button')
+      .find((b) => b.text().includes('Browse'))
     expect(browseBtn).toBeTruthy()
     await browseBtn!.trigger('click')
     expect(wrapper.emitted('browse')).toHaveLength(1)
@@ -46,6 +48,6 @@ describe('InstallNamePath', () => {
 
   it('no longer renders a readonly text input for the path', () => {
     const wrapper = mountComponent()
-    expect(wrapper.find('.path-input input[readonly]').exists()).toBe(false)
+    expect(wrapper.find('.install-path-input input[readonly]').exists()).toBe(false)
   })
 })
