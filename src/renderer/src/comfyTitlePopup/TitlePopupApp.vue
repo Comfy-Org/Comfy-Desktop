@@ -373,12 +373,14 @@ onUnmounted(() => {
        which for a reused WebContentsView caused an "open → close → open"
        flicker on 2nd+ clicks. -->
   <div
-    class="popup"
+    class="popup box-border m-0 h-full w-full overflow-hidden rounded-card border border-solid border-border bg-neutral-800 text-text select-none [box-shadow:var(--shadow-highlight)]"
     :class="{
-      'is-menu': kind === 'menu',
+      'is-menu text-[13px]': kind === 'menu',
       'is-picker': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
-      'is-downloads-full': kind === 'downloads-full'
+      'is-downloads-full': kind === 'downloads-full',
+      'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
+        kind === 'instance-picker' || kind === 'global-settings' || kind === 'downloads-full'
     }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
@@ -392,42 +394,3 @@ onUnmounted(() => {
     <DialogHost />
   </div>
 </template>
-
-<style scoped>
-:global(html),
-:global(body),
-:global(#app) {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent !important;
-}
-
-.popup {
-  background: var(--neutral-800);
-  color: var(--text);
-  margin: 0;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  user-select: none;
-  overflow: hidden;
-  height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.popup.is-menu {
-  border-color: var(--chooser-surface-border);
-  font-size: 13px;
-}
-
-/* Centred-card popups share the in-app modal-card chrome. */
-.popup.is-picker,
-.popup.is-global-settings,
-.popup.is-downloads-full {
-  background: var(--modal-surface-bg);
-  border: 1px solid var(--modal-surface-border);
-  border-radius: 14px;
-  box-shadow: var(--modal-surface-shadow);
-}
-</style>

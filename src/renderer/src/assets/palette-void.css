@@ -170,26 +170,12 @@
 }
 
 /* ── 4. Popup windows ──────────────────────────────────────────────── */
-/* Hairline border and the inset top highlight; an outer shadow would be
- * clipped by the content-sized window. */
-:root.palette-void .popup.popup {
-  border-color: var(--color-border);
-  box-shadow: var(--shadow-highlight);
-}
-/* Menus and the small downloads list: 12px. */
-:root.palette-void .popup.popup:not(.is-picker, .is-global-settings, .is-downloads-full) {
-  border-radius: var(--radius-card);
-}
 :root.palette-void .popup.is-menu .item:hover {
   background: oklch(1 0 0 / 0.07);
 }
 :root.palette-void .popup.is-menu .separator {
   background: var(--color-border);
   opacity: 1;
-}
-/* Centered cards (picker, settings, all downloads): 16px panels. */
-:root.palette-void :is(.popup.is-picker, .popup.is-global-settings, .popup.is-downloads-full) {
-  border-radius: var(--radius-panel);
 }
 
 /* ── 5. Desktop Settings: one surface; the tab list is a quiet nav ──── */

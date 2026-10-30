@@ -168,7 +168,7 @@ onUnmounted(() => {
   <div
     v-if="variant === 'coachmark'"
     ref="bubble"
-    class="coachmark"
+    class="coachmark relative mx-auto mt-[7px] box-border block w-max max-w-[280px] select-none rounded-[10px] border border-solid px-3.5 py-3 font-sans text-[13px] leading-[1.45] font-normal [box-shadow:inset_0_0_0_1px_rgba(255,255,255,0.04),0_8px_24px_rgba(0,0,0,0.5)]"
     role="dialog"
     aria-modal="false"
     :aria-label="cmTitle"
@@ -188,7 +188,7 @@ onUnmounted(() => {
     }"
   >
     <span
-      class="coachmark-beak"
+      class="coachmark-beak absolute -top-1.5 left-1/2 size-3 rounded-tl-[3px] border-t border-l border-solid [transform:translateX(-50%)_rotate(45deg)]"
       :style="{
         background: themeBg,
         borderColor: coachmarkBorder,
@@ -196,13 +196,22 @@ onUnmounted(() => {
       }"
     />
     <div class="coachmark-body">
-      <div class="coachmark-title" :style="{ color: themeAccent }">{{ cmTitle }}</div>
-      <p class="coachmark-text">{{ cmBody }}</p>
-      <div class="coachmark-actions">
+      <div
+        class="coachmark-title text-[13px] font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]"
+        :style="{ color: themeAccent }"
+      >
+        {{ cmTitle }}
+      </div>
+      <p
+        class="coachmark-text mt-1 mr-0 mb-2.5 ml-0 text-[12px] leading-[1.5] opacity-88 [overflow-wrap:anywhere]"
+      >
+        {{ cmBody }}
+      </p>
+      <div class="coachmark-actions flex items-center gap-3.5">
         <button
           v-if="cmActionLabel"
           type="button"
-          class="coachmark-action"
+          class="coachmark-action appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
           :style="{ color: themeAccent }"
           @click="onAction"
         >
@@ -210,7 +219,7 @@ onUnmounted(() => {
         </button>
         <button
           type="button"
-          class="coachmark-dismiss"
+          class="coachmark-dismiss appearance-none border-0 border-none border-current bg-transparent px-0 py-0.5 font-[inherit] text-[12px] leading-[inherit] font-semibold cursor-pointer hover:underline"
           :style="{ color: themeAccent }"
           @click="onDismiss"
         >
@@ -223,7 +232,7 @@ onUnmounted(() => {
   <span
     v-else-if="text"
     ref="bubble"
-    class="bubble"
+    class="bubble pointer-events-none box-border inline-block w-max max-w-[260px] select-none rounded-md border border-solid px-2.5 py-1.5 font-sans text-[12px] leading-[1.4] font-normal tracking-normal whitespace-normal [box-shadow:0_4px_12px_rgba(0,0,0,0.35)]"
     :style="{
       background: themeBg,
       color: themeText,
@@ -232,130 +241,3 @@ onUnmounted(() => {
     >{{ text }}</span
   >
 </template>
-
-<style scoped>
-:global(html),
-:global(body),
-:global(#app) {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent !important;
-  overflow: hidden;
-}
-
-/* Center the bubble horizontally; anchor it to the top (asymmetric gutter). */
-:global(body) {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-/* Shrink-wraps its text so main can measure and resize the view. Chrome matches
-   the panel-side `.info-tooltip-bubble` so the popup looks identical. */
-.bubble {
-  display: inline-block;
-  width: max-content;
-  max-width: 260px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid;
-  font: 12px/1.4 var(--font-sans, 'Inter', system-ui, sans-serif);
-  font-weight: 400;
-  letter-spacing: 0;
-  white-space: normal;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-/* Coachmark card — sticky onboarding hint, sized from its measured rect. */
-.coachmark {
-  position: relative;
-  display: block;
-  width: max-content;
-  max-width: 280px;
-  /* `margin-top` for the beak; `auto` inline as the FALLBACK centring — main normally sends
-     an explicit centre (`cmCardCentre`) which overrides this inline, because centring here
-     depends on the page's own width and that is sometimes still the pre-resize value.
-     Body's flex centring does not reach it: `#app` is `width: 100%`, so the flex item that
-     gets centred is a full-width box and the card inside it stays flush-left. Main sizes the
-     view as the card plus a shadow gutter each side and centres that VIEW on the bell, so a
-     flush-left card lands one gutter to the left — beak included, since the beak is pinned to
-     the card. Measured at −10px on Linux and −18px on Windows, each exactly its gutter.
-     `margin-inline: auto` fixes it without making `#app` a flex container, which changes what
-     `notifyRendered` measures and collapses the view. */
-  margin: 7px auto 0;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 8px 24px rgba(0, 0, 0, 0.5);
-  font: 13px/1.45 var(--font-sans, 'Inter', system-ui, sans-serif);
-  user-select: none;
-  box-sizing: border-box;
-}
-
-/* Upward beak: a rotated square sharing the card's bg + border. */
-/* `left` is set inline from the measured anchor position; 50% is the fallback for a card
-   whose beak push never arrived. */
-.coachmark-beak {
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  width: 12px;
-  height: 12px;
-  transform: translateX(-50%) rotate(45deg);
-  border-top: 1px solid;
-  border-left: 1px solid;
-  border-top-left-radius: 3px;
-}
-
-/* The card is `max-width: 280px` with `overflow: hidden` on the viewport, and a
-   payload-supplied feature name can be a single unbroken token — which would otherwise be
-   clipped rather than wrapped. */
-.coachmark-title,
-.coachmark-text {
-  overflow-wrap: anywhere;
-}
-
-.coachmark-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.coachmark-text {
-  margin: 4px 0 10px;
-  font-size: 12px;
-  line-height: 1.5;
-  opacity: 0.88;
-}
-
-/* Action (when present) sits left of dismiss, which stays the rightmost button so its
-   position doesn't move between a dismiss-only and an actioned card. */
-.coachmark-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.coachmark-action,
-.coachmark-dismiss {
-  appearance: none;
-  background: transparent;
-  border: none;
-  padding: 2px 0;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.coachmark-action:hover,
-.coachmark-dismiss:hover {
-  text-decoration: underline;
-}
-</style>
