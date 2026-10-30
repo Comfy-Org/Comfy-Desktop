@@ -38,12 +38,20 @@ function rowOpacity(index: number): number {
 </script>
 
 <template>
-  <div v-if="steps.length" class="bpv" :style="viewportStyle" aria-live="polite">
-    <ul class="bpv__track" :style="trackStyle">
+  <div
+    v-if="steps.length"
+    class="bpv relative mx-auto w-full max-w-[38rem] overflow-hidden [mask-image:linear-gradient(to_bottom,transparent_0%,#000_18%,#000_82%,transparent_100%)]"
+    :style="viewportStyle"
+    aria-live="polite"
+  >
+    <ul
+      class="bpv__track m-0 flex list-none flex-col p-0 transition-transform duration-420 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none"
+      :style="trackStyle"
+    >
       <li
         v-for="(step, i) in steps"
         :key="step.phase"
-        class="bpv__row"
+        class="bpv__row flex h-[46px] items-center justify-center px-1 transition-opacity duration-300 ease-[ease]"
         :class="[
           `is-${step.status}`,
           {
@@ -53,22 +61,56 @@ function rowOpacity(index: number): number {
         :style="{ opacity: rowOpacity(i) }"
         :aria-current="i === activeIndex ? 'step' : undefined"
       >
-        <span class="bpv__row-inner">
-          <span class="bpv__text">
-            <span class="bpv__line">
-              <span class="bpv__icon" aria-hidden="true">
+        <span class="bpv__row-inner flex max-w-full justify-center">
+          <span
+            class="bpv__text flex min-w-0 max-w-[min(34rem,88vw)] flex-col items-center gap-px text-center"
+          >
+            <span class="bpv__line inline-flex max-w-full items-center justify-center gap-2">
+              <span
+                :class="
+                  i === activeIndex
+                    ? 'text-comfy-yellow'
+                    : step.status === 'done'
+                      ? 'text-[var(--brand-success,#3ecf8e)]'
+                      : 'text-neutral-500'
+                "
+                class="bpv__icon inline-flex size-4 flex-[0_0_16px] items-center justify-center"
+                aria-hidden="true"
+              >
                 <Check v-if="step.status === 'done'" :size="12" stroke-width="2.5" />
-                <LoaderCircle v-else-if="step.status === 'active'" :size="14" class="bpv__spin" />
-                <span v-else class="bpv__dot" />
+                <LoaderCircle
+                  v-else-if="step.status === 'active'"
+                  :size="14"
+                  class="bpv__spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                />
+                <span
+                  v-else
+                  class="bpv__dot size-1.5 rounded-[50%] border-[1.5px] border-solid border-neutral-500"
+                />
               </span>
-              <span class="bpv__label">{{ step.label }}</span>
+              <span
+                :class="
+                  i === activeIndex
+                    ? 'text-sm font-medium text-neutral-100 [text-shadow:0_1px_3px_rgba(0,0,0,0.75),0_0_24px_rgba(25,19,29,0.95)]'
+                    : 'text-[0.8125rem] font-normal text-neutral-300 [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_0_18px_rgba(25,19,29,0.9)]'
+                "
+                class="bpv__label truncate leading-[1.25] tracking-[0.005em]"
+                >{{ step.label }}</span
+              >
             </span>
             <span
               v-if="i === activeIndex && step.detail"
-              class="bpv__detail"
-              :class="{ 'is-error': step.isError }"
+              class="bpv__detail inline-flex max-w-full items-center gap-1 overflow-hidden text-[0.6875rem] leading-[1.3] tracking-[0.01em] text-ellipsis whitespace-nowrap tabular-nums [text-shadow:0_1px_2px_rgba(0,0,0,0.65),0_0_16px_rgba(25,19,29,0.85)]"
+              :class="
+                step.isError ? 'is-error font-semibold text-[var(--danger)]' : 'text-neutral-400'
+              "
             >
-              <X v-if="step.isError" :size="11" stroke-width="2.5" class="bpv__detail-icon" />
+              <X
+                v-if="step.isError"
+                :size="11"
+                stroke-width="2.5"
+                class="bpv__detail-icon flex-none"
+              />
               {{ step.detail }}
             </span>
           </span>
@@ -77,144 +119,3 @@ function rowOpacity(index: number): number {
     </ul>
   </div>
 </template>
-
-<style scoped>
-.bpv {
-  --bpv-row-h: 46px;
-  position: relative;
-  width: 100%;
-  max-width: 38rem;
-  margin-inline: auto;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 18%,
-    #000 82%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
-}
-.bpv__track {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-.bpv__row {
-  height: var(--bpv-row-h);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-inline: 0.25rem;
-  transition: opacity 300ms ease;
-}
-.bpv__row-inner {
-  display: flex;
-  justify-content: center;
-  max-width: 100%;
-}
-.bpv__line {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  max-width: 100%;
-}
-.bpv__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  color: var(--neutral-500);
-}
-.bpv__row.is-done .bpv__icon {
-  color: var(--brand-success, #3ecf8e);
-}
-.bpv__row.is-focused .bpv__icon {
-  color: var(--comfy-yellow);
-}
-.bpv__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  border: 1.5px solid var(--neutral-500);
-}
-.bpv__text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  min-width: 0;
-  /* Wide enough for the full download detail line (bytes · speed · ETA) so it
-     isn't ellipsized; clamped to the viewport on narrow windows. */
-  max-width: min(34rem, 88vw);
-  text-align: center;
-}
-.bpv__label {
-  font-size: 0.8125rem;
-  font-weight: 400;
-  line-height: 1.25;
-  color: var(--neutral-300);
-  letter-spacing: 0.005em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.7),
-    0 0 18px rgba(25, 19, 29, 0.9);
-}
-.bpv__row.is-focused .bpv__label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--neutral-100);
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.75),
-    0 0 24px rgba(25, 19, 29, 0.95);
-}
-.bpv__detail {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.6875rem;
-  line-height: 1.3;
-  color: var(--neutral-400);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.65),
-    0 0 16px rgba(25, 19, 29, 0.85);
-}
-.bpv__detail.is-error {
-  color: var(--danger);
-  font-weight: 600;
-}
-.bpv__detail-icon {
-  flex: 0 0 auto;
-}
-.bpv__spin {
-  animation: bpv-spin 0.9s linear infinite;
-}
-@keyframes bpv-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bpv__track {
-    transition: none;
-  }
-  .bpv__spin {
-    animation: none;
-  }
-}
-</style>
