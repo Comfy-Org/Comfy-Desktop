@@ -8,6 +8,12 @@ import exceptions from './vue-style-exceptions.json'
 const root = resolve(import.meta.dirname, '../..')
 const allowed: Record<string, { sha256: string; reason: string }> = exceptions
 
+// Hash the complete block, including attributes. Ignore only checkout line
+// endings so the same source is accepted on Windows and Unix.
+export function fingerprintStyleBlock(block: string) {
+  return createHash('sha256').update(block.replace(/\r\n/g, '\n')).digest('hex')
+}
+
 export default {
   meta: {
     type: 'problem',
@@ -34,11 +40,7 @@ export default {
         let available = exception?.sha256
         for (const block of getDocumentFragment()?.children ?? []) {
           if (block.type !== 'VElement' || block.name !== 'style') continue
-          // Hash the complete block, including attributes. Ignore only checkout
-          // line endings so the same source is accepted on Windows and Unix.
-          const text = source.text.slice(...block.range).replace(/\r\n/g, '\n')
-          const fingerprint = createHash('sha256').update(text).digest('hex')
-          if (available === fingerprint) {
+          if (available === fingerprintStyleBlock(source.text.slice(...block.range))) {
             available = undefined
             continue
           }

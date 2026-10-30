@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { parser as tsParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
-import rule from './no-new-vue-style-blocks'
+import rule, { fingerprintStyleBlock } from './no-new-vue-style-blocks'
 import exceptions from './vue-style-exceptions.json'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -74,6 +74,14 @@ describe('no new Vue style blocks', () => {
   it.each(Object.keys(exceptions))('preserves the exact exception in %s', (file) => {
     expect(lint(readFileSync(resolve(root, file), 'utf8'), file)).toEqual([])
   })
+
+  it.each(Object.entries(exceptions))(
+    'keeps the %s exception backed by its existing block',
+    (file, { sha256 }) => {
+      const blocks = readFileSync(resolve(root, file), 'utf8').match(/<style\b[\s\S]*?<\/style>/g)
+      expect(blocks?.map(fingerprintStyleBlock)).toContain(sha256)
+    }
+  )
 
   it('accepts CRLF checkout line endings', () => {
     expect(lint(frozenSource.replace(/\r?\n/g, '\r\n'), frozenFile)).toEqual([])

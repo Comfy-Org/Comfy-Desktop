@@ -22,9 +22,11 @@ Only CRLF line endings are normalized to LF.
 An exception permits that exact block once, in that exact repository-relative
 file. It does not permit a second block, changes to the existing CSS or its
 attributes, or moving/copying the block to another file. Edits elsewhere in the
-component and removal of the block are allowed. Remove its manifest entry when
-retiring an exception. Do not regenerate fingerprints to silence lint: any
-necessary exception change needs deliberate review of its CSS and reason.
+component and removal of the block are allowed. Removing a block also requires
+removing its manifest entry; the tests fail while an entry has no matching
+block, so a stale entry cannot silently re-permit that CSS. Do not regenerate
+fingerprints to silence lint: any necessary exception change needs deliberate
+review of its CSS and reason.
 
 Run the focused tests with:
 
