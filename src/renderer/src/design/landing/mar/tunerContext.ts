@@ -55,10 +55,10 @@ export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
   firstRun: onFirstRun,
-  // Examples show in the first run (Stage, Original; Reel has its own reel)
-  // and on a first-time Home with a build, in Recently used's place.
+  // Examples show in the Original first run and on a first-time Home with
+  // a build, in Recently used's place.
   exampleLook: computed(
-    () => onHome.value && firstTime.value && !(onFirstRun.value && firstRun.id === 'reel')
+    () => onHome.value && firstTime.value && (!onFirstRun.value || firstRun.id === 'original')
   ),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
@@ -173,6 +173,10 @@ export const TWEAKS = {
     isDefault: () => marUser.user === 'returning' && marUser.local === 'several',
     reset: () => setUser('returning')
   },
+  account: {
+    isDefault: () => proto.signedIn,
+    reset: () => (proto.signedIn = true)
+  },
   surface: one(surface, 'desktop'),
   nav: one(marNav, 'classic'),
   palette: one(palette, 'void'),
@@ -180,7 +184,7 @@ export const TWEAKS = {
   crit: one(crit, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
-  firstRun: one(firstRun, 'stage'),
+  firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'fan'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),

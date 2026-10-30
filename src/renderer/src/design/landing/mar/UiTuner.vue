@@ -24,16 +24,19 @@ import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { CRITS, crit } from './crit/crit'
+import { proto } from '../useProto'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import PabloPortsTuner from './PabloPortsTuner.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
 
-/** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Three groups:
- *  Global (who, where, colour), This page (only the tweaks that change
- *  the screen you're on; tunerContext.ts says when), and More, folded
- *  (rare and exploratory). A hidden tweak keeps its value. */
+/** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Global
+ *  (proposal, where, navigation, colour), States (the situation being
+ *  simulated), This page (design options for the screen you're on),
+ *  Crit feedback, and More, folded (rare and exploratory). States and
+ *  This page list only what changes the screen now (tunerContext.ts says
+ *  when); a hidden tweak keeps its value. */
 const NAVS: { value: MarNav; label: string }[] = [
   { value: 'classic', label: 'Original' },
   { value: 'floating', label: 'Floating · a card' },
@@ -49,6 +52,14 @@ const HOME_BUILD_OPTIONS = [
   { value: 'off', label: 'Off' },
   { value: 'on', label: 'On' }
 ] as const
+const ACCOUNTS = [
+  { value: 'in', label: 'Signed in' },
+  { value: 'out', label: 'Signed out' }
+] as const
+const account = computed({
+  get: () => (proto.signedIn ? 'in' : 'out'),
+  set: (v: 'in' | 'out') => (proto.signedIn = v === 'in')
+})
 const SURFACE_OPTIONS = SURFACES.map((sf) => ({
   value: sf.value,
   label: sf.value === 'desktop' ? 'Desktop' : 'Cloud'
@@ -89,26 +100,33 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['user', 'surface', 'nav', 'palette', 'theme', 'crit']
+const GLOBAL: TweakId[] = ['surface', 'nav', 'palette', 'theme']
+// States: the situation being simulated (who, what's installed, signed in,
+// how a page or the credits are doing), apart from the design options.
+const STATES: { id: TweakId; show: () => boolean }[] = [
+  { id: 'user', show: () => true },
+  { id: 'homeBuilds', show: () => when.homeBuilds.value },
+  { id: 'account', show: () => true },
+  { id: 'pageState', show: () => when.pageState.value },
+  { id: 'credits', show: () => when.credits.value }
+]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
-  { id: 'homeBuilds', show: () => when.homeBuilds.value },
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'cover', show: () => when.cover.value },
-  { id: 'pageState', show: () => when.pageState.value },
-  { id: 'credits', show: () => when.credits.value },
   { id: 'modeSwitch', show: () => when.modeSwitch.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs', 'p20']
 const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
+const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
 const globalIds = computed<TweakId[]>(() => (isMariana.value ? GLOBAL : ['theme']))
 const moreIds = computed<TweakId[]>(() => (isMariana.value ? MORE : ['screen', 'knobs']))
-const shows = (id: TweakId): boolean => pageIds.value.includes(id)
+const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
 const dirty = (ids: TweakId[]): boolean => ids.some((id) => !TWEAKS[id].isDefault())
 const resetGroup = (ids: TweakId[]): void => ids.forEach((id) => TWEAKS[id].reset())
 function resetAll(): void {
@@ -161,29 +179,6 @@ function onScroll(e: Event): void {
           <Row label="Proposal">
             <Seg v-model="proposal.id" label="Proposal" :options="PROPOSALS" />
           </Row>
-          <!-- Who is looking, and what is on this computer: two axes. A
-               first-time user starts with no local install; a returning
-               one may have none either (they work on Cloud). -->
-          <Row v-if="isMariana" label="User">
-            <Seg
-              label="User"
-              :options="MAR_USERS"
-              :model-value="marUser.user"
-              @update:model-value="setUser"
-            />
-          </Row>
-          <!-- On Cloud (a browser) there is no local install. -->
-          <Row
-            v-if="isMariana"
-            :label="onCloud ? 'Local install · none in a browser' : 'Local install'"
-          >
-            <Seg
-              v-model="marUser.local"
-              label="Local install"
-              :options="MAR_LOCALS"
-              :class="onCloud && 'pointer-events-none opacity-50'"
-            />
-          </Row>
           <Row v-if="isMariana" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
@@ -207,9 +202,45 @@ function onScroll(e: Event): void {
               />
             </div>
           </Row>
-          <!-- The Oct 29 Weekly Design Crit's notes, all at once (crit/crit.ts). -->
-          <Row v-if="isMariana" label="Crit feedback · Oct 29">
-            <Seg v-model="crit.id" label="Crit feedback" :options="CRITS" />
+        </section>
+
+        <!-- States: the situation on screen (who, what's installed, signed
+             in, how the page and the credits are doing). Each one shows
+             only where it applies. -->
+        <section v-if="isMariana" aria-label="States" class="mt-6 flex flex-col">
+          <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
+          <!-- Who is looking, and what is on this computer: two axes. A
+               first-time user starts with no local install; a returning
+               one may have none either (they work on Cloud). -->
+          <Row label="User">
+            <Seg
+              label="User"
+              :options="MAR_USERS"
+              :model-value="marUser.user"
+              @update:model-value="setUser"
+            />
+          </Row>
+          <!-- Local builds: what's on this computer, and on Home whether
+               it shows a Builds row. On Cloud (a browser) there is none. -->
+          <Row :label="onCloud ? 'Local builds · none in a browser' : 'Local builds'">
+            <Seg
+              v-model="marUser.local"
+              label="Local install"
+              :options="MAR_LOCALS"
+              :class="onCloud && 'pointer-events-none opacity-50'"
+            />
+          </Row>
+          <Row :show="shows('homeBuilds')" label="Builds row on Home">
+            <Seg v-model="homeBuilds.id" label="Builds row on Home" :options="HOME_BUILD_OPTIONS" />
+          </Row>
+          <Row label="Account">
+            <Seg v-model="account" label="Account" :options="ACCOUNTS" />
+          </Row>
+          <Row :show="shows('pageState')" label="Page state">
+            <Seg v-model="pageState.id" label="Page state" :options="PAGE_STATES" />
+          </Row>
+          <Row :show="shows('credits')" label="Credits state">
+            <Select v-model="creditsState.id" :options="CREDITS_STATES" class="w-full" />
           </Row>
         </section>
 
@@ -227,10 +258,6 @@ function onScroll(e: Event): void {
           <Row :show="shows('homeBackground')" label="Background">
             <Select v-model="homeBackground.id" :options="BACKGROUNDS" class="w-full" />
           </Row>
-          <!-- Builds row: desktop only, and not in the first run. -->
-          <Row :show="shows('homeBuilds')" label="Builds row">
-            <Seg v-model="homeBuilds.id" label="Builds row" :options="HOME_BUILD_OPTIONS" />
-          </Row>
           <Row :show="shows('firstRun')" label="First run">
             <Select v-model="firstRun.id" :options="FIRST_RUNS" class="w-full" />
           </Row>
@@ -246,12 +273,6 @@ function onScroll(e: Event): void {
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
           </Row>
-          <Row :show="shows('pageState')" label="Page state">
-            <Seg v-model="pageState.id" label="Page state" :options="PAGE_STATES" />
-          </Row>
-          <Row :show="shows('credits')" label="Credits state">
-            <Select v-model="creditsState.id" :options="CREDITS_STATES" class="w-full" />
-          </Row>
           <Row :show="shows('modeSwitch')" label="Mode switch">
             <Select v-model="modeStyle.id" :options="MODE_STYLES" class="w-full" />
           </Row>
@@ -259,6 +280,19 @@ function onScroll(e: Event): void {
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><PabloPortsTuner /></Row>
+        </section>
+
+        <!-- The Oct 29 Weekly Design Crit's notes, all at once (crit/crit.ts). -->
+        <section v-if="isMariana" aria-label="Crit feedback" class="mt-6 flex flex-col">
+          <GroupHead
+            title="Crit feedback"
+            note="Oct 29"
+            :changed="dirty(['crit'])"
+            @reset="resetGroup(['crit'])"
+          />
+          <Row>
+            <Seg v-model="crit.id" label="Crit feedback" :options="CRITS" />
+          </Row>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma
