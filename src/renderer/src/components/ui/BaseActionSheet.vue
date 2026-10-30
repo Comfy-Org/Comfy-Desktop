@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
+import Button from '@comfyorg/design-system/button/Button'
 
 // Action-sheet primitive: title, message, list of choices, Cancel footer.
 // Not BaseSelect.vue, which is the inline form combobox.
@@ -76,122 +77,69 @@ watch(
     @close="cancel"
   >
     <template #header>
-      <h2 :id="TITLE_ID" class="base-action-sheet-title">{{ title }}</h2>
+      <h2
+        :id="TITLE_ID"
+        class="base-action-sheet-title m-0 text-base leading-[1.3] font-semibold text-neutral-100"
+      >
+        {{ title }}
+      </h2>
     </template>
 
-    <div class="base-action-sheet-body">
-      <div v-if="message" class="base-action-sheet-message">{{ message }}</div>
-      <div class="base-action-sheet-list">
-        <button
+    <div class="base-action-sheet-body flex flex-col gap-3 text-sm leading-[1.5] text-text-muted">
+      <div v-if="message" class="base-action-sheet-message whitespace-pre-line select-text">
+        {{ message }}
+      </div>
+      <div class="base-action-sheet-list flex flex-col gap-1.5">
+        <Button
           v-for="(item, idx) in items"
           :key="item.value"
-          :ref="
-            (el) => {
-              if (idx === 0) firstItemRef = el as HTMLButtonElement
-            }
+          as-child
+          variant="textonly"
+          size="unset"
+          class="base-action-sheet-item flex w-full flex-col items-start gap-0.5 rounded-lg border border-solid bg-neutral-100/4 px-3 py-2.5 text-left whitespace-normal font-sans text-sm leading-[1.5] font-normal text-neutral-100 [appearance:button] transition-[border-color,background] duration-[120ms] ease-[ease] focus-visible:ring-0 focus-visible:outline-none"
+          :class="
+            item.tone === 'danger'
+              ? 'base-action-sheet-item--danger border-danger/35 hover:border-danger hover:bg-danger/12 focus-visible:border-danger focus-visible:bg-danger/12'
+              : 'border-neutral-100/10 hover:border-[var(--accent)] hover:bg-[color-mix(in_oklab,var(--accent)_10%,transparent)] focus-visible:border-[var(--accent)] focus-visible:bg-[color-mix(in_oklab,var(--accent)_10%,transparent)]'
           "
-          type="button"
-          class="base-action-sheet-item"
-          :class="{ 'base-action-sheet-item--danger': item.tone === 'danger' }"
-          :data-testid="`base-action-sheet-item-${item.value}`"
-          @click="onItemClick(item.value)"
         >
-          <span class="base-action-sheet-item-label">{{ item.label }}</span>
-          <span v-if="item.description" class="base-action-sheet-item-desc">
-            {{ item.description }}
-          </span>
-        </button>
+          <button
+            :ref="
+              (el) => {
+                if (idx === 0) firstItemRef = el as HTMLButtonElement
+              }
+            "
+            type="button"
+            :data-testid="`base-action-sheet-item-${item.value}`"
+            @click="onItemClick(item.value)"
+          >
+            <span
+              class="base-action-sheet-item-label font-medium"
+              :class="item.tone === 'danger' ? 'text-danger' : 'text-neutral-100'"
+              >{{ item.label }}</span
+            >
+            <span
+              v-if="item.description"
+              class="base-action-sheet-item-desc text-xs leading-[1.5] text-text-muted"
+            >
+              {{ item.description }}
+            </span>
+          </button>
+        </Button>
       </div>
     </div>
 
     <template #footer>
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="unset"
+        class="rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal text-text [appearance:button] transition-none hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
         :data-testid="testIdCancel ?? 'base-action-sheet-cancel'"
         @click="cancel"
       >
         {{ cancelLabel ?? $t('common.cancel') }}
-      </button>
+      </Button>
     </template>
   </BaseModal>
 </template>
-
-<style scoped>
-.base-action-sheet-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--neutral-100);
-}
-
-.base-action-sheet-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-
-.base-action-sheet-message {
-  white-space: pre-line;
-  user-select: text;
-}
-
-.base-action-sheet-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.base-action-sheet-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--neutral-100) 4%, transparent);
-  cursor: pointer;
-  text-align: left;
-  font-size: 14px;
-  color: var(--neutral-100);
-  transition:
-    border-color 0.12s ease,
-    background 0.12s ease;
-}
-
-.base-action-sheet-item:hover,
-.base-action-sheet-item:focus-visible {
-  border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
-  outline: none;
-}
-
-.base-action-sheet-item--danger {
-  border-color: color-mix(in oklab, var(--danger) 35%, transparent);
-}
-
-.base-action-sheet-item--danger:hover,
-.base-action-sheet-item--danger:focus-visible {
-  border-color: var(--danger);
-  background: color-mix(in oklab, var(--danger) 12%, transparent);
-}
-
-.base-action-sheet-item-label {
-  font-weight: 500;
-  color: var(--neutral-100);
-}
-
-.base-action-sheet-item--danger .base-action-sheet-item-label {
-  color: var(--danger);
-}
-
-.base-action-sheet-item-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-</style>
