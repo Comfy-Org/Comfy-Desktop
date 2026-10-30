@@ -28,11 +28,18 @@
 // stderr line, survives; not at `'` or a space, which are legal in a Windows
 // username. A `\uXXXX` escape is part of the name (non-ASCII JSON).
 const NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
+// A `\\` share root must not follow a path character: escaped, a nested
+// `x\\Users` folder would otherwise read as share `x`.
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+)`,
-  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)`,
-  String.raw`(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)`,
-  // Forward-slash roots only: a backslash `\home\` is usually a nested project folder.
+  String.raw`(?<![\w.~$-])(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home[\\/]+)`,
+  String.raw`(?<![\w.~$-])(\\\\[^\\/]+[\\/]+(?:Users|home)[\\/]+)`,
+  String.raw`(?<![\w.~$-])(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users[\\/]+)`,
+  String.raw`(?<![\w.~$-])(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+[\\/]+Users[\\/]+)`,
+  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users[\\/]+)`,
+  // A backslash `\Users\` only at a path root (`\Users\x`): nested, it is usually a project folder.
+  String.raw`((?<![\w.~$\\/-])\\+Users[\\/]+)`,
+  // Forward-slash roots for the rest: a backslash `\home\` is usually a nested project folder.
   String.raw`(\/Users[\\/]+)`,
   String.raw`(\/home[\\/]+)`,
   String.raw`(\/mnt\/wsl\/[^/]+\/home\/)`
@@ -57,13 +64,10 @@ export function setScrubbedHomeDir(homeDir: string): void {
   }
   const parent = segments.map((segment) => `${escapeRegExp(segment)}[\\\\/]+`).join('')
   const name = escapeRegExp(last)
-  // Bounded on both sides by a path edge: not inside a longer component
-  // (`/mnt/data` for home `/data`), and not a prefix of a sibling (`alice.smith`).
+  // Not inside a longer component (`/mnt/data` for home `/data`), and not a
+  // prefix of a sibling (`alice.smith`); any other following character ends the name.
   homeDirPatterns = [
-    new RegExp(
-      `(?<![\\w.~$-])(${leading}${parent})${name}(?=[\\\\/"'\\s:;,)\\]}]|\\.(?![\\w-])|$)`,
-      'gi'
-    )
+    new RegExp(`(?<![\\w.~$-])(${leading}${parent})${name}(?![\\w$~-])(?!\\.[\\w-])`, 'gi')
   ]
 }
 

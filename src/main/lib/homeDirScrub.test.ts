@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import os from 'os'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { scrubPII, setScrubbedHomeDir } from '../../shared/piiScrub'
 import { registerHomeDirScrub } from './homeDirScrub'
 
 describe('registerHomeDirScrub', () => {
-  afterEach(() => setScrubbedHomeDir(''))
+  afterEach(() => {
+    setScrubbedHomeDir('')
+    vi.restoreAllMocks()
+  })
+
+  it('reads os.homedir() by default', () => {
+    vi.spyOn(os, 'homedir').mockReturnValue('/var/lib/alice')
+    registerHomeDirScrub()
+    expect(scrubPII('/var/lib/alice/x')).toBe('/var/lib/[REDACTED]/x')
+  })
 
   it('registers the home directory for scrubbing', () => {
     registerHomeDirScrub(() => 'D:\\Profiles\\alice')
