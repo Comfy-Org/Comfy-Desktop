@@ -1681,3 +1681,24 @@
     translate: none;
   }
 }
+
+/* Sidebar foot (Classic, Panels): credits and the workspace stay in view;
+   everything above scrolls under them. */
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child {
+  position: sticky;
+  bottom: -8px;
+  z-index: 2;
+  margin-bottom: -8px;
+  padding-bottom: 8px;
+  background: var(--mar-side-bg, var(--color-app-background));
+}
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child::before {
+  content: '';
+  position: absolute;
+  inset: -20px 0 100%;
+  background: linear-gradient(to top, var(--mar-side-bg, var(--color-app-background)), transparent);
+  pointer-events: none;
+}
+:root[data-mar-nav='panels'] {
+  --mar-side-bg: var(--mar-panels-side);
+}

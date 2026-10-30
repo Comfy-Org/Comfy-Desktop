@@ -21,7 +21,7 @@ export interface Tuning {
 }
 
 const DEFAULTS: Tuning = {
-  radius: 'soft',
+  radius: 'default',
   contrast: 'default',
   borders: 'none',
   shadows: 'default'
@@ -110,8 +110,8 @@ const TOKENS: { [K in keyof Tuning]: Partial<Record<Tuning[K], Record<string, st
   }
 }
 
-// v4: corners default to soft (no sharp); borders default to none.
-const KEY = 'comfy.design.uiTuning.v4'
+// v5: corners back to Default; borders default to none.
+const KEY = 'comfy.design.uiTuning.v5'
 
 function load(): Tuning {
   try {

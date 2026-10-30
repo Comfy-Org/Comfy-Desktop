@@ -200,14 +200,7 @@ const recent = computed(() =>
       />
 
       <section v-if="parts.recent === 'mar' && recent.length" class="mt-10">
-        <SectionHeader title="Recently used" link="See all" @link="go('workflows')">
-          <template #controls>
-            <span
-              class="inline-flex h-5 items-center rounded-full bg-secondary-background px-2 text-ui text-muted-foreground"
-              >{{ recent.length }}</span
-            >
-          </template>
-        </SectionHeader>
+        <SectionHeader title="Recently used" link="See all" @link="go('workflows')" />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
         <ScrollRow v-else v-scroll-fade :columns="5" class="mar-recent-row">

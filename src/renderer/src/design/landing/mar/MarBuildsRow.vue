@@ -16,14 +16,7 @@ const shown = computed(() => recentInstances.value.slice(0, 3))
 
 <template>
   <section class="mt-10">
-    <SectionHeader title="Builds" link="All builds" @link="go('environments')">
-      <template #controls>
-        <span
-          class="inline-flex h-5 items-center rounded-full bg-secondary-background px-2 text-ui text-muted-foreground"
-          >{{ instances.length }}</span
-        >
-      </template>
-    </SectionHeader>
+    <SectionHeader title="Builds" link="All builds" @link="go('environments')" />
     <!-- One, two or three builds always fill the row. -->
     <div
       class="grid gap-3.5"

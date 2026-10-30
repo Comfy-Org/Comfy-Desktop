@@ -152,7 +152,7 @@ export interface Tweak {
   isDefault: () => boolean
   reset: () => void
 }
-const TUNING_DEFAULTS = { radius: 'soft', contrast: 'default', borders: 'none', shadows: 'default' }
+const TUNING_DEFAULTS = { radius: 'default', contrast: 'default', borders: 'none', shadows: 'default' }
 const P20_DEFAULTS: Record<string, string> = {
   recent: 'cards',
   spaces: 'plain',

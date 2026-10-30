@@ -30,7 +30,7 @@ const empty = ref('')
 const typed = ref('portrait')
 const grid = ref<'grid' | 'list'>('grid')
 const list = ref<'grid' | 'list'>('list')
-const TUNING = 'comfy.design.uiTuning.v4'
+const TUNING = 'comfy.design.uiTuning.v5'
 // The Workflows toolbar, in app pixels.
 const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 </script>

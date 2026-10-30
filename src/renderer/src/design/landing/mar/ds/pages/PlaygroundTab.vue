@@ -72,7 +72,7 @@ onBeforeUnmount(() => window.removeEventListener('message', onMessage))
 const src = computed(() => {
   const s = start.value
   const seed = {
-    'comfy.design.uiTuning.v4': { radius: s.corners }
+    'comfy.design.uiTuning.v5': { radius: s.corners }
   }
   return `?${new URLSearchParams({
     frame: 'play',
