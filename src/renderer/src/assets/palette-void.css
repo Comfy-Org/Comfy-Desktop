@@ -124,7 +124,7 @@
 }
 
 /* ── 9. Dialogs: 16px panels ───────────────────────────────────────── */
-:root.palette-void :is(.modal-box, .announce-content) {
+:root.palette-void .modal-box {
   border-color: var(--color-border);
   border-radius: var(--radius-panel);
 }
