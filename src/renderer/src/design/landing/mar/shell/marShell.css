@@ -1691,9 +1691,12 @@
 /* The content panel keeps its edge where the Home glow lightens it: a
    barely-there inner hairline, so the panel never dissolves into the
    sidebar or the title bar. */
+/* An inner outline, not an inset shadow: outlines paint above the
+   content, so nothing that reaches the edge can cover the line. */
 :root[data-mar-ui='on'] .proto-main {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  outline: 1px solid color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  outline-offset: -1px;
 }
 :root[data-mar-ui='on'][data-ds-theme='light'] .proto-main {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  outline-color: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
