@@ -50,7 +50,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       ref="rootRef"
-      class="brand-takeover-root"
+      class="brand-takeover-root fixed inset-0 z-50 flex animate-brand-takeover focus:outline-none motion-reduce:animate-none"
       :data-theme="theme"
       role="dialog"
       aria-modal="true"
@@ -58,10 +58,15 @@ onBeforeUnmount(() => {
       tabindex="-1"
     >
       <BrandBackground :vignette="vignette" :scroll-content="scrollContent">
-        <div class="brand-logo-row">
-          <ComfyCLogo class="brand-logo" />
+        <div class="brand-logo-row absolute top-0 left-0 z-2 flex items-center px-[15px] py-4">
+          <ComfyCLogo
+            class="brand-logo inline-flex size-[var(--takeover-logo-size)] text-comfy-yellow"
+          />
         </div>
-        <div v-if="$slots['logo-right']" class="brand-logo-row brand-logo-row--right">
+        <div
+          v-if="$slots['logo-right']"
+          class="brand-logo-row brand-logo-row--right absolute top-0 right-0 z-2 flex max-w-[min(60vw,680px)] items-center justify-end py-4 pr-[clamp(16px,2.5vw,32px)] pl-[15px] [&>*]:flex [&>*]:min-h-[var(--takeover-logo-size)] [&>*]:items-center"
+        >
           <slot name="logo-right" />
         </div>
         <slot />
@@ -75,58 +80,3 @@ onBeforeUnmount(() => {
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.brand-takeover-root {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  animation: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes brand-takeover-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-takeover-root {
-    animation: none;
-  }
-}
-
-.brand-logo-row {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  padding: 16px 15px;
-  display: flex;
-  align-items: center;
-}
-.brand-logo-row.brand-logo-row--right {
-  left: auto;
-  right: 0;
-  padding-right: clamp(16px, 2.5vw, 32px);
-  max-width: min(60vw, 680px);
-  justify-content: flex-end;
-}
-.brand-logo-row.brand-logo-row--right > * {
-  min-height: var(--takeover-logo-size);
-  display: flex;
-  align-items: center;
-}
-.brand-logo {
-  color: var(--comfy-yellow);
-  display: inline-flex;
-  width: var(--takeover-logo-size);
-  height: var(--takeover-logo-size);
-}
-</style>

@@ -336,29 +336,6 @@
 /* ── 10. Full-window flows ────────────────────────────────────────── */
 /* Keep the existing composition and artwork, but remove the old plum/yellow
  * palette. No new shell, navigation, form structure or content is introduced. */
-:root.palette-void .brand-background.brand-background {
-  background: var(--color-background);
-}
-:root.palette-void .brand-inner-frame.brand-inner-frame {
-  background: var(--color-content-background);
-}
-:root.palette-void .brand-inner-frame.brand-inner-frame--vignette {
-  background: radial-gradient(
-    circle 196px at 50% 50%,
-    var(--neutral-950) 0%,
-    var(--neutral-950) 35%,
-    var(--color-content-background) 100%
-  );
-}
-:root.palette-void .brand-beam {
-  filter: grayscale(1);
-  opacity: 0.45;
-}
-:root.palette-void .brand-takeover-root:focus {
-  /* This container receives programmatic entry focus. Interactive controls
-   * retain their own visible keyboard rings; avoid the OS accent at its edge. */
-  outline: none;
-}
 :root.palette-void .brand-progress__glyph {
   color: var(--color-foreground);
 }

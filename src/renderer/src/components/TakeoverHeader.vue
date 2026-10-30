@@ -7,33 +7,17 @@ defineProps<{
 </script>
 
 <template>
-  <div class="takeover-header">
-    <div class="takeover-grand-title">{{ title }}</div>
-    <div v-if="subtitle" class="takeover-grand-subtitle">{{ subtitle }}</div>
+  <div class="takeover-header flex min-w-0 flex-auto flex-col gap-1">
+    <div
+      class="takeover-grand-title text-[20px] leading-[1.2] font-semibold text-text [word-break:break-word]"
+    >
+      {{ title }}
+    </div>
+    <div
+      v-if="subtitle"
+      class="takeover-grand-subtitle text-[13px] leading-[1.4] text-text-muted [word-break:break-word]"
+    >
+      {{ subtitle }}
+    </div>
   </div>
 </template>
-
-<style scoped>
-.takeover-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.takeover-grand-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.2;
-  word-break: break-word;
-}
-
-.takeover-grand-subtitle {
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.4;
-  word-break: break-word;
-}
-</style>
