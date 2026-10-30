@@ -37,6 +37,7 @@ import type { ComfyVersion } from './version'
 import { assertReadable } from './desktopDetect'
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
+import { tryBuildInstallation } from './buildInstallation'
 
 const MARKER_FILE = '.comfyui-desktop-2'
 
@@ -100,8 +101,7 @@ export function sendMigrationSteps(
  */
 async function resolveStandaloneInstallData(
   target: StandaloneTargetSelection | undefined,
-  sourceMap: Record<string, SourcePlugin>,
-  cleanupOnError: () => void
+  sourceMap: Record<string, SourcePlugin>
 ): Promise<{ instData: Record<string, unknown>; standaloneSource: SourcePlugin }> {
   const standaloneSource = sourceMap['standalone']!
 
@@ -122,7 +122,6 @@ async function resolveStandaloneInstallData(
       { includeLatestStable: true }
     )
     if (releaseOptions.length === 0) {
-      cleanupOnError()
       throw new Error('No releases available.')
     }
     release = releaseOptions[0]!
@@ -134,16 +133,15 @@ async function resolveStandaloneInstallData(
       { gpu: gpu?.id }
     )
     if (variantOptions.length === 0) {
-      cleanupOnError()
       throw new Error('No compatible variants found for this platform.')
     }
     variant = variantOptions.find((v) => v.recommended) || variantOptions[0]!
   }
 
+  const buildResult = tryBuildInstallation(standaloneSource, { release, variant })
+  if (!buildResult.ok) throw new Error(buildResult.message)
   const instData = {
-    sourceId: 'standalone',
-    sourceLabel: standaloneSource.label,
-    ...standaloneSource.buildInstallation({ release, variant }),
+    ...buildResult.data,
     // Migrating from a snapshot freezes the install to the snapshot's pinned
     // ComfyUI version: skip the post-install auto-update (the snapshot restore
     // re-pins the core commit). updateChannel is left as built here and
@@ -545,16 +543,19 @@ export async function migrateToStandaloneFromSnapshot(
   const { sendProgress, signal, uniqueName } = tools
   const { stagedSnapshot, sourcePaths, labels, target } = input
 
-  const cleanupStagedFile = (): void => {
-    if (stagedSnapshot.owned) fs.promises.unlink(stagedSnapshot.path).catch(() => {})
+  const cleanupStagedFile = async (): Promise<void> => {
+    if (stagedSnapshot.owned) await fs.promises.unlink(stagedSnapshot.path).catch(() => {})
   }
 
   // 1. Resolve release/variant
-  const { instData, standaloneSource } = await telemetry.trackedStep(
-    'comfy.desktop.migrate.resolve_target',
-    {},
-    async () => resolveStandaloneInstallData(target, tools.sourceMap, cleanupStagedFile)
-  )
+  const { instData, standaloneSource } = await telemetry
+    .trackedStep('comfy.desktop.migrate.resolve_target', {}, async () =>
+      resolveStandaloneInstallData(target, tools.sourceMap)
+    )
+    .catch(async (error: unknown) => {
+      await cleanupStagedFile()
+      throw error
+    })
 
   // 2. Create new standalone installation record
   const { entry, destPath } = await telemetry.trackedStep(
@@ -694,7 +695,7 @@ export async function migrateToStandaloneFromSnapshot(
       // owned staged file here.
       await installations.remove(entry.id).catch(() => {})
       await fs.promises.rm(destPath, { recursive: true, force: true }).catch(() => {})
-      cleanupStagedFile()
+      await cleanupStagedFile()
     } else {
       await installations.update(entry.id, { status: 'failed' }).catch(() => {})
     }
