@@ -39,9 +39,9 @@ import GroupHead from './tuner/TunerGroupHead.vue'
  *  when); a hidden tweak keeps its value. */
 const NAVS: { value: MarNav; label: string }[] = [
   { value: 'classic', label: 'Original' },
-  { value: 'floating', label: 'Floating · a card' },
+  { value: 'floating', label: 'Floating sidebar' },
   { value: 'tabs', label: '08 · Tabs · a bar on top' },
-  { value: 'panels', label: 'Panels · two cards' }
+  { value: 'panels', label: 'Floating panels' }
 ]
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },

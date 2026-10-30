@@ -178,8 +178,8 @@ export const TWEAKS = {
     reset: () => (proto.signedIn = true)
   },
   surface: one(surface, 'desktop'),
-  nav: one(marNav, 'classic'),
-  palette: one(palette, 'void'),
+  nav: one(marNav, 'panels'),
+  palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   crit: one(crit, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),

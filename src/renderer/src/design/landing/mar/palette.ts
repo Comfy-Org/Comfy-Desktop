@@ -26,15 +26,16 @@ export const PALETTES: Palette[] = [
   { id: 'plum', label: 'Plum · a hint of aubergine', hue: 320, chroma: 0.012 }
 ]
 
-const KEY = 'comfy.design.mar.palette'
+// v2: Graphite is the default (Pablo/Mar, Oct 30).
+const KEY = 'comfy.design.mar.palette.v2'
 
 export const palette = reactive<{ id: string }>({
   id: (() => {
     try {
       const v = localStorage.getItem(KEY)
-      return PALETTES.some((p) => p.id === v) ? v! : 'void'
+      return PALETTES.some((p) => p.id === v) ? v! : 'graphite'
     } catch {
-      return 'void'
+      return 'graphite'
     }
   })()
 })
