@@ -182,17 +182,6 @@
   background: var(--color-accent);
   color: var(--text);
 }
-:root.palette-void .picker-row {
-  border-radius: var(--radius-control);
-}
-:root.palette-void .picker-row.is-active {
-  background: var(--color-accent);
-}
-/* Status dots ring against the surface they sit on. */
-:root.palette-void :is(.picker-row-running-dot, .picker-row-update-dot, .picker-row-op-dot) {
-  border-color: var(--neutral-800);
-}
-
 /* ── 7. Manage: the settings tabs inside the picker ────────────────── */
 /* The active tab took the old surface color, which is now the popup's own. */
 :root.palette-void .settings-v2-tab {
