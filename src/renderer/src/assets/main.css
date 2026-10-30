@@ -464,7 +464,7 @@ button.looks-disabled {
 .brand-input input::placeholder {
   color: var(--neutral-400);
 }
-/* Invalid state — paired with an adjacent .field-error message.
+/* Invalid state — paired with an adjacent validation message.
  * Overrides hover/focus border so the danger cue stays visible. */
 .brand-input--invalid,
 .brand-input--invalid:hover,
@@ -474,41 +474,6 @@ button.looks-disabled {
 .brand-input--invalid:has(input:focus-visible) {
   border-color: var(--danger);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 35%, transparent);
-}
-
-
-.brand-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 6px;
-  background: var(--brand-surface-bg);
-  color: var(--neutral-200);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    color 160ms ease;
-}
-.brand-pill:hover {
-  border-color: var(--brand-surface-border-hover);
-  background: var(--brand-surface-bg-hover);
-}
-.brand-pill:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.brand-pill:disabled {
-  cursor: default;
-}
-.brand-pill--selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--neutral-100);
 }
 
 /* Brand card — frosted-glass content container used by takeover screens
@@ -819,18 +784,6 @@ button.loading::after {
 }
 .path-input button {
   flex-shrink: 0;
-}
-.field-error {
-  font-size: 13px;
-  color: var(--danger);
-  margin-top: 4px;
-  min-height: 0;
-}
-.disk-space-info {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  min-height: 18px;
 }
 
 /* Shared drag handles */
@@ -1351,7 +1304,6 @@ button.loading::after {
     transform: none;
   }
 }
-
 
 .view-modal-content {
   background: var(--bg);
@@ -2047,22 +1999,6 @@ button.loading::after {
   color: var(--text-muted);
   padding: 12px 0;
 }
-.wizard-error {
-  font-size: 14px;
-  color: var(--danger);
-  padding: 12px 0;
-}
-/* Non-blocking hardware warning under the detected-GPU field (e.g. Linux
- * AMD /dev/kfd inaccessible): install may proceed, so warning, not danger. */
-.config-gpu-warning {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--warning);
-  margin-top: 6px;
-}
-
-
-
 
 /* Quick install modal */
 .quick-install-modal {
