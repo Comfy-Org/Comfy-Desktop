@@ -244,6 +244,9 @@ const titleInstallPillClass = [
   '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
 ].join(' ')
 
+const titleDownloadsBadgeClass =
+  'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--accent,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
+
 const isMac = ref(bridge?.isMac() ?? false)
 /** Active body-mode pill, mirrored from main. Drives the native Install
  *  menu's checkmark for install-scoped pages (Install Settings /
@@ -1065,7 +1068,7 @@ onUnmounted(() => {
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
         type="button"
-        class="title-update-pill is-app-update"
+        class="title-update-pill is-app-update [-webkit-app-region:no-drag] inline-flex items-center gap-1 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_8%,transparent)] px-2.5 py-0.5 [font-family:inherit] text-[12px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_14%,transparent)] [.title-bar.is-hover-active_&]:hover:enabled:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_18%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_65%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 [.title-bar.is-light.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_26%,transparent)] [.title-bar.is-light.is-hover-active_&]:hover:enabled:border-[color-mix(in_srgb,var(--comfy-yellow)_85%,var(--neutral-700))] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 [.title-bar.is-collapsed-update_&]:size-6 [.title-bar.is-collapsed-update_&]:justify-center [.title-bar.is-collapsed-update_&]:gap-0 [.title-bar.is-collapsed-update_&]:p-0"
         :class="{
           'is-ready': appUpdateState.kind === 'ready',
           'is-downloading': appUpdateState.kind === 'downloading'
@@ -1077,10 +1080,13 @@ onUnmounted(() => {
         <Loader2
           v-else-if="appUpdateState.kind === 'downloading'"
           :size="14"
-          class="title-update-pill-spinner"
+          class="title-update-pill-spinner animate-spin"
         />
         <RefreshCw v-else-if="appUpdateState.kind === 'ready'" :size="14" />
-        <span class="title-update-pill-label">{{ appUpdatePillLabel ?? 'Desktop Update' }}</span>
+        <span
+          class="title-update-pill-label max-w-[clamp(80px,14cqi,200px)] truncate [.title-bar.is-collapsed-update_&]:hidden"
+          >{{ appUpdatePillLabel ?? 'Desktop Update' }}</span
+        >
       </button>
       <!-- Zoom-level pill. Contextual — fades in only when the comfyView
            is zoomed off 100%; click resets to 100% and it fades out. -->
@@ -1088,7 +1094,7 @@ onUnmounted(() => {
         <button
           v-if="showZoomReset"
           type="button"
-          class="title-zoom-reset [-webkit-app-region:no-drag] inline-flex shrink-0 items-center gap-1 rounded-[999px] border border-solid border-transparent bg-transparent px-2 py-[3px] [font-family:inherit] text-[11px] leading-[14px] font-normal text-[var(--titlebar-icon)] opacity-85 tabular-nums cursor-pointer transition-[background-color,opacity,border-color,color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
+          class="title-zoom-reset [&:is(.title-zoom-fade-enter-active,.title-zoom-fade-leave-active)]:transition-[opacity,transform] [&:is(.title-zoom-fade-enter-active,.title-zoom-fade-leave-active)]:duration-[160ms] [&:is(.title-zoom-fade-enter-active,.title-zoom-fade-leave-active)]:ease-[ease] [&:is(.title-zoom-fade-enter-from,.title-zoom-fade-leave-to)]:opacity-0 [&:is(.title-zoom-fade-enter-from,.title-zoom-fade-leave-to)]:[transform:scale(0.9)] [-webkit-app-region:no-drag] inline-flex shrink-0 items-center gap-1 rounded-[999px] border border-solid border-transparent bg-transparent px-2 py-[3px] [font-family:inherit] text-[11px] leading-[14px] font-normal text-[var(--titlebar-icon)] opacity-85 tabular-nums cursor-pointer transition-[background-color,opacity,border-color,color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
           v-bind="tooltipAttrs(t('titleBar.resetZoomTooltip'))"
           @click="handleResetZoom"
         >
@@ -1133,7 +1139,7 @@ onUnmounted(() => {
         v-if="!isFirstUseLockdown"
         ref="downloadsBtn"
         type="button"
-        class="title-downloads-tray"
+        class="title-downloads-tray [-webkit-app-region:no-drag] relative cursor-pointer rounded-lg border border-solid border-transparent bg-transparent px-1.5 py-1 text-[var(--titlebar-icon)] transition-[color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-comfy-yellow [.title-bar.is-light.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-neutral-700 [&.has-active]:border-[rgba(96,165,250,0.55)] [&.has-active]:bg-[rgba(96,165,250,0.16)] [.title-bar.is-light_&.has-active]:border-[rgba(37,99,235,0.55)] [.title-bar.is-light_&.has-active]:bg-[rgba(37,99,235,0.12)] [&.is-open]:text-neutral-50 [.title-bar.is-light_&.is-open]:text-neutral-700 [&.is-flashing]:animate-[title-downloads-tray-flash_0.9s_ease-out_1] [&.has-unseen]:border-[rgba(34,197,94,0.55)] [&.has-unseen]:bg-[rgba(34,197,94,0.16)] [.title-bar.is-light_&.has-unseen]:border-[rgba(22,163,74,0.55)] [.title-bar.is-light_&.has-unseen]:bg-[rgba(22,163,74,0.12)] [&.has-error]:border-[color-mix(in_srgb,var(--danger)_55%,transparent)] [&.has-error]:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:border-transparent"
         :class="{
           'has-active': downloadsActiveCount > 0,
           'has-error': unseenErrorCount > 0,
@@ -1146,18 +1152,24 @@ onUnmounted(() => {
         @click="handleDownloadsTray"
       >
         <ArrowDownToLine :size="16" />
-        <span v-if="downloadsActiveCount > 0" class="title-downloads-badge" aria-hidden="true">{{
-          downloadsActiveCount
-        }}</span>
+        <span
+          v-if="downloadsActiveCount > 0"
+          class="title-downloads-badge"
+          :class="titleDownloadsBadgeClass"
+          aria-hidden="true"
+          >{{ downloadsActiveCount }}</span
+        >
         <span
           v-else-if="unseenErrorCount > 0"
           class="title-downloads-badge is-error"
+          :class="titleDownloadsBadgeClass"
           aria-hidden="true"
           >{{ unseenErrorCount }}</span
         >
         <span
           v-else-if="unseenFinishedCount > 0"
           class="title-downloads-badge is-unseen"
+          :class="titleDownloadsBadgeClass"
           aria-hidden="true"
           >{{ unseenFinishedCount }}</span
         >
@@ -1167,7 +1179,7 @@ onUnmounted(() => {
              for the queue to drain. -->
         <span
           v-if="downloadsActiveCount > 0 && unseenErrorCount > 0"
-          class="title-downloads-error-dot"
+          class="title-downloads-error-dot pointer-events-none absolute -top-[3px] -left-[3px] size-2 rounded-[999px] bg-[var(--danger)] [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))]"
           aria-hidden="true"
         />
       </button>
@@ -1175,228 +1187,8 @@ onUnmounted(() => {
   </header>
 </template>
 
-<style scoped>
-.title-zoom-fade-enter-active,
-.title-zoom-fade-leave-active {
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-.title-zoom-fade-enter-from,
-.title-zoom-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.9);
-}
-
-/* --- Status pills (app-update + install-update) ---
-   Neutral pill rendered in the right trailing cluster. State is
-   communicated via icon (Download / Loader2 / RefreshCw), not tint —
-   the chrome stays the same across `available`, `downloading`, and
-   `ready` so the eye lands on the icon for status. Sized to fit
-   inside the 36px content area of the 37px title bar without growing
-   it.
-   TODO(brand-cleanup): the white-alpha-04/10 values aren't tokenized
-   yet; the existing `--brand-surface-*` recipe is .05/.09. Migrate to
-   a shared `--white-alpha-*` ramp when one is introduced. */
-.title-update-pill {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  /* High-attention tint: updates are user-actionable CTAs, not passive
-     status indicators — they earn the brand-yellow lift to compete
-     with the surrounding neutrals. Background stays calm so the
-     border + text/icon carry the accent. */
-  border: 1px solid color-mix(in srgb, var(--comfy-yellow) 55%, transparent);
-  background: color-mix(in srgb, var(--comfy-yellow) 8%, transparent);
-  color: var(--comfy-yellow);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  cursor: pointer;
-  transition:
-    background-color 0.12s,
-    border-color 0.12s,
-    opacity 0.12s;
-}
-.title-bar.is-hover-active .title-update-pill:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--comfy-yellow) 14%, transparent);
-  border-color: var(--comfy-yellow);
-}
-.title-bar.is-light .title-update-pill {
-  /* Light theme: brand yellow on white needs darker text for contrast.
-     Keep the yellow border + tinted background as the visual signal;
-     text drops to neutral-700 for readability. */
-  background: color-mix(in srgb, var(--comfy-yellow) 18%, transparent);
-  border-color: color-mix(in srgb, var(--comfy-yellow) 65%, var(--neutral-700));
-  color: var(--neutral-700);
-}
-.title-bar.is-light.is-hover-active .title-update-pill:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--comfy-yellow) 26%, transparent);
-  border-color: color-mix(in srgb, var(--comfy-yellow) 85%, var(--neutral-700));
-}
-.title-update-pill:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.title-update-pill-spinner {
-  animation: title-update-pill-spin 1s linear infinite;
-}
-@keyframes title-update-pill-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.title-update-pill-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* Cap the label width so unusually long version strings (or longer
-     localized labels) don't push the trailing cluster wide enough to
-     shove the centered install pill off-center. Tooltips on each pill
-     carry the full label, so truncated state stays accessible. */
-  max-width: clamp(80px, 14cqi, 200px);
-}
-
-/* --- Downloads tray ---
-   Icon-only chip sitting next to the app-update pill. Distinct from
-   the update pills in three ways so the user reads them at a glance
-   as separate things:
-     1. Icon: `ArrowDownToLine` (vs Download / RefreshCw on the
-        update pills).
-     2. Chrome: neutral surface tint (no blue/green accent) — the
-        tray is a passive informational entry-point, not a CTA.
-     3. Shape: square-ish padding + rounded corners (vs the update
-        pills' fully-pilled radius).
-   Padding/font-size kept tight (matching the update pills) so the
-   tray fits in the 36px content area of the 37px title bar without
-   growing it. */
-.title-downloads-tray {
-  -webkit-app-region: no-drag;
-  position: relative;
-  cursor: pointer;
-  color: var(--titlebar-icon);
-  background: transparent;
-  border: 1px solid transparent;
-  /* Pad the button so the icon centers freely and the badge has a
-   * corner to anchor into without crowding the glyph. */
-  padding: 4px 6px;
-  border-radius: 8px;
-  transition: color 0.12s;
-}
-.title-bar.is-hover-active .title-downloads-tray:hover:not(:disabled) {
-  color: var(--comfy-yellow);
-}
-/* Light comfy theme: yellow hover/open lift is near-invisible on a white bar,
- * so deepen the muted resting icon to full-strength dark text instead — the
- * same active cue, kept in the light theme's color family. */
-.title-bar.is-light.is-hover-active .title-downloads-tray:hover:not(:disabled) {
-  color: var(--neutral-700);
-}
-
-.title-downloads-badge {
-  /* Standard notification-badge pattern: small pill floating in the
-   * top-right corner of the button, anchored to the existing
-   * `position: relative` on `.title-downloads-tray`. The icon below
-   * gets the full button real-estate; the badge layers above without
-   * competing for inline space. */
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 4px;
-  border-radius: 999px;
-  /* Subtle ring against the title-bar background so the badge reads
-   * as a separate token from the icon underneath at any zoom. */
-  box-shadow: 0 0 0 2px var(--titlebar-bg-active, var(--titlebar-bg, var(--neutral-900)));
-  background: var(--accent, #60a5fa);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-
-.title-downloads-tray.has-active {
-  border-color: rgba(96, 165, 250, 0.55);
-  background: rgba(96, 165, 250, 0.16);
-}
-.title-bar.is-light .title-downloads-tray.has-active {
-  border-color: rgba(37, 99, 235, 0.55);
-  background: rgba(37, 99, 235, 0.12);
-}
-.title-downloads-tray.has-active .title-downloads-badge {
-  animation: title-downloads-pulse 1.6s ease-in-out infinite;
-}
-
-.title-downloads-tray.is-open,
-.title-bar.is-hover-active .title-downloads-tray.is-open:hover {
-  color: var(--neutral-50);
-}
-.title-bar.is-light .title-downloads-tray.is-open,
-.title-bar.is-light.is-hover-active .title-downloads-tray.is-open:hover {
-  color: var(--neutral-700);
-}
-
-.title-downloads-tray.is-flashing .title-downloads-badge {
-  animation:
-    title-downloads-flash 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.4) 1,
-    title-downloads-pulse 1.6s ease-in-out infinite 0.6s;
-}
-.title-downloads-tray.is-flashing {
-  animation: title-downloads-tray-flash 0.9s ease-out 1;
-}
-
-.title-downloads-tray.has-unseen {
-  border-color: rgba(34, 197, 94, 0.55);
-  background: rgba(34, 197, 94, 0.16);
-}
-.title-bar.is-light .title-downloads-tray.has-unseen {
-  border-color: rgba(22, 163, 74, 0.55);
-  background: rgba(22, 163, 74, 0.12);
-}
-.title-downloads-badge.is-unseen {
-  /* Colour-only delta against the active variant — the green tone
-   * carries the "done, unseen" meaning so the icon+count combo can
-   * stay identical in shape and size. */
-  background: #22c55e;
-}
-
-.title-downloads-tray.has-error {
-  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-}
-.title-downloads-badge.is-error {
-  /* Same shape as the other variants — the danger tone carries the
-   * "a download failed" meaning and takes precedence over the green
-   * "done, unseen" badge. */
-  background: var(--danger);
-}
-
-.title-downloads-error-dot {
-  /* Mid-batch failure marker. While downloads are still active the
-   * count badge occupies the top-right corner, so the failure dot
-   * anchors top-LEFT to avoid overlap. The red icon tint
-   * (`.has-error`) carries the colour meaning; this dot makes the
-   * failure legible at the badge level too. */
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--danger);
-  box-shadow: 0 0 0 2px var(--titlebar-bg-active, var(--titlebar-bg, var(--neutral-900)));
-  pointer-events: none;
-}
+<style>
+/* Download notification animations retain their original timing and reduced-motion override. */
 
 @keyframes title-downloads-pulse {
   0%,
@@ -1430,47 +1222,11 @@ onUnmounted(() => {
     box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.55);
   }
 }
-
-/* Honour reduced-motion preferences — fall back to a static accent
-   border for the running state and skip the bounce / pulse loops
-   entirely. */
 @media (prefers-reduced-motion: reduce) {
   .title-downloads-tray.has-active .title-downloads-badge,
   .title-downloads-tray.is-flashing,
   .title-downloads-tray.is-flashing .title-downloads-badge {
     animation: none;
   }
-}
-
-/* --- Responsive pill collapse ---
-   Driven by the JS fit controller in <script>, not container queries.
-   The controller measures the actual gap between the centre install
-   pill rect and the trailing cluster rect each resize frame, then
-   advances through three modes (`full` → `no-feedback` → `icons-only`)
-   when the gap falls below `MIN_GAP_PX`, walking back with hysteresis
-   tied to the learned restore cost of each hidden label.
-
-   Two boolean class hooks mirror that state for CSS:
-
-     - `.is-collapsed-feedback` — Feedback label is hidden.
-     - `.is-collapsed-update`   — Desktop Update label is hidden
-                                  (implies `.is-collapsed-feedback`).
-
-   Tooltips on every pill carry the full label, so icon-only states
-   stay accessible without extra markup. */
-
-/* When the update label collapses the pill drops to a 24×24 circle
-   (matching the Settings + other icon-only chrome) instead of staying
-   an oval, so it reads as an icon affordance not a "shrunk pill". */
-.title-bar.is-collapsed-update .title-update-pill-label {
-  display: none;
-}
-.title-bar.is-collapsed-update .title-update-pill {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  gap: 0;
-  justify-content: center;
-  border-radius: 999px;
 }
 </style>

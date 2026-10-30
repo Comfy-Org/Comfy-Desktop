@@ -114,22 +114,6 @@
   border-color: var(--accent-hover);
 }
 
-/* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
-/* Ghost icon buttons: no outline on hover, 8px radius. */
-:root.palette-void .title-bar:not(.is-light) .title-downloads-tray {
-  border-radius: var(--radius-control);
-}
-:root.palette-void
-  .title-bar.is-hover-active:not(.is-light)
-  :is(.title-downloads-tray:not(.has-active, .has-unseen, .has-error)):hover {
-  background: var(--color-secondary);
-  border-color: transparent;
-}
-/* The active-download count sits on the accent, which is white here. */
-:root.palette-void .title-bar:not(.is-light) .title-downloads-badge:not(.is-unseen, .is-error) {
-  color: var(--color-background);
-}
-
 /* ── 4. Popup windows ──────────────────────────────────────────────── */
 :root.palette-void .popup.is-menu .item:hover {
   background: oklch(1 0 0 / 0.07);
