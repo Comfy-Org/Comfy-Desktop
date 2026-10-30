@@ -851,9 +851,11 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- Equal outer tracks keep the identity pill centered. Platform padding reserves
+       the native window controls; the trailing ResizeObserver supplies the left track width. -->
   <header
     ref="titleBar"
-    class="title-bar"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border"
     :class="{
       'is-mac': isMac,
       'is-light': isLight,
@@ -885,7 +887,9 @@ onUnmounted(() => {
          surfaces the "Skip Onboarding" escape, and `loading-lockdown`
          keeps the full menu so the user can open a fresh window,
          settings, feedback, or quit cleanly while an op runs. -->
-    <div class="title-cluster">
+    <div
+      class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
+    >
       <button
         v-if="!isConsentLockdown"
         ref="fileBtn"
@@ -915,7 +919,9 @@ onUnmounted(() => {
          moved to the right trailing cluster alongside the other
          user-action controls; the install-update pill remains here so
          it stays adjacent to the install identity. -->
-    <div class="title-center">
+    <div
+      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
+    >
       <!-- Center identity pill. Install-backed hosts render as a
            button that opens the instance-picker popover (matching the
            rest of the title-bar dropdown buttons — waffle menu +
@@ -1001,7 +1007,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div ref="titleTrailing" class="title-trailing">
+    <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
       <!-- App-update pill ("Desktop Update") lives in the trailing
            cluster. The instance-update CTA now lives inside the center
            identity pill (next to the install name) so the two updates
@@ -1115,109 +1121,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.title-bar {
-  position: relative;
-  /* Three-track grid: [left auto | center 1fr | trailing auto]. Each
-     cluster owns its own track, so they cannot overlap regardless of
-     how wide the center cluster's content gets. The center pill stays
-     visually centered via `justify-self: center` on `.title-center`
-     while the 1fr track absorbs all remaining space.
-
-     This replaces an earlier `display: flex` + `position: absolute;
-     left: 50%` center cluster that didn't know the trailing cluster's
-     width and could be painted under the right-side pills when both
-     update pills + Feedback were showing. Grid makes that overlap
-     structurally impossible. */
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  height: 100vh;
-  width: 100vw;
-  /* OS-chrome reservations live in the title-bar padding (NOT in
-     cluster margins) so the grid tracks see clean inner space. Mac
-     reserves 78px on the left for traffic lights (vanishes in
-     fullscreen via the .is-fullscreen override below); Win/Linux
-     reserves 140px on the right for native min/max/close. */
-  padding: 0 12px;
-  box-sizing: border-box;
-  /* `--titlebar-bg-active` is set inline from the reported ComfyUI bg while
-     inside an instance; install-less / pre-report hosts fall back to the
-     static brand `--titlebar-bg`. */
-  background: var(--titlebar-bg-active, var(--titlebar-bg));
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  font: 12px/1 var(--font-sans, 'Inter', system-ui, sans-serif);
-  user-select: none;
-  -webkit-app-region: drag;
-  column-gap: 12px;
-  /* Container scope so the install pill's `max-inline-size:
-     clamp(..., 22cqi, ...)` resolves against the bar's inline size
-     rather than the viewport. Bar is `100vw` today so the two are
-     equivalent, but the explicit container keeps the intent and
-     stays correct if the bar ever lives inside a narrower frame. */
-  container: title-bar / inline-size;
-}
-/* macOS: reserve 78px on the left for the traffic-light cluster. */
-.title-bar.is-mac {
-  padding-left: 78px;
-}
-/* Traffic lights vanish in macOS fullscreen — reclaim the inset. */
-.title-bar.is-mac.is-fullscreen {
-  padding-left: 12px;
-}
-/* Win/Linux: reserve 140px on the right for native window controls. */
-.title-bar:not(.is-mac) {
-  padding-right: 140px;
-}
-
-/* The container DIVs stay drag-region so empty space around the buttons
-   is still draggable — only the actual interactive elements opt out via
-   `-webkit-app-region: no-drag` (set on each <button> below). Marking
-   the containers no-drag would consume the entire title bar width and
-   leave only the small left/right padding zones draggable. */
-.title-cluster {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  /* Mirror the trailing cluster's measured width (set by the
-     ResizeObserver in <script>) so the left + trailing grid tracks
-     stay equal-width. With symmetric OS-chrome padding (macOS, where
-     the left traffic-light inset is handled below) this centres the
-     1fr track at true window centre. */
-  min-width: var(--title-trailing-width, 0px);
-}
-/* Win/Linux: the native window controls reserve 140px on the RIGHT, vs the
-   12px base padding on the left. Mirroring only the trailing width centres
-   the pill in the *content box*, which the asymmetric reservation shifts
-   64px left of true window centre — this is the off-centre pill on Windows.
-   Claim the 128px delta (140px controls − 12px base padding) as extra left
-   min-width so the 1fr centre track is pushed back to true window centre.
-   Keep this value in sync with the `padding-right` above. */
-.title-bar:not(.is-mac) .title-cluster {
-  min-width: calc(var(--title-trailing-width, 0px) + 128px);
-}
-
-.title-center {
-  /* Lives in the middle 1fr grid track and is centered within it via
-     `justify-self`, so the install pill anchors to the visual centre
-     of whatever space the track has — without overlapping the left
-     or trailing tracks. */
-  justify-self: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.title-trailing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-self: end;
-}
-
 /* --- App / hamburger menu button --- */
 .title-menu-button {
   -webkit-app-region: no-drag;

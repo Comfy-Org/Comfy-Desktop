@@ -115,9 +115,6 @@
 }
 
 /* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
-:root.palette-void .title-bar.title-bar:not(.is-light) {
-  border-bottom-color: var(--color-border);
-}
 /* Ghost icon buttons: no outline on hover, 8px radius. */
 :root.palette-void .title-bar:not(.is-light) :is(.title-menu-button, .title-downloads-tray) {
   border-radius: var(--radius-control);
