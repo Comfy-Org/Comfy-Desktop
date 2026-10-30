@@ -25,6 +25,7 @@ import '../pabloPorts'
 // Mar's look: the prototype loads it with MarBackdrop, always mounted in
 // her proposal.
 import '../shell/marShell.css'
+import '../shell/borders.css'
 import '../shell/panelsNav.css'
 // The app loads it with MarBackdrop, under Mar's proposal.
 import '../motion/motion.css'

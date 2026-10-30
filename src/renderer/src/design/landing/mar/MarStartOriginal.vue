@@ -6,13 +6,15 @@ import { can } from '../milestones'
 import SectionHeader from '../ui/SectionHeader.vue'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
+import EditorEntry from './userStates/EditorEntry.vue'
+import { editorEntry } from './userStates/editorEntry'
 
 /**
  * First run · Original (UI Playground › First run): the same Home a
  * returning user gets, only emptier: under the same greeting and prompt
  * (MarHomeV10.vue), run an example (in the look from UI Playground ›
  * First-time examples), or, for those who already know ComfyUI, open the node editor on
- * Cloud or on this computer.
+ * Cloud or on this computer (UI Playground › Node editor entry).
  */
 function openCloud(): void {
   if (proto.signedIn) hostActions.launch(INSTANCES[0]!)
@@ -38,8 +40,9 @@ function openCloud(): void {
   </section>
 
   <section class="mt-10">
-    <SectionHeader title="Know ComfyUI? Open the node editor" />
-    <div class="mar-start-ways">
+    <SectionHeader v-if="editorEntry.id !== 'banner'" title="Know ComfyUI? Open the node editor" />
+    <EditorEntry v-if="editorEntry.id !== 'rows'" />
+    <div v-else class="mar-start-ways">
       <button type="button" class="mar-start-way" @click="openCloud">
         <span class="mar-start-icon"><Cloud :size="17" /></span>
         <span class="flex min-w-0 flex-1 flex-col text-left">

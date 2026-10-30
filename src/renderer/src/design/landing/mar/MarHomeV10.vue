@@ -20,12 +20,6 @@ import { EXAMPLES } from './userStates/examples'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
-import CommandHome from './p20/CommandHome.vue'
-import BentoHome from './p20/BentoHome.vue'
-import ComposerHome from './p20/ComposerHome.vue'
-import TimelineHome from './p20/TimelineHome.vue'
-import CanvasHome from './p20/CanvasHome.vue'
-import ZenHome from './p20/ZenHome.vue'
 import FilmstripRow from './p20/FilmstripRow.vue'
 import TableRow from './p20/TableRow.vue'
 import PulseStrip from './p20/PulseStrip.vue'
@@ -86,16 +80,6 @@ const actions = computed(() => [
       ]
     : [])
 ])
-// Proposals · 20: a picked layout replaces the Home's body.
-const LAYOUTS = {
-  command: CommandHome,
-  bento: BentoHome,
-  composer: ComposerHome,
-  timeline: TimelineHome,
-  canvas: CanvasHome,
-  zen: ZenHome
-} as const
-const layout = computed(() => (p20.homeLayout === 'default' ? undefined : LAYOUTS[p20.homeLayout]))
 const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // First run: a first-time user before any local install (UI Playground ›
 // User and Local install). A returning user with no local install (on
@@ -142,8 +126,7 @@ const recent = computed(() =>
       </Button>
     </template>
   </div>
-  <component :is="layout" v-if="layout && !firstTime" />
-  <div v-else class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
+  <div class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">

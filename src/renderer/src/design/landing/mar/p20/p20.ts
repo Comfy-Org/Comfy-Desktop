@@ -3,21 +3,12 @@ import { reactive, watch } from 'vue'
 /**
  * The 20 UI proposals from Figma ("UI proposals · 20", page 115:1527),
  * brought into Mar's proposal as switches (UI Playground › Proposals ·
- * 20). Layouts replace the Home's body; the rest swap or add one piece.
+ * 20). Each one swaps or adds one piece (the Home layouts were dropped).
  * Left out on purpose: 09 Dock, 17 Workspace switcher, 19 Agent split
  * and the Up next list of 16; the Home prompt gets no model or aspect
  * chips.
  */
 export const P20 = {
-  homeLayout: [
-    { value: 'default', label: 'Default' },
-    { value: 'bento', label: '03 · Bento' },
-    { value: 'command', label: '02 · Command home' },
-    { value: 'composer', label: '05 · Composer' },
-    { value: 'timeline', label: '11 · Timeline' },
-    { value: 'canvas', label: '12 · Canvas hero' },
-    { value: 'zen', label: '20 · Zen' }
-  ],
   recent: [
     { value: 'cards', label: 'Cards' },
     { value: 'filmstrip', label: '04 · Filmstrip' },
@@ -58,7 +49,6 @@ type Knob = keyof typeof P20
 export type P20State = { [K in Knob]: (typeof P20)[K][number]['value'] }
 
 const DEFAULTS: P20State = {
-  homeLayout: 'default',
   recent: 'cards',
   spaces: 'plain',
   news: 'banner',

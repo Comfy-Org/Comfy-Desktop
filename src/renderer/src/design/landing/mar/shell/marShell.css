@@ -164,14 +164,7 @@
 :root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine::after {
   display: none;
 }
-:root[data-mar-ui='on'][data-mar-borders='hairline']
-  :is(.mar-surface, .mar-composer, .mar-card, .mar-bubble) {
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
-}
-:root[data-mar-ui='on'][data-mar-borders='glass']
-  :is(.mar-surface, .mar-composer, .mar-card, .mar-bubble) {
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
-}
+/* Hairline and Glass edge on every surface: shell/borders.css. */
 
 /* Tabs and switches: a track behind every option, the picked one lighter. */
 :root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) {

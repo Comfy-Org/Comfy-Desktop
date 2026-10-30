@@ -1,0 +1,59 @@
+/* Borders (UI Playground): None is the default and draws no line.
+   Hairline puts one faint line round every New UI surface; Glass edge
+   puts a soft light along the top of each one instead. The surfaces are
+   listed once here so both options reach cards, fields, filters, menus,
+   the prompt and dialogs alike, Mar's and Pablo's. */
+:root[data-mar-ui='on'] {
+  --mar-edge-line: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  --mar-edge-glass: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  --mar-edge-line: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  --mar-edge-glass: color-mix(in oklch, #fff 80%, transparent);
+}
+
+/* Hairline: an outline, so it draws above covers and pictures that fill
+   the card, and follows each corner radius. */
+:root[data-mar-ui='on'][data-mar-borders='hairline']
+  :is(
+    .rounded-card, .edge-shine, .mar-item, .mar-surface, .mar-card, .mar-bubble,
+    .mar-composer, .mar-prompt, .mar-credits-row, .mar-view, .mar-view-trigger,
+    .mar-pseg, .mar-pfind, .mar-seg, .mar-ex-search, .mar-search-field, .mar-search-glass,
+    .mar-field, .mar-cloud-field, .mar-menu-panel, .mar-glass-menu, .mar-ws-menu,
+    .mar-tpl-panel, .mar-dep-panel, .mar-dep-tile, .mar-dep-seg, .mar-dep-logs-panel,
+    .mar-dep-code-panel, .mar-xrow-card, .mar-bento-tile, .mar-flow-card, .mar-deck-card,
+    .mar-row-card, .mar-ro-tile, .mar-where-card, .mar-search-tile, .mar-ex-card,
+    .mar-sk-card, .mar-reel-card, .mar-ee-card, .mar-ws-card, .mar-build-code-card,
+    .mar-bs-card, .mar-add-tile, .mar-learn-course, .mar-learn-next, .mar-learn-row,
+    .bg-secondary-background.rounded-control, .bg-card-background.rounded-control,
+    [role='menu'], [role='listbox'], [role='dialog']
+  ):not(:focus-visible) {
+  outline: 1px solid var(--mar-edge-line);
+  outline-offset: -1px;
+}
+
+/* Glass edge: light along the top only. Floating surfaces keep a drop
+   shadow under it. */
+:root[data-mar-ui='on'][data-mar-borders='glass']
+  :is(
+    .rounded-card, .mar-item, .mar-surface, .mar-card, .mar-bubble,
+    .mar-composer, .mar-prompt, .mar-credits-row, .mar-view-trigger,
+    .mar-pseg, .mar-pfind, .mar-seg, .mar-ex-search, .mar-search-field,
+    .mar-field, .mar-cloud-field, .mar-dep-tile, .mar-dep-seg, .mar-dep-logs-panel,
+    .mar-dep-code-panel, .mar-xrow-card, .mar-bento-tile, .mar-flow-card, .mar-deck-card,
+    .mar-row-card, .mar-ro-tile, .mar-where-card, .mar-search-tile, .mar-ex-card,
+    .mar-sk-card, .mar-reel-card, .mar-ee-card, .mar-ws-card, .mar-build-code-card,
+    .mar-bs-card, .mar-add-tile, .mar-learn-course, .mar-learn-next, .mar-learn-row,
+    .bg-secondary-background.rounded-control, .bg-card-background.rounded-control
+  ) {
+  box-shadow: inset 0 1px 0 var(--mar-edge-glass) !important;
+}
+:root[data-mar-ui='on'][data-mar-borders='glass']
+  :is(
+    .mar-view, .mar-search-glass, .mar-menu-panel, .mar-glass-menu, .mar-ws-menu,
+    .mar-tpl-panel, .mar-dep-panel, [role='menu'], [role='listbox'], [role='dialog']
+  ) {
+  box-shadow:
+    inset 0 1px 0 var(--mar-edge-glass),
+    0 24px 64px -20px rgb(0 0 0 / 0.5) !important;
+}
