@@ -18,7 +18,7 @@ const STATES = [
     title="Where should Comfy run?"
     note="One row card per place: icon, name, one line, and the action at the end. Cloud is recommended."
   >
-    <Cells :min="520">
+    <Cells :min="960">
       <Cell
         v-for="s in STATES"
         :key="s.label"
@@ -35,7 +35,7 @@ const STATES = [
     title="Builds"
     note="Home's builds: the same row card, with the build's state. One or two builds fill the width."
   >
-    <Cells :min="520">
+    <Cells :min="960">
       <Cell
         v-for="s in STATES"
         :key="s.label"
@@ -52,7 +52,7 @@ const STATES = [
     title="Build cards (Builds page)"
     note="One card per build: an inset strip of its last outputs, name and meta with the action, then the specs in three lines on an 8px rhythm (GPU and uptime or wake time, a slim memory meter and credits an hour or disk, models and node packs). The state chip sits top-left; the button bottom-right."
   >
-    <Cells :min="520">
+    <Cells :min="960">
       <AppShot label="Builds" page="environments" :crop="[250, 120, 1030, 560]" />
     </Cells>
   </Section>

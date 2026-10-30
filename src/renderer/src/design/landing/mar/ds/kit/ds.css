@@ -230,6 +230,18 @@ html.ds-frame #app {
   margin: 0;
   overflow: visible;
   border-radius: 12px;
+  /* The page's plain surface: not the content panel's light and mesh. */
+  background: var(--color-content-background);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.ds-cell-surface.proto-main.proto-main.proto-main::before,
+.ds-cell-surface.proto-main.proto-main.proto-main::after {
+  display: none;
+}
+/* A specimen's own outer margin (a header's gap below it) isn't the
+   cell's: the padding around it stays even. */
+.ds-cell-stage > * {
+  margin-block: 0;
 }
 .ds-cell-surface.proto-sidebar {
   background: var(--color-app-background);
@@ -427,8 +439,12 @@ html.ds-app-frame #app {
   display: flex;
   justify-content: center;
 }
+/* At the component's own width: wide ones (rows, headers) take the
+   column, small ones sit centred with room around them. */
 .ds-cells.is-hero > .ds-cell {
-  width: min(100%, 720px);
+  width: fit-content;
+  min-width: min(100%, 480px);
+  max-width: 100%;
 }
 .ds-frame-page.is-hero .ds-cell-surface {
   min-height: 280px;
