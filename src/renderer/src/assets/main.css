@@ -659,17 +659,6 @@ button.brand-primary:focus-visible {
   outline-color: color-mix(in srgb, var(--comfy-yellow) 80%, var(--neutral-100));
 }
 
-/* Blue secondary — supporting action next to a primary (Browse, etc.). */
-button.brand-secondary {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: #fff;
-}
-button.brand-secondary:hover:not([disabled]) {
-  background: color-mix(in srgb, var(--accent-primary) 88%, #000);
-  border-color: color-mix(in srgb, var(--accent-primary) 88%, #000);
-}
-
 /* Frosted-glass tertiary — sits next to inputs inside brand-surface
  * cards (Browse, source-field actions). Low-emphasis so it doesn't
  * compete with the primary CTA, but still reads as a button. */
@@ -742,37 +731,6 @@ button.brand-ghost:hover:not([disabled]) {
   flex-direction: column;
   gap: 2px;
 }
-.brand-checkbox__title {
-  font-size: var(--takeover-fs-body);
-  font-weight: 600;
-  color: var(--neutral-100);
-}
-.brand-checkbox__hint {
-  font-size: var(--takeover-fs-body);
-  color: var(--neutral-300);
-  line-height: normal;
-}
-.brand-checkbox__link,
-button.brand-checkbox__link {
-  color: var(--neutral-100);
-  text-decoration: underline;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  border-radius: 2px;
-}
-.brand-checkbox__link:hover,
-button.brand-checkbox__link:hover {
-  color: var(--comfy-yellow);
-  background: transparent;
-}
-.brand-checkbox__link:focus-visible,
-button.brand-checkbox__link:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
 
 button.loading {
   opacity: 0.7;
@@ -794,11 +752,6 @@ button.loading::after {
   to {
     transform: rotate(360deg);
   }
-}
-button.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 /* Forms */
@@ -922,18 +875,6 @@ button.add-btn {
   background: var(--text);
   border-radius: 1px;
 }
-.status-danger {
-  color: var(--danger);
-  font-weight: 600;
-}
-.status-running {
-  color: var(--accent);
-  font-weight: 600;
-}
-.status-new {
-  color: var(--accent);
-  font-weight: 600;
-}
 .status-update {
   color: var(--warning);
   font-weight: 600;
@@ -959,47 +900,12 @@ button.add-btn {
   background: color-mix(in srgb, var(--warning) 80%, #fff);
   border-color: color-mix(in srgb, var(--warning) 80%, #fff);
 }
-.migrate-pill {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #1a1a1a;
-  border: 1px solid var(--accent);
-  cursor: pointer;
-  user-select: none;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
-}
-.migrate-pill:hover {
-  background: color-mix(in srgb, var(--accent) 80%, #fff);
-  border-color: color-mix(in srgb, var(--accent) 80%, #fff);
-}
-.status-in-progress {
-  color: var(--accent);
-  font-weight: 600;
-}
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
   color: var(--text-muted);
   font-size: 14px;
-}
-.empty-state-title {
-  font-weight: 700;
-  color: var(--text-muted);
-}
-.empty-state-hint {
-  margin-top: 4px;
-}
-.empty-state-action {
-  margin-top: 8px;
 }
 
 .toolbar {
@@ -1009,54 +915,12 @@ button.add-btn {
   min-height: 34px;
   margin-bottom: 16px;
 }
-.toolbar-actions {
-  display: flex;
-  gap: 8px;
-}
 
 .breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-.breadcrumb-current {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* In-view page close button (X) shown next to the breadcrumb on root
-   panel pages such as Settings and Directories. Resets the host
-   window's panel-history stack via `closeCurrentPanel`. */
-.view-page-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-  line-height: 1;
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-.view-page-close:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.view-page-close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .detected-hardware {
@@ -1094,13 +958,6 @@ button.add-btn {
   justify-content: flex-end;
   gap: 10px;
   padding-top: 12px;
-}
-.view-list-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 8px;
 }
 
 /* Detail tabs — brand-redesign parity with `.settings-v2-tabs` in
@@ -1222,57 +1079,11 @@ button.add-btn {
 .settings-section .field:last-child {
   margin-bottom: 0;
 }
-.path-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-.path-primary-tag {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--surface);
-  padding: 2px 8px;
-  border-radius: 3px;
-  flex-shrink: 0;
-  align-self: center;
-}
 
 /* Progress */
-.progress-status {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-  user-select: text;
-}
-.progress-substatus {
-  font-size: 12px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  margin-bottom: 12px;
-  user-select: text;
-}
 .progress-error-message {
   color: var(--danger);
   margin-bottom: 12px;
-}
-.progress-bar-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.progress-bar-wrap .progress-bar-track {
-  flex: 1 1 auto;
-  margin-bottom: 0;
-}
-.progress-bar-percent {
-  flex: 0 0 auto;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  min-width: 3ch;
-  text-align: right;
 }
 .progress-bar-track {
   width: 100%;
@@ -1310,13 +1121,6 @@ button.add-btn {
   50% {
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
-}
-
-.progress-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 16px;
 }
 .progress-step {
   display: flex;
@@ -1413,12 +1217,6 @@ button.add-btn {
   font-size: 13px;
   color: var(--text-muted);
   user-select: text;
-}
-
-.progress-conflict-actions {
-  margin-bottom: 16px;
-  display: flex;
-  gap: 8px;
 }
 
 /* Terminal output */
@@ -1608,24 +1406,6 @@ button.add-btn {
   }
 }
 
-.view-fullscreen {
-  position: fixed;
-  top: var(--titlebar-height);
-  bottom: 0;
-  right: 0;
-  left: var(--sidebar-width);
-  display: flex;
-  z-index: 40;
-  background: var(--bg);
-}
-.view-fullscreen .view-modal-content {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  border-radius: 0;
-  border: none;
-}
-
 .view-modal-content {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1717,11 +1497,6 @@ button.add-btn {
 }
 .detail-embedded-title > [contenteditable]:focus .edit-name-hint {
   opacity: 0;
-}
-.view-modal-header-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
 }
 /* Stack the optional back chevron above the grand title in Tier 3
    takeover modals (NewInstall / Track / LoadSnapshot / QuickInstall).
@@ -2232,33 +2007,6 @@ button.add-btn {
   font-size: 12px;
 }
 
-/* Update banner */
-.update-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: var(--surface);
-  font-size: 14px;
-}
-.update-banner .update-text {
-  flex: 1;
-  color: var(--text);
-}
-.update-banner .update-text strong {
-  color: var(--accent);
-}
-.update-banner-actions {
-  display: flex;
-  gap: 8px;
-}
-.update-banner button {
-  flex-shrink: 0;
-}
-
 /* Zoom banner */
 .zoom-banner {
   display: flex;
@@ -2291,61 +2039,6 @@ button.add-btn {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px;
-}
-.recessed-search {
-  width: 100%;
-  padding: 6px 8px;
-  margin-bottom: 4px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
-}
-
-/* Card progress bar */
-.card-progress {
-  flex: 1;
-  min-width: 0;
-  margin-top: 4px;
-}
-.card-progress-status {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 4px;
-}
-.card-progress-track {
-  width: 100%;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.card-progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  width: 0%;
-  transition: width 0.3s ease;
-}
-.card-progress-fill.paused {
-  background: var(--warning);
-}
-.card-progress-fill.error {
-  background: var(--danger);
-}
-.card-progress-fill.success {
-  background: var(--success);
-}
-.card-progress-fill.indeterminate {
-  animation: indeterminate 1.5s ease-in-out infinite;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 50%, var(--accent) 100%);
-  background-size: 200% 100%;
 }
 
 /* Dashboard */
@@ -2401,16 +2094,6 @@ button.add-btn {
   color: var(--accent-hover);
 }
 
-/* Primary card indicator */
-.card-indicator {
-  display: inline-block;
-  vertical-align: -2px;
-  margin-left: 4px;
-}
-.card-indicator-primary {
-  color: var(--accent);
-}
-
 /* Install wizard */
 .wizard-loading {
   font-size: 14px;
@@ -2428,12 +2111,6 @@ button.add-btn {
   font-size: 12px;
   line-height: 1.4;
   color: var(--warning);
-  margin-top: 6px;
-}
-.track-probing {
-  font-size: 14px;
-  color: var(--text-muted);
-  padding: 8px 0;
   margin-top: 6px;
 }
 

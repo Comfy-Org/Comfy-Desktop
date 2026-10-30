@@ -117,16 +117,6 @@
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
-/* The brand secondary beside a white primary: a quiet secondary button. */
-:root.palette-void button.brand-secondary {
-  border-color: var(--color-border);
-  background: var(--color-secondary);
-  color: var(--color-foreground);
-}
-:root.palette-void button.brand-secondary:hover:not([disabled]) {
-  border-color: var(--color-border-strong);
-  background: var(--color-accent);
-}
 
 /* ── 3. Title bar (dark only; the light bar keeps its styles) ──────── */
 :root.palette-void .title-bar.title-bar:not(.is-light) {
@@ -277,7 +267,7 @@
 :root.palette-void :is(.brand-input, .brand-surface, .brand-checkbox input[type='checkbox']) {
   border-color: var(--color-border);
 }
-:root.palette-void :is(button.brand-primary, button.brand-secondary, button.brand-tertiary) {
+:root.palette-void :is(button.brand-primary, button.brand-tertiary) {
   border-radius: var(--radius-control);
 }
 /* These forms keep their existing control dimensions during the recolor. */
