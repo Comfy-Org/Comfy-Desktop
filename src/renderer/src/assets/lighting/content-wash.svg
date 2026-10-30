@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+  <defs>
+    <radialGradient
+      id="g0"
+      gradientUnits="userSpaceOnUse"
+      cx="0"
+      cy="0"
+      r="1"
+      fx="-0.16"
+      fy="0.03"
+      gradientTransform="translate(1.2 -5.7) rotate(176) skewX(8) scale(56 26)"
+    >
+      <stop stop-color="rgb(122,92,156)" stop-opacity="0.047" />
+      <stop offset="1" stop-color="rgb(122,92,156)" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="g1"
+      gradientUnits="userSpaceOnUse"
+      cx="0"
+      cy="0"
+      r="1"
+      fx="-0.12"
+      fy="0.02"
+      gradientTransform="translate(73.0 8.0) rotate(28) skewX(11) scale(56 20)"
+    >
+      <stop stop-color="rgb(70,128,136)" stop-opacity="0.044" />
+      <stop offset="1" stop-color="rgb(70,128,136)" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="g2"
+      gradientUnits="userSpaceOnUse"
+      cx="0"
+      cy="0"
+      r="1"
+      fx="-0.13"
+      fy="0.03"
+      gradientTransform="translate(29.6 58.5) rotate(45) skewX(15) scale(40 18)"
+    >
+      <stop stop-color="rgb(122,92,156)" stop-opacity="0.039" />
+      <stop offset="1" stop-color="rgb(122,92,156)" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="g3"
+      gradientUnits="userSpaceOnUse"
+      cx="0"
+      cy="0"
+      r="1"
+      fx="0.07"
+      fy="0.25"
+      gradientTransform="translate(76.2 -4.8) rotate(164) skewX(2) scale(61 34)"
+    >
+      <stop stop-color="rgb(70,128,136)" stop-opacity="0.059" />
+      <stop offset="1" stop-color="rgb(70,128,136)" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="g4"
+      gradientUnits="userSpaceOnUse"
+      cx="0"
+      cy="0"
+      r="1"
+      fx="0.16"
+      fy="-0.08"
+      gradientTransform="translate(82.8 -7.2) rotate(31) skewX(-6) scale(51 15)"
+    >
+      <stop stop-color="rgb(122,92,156)" stop-opacity="0.037" />
+      <stop offset="1" stop-color="rgb(122,92,156)" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="100" height="100" fill="url(#g0)" />
+  <rect width="100" height="100" fill="url(#g1)" />
+  <rect width="100" height="100" fill="url(#g2)" />
+  <rect width="100" height="100" fill="url(#g3)" />
+  <rect width="100" height="100" fill="url(#g4)" />
+</svg>
