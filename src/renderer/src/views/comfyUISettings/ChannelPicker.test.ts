@@ -406,7 +406,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
     const button = wrapper.find('[data-testid="update-action-change-pytorch"]')
     expect(button.exists()).toBe(true)
-    expect(button.classes()).toContain('accent')
+    expect(button.attributes('data-variant')).toBe('accent')
     expect(button.text()).toContain('Change PyTorch')
   })
 
@@ -427,7 +427,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
     const copyButton = wrapper.find('[data-testid="update-action-copy-pytorch"]')
     expect(copyButton.exists()).toBe(true)
-    expect(copyButton.classes()).not.toContain('accent')
+    expect(copyButton.attributes('data-variant')).not.toBe('accent')
     expect(copyButton.text()).toContain('Copy & Change PyTorch')
     // Safe alternative sits before the primary action, mirroring Copy & Update.
     const ids = wrapper
