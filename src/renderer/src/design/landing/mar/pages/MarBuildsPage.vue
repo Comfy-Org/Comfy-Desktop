@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import {
   ArrowUpCircle,
+  CircleAlert,
   Copy,
   ExternalLink,
   FolderOpen,
@@ -323,11 +324,13 @@ const newLabel = computed(() =>
               <span class="mar-build-gpu">{{ gpuName(b) }}</span>
               <span :class="b.state === 'error' && 'is-error'">{{ stateLine(b) }}</span>
             </span>
-            <span v-if="b.state === 'error'" class="mar-build-row is-error">{{ b.error }}</span>
+            <span v-if="b.state === 'error'" class="mar-build-row is-error"
+              ><CircleAlert :size="14" class="mar-build-alert" />{{ b.error }}</span
+            >
             <span v-else class="mar-build-row">
               <span
                 v-if="b.state === 'running' && live(b).mem"
-                class="mar-build-meter"
+                class="mar-build-mem"
                 :aria-label="`${memory(b)} ${live(b).mem![0]} of ${live(b).mem![1]} GB in use`"
               >
                 <span class="mar-build-bar"
@@ -530,7 +533,7 @@ const newLabel = computed(() =>
 .mar-build-spec .is-error {
   color: var(--color-error-foreground, oklch(0.62 0.19 25));
 }
-.mar-build-meter {
+.mar-build-mem {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -557,5 +560,75 @@ const newLabel = computed(() =>
   height: 100%;
   align-items: center;
   justify-content: center;
+}
+/* ---- Light: the same card, tuned for a white page. Dark is above. ---- */
+/* A soft surface: a faint ring and a low shadow instead of an outline. */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    0 1px 2px color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
+    0 8px 24px -12px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build.is-selected {
+  box-shadow: 0 0 0 2px var(--color-base-foreground);
+}
+/* The strip's seams take the card's colour, not a dark gap. */
+:root[data-ds-theme='light'] .mar-build-made {
+  background: var(--color-card-background);
+}
+:root[data-ds-theme='light'] .mar-build-spec {
+  border-top-color: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+/* A light track under a mid-grey fill (the fill is set in light.css). */
+:root[data-ds-theme='light'] .mar-build-bar {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* Chips on the strip: a frosted white pill, dark words, the dot in colour. */
+:root[data-ds-theme='light'] .mar-build .mar-status.on-media {
+  background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  color: var(--color-base-foreground);
+}
+:root[data-ds-theme='light'] .mar-build .mar-status.on-media.is-go .mar-status-dot {
+  color: var(--color-status-running);
+}
+:root[data-ds-theme='light'] .mar-build .mar-status.on-media.is-bad svg {
+  color: var(--color-status-danger);
+}
+:root[data-ds-theme='light'] .mar-build .mar-status.on-media.is-warn svg {
+  color: oklch(0.62 0.14 70);
+}
+/* Didn't start: a calm inline banner (light red tint and an icon) in
+   place of raw red words; it keeps the line's height. */
+:root[data-ds-theme='light'] .mar-build-spec .is-error {
+  color: var(--color-status-danger);
+}
+:root[data-ds-theme='light'] .mar-build-row.is-error {
+  justify-content: flex-start;
+  gap: 6px;
+  margin: -5px 0;
+  padding: 5px 8px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-status-danger) 8%, var(--color-card-background));
+  color: color-mix(in oklch, var(--color-status-danger) 70%, var(--color-base-foreground));
+}
+.mar-build-alert {
+  display: none;
+  flex-shrink: 0;
+}
+:root[data-ds-theme='light'] .mar-build-alert {
+  display: block;
+  color: var(--color-status-danger);
+}
+/* The card's button: the system's light secondary-primary, not a heavy
+   black block in every card. */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-build-go {
+  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  background: var(--color-card-background);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-build-go:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, var(--color-card-background));
 }
 </style>
