@@ -7,6 +7,8 @@ import globals from 'globals'
 import { configs as tseslintConfigs, parser as tseslintParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
+import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
+
 const extraFileExtensions = ['.vue']
 
 const commonParserOptions = {
@@ -49,6 +51,10 @@ export default defineConfig([
   },
   {
     files: ['./**/*.vue'],
+    plugins: {
+      desktop: { rules: { 'no-new-vue-style-blocks': noNewVueStyleBlocks } }
+    },
+    rules: { 'desktop/no-new-vue-style-blocks': 'error' },
     languageOptions: {
       globals: { ...globals.browser },
       parser: vueParser,

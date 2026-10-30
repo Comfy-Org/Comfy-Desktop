@@ -18,7 +18,7 @@ export default defineConfig({
     // teardown had deleted `window.api`, restored mocks or reset the DOM,
     // leaving unmount hooks to run against a dismantled environment.
     sequence: { hooks: 'list' },
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/eslint/**/*.test.ts'],
     exclude: ['src/**/*.integration.test.ts', 'node_modules'],
     globals: true,
     maxWorkers: 8,
