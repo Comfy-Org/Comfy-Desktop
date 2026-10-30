@@ -19,6 +19,10 @@ const props = defineProps<{
   schemaVersion: number
 }>()
 
+// Match the scoped pill selector priority inside an input’s trailing slot.
+const pillTriggerClass =
+  '[&.beta-args_button.ui-menu-trigger]:gap-1 [&.beta-args_button.ui-menu-trigger]:w-auto [&.beta-args_button.ui-menu-trigger]:h-[22px] [&.beta-args_button.ui-menu-trigger]:px-[7px] [&.beta-args_button.ui-menu-trigger]:py-0 [&.beta-args_button.ui-menu-trigger]:text-[11px] [&.beta-args_button.ui-menu-trigger]:font-medium [&.beta-args_button.ui-menu-trigger]:whitespace-nowrap [&.beta-args_button.ui-menu-trigger]:text-text-muted [&.beta-args_button.ui-menu-trigger]:bg-transparent [&.beta-args_button.ui-menu-trigger]:border [&.beta-args_button.ui-menu-trigger]:border-solid [&.beta-args_button.ui-menu-trigger]:border-[var(--border)] [&.beta-args_button.ui-menu-trigger]:rounded-[9999px] [&.beta-args_button.ui-menu-trigger:hover]:text-text [&.beta-args_button.ui-menu-trigger:hover]:bg-border-hover [&.beta-args_button.ui-menu-trigger[aria-expanded=true]]:text-text [&.beta-args_button.ui-menu-trigger[aria-expanded=true]]:bg-border-hover'
+
 const LOADING_DELAY_MS = 150
 const OPT_IN_KEYS = new Set(['betaFeaturesEnabled', 'telemetryEnabled'])
 
@@ -96,19 +100,23 @@ function onSelect(id: string): void {
 <template>
   <span
     v-if="loading"
-    class="beta-args beta-args-loading"
+    class="beta-args beta-args-loading inline-flex h-[22px] w-auto items-center gap-1 rounded-[9999px] border border-solid border-[var(--border)] bg-transparent px-[7px] py-0 text-[11px] font-medium whitespace-nowrap text-text-muted opacity-70"
     role="status"
     :aria-label="t('comfyUISettings.betaArgsLoading')"
   >
-    <LoaderCircle :size="12" class="beta-args-spin" aria-hidden="true" />
+    <LoaderCircle :size="12" class="beta-args-spin animate-spin" aria-hidden="true" />
     <span>{{ t('comfyUISettings.betaArgsPillLoading') }}</span>
   </span>
-  <span v-else-if="args.length > 0" class="beta-args">
+  <span
+    v-else-if="args.length > 0"
+    class="beta-args inline-flex items-center"
+    :class="pillTriggerClass"
+  >
     <BaseMenu
       ref="menu"
       :items="items"
       align="end"
-      list-class="beta-args-menu"
+      list-class="beta-args-menu w-[300px] [&_.ui-menu-item[aria-disabled=true]]:items-baseline [&_.ui-menu-item[aria-disabled=true]]:text-text [&_.ui-menu-item[aria-disabled=true]]:text-[12px] [&_.ui-menu-item[aria-disabled=true]]:cursor-default [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:flex-none [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:[font-family:ui-monospace,SFMono-Regular,Menlo,monospace] [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:font-semibold"
       :heading="t(next ? 'comfyUISettings.betaArgsHeadingNext' : 'comfyUISettings.betaArgsHeading')"
       :trigger-aria-label="
         t(
@@ -119,78 +127,12 @@ function onSelect(id: string): void {
       "
       @select="onSelect"
     >
-      <FlaskConical :size="12" class="beta-args-flask" aria-hidden="true" />
+      <FlaskConical
+        :size="12"
+        class="beta-args-flask text-[var(--accent-plum)]"
+        aria-hidden="true"
+      />
       <span>{{ t('comfyUISettings.betaArgsPill', { n: args.length }) }}</span>
     </BaseMenu>
   </span>
 </template>
-
-<style scoped>
-/* Qualified by `.beta-args` to outrank BaseInput's `.ui-input-trailing :deep(button)` icon-button
- * sizing, which otherwise squeezes every trailing-slot button to 28x28. */
-.beta-args {
-  display: inline-flex;
-  align-items: center;
-}
-
-.beta-args :deep(button.ui-menu-trigger),
-.beta-args-loading {
-  gap: 4px;
-  width: auto;
-  height: 22px;
-  padding: 0 7px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 9999px;
-}
-
-.beta-args :deep(button.ui-menu-trigger:hover),
-.beta-args :deep(button.ui-menu-trigger[aria-expanded='true']) {
-  color: var(--text);
-  background: var(--border-hover);
-}
-
-.beta-args-loading {
-  opacity: 0.7;
-}
-
-.beta-args-flask {
-  color: var(--accent-plum);
-}
-
-.beta-args-spin {
-  animation: beta-args-spin 1s linear infinite;
-}
-
-@keyframes beta-args-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
-
-<style>
-/* The menu is teleported to <body>, out of reach of scoped styles. */
-.beta-args-menu {
-  width: 300px;
-}
-
-/* Arg rows are information, not actions: inert, but not greyed out. */
-.beta-args-menu .ui-menu-item[aria-disabled='true'] {
-  align-items: baseline;
-  color: var(--text);
-  font-size: 12px;
-  cursor: default;
-}
-
-/* A flag is one token and never breaks; the feature name beside it wraps instead. */
-.beta-args-menu .ui-menu-item[aria-disabled='true'] .ui-menu-item-label {
-  flex: 0 0 auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-weight: 600;
-}
-</style>
