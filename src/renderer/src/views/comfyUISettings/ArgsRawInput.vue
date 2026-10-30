@@ -94,7 +94,7 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="args-raw-input" @focusin="onFocus" @focusout="onBlur" @keydown="onKeydown">
+  <div class="args-raw-input relative" @focusin="onFocus" @focusout="onBlur" @keydown="onKeydown">
     <BaseInput
       mono
       :spellcheck="false"
@@ -111,27 +111,41 @@ function onKeydown(e: KeyboardEvent): void {
     </BaseInput>
     <ul
       v-if="autocomplete.visible.value"
-      class="args-raw-input-ac"
+      class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-lg border border-solid border-[var(--border)] bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
       role="listbox"
       :aria-label="t('comfyUISettings.argsAutocompleteLabel', 'Argument suggestions')"
     >
       <li
         v-for="(m, i) in autocomplete.matches.value"
         :key="m.name"
-        class="args-raw-input-ac-item"
-        :class="{ selected: i === autocomplete.acIndex.value }"
+        class="args-raw-input-ac-item flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-[12px] text-text transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
+        :class="{
+          'selected bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]':
+            i === autocomplete.acIndex.value
+        }"
         role="option"
         :aria-selected="i === autocomplete.acIndex.value"
         @mousedown.prevent="autocomplete.completeArg(m.name)"
         @mouseenter="autocomplete.acIndex.value = i"
       >
-        <span class="args-raw-input-ac-flag">{{ m.flag }}</span>
-        <span v-if="m.type !== 'boolean'" class="args-raw-input-ac-meta">
+        <span
+          class="args-raw-input-ac-flag shrink-0 font-[family-name:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace)] font-semibold text-[var(--accent-primary)]"
+          >{{ m.flag }}</span
+        >
+        <span
+          v-if="m.type !== 'boolean'"
+          class="args-raw-input-ac-meta shrink-0 font-[family-name:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace)] text-[11px] text-text-muted"
+        >
           {{ m.metavar ? (m.type === 'optional-value' ? `[${m.metavar}]` : m.metavar) : '' }}
         </span>
-        <span class="args-raw-input-ac-help">{{ m.help }}</span>
+        <span class="args-raw-input-ac-help min-w-0 flex-1 truncate text-text-muted">{{
+          m.help
+        }}</span>
       </li>
-      <li class="args-raw-input-ac-hint" aria-hidden="true">
+      <li
+        class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-[var(--border)] px-2 pt-1 pb-0.5 text-right text-[10px] text-[color:color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
+        aria-hidden="true"
+      >
         {{
           t('comfyUISettings.argsAutocompleteHint', '↑↓ navigate · Tab/Enter select · Esc dismiss')
         }}
@@ -141,17 +155,20 @@ function onKeydown(e: KeyboardEvent): void {
     <!-- Colored echo of the raw string so problem tokens are easy to spot. -->
     <div
       v-if="validation && showTokenDisplay && validation.tokens.length"
-      class="args-raw-tokens"
+      class="args-raw-tokens mt-1.5 flex flex-wrap gap-x-1.5 gap-y-1 rounded-md border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 px-2.5 py-1.5 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-[1.5] text-text-muted"
       aria-hidden="true"
     >
       <span
         v-for="(tok, i) in validation.tokens"
         :key="i"
         :class="{
-          'token-bad': tok.status === 'unsupported' || tok.status === 'orphaned',
-          'token-missing': tok.status === 'missing-value',
-          'token-awaiting': tok.status === 'awaiting-value',
-          'token-partial': tok.status === 'partial'
+          'token-bad text-danger underline decoration-wavy underline-offset-[3px]':
+            tok.status === 'unsupported' || tok.status === 'orphaned',
+          'token-missing text-[var(--warning)] underline decoration-wavy underline-offset-[3px]':
+            tok.status === 'missing-value',
+          'token-awaiting text-[var(--accent-primary)] underline decoration-dotted underline-offset-[3px]':
+            tok.status === 'awaiting-value',
+          'token-partial text-text-muted opacity-60': tok.status === 'partial'
         }"
         :title="tok.tooltip || ''"
         >{{ tok.text }}</span
@@ -161,7 +178,7 @@ function onKeydown(e: KeyboardEvent): void {
     <template v-if="validation">
       <p
         v-if="validation.awaiting"
-        class="args-raw-validation args-raw-validation-info"
+        class="args-raw-validation args-raw-validation-info mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
@@ -172,20 +189,23 @@ function onKeydown(e: KeyboardEvent): void {
       </p>
       <p
         v-if="validation.unsupportedFlags.length > 0"
-        class="args-raw-validation args-raw-validation-error"
+        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
           {{ t('comfyUISettings.argsUnsupported', 'Unsupported:') }}
-          <code v-for="flag in validation.unsupportedFlags" :key="flag" class="args-raw-bad-flag"
+          <code
+            v-for="flag in validation.unsupportedFlags"
+            :key="flag"
+            class="args-raw-bad-flag rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[11px]"
             >--{{ flag }}</code
           >
         </span>
       </p>
       <p
         v-if="validation.missingValueFlags.length > 0"
-        class="args-raw-validation args-raw-validation-warn"
+        class="args-raw-validation args-raw-validation-warn mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
@@ -194,177 +214,27 @@ function onKeydown(e: KeyboardEvent): void {
           <code
             v-for="flag in validation.missingValueFlags"
             :key="flag"
-            class="args-raw-bad-flag"
+            class="args-raw-bad-flag rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[11px]"
             >{{ flag }}</code
           >
         </span>
       </p>
       <p
         v-if="validation.orphanedTokens.length > 0"
-        class="args-raw-validation args-raw-validation-error"
+        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
           {{ t('comfyUISettings.argsUnexpected', 'Unexpected:') }}
-          <code v-for="tok in validation.orphanedTokens" :key="tok" class="args-raw-bad-flag">{{
-            tok
-          }}</code>
+          <code
+            v-for="tok in validation.orphanedTokens"
+            :key="tok"
+            class="args-raw-bad-flag rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[11px]"
+            >{{ tok }}</code
+          >
         </span>
       </p>
     </template>
   </div>
 </template>
-
-<style scoped>
-.args-raw-input {
-  position: relative;
-}
-
-.args-raw-input-ac {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 50;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.args-raw-input-ac-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-  color: var(--text);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-
-.args-raw-input-ac-item.selected,
-.args-raw-input-ac-item:hover {
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-}
-
-.args-raw-input-ac-flag {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-weight: 600;
-  color: var(--accent-primary);
-  flex-shrink: 0;
-}
-
-.args-raw-input-ac-meta {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.args-raw-input-ac-help {
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
-}
-
-.args-raw-input-ac-hint {
-  padding: 4px 8px 2px;
-  font-size: 10px;
-  color: color-mix(in srgb, var(--text-muted) 70%, transparent);
-  border-top: 1px solid var(--border);
-  margin-top: 2px;
-  text-align: right;
-  cursor: default;
-}
-
-/* Colored echo of the raw string: each problem token underlined in its color. */
-.args-raw-tokens {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  margin: 6px 0 0;
-  padding: 6px 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  background: var(--neutral-800);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 6px;
-}
-
-.args-raw-tokens .token-bad {
-  color: var(--danger);
-  text-decoration: underline wavy;
-  text-underline-offset: 3px;
-}
-
-.args-raw-tokens .token-missing {
-  color: var(--warning);
-  text-decoration: underline wavy;
-  text-underline-offset: 3px;
-}
-
-.args-raw-tokens .token-awaiting {
-  color: var(--accent-primary);
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-}
-
-/* Trailing flag still being typed: dimmed, no error decoration. */
-.args-raw-tokens .token-partial {
-  color: var(--text-muted);
-  opacity: 0.6;
-}
-
-.args-raw-validation {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0 0;
-  padding: 6px 10px;
-  font-size: 11px;
-  line-height: 1.5;
-  border-radius: 6px;
-}
-
-.args-raw-validation :deep(svg) {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.args-raw-validation-error {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-
-.args-raw-validation-warn {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-}
-
-.args-raw-validation-info {
-  color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-}
-
-.args-raw-bad-flag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: color-mix(in srgb, currentcolor 14%, transparent);
-}
-</style>
