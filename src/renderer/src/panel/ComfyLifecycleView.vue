@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RefreshCcw, Loader2, ArrowLeft } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import { useSessionStore } from '../stores/sessionStore'
 import {
   useReturnToDashboardConfirm,
@@ -298,25 +299,31 @@ const placeholderTitle = computed<string>(() => {
           : $t('comfyLifecycle.crashedTitle')
       "
     >
-      <template #actions>
-        <button
-          class="brand-ghost brand-progress__footer-btn"
+      <template #actions="{ buttonClass, secondaryClass, primaryClass }">
+        <Button
+          size="unset"
+          variant="textonly"
+          class="brand-progress__footer-btn"
+          :class="[buttonClass, secondaryClass]"
           type="button"
           :data-testid="TID.lifecycleReturnDashboard"
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
           {{ $t('common.back') }}
-        </button>
-        <button
-          class="brand-primary brand-progress__footer-btn"
+        </Button>
+        <Button
+          size="unset"
+          variant="textonly"
+          class="brand-progress__footer-btn"
+          :class="[buttonClass, primaryClass]"
           type="button"
           :data-testid="TID.lifecycleRelaunch"
           @click="startLaunch"
         >
           <RefreshCcw :size="14" />
           {{ $t('comfyLifecycle.restart') }}
-        </button>
+        </Button>
       </template>
     </BrandFinishedSurface>
 
@@ -329,25 +336,31 @@ const placeholderTitle = computed<string>(() => {
       :message="$t('comfyLifecycle.stoppedDesc')"
       :aria-label="$t('comfyLifecycle.stoppedTitle')"
     >
-      <template #actions>
-        <button
-          class="brand-ghost brand-progress__footer-btn"
+      <template #actions="{ buttonClass, secondaryClass, primaryClass }">
+        <Button
+          size="unset"
+          variant="textonly"
+          class="brand-progress__footer-btn"
+          :class="[buttonClass, secondaryClass]"
           type="button"
           :data-testid="TID.lifecycleReturnDashboard"
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
           {{ $t('dashboard.confirmStopLocal.confirmLabel', 'Return to Dashboard') }}
-        </button>
-        <button
-          class="brand-primary brand-progress__footer-btn"
+        </Button>
+        <Button
+          size="unset"
+          variant="textonly"
+          class="brand-progress__footer-btn"
+          :class="[buttonClass, primaryClass]"
           type="button"
           :data-testid="TID.lifecycleRelaunch"
           @click="startLaunch"
         >
           <RefreshCcw :size="14" />
           {{ $t('comfyLifecycle.relaunch') }}
-        </button>
+        </Button>
       </template>
     </BrandFinishedSurface>
 

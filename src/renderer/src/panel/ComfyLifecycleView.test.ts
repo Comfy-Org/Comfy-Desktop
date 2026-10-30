@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
+import { TID } from '../../../shared/testIds'
 
 const messages = {
   en: {
@@ -136,7 +137,7 @@ describe('ComfyLifecycleView', () => {
     // Neutral surface, not the crashed/error chrome.
     expect(wrapper.find('.brand-progress__banner--error').exists()).toBe(false)
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(false)
-    const button = wrapper.find('button.brand-primary')
+    const button = wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`)
     expect(button.exists()).toBe(true)
     expect(button.text()).toContain('Relaunch ComfyUI')
   })
@@ -146,7 +147,7 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     const back = wrapper.findAll('button').find((b) => b.text().includes('Return to Dashboard'))
     expect(back?.exists()).toBe(true)
-    expect(back!.classes()).toContain('brand-ghost')
+    expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
     await back!.trigger('click')
     await flushPromises()
     const api = (window as unknown as { api: MockApi }).api
@@ -156,7 +157,7 @@ describe('ComfyLifecycleView', () => {
   it('relaunches from the stopped surface via a launch show-progress', async () => {
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.find('button.brand-primary').trigger('click')
+    await wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).trigger('click')
     const evts = wrapper.emitted('show-progress')
     expect(evts).toBeTruthy()
     const opts = evts![0]![0] as { opKind: string; apiCall: () => unknown }
@@ -170,7 +171,7 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Starting ComfyUI')
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(true)
-    expect(wrapper.find('button.brand-primary').exists()).toBe(false)
+    expect(wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).exists()).toBe(false)
   })
 
   it('shows the in-flight placeholder while sessionStore reports the install as stopping', async () => {
@@ -180,7 +181,7 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Stopping ComfyUI')
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(true)
-    expect(wrapper.find('button.brand-primary').exists()).toBe(false)
+    expect(wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).exists()).toBe(false)
   })
 
   it('renders the crashed state in brand-error chrome with exit code', async () => {
@@ -194,7 +195,7 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.text()).toContain('ComfyUI exited unexpectedly')
     expect(wrapper.text()).toContain('exit code 137')
     expect(wrapper.find('.brand-progress__banner--error').exists()).toBe(true)
-    const button = wrapper.find('button.brand-primary')
+    const button = wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`)
     expect(button.exists()).toBe(true)
     expect(button.text()).toContain('Restart ComfyUI')
   })
@@ -267,7 +268,7 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.text()).not.toContain('ComfyUI exited unexpectedly')
     expect(wrapper.text()).not.toContain('The ComfyUI process exited')
     // Still recoverable from here.
-    expect(wrapper.find('button.brand-primary').exists()).toBe(true)
+    expect(wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).exists()).toBe(true)
   })
 
   it('keeps crash copy for a crash even when a message is also recorded', async () => {
@@ -475,7 +476,7 @@ describe('ComfyLifecycleView', () => {
       exitCode: 1
     })
     await flushPromises()
-    await wrapper.find('button.brand-primary').trigger('click')
+    await wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).trigger('click')
     const events = wrapper.emitted('show-progress')
     expect(events).toBeDefined()
     expect(events!.length).toBe(1)
@@ -508,7 +509,7 @@ describe('ComfyLifecycleView', () => {
     const buttons = errorActions.findAll('button')
     const back = buttons.find((b) => b.text().includes('Back'))
     expect(back?.exists()).toBe(true)
-    expect(back!.classes()).toContain('brand-ghost')
+    expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
     // Back on the left, Restart on the right.
     expect(buttons[0]!.text()).toContain('Back')
     expect(buttons[1]!.text()).toContain('Restart')
