@@ -21,6 +21,7 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
+import { CRITS, crit } from './crit/crit'
 import PabloPortsTuner from './PabloPortsTuner.vue'
 
 /** The UI tuner panel (Prototype menu › UI Playground): whose proposal
@@ -45,6 +46,7 @@ function reset(): void {
   homeBuilds.id = 'off'
   setUser('returning')
   palette.id = 'void'
+  crit.id = 'off'
 }
 
 const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }))
@@ -239,6 +241,28 @@ function set(key: keyof Tuning, value: string): void {
       <div v-if="isMariana" class="flex flex-col gap-1.5">
         <span class="text-ui text-subtle-foreground">Look</span>
         <Select v-model="marLook.id" :options="LOOKS" class="w-full" />
+      </div>
+
+      <!-- The Oct 29 Weekly Design Crit's notes, all at once (crit/crit.ts). -->
+      <div v-if="isMariana" class="flex flex-col gap-1.5">
+        <span class="text-ui text-subtle-foreground">Crit feedback · Oct 29</span>
+        <div class="mar-seg flex gap-1 rounded-control bg-secondary-background p-0.5">
+          <button
+            v-for="c in CRITS"
+            :key="c.value"
+            type="button"
+            :aria-pressed="crit.id === c.value"
+            :class="[
+              'h-7 flex-1 rounded-[7px] px-2 text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
+              crit.id === c.value
+                ? 'bg-secondary-background-hover font-medium text-base-foreground'
+                : 'text-muted-foreground hover:text-base-foreground'
+            ]"
+            @click="crit.id = c.value"
+          >
+            {{ c.label }}
+          </button>
+        </div>
       </div>
 
       <!-- Mar's pages: show any page Live, Loading, Empty or offline. -->

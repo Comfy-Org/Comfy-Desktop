@@ -13,6 +13,7 @@ import {
   Bot,
   ChevronDown,
   ChevronUp,
+  Clock3,
   Copy,
   Group as GroupIcon,
   Hand,
@@ -38,6 +39,7 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
+import { critOn } from '../crit/crit'
 import {
   ComfyAssets,
   ComfyModel,
@@ -790,6 +792,11 @@ const activeJob = computed(() =>
   jobs.value.find((j) => j.status === 'running' || j.status === 'paused')
 )
 const waiting = computed(() => jobs.value.filter((j) => j.status === 'queued'))
+/** How many runs wait. Crit · Oct 29: the run that is (or is about to
+ *  be) running never counts, so "1 queued" means a second run is waiting. */
+const queuedCount = computed(() =>
+  critOn.value && !activeJob.value ? Math.max(0, waiting.value.length - 1) : waiting.value.length
+)
 
 /** What a run is given: the nodes' values as they are now, without the
  *  ones in locked groups (and only `only`, when given). */
@@ -1420,7 +1427,12 @@ function onRail(label: string): void {
           </span>
           <i v-else class="mg-spin" aria-hidden="true" />
           <span>{{ activeJob?.status === 'paused' ? 'Paused' : 'Running' }}</span>
-          <span v-if="waiting.length" class="mg-badge">Queued {{ waiting.length }}</span>
+          <span v-if="critOn && queuedCount" class="mg-badge is-crit"
+            ><Clock3 :size="11" aria-hidden="true" />{{ queuedCount }} queued</span
+          >
+          <span v-else-if="!critOn && waiting.length" class="mg-badge"
+            >Queued {{ waiting.length }}</span
+          >
           <span class="mg-hairline" :style="{ width: `${(activeJob?.progress ?? 0) * 100}%` }" />
         </button>
         <template v-if="jobsOpen">
@@ -1428,7 +1440,14 @@ function onRail(label: string): void {
             <span v-if="job.status === 'paused'" class="mg-paused is-small" aria-hidden="true">
               <Pause :size="8" fill="currentColor" />
             </span>
-            <i v-else-if="job.status === 'running'" class="mg-spin is-small" aria-hidden="true" />
+            <!-- Crit · Oct 29: one running signal (the pill's spinner); the
+                 running row shows its progress, a queued one a clock. -->
+            <i
+              v-else-if="job.status === 'running'"
+              :class="critOn ? 'mg-job-live' : 'mg-spin is-small'"
+              aria-hidden="true"
+            />
+            <Clock3 v-else-if="critOn" :size="13" class="mg-job-clock" aria-hidden="true" />
             <i v-else class="mg-job-dot" aria-hidden="true" />
             <span class="mg-job-text">
               <span class="mg-job-title">{{ job.title }}</span>
@@ -2205,6 +2224,24 @@ function onRail(label: string): void {
   margin: 0 5px;
   border-radius: 999px;
   background: var(--mg-muted);
+}
+.mg-job-live {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  margin: 0 4.5px;
+  border-radius: 999px;
+  background: var(--color-base-foreground);
+}
+.mg-job-clock {
+  flex: none;
+  margin: 0 1.5px;
+  color: var(--mg-muted);
+}
+.mg-badge.is-crit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .mg-job-text {
   display: flex;
