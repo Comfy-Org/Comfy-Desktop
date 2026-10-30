@@ -5,4 +5,3 @@
  * Current (no attribute) is untouched. Selectors that restyle buttons go
  * through `.proto-ui.proto-ui.proto-ui` to beat the prototype's reset.
  */
-@import './grain.css';

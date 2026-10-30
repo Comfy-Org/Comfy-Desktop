@@ -8,11 +8,10 @@ import './looks.css'
  * stylesheet is scoped to `:root[data-mar-look='grain']`. Current changes
  * nothing.
  */
-export type MarLook = 'current' | 'grain'
+export type MarLook = 'current'
 
 export const LOOKS: { value: MarLook; label: string }[] = [
-  { value: 'current', label: 'Current · Void as it is' },
-  { value: 'grain', label: 'Grain · film grain and vignette on every picture' }
+  { value: 'current', label: 'Current · Void as it is' }
 ]
 
 const KEY = 'comfy.design.mar.look'

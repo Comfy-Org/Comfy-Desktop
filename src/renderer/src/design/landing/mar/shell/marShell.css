@@ -864,11 +864,12 @@
 /* The spotlight carries on down the whole page: the same light, weaker
    the further down you go, so the content never sits on a flat band.
    Painted on the page itself (scrolling with it), so it spans the full
-   width and height with no edge. */
+   height with no edge; kept to the middle so the panel's sides stay as
+   dark as the page and the edge never washes into the sidebar. */
 :root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight) {
   background:
     radial-gradient(
-      ellipse 90% 100% at 50% 0%,
+      ellipse 62% 100% at 50% 0%,
       color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
       color-mix(in oklch, var(--color-base-foreground) 2.5%, transparent) 50%,
       transparent 100%
@@ -888,7 +889,7 @@
 :root[data-mar-ui='on'][data-ds-theme='light'] .proto-main:has(> .mar-backdrop.is-spotlight) {
   background:
     radial-gradient(
-      ellipse 90% 100% at 50% 0%,
+      ellipse 62% 100% at 50% 0%,
       oklch(0.9 0.04 290 / 0.3),
       oklch(0.92 0.03 290 / 0.14) 40%,
       oklch(0.94 0.02 290 / 0.05) 70%,
@@ -1686,17 +1687,4 @@
   :root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
     translate: none;
   }
-}
-
-/* The content panel keeps its edge where the Home glow lightens it: a
-   barely-there inner hairline, so the panel never dissolves into the
-   sidebar or the title bar. */
-/* An inner outline, not an inset shadow: outlines paint above the
-   content, so nothing that reaches the edge can cover the line. */
-:root[data-mar-ui='on'] .proto-main {
-  outline: 1px solid color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
-  outline-offset: -1px;
-}
-:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main {
-  outline-color: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }

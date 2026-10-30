@@ -18,6 +18,7 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { P20, p20 } from './p20/p20'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
+import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
@@ -238,7 +239,7 @@ function set(key: keyof Tuning, value: string): void {
         </div>
       </div>
 
-      <div v-if="isMariana" class="flex flex-col gap-1.5">
+      <div v-if="isMariana && LOOKS.length > 1" class="flex flex-col gap-1.5">
         <span class="text-ui text-subtle-foreground">Look</span>
         <Select v-model="marLook.id" :options="LOOKS" class="w-full" />
       </div>
@@ -372,6 +373,11 @@ function set(key: keyof Tuning, value: string): void {
       <div v-if="isMariana" class="flex flex-col gap-1.5">
         <span class="text-ui text-subtle-foreground">First run · first-time, no local install</span>
         <Select v-model="firstRun.id" :options="FIRST_RUNS" class="w-full" />
+      </div>
+
+      <div v-if="isMariana" class="flex flex-col gap-1.5">
+        <span class="text-ui text-subtle-foreground">First-time examples</span>
+        <Select v-model="exampleLook.id" :options="EXAMPLE_LOOKS" class="w-full" />
       </div>
 
       <div v-if="DIRECTIONS.length > 1" class="flex flex-col gap-1.5">
