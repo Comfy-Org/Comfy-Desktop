@@ -63,10 +63,31 @@ describe('piiScrub', () => {
       )
     })
 
-    it('leaves a nested Windows home or users folder alone', () => {
-      expect(scrubPII('C:\\ComfyUI\\custom_nodes\\x\\home\\config.json')).toBe(
-        'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json'
-      )
+    it.each([
+      'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
+      'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
+      'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json'
+    ])('leaves the nested project folder in %s alone', (input) => {
+      expect(scrubPII(input)).toBe(input)
+    })
+
+    it.each([
+      ['admin share', '\\\\server\\c$\\Users\\alice\\x', '\\\\server\\c$\\Users\\[REDACTED]\\x'],
+      [
+        'long UNC',
+        '\\\\?\\UNC\\server\\Users\\alice\\x',
+        '\\\\?\\UNC\\server\\Users\\[REDACTED]\\x'
+      ],
+      ['long drive', '\\\\?\\C:\\Users\\alice\\x', '\\\\?\\C:\\Users\\[REDACTED]\\x'],
+      [
+        'device path',
+        '\\Device\\HarddiskVolume3\\Users\\alice',
+        '\\Device\\HarddiskVolume3\\Users\\[REDACTED]'
+      ],
+      ['root-relative', 'open \\Users\\alice\\x', 'open \\Users\\[REDACTED]\\x'],
+      ['doubled root-relative', '"\\\\Users\\\\alice\\\\x"', '"\\\\Users\\\\[REDACTED]\\\\x"']
+    ])('redacts a backslash-rooted %s Users path', (_label, input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
     })
 
     it('redacts the segment after a /users/ URL path', () => {
@@ -134,6 +155,21 @@ describe('piiScrub', () => {
         expect(scrubPII(`D:\\Profiles\\${sibling}\\x`)).toBe(`D:\\Profiles\\${sibling}\\x`)
       }
     )
+
+    it.each([
+      ['cwd=D:\\Profiles\\alice', 'cwd=D:\\Profiles\\[REDACTED]'],
+      ['open D:\\Profiles\\alice failed', 'open D:\\Profiles\\[REDACTED] failed'],
+      ['cannot open <D:\\Profiles\\alice>', 'cannot open <D:\\Profiles\\[REDACTED]>'],
+      ['`D:\\Profiles\\alice`', '`D:\\Profiles\\[REDACTED]`'],
+      ['D:\\Profiles\\alice|x', 'D:\\Profiles\\[REDACTED]|x'],
+      ['D:\\Profiles\\alice>dir', 'D:\\Profiles\\[REDACTED]>dir'],
+      ['D:\\Profiles\\alice&&x', 'D:\\Profiles\\[REDACTED]&&x'],
+      ['D:\\Profiles\\alice!', 'D:\\Profiles\\[REDACTED]!'],
+      ['D:\\Profiles\\alice*', 'D:\\Profiles\\[REDACTED]*']
+    ])('redacts the home directory in %s', (input, expected) => {
+      setScrubbedHomeDir('D:\\Profiles\\alice')
+      expect(scrubPII(input)).toBe(expected)
+    })
 
     it('redacts the home directory at the end of a sentence', () => {
       setScrubbedHomeDir('D:\\Profiles\\alice')
