@@ -114,9 +114,17 @@ describe('no new Vue style blocks', () => {
   )
 
   it('enforces the rule through the actual project ESLint configuration', async () => {
-    const eslint = new ESLint({ cwd: root })
+    const eslint = new ESLint({
+      cwd: root,
+      overrideConfig: {
+        files: ['**/*.vue'],
+        // This rule only needs the SFC syntax tree. Keep the real config's
+        // parser and rule wiring without scanning the entire TypeScript project.
+        languageOptions: { parserOptions: { projectService: false } }
+      }
+    })
     const [rejected] = await eslint.lintText('<template><div /></template>\n<style scoped/>', {
-      filePath: 'src/renderer/src/views/LoadSnapshotModal.vue'
+      filePath: 'src/renderer/src/NewComponent.vue'
     })
     expect(rejected?.messages).toEqual([expect.objectContaining({ ruleId, severity: 2, line: 2 })])
     const [accepted] = await eslint.lintText(frozenSource, { filePath: frozenFile })
