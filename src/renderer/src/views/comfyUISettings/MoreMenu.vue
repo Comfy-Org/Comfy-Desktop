@@ -104,155 +104,60 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
 </script>
 
 <template>
-  <Transition name="more-menu-fade">
+  <Transition
+    name="more-menu-fade"
+    enter-active-class="more-menu-fade-enter-active [transition:opacity_120ms_ease,transform_120ms_cubic-bezier(0.32,0.72,0,1)]"
+    leave-active-class="more-menu-fade-leave-active [transition:opacity_120ms_ease,transform_120ms_cubic-bezier(0.32,0.72,0,1)]"
+    enter-from-class="more-menu-fade-enter-from opacity-0 [transform:translateY(4px)]"
+    leave-to-class="more-menu-fade-leave-to opacity-0 [transform:translateY(4px)]"
+  >
     <ul
       v-if="open && visibleActions.length > 0"
       ref="menu"
-      class="more-menu"
-      :class="{ 'has-heading': !!heading, 'has-icons': hasIcons }"
+      class="more-menu absolute right-0 bottom-[calc(100%+6px)] z-62 m-0 list-none rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] p-1.5 shadow-[var(--modal-surface-shadow)]"
+      :class="[
+        { 'has-heading': !!heading, 'has-icons': hasIcons },
+        heading || hasIcons ? 'w-max min-w-[168px] max-w-[280px]' : 'min-w-[200px]'
+      ]"
       role="menu"
       :aria-label="heading"
       aria-orientation="vertical"
     >
-      <li v-if="heading" class="more-menu-heading" role="presentation">{{ heading }}</li>
+      <li
+        v-if="heading"
+        class="more-menu-heading mb-1 border-b border-solid border-[var(--chooser-surface-border)] px-3 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
+        role="presentation"
+      >
+        {{ heading }}
+      </li>
       <li v-for="(action, i) in visibleActions" :key="action.id" role="none">
         <button
           type="button"
           role="menuitem"
-          class="more-menu-item"
-          :class="{
-            'is-danger': action.style === 'danger',
-            'is-accent': action.style === 'accent',
-            'is-disabled': action.enabled === false
-          }"
+          class="more-menu-item group/more flex w-full items-center gap-[9px] rounded-md border-none bg-transparent px-3.5 py-2 text-left text-[13px] transition-[background-color,color] duration-100 ease-[ease] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="[
+            { 'is-disabled': action.enabled === false },
+            action.style === 'danger'
+              ? 'is-danger text-danger enabled:hover:text-danger-hover focus-visible:text-danger-hover'
+              : action.style === 'accent'
+                ? 'is-accent text-[var(--accent-primary)] enabled:hover:text-text'
+                : 'text-neutral-100 enabled:hover:text-text focus-visible:text-text'
+          ]"
           :disabled="action.enabled === false"
           :tabindex="focusedIndex === i ? 0 : -1"
           :data-testid="TID.pinBottomAction(action.id)"
           @click="handlePick(action)"
         >
-          <span v-if="hasIcons" class="more-menu-item-icon" aria-hidden="true">
+          <span
+            v-if="hasIcons"
+            class="more-menu-item-icon inline-flex size-4 flex-[0_0_16px] items-center justify-center text-text-muted group-[:enabled:hover]/more:text-inherit group-focus-visible/more:text-inherit"
+            aria-hidden="true"
+          >
             <component :is="action.icon" v-if="action.icon" :size="15" />
           </span>
-          <span class="more-menu-item-label">{{ action.label }}</span>
+          <span class="more-menu-item-label flex-auto">{{ action.label }}</span>
         </button>
       </li>
     </ul>
   </Transition>
 </template>
-
-<style scoped>
-/* Mirrors the dashboard's `.context-menu` chrome so kebab and More menu read as one family. */
-.more-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  margin: 0;
-  padding: 6px;
-  list-style: none;
-  min-width: 200px;
-  background: var(--modal-surface-bg);
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 10px;
-  box-shadow: var(--modal-surface-shadow);
-  z-index: 62;
-}
-
-/* Caret variant (titled / icon'd): hug the content instead of the fixed 200px
- * "More"-menu width, so a short single item doesn't float in a wide box. */
-.more-menu.has-heading,
-.more-menu.has-icons {
-  min-width: 168px;
-  width: max-content;
-  max-width: 280px;
-}
-
-/* Section title above a hairline divider — turns a bare list into a deliberate menu. */
-.more-menu-heading {
-  padding: 4px 12px 6px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--chooser-surface-border);
-  color: var(--text-muted);
-  opacity: 0.7;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* Override global `button` chrome: transparent full-row popover items matching `.context-menu-item`. */
-.more-menu-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 14px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--neutral-100);
-  font-size: 13px;
-  text-align: left;
-  transition:
-    background-color 100ms ease,
-    color 100ms ease;
-}
-
-/* Fixed icon column so labels align whether or not a row carries an icon. */
-.more-menu-item-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  color: var(--text-muted);
-}
-.more-menu-item:hover:not(:disabled) .more-menu-item-icon,
-.more-menu-item:focus-visible .more-menu-item-icon {
-  color: inherit;
-}
-.more-menu-item-label {
-  flex: 1 1 auto;
-}
-
-.more-menu-item:hover:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-  color: var(--text);
-}
-
-.more-menu-item:focus-visible {
-  outline: none;
-  background: var(--brand-surface-bg-hover);
-  color: var(--text);
-}
-
-.more-menu-item.is-danger {
-  color: var(--danger);
-}
-.more-menu-item.is-danger:hover:not(:disabled),
-.more-menu-item.is-danger:focus-visible {
-  color: var(--danger-hover);
-}
-
-.more-menu-item.is-accent {
-  color: var(--accent-primary);
-}
-
-.more-menu-item.is-disabled,
-.more-menu-item:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.more-menu-fade-enter-active,
-.more-menu-fade-leave-active {
-  transition:
-    opacity 120ms ease,
-    transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.more-menu-fade-enter-from,
-.more-menu-fade-leave-to {
-  opacity: 0;
-  transform: translateY(4px);
-}
-</style>
