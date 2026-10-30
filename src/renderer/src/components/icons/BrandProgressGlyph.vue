@@ -2,6 +2,7 @@
 
 <template>
   <svg
+    class="text-foreground [&_stop]:[stop-color:currentColor]"
     viewBox="0 0 715 557"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
