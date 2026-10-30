@@ -63,6 +63,30 @@ describe('piiScrub', () => {
       )
     })
 
+    it.each([
+      ['/home/zo\\u00eb/x', '\\u00eb'],
+      ['"C:/Users/\\u674e\\u5c0f\\u9f99/x"', '\\u5c0f'],
+      ['"\\/Users\\/Bj\\u00f6rn\\/x"', '\\u00f6rn']
+    ])('redacts a JSON-escaped non-ASCII name after a forward slash: %s', (input, tail) => {
+      const scrubbed = scrubPII(input)
+      expect(scrubbed).toContain('[REDACTED]')
+      expect(scrubbed).not.toContain(tail)
+    })
+
+    it('redacts every occurrence of the same spelling', () => {
+      const traceback = [
+        'File "/home/bob/a.py", line 1',
+        'File "/home/bob/b.py", line 2',
+        'File "C:\\Users\\alice\\a.py", line 3',
+        'File "C:\\Users\\alice\\b.py", line 4',
+        'File "C:\\Users\\alice\\c.py", line 5'
+      ].join('\n')
+      const scrubbed = scrubPII(traceback)
+      expect(scrubbed).not.toContain('bob')
+      expect(scrubbed).not.toContain('alice')
+      expect(scrubbed.match(/\[REDACTED\]/g)).toHaveLength(5)
+    })
+
     it('keeps a raw folder whose name looks like a JSON escape', () => {
       expect(scrubPII('C:\\Users\\alice\\u1234\\x')).toBe('C:\\Users\\[REDACTED]\\u1234\\x')
     })
@@ -173,6 +197,13 @@ describe('piiScrub', () => {
     ])('redacts the home directory in %s', (input, expected) => {
       setScrubbedHomeDir('D:\\Profiles\\alice')
       expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('redacts every occurrence of the registered home directory', () => {
+      setScrubbedHomeDir('D:\\Profiles\\alice')
+      expect(scrubPII('D:\\Profiles\\alice\\a and D:\\Profiles\\alice\\b')).toBe(
+        'D:\\Profiles\\[REDACTED]\\a and D:\\Profiles\\[REDACTED]\\b'
+      )
     })
 
     it('redacts the home directory at the end of a sentence', () => {
