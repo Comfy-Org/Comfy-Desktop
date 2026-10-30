@@ -2,6 +2,7 @@
 /** Account identity and authentication controls shown at the dashboard's top-right. */
 import { computed, ref } from 'vue'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
@@ -44,155 +45,64 @@ async function onSignOut(): Promise<void> {
 </script>
 
 <template>
-  <div ref="rootRef" class="account-chip" @keydown="onKeydown">
+  <div
+    ref="rootRef"
+    class="account-chip relative inline-flex flex-col items-end"
+    @keydown="onKeydown"
+  >
     <template v-if="store.isSignedIn">
       <button
         ref="faceRef"
         type="button"
-        class="account-chip__face"
+        class="account-chip__face inline-flex h-7 min-w-0 max-w-80 items-center gap-2 rounded-lg border border-solid border-transparent bg-transparent px-2 py-0 text-neutral-100 text-[length:var(--text-ui)] [--dp-avatar-size:20px] transition-[background,border-color] duration-[120ms] ease-[ease] hover:border-transparent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:cursor-wait disabled:opacity-65"
         data-testid="devplatform-account-chip"
         :aria-expanded="menuOpen"
         @click="toggleMenu"
       >
         <DevPlatformAvatar :name="email || '?'" />
-        <span class="account-chip__email">{{ email }}</span>
+        <span
+          class="account-chip__email max-w-[200px] truncate font-semibold text-neutral-100 text-[length:var(--text-ui)]"
+          >{{ email }}</span
+        >
         <ChevronDown
           :size="14"
-          class="account-chip__caret"
-          :class="{ 'account-chip__caret--open': menuOpen }"
+          class="account-chip__caret flex-none text-neutral-200 transition-transform duration-[140ms] ease-[ease]"
+          :class="{ 'account-chip__caret--open rotate-180': menuOpen }"
           aria-hidden="true"
         />
       </button>
 
       <div
         v-if="menuOpen"
-        class="account-chip__menu"
+        class="account-chip__menu absolute top-[calc(100%+6px)] right-0 z-20 min-w-[180px] rounded-card border border-solid border-border bg-popover p-1 shadow-popover backdrop-blur-[18px]"
         role="group"
         :aria-label="$t('devPlatform.account.signedInAs', { email })"
         data-testid="devplatform-account-menu"
       >
-        <button
+        <Button
           type="button"
-          class="account-chip__item"
+          variant="textonly"
+          size="unset"
+          class="account-chip__item flex min-h-8 w-full items-center justify-start gap-2.5 rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-left font-normal text-neutral-100 text-[length:var(--text-ui)] leading-[inherit] whitespace-normal appearance-auto transition-[background] duration-[120ms] ease-[ease] hover:bg-secondary focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]"
           data-testid="devplatform-account-signout"
           @click="onSignOut"
         >
           <LogOut :size="16" aria-hidden="true" />
           <span>{{ $t('devPlatform.account.signOut') }}</span>
-        </button>
+        </Button>
       </div>
     </template>
-    <button
+    <Button
       v-else
       type="button"
-      class="account-chip__face account-chip__signin"
+      variant="inverted"
+      size="unset"
+      class="account-chip__face account-chip__signin inline-flex h-7 min-w-0 max-w-80 items-center gap-2 rounded-lg border border-solid border-transparent bg-foreground px-2.5 py-0 font-medium text-background text-[length:var(--text-ui)] leading-[inherit] whitespace-normal appearance-auto transition-[background,border-color] duration-[120ms] ease-[ease] hover:enabled:bg-accent-hover disabled:hover:bg-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-65"
       data-testid="devplatform-account-signin"
       :disabled="signingIn"
       @click="onSignIn"
     >
       {{ $t('devPlatform.signIn.cta') }}
-    </button>
+    </Button>
   </div>
 </template>
-
-<style scoped>
-.account-chip {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.account-chip__face {
-  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 320px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
-  color: var(--neutral-100);
-  font: inherit;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-.account-chip__face:hover {
-  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 18%, transparent);
-}
-.account-chip__face:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.account-chip__face:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.account-chip__signin {
-  padding-inline: 16px;
-  font-size: var(--takeover-fs-caption);
-  font-weight: 600;
-}
-
-.account-chip__email {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--neutral-100);
-  font-size: var(--takeover-fs-caption);
-  font-weight: 600;
-}
-
-.account-chip__caret {
-  flex: 0 0 auto;
-  color: var(--neutral-200);
-  transition: transform 140ms ease;
-}
-.account-chip__caret--open {
-  transform: rotate(180deg);
-}
-
-.account-chip__menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  min-width: 180px;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--brand-surface-border);
-  background: var(--chooser-surface-bg);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-.account-chip__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--neutral-100);
-  font: inherit;
-  font-size: var(--takeover-fs-caption);
-  text-align: left;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-.account-chip__item:hover {
-  background: var(--brand-surface-bg-hover);
-}
-.account-chip__item:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-</style>

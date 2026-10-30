@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
@@ -10,6 +11,9 @@ import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/w
 const props = defineProps<{
   modelValue: string
 }>()
+
+const itemClass =
+  'workspace-selector__item flex min-h-8 w-full items-center justify-start gap-2.5 rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-left font-normal text-neutral-100 text-[length:var(--text-ui)] leading-[inherit] [--dp-avatar-size:calc(var(--takeover-fs-caption)*2.5)] appearance-auto hover:enabled:bg-secondary focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]'
 
 const emit = defineEmits<{
   'update:modelValue': [workspaceId: string]
@@ -88,11 +92,11 @@ function onSelectWorkspace(workspaceId: string): void {
 </script>
 
 <template>
-  <div ref="rootRef" class="workspace-selector" @keydown="onKeydown">
+  <div ref="rootRef" class="workspace-selector relative w-fit" @keydown="onKeydown">
     <button
       ref="faceRef"
       type="button"
-      class="workspace-selector__face"
+      class="workspace-selector__face inline-flex h-7 min-w-0 max-w-80 items-center gap-2 rounded-lg border border-solid border-transparent bg-transparent px-2 py-0 text-neutral-100 text-[length:var(--text-ui)] [--dp-avatar-size:20px] hover:border-transparent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]"
       data-testid="devplatform-workspace-selector"
       aria-haspopup="true"
       :aria-expanded="menuOpen"
@@ -100,205 +104,95 @@ function onSelectWorkspace(workspaceId: string): void {
       @click="toggleMenu"
     >
       <DevPlatformAvatar :name="currentWorkspaceName" />
-      <span class="workspace-selector__name">{{ currentWorkspaceName }}</span>
+      <span
+        class="workspace-selector__name flex-auto truncate text-left font-semibold text-neutral-100 text-[length:var(--text-ui)]"
+        >{{ currentWorkspaceName }}</span
+      >
       <ChevronDown
         :size="14"
-        class="workspace-selector__caret"
-        :class="{ 'workspace-selector__caret--open': menuOpen }"
+        class="workspace-selector__caret flex-none text-neutral-200 transition-transform duration-[140ms] ease-[ease]"
+        :class="{ 'workspace-selector__caret--open rotate-180': menuOpen }"
         aria-hidden="true"
       />
     </button>
 
     <div
       v-if="menuOpen"
-      class="workspace-selector__menu"
+      class="workspace-selector__menu absolute top-[calc(100%+6px)] left-0 z-20 max-h-[min(70vh,480px)] min-w-[260px] max-w-[340px] overflow-y-auto rounded-card border border-solid border-border bg-popover p-1 shadow-popover"
       role="group"
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       data-testid="devplatform-workspace-menu"
     >
       <div
         v-if="store.loadingWorkspaces && store.workspaces.length === 0"
-        class="workspace-selector__hint"
+        class="workspace-selector__hint px-2.5 py-2 text-neutral-200 text-[length:var(--takeover-fs-caption)]"
       >
         {{ $t('common.loading') }}
       </div>
-      <button
+      <Button
         v-else-if="store.workspacesError && store.workspaces.length === 0"
         type="button"
-        class="workspace-selector__item workspace-selector__retry"
+        variant="textonly"
+        size="unset"
+        :class="[itemClass, 'workspace-selector__retry text-neutral-200']"
         data-testid="devplatform-workspace-retry"
         @click="store.fetchWorkspaces()"
       >
         {{ $t('devPlatform.workspace.loadError') }}
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
-        class="workspace-selector__item"
+        variant="textonly"
+        size="unset"
+        :class="itemClass"
         :aria-pressed="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
         data-testid="devplatform-workspace-personal"
         @click="onSelectWorkspace(PERSONAL_WORKSPACE_ID)"
       >
         <DevPlatformAvatar :name="$t('devPlatform.workspace.personalLabel')" />
-        <span class="workspace-selector__identity">
-          <span class="workspace-selector__item-name">{{
+        <span class="workspace-selector__identity flex min-w-0 flex-auto flex-col leading-[1.2]">
+          <span class="workspace-selector__item-name truncate font-semibold text-neutral-100">{{
             $t('devPlatform.workspace.personalLabel')
           }}</span>
         </span>
         <Check
           v-if="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
           :size="15"
-          class="workspace-selector__check"
+          class="workspace-selector__check flex-none text-comfy-yellow"
           aria-hidden="true"
         />
-      </button>
+      </Button>
 
-      <button
+      <Button
         v-for="workspace in teamWorkspaces"
         :key="workspace.id"
         type="button"
-        class="workspace-selector__item"
+        variant="textonly"
+        size="unset"
+        :class="itemClass"
         :aria-pressed="workspace.id === currentWorkspaceId"
         :data-testid="`devplatform-workspace-${workspace.id}`"
         @click="onSelectWorkspace(workspace.id)"
       >
         <DevPlatformAvatar :name="workspaceLabel(workspace)" />
-        <span class="workspace-selector__identity">
-          <span class="workspace-selector__item-name">{{ workspaceLabel(workspace) }}</span>
-          <span v-if="workspace.type !== 'personal'" class="workspace-selector__item-sub">{{
-            workspace.type
+        <span class="workspace-selector__identity flex min-w-0 flex-auto flex-col leading-[1.2]">
+          <span class="workspace-selector__item-name truncate font-semibold text-neutral-100">{{
+            workspaceLabel(workspace)
           }}</span>
+          <span
+            v-if="workspace.type !== 'personal'"
+            class="workspace-selector__item-sub truncate text-neutral-200 capitalize"
+            >{{ workspace.type }}</span
+          >
         </span>
         <Check
           v-if="workspace.id === currentWorkspaceId"
           :size="15"
-          class="workspace-selector__check"
+          class="workspace-selector__check flex-none text-comfy-yellow"
           aria-hidden="true"
         />
-      </button>
+      </Button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.workspace-selector {
-  position: relative;
-  width: fit-content;
-}
-
-.workspace-selector__face {
-  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 220px;
-  max-width: 320px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
-  color: var(--neutral-100);
-  font: inherit;
-  cursor: pointer;
-}
-.workspace-selector__face:hover {
-  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 18%, transparent);
-}
-.workspace-selector__face:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.workspace-selector__name,
-.workspace-selector__item-name,
-.workspace-selector__item-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.workspace-selector__name {
-  flex: 1 1 auto;
-  color: var(--neutral-100);
-  font-size: var(--takeover-fs-caption);
-  font-weight: 600;
-  text-align: left;
-}
-.workspace-selector__caret {
-  flex: 0 0 auto;
-  color: var(--neutral-200);
-  transition: transform 140ms ease;
-}
-.workspace-selector__caret--open {
-  transform: rotate(180deg);
-}
-
-.workspace-selector__menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  min-width: 260px;
-  max-width: 340px;
-  max-height: min(70vh, 480px);
-  overflow-y: auto;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--brand-surface-border);
-  background: var(--neutral-800);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-.workspace-selector__hint {
-  padding: 8px 10px;
-  color: var(--neutral-200);
-  font-size: var(--takeover-fs-caption);
-}
-
-.workspace-selector__item {
-  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--neutral-100);
-  font: inherit;
-  font-size: var(--takeover-fs-caption);
-  text-align: left;
-  cursor: pointer;
-}
-.workspace-selector__item:hover:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-}
-.workspace-selector__item:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.workspace-selector__retry {
-  color: var(--neutral-200);
-}
-
-.workspace-selector__identity {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: column;
-  line-height: 1.2;
-}
-.workspace-selector__item-name {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-.workspace-selector__item-sub {
-  color: var(--neutral-200);
-  text-transform: capitalize;
-}
-.workspace-selector__check {
-  flex: 0 0 auto;
-  color: var(--comfy-yellow);
-}
-</style>
