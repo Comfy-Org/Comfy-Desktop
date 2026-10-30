@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
@@ -68,6 +68,16 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate'
     },
+    actions: {
+      launch: 'Launch',
+      stop: 'Stop',
+      restart: 'Restart',
+      restartConfirmTitle: 'Restart ComfyUI',
+      restartConfirmMessage: 'This will stop ComfyUI and start it again.',
+      restartConfirm: 'Restart',
+      restartProgressTitle: 'Restarting ComfyUI'
+    },
+    comfyLifecycle: { launchProgressTitle: 'Starting ComfyUI' },
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
@@ -103,6 +113,7 @@ interface MockApi {
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
   focusComfyWindow: ReturnType<typeof vi.fn>
+  stopComfyUI: ReturnType<typeof vi.fn>
   // authStore reads window.api.comfybuilder at construction time.
   comfybuilder: Record<string, ReturnType<typeof vi.fn>>
   getCloudFreeRunsEnabled: ReturnType<typeof vi.fn>
@@ -121,6 +132,7 @@ function installMockApi(initial: Installation[]): MockApi {
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
+    stopComfyUI: vi.fn().mockResolvedValue(undefined),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),
@@ -180,16 +192,29 @@ function installMockApiSignedIn(
   return api
 }
 
-function mountChooser() {
-  return mount(ChooserView, {
-    global: { plugins: [createTestI18n(), createPinia()] }
+const mountedWrappers: ReturnType<typeof mount>[] = []
+
+function mountChooser(pinia = createPinia()) {
+  setActivePinia(pinia)
+  const wrapper = mount(ChooserView, {
+    global: { plugins: [createTestI18n(), pinia] }
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('ChooserView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockModal.alert.mockClear()
+  })
+
+  afterEach(() => {
+    while (mountedWrappers.length) {
+      mountedWrappers.pop()!.unmount()
+    }
+    document.body.innerHTML = ''
+    ;(window as unknown as { api?: unknown }).api = undefined
   })
 
   it('uses the concise instance search prompt', async () => {
@@ -337,17 +362,124 @@ describe('ChooserView', () => {
     expect((events![0]![0] as Installation).id).toBe('a')
   })
 
-  it('renders no lifecycle CTA cluster on a tile - the instance window owns lifecycle', async () => {
-    // The dashboard no longer carries any stop/launch button. State is
-    // shown via a labelled status pill; lifecycle actions live in the
-    // instance window.
-    installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
+  it('shows lifecycle buttons only on standalone tiles and switches controls while running', async () => {
+    installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' }),
+      makeInstall({ id: 'legacy', name: 'Legacy', sourceId: 'desktop', status: 'installed' })
+    ])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find('.chooser-tile-cta').exists()).toBe(false)
-    // Idle install has no centered status pill and no error badge.
-    expect(wrapper.find('.chooser-tile-status').exists()).toBe(false)
-    expect(wrapper.find('.chooser-tile-error-badge').exists()).toBe(false)
+    const tile = wrapper.get(`[data-testid="${TID.dashboardTile('a')}"]`)
+    expect(tile.find('.chooser-tile-cta__button--start').text()).toContain('Launch')
+    expect(tile.find('.chooser-tile-cta__button--stop').exists()).toBe(false)
+    expect(
+      wrapper
+        .get(`[data-testid="${TID.dashboardTile('legacy')}"]`)
+        .find('.chooser-tile-cta')
+        .exists()
+    ).toBe(false)
+
+    const sessionStore = useSessionStore()
+    sessionStore.runningInstances.set('a', { installationId: 'a' } as never)
+    await flushPromises()
+    expect(tile.find('.chooser-tile-cta__button--start').exists()).toBe(false)
+    expect(tile.find('.chooser-tile-cta__button--stop').text()).toContain('Stop')
+    expect(tile.text()).toContain('Restart')
+  })
+
+  it('routes start through the launch progress flow without picking the tile', async () => {
+    const api = installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    await wrapper
+      .get(`[data-testid="${TID.dashboardTile('a')}"] .chooser-tile-cta__button--start`)
+      .trigger('click')
+    const [opts] = wrapper.emitted('show-progress')![0]!
+    const progress = opts as { apiCall: () => Promise<unknown>; triggersInstanceStart?: boolean }
+    expect(progress.triggersInstanceStart).toBe(true)
+    await progress.apiCall()
+    expect(api.runAction).toHaveBeenCalledWith('a', 'launch')
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('does not pick a tile when lifecycle buttons receive Enter or Space', async () => {
+    installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const tile = wrapper.get(`[data-testid="${TID.dashboardTile('a')}"]`)
+    const launch = tile.get('.chooser-tile-cta__button--start')
+    expect(launch.attributes('aria-label')).toBe('Launch')
+    await launch.trigger('keydown', { key: 'Enter' })
+    await launch.trigger('keydown', { key: ' ' })
+
+    useSessionStore().runningInstances.set('a', { installationId: 'a' } as never)
+    await flushPromises()
+
+    const stop = tile.get('.chooser-tile-cta__button--stop')
+    const restart = tile.get('.chooser-tile-cta__button:not(.chooser-tile-cta__button--stop)')
+    expect(stop.attributes('aria-label')).toBe('Stop')
+    expect(restart.attributes('aria-label')).toBe('Restart')
+    for (const button of [stop, restart]) {
+      await button.trigger('keydown', { key: 'Enter' })
+      await button.trigger('keydown', { key: ' ' })
+    }
+
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('confirms before stopping a running standalone instance', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const api = installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' })
+    ])
+    useSessionStore().runningInstances.set('a', { installationId: 'a' } as never)
+    mockModal.confirm.mockResolvedValueOnce(true)
+    const wrapper = mountChooser(pinia)
+    await flushPromises()
+
+    await wrapper
+      .get(`[data-testid="${TID.dashboardTile('a')}"] .chooser-tile-cta__button--stop`)
+      .trigger('click')
+    await flushPromises()
+    expect(mockModal.confirm).toHaveBeenCalled()
+    expect(api.stopComfyUI).toHaveBeenCalledWith('a')
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('confirms restart and runs stop then launch through one progress operation', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const api = installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha', sourceId: 'standalone', status: 'installed' })
+    ])
+    const sessionStore = useSessionStore()
+    sessionStore.runningInstances.set('a', { installationId: 'a' } as never)
+    api.stopComfyUI.mockImplementation(async () => {
+      sessionStore.runningInstances.delete('a')
+    })
+    mockModal.confirm.mockResolvedValueOnce(true)
+    const wrapper = mountChooser(pinia)
+    await flushPromises()
+
+    await wrapper
+      .get(
+        `[data-testid="${TID.dashboardTile('a')}"] .chooser-tile-cta__button:not(.chooser-tile-cta__button--stop)`
+      )
+      .trigger('click')
+    await flushPromises()
+    const [opts] = wrapper.emitted('show-progress')![0]!
+    const progress = opts as { apiCall: () => Promise<unknown>; triggersInstanceStart?: boolean }
+    expect(progress.triggersInstanceStart).toBe(true)
+    await progress.apiCall()
+    expect(api.stopComfyUI).toHaveBeenCalledWith('a')
+    expect(api.runAction).toHaveBeenCalledWith('a', 'launch')
   })
 
   it('shows a "Running" status pill (keeping the source pill) and focuses the existing window instead of emitting pick', async () => {
