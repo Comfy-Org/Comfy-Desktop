@@ -95,3 +95,24 @@
 :root[data-mar-ui='on'][data-ds-theme='light'] {
   --color-error-foreground: var(--color-status-danger);
 }
+
+/* Faces in a space card (light): the card is a 5% tint over the page, so
+   a white cut-out ring reads as an outline. The ring takes the card's
+   real colour, and the online dot a clearer green with the same ring. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1:has(> .rounded-full) {
+  --mar-face-ring: color-mix(
+    in oklch,
+    var(--color-base-foreground) 5%,
+    var(--color-content-background)
+  );
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1:has(> .rounded-full) > *,
+:root[data-mar-ui='on'][data-ds-theme='light']
+  .proto-main
+  .-space-x-1:has(> .rounded-full)
+  .bg-status-running {
+  --tw-ring-color: var(--mar-face-ring);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1 .bg-status-running {
+  background-color: oklch(0.68 0.15 155);
+}
