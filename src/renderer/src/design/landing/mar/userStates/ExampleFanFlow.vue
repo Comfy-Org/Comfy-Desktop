@@ -239,8 +239,8 @@ function wheel(e: WheelEvent): void {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-/* Run at the bottom: a white pill over a soft scrim, shown on the cover
-   you point at (or focus). */
+/* Run at the bottom: a full-width white pill over a soft scrim, shown on
+   the cover you point at (or focus). */
 .mar-ff-scrim {
   position: absolute;
   inset: 0;
@@ -251,11 +251,11 @@ function wheel(e: WheelEvent): void {
 }
 .mar-ff-go {
   position: absolute;
-  bottom: 14px;
-  left: 50%;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
   display: flex;
-  min-width: 96px;
-  height: 34px;
+  height: 38px;
   align-items: center;
   justify-content: center;
   padding: 0 20px;
@@ -271,7 +271,7 @@ function wheel(e: WheelEvent): void {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 6px) scale(0.96);
+  transform: translateY(6px) scale(0.98);
   transition:
     opacity 200ms ease,
     transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
@@ -281,13 +281,13 @@ function wheel(e: WheelEvent): void {
 .mar-ff-card:focus-visible .mar-ff-go {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 .mar-ff-card .mar-ff-go:hover {
   background: rgb(255 255 255 / 0.9);
 }
 .mar-ff-card .mar-ff-go:active {
-  transform: translate(-50%, 0) scale(0.97);
+  transform: translateY(0) scale(0.98);
 }
 .mar-ff-card:hover .mar-ff-scrim,
 .mar-ff-card:focus-visible .mar-ff-scrim {

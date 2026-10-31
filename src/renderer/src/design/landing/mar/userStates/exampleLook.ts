@@ -21,9 +21,9 @@ export const exampleLook = reactive<{ id: ExampleLook }>({
   id: (() => {
     try {
       const v = localStorage.getItem(KEY)
-      return EXAMPLE_LOOKS.some((l) => l.value === v) ? (v as ExampleLook) : 'fan'
+      return EXAMPLE_LOOKS.some((l) => l.value === v) ? (v as ExampleLook) : 'fanflow'
     } catch {
-      return 'fan'
+      return 'fanflow'
     }
   })()
 })
