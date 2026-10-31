@@ -4,6 +4,8 @@ import MarDock from './MarDock.vue'
 import MarSidebar from './MarSidebar.vue'
 import { onCloud } from './surface'
 import MarBloom from './MarBloom.vue'
+import MarWires from './MarWires.vue'
+import GradedImage from '../brand/GradedImage.vue'
 import MarSearch from '../search/MarSearch.vue'
 import QueuePanel from '../p20/QueuePanel.vue'
 import InspectorPanel from '../p20/InspectorPanel.vue'
@@ -25,6 +27,7 @@ import './marShell.css'
 import './panelsNav.css'
 import './light.css'
 import './borders.css'
+import './homeBackgrounds.css'
 import '../menus/layers.css'
 import '../motion/motion.css'
 import '../motion/tabSlide'
@@ -47,7 +50,11 @@ import '../motion/tabSlide'
     aria-hidden="true"
   >
     <img v-if="altBackground === 'output'" :src="lastOutput" alt="" class="mar-bg-output" />
-    <div v-else class="mar-bg" />
+    <GradedImage v-else-if="altBackground === 'grade'" :src="lastOutput" :blur="14" />
+    <template v-else>
+      <div class="mar-bg" />
+      <MarWires v-if="altBackground === 'wires'" />
+    </template>
   </div>
   <div v-else-if="heroImage" class="mar-backdrop" aria-hidden="true">
     <img :src="heroImage" alt="" />

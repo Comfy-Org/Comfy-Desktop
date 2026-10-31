@@ -181,6 +181,15 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/BackgroundPage.vue'))
   },
   {
+    id: 'brand-imagery',
+    label: 'Brand imagery',
+    group: 'Foundations',
+    title: 'Brand imagery',
+    source: 'mar/brand/imagery.ts, GradedImage.vue; mar/shell/MarWires.vue, homeBackgrounds.css',
+    use: 'Any picture we make (tiles, covers, Home backgrounds): one grade, the link colours, one grain.',
+    component: lazy(() => import('./pages/BrandImageryPage.vue'))
+  },
+  {
     id: 'user',
     label: 'User',
     group: 'Patterns',

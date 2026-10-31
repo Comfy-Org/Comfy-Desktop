@@ -51,7 +51,10 @@ const NAVS: { value: MarNav; label: string }[] = [
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },
   { value: 'bloom', label: 'Latent bloom · colour out of grain' },
-  { value: 'output', label: 'Latest output · blurred' }
+  { value: 'output', label: 'Latest output · blurred' },
+  { value: 'canvas', label: 'Canvas · the editor’s dot grid' },
+  { value: 'wires', label: 'Wires · a graph traced in light' },
+  { value: 'grade', label: 'Latent grade · latest output, duotone' }
 ]
 const HOME_BUILD_OPTIONS = [
   { value: 'off', label: 'Off' },

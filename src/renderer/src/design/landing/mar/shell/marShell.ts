@@ -192,8 +192,9 @@ export const spaceCover = computed<{ bg: string; accent: string } | undefined>((
   return brand && { bg: brand.logo.bg ?? brand.color, accent: brand.color }
 })
 
-/** Home's background (UI Playground › Home background): Latent bloom
- *  (default), the photo, or one of the quieter alternatives. */
+/** Home's background (UI Playground › Home background): Spotlight
+ *  (default), Latent bloom, the photo, or one of the quieter alternatives.
+ *  Canvas, Wires and Latent grade follow DS › Brand imagery. */
 export type HomeBackground =
   | 'bloom'
   | 'photo'
@@ -202,13 +203,18 @@ export type HomeBackground =
   | 'aurora'
   | 'grain'
   | 'output'
+  | 'canvas'
+  | 'wires'
+  | 'grade'
 const BG_KEY = 'comfy.design.mar.homeBackground'
 function loadBackground(): HomeBackground {
   try {
     const v = localStorage.getItem(BG_KEY) as HomeBackground | null
     // Spotlight is the default; retired picks (photo, mesh, aurora, grain)
     // fall back to it.
-    return v && ['bloom', 'spotlight', 'output'].includes(v) ? v : 'spotlight'
+    return v && ['bloom', 'spotlight', 'output', 'canvas', 'wires', 'grade'].includes(v)
+      ? v
+      : 'spotlight'
   } catch {
     return 'spotlight'
   }
