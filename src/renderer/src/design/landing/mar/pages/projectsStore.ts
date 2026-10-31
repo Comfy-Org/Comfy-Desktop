@@ -23,9 +23,9 @@ export interface MarProject {
 const ART = PROJECT_ART
 const PEOPLE = [
   ['Pablo'],
-  ['Pablo', 'Mariana'],
+  ['Pablo', 'Mia'],
   ['Pablo', 'Sam', 'Ana'],
-  ['Pablo', 'Mariana', 'Sam', 'Ana', 'Leo'],
+  ['Pablo', 'Mia', 'Sam', 'Ana', 'Leo'],
   ['Pablo']
 ]
 const UPDATED = ['12 min ago', '1 hour ago', 'Yesterday', '2 days ago', 'Last week']

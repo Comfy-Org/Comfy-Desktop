@@ -89,6 +89,7 @@ interface Event {
   what: string
   when: string
   status?: ItemStatus
+  thumbId?: string
 }
 const activity = computed<Event[]>(() => {
   const m = p.value?.members ?? ['You']
@@ -99,6 +100,7 @@ const activity = computed<Event[]>(() => {
       what: w.name,
       when: w.modified,
       status: w.status,
+      thumbId: w.thumbId,
       age: w.age
     })),
     ...made.value.slice(0, 3).map((a, i) => ({
@@ -107,6 +109,7 @@ const activity = computed<Event[]>(() => {
       what: a.name,
       when: a.when,
       status: a.status,
+      thumbId: a.thumbId,
       age: a.age
     }))
   ]
@@ -298,13 +301,25 @@ function removePerson(m: string): void {
       <div class="mar-proj-feed">
         <h2 class="mar-proj-eyebrow">Recent activity</h2>
         <ol class="flex flex-col">
+          <!-- Who and when on top, what below, the thing itself on the right. -->
           <li v-for="(e, i) in activity" :key="i" class="mar-proj-event">
             <MemberAvatar :name="e.who" size="sm" />
-            <span class="min-w-0 flex-1 truncate text-ui text-muted-foreground">
-              <b class="font-medium text-base-foreground">{{ e.who }}</b> {{ e.verb }}
-              <span class="text-base-foreground">{{ e.what }}</span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-ui text-muted-foreground">
+                <b class="font-medium text-base-foreground">{{ e.who }}</b> {{ e.verb }}
+                <span class="mar-proj-event-when">· {{ e.when }}</span>
+              </span>
+              <span class="truncate text-ui text-base-foreground">{{ e.what }}</span>
             </span>
-            <span class="shrink-0 text-ui text-subtle-foreground">{{ e.when }}</span>
+            <span class="mar-proj-event-thumb">
+              <img v-if="e.thumbId" :src="thumb(e.thumbId)" alt="" />
+              <MarStatus
+                v-if="e.status === 'running' || e.status === 'executing' || e.status === 'queued'"
+                :status="e.status"
+                on-media
+                class="mar-proj-event-status"
+              />
+            </span>
           </li>
         </ol>
       </div>
@@ -508,14 +523,44 @@ function removePerson(m: string): void {
   padding: 0;
   list-style: none;
 }
+.mar-proj-feed ol {
+  gap: 2px;
+}
 .mar-proj-event {
   display: flex;
-  height: 40px;
+  min-height: 48px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-inline: -8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control, 8px);
+  line-height: 18px;
+  transition: background-color 150ms ease;
 }
-.mar-proj-event + .mar-proj-event {
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+.mar-proj-event:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+.mar-proj-event-when {
+  color: var(--color-subtle-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.mar-proj-event-thumb {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.mar-proj-event-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mar-proj-event-status {
+  position: absolute;
+  inset: auto 2px 2px auto;
 }
 
 /* People */
