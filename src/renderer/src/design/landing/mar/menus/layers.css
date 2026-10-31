@@ -91,3 +91,24 @@
     inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
     0 1px 3px rgb(0 0 0 / 0.08);
 }
+
+/* Group titles: the sidebar's section label (LIBRARIES, PROJECTS):
+   uppercase, tracked, subtle. Groups are set apart by space, not by a
+   hairline, so a divider right before a title goes; the one before the
+   footer actions stays. */
+:root[data-mar-ui='on'] .mar-menu-label {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:root[data-mar-ui='on'] .mar-menu-label:not(:first-child) {
+  margin-top: 8px;
+}
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'])
+  :is([role='separator'], .mar-menu-sep):has(+ .mar-menu-label) {
+  display: none;
+}
