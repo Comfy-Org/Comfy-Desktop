@@ -8,11 +8,13 @@ import {
   Pause,
   Play,
   RefreshCw,
-  Search,
+  SearchX,
   XCircle
 } from 'lucide-vue-next'
 import RailPanel from './RailPanel.vue'
 import { DOWNLOAD, MODEL_FOLDERS } from './panelData'
+import MarSearchField from '../../pages/MarSearchField.vue'
+import MarEmpty from '../../pages/MarEmpty.vue'
 
 /**
  * Model Library on a local build (ComfyUI's ModelLibrarySidebarTab): the
@@ -52,17 +54,12 @@ const folders = computed(() => {
       </button>
     </template>
     <template #header>
-      <div class="rp-top">
-        <label class="rp-search">
-          <Search :size="14" />
-          <input v-model="query" type="search" placeholder="Search Models..." />
-        </label>
-      </div>
+      <MarSearchField v-model="query" placeholder="Search Models..." />
     </template>
 
     <!-- Desktop: what is downloading. -->
     <section v-if="!query" class="mp-downloads">
-      <p class="mp-downloads-title">In Progress</p>
+      <p class="mp-downloads-title">In Progress<span class="rp-count">1</span></p>
       <div class="mp-download">
         <p class="mp-file">{{ DOWNLOAD.file }}</p>
         <div class="mp-bar-row">
@@ -74,7 +71,7 @@ const folders = computed(() => {
           <template v-if="!cancelled">
             <button
               type="button"
-              class="rp-icon is-filled mp-round"
+              class="rp-icon mp-round"
               :aria-label="paused ? 'Resume Download' : 'Pause Download'"
               :title="paused ? 'Resume Download' : 'Pause Download'"
               @click="paused = !paused"
@@ -83,7 +80,7 @@ const folders = computed(() => {
             </button>
             <button
               type="button"
-              class="rp-icon is-filled mp-round is-danger"
+              class="rp-icon mp-round is-danger"
               aria-label="Cancel Download"
               title="Cancel Download"
               @click="cancelled = true"
@@ -122,74 +119,102 @@ const folders = computed(() => {
           </button>
         </template>
       </template>
-      <p v-if="!folders.length" class="rp-empty">No models match “{{ query }}”.</p>
     </div>
+    <MarEmpty
+      v-if="!folders.length"
+      compact
+      :icon="SearchX"
+      title="No results"
+      :text="`No models match “${query}”.`"
+      action="Clear search"
+      @action="query = ''"
+    />
   </RailPanel>
 </template>
 
 <style>
+/* What is downloading: the DS's raised panel. */
 .mp-downloads {
-  margin: 4px 16px 12px;
-  padding: 12px;
+  margin: 12px 12px 4px;
+  padding: 10px 12px 12px;
   border-radius: var(--mar-tab-radius);
-  background: var(--rp-chip);
+  background: var(--rp-raised);
+  box-shadow: var(--rp-raised-shadow);
 }
 .mp-downloads-title {
-  margin: 0 0 8px;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 6px;
+  font-size: 12px;
   font-weight: 600;
 }
 .mp-file {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   overflow: hidden;
-  color: var(--mg-muted);
-  font-size: 12px;
+  color: var(--rp-text);
+  font-size: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .mp-bar-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .mp-bar {
   position: relative;
-  height: 20px;
+  display: flex;
+  height: 16px;
   flex: 1;
-  overflow: hidden;
-  border-radius: 6px;
+  align-items: center;
+  gap: 8px;
+}
+.mp-bar::before {
+  position: absolute;
+  top: 6px;
+  right: 40px;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
   background: var(--rp-chip-on);
+  content: '';
 }
 .mp-bar i {
   position: absolute;
-  inset: 0 auto 0 0;
+  top: 6px;
+  left: 0;
+  max-width: calc(100% - 40px);
+  height: 4px;
+  border-radius: 999px;
   background: #0b8ce9;
 }
 .mp-bar b {
-  position: relative;
-  display: flex;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 11px;
+  margin-left: auto;
+  color: var(--rp-meta);
+  font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 :root .proto-ui.proto-ui.proto-ui .mp-round {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
+  width: 28px;
+  height: 28px;
 }
 .mp-chip {
   padding: 2px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, #e5484d 20%, transparent);
+  background: color-mix(in srgb, #e5484d 16%, transparent);
   color: #e5484d;
   font-size: 11px;
+  font-weight: 500;
 }
+/* Files sit on a guide line under their folder. */
 :root .proto-ui.proto-ui.proto-ui .rp-row.mp-leaf {
-  padding-left: 30px;
+  width: calc(100% - 15px);
+  margin-left: 15px;
+  padding-left: 12px;
+  border-radius: 0 var(--mar-tab-item-radius) var(--mar-tab-item-radius) 0;
+  box-shadow: inset 1px 0 0 var(--rp-line);
   cursor: grab;
 }
 </style>

@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Settings, X } from 'lucide-vue-next'
 import { SHORTCUTS } from './panelData'
+import MarSeg from '../../pages/MarSeg.vue'
 
 /**
  * Keyboard Shortcuts (ComfyUI's bottom panel, rail › Shortcuts): Essential
@@ -10,6 +11,10 @@ import { SHORTCUTS } from './panelData'
  */
 const emit = defineEmits<{ close: []; manage: [] }>()
 const tab = ref<keyof typeof SHORTCUTS>('Essential')
+const TABS = (Object.keys(SHORTCUTS) as (keyof typeof SHORTCUTS)[]).map((t) => ({
+  value: t,
+  label: t
+}))
 const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
 const key = (k: string): string => (mac && k === 'Ctrl' ? '⌘' : mac && k === 'Alt' ? '⌥' : k)
 </script>
@@ -17,20 +22,9 @@ const key = (k: string): string => (mac && k === 'Ctrl' ? '⌘' : mac && k === '
 <template>
   <section class="sp" aria-label="Keyboard Shortcuts" @pointerdown.stop @wheel.stop>
     <header class="sp-head">
-      <div class="rp-tabs sp-tabs" role="tablist">
-        <button
-          v-for="t in Object.keys(SHORTCUTS) as (keyof typeof SHORTCUTS)[]"
-          :key="t"
-          type="button"
-          role="tab"
-          class="rp-tab"
-          :class="tab === t && 'is-on'"
-          :aria-selected="tab === t"
-          @click="tab = t"
-        >
-          {{ t }}
-        </button>
-      </div>
+      <h2 class="rp-title sp-h">Keyboard Shortcuts</h2>
+      <MarSeg v-model="tab" :options="TABS" label="Shortcut groups" />
+      <span class="sp-gap" />
       <button type="button" class="rp-btn" @click="emit('manage')">
         <Settings :size="13" />Manage Shortcuts
       </button>
@@ -62,40 +56,38 @@ const key = (k: string): string => (mac && k === 'Ctrl' ? '⌘' : mac && k === '
   max-height: 46%;
   overflow: auto;
   border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--color-content-background) 84%, transparent);
-  backdrop-filter: blur(32px) saturate(1.2);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 0.3);
-  color: var(--mg-text);
-  --rp-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  --rp-chip: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
-}
-:root[data-ds-theme='light'] .sp {
-  background: oklch(1 0 0 / 0.86);
+  background: var(--rp-surface);
+  backdrop-filter: blur(28px) saturate(1.3);
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.06),
-    0 18px 50px rgb(0 0 0 / 0.12);
+    inset 0 0 0 1px var(--rp-ring),
+    var(--rp-shadow);
+  color: var(--rp-text);
 }
 .mg.is-current .sp {
   right: 0;
   bottom: 0;
   left: 56px;
   border-radius: 0;
-  background: var(--mg-chrome);
-  box-shadow: inset 0 1px 0 var(--mg-chrome-line);
+  box-shadow: inset 0 1px 0 var(--rp-ring);
   backdrop-filter: none;
 }
 .sp-head {
   position: sticky;
   top: 0;
+  z-index: 1;
   display: flex;
+  height: 52px;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 0;
+  gap: 12px;
+  padding: 0 10px 0 16px;
+  background: var(--rp-surface);
+  box-shadow: inset 0 -1px 0 var(--rp-line);
 }
-.sp-tabs {
+:root .proto-ui.proto-ui.proto-ui .sp-h {
+  flex: none;
+}
+.sp-gap {
   flex: 1;
-  padding-top: 4px;
 }
 .sp-cols {
   display: grid;
@@ -105,8 +97,8 @@ const key = (k: string): string => (mac && k === 'Ctrl' ? '⌘' : mac && k === '
   gap: 8px 64px;
   padding: 4px 0 24px;
 }
-.sp-title {
-  padding: 10px 0 8px;
+:root .proto-ui.proto-ui.proto-ui .sp-title {
+  padding: 16px 0 6px;
 }
 .sp-row {
   display: flex;
@@ -114,8 +106,11 @@ const key = (k: string): string => (mac && k === 'Ctrl' ? '⌘' : mac && k === '
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  color: var(--rp-text);
   font-size: 13px;
-  font-weight: 500;
+}
+.sp-row + .sp-row {
+  box-shadow: inset 0 1px 0 var(--rp-line);
 }
 .sp-keys {
   display: flex;

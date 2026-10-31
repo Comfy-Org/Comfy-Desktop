@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  ArrowUpDown,
-  ChevronDown,
-  Ellipsis,
-  FolderInput,
-  Info,
-  List,
-  Search
-} from 'lucide-vue-next'
+import { ArrowUpDown, ChevronDown, Ellipsis, FolderInput, Info, List } from 'lucide-vue-next'
 import GraphDialog from './GraphDialog.vue'
+import MarSearchField from '../../pages/MarSearchField.vue'
 import { CLOUD_MODELS, CLOUD_MODEL_TYPES, type CloudModel } from './panelData'
 import { ComfyModel } from '../../icons/comfyIcons'
+import MediaChip from '../../MediaChip.vue'
 
 /**
  * Model Library on Comfy Cloud (ComfyUI's AssetBrowserModal): All Models,
@@ -73,10 +67,7 @@ const shown = computed(() => {
       </button>
     </template>
     <template #header>
-      <label class="rp-search">
-        <Search :size="15" />
-        <input v-model="query" type="search" placeholder="Search ..." aria-label="Search models" />
-      </label>
+      <MarSearchField v-model="query" placeholder="Search ..." />
       <button type="button" class="rp-btn is-primary"><FolderInput :size="14" />Import</button>
     </template>
 
@@ -89,13 +80,14 @@ const shown = computed(() => {
         <button type="button" class="rp-btn" @click="sortOpen = !sortOpen">
           <ArrowUpDown :size="13" />Sort by: {{ sort }}
         </button>
-        <div v-if="sortOpen" class="rp-menu is-end">
+        <div v-if="sortOpen" class="rp-menu is-end" role="menu">
           <button
             v-for="o in ['Recent', 'A-Z', 'Z-A']"
             :key="o"
             type="button"
+            role="menuitemradio"
             class="rp-row"
-            :class="sort === o && 'is-on'"
+            :data-state="sort === o ? 'checked' : 'unchecked'"
             @click="((sort = o), (sortOpen = false))"
           >
             {{ o }}
@@ -113,12 +105,14 @@ const shown = computed(() => {
       >
         <span class="mb-media">
           <img :src="m.src" alt="" />
-          <span class="mb-badge">{{ m.base }}</span>
+          <span class="mb-badge"
+            ><MediaChip>{{ m.base }}</MediaChip></span
+          >
           <span class="mb-hover">
-            <button type="button" class="rp-icon is-filled" aria-label="Model Info">
+            <button type="button" class="rp-icon mb-on-media" aria-label="Model Info">
               <Info :size="14" />
             </button>
-            <button type="button" class="rp-icon is-filled" aria-label="More">
+            <button type="button" class="rp-icon mb-on-media" aria-label="More">
               <Ellipsis :size="14" />
             </button>
           </span>
@@ -173,9 +167,12 @@ const shown = computed(() => {
   border-radius: var(--mar-tab-radius);
   cursor: pointer;
 }
-.mb-card:hover,
+.mb-card:hover {
+  background: var(--rp-hover);
+}
 .mb-card.is-on {
-  background: var(--rp-chip);
+  background: var(--rp-raised);
+  box-shadow: var(--rp-raised-shadow);
 }
 .mb-media {
   position: relative;
@@ -192,11 +189,6 @@ const shown = computed(() => {
   position: absolute;
   bottom: 8px;
   left: 8px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
-  font-size: 11px;
 }
 .mb-hover {
   position: absolute;
@@ -209,8 +201,12 @@ const shown = computed(() => {
 .mb-card:hover .mb-hover {
   opacity: 1;
 }
-:root .proto-ui.proto-ui.proto-ui .mb-hover .rp-icon {
-  background: rgb(0 0 0 / 0.55);
+:root .proto-ui.proto-ui.proto-ui .mb-hover .mb-on-media {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--color-media-overlay, rgb(0 0 0 / 0.55));
+  backdrop-filter: blur(12px);
   color: #fff;
 }
 .mb-title {
@@ -220,7 +216,7 @@ const shown = computed(() => {
 }
 .mb-sub {
   margin: 0;
-  color: var(--mg-dim);
+  color: var(--rp-meta);
   font-size: 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .mb-use {
@@ -250,7 +246,7 @@ const shown = computed(() => {
   font-size: 12px;
 }
 .mb-meta dt {
-  color: var(--mg-dim);
+  color: var(--rp-meta);
 }
 .mb-meta dd {
   margin: 0;

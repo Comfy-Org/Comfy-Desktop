@@ -9,7 +9,6 @@ import {
   PenTool,
   Puzzle,
   ReceiptText,
-  Search,
   Server,
   Settings,
   User,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import GraphDialog from './GraphDialog.vue'
+import MarSearchField from '../../pages/MarSearchField.vue'
 import { SHORTCUTS } from './panelData'
 
 /**
@@ -174,10 +174,7 @@ const keybindings = computed(() =>
       </template>
     </template>
     <template #header>
-      <label class="rp-search">
-        <Search :size="15" />
-        <input v-model="query" type="search" placeholder="Search Settings..." />
-      </label>
+      <MarSearchField v-model="query" placeholder="Search Settings..." />
     </template>
 
     <template v-if="query">
@@ -294,11 +291,11 @@ const keybindings = computed(() =>
 .sd-row small,
 .sd-card small {
   display: block;
-  color: var(--mg-dim);
+  color: var(--rp-meta);
   font-size: 11.5px;
 }
 .sd-muted {
-  color: var(--mg-muted);
+  color: var(--rp-meta);
 }
 .sd-card {
   display: flex;
@@ -363,7 +360,7 @@ const keybindings = computed(() =>
   outline: none;
   background: var(--rp-chip);
   box-shadow: none;
-  color: var(--mg-text);
+  color: var(--rp-text);
   font: inherit;
   font-size: 12.5px;
 }

@@ -2,10 +2,11 @@
 import { X } from 'lucide-vue-next'
 
 /**
- * The chrome every rail panel shares, as ComfyUI's SidebarTabTemplate: a
- * header with the title and its tool buttons (shown on hover, as in the
- * product) and Close, then the panel's own header (tabs, search), its
- * body and an optional footer. Opens beside the rail.
+ * The chrome every rail panel shares (ComfyUI's SidebarTabTemplate, in
+ * the New UI): one header row (title, the panel's actions, Close), then
+ * the panel's controls (segmented tabs, search and its filter) closed by
+ * a hairline, then the scrolling body and an optional footer. Actions
+ * stay in view: tools that wait for the pointer are hard to find.
  */
 defineProps<{ title: string; label?: string }>()
 defineEmits<{ close: [] }>()
@@ -14,11 +15,11 @@ defineEmits<{ close: [] }>()
 <template>
   <aside class="rp" :aria-label="label ?? title" @pointerdown.stop @wheel.stop>
     <header class="rp-head">
-      <span class="rp-title">{{ title }}<slot name="alt-title" /></span>
+      <h2 class="rp-title">{{ title }}<slot name="alt-title" /></h2>
       <span class="rp-tools"><slot name="tools" /></span>
       <button
         type="button"
-        class="rp-icon"
+        class="rp-icon rp-close"
         aria-label="Close sidebar"
         title="Close sidebar"
         @click="$emit('close')"
@@ -26,15 +27,63 @@ defineEmits<{ close: [] }>()
         <X :size="15" />
       </button>
     </header>
-    <slot name="header" />
+    <div v-if="$slots.header" class="rp-controls"><slot name="header" /></div>
     <div class="rp-body"><slot /></div>
     <slot name="footer" />
   </aside>
 </template>
 
 <style>
-/* Shared by every panel and dialog of the rail (rp-*). Glass floats a
-   card beside the rail; Current docks a flush panel, as ComfyUI does. */
+/* Shared by every panel and dialog of the rail (rp-*).
+   Surface: the DS's Glass · menu recipe (mar/shell/marShell.css), more
+   opaque so the canvas's dots don't read through, with a 1px ring so
+   the edge holds on the dotted canvas. Current docks a solid panel with
+   a real edge line, as ComfyUI does. */
+.rp,
+.sp,
+.rp-dialog {
+  --rp-surface: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 94%,
+    transparent
+  );
+  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+  --rp-line: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  --rp-hover: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  --rp-chip: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+  --rp-raised: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  --rp-raised-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.22);
+  --rp-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 24px 56px -12px rgb(0 0 0 / 0.6);
+  --rp-text: var(--color-base-foreground);
+  --rp-meta: var(--color-muted-foreground);
+  --rp-label: var(--color-muted-foreground);
+}
+:root[data-ds-theme='light'] :is(.rp, .sp, .rp-dialog) {
+  --rp-surface: color-mix(in oklch, var(--color-card-background) 97%, transparent);
+  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  --rp-line: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  --rp-hover: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  --rp-chip: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  --rp-raised: var(--color-card-background);
+  --rp-raised-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.1);
+  --rp-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 18px 44px -14px rgb(0 0 0 / 0.24);
+  --rp-meta: color-mix(in oklch, var(--color-base-foreground) 62%, transparent);
+  --rp-label: color-mix(in oklch, var(--color-base-foreground) 62%, transparent);
+}
+.mg.is-current :is(.rp, .sp, .rp-dialog) {
+  --rp-surface: var(--mg-chrome);
+  --rp-ring: var(--mg-chrome-line);
+  --rp-line: var(--mg-chrome-line);
+  --rp-text: var(--mg-text);
+  --rp-meta: var(--mg-muted);
+  --rp-label: var(--mg-muted);
+}
 .rp {
   position: absolute;
   top: calc(var(--mg-top) + 16px);
@@ -42,73 +91,96 @@ defineEmits<{ close: [] }>()
   left: 76px;
   z-index: 4;
   display: flex;
-  width: 312px;
+  width: 320px;
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--color-content-background) 78%, transparent);
-  backdrop-filter: blur(32px) saturate(1.2);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 0.28);
-  color: var(--mg-text);
-  font-size: 13px;
-}
-:root[data-ds-theme='light'] .rp {
-  background: oklch(1 0 0 / 0.82);
+  background: var(--rp-surface);
+  backdrop-filter: blur(28px) saturate(1.3);
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.06),
-    0 18px 50px rgb(0 0 0 / 0.12);
+    inset 0 0 0 1px var(--rp-ring),
+    var(--rp-shadow);
+  color: var(--rp-text);
+  font-size: 13px;
 }
 .mg.is-current .rp {
   top: calc(var(--mg-top) + 38px);
   bottom: 0;
   left: 56px;
   border-radius: 0;
-  background: var(--mg-chrome);
-  box-shadow: inset -1px 0 0 var(--mg-chrome-line);
+  box-shadow: inset -1px 0 0 var(--rp-ring);
   backdrop-filter: none;
 }
+
+/* Header: title, actions, Close. Same height in every panel. */
 .rp-head {
   display: flex;
-  min-height: 52px;
+  height: 52px;
   flex: none;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px 0 16px;
-  box-shadow: inset 0 -1px 0 var(--rp-line);
+  gap: 2px;
+  padding: 0 10px 0 16px;
 }
-.rp,
-.rp-dialog {
-  --rp-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  --rp-chip: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
-}
-.rp-title {
+:root .proto-ui.proto-ui.proto-ui .rp-title {
   display: flex;
   min-width: 0;
   flex: 1;
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  font-size: 13.5px;
+  margin: 0;
+  color: var(--rp-text);
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }
-/* While a panel is open the Agent button moves past it. */
-:root .proto-ui.proto-ui.proto-ui .mg.is-current.has-panel .mg-agent-btn {
-  left: 380px;
-}
-/* Tool buttons wait for the pointer, as the product's do. */
 .rp-tools {
   display: flex;
   align-items: center;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
 }
-.rp:hover .rp-tools,
-.rp:focus-within .rp-tools {
-  opacity: 1;
+.rp-tools:not(:empty)::after {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--rp-line);
+  content: '';
 }
+/* Controls: the panel's tabs, then search and its filter. A hairline
+   splits what stays put from what scrolls. */
+.rp-controls {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  box-shadow: inset 0 -1px 0 var(--rp-line);
+}
+.rp-controls .mar-pseg {
+  display: flex;
+  width: 100%;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-controls .mar-pseg-btn {
+  flex: 1;
+}
+.rp-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Grows along a row, keeps its 32px in the column of controls. */
+:root .proto-ui.proto-ui.proto-ui :is(.rp, .sp, .rp-dialog) .mar-pfind {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+/* While a panel is open the Agent button moves past it. */
+:root .proto-ui.proto-ui.proto-ui .mg.is-current.has-panel .mg-agent-btn {
+  left: 388px;
+}
+
+/* Icon buttons. `is-field` matches the search field beside it (same
+   height, corner and ring), so filter and view read as part of it. */
 :root .proto-ui.proto-ui.proto-ui .rp-icon {
   position: relative;
   display: inline-flex;
@@ -120,106 +192,79 @@ defineEmits<{ close: [] }>()
   padding: 0;
   border-radius: var(--mar-tab-item-radius);
   background: transparent;
-  color: var(--mg-muted);
+  color: var(--rp-meta);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .rp-icon:hover,
 :root .proto-ui.proto-ui.proto-ui .rp-icon.is-on {
-  background: var(--mg-hover);
-  color: var(--mg-text);
+  background: var(--rp-hover);
+  color: var(--rp-text);
 }
-:root .proto-ui.proto-ui.proto-ui .rp-icon.is-filled {
-  background: var(--rp-chip);
+:root .proto-ui.proto-ui.proto-ui .rp-icon:focus-visible,
+:root .proto-ui.proto-ui.proto-ui .rp-row:focus-visible,
+:root .proto-ui.proto-ui.proto-ui .rp-btn:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-icon.is-field {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--mar-tab-radius);
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background)) 82%,
+    transparent
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .rp-icon.is-field:hover,
+:root .proto-ui.proto-ui.proto-ui .rp-icon.is-field.is-on {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  color: var(--rp-text);
 }
 .rp-icon .rp-dot {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 6px;
+  right: 6px;
   width: 6px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-primary-background, #0b8ce9);
+  box-shadow: 0 0 0 2px var(--rp-surface);
 }
 .rp-body {
   min-height: 0;
   flex: 1;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
-/* Tabs: the product's TabList, in our pills. */
-.rp-tabs {
+/* Section labels: sentence case, as the DS's group labels. */
+:root .proto-ui.proto-ui.proto-ui .rp-section {
   display: flex;
-  flex: none;
-  gap: 4px;
-  padding: 10px 16px 2px;
-}
-:root .proto-ui.proto-ui.proto-ui .rp-tab {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: var(--mar-tab-item-radius);
-  background: transparent;
-  color: var(--mg-muted);
-  font-size: 12.5px;
-}
-:root .proto-ui.proto-ui.proto-ui .rp-tab:hover {
-  color: var(--mg-text);
-}
-:root .proto-ui.proto-ui.proto-ui .rp-tab.is-on {
-  background: var(--rp-chip-on);
-  color: var(--mg-text);
-}
-
-/* Search row: the field, then the panel's actions (SidebarTopArea). */
-.rp-top {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-}
-.rp-search {
-  display: flex;
-  min-width: 0;
-  height: 32px;
-  flex: 1;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
-  border-radius: var(--mar-tab-radius);
-  background: var(--rp-chip);
-  color: var(--mg-dim);
-}
-:root .proto-ui.proto-ui.proto-ui .rp-search input {
-  min-width: 0;
-  height: auto;
-  flex: 1;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--mg-text);
-  font: inherit;
-  font-size: 12.5px;
-}
-.rp-search input::placeholder {
-  color: var(--mg-dim);
-}
-
-/* Section headers and the rows under them. */
-.rp-section {
-  padding: 14px 16px 6px;
-  color: var(--mg-dim);
-  font-size: 11px;
+  margin: 0;
+  padding: 14px 8px 6px;
+  color: var(--rp-label);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+}
+.rp-section .rp-count {
+  margin-left: auto;
 }
 .rp-note {
-  padding: 4px 24px 8px;
-  color: var(--mg-dim);
+  margin: 0;
+  padding: 2px 8px 8px;
+  color: var(--rp-meta);
   font-size: 12px;
 }
+
+/* Rows: hover lifts a shade; the current one is a raised row, as the
+   current pick in a DS menu. */
 :root .proto-ui.proto-ui.proto-ui .rp-row {
   display: flex;
   width: 100%;
@@ -229,19 +274,21 @@ defineEmits<{ close: [] }>()
   padding: 0 8px;
   border-radius: var(--mar-tab-item-radius);
   background: transparent;
-  color: var(--mg-text);
-  font-size: 12.5px;
+  color: var(--rp-text);
+  font-size: 13px;
   text-align: left;
+  transition: background-color 120ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .rp-row:hover {
-  background: var(--mg-hover);
+  background: var(--rp-hover);
 }
 :root .proto-ui.proto-ui.proto-ui .rp-row.is-on {
-  background: var(--rp-chip-on);
+  background: var(--rp-raised);
+  box-shadow: var(--rp-raised-shadow);
 }
 .rp-row-icon {
   flex: none;
-  color: var(--mg-muted);
+  color: var(--rp-meta);
 }
 .rp-row-text {
   min-width: 0;
@@ -252,45 +299,42 @@ defineEmits<{ close: [] }>()
 }
 .rp-chev {
   flex: none;
-  color: var(--mg-dim);
+  color: var(--rp-meta);
   transition: rotate 0.15s ease;
 }
 .rp-chev.is-shut {
   rotate: -90deg;
 }
 .rp-count {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--rp-chip);
-  color: var(--mg-muted);
-  font-size: 11px;
+  flex: none;
+  color: var(--rp-meta);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 .rp-list {
-  padding: 0 8px 12px;
+  padding: 4px 8px 12px;
 }
 .rp-badge {
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--rp-chip-on);
-  color: var(--mg-muted);
+  color: var(--rp-meta);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
 :root .proto-ui.proto-ui.proto-ui .rp-btn {
   display: inline-flex;
-  height: 28px;
+  height: 30px;
   flex: none;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
   border-radius: var(--mar-tab-item-radius);
   background: var(--rp-chip);
-  color: var(--mg-text);
-  font-size: 12px;
+  color: var(--rp-text);
+  font-size: 12.5px;
+  font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .rp-btn:hover:not(:disabled) {
   background: var(--rp-chip-on);
@@ -302,44 +346,80 @@ defineEmits<{ close: [] }>()
   background: var(--mg-run);
   color: var(--mg-run-text);
 }
+/* Small text-only notes in place of a list ("No bookmarks yet"); real
+   empty states use MarEmpty. */
 .rp-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 48px 24px;
-  color: var(--mg-dim);
-  font-size: 12.5px;
+  padding: 40px 24px;
+  color: var(--rp-meta);
+  font-size: 13px;
   line-height: 18px;
   text-align: center;
 }
-.rp-empty strong {
-  color: var(--mg-text);
-  font-weight: 600;
+:is(.rp, .sp) .mar-empty.is-compact {
+  padding: 40px 16px 32px;
 }
-/* A small menu under a tool button (filter, sort, view). */
+
+/* Menus under a tool button: role="menu" gives them the DS's glass
+   menu (surface, ring, radius 14, padding 6); the current pick is a
+   raised row. */
+.rp-anchor {
+  position: relative;
+  display: inline-flex;
+}
 .rp-menu {
   position: absolute;
   z-index: 8;
   display: flex;
-  min-width: 190px;
+  min-width: 200px;
+  max-height: min(440px, calc(100vh - 340px));
   flex-direction: column;
-  padding: 4px;
-  border-radius: var(--mar-tab-radius);
-  background: var(--color-content-background);
-  box-shadow:
-    0 0 0 1px var(--rp-line),
-    0 12px 32px rgb(0 0 0 / 0.3);
+  gap: 1px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.rp-menu > * {
+  flex: none;
+}
+.rp-menu.is-end {
+  top: calc(100% + 6px);
+  right: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row {
+  min-height: 32px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row[data-state='checked'] {
+  background: var(--rp-raised);
+  box-shadow: var(--rp-raised-shadow);
 }
 .rp-menu-label {
-  padding: 6px 8px 4px;
-  color: var(--mg-dim);
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 8px 4px;
+  color: var(--rp-label);
+  font-size: 12px;
+  font-weight: 600;
 }
 .rp-menu-sep {
   height: 1px;
-  margin: 4px 0;
+  margin: 4px 6px;
   background: var(--rp-line);
+}
+.rp-row small {
+  display: block;
+  color: var(--rp-meta);
+  font-size: 11.5px;
+}
+.rp-row.is-danger,
+.rp-icon.is-danger:hover {
+  color: var(--color-danger-foreground, #e5484d);
 }
 .rp-kbd {
   display: inline-flex;
@@ -350,8 +430,16 @@ defineEmits<{ close: [] }>()
   padding: 0 6px;
   border-radius: 6px;
   background: var(--rp-chip-on);
-  color: var(--mg-text);
+  box-shadow: inset 0 -1px 0 var(--rp-line);
+  color: var(--rp-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp-chev,
+  :root .proto-ui.proto-ui.proto-ui .rp-row,
+  :root .proto-ui.proto-ui.proto-ui .rp-icon {
+    transition: none;
+  }
 }
 </style>

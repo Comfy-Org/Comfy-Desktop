@@ -2,35 +2,51 @@
 import { computed, ref } from 'vue'
 import {
   Calendar,
+  Copy,
   Download,
-  Ellipsis,
+  FileOutput,
   Grid3x3,
   Image,
-  Info,
+  ImageOff,
   Layers,
   LayoutGrid,
-  ListFilter,
-  Search,
-  Settings2,
-  TableOfContents
+  SearchX,
+  SlidersHorizontal,
+  TableOfContents,
+  Trash2,
+  Workflow
 } from 'lucide-vue-next'
 import RailPanel from './panels/RailPanel.vue'
 import { PICTURES } from './panels/panelData'
 import { savedAssets } from './savedAssets'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
+import MarItem from '../pages/MarItem.vue'
+import MarEmpty from '../pages/MarEmpty.vue'
+import MediaChip from '../MediaChip.vue'
+import type { MenuLine } from '../pages/menu'
 
 /**
- * Media Assets (ComfyUI's AssetsSidebarTab): Generated and Imported, a
- * search with View settings (list, small or large grid) and, on Comfy
- * Cloud, a filter by media type and date and the sort orders. An asset
- * drags onto the canvas as an Image node.
+ * Media Assets (ComfyUI's AssetsSidebarTab) with the DS's parts: the
+ * segmented tabs, the search field, library items (MarItem) and the
+ * empty state. One button beside the search holds view and, on Comfy
+ * Cloud, the filters and sort, with a dot while a filter is on. Names
+ * drop the extension (it moves to the meta line), so they truncate
+ * later; a stack reads as a chip on its picture. An asset drags onto
+ * the canvas as an Image node.
  */
 const { cloud } = defineProps<{ cloud: boolean }>()
 defineEmits<{ close: [] }>()
 
 type View = 'list' | 'small' | 'large'
-const tab = ref<'Generated' | 'Imported'>('Generated')
+type Tab = 'Generated' | 'Imported'
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'Generated', label: 'Generated' },
+  { value: 'Imported', label: 'Imported' }
+]
+const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'filter' | 'view'>('')
+const menu = ref(false)
 const view = ref<View>(
   (() => {
     try {
@@ -48,8 +64,15 @@ function setView(v: View): void {
     // Storage blocked: the pick lasts for this window only.
   }
 }
+const VIEWS = [
+  { value: 'list', label: 'List view', icon: TableOfContents },
+  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'large', label: 'Grid (large)', icon: LayoutGrid }
+] as const
 const sort = ref('Newest first')
 const date = ref('All time')
+const filtered = computed(() => date.value !== 'All time')
+const selected = ref<string>('')
 
 const ALL = PICTURES.map((p, i) => ({
   ...p,
@@ -90,6 +113,20 @@ const SORTS = computed(() => [
     ? ['Generation time (longest first)', 'Generation time (fastest first)']
     : [])
 ])
+/** "PNG · 13.3s" for a run's output, "PNG · 1.2 MB" for an import. */
+const meta = (a: { file: string; kind: Tab; seconds: number }): string =>
+  `${a.file.split('.').pop()!.toUpperCase()} · ${
+    a.kind === 'Generated' ? `${a.seconds.toFixed(1)}s` : '1.2 MB'
+  }`
+// The product's asset menu (MediaAssetContextMenu).
+const LINES: MenuLine[] = [
+  { label: 'Download', icon: Download },
+  { label: 'Open as workflow', icon: Workflow },
+  { label: 'Export workflow', icon: FileOutput },
+  { label: 'Copy job ID', icon: Copy },
+  'sep',
+  { label: 'Delete', icon: Trash2, danger: true }
+]
 function drag(a: { name: string; src: string }, e: DragEvent): void {
   e.dataTransfer?.setData('text/x-mg-asset', a.src)
   e.dataTransfer?.setData('text/x-mg-name', `${a.name}.jpg`)
@@ -99,104 +136,74 @@ function drag(a: { name: string; src: string }, e: DragEvent): void {
 <template>
   <RailPanel title="Media Assets" @close="$emit('close')">
     <template #header>
-      <div class="rp-tabs" role="tablist">
-        <button
-          v-for="t in ['Generated', 'Imported'] as const"
-          :key="t"
-          type="button"
-          role="tab"
-          class="rp-tab"
-          :class="tab === t && 'is-on'"
-          :aria-selected="tab === t"
-          @click="tab = t"
-        >
-          {{ t }}
-        </button>
-      </div>
+      <MarSeg v-model="tab" :options="TABS" label="Assets" />
       <div class="rp-top">
-        <label class="rp-search">
-          <Search :size="14" />
-          <input v-model="query" type="search" placeholder="Search Assets..." />
-        </label>
-        <span v-if="cloud" class="rp-anchor">
-          <button
-            type="button"
-            class="rp-icon is-filled"
-            title="Filter by"
-            aria-label="Filter by"
-            @click="menu = menu === 'filter' ? '' : 'filter'"
-          >
-            <ListFilter :size="15" /><i v-if="date !== 'All time'" class="rp-dot" />
-          </button>
-          <div v-if="menu === 'filter'" class="rp-menu is-end">
-            <p class="rp-menu-label">Attribute</p>
-            <p class="rp-menu-label ap-sub"><Image :size="12" />Media type</p>
-            <button
-              v-for="m in ['Image', 'Video', 'Audio', '3D', 'Text']"
-              :key="m"
-              type="button"
-              class="rp-row"
-            >
-              {{ m }}
-            </button>
-            <span class="rp-menu-sep" />
-            <p class="rp-menu-label ap-sub"><Calendar :size="12" />Date</p>
-            <button
-              v-for="d in ['All time', 'Today', 'Past 7 days', 'Past 30 days', 'This year']"
-              :key="d"
-              type="button"
-              class="rp-row"
-              :class="date === d && 'is-on'"
-              @click="((date = d), (menu = ''))"
-            >
-              {{ d }}
-            </button>
-          </div>
-        </span>
+        <MarSearchField v-model="query" placeholder="Search Assets..." />
         <span class="rp-anchor">
           <button
             type="button"
-            class="rp-icon is-filled"
-            title="View settings"
-            aria-label="View settings"
-            @click="menu = menu === 'view' ? '' : 'view'"
+            class="rp-icon is-field"
+            :class="menu && 'is-on'"
+            :title="cloud ? 'Filter, sort and view' : 'View settings'"
+            :aria-label="cloud ? 'Filter, sort and view' : 'View settings'"
+            :aria-expanded="menu"
+            @click="menu = !menu"
           >
-            <Settings2 :size="15" />
+            <SlidersHorizontal :size="15" /><i v-if="filtered" class="rp-dot" />
           </button>
-          <div v-if="menu === 'view'" class="rp-menu is-end">
-            <button
-              type="button"
-              class="rp-row"
-              :class="view === 'list' && 'is-on'"
-              @click="(setView('list'), (menu = ''))"
-            >
-              <TableOfContents :size="14" class="rp-row-icon" />List view
-            </button>
-            <button
-              type="button"
-              class="rp-row"
-              :class="view === 'small' && 'is-on'"
-              @click="(setView('small'), (menu = ''))"
-            >
-              <Grid3x3 :size="14" class="rp-row-icon" />Grid (small)
-            </button>
-            <button
-              type="button"
-              class="rp-row"
-              :class="view === 'large' && 'is-on'"
-              @click="(setView('large'), (menu = ''))"
-            >
-              <LayoutGrid :size="14" class="rp-row-icon" />Grid (large)
-            </button>
+          <div v-if="menu" class="rp-menu is-end ap-menu" role="menu">
+            <p class="rp-menu-label">View</p>
+            <div class="mar-pseg ap-views" role="radiogroup" aria-label="View">
+              <button
+                v-for="v in VIEWS"
+                :key="v.value"
+                type="button"
+                role="radio"
+                class="mar-pseg-btn is-icon"
+                :aria-checked="view === v.value"
+                :aria-selected="view === v.value"
+                :aria-label="v.label"
+                :title="v.label"
+                @click="setView(v.value)"
+              >
+                <component :is="v.icon" :size="14" />
+              </button>
+            </div>
             <template v-if="cloud">
               <span class="rp-menu-sep" />
+              <p class="rp-menu-label"><Image :size="12" />Media type</p>
+              <button
+                v-for="m in ['Image', 'Video', 'Audio', '3D', 'Text']"
+                :key="m"
+                type="button"
+                role="menuitemcheckbox"
+                class="rp-row"
+              >
+                {{ m }}
+              </button>
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label"><Calendar :size="12" />Date</p>
+              <button
+                v-for="d in ['All time', 'Today', 'Past 7 days', 'Past 30 days', 'This year']"
+                :key="d"
+                type="button"
+                role="menuitemradio"
+                class="rp-row"
+                :data-state="date === d ? 'checked' : 'unchecked'"
+                @click="((date = d), (menu = false))"
+              >
+                {{ d }}
+              </button>
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label">Sort by</p>
               <button
                 v-for="s in SORTS"
                 :key="s"
                 type="button"
+                role="menuitemradio"
                 class="rp-row"
-                :class="sort === s && 'is-on'"
-                @click="((sort = s), (menu = ''))"
+                :data-state="sort === s ? 'checked' : 'unchecked'"
+                @click="((sort = s), (menu = false))"
               >
                 {{ s }}
               </button>
@@ -206,163 +213,150 @@ function drag(a: { name: string; src: string }, e: DragEvent): void {
       </div>
     </template>
 
-    <div v-if="shown.length && view !== 'list'" class="ap-grid" :class="`is-${view}`">
-      <figure
-        v-for="a in shown"
-        :key="a.file"
-        class="ap-card"
-        draggable="true"
-        :title="`Drag ${a.file} onto the canvas`"
-        @dragstart="drag(a, $event)"
-      >
-        <span class="ap-media">
-          <img :src="a.src" alt="" />
-          <span class="ap-hover">
-            <button type="button" class="rp-icon is-filled" aria-label="Download">
-              <Download :size="13" />
-            </button>
-            <button type="button" class="rp-icon is-filled" aria-label="More options">
-              <Ellipsis :size="13" />
-            </button>
-          </span>
-        </span>
-        <figcaption>
-          <span class="ap-text">
-            <span class="ap-name">{{ a.file }}</span>
-            <small>{{ a.kind === 'Generated' ? `${a.seconds.toFixed(2)}s` : '1.2 MB' }}</small>
-          </span>
-          <button
-            v-if="a.outputs > 1 && tab === 'Generated'"
-            type="button"
-            class="rp-btn ap-stack"
-            title="See more outputs"
-          >
-            <Layers :size="12" />{{ a.outputs }}
-          </button>
-        </figcaption>
-      </figure>
-    </div>
-    <div v-else-if="shown.length" class="rp-list">
+    <div
+      v-if="shown.length"
+      class="ap-items"
+      :class="`is-${view}`"
+      :aria-label="`${tab} assets`"
+      @click.self="selected = ''"
+    >
       <div
         v-for="a in shown"
         :key="a.file"
-        class="jp-row"
+        class="ap-drag"
         draggable="true"
         @dragstart="drag(a, $event)"
       >
-        <span class="jp-thumb"><img :src="a.src" alt="" /></span>
-        <span class="jp-text">
-          <span>{{ a.file }}</span>
-          <small>{{ a.kind === 'Generated' ? `${a.seconds.toFixed(2)}s` : '1.2 MB' }}</small>
-        </span>
-        <button
-          v-if="a.outputs > 1 && tab === 'Generated'"
-          type="button"
-          class="rp-btn ap-stack"
-          aria-label="See more outputs"
+        <MarItem
+          :name="a.name"
+          :thumb="a.src"
+          :meta="view === 'small' ? undefined : meta(a)"
+          :layout="view === 'list' ? 'list' : 'grid'"
+          ratio="1 / 1"
+          :selected="selected === a.file"
+          :lines="LINES"
+          :title="`${a.file} · drag onto the canvas`"
+          @open="selected = a.file"
+          @select="selected = a.file"
         >
-          <Layers :size="12" />{{ a.outputs }}
-        </button>
-        <span class="jp-actions">
-          <button type="button" class="rp-icon" aria-label="More options">
-            <Ellipsis :size="14" />
-          </button>
-        </span>
+          <template v-if="a.outputs > 1 && tab === 'Generated'" #overlay>
+            <span class="ap-stack" :aria-label="`${a.outputs} outputs`">
+              <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
+            </span>
+          </template>
+          <template v-if="view === 'list' && a.outputs > 1 && tab === 'Generated'" #cols>
+            <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
+              ><Layers :size="12" />{{ a.outputs }}</span
+            >
+          </template>
+        </MarItem>
       </div>
     </div>
-    <div v-else class="rp-empty">
-      <Info :size="22" />
-      <strong>{{
-        tab === 'Generated' ? 'No generated files found' : 'No imported files found'
-      }}</strong>
-      <span>Upload files or generate content to see them here</span>
-    </div>
+    <MarEmpty
+      v-else-if="query"
+      compact
+      :icon="SearchX"
+      title="No results"
+      :text="`Nothing in ${tab} matches “${query}”.`"
+      action="Clear search"
+      @action="query = ''"
+    />
+    <MarEmpty
+      v-else
+      compact
+      :icon="ImageOff"
+      :title="tab === 'Generated' ? 'No generated files found' : 'No imported files found'"
+      text="Upload files or generate content to see them here"
+      :pics="PICTURES.slice(0, 3).map((p) => p.src)"
+    />
   </RailPanel>
 </template>
 
 <style>
-.ap-sub {
-  display: flex;
-  align-items: center;
+.ap-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 6px;
+  padding: 10px 10px 16px;
+}
+.ap-items.is-small {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
-.ap-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 4px;
-  padding: 4px 8px 16px;
+.ap-items.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px 8px 12px;
 }
-.ap-grid.is-small {
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-}
-.ap-card {
-  margin: 0;
-  padding: 6px;
-  border-radius: var(--mar-tab-radius);
+.ap-drag {
+  min-width: 0;
   cursor: grab;
 }
-.ap-card:hover {
-  background: var(--mg-hover);
+/* In a panel the cards sit on the panel's own surface: no card behind
+   them until hover, so the pictures carry the grid. */
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid {
+  padding: 4px 4px 6px;
+  border-radius: var(--mar-tab-radius);
+  background: transparent;
+  backdrop-filter: none;
 }
-.ap-media {
-  position: relative;
-  display: block;
-  aspect-ratio: 1;
-  overflow: hidden;
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid:hover,
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid.is-menu {
+  background: var(--rp-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid .mar-item-media {
   border-radius: var(--mar-tab-item-radius);
 }
-.ap-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.rp .mar-item.is-grid .mar-item-text {
+  padding: 8px 4px 0;
 }
-.ap-hover {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  gap: 2px;
-  opacity: 0;
+.rp .mar-item .mar-item-meta {
+  color: var(--rp-meta);
+  font-variant-numeric: tabular-nums;
 }
-.ap-card:hover .ap-hover {
-  opacity: 1;
+.rp .ap-items.is-small .mar-item-text {
+  padding-top: 6px;
 }
-:root .proto-ui.proto-ui.proto-ui .ap-hover .rp-icon {
-  width: 26px;
-  height: 26px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
-}
-.ap-card figcaption {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 2px 0;
-}
-.ap-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.ap-name {
-  overflow: hidden;
+:root .proto-ui.proto-ui.proto-ui .rp .ap-items.is-small .mar-item-name {
   font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
-.ap-text small {
-  color: var(--mg-dim);
-  font-size: 11px;
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-list {
+  height: 52px;
+  gap: 10px;
+  padding: 0 6px;
+  border-radius: var(--mar-tab-radius);
 }
-.ap-grid.is-small .ap-text small,
-.ap-grid.is-small .ap-stack {
+.rp .mar-item.is-list .mar-item-media {
+  width: 40px;
+  height: 40px;
+}
+/* The selection checkbox is for library pages; a panel selects with a click. */
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item-check {
   display: none;
 }
-:root .proto-ui.proto-ui.proto-ui .ap-stack {
-  height: 24px;
+.ap-stack {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  pointer-events: none;
+}
+.ap-stack-row {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
   gap: 4px;
-  padding: 0 7px;
-  font-size: 11px;
+  color: var(--rp-meta);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ap-menu {
+  min-width: 220px;
+}
+.ap-views {
+  display: flex;
+  margin: 2px 4px 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
+  flex: 1;
 }
 </style>

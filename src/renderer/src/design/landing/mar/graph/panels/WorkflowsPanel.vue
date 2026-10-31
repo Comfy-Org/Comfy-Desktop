@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { Bookmark, ChevronDown, Folder, Plus, RefreshCw, Search } from 'lucide-vue-next'
+import { AppWindow, Bookmark, ChevronDown, Folder, Plus, RefreshCw, SearchX } from 'lucide-vue-next'
 import RailPanel from './RailPanel.vue'
 import { APPS, WORKFLOW_TREE, type FileNode } from './panelData'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
+import MarSearchField from '../../pages/MarSearchField.vue'
+import MarEmpty from '../../pages/MarEmpty.vue'
 
 /**
  * Workflows and Apps (ComfyUI's BaseWorkflowsSidebarTab, which Apps reuses
@@ -15,8 +17,9 @@ const emit = defineEmits<{ close: []; open: [name: string] }>()
 
 const apps = computed(() => kind === 'apps')
 const query = ref('')
-const input = ref<HTMLInputElement>()
-onMounted(() => nextTick(() => input.value?.focus()))
+onMounted(() =>
+  nextTick(() => document.querySelector<HTMLInputElement>('.rp .mar-pfind input')?.focus())
+)
 const bookmarks = ref<string[]>(apps.value ? [] : ['portrait-sun'])
 const shut = ref(new Set<string>())
 const syncing = ref(false)
@@ -61,22 +64,15 @@ const tree = computed<FileNode[]>(() => {
       </button>
     </template>
     <template #header>
-      <div class="rp-top">
-        <label class="rp-search">
-          <Search :size="14" />
-          <input
-            ref="input"
-            v-model="query"
-            type="search"
-            :placeholder="apps ? 'Search Apps...' : 'Search Workflows...'"
-          />
-        </label>
-      </div>
+      <MarSearchField
+        v-model="query"
+        :placeholder="apps ? 'Search Apps...' : 'Search Workflows...'"
+      />
     </template>
 
     <div class="rp-list">
       <template v-if="bookmarks.length && !query">
-        <p class="wp-divider"><span>Bookmarks</span></p>
+        <p class="rp-section">Bookmarks</p>
         <div v-for="b in bookmarks" :key="`b-${b}`" class="np-line">
           <button
             type="button"
@@ -98,7 +94,7 @@ const tree = computed<FileNode[]>(() => {
       </template>
 
       <template v-if="tree.length">
-        <p v-if="!query" class="wp-divider"><span>Browse</span></p>
+        <p v-if="!query" class="rp-section">Browse</p>
         <template v-for="n in tree" :key="n.name">
           <template v-if="n.children">
             <button type="button" class="rp-row" @click="toggle(n.name)">
@@ -157,33 +153,29 @@ const tree = computed<FileNode[]>(() => {
           </div>
         </template>
       </template>
-
-      <div v-else-if="apps && !query" class="rp-empty">
-        <span>Saved apps will show up here.<br />Click below to build your first app.</span>
-        <button type="button" class="rp-btn"><Plus :size="13" />Create app</button>
-      </div>
-      <div v-else class="rp-empty">
-        <Folder :size="40" :stroke-width="1.25" />
-        <strong>Empty</strong>
-        <span>No workflows found.</span>
-      </div>
     </div>
+    <MarEmpty
+      v-if="!tree.length && apps && !query"
+      compact
+      :icon="AppWindow"
+      title="No apps yet"
+      text="Saved apps will show up here. Click below to build your first app."
+      action="Create app"
+    />
+    <MarEmpty
+      v-else-if="!tree.length"
+      compact
+      :icon="query ? SearchX : Folder"
+      :title="query ? 'No results' : 'No workflows yet'"
+      :text="query ? `Nothing matches “${query}”.` : 'Saved workflows will show up here.'"
+      :action="query ? 'Clear search' : undefined"
+      @action="query = ''"
+    />
   </RailPanel>
 </template>
 
 <style>
-.wp-divider {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 6px 8px;
-  color: var(--mg-dim);
-  font-size: 11.5px;
-}
-.wp-divider::after {
-  height: 0;
-  flex: 1;
-  border-top: 1px dashed var(--rp-line);
-  content: '';
+.rp-list > .rp-section:first-child {
+  padding-top: 8px;
 }
 </style>

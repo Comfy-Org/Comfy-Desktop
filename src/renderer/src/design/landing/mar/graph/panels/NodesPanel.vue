@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { Bookmark, ChevronDown, Folder, ListFilter, Search, Settings2 } from 'lucide-vue-next'
+import { Bookmark, ChevronDown, Folder, SearchX, SlidersHorizontal } from 'lucide-vue-next'
 import RailPanel from './RailPanel.vue'
 import { NODE_ICONS } from '../nodeIcons'
 import { CATEGORIES, NODE_TYPES, type NodeKind } from '../canvasData'
 import { ComfyNode } from '../../icons/comfyIcons'
+import MarSeg from '../../pages/MarSeg.vue'
+import MarSearchField from '../../pages/MarSearchField.vue'
+import MarEmpty from '../../pages/MarEmpty.vue'
 
 /**
  * Nodes (ComfyUI's NodeLibrarySidebarTabV2). Essentials, a curated grid by
@@ -17,11 +20,16 @@ const emit = defineEmits<{ close: []; add: [kind: NodeKind] }>()
 
 const tab = ref<'essentials' | 'all'>(cloud ? 'essentials' : 'all')
 const query = ref('')
-const menu = ref<'' | 'filter' | 'sort'>('')
+const menu = ref(false)
 const filter = ref('All')
 const sort = ref<'Categorized' | 'A-Z'>('Categorized')
-const input = ref<HTMLInputElement>()
-onMounted(() => nextTick(() => input.value?.focus()))
+const TABS = [
+  { value: 'essentials' as const, label: 'Essentials' },
+  { value: 'all' as const, label: 'All nodes' }
+]
+onMounted(() =>
+  nextTick(() => document.querySelector<HTMLInputElement>('.rp .mar-pfind input')?.focus())
+)
 
 const match = (k: NodeKind): boolean => {
   const q = query.value.trim().toLowerCase()
@@ -128,77 +136,55 @@ const nothing = computed(() =>
 <template>
   <RailPanel title="Nodes" @close="emit('close')">
     <template #header>
-      <div v-if="cloud" class="rp-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          class="rp-tab"
-          :class="tab === 'essentials' && 'is-on'"
-          :aria-selected="tab === 'essentials'"
-          @click="((tab = 'essentials'), (filter = 'All'))"
-        >
-          Essentials
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="rp-tab"
-          :class="tab === 'all' && 'is-on'"
-          :aria-selected="tab === 'all'"
-          @click="((tab = 'all'), (filter = 'All'))"
-        >
-          All nodes
-        </button>
-      </div>
+      <MarSeg
+        v-if="cloud"
+        :model-value="tab"
+        :options="TABS"
+        label="Nodes"
+        @update:model-value="((tab = $event), (filter = 'All'))"
+      />
       <div class="rp-top">
-        <label class="rp-search">
-          <Search :size="14" />
-          <input ref="input" v-model="query" type="search" placeholder="Search Nodes..." />
-        </label>
+        <MarSearchField v-model="query" placeholder="Search Nodes..." />
         <span class="rp-anchor">
           <button
             type="button"
-            class="rp-icon is-filled"
-            aria-label="Filter"
-            title="Filter"
-            @click="menu = menu === 'filter' ? '' : 'filter'"
+            class="rp-icon is-field"
+            :class="menu && 'is-on'"
+            :aria-label="tab === 'all' ? 'Filter and sort' : 'Filter'"
+            :title="tab === 'all' ? 'Filter and sort' : 'Filter'"
+            :aria-expanded="menu"
+            @click="menu = !menu"
           >
-            <ListFilter :size="15" /><i v-if="filter !== 'All'" class="rp-dot" />
+            <SlidersHorizontal :size="15" /><i v-if="filter !== 'All'" class="rp-dot" />
           </button>
-          <div v-if="menu === 'filter'" class="rp-menu is-end">
+          <div v-if="menu" class="rp-menu is-end" role="menu">
+            <p class="rp-menu-label">Filter</p>
             <button
               v-for="f in FILTERS"
               :key="f"
               type="button"
+              role="menuitemradio"
               class="rp-row"
-              :class="filter === f && 'is-on'"
-              @click="((filter = f), (menu = ''))"
+              :data-state="filter === f ? 'checked' : 'unchecked'"
+              @click="((filter = f), (menu = false))"
             >
               {{ f }}
             </button>
-          </div>
-        </span>
-        <span v-if="tab === 'all'" class="rp-anchor">
-          <button
-            type="button"
-            class="rp-icon is-filled"
-            aria-label="Sort"
-            title="Sort"
-            @click="menu = menu === 'sort' ? '' : 'sort'"
-          >
-            <Settings2 :size="15" />
-          </button>
-          <div v-if="menu === 'sort'" class="rp-menu is-end">
-            <button
-              v-for="o in ['Categorized', 'A-Z'] as const"
-              :key="o"
-              type="button"
-              class="rp-row"
-              :class="sort === o && 'is-on'"
-              @click="((sort = o), (menu = ''))"
-            >
-              {{ o }}
-            </button>
+            <template v-if="tab === 'all'">
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label">Sort</p>
+              <button
+                v-for="o in ['Categorized', 'A-Z'] as const"
+                :key="o"
+                type="button"
+                role="menuitemradio"
+                class="rp-row"
+                :data-state="sort === o ? 'checked' : 'unchecked'"
+                @click="((sort = o), (menu = false))"
+              >
+                {{ o }}
+              </button>
+            </template>
           </div>
         </span>
       </div>
@@ -207,7 +193,7 @@ const nothing = computed(() =>
     <!-- Essentials: tiles by section. -->
     <template v-if="tab === 'essentials'">
       <section v-for="s in essentials" :key="s.title" class="np-section">
-        <h3 class="np-head">{{ s.title }}</h3>
+        <h3 class="rp-section np-head">{{ s.title }}</h3>
         <div v-for="g in s.groups" :key="g.title ?? s.title" class="np-group">
           <p v-if="g.title" class="np-sub">{{ g.title }}</p>
           <div class="np-grid">
@@ -320,64 +306,84 @@ const nothing = computed(() =>
         </template>
       </template>
     </div>
-    <p v-if="nothing" class="rp-empty">No nodes match "{{ query }}"</p>
+    <MarEmpty
+      v-if="nothing"
+      compact
+      :icon="SearchX"
+      title="No results"
+      :text="query ? `No nodes match “${query}”.` : 'No nodes in this filter.'"
+      action="Clear filters"
+      @action="((query = ''), (filter = 'All'))"
+    />
   </RailPanel>
 </template>
 
 <style>
 .np-section {
-  padding: 0 16px 16px;
-  box-shadow: inset 0 -1px 0 var(--rp-line);
+  padding: 0 12px 14px;
 }
-.np-head {
-  margin: 0;
-  padding: 16px 0 10px;
-  color: var(--mg-dim);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.np-section + .np-section {
+  box-shadow: inset 0 1px 0 var(--rp-line);
+}
+:root .proto-ui.proto-ui.proto-ui .np-head {
+  padding: 14px 0 8px;
 }
 .np-group + .np-group {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 .np-sub {
-  margin: 0 0 8px;
-  font-size: 12.5px;
+  margin: 0 0 6px;
+  color: var(--rp-meta);
+  font-size: 12px;
 }
 .np-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
+/* Tiles: the DS's raised surface, so they read as things to pick up. */
 :root .proto-ui.proto-ui.proto-ui .np-card {
   display: flex;
   aspect-ratio: 1;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 8px 6px;
   border-radius: var(--mar-tab-radius);
-  background: var(--rp-chip);
-  color: var(--mg-text);
-  font-size: 11.5px;
-  line-height: 14px;
+  background: var(--rp-raised);
+  box-shadow: var(--rp-raised-shadow);
+  color: var(--rp-text);
+  font-size: 12px;
+  line-height: 15px;
   text-align: center;
   cursor: grab;
+  transition: background-color 120ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .np-card:hover {
   background: var(--rp-chip-on);
 }
+.np-card > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .np-card-icon {
-  color: var(--mg-muted);
+  color: var(--rp-meta);
+}
+.np-card:hover .np-card-icon {
+  color: var(--rp-text);
 }
 .np-line {
   display: flex;
   align-items: center;
 }
 .np-line.is-in {
-  padding-left: 22px;
+  margin-left: 15px;
+  padding-left: 7px;
+  box-shadow: inset 1px 0 0 var(--rp-line);
 }
 .np-line .rp-row {
   flex: 1;

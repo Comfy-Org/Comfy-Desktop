@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { AppWindow, ChevronDown, Flame, Handshake, Info, Search } from 'lucide-vue-next'
+import { AppWindow, ChevronDown, Flame, Handshake, Info, SearchX } from 'lucide-vue-next'
 import GraphDialog from './GraphDialog.vue'
+import MarEmpty from '../../pages/MarEmpty.vue'
+import MarSeg from '../../pages/MarSeg.vue'
+import MarSearchField from '../../pages/MarSearchField.vue'
 import { TEMPLATES, thumb, type Template } from '../../../mock'
 import { ComfyTemplate, ComfyWorkflow } from '../../icons/comfyIcons'
 import { PICTURES } from './panelData'
+import MediaChip from '../../MediaChip.vue'
 
 /**
  * Templates (ComfyUI's WorkflowTemplateSelectorDialog, from the rail's
@@ -28,6 +32,7 @@ const GROUPS: { title: string; items: { label: string; category?: Template['cate
 const nav = ref('All Templates')
 const query = ref('')
 const type = ref<'All' | 'Node graph' | 'App'>('All')
+const TYPES = (['All', 'Node graph', 'App'] as const).map((t) => ({ value: t, label: t }))
 const category = computed(
   () => GROUPS.flatMap((g) => g.items).find((i) => i.label === nav.value)?.category
 )
@@ -99,27 +104,12 @@ const CAT: Record<Template['category'], string> = {
       </button>
     </template>
     <template #header>
-      <label class="rp-search">
-        <Search :size="15" />
-        <input v-model="query" type="search" placeholder="Search ..." />
-      </label>
+      <MarSearchField v-model="query" placeholder="Search ..." />
     </template>
 
     <h2 class="rp-title-lg">Get Started with a Template</h2>
     <div class="rp-filters">
-      <button
-        v-for="t in ['All', 'Node graph', 'App'] as const"
-        :key="t"
-        type="button"
-        class="rp-btn"
-        :class="type === t && 'is-inverted'"
-        @click="type = t"
-      >
-        <ComfyWorkflow v-if="t === 'Node graph'" :size="13" /><AppWindow
-          v-else-if="t === 'App'"
-          :size="13"
-        />{{ t }}
-      </button>
+      <MarSeg v-model="type" :options="TYPES" label="Template type" />
       <span class="rp-spacer" />
       <button type="button" class="rp-btn">Model Filter<ChevronDown :size="13" /></button>
       <button type="button" class="rp-btn">Tasks<ChevronDown :size="13" /></button>
@@ -132,9 +122,9 @@ const CAT: Record<Template['category'], string> = {
         <span class="td-media">
           <img :src="thumb(t.id)" alt="" loading="lazy" @error="fallback($event, i)" />
           <span class="td-chip"
-            ><AppWindow v-if="t.kind === 'app'" :size="12" /><ComfyWorkflow v-else :size="12" />{{
+            ><MediaChip :icon="t.kind === 'app' ? AppWindow : ComfyWorkflow">{{
               t.kind === 'app' ? 'App' : 'Node graph'
-            }}</span
+            }}</MediaChip></span
           >
           <button type="button" class="rp-icon td-info" aria-label="See a tutorial" @click.stop>
             <Info :size="14" />
@@ -148,11 +138,15 @@ const CAT: Record<Template['category'], string> = {
         </span>
       </article>
     </div>
-    <div v-else class="rp-empty">
-      <Search :size="40" :stroke-width="1.25" />
-      <strong>No templates found</strong>
-      <span>Try adjusting your search or filters</span>
-    </div>
+    <MarEmpty
+      v-else
+      compact
+      :icon="SearchX"
+      title="No templates found"
+      text="Try adjusting your search or filters"
+      action="Clear filters"
+      @action="((query = ''), (type = 'All'), (nav = 'All Templates'))"
+    />
     <template #footer>
       <p class="rp-dialog-foot">Showing {{ shown.length }} of {{ TEMPLATES.length }} templates</p>
     </template>
@@ -192,14 +186,6 @@ const CAT: Record<Template['category'], string> = {
   position: absolute;
   top: 8px;
   left: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
-  font-size: 11px;
 }
 :root .proto-ui.proto-ui.proto-ui .td-info {
   position: absolute;
@@ -231,7 +217,7 @@ const CAT: Record<Template['category'], string> = {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--rp-chip);
-  color: var(--mg-muted);
+  color: var(--rp-meta);
   font-size: 11px;
 }
 </style>

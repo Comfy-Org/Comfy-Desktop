@@ -67,11 +67,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   height: min(800px, 100%);
   overflow: hidden;
   border-radius: var(--radius-card);
-  background: var(--color-content-background);
+  background: color-mix(in oklch, var(--color-card-background) 97%, transparent);
+  backdrop-filter: blur(28px) saturate(1.3);
   box-shadow:
-    0 0 0 1px var(--rp-line),
-    0 30px 80px rgb(0 0 0 / 0.45);
-  color: var(--mg-text);
+    inset 0 0 0 1px var(--rp-ring),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 28px 64px -20px rgb(0 0 0 / 0.6);
+  color: var(--rp-text);
   font-size: 13px;
 }
 .rp-dialog.is-md {
@@ -99,13 +101,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   font-weight: 600;
 }
 .rp-dialog-group {
-  margin: 12px 0 4px;
+  margin: 14px 0 4px;
   padding: 0 8px;
-  color: var(--mg-dim);
-  font-size: 11px;
+  color: var(--rp-label);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .rp-dialog-main {
   display: flex;
@@ -121,7 +121,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   gap: 10px;
   padding: 12px 12px 12px 24px;
 }
-.rp-dialog-head .rp-search {
+:root .proto-ui.proto-ui.proto-ui .rp-dialog-head .mar-pfind {
   max-width: 420px;
   height: 36px;
 }
@@ -145,7 +145,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 .rp-dialog-foot {
   flex: none;
   padding: 10px 24px;
-  color: var(--mg-dim);
+  color: var(--rp-meta);
   font-size: 12px;
   box-shadow: inset 0 1px 0 var(--rp-line);
 }
@@ -168,8 +168,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   font-size: 18px;
   font-weight: 600;
 }
+:root[data-ds-theme='light'] .rp-dialog {
+  box-shadow:
+    inset 0 0 0 1px var(--rp-ring),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 64px -20px rgb(0 0 0 / 0.28);
+}
 .mg.is-current .rp-dialog {
   background: var(--mg-chrome);
+  backdrop-filter: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .rp-scrim {
