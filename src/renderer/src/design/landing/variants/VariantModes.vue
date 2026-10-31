@@ -24,6 +24,7 @@ import { can, landingPage } from '../milestones'
 import { agentIcon, isMariana } from '../mar/proposal'
 import MarBackdrop from '../mar/shell/MarBackdrop.vue'
 import MarSidebarToggle from '../mar/shell/MarSidebarToggle.vue'
+import MarPanelsHead from '../mar/shell/MarPanelsHead.vue'
 import MarFavoritesGroup from '../mar/shell/MarFavoritesGroup.vue'
 import { marSidebarClosed } from '../mar/shell/marShell'
 import MarLensSwitch from '../mar/shell/MarLensSwitch.vue'
@@ -78,6 +79,8 @@ const MODES = computed(() => [
       :inert="sidebarHidden || undefined"
     >
       <div class="flex min-h-full w-55 shrink-0 flex-col">
+        <!-- Mar's Floating panels: the Comfy mark and the collapse toggle. -->
+        <MarPanelsHead v-if="isMariana" />
         <!-- Create / Build (Milestone 6: the Builder) -->
         <div v-if="can.builder" class="mb-3 flex h-8.5 shrink-0 items-center">
           <MarLensSwitch v-if="marTabsOn" v-model="mode" :options="MODES" />
@@ -98,9 +101,7 @@ const MODES = computed(() => [
         <!-- Mar's proposal keeps them for a new user, each with an empty
              state, and shows its builds even with no local install. -->
         <SidebarGroup v-if="proto.mode === 'create' && (isMariana || !proto.fresh)" />
-        <SpacesGroup
-          v-if="proto.mode === 'create' && can.spaces && (isMariana || !proto.fresh)"
-        />
+        <SpacesGroup v-if="proto.mode === 'create' && can.spaces && (isMariana || !proto.fresh)" />
 
         <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>
       </div>

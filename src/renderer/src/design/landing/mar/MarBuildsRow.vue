@@ -6,7 +6,7 @@ import SectionHeader from '../ui/SectionHeader.vue'
 import StatusDot from '../ui/StatusDot.vue'
 import LocationIcon from '../ui/LocationIcon.vue'
 import { envStatus } from '../parts/env/env'
-import { go, hostActions, instances, recentInstances } from '../useProto'
+import { go, hostActions, recentInstances } from '../useProto'
 
 /** Home's builds in Mar's proposal (UI Playground › Build on Home): what
  *  Pablo's Home shows (three recent builds, their state, click to launch
@@ -35,8 +35,11 @@ const shown = computed(() => recentInstances.value.slice(0, 3))
         </span>
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
           <span class="block truncate text-ui font-medium">{{ i.name }}</span>
-          <span class="flex items-center gap-1.5 truncate text-ui text-subtle-foreground"
-            ><StatusDot v-if="envStatus(i).live" status="running" />{{ envStatus(i).label }}</span
+          <!-- Only the label truncates, so the running dot's halo isn't clipped. -->
+          <span class="flex min-w-0 items-center gap-1.5 text-ui text-subtle-foreground"
+            ><StatusDot v-if="envStatus(i).live" status="running" /><span class="truncate">{{
+              envStatus(i).label
+            }}</span></span
           >
         </span>
         <Play

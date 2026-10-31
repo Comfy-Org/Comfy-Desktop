@@ -3,6 +3,7 @@ import { proto } from '../../useProto'
 import { isMariana } from '../proposal'
 import { active } from '../marParts'
 import { mock } from '../assets/mock'
+import { spaceById } from '../../spaces'
 
 /**
  * Mar's shell (Figma "Exploration 01 · Cinema hero"): the sidebar floats
@@ -143,7 +144,47 @@ watch(
   { immediate: true }
 )
 
+/** Floating panels › Sidebar head (UI Playground): Pablo's wide sidebar
+ *  as it is (`plain`, the default), or Magnific's head with the Comfy
+ *  wordmark and a collapse toggle (`brand`, MarPanelsHead.vue). */
+export type MarSideHead = 'plain' | 'brand'
+const SIDE_HEAD_KEY = 'comfy.design.mar.sideHead'
+function loadSideHead(): MarSideHead {
+  try {
+    return localStorage.getItem(SIDE_HEAD_KEY) === 'brand' ? 'brand' : 'plain'
+  } catch {
+    return 'plain'
+  }
+}
+export const marSideHead = reactive<{ id: MarSideHead }>({ id: loadSideHead() })
+watch(
+  () => marSideHead.id,
+  (id) => {
+    try {
+      localStorage.setItem(SIDE_HEAD_KEY, id)
+    } catch {
+      // Storage blocked: the pick lasts for this window only.
+    }
+  }
+)
+
+/** Floating panels with the brand head: the sidebar card can collapse. */
+export const marPanelsOn = computed(
+  () => isMariana.value && marNav.id === 'panels' && marSideHead.id === 'brand'
+)
+
 export const marSidebarClosed = computed(() => marShellOn.value && !marShell.open)
+
+// Floating panels, collapsed from its head (MarPanelsHead.vue): the card
+// narrows to a rail of icons (`data-mar-rail`, panelsNav.css).
+watch(
+  () => marPanelsOn.value && marNav.collapsed,
+  (rail) => {
+    if (rail) document.documentElement.dataset.marRail = 'on'
+    else delete document.documentElement.dataset.marRail
+  },
+  { immediate: true }
+)
 
 // Not every page gets a photo: tools (builds, the agent, admin) stay plain.
 const HERO: Record<string, string> = {
@@ -162,8 +203,18 @@ export const heroImage = computed<string | undefined>(() => {
   if (!isMariana.value) return undefined
   const page = proto.page
   if (page.startsWith('project:')) return HERO.projects
-  if (page.startsWith('space:')) return HERO.spaces
+  // A space gets its brand's colour instead of a photo (spaceCover).
+  if (page.startsWith('space:')) return undefined
   return HERO[page]
+})
+
+/** One space's cover: its logo tile's colour washing down from the top,
+ *  with the brand colour as a glow, so a black tile (Spotify) still reads
+ *  on a dark page and a white one (Nike) on a light page. */
+export const spaceCover = computed<{ bg: string; accent: string } | undefined>(() => {
+  if (!isMariana.value || !proto.page.startsWith('space:')) return undefined
+  const brand = spaceById(proto.page.slice(6))?.brand
+  return brand && { bg: brand.logo.bg ?? brand.color, accent: brand.color }
 })
 
 /** Home's background (UI Playground › Home background): Latent bloom

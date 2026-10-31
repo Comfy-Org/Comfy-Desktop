@@ -6,7 +6,14 @@ import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
 import { isMariana, proposal, PROPOSALS } from './proposal'
 import { onCloud, SURFACES, surface } from './shell/surface'
-import { homeBackground, marNav, type HomeBackground, type MarNav } from './shell/marShell'
+import {
+  homeBackground,
+  marNav,
+  marSideHead,
+  type HomeBackground,
+  type MarNav,
+  type MarSideHead
+} from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
@@ -42,6 +49,10 @@ const NAVS: { value: MarNav; label: string }[] = [
   { value: 'floating', label: 'Floating sidebar' },
   { value: 'tabs', label: '08 · Tabs · a bar on top' },
   { value: 'panels', label: 'Floating panels' }
+]
+const SIDE_HEADS: { value: MarSideHead; label: string }[] = [
+  { value: 'plain', label: 'Wide' },
+  { value: 'brand', label: 'Logo + collapse' }
 ]
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },
@@ -100,7 +111,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'nav', 'palette', 'theme']
+const GLOBAL: TweakId[] = ['surface', 'nav', 'sideHead', 'palette', 'theme']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -184,6 +195,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row v-if="isMariana" label="Navigation">
             <Select v-model="marNav.id" :options="NAVS" class="w-full" />
+          </Row>
+          <Row v-if="isMariana && marNav.id === 'panels'" label="Sidebar head">
+            <Seg v-model="marSideHead.id" label="Sidebar head" :options="SIDE_HEADS" />
           </Row>
           <Row :label="isMariana ? 'Palette and theme' : 'Theme'">
             <div class="flex items-center gap-1.5">

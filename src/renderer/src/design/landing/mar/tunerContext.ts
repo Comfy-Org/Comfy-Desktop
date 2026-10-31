@@ -6,7 +6,7 @@ import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
 import { surface, onCloud } from './shell/surface'
-import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
+import { homeBackground, marNav, marSideHead, marSideOn, marSidebarClosed } from './shell/marShell'
 import { marTabsOn } from './shell/titleTabs'
 import { screen } from './screen'
 import { palette } from './palette'
@@ -152,7 +152,12 @@ export interface Tweak {
   isDefault: () => boolean
   reset: () => void
 }
-const TUNING_DEFAULTS = { radius: 'default', contrast: 'default', borders: 'none', shadows: 'default' }
+const TUNING_DEFAULTS = {
+  radius: 'default',
+  contrast: 'default',
+  borders: 'none',
+  shadows: 'default'
+}
 const P20_DEFAULTS: Record<string, string> = {
   recent: 'cards',
   spaces: 'plain',
@@ -179,6 +184,7 @@ export const TWEAKS = {
   },
   surface: one(surface, 'desktop'),
   nav: one(marNav, 'panels'),
+  sideHead: one(marSideHead, 'plain'),
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   crit: one(crit, 'off'),
