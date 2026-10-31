@@ -22,6 +22,7 @@ import { assets } from './assetsStore'
 import { notify } from './undo'
 import { shownState } from './pageState'
 import type { MenuLine } from './menu'
+import '../table/table.css'
 
 /**
  * One project (Mar's proposal), as a product page: its cover, name and
@@ -373,28 +374,31 @@ function removePerson(m: string): void {
           People here see this project’s workflows and assets, nothing else.
         </p>
 
-        <div class="mar-people-head">
-          <h2 class="mar-proj-eyebrow">
-            Members<span class="mar-people-count">{{ p.members.length }}</span>
-          </h2>
-          <span class="mar-proj-eyebrow mar-person-role">Role</span>
-          <span class="mar-person-act" />
-        </div>
-        <ul class="mar-people-list">
-          <!-- Who on the left, their role in one column, remove on hover. -->
-          <li v-for="(m, i) in p.members" :key="m" class="mar-person">
-            <MemberAvatar :name="m" />
-            <span class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-ui font-medium text-base-foreground"
+        <!-- Members: the one table pattern (mar/table/table.css). -->
+        <div class="mar-table mar-people-table">
+          <div class="mar-table-head">
+            <span class="col-span-2"
+              >{{ p.members.length }} {{ p.members.length === 1 ? 'member' : 'members' }}</span
+            >
+            <span />
+            <span class="mar-person-owner">Role</span>
+            <span />
+          </div>
+          <div v-for="(m, i) in p.members" :key="m" class="mar-table-row mar-person">
+            <MemberAvatar :name="m" class="is-center" />
+            <span class="mar-table-name">
+              <span class="mar-table-title"
                 >{{ m
                 }}<span v-if="i === 0" class="font-normal text-subtle-foreground">
                   (you)</span
                 ></span
               >
-              <span class="truncate text-ui text-subtle-foreground">{{ emailOf(m) }}</span>
+              <span class="mar-table-sub">{{ emailOf(m) }}</span>
             </span>
-            <MarStatus v-if="invited.includes(m)" status="queued" label="Invite sent" />
-            <span class="mar-person-role">
+            <span class="mar-table-cell">
+              <MarStatus v-if="invited.includes(m)" status="queued" label="Invite sent" />
+            </span>
+            <span class="mar-table-cell mar-person-role">
               <span v-if="i === 0" class="mar-person-owner">Owner</span>
               <Select
                 v-else
@@ -406,7 +410,7 @@ function removePerson(m: string): void {
                 @update:model-value="roles[m] = $event"
               />
             </span>
-            <span class="mar-person-act">
+            <span class="mar-table-cell is-end">
               <button
                 v-if="i > 0"
                 type="button"
@@ -417,8 +421,8 @@ function removePerson(m: string): void {
                 <X :size="14" />
               </button>
             </span>
-          </li>
-        </ul>
+          </div>
+        </div>
         <MarEmpty
           v-if="p.members.length === 1"
           :icon="Users"
@@ -637,63 +641,26 @@ function removePerson(m: string): void {
   color: var(--color-subtle-foreground);
   font-size: 12px;
 }
-.mar-people-head {
-  display: flex;
+/* Members follow the one table; rows hold a role picker, so their cells
+   stay centred, and nothing opens on a click. */
+.mar-people-table {
+  --mar-grid: 32px minmax(0, 1fr) auto 128px 28px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-people-table .mar-person {
   align-items: center;
-  gap: 12px;
-  padding: 0 12px 8px;
+  cursor: default;
 }
-.mar-people-head h2 {
-  flex: 1;
-}
-.mar-people-count {
-  margin-left: 6px;
-  color: var(--color-muted-foreground);
-  font-variant-numeric: tabular-nums;
-}
-.mar-people-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 4px;
-  border-radius: var(--radius-card, 14px);
-  background: color-mix(in oklch, var(--color-card-background) 70%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  list-style: none;
-}
-.mar-person {
-  display: flex;
-  height: 56px;
-  align-items: center;
-  gap: 12px;
-  padding: 0 8px;
-  border-radius: calc(var(--radius-card, 14px) - 4px);
-  line-height: 18px;
-  transition: background-color 150ms ease;
-}
-.mar-person:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
-}
-/* One role column: the Owner label starts where a role's name does. */
 .mar-person-role {
   display: flex;
-  width: 116px;
-  flex-shrink: 0;
   align-items: center;
-}
-.mar-person-owner,
-.mar-people-head .mar-person-role {
-  padding-left: 11px;
+  overflow: visible;
 }
 .mar-person-owner {
+  padding-left: 11px;
   color: var(--color-muted-foreground);
-  font-size: 13px;
 }
-.mar-person-act {
-  display: flex;
-  width: 28px;
-  flex-shrink: 0;
-  justify-content: center;
+.mar-table-head .mar-person-owner {
+  color: inherit;
 }
 /* Quiet role pickers: text until hovered or open (beats the shell's pills). */
 :root .proto-ui.proto-ui.proto-ui :is(.mar-person-role, .mar-invite) button[role='combobox'] {
