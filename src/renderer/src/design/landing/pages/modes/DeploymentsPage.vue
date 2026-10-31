@@ -15,6 +15,8 @@ import { deployEnv, go, instances, proto } from '../../useProto'
 import SpaceMark from '../../parts/space/SpaceMark.vue'
 import { SPACES } from '../../spaces'
 import { PROJECTS } from '../../mock'
+import { isMariana } from '../../mar/proposal'
+import DeploymentsTable from '../../mar/deploy/DeploymentsTable.vue'
 
 /** Deployments: a pinned environment version + GPUs + an endpoint. */
 const firstLocal = computed(() => instances.value.find((i) => i.kind === 'local'))
@@ -83,6 +85,8 @@ const spaceOf = (id?: string) => (id ? SPACES.find((s) => s.id === id) : undefin
       title="Deploy ComfyUI as an API"
       body="Log in to deploy a build behind an endpoint."
     />
+    <!-- Mar's proposal: the one table (mar/table). -->
+    <DeploymentsTable v-else-if="isMariana" :list :projects-of="projectsOf" />
     <Card v-else class="overflow-hidden">
       <div
         class="grid h-10 items-center gap-4 border-b border-border-default bg-secondary-background/40 px-4 text-ui font-medium tracking-wider text-subtle-foreground uppercase"
