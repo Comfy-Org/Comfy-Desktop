@@ -53,9 +53,7 @@ defineEmits<{ close: [] }>()
   --rp-chip: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
   --rp-raised: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  --rp-raised-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.22);
+  --rp-raised-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
   --rp-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 24px 56px -12px rgb(0 0 0 / 0.6);
   --rp-text: var(--color-base-foreground);
   --rp-meta: var(--color-muted-foreground);

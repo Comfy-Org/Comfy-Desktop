@@ -672,7 +672,6 @@
   font-size: 13.5px;
   font-weight: 600;
   background: var(--color-inverted-background);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 0.25) inset;
   transition:
     background-color 140ms ease,
     transform 120ms ease;

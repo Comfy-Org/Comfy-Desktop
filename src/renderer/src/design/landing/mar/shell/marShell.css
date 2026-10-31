@@ -160,11 +160,11 @@
 }
 
 /* Borders (Tune the UI): None hides every line; Hairline draws a faint
-   uniform line; Glass edge keeps only the soft highlight along the top. */
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine::after {
+   uniform line. Neither keeps edge-shine's lit top edge. */
+:root[data-mar-ui='on'] .edge-shine::after {
   display: none;
 }
-/* Hairline and Glass edge on every surface: shell/borders.css. */
+/* Hairline on every surface: shell/borders.css. */
 
 /* Tabs and switches: a track behind every option, the picked one lighter. */
 :root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) {
@@ -671,14 +671,14 @@
   justify-content: center;
 }
 
-/* Borders: None and Hairline drop the card's lit top edge too (it lives in
-   the elevation shadow, not only in edge-shine). */
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev {
+/* No lit top edge on cards (it lives in the elevation shadow, not only in
+   edge-shine). */
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
   box-shadow:
     0 1px 2px oklch(0 0 0 / 0.35),
     0 6px 18px oklch(0 0 0 / 0.28);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev:hover {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
   box-shadow:
     0 2px 4px oklch(0 0 0 / 0.35),
     0 10px 26px oklch(0 0 0 / 0.34);
@@ -958,14 +958,6 @@
 :root[data-mar-ui='on'] .mar-backdrop.mar-backdrop {
   height: 560px;
   mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
-}
-
-/* Borders: Glass is a whisper of light along the top edge, not a line. */
-:root[data-mar-ui='on'][data-mar-borders='glass'] .edge-shine {
-  --shine: 0.05;
-}
-:root[data-mar-ui='on'][data-mar-borders='glass'] .edge-shine:hover {
-  --shine: 0.08;
 }
 
 /* Page photos stay a hint of colour behind the header, not a picture
@@ -1249,10 +1241,10 @@
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.12), 0 6px 16px -6px oklch(0 0 0 / 0.18);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.14), 0 10px 22px -8px oklch(0 0 0 / 0.22);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
   box-shadow: var(--shadow-elev);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev:hover {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
   box-shadow: var(--shadow-elev-hover);
 }
 :root[data-mar-ui='on'][data-ds-theme='light']:not([data-mar-shadows='off']) {

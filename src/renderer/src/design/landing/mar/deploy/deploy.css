@@ -1144,7 +1144,6 @@
   font-size: 13.5px;
   font-weight: 600;
   background: var(--color-inverted-background);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 0.25) inset;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-dep-primary:hover:not(:disabled) {
   background: var(--color-inverted-background-hover);

@@ -269,9 +269,7 @@ function lens(m: Mode): void {
   border-radius: 20px;
   background: color-mix(in oklch, var(--color-content-background) 72%, transparent);
   backdrop-filter: blur(40px) saturate(1.3);
-  box-shadow:
-    0 20px 60px -20px rgb(0 0 0 / 0.7),
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  box-shadow: 0 20px 60px -20px rgb(0 0 0 / 0.7);
   animation: mar-dock-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .mar-dock-btn {

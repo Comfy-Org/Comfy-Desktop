@@ -433,8 +433,7 @@ function newChat(): void {
   backdrop-filter: blur(40px) saturate(1.3);
   box-shadow:
     0 24px 64px -24px rgb(0 0 0 / 0.7),
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
   transition: width 320ms cubic-bezier(0.645, 0.045, 0.355, 1);
   -webkit-app-region: no-drag;
 }

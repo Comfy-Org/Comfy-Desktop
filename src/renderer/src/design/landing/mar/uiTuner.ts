@@ -16,7 +16,7 @@ export interface Knob {
 export interface Tuning {
   radius: 'default' | 'soft'
   contrast: 'low' | 'default' | 'high'
-  borders: 'none' | 'hairline' | 'glass'
+  borders: 'none' | 'hairline'
   shadows: 'off' | 'default'
 }
 
@@ -50,8 +50,7 @@ export const KNOBS: Knob[] = [
     label: 'Borders',
     options: [
       { value: 'none', label: 'None' },
-      { value: 'hairline', label: 'Hairline' },
-      { value: 'glass', label: 'Glass' }
+      { value: 'hairline', label: 'Hairline' }
     ]
   },
   {
@@ -92,14 +91,12 @@ const TOKENS: { [K in keyof Tuning]: Partial<Record<Tuning[K], Record<string, st
     }
   },
   // None: no borders at all. Hairline: a uniform, faint line all round.
-  // Glass edge: only a soft highlight along the top, like Pablo's cards.
   borders: {
     none: { '--color-border-default': 'transparent', '--color-border-strong': 'transparent' },
     hairline: {
       '--color-border-default': 'color-mix(in oklch, var(--color-base-foreground) 9%, transparent)',
       '--color-border-strong': 'color-mix(in oklch, var(--color-base-foreground) 14%, transparent)'
-    },
-    glass: { '--color-border-default': 'transparent', '--color-border-strong': 'transparent' }
+    }
   },
   shadows: {
     off: {
@@ -115,7 +112,10 @@ const KEY = 'comfy.design.uiTuning.v5'
 
 function load(): Tuning {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
+    const t = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
+    // Glass edge (a lit top edge) is gone: a saved pick falls back to None.
+    if (t.borders !== 'hairline') t.borders = 'none'
+    return t
   } catch {
     return { ...DEFAULTS }
   }

@@ -38,9 +38,7 @@
   flex-direction: column;
   border-radius: calc(var(--mar-menu-radius, 14px) - var(--mar-menu-pad, 6px));
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.22);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
 }
 .mar-menu-panel + :is([role='separator'], .mar-menu-sep) {
   display: none;
@@ -66,9 +64,7 @@
     [role='option'][data-state='checked']
   ) {
   background-color: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.22);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
 }
 :root[data-mar-ui='on']
   :is([role='menu'], [role='listbox'])

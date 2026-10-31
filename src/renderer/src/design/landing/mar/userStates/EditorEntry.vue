@@ -202,9 +202,7 @@ function openLocal(): void {
   overflow: hidden;
   border-radius: var(--radius-panel);
   background: color-mix(in oklch, var(--color-card-background) 92%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.05),
-    0 1px 2px rgb(0 0 0 / 0.3);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 :global(:root[data-ds-theme='light'] .mar-ee-card) {
   background: #fff;
