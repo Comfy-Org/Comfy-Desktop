@@ -1,3 +1,4 @@
+import { watch } from 'vue'
 import { allWorkflows } from '../../gallery'
 import { collection } from './collection'
 import type { ItemStatus } from './MarStatus.vue'
@@ -28,7 +29,7 @@ const STATES: [ItemStatus, string?][] = [
   ['draft', 'Unsaved']
 ]
 
-export const workflows = collection<MarWorkflow>(
+const seed = (): MarWorkflow[] =>
   allWorkflows.value.map((w, i) => {
     const s = STATES[i]
     return {
@@ -45,6 +46,13 @@ export const workflows = collection<MarWorkflow>(
       status: s?.[0] ?? (w.source === 'cloud' && i % 2 ? 'shared' : undefined),
       statusLabel: s?.[1]
     }
-  }),
-  'workflow'
+  })
+
+export const workflows = collection<MarWorkflow>(seed(), 'workflow')
+
+// The seed follows the simulated user: switching First-time to Returning
+// (or Data: Mine) in the UI Playground brings that user's workflows.
+watch(
+  () => allWorkflows.value.map((w) => w.id).join(),
+  () => workflows.items.splice(0, workflows.items.length, ...seed())
 )

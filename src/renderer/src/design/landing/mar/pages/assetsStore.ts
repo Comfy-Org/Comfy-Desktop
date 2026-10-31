@@ -1,3 +1,4 @@
+import { watch } from 'vue'
 import { allAssets } from '../../gallery'
 import { collection } from './collection'
 import type { ItemStatus } from './MarStatus.vue'
@@ -67,7 +68,11 @@ const RUNS: MarAsset[] = [
   }
 ]
 
-export const assets = collection<MarAsset>(
-  [...RUNS, ...allAssets.value.map((a) => ({ ...a }))],
-  'asset'
+const seed = (): MarAsset[] => [...RUNS, ...allAssets.value.map((a) => ({ ...a }))]
+export const assets = collection<MarAsset>(seed(), 'asset')
+
+// Follows the simulated user, like workflowsStore.ts.
+watch(
+  () => allAssets.value.map((a) => a.id).join(),
+  () => assets.items.splice(0, assets.items.length, ...seed())
 )
