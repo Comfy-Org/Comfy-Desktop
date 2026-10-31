@@ -20,7 +20,6 @@ import SpaceActivity from '../../pages/spaces/SpaceActivity.vue'
 import SpaceCatalog from '../../pages/spaces/SpaceCatalog.vue'
 import SpaceHomeBrand from '../../pages/spaces/SpaceHomeBrand.vue'
 import SpaceAccess from '../../pages/spaces/SpaceAccess.vue'
-import SpaceOverview from '../../pages/spaces/SpaceOverview.vue'
 import SpaceSettings from '../../pages/spaces/SpaceSettings.vue'
 import SpaceUsage from '../../pages/spaces/SpaceUsage.vue'
 import { SPACES, goLive, previewSpace } from '../../spaces'
@@ -32,15 +31,19 @@ import MemberAvatar from '../../parts/MemberAvatar.vue'
 import MarEntityHeader from './MarEntityHeader.vue'
 import MarAddress from './MarAddress.vue'
 import MarSplitButton from './MarSplitButton.vue'
+import MarSeg from './MarSeg.vue'
+import MarSpaceOverview from './MarSpaceOverview.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 
 /**
  * One space (Mar's proposal): the shared header (mark, name, state, the
- * address, members and last activity; Invite, Open site ▾, ⋯), then Pablo's panels (overview, tools, brand, members, usage,
- * activity, settings) under Mar's tabs, inside the shared page frame so
- * Loading and Error apply here too.
+ * address, members and last activity; Invite, Open site ▾, ⋯) under a
+ * cover in the brand's colours (MarBackdrop), then the shared tab group
+ * and the panels: Mar's overview, Pablo's tools, brand, members, usage,
+ * activity and settings, inside the shared page frame so Loading and
+ * Error apply here too.
  */
 const { id } = defineProps<{ id: string }>()
 const space = computed(() => SPACES.find((s) => s.id === id))
@@ -148,12 +151,16 @@ const lines = computed<MenuLine[]>(() => {
   >
     <template #header>
       <MarEntityHeader
+        class="mar-space-head"
+        :style="{ '--space-accent': space.brand.color }"
         back="Spaces"
         :title="space.name"
         :status="space.status"
         @back="go('spaces')"
       >
-        <template #cover><SpaceMark :brand="space.brand" size="lg" /></template>
+        <template #cover
+          ><SpaceMark :brand="space.brand" size="lg" class="mar-space-logo"
+        /></template>
         <template #meta>
           <MarAddress :address="space.domain" :pending="space.status === 'draft'" />
           <span class="mar-eh-dot" />
@@ -197,25 +204,17 @@ const lines = computed<MenuLine[]>(() => {
     </template>
 
     <template #tabs="{ state }">
-      <div v-if="state === 'live'" class="mar-eh-row">
-        <div class="mar-eh-tabs" role="tablist" data-no-pill aria-label="Space">
-          <button
-            v-for="t in TABS"
-            :key="t.value"
-            type="button"
-            role="tab"
-            :aria-selected="tab === t.value"
-            class="mar-eh-tab"
-            @click="tab = t.value"
-          >
-            {{ t.label
-            }}<span v-if="t.count !== undefined" class="mar-eh-count">{{ t.count }}</span>
-          </button>
-        </div>
+      <div v-if="state === 'live'" class="mar-space-tabs">
+        <MarSeg v-model="tab" :options="TABS" label="Space" />
       </div>
     </template>
 
-    <SpaceOverview v-if="tab === 'overview'" :space @tab="(t: Tab) => (tab = t)" />
+    <MarSpaceOverview
+      v-if="tab === 'overview'"
+      :space
+      @tab="(t: Tab) => (tab = t)"
+      @invite="invite"
+    />
     <MarEmpty
       v-else-if="tab === 'catalog' && !space.catalog.length && !opened.catalog"
       :icon="Wrench"
@@ -257,3 +256,31 @@ const lines = computed<MenuLine[]>(() => {
     <SpaceSettings v-else :space-id="space.id" />
   </MarPage>
 </template>
+
+<style>
+/* The logo fills the header's cover: one tile, not a tile on a tile. */
+:root .proto-ui.proto-ui.proto-ui .mar-space-head .mar-eh-cover {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  /* A hairline so a white or black tile keeps its edge, and a glow in the
+     brand's colour so it sits in its own light. */
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent),
+    0 14px 36px -14px color-mix(in oklch, var(--space-accent) 55%, transparent);
+}
+.mar-space-logo,
+.mar-space-logo > .space-mark {
+  width: 100%;
+  height: 100%;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-space-logo > .space-mark {
+  padding: 17px;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* The tabs sit on their own track, so no rule under them. */
+.mar-space-tabs {
+  margin-bottom: 24px;
+}
+</style>

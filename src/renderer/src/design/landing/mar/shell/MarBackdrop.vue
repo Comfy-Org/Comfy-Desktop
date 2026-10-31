@@ -11,7 +11,15 @@ import ShortcutBar from '../p20/ShortcutBar.vue'
 import TabsNav from '../p20/TabsNav.vue'
 import { p20 } from '../p20/p20'
 import { isMariana } from '../proposal'
-import { altBackground, bloomOn, heroImage, marDockOn, marNav, marSideOn } from './marShell'
+import {
+  altBackground,
+  bloomOn,
+  heroImage,
+  marDockOn,
+  marNav,
+  marSideOn,
+  spaceCover
+} from './marShell'
 import lastOutput from '../assets/portrait-seaside.jpg'
 import './marShell.css'
 import './panelsNav.css'
@@ -44,6 +52,13 @@ import '../motion/tabSlide'
   <div v-else-if="heroImage" class="mar-backdrop" aria-hidden="true">
     <img :src="heroImage" alt="" />
   </div>
+  <!-- A space: its logo's colours, faint, behind the header. -->
+  <div
+    v-else-if="spaceCover"
+    class="mar-backdrop is-space"
+    :style="{ '--cover-bg': spaceCover.bg, '--cover-accent': spaceCover.accent }"
+    aria-hidden="true"
+  />
   <MarDock v-if="marDockOn" />
   <MarSidebar v-if="marSideOn" />
   <MarCloudBar v-if="onCloud" />
@@ -83,5 +98,30 @@ import '../motion/tabSlide'
     color-mix(in oklch, var(--color-content-background) 45%, transparent) 45%,
     var(--color-content-background) 100%
   );
+}
+/* A space's cover: the tile's colour washes down from the whole top edge;
+   the brand colour glows above the logo, on the left. Faint, and fainter
+   in light mode, where a dark tile's colour would read as dirt. */
+.mar-backdrop.is-space {
+  --cover-bg-mix: 22%;
+  --cover-accent-mix: 18%;
+  background:
+    radial-gradient(
+      ellipse 46% 90% at 14% -10%,
+      color-mix(in oklch, var(--cover-accent) var(--cover-accent-mix), transparent),
+      transparent 72%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--cover-bg) var(--cover-bg-mix), transparent),
+      transparent 85%
+    );
+}
+.mar-backdrop.is-space::after {
+  content: none;
+}
+:root[data-ds-theme='light'] .mar-backdrop.is-space {
+  --cover-bg-mix: 12%;
+  --cover-accent-mix: 16%;
 }
 </style>
