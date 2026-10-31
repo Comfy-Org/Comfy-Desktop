@@ -61,7 +61,8 @@
    it so rows slide under cleanly. The fill reaches up over the scroll
    area's top padding (it sticks below that padding), so no row shows
    above the head, and sideways over the page gutters as shadow (which
-   never adds a scrollbar); the scroll area clips the rest. */
+   never adds a scrollbar); the scroll area clips the rest. It never
+   takes clicks meant for what sits above the table. */
 .mar-table-head::before {
   position: absolute;
   z-index: -1;
@@ -73,6 +74,7 @@
     48px 0 0 var(--color-content-background);
   content: '';
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease;
 }
 @container scroll-state(stuck: top) {
