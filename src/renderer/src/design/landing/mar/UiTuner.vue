@@ -9,10 +9,8 @@ import { onCloud, SURFACES, surface } from './shell/surface'
 import {
   homeBackground,
   marNav,
-  marSideHead,
   type HomeBackground,
-  type MarNav,
-  type MarSideHead
+  type MarNav
 } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Select from '../ui/Select.vue'
@@ -50,10 +48,6 @@ const NAVS: { value: MarNav; label: string }[] = [
   { value: 'tabs', label: '08 · Tabs · a bar on top' },
   { value: 'panels', label: 'Floating panels' }
 ]
-const SIDE_HEADS: { value: MarSideHead; label: string }[] = [
-  { value: 'plain', label: 'Wide' },
-  { value: 'brand', label: 'Logo + collapse' }
-]
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },
   { value: 'bloom', label: 'Latent bloom · colour out of grain' },
@@ -86,7 +80,6 @@ const P20_ROWS: { key: keyof typeof P20; label: string }[] = [
   { key: 'news', label: "What's new" },
   { key: 'spaces', label: 'Spaces' },
   { key: 'builds', label: 'Builds' },
-  { key: 'pulse', label: 'Usage strip' },
   { key: 'panel', label: 'Right panel' },
   { key: 'density', label: 'Density' },
   { key: 'rail', label: 'Collapsed rail' }
@@ -111,7 +104,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'nav', 'sideHead', 'palette', 'theme']
+const GLOBAL: TweakId[] = ['surface', 'nav', 'palette', 'theme']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -195,9 +188,6 @@ function onScroll(e: Event): void {
           </Row>
           <Row v-if="isMariana" label="Navigation">
             <Select v-model="marNav.id" :options="NAVS" class="w-full" />
-          </Row>
-          <Row v-if="isMariana && marNav.id === 'panels'" label="Sidebar head">
-            <Seg v-model="marSideHead.id" label="Sidebar head" :options="SIDE_HEADS" />
           </Row>
           <Row :label="isMariana ? 'Palette and theme' : 'Theme'">
             <div class="flex items-center gap-1.5">

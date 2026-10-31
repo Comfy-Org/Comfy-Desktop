@@ -26,10 +26,7 @@ export const P20 = {
     { value: 'off', label: 'Off' },
     { value: 'health', label: '18 · Build health' }
   ],
-  pulse: [
-    { value: 'off', label: 'Off' },
-    { value: 'on', label: '10 · Pulse' }
-  ],
+  pulse: [{ value: 'off', label: 'Off' }],
   panel: [
     { value: 'none', label: 'None' },
     { value: 'queue', label: '06 · Queue' },

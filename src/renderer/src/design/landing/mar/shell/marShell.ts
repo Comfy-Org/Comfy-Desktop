@@ -144,34 +144,9 @@ watch(
   { immediate: true }
 )
 
-/** Floating panels › Sidebar head (UI Playground): Pablo's wide sidebar
- *  as it is (`plain`, the default), or Magnific's head with the Comfy
- *  wordmark and a collapse toggle (`brand`, MarPanelsHead.vue). */
-export type MarSideHead = 'plain' | 'brand'
-const SIDE_HEAD_KEY = 'comfy.design.mar.sideHead'
-function loadSideHead(): MarSideHead {
-  try {
-    return localStorage.getItem(SIDE_HEAD_KEY) === 'brand' ? 'brand' : 'plain'
-  } catch {
-    return 'plain'
-  }
-}
-export const marSideHead = reactive<{ id: MarSideHead }>({ id: loadSideHead() })
-watch(
-  () => marSideHead.id,
-  (id) => {
-    try {
-      localStorage.setItem(SIDE_HEAD_KEY, id)
-    } catch {
-      // Storage blocked: the pick lasts for this window only.
-    }
-  }
-)
-
-/** Floating panels with the brand head: the sidebar card can collapse. */
-export const marPanelsOn = computed(
-  () => isMariana.value && marNav.id === 'panels' && marSideHead.id === 'brand'
-)
+/** Floating panels: the sidebar card carries the Comfy wordmark and can
+ *  collapse to a rail (MarPanelsHead.vue). */
+export const marPanelsOn = computed(() => isMariana.value && marNav.id === 'panels')
 
 export const marSidebarClosed = computed(() => marShellOn.value && !marShell.open)
 

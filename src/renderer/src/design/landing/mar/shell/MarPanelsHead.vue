@@ -6,7 +6,7 @@ import PanelToggleIcon from './PanelToggleIcon.vue'
 import { marNav, marPanelsOn } from './marShell'
 
 /**
- * Floating panels › Sidebar head › Logo + collapse: the sidebar card's
+ * Floating panels: the sidebar card's
  * head, after Magnific. Open, the Comfy wordmark and the collapse toggle;
  * collapsed to the rail, the Comfy iso over the toggle. In the text
  * colour: neutral first, branding later.

@@ -22,7 +22,6 @@ import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
 import FilmstripRow from './p20/FilmstripRow.vue'
 import TableRow from './p20/TableRow.vue'
-import PulseStrip from './p20/PulseStrip.vue'
 import SpotlightCarousel from './p20/SpotlightCarousel.vue'
 import GradientSpacesRow from './p20/GradientSpacesRow.vue'
 import BuildHealthRow from './p20/BuildHealthRow.vue'
@@ -140,7 +139,6 @@ const recent = computed(() =>
           <PromptBox target class="mar-prompt" />
         </div>
         <template v-if="!firstRun">
-          <PulseStrip v-if="p20.pulse === 'on'" />
           <BuildHealthRow v-if="p20.builds === 'health'" />
           <div v-if="parts.builds === 'mar'" class="mx-auto mt-8 w-full max-w-210">
             <div class="mb-2.5 flex items-center justify-between px-1">
