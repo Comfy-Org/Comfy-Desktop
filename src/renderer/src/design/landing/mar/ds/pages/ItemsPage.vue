@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Copy, Pencil, Trash2 } from 'lucide-vue-next'
+import { Copy, FileUp, Pencil, Trash2 } from 'lucide-vue-next'
 import { thumb } from '../../../mock'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
 import MarItem from '../../pages/MarItem.vue'
+import MarNewTile from '../../pages/MarNewTile.vue'
 import type { MenuLine } from '../../pages/menu'
 import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
@@ -29,6 +30,13 @@ const GRID = [
   { label: 'hover', props: { thumb: PIC }, force: 'hover' },
   { label: 'running', props: { thumb: PIC, status: 'executing' } },
   { label: 'draft (hollow dot)', props: { thumb: PIC, status: 'draft' } },
+  { label: 'shared (icon on the meta line)', props: { thumb: PIC, status: 'shared' } },
+  {
+    label: 'shared, hover',
+    props: { thumb: PIC, status: 'shared' },
+    force: 'hover'
+  },
+  { label: 'running, hover', props: { thumb: PIC, status: 'executing' }, force: 'hover' },
   { label: 'selecting', props: { thumb: PIC, selecting: true } },
   {
     label: 'selected',
@@ -51,7 +59,7 @@ const LIST = [
 <template>
   <Section
     title="Card"
-    note="A library item. Hover lightens the surface and shows the star and ⋯; it never grows. The state chip sits top-left and moves right when the select check shows. With no picture yet, the canvas's dot grid and the kind's icon."
+    note="A library item. Hover lightens the surface and shows the star and ⋯; it never grows. Top-left is the select check's corner, always: nothing else lives there, so nothing jumps when it shows. The star and ⋯ sit top-right, a state chip bottom-left. Shared is not a state on a card: it is a small people icon before the meta line (the list keeps it in the State column). With no picture yet, the canvas's dot grid and the kind's icon."
   >
     <Cells :min="220">
       <Cell
@@ -63,6 +71,22 @@ const LIST = [
         target=".mar-item"
       >
         <MarItem v-bind="{ ...base, ...s.props }" />
+      </Cell>
+    </Cells>
+  </Section>
+  <Section
+    title="New tile"
+    note="Ends a grid with the way to add one more. Built like a card: the same picture ratio, an empty dashed slot with + and the label, and a quiet second way in on the caption line."
+  >
+    <Cells :min="220">
+      <Cell label="idle" fill>
+        <MarNewTile label="New workflow" alt-label="Import a file" :alt-icon="FileUp" />
+      </Cell>
+      <Cell label="hover" fill force="hover" target=".mar-add-main">
+        <MarNewTile label="New workflow" alt-label="Import a file" :alt-icon="FileUp" />
+      </Cell>
+      <Cell label="next to a card" fill>
+        <MarItem v-bind="{ ...base, thumb: PIC }" />
       </Cell>
     </Cells>
   </Section>
