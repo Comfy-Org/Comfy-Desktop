@@ -129,7 +129,7 @@ function lines(s: Space): MenuLine[] {
   <MarPage
     title="Spaces"
     description="Branded places where your clients run the tools you publish for them."
-    skeleton="grid"
+    :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && SPACES.length === 0 ? 'empty' : undefined"
     :empty="{
@@ -194,11 +194,10 @@ function lines(s: Space): MenuLine[] {
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">Space</span><span class="w-28">Members</span
-        ><span class="w-36">Spend</span><span class="w-[150px] text-right">State</span
-        ><span class="w-16" />
+    <div v-else class="mar-table is-items" style="--mar-cols: 96px 160px">
+      <div class="mar-table-head">
+        <span>Space</span><span class="is-num">Members</span><span class="is-num">Spend</span
+        ><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="s in shown"
@@ -225,10 +224,8 @@ function lines(s: Space): MenuLine[] {
           /></span>
         </template>
         <template #cols>
-          <span class="mar-item-col w-28">{{ s.members.length }}</span>
-          <span class="mar-item-col w-36 tabular-nums"
-            >{{ credits(s.used) }} / {{ credits(s.budget) }}</span
-          >
+          <span class="mar-item-col is-num">{{ s.members.length }}</span>
+          <span class="mar-item-col is-num">{{ credits(s.used) }} / {{ credits(s.budget) }}</span>
         </template>
       </MarItem>
     </div>

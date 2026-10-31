@@ -554,7 +554,7 @@ const lowDisk = computed(() => freeGb.value < 120)
               </span>
               <span class="mm-cell">{{ TYPE_LABEL[x.type] }}</span>
               <span class="mm-cell">{{ x.base }}</span>
-              <span class="mm-cell tabular-nums">{{ fmtSize(x.sizeGb) }}</span>
+              <span class="mm-cell is-num">{{ fmtSize(x.sizeGb) }}</span>
               <span class="mm-cell truncate">
                 {{
                   x.usedBy.length
@@ -590,7 +590,7 @@ const lowDisk = computed(() => freeGb.value < 120)
                 </span>
                 <span class="mm-cell">{{ TYPE_LABEL[x.type] }}</span>
                 <span class="mm-cell">{{ x.base }}</span>
-                <span class="mm-cell tabular-nums">{{ fmtSize(x.sizeGb) }}</span>
+                <span class="mm-cell is-num">{{ fmtSize(x.sizeGb) }}</span>
                 <span class="mm-cell">{{ x.addedAt }}</span>
                 <ModelStatus :model="x" />
               </div>
@@ -826,16 +826,43 @@ const lowDisk = computed(() => freeGb.value < 120)
   padding: 4px;
   border-radius: 16px;
 }
+/* Rows follow the one table pattern (../table/table.css): 48px,
+   full-width hairlines that a filled row hides, sizes right-aligned in tabular
+   figures. */
 .mm-row {
+  position: relative;
   display: grid;
-  min-height: 56px;
+  min-height: 48px;
   grid-template-columns: 36px minmax(0, 1.6fr) 120px 100px 72px minmax(0, 0.8fr) 220px;
   align-items: center;
-  gap: 14px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  column-gap: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  transition: background-color 120ms ease;
+}
+.mm-row + .mm-row::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  content: '';
+  pointer-events: none;
+}
+.mm-row:is(:hover, :focus-visible, .is-open, .is-picked)::before,
+.mm-row:is(:hover, :focus-visible, .is-open, .is-picked) + .mm-row::before {
+  opacity: 0;
+}
+.mm-row.is-partner:hover::before,
+.mm-row.is-partner:hover + .mm-row::before {
+  opacity: 1;
+}
+.mm-cell.is-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .mm-row.is-partner {
   grid-template-columns: 36px minmax(0, 1fr) 140px 140px;
@@ -843,7 +870,7 @@ const lowDisk = computed(() => freeGb.value < 120)
 }
 .mm-row:hover,
 .mm-row:focus-visible {
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
   outline: none;
 }
 .mm-row.is-partner:hover {
@@ -851,7 +878,7 @@ const lowDisk = computed(() => freeGb.value < 120)
 }
 .mm-row.is-open,
 .mm-row.is-picked {
-  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 .mm-cell {
   overflow: hidden;

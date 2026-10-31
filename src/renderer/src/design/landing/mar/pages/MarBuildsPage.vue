@@ -371,11 +371,10 @@ const newLabel = computed(() =>
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">Build</span><span class="w-56">Runs on</span
-        ><span class="w-28">Last used</span><span class="w-[150px] text-right">State</span
-        ><span class="w-16" />
+    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 220px) 120px">
+      <div class="mar-table-head">
+        <span>Build</span><span>Runs on</span><span>Last used</span><span class="is-end">State</span
+        ><span />
       </div>
       <MarItem
         v-for="b in shown"
@@ -406,8 +405,8 @@ const newLabel = computed(() =>
           /></span>
         </template>
         <template #cols>
-          <span class="mar-item-col w-56">{{ b.gpu }}</span>
-          <span class="mar-item-col w-28">{{ b.state === 'running' ? 'Now' : b.lastUsed }}</span>
+          <span class="mar-item-col">{{ b.gpu }}</span>
+          <span class="mar-item-col">{{ b.state === 'running' ? 'Now' : b.lastUsed }}</span>
         </template>
       </MarItem>
     </div>

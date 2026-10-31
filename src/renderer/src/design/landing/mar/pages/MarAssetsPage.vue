@@ -170,7 +170,7 @@ function lines(a: MarAsset): MenuLine[] {
   <MarPage
     title="Assets"
     description="What your runs made and what you brought in, on this computer and in the cloud."
-    skeleton="grid"
+    :skeleton="assetView.layout === 'list' ? 'list' : 'grid'"
     :no-results="shown.length === 0 && filtered"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
@@ -252,11 +252,10 @@ function lines(a: MarAsset): MenuLine[] {
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">Name</span><span class="w-40">Project</span
-        ><span class="w-24">Size</span><span class="w-28">Made</span
-        ><span class="w-[150px] text-right">State</span><span class="w-16" />
+    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 200px) 88px 120px">
+      <div class="mar-table-head">
+        <span>Name</span><span>Project</span><span class="is-num">Size</span><span>Made</span
+        ><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="a in shown"
@@ -281,9 +280,9 @@ function lines(a: MarAsset): MenuLine[] {
         @cancel-rename="lib.renaming.value = ''"
       >
         <template #cols>
-          <span class="mar-item-col w-40">{{ a.project ?? '—' }}</span>
-          <span class="mar-item-col w-24 tabular-nums">{{ a.size }}</span>
-          <span class="mar-item-col w-28">{{ a.when }}</span>
+          <span class="mar-item-col">{{ a.project ?? '—' }}</span>
+          <span class="mar-item-col is-num">{{ a.size }}</span>
+          <span class="mar-item-col">{{ a.when }}</span>
         </template>
       </MarItem>
     </div>

@@ -102,6 +102,46 @@ export const CONTENT: Record<string, Content> = {
     ],
     play: 'status'
   },
+  tables: {
+    heroWidth: '100%',
+    when: ['A list people compare across: builds, workflows, assets, members, usage.'],
+    whenNot: [
+      'A few places or builds to pick from (Row cards).',
+      'Recent work on Home (Cards).',
+      'Any other table style: there is only this one.'
+    ],
+    rules: [
+      'Head: 12px medium, sentence case, lightly tracked; sticky, filled only once it sticks.',
+      'One grid for head and rows (--mar-grid): a header always sits over its cells.',
+      'Rows 48px, inset hairlines, no zebra; hover and selected fill the row and hide its lines.',
+      'Numbers right-aligned in tabular figures; the last column ends on the right.',
+      'A two-line name: other cells sit on its first line (rows with selects or switches centre). Tags share the state chip’s shape.'
+    ],
+    tokens: [
+      { name: 'height', selector: '.mar-table-head', use: 'Head' },
+      { name: 'font-size', selector: '.mar-table-head', use: 'Head' },
+      { name: 'min-height', selector: '.mar-table-row', use: 'Row' },
+      { name: 'padding-inline', selector: '.mar-table-row', use: 'Row' },
+      { name: 'column-gap', selector: '.mar-table-row', use: 'Columns' },
+      { name: 'font-size', selector: '.mar-table-cell', use: 'Cell' },
+      fg('--color-subtle-foreground', 'Head, sub line, quiet cells'),
+      fg('--color-muted-foreground', 'Cells')
+    ],
+    snippet: `<div class="mar-table" style="--mar-grid: 32px minmax(0, 1fr) 120px 88px">
+  <div class="mar-table-head">
+    <span style="grid-column: span 2">Build</span><span>Runs on</span><span class="is-num">Deployments</span>
+  </div>
+  <div class="mar-table-row" tabindex="0">
+    <span class="is-center"><InstanceGlyph /></span>
+    <span class="mar-table-name">
+      <span class="mar-table-title">My Local 1</span><span class="mar-table-sub">On this computer</span>
+    </span>
+    <span class="mar-table-cell">This computer</span>
+    <span class="mar-table-cell is-num">2</span>
+  </div>
+</div>
+<!-- Library pages: <div class="mar-table is-items" style="--mar-cols: …"> + MarItem layout="list" -->`
+  },
   items: {
     heroWidth: '280px',
     pairs: [{ id: 'hover', do: 'Hover lightens the surface.', dont: 'The card grows on hover.' }],

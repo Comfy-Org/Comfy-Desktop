@@ -22,6 +22,7 @@ import { go, hostActions, instances, proto } from '../../useProto'
 import { isMariana } from '../../mar/proposal'
 import BuildsCompact from '../../mar/builds/BuildsCompact.vue'
 import BuildsViewToggle from '../../mar/builds/BuildsViewToggle.vue'
+import BuildsTable from '../../mar/builds/BuildsTable.vue'
 import { buildsView } from '../../mar/builds/buildsView'
 
 /**
@@ -79,6 +80,7 @@ const COLS = 'grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1.2fr)_minmax(0,1fr)_110
     </div>
 
     <BuildsCompact v-if="isMariana && buildsView.id === 'compact'" :list />
+    <BuildsTable v-else-if="isMariana && proto.mode === 'build'" :list />
 
     <!-- Create lens: cards -->
     <div

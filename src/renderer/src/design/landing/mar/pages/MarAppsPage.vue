@@ -163,7 +163,7 @@ function lines(a: LibApp): MenuLine[] {
   <MarPage
     title="Apps"
     description="Tools anyone can run from a link. No graph to learn."
-    skeleton="grid"
+    :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && LIB.length === 0 ? 'empty' : undefined"
     :empty="{
@@ -236,12 +236,14 @@ function lines(a: LibApp): MenuLine[] {
         @cancel-rename="lib.renaming.value = ''"
       />
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">App</span
-        ><span class="w-44">{{ tab === 'mine' ? 'Who can use it' : 'From' }}</span
-        ><span class="w-24">Runs</span><span class="w-[150px] text-right">State</span
-        ><span class="w-16" />
+    <div
+      v-else
+      class="mar-table is-items"
+      style="--mar-cols: minmax(0, 200px) 88px; --mar-state: 168px"
+    >
+      <div class="mar-table-head">
+        <span>App</span><span>{{ tab === 'mine' ? 'Who can use it' : 'From' }}</span
+        ><span class="is-num">Runs</span><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="a in shown"
@@ -264,8 +266,8 @@ function lines(a: LibApp): MenuLine[] {
         @cancel-rename="lib.renaming.value = ''"
       >
         <template #cols>
-          <span class="mar-item-col w-44">{{ mine(a) ? accessLabel(a) : a.owner }}</span>
-          <span class="mar-item-col w-24 tabular-nums">{{ a.runs.toLocaleString('en-US') }}</span>
+          <span class="mar-item-col">{{ mine(a) ? accessLabel(a) : a.owner }}</span>
+          <span class="mar-item-col is-num">{{ a.runs.toLocaleString('en-US') }}</span>
         </template>
       </MarItem>
     </div>

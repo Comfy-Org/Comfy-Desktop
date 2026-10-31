@@ -6,6 +6,7 @@ import type { FavoriteKind } from '../favorites'
 import MarItemMenu from './MarItemMenu.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
 import type { MenuLine } from './menu'
+import '../table/table.css'
 
 /**
  * One thing in a library (Mar's pages), as a card or a list row. Click
@@ -13,12 +14,12 @@ import type { MenuLine } from './menu'
  * once anything is selected a plain click selects too. Double-click the
  * name (or Rename in ⋯) to rename it in place. The card never grows on
  * hover; its surface lifts a shade and the controls show.
- */
  *
  * Corners of a card's picture: top-left is the select check's, always;
  * top-right holds the star and ⋯; a state chip sits bottom-left. Shared
  * is not a state on a card: it reads as a small icon on the meta line,
  * so nothing moves when the check appears.
+ */
 const {
   name,
   thumb,
@@ -67,8 +68,8 @@ const emit = defineEmits<{
 }>()
 
 const menuOpen = ref(false)
-const draft = ref(name)
 const isSharedCard = computed(() => layout === 'grid' && status === 'shared')
+const draft = ref(name)
 const input = ref<HTMLInputElement>()
 watch(
   () => renaming,
@@ -467,7 +468,7 @@ function click(e: MouseEvent): void {
   opacity: 1;
 }
 
-/* The grid and list every library page shares. */
+/* The grid every library page shares. */
 .mar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -476,20 +477,5 @@ function click(e: MouseEvent): void {
 .mar-grid.is-wide {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
-.mar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mar-list-head {
-  display: flex;
-  height: 28px;
-  align-items: center;
-  gap: 14px;
-  padding: 0 8px 0 64px;
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
+/* The list every library page shares is the one table: ../table/table.css. */
 </style>

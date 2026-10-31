@@ -127,9 +127,10 @@ function remove(id: string): void {
     </p>
     <Button variant="primary" @click="open = true"><Plus :size="14" />Add to space</Button>
   </div>
-  <Card class="overflow-hidden">
+  <!-- is-mar-*: hooks for Mar's one table (mar/table/table.css). -->
+  <Card class="is-mar-table overflow-hidden">
     <div
-      class="grid h-10 grid-cols-[minmax(0,1fr)_170px_190px_220px_64px_76px] items-center gap-4 border-b border-border-default px-4 text-ui text-subtle-foreground"
+      class="is-mar-head grid h-10 grid-cols-[minmax(0,1fr)_170px_190px_220px_64px_76px] items-center gap-4 border-b border-border-default px-4 text-ui text-subtle-foreground"
     >
       <span>Tool</span><span>Shown as</span><span>Version</span><span>Endpoint</span
       ><span class="text-right">Cost</span><span class="text-right">Visible</span>
@@ -137,7 +138,7 @@ function remove(id: string): void {
     <div
       v-for="c in space.catalog"
       :key="c.id"
-      class="grid min-h-16 grid-cols-[minmax(0,1fr)_170px_190px_220px_64px_76px] items-center gap-4 border-b border-border-default px-4 last:border-b-0"
+      class="is-mar-row grid min-h-16 grid-cols-[minmax(0,1fr)_170px_190px_220px_64px_76px] items-center gap-4 border-b border-border-default px-4 last:border-b-0"
     >
       <span class="flex min-w-0 items-center gap-3">
         <img

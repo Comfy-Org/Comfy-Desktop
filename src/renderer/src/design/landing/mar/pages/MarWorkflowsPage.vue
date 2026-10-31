@@ -168,7 +168,7 @@ function lines(w: MarWorkflow): MenuLine[] {
         ? undefined
         : 'Every workflow, on this computer and in the cloud. Each opens in its build.'
     "
-    skeleton="grid"
+    :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && base.length === 0 ? 'empty' : undefined"
     :empty="{
@@ -239,11 +239,10 @@ function lines(w: MarWorkflow): MenuLine[] {
         @alt="toast('Pick a workflow file to import')"
       />
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">Name</span><span class="w-40">Project</span
-        ><span class="w-28">Edited</span><span class="w-[150px] text-right">State</span
-        ><span class="w-16" />
+    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 200px) 120px">
+      <div class="mar-table-head">
+        <span>Name</span><span>Project</span><span>Edited</span><span class="is-end">State</span
+        ><span />
       </div>
       <MarItem
         v-for="w in shown"
@@ -268,8 +267,8 @@ function lines(w: MarWorkflow): MenuLine[] {
         @star="workflows.star(w.id)"
       >
         <template #cols>
-          <span class="mar-item-col w-40">{{ w.project ?? '—' }}</span>
-          <span class="mar-item-col w-28">{{ w.modified }}</span>
+          <span class="mar-item-col">{{ w.project ?? '—' }}</span>
+          <span class="mar-item-col">{{ w.modified }}</span>
         </template>
       </MarItem>
     </div>

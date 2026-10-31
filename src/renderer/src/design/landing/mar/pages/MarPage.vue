@@ -5,6 +5,7 @@ import Button from '../../ui/Button.vue'
 import { retry, shownState, type PageState } from './pageState'
 import MarUndoToast from './MarUndoToast.vue'
 import MarEmpty from './MarEmpty.vue'
+import '../table/table.css'
 
 /**
  * The frame every library page in Mar's proposal shares: the title and
@@ -110,12 +111,27 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
           <span class="mar-sk mar-sk-line is-sm" :style="{ width: `${30 + ((n * 11) % 25)}%` }" />
         </div>
       </div>
-      <div v-else-if="skeleton === 'list'" class="mar-sk-list">
-        <div v-for="n in rows" :key="n" class="mar-sk-row">
+      <!-- A list loads in the one table's shape (../table/table.css). -->
+      <div
+        v-else-if="skeleton === 'list'"
+        class="mar-table is-items"
+        style="--mar-cols: minmax(0, 200px) 120px"
+      >
+        <div class="mar-table-head">
+          <span><span class="mar-sk mar-sk-line is-sm" style="width: 48px" /></span>
+          <span><span class="mar-sk mar-sk-line is-sm" style="width: 56px" /></span>
+          <span><span class="mar-sk mar-sk-line is-sm" style="width: 44px" /></span>
+          <span /><span />
+        </div>
+        <div v-for="n in rows" :key="n" class="mar-table-row mar-table-sk">
           <span class="mar-sk mar-sk-thumb" />
-          <span class="mar-sk mar-sk-line" :style="{ width: `${22 + ((n * 13) % 20)}%` }" />
-          <span class="mar-sk mar-sk-line is-sm ml-auto" style="width: 12%" />
-          <span class="mar-sk mar-sk-line is-sm" style="width: 9%" />
+          <span class="flex flex-col gap-1.5">
+            <span class="mar-sk mar-sk-line" :style="{ width: `${28 + ((n * 13) % 22)}%` }" />
+            <span class="mar-sk mar-sk-line is-sm" :style="{ width: `${16 + ((n * 7) % 12)}%` }" />
+          </span>
+          <span class="mar-sk mar-sk-line is-sm" :style="{ width: `${50 + ((n * 11) % 30)}%` }" />
+          <span class="mar-sk mar-sk-line is-sm" style="width: 60%" />
+          <span /><span />
         </div>
       </div>
       <div v-else class="mar-sk-settings">
@@ -253,7 +269,6 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   height: 8px;
   opacity: 0.7;
 }
-.mar-sk-list,
 .mar-sk-settings {
   display: flex;
   flex-direction: column;
@@ -273,10 +288,10 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   border-radius: 0;
 }
 .mar-sk-thumb {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  border-radius: 9px;
+  border-radius: 8px;
 }
 .mar-sk-ctl {
   width: 120px;
