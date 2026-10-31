@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ArrowUpRight,
   Check,
+  ChevronDown,
   CircleAlert,
   Copy,
   Eye,
@@ -31,13 +32,12 @@ import { envById, isPublished, versionsOf } from '../../parts/env/env'
 import type { EnvVersion } from '../../mock'
 import { PORTAL_TO } from '../../ui/portal'
 import { goIn, hostActions, proto, toast } from '../../useProto'
-import { ComfyModel, ComfyNode, ComfyWorkflow } from '../icons/comfyIcons'
+import { ComfyModel, ComfyNode } from '../icons/comfyIcons'
 import sample from '../templateModal/angles-output.jpg'
 import {
   GPUS,
   IDLE_STOP_S,
   REGIONS,
-  SCENARIOS,
   STORAGE_PER_GB_MONTH,
   account,
   applyScenario,
@@ -52,6 +52,7 @@ import {
   regionById,
   retryRelease,
   samplesFor,
+  scenarioPick,
   selectKey,
   setLive,
   startDeploy,
@@ -132,8 +133,14 @@ const needsRelease = computed(() => Boolean(version.value && !isReleased(version
 const upload = computed(() =>
   build.value ? uploadFor(build.value, !needsRelease.value) : undefined
 )
+/** The files a release uploads, folded until asked for. */
+const showModels = ref(false)
+watch(
+  () => draft.value.version,
+  () => (showModels.value = false)
+)
 
-// ── Scenarios: the modal's own "Deploy state" corner ────────────────────
+// ── Scenarios: UI Playground › States › Deploy state ────────────────────
 
 /** Which build and version each state is shown on. */
 function sourceFor(s: Scenario): { envId: string; version: string } | undefined {
@@ -261,11 +268,7 @@ const blocker = computed<Blocker | undefined>(() => {
 })
 
 const primaryLabel = computed(() =>
-  !account.signedIn
-    ? 'Sign in to deploy'
-    : needsRelease.value
-      ? `Upload, release & deploy`
-      : 'Deploy'
+  !account.signedIn ? 'Sign in to deploy' : `Deploy ${draft.value.version}`
 )
 const canDeploy = computed(() => !blocker.value && nameOk.value)
 
@@ -351,10 +354,23 @@ const title = computed(() => {
     return dep.deploying ? `Deploying ${dep.draft?.name}` : `Releasing ${dep.draft?.version}`
   return 'Deploy as API'
 })
-const scenarioModel = computed({
-  get: () => dep.scenario,
-  set: (s: Scenario) => setScenario(s)
-})
+/** Clicks in the UI Playground (and its select menus) don't close the modal. */
+function keepForTuner(e: Event): void {
+  const t = (e as CustomEvent<{ originalEvent?: Event }>).detail?.originalEvent?.target
+  if (t instanceof Element && t.closest("[aria-label='UI tuner'], [role='listbox']"))
+    e.preventDefault()
+}
+
+// UI Playground › States › Deploy state asks for a state through
+// scenarioPick; the modal owns the draft, so it applies it here.
+watch(
+  () => scenarioPick.want,
+  (s) => {
+    if (!s) return
+    scenarioPick.want = null
+    setScenario(s)
+  }
+)
 </script>
 
 <template>
@@ -366,27 +382,31 @@ const scenarioModel = computed({
         class="proto-ui mar-dep"
         :data-phase="dep.phase"
         @open-auto-focus.prevent
+        @interact-outside="keepForTuner"
       >
         <header class="mar-dep-head">
           <InstanceGlyph :inst="env" size="sm" />
           <div class="min-w-0">
-            <p class="mar-dep-eyebrow">
-              <ComfyWorkflow :size="13" />Build<i />{{ env.name }}<i />ComfyUI {{ build.comfy }}
-            </p>
             <DialogTitle class="mar-dep-title">{{ title }}</DialogTitle>
+            <DialogDescription v-if="dep.phase === 'configure'" class="mar-dep-sub">
+              Serve a release of {{ env.name }} on dedicated GPUs, behind an endpoint you call from
+              code.
+            </DialogDescription>
+            <p v-else class="mar-dep-sub">{{ env.name }} · ComfyUI {{ build.comfy }}</p>
           </div>
         </header>
 
         <!-- ─── Configure ─────────────────────────────────────────── -->
+        <!-- One surface, three unnumbered sections (choose a version, where
+             it runs, how it's called), and a summary rail: what happens,
+             then what it costs, each figure once. -->
         <div v-if="dep.phase === 'configure'" class="mar-dep-body">
-          <div class="mar-dep-form">
-            <DialogDescription class="mar-dep-lede">
-              Runs one release of this build on dedicated GPUs, behind an endpoint you call from
-              your code. You pay per second while a worker is up.
-            </DialogDescription>
-
-            <section class="mar-dep-panel">
-              <h3 class="mar-dep-label"><b>1</b>Source</h3>
+          <div class="mar-dep-form" data-flat>
+            <section class="mar-dep-sec">
+              <header class="mar-dep-sec-head">
+                <h3>Version</h3>
+                <span>ComfyUI {{ build.comfy }} · {{ build.nodes }} custom nodes</span>
+              </header>
               <div class="mar-dep-versions" role="radiogroup" aria-label="Version">
                 <button
                   v-for="v in versions"
@@ -397,57 +417,66 @@ const scenarioModel = computed({
                   :aria-checked="draft.version === v.id"
                   @click="draft.version = v.id"
                 >
-                  <span class="mar-dep-ver">{{ v.label }}</span>
-                  <span class="mar-dep-row-text">
+                  <span class="mar-dep-radio" />
+                  <span class="mar-dep-row-text" data-inline>
+                    <b>{{ v.label }}</b>
                     <span>{{ v.note }}</span>
                     <small>{{ v.when }}</small>
                   </span>
-                  <span class="mar-dep-badge" :data-tone="isReleased(v) ? 'ok' : 'muted'">{{
-                    isReleased(v) ? 'Released' : 'Only on this computer'
+                  <span class="mar-dep-badge" :data-tone="isReleased(v) ? 'ok' : undefined">{{
+                    isReleased(v) ? 'Released' : 'On this computer'
                   }}</span>
-                  <span class="mar-dep-radio" />
                 </button>
               </div>
 
-              <div v-if="needsRelease && upload" class="mar-dep-release">
-                <div class="mar-dep-release-head">
-                  <span class="mar-dep-tile"><Upload :size="15" /></span>
-                  <span class="min-w-0 flex-1">
-                    <b>Upload &amp; release {{ draft.version }}</b>
-                    <small
-                      >{{ fmtGb(upload.gb) }} to upload<template v-if="upload.skipped">
-                        · {{ upload.skipped }} already in your storage</template
-                      ></small
-                    >
-                  </span>
-                  <span class="mar-dep-release-cost"
-                    >{{ fmtUsd(storageCost) }}<small>/ month storage</small></span
+              <div
+                v-if="needsRelease && upload"
+                class="mar-dep-release"
+                :data-open="showModels || undefined"
+              >
+                <p class="mar-dep-release-line">
+                  <Upload :size="14" />
+                  <span
+                    ><b>{{ draft.version }} isn't released yet.</b> Deploying uploads
+                    {{ fmtGb(upload.gb) }} once<template v-if="upload.skipped">
+                      ({{ upload.skipped }} already in storage)</template
+                    >, then later deployments reuse it.</span
                   >
-                </div>
-                <p class="mar-dep-release-note">
-                  A release is an immutable copy of {{ draft.version }} in your Comfy storage (linux
-                  / nvidia): ComfyUI {{ build.comfy }}, {{ build.nodes }} custom nodes,
-                  {{ build.models.length }} models ({{ fmtGb(upload.allGb) }}). It happens once;
-                  later deployments reuse it.
+                  <button
+                    type="button"
+                    class="mar-dep-disclose"
+                    :aria-expanded="showModels"
+                    @click="showModels = !showModels"
+                  >
+                    {{ showModels ? 'Hide' : 'Show' }} files<ChevronDown :size="13" />
+                  </button>
                 </p>
-                <ul class="mar-dep-models">
-                  <li v-for="m in build.models" :key="m.name">
-                    <ComfyModel :size="13" /><span>{{ m.name }}</span
-                    ><em>{{ fmtGb(m.gb) }}</em>
-                    <span class="mar-dep-mark" :data-m="m.stored ? 'stored' : 'new'">{{
-                      m.stored ? 'In storage' : 'Uploads'
-                    }}</span>
-                  </li>
-                  <li>
-                    <ComfyNode :size="13" /><span>{{ build.nodes }} custom nodes</span
-                    ><em>lockfile</em><span class="mar-dep-mark" data-m="new">Installs</span>
-                  </li>
-                </ul>
+                <div v-if="showModels" class="mar-dep-release-more">
+                  <p class="mar-dep-release-note">
+                    A release is an immutable copy of {{ draft.version }} for linux / nvidia.
+                  </p>
+                  <ul class="mar-dep-models">
+                    <li v-for="m in build.models" :key="m.name">
+                      <ComfyModel :size="13" /><span>{{ m.name }}</span
+                      ><em>{{ fmtGb(m.gb) }}</em>
+                      <span class="mar-dep-mark" :data-m="m.stored ? 'stored' : 'new'">{{
+                        m.stored ? 'In storage' : 'Uploads'
+                      }}</span>
+                    </li>
+                    <li>
+                      <ComfyNode :size="13" /><span>{{ build.nodes }} custom nodes</span
+                      ><em>lockfile</em><span class="mar-dep-mark" data-m="new">Installs</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </section>
 
-            <section class="mar-dep-panel">
-              <h3 class="mar-dep-label"><b>2</b>Compute</h3>
+            <section class="mar-dep-sec">
+              <header class="mar-dep-sec-head">
+                <h3>Hardware</h3>
+                <span>One GPU per worker</span>
+              </header>
               <div class="mar-dep-seg" role="radiogroup" aria-label="Region">
                 <button
                   v-for="r in REGIONS"
@@ -473,14 +502,13 @@ const scenarioModel = computed({
                   @click="draft.gpu = g.id"
                 >
                   <span class="mar-dep-gpu-name">{{ g.name }}</span>
-                  <span class="mar-dep-gpu-mem">{{ g.memGb }} GB</span>
                   <span class="mar-dep-gpu-price">{{ fmtUsd(perHour(g)) }}<small>/ h</small></span>
                   <span class="mar-dep-gpu-note">{{
                     !offered(g.id, draft.region)
                       ? `Not in ${region.label}`
                       : isFull(g.id, draft.region)
                         ? 'No capacity right now'
-                        : `$${g.perSec.toFixed(5)} / s`
+                        : `${g.memGb} GB`
                   }}</span>
                 </button>
               </div>
@@ -498,10 +526,12 @@ const scenarioModel = computed({
               </div>
             </section>
 
-            <section class="mar-dep-panel">
-              <h3 class="mar-dep-label"><b>3</b>Endpoint &amp; scaling</h3>
+            <section class="mar-dep-sec">
+              <header class="mar-dep-sec-head">
+                <h3>Endpoint</h3>
+                <span>Workers start on demand</span>
+              </header>
               <label class="mar-dep-name">
-                <span class="mar-dep-field-label">Name</span>
                 <span class="mar-dep-input" :data-invalid="!nameOk || undefined">
                   <input
                     v-model="draft.name"
@@ -537,8 +567,8 @@ const scenarioModel = computed({
                   </span>
                   <small>{{
                     draft.min === 0
-                      ? 'Cold starts, $0 when idle'
-                      : `${draft.min} always on, ${fmtUsd(idleCost)} / h even when idle`
+                      ? 'Cold starts, nothing billed when idle'
+                      : `${draft.min} always on`
                   }}</small>
                 </div>
                 <div class="mar-dep-stepper">
@@ -562,7 +592,7 @@ const scenarioModel = computed({
                     </button>
                   </span>
                   <small
-                    >{{ account.plan.name }} plan: up to {{ planMax }} ·
+                    >Up to {{ planMax }} on {{ account.plan.name }} ·
                     <button type="button" class="mar-dep-link" @click="toast('Opens plans')">
                       Upgrade
                     </button></small
@@ -573,7 +603,13 @@ const scenarioModel = computed({
           </div>
 
           <aside class="mar-dep-side">
-            <div v-if="blocker" class="mar-dep-callout" data-tone="block" :data-kind="blocker.kind">
+            <!-- Capacity shows inline under the GPUs, with its fixes. -->
+            <div
+              v-if="blocker && blocker.kind !== 'capacity'"
+              class="mar-dep-callout"
+              data-tone="block"
+              :data-kind="blocker.kind"
+            >
               <CircleAlert :size="15" />
               <span
                 ><b>{{ blocker.title }}</b
@@ -589,12 +625,13 @@ const scenarioModel = computed({
               >
             </div>
 
-            <section class="mar-dep-panel">
+            <section class="mar-dep-panel mar-dep-summary">
               <h3 class="mar-dep-label">What happens</h3>
               <ol class="mar-dep-plan">
                 <template v-if="needsRelease && upload">
                   <li>
-                    <b>Upload</b><span>{{ fmtGb(upload.gb) }} of models</span>
+                    <b>Upload {{ fmtGb(upload.gb) }}</b
+                    ><span>Resumable, only once</span>
                   </li>
                   <li>
                     <b>Release {{ draft.version }}</b
@@ -606,30 +643,33 @@ const scenarioModel = computed({
                   ><span>{{ gpu.name }} · {{ region.label }}</span>
                 </li>
                 <li>
-                  <b>Endpoint</b><span class="mar-dep-mono">{{ draft.name }}.run.comfy.app</span>
+                  <b>Call it</b><span class="mar-dep-mono">{{ draft.name }}.run.comfy.app</span>
                 </li>
               </ol>
-            </section>
 
-            <section class="mar-dep-panel">
-              <h3 class="mar-dep-label">Estimate</h3>
+              <hr />
+
+              <h3 class="mar-dep-label">Cost</h3>
+              <div class="mar-dep-hero">
+                <b :data-zero="idleCost === 0 || undefined">{{ fmtUsd(idleCost) }}</b>
+                <span>/ h while idle</span>
+              </div>
               <dl class="mar-dep-cost">
-                <dt>While idle</dt>
-                <dd :data-zero="idleCost === 0 || undefined">{{ fmtUsd(idleCost) }} / h</dd>
                 <dt>Each busy worker</dt>
                 <dd>{{ fmtUsd(hourly) }} / h</dd>
-                <dt>At full scale ({{ draft.max }})</dt>
+                <dt>All {{ draft.max }} busy</dt>
                 <dd>{{ fmtUsd(fullCost) }} / h</dd>
                 <dt>Model storage</dt>
                 <dd>{{ fmtUsd(storageCost) }} / mo</dd>
               </dl>
               <p class="mar-dep-fine">
-                Billed per second. Workers stop {{ IDLE_STOP_S }} s after the last job.
+                Per second, only while a worker is up. Workers stop {{ IDLE_STOP_S }} s after the
+                last job.
               </p>
               <p v-if="account.signedIn" class="mar-dep-balance">
                 <span>Balance</span><b>{{ fmtUsd(account.balance) }}</b
                 ><small v-if="fullCost && account.balance >= account.minBalance"
-                  >~{{ Math.floor(hoursLeft) }} h at full scale</small
+                  >~{{ Math.floor(hoursLeft) }} h with all busy</small
                 >
               </p>
             </section>
@@ -948,19 +988,13 @@ const scenarioModel = computed({
         </div>
 
         <footer class="mar-dep-foot">
-          <label class="mar-dep-dev" title="Prototype only: jump to a state">
-            <span>Deploy state</span>
-            <select v-model="scenarioModel">
-              <option v-for="s in SCENARIOS" :key="s.id" :value="s.id">{{ s.label }}</option>
-            </select>
-          </label>
           <div class="mar-dep-buttons">
             <template v-if="dep.phase === 'configure'">
               <DialogClose class="mar-dep-ghost">Cancel</DialogClose>
               <button
                 v-if="needsRelease && account.signedIn"
                 type="button"
-                class="mar-dep-ghost"
+                class="mar-dep-secondary"
                 :disabled="!canDeploy"
                 @click="confirm(false)"
               >

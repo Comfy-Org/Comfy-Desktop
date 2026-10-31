@@ -27,6 +27,8 @@ import { marLook } from './looks/looks'
 import { crit } from './crit/crit'
 import { PORTS, ports, type Port } from './pabloPorts'
 import { active as parts } from './marParts'
+import { dep, scenarioPick } from './deploy/deployData'
+import { buildNav } from './build/buildNav'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -92,6 +94,10 @@ export const when = {
       (marNav.id === 'classic' || marNav.id === 'panels')
   ),
   graph: inGraph,
+  // The Deploy as API modal (deploy/MarDeployModal.vue), while it's open.
+  deployState: computed(() => Boolean(proto.deploying)),
+  // A build's page (mar/build/buildNav.ts).
+  buildNav: computed(() => inShell.value && proto.page.startsWith('environment:')),
   // From Pablo (PabloPortsTuner.vue): each switch acts on the Floating
   // sidebar and the Tabs bar, each in its own situation.
   ports: computed(() => inShell.value && (marSideOn.value || marNav.id === 'tabs'))
@@ -197,7 +203,15 @@ export const TWEAKS = {
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   modeSwitch: one(modeStyle, 'split'),
+  // The modal opens on Configure (or Needs upload for an unreleased version).
+  deployState: {
+    isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),
+    reset: () => {
+      if (proto.deploying) scenarioPick.want = 'configure'
+    }
+  },
   graph: one(graphStyle, 'glass'),
+  buildNav: one(buildNav, 'current'),
   ports: {
     isDefault: () => PORTS.every((p) => !ports[p.key]),
     reset: () => PORTS.forEach((p) => (ports[p.key] = false))

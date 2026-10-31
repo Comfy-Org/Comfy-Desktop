@@ -27,7 +27,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1000px, calc(100vw - 32px));
-  height: min(740px, calc(100vh - 32px));
+  height: min(800px, calc(100vh - 32px));
   overflow: hidden;
   border-radius: 22px;
   color: var(--dep-ink);
@@ -84,28 +84,21 @@
 /* ── Header ──────────────────────────────────────────────────────── */
 .mar-dep-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 22px 64px 16px 24px;
+  padding: 22px 64px 18px 24px;
 }
-.mar-dep-eyebrow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-subtle-foreground);
-  font-size: 12.5px;
-  line-height: 18px;
+.mar-dep-head > :first-child {
+  margin-top: 3px;
 }
-.mar-dep-eyebrow > i {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
+.mar-dep-sub {
+  margin-top: 2px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 19px;
+  text-wrap: pretty;
 }
 .mar-dep-title {
-  margin-top: 2px;
   overflow: hidden;
   font-size: 20px;
   font-weight: 600;
@@ -1091,27 +1084,6 @@
   gap: 8px;
   margin-left: auto;
 }
-/* Prototype-only corner: jump to any state. Dashed so it never reads as
-   product UI. */
-.mar-dep-dev {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  border-radius: 9px;
-  padding: 0 4px 0 10px;
-  color: var(--color-subtle-foreground);
-  font-size: 11.5px;
-  outline: 1px dashed var(--dep-well-3);
-  outline-offset: -1px;
-}
-.mar-dep-dev select {
-  border: 0;
-  outline: none;
-  color: var(--color-muted-foreground);
-  font-size: 11.5px;
-  background: transparent;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-dep-ghost,
 :root .proto-ui.proto-ui.proto-ui .mar-dep-primary {
   display: inline-flex;
@@ -1183,4 +1155,215 @@
   .mar-dep-spin {
     animation: none;
   }
+}
+
+/* ── Configure: one surface, unnumbered sections ─────────────────── */
+.mar-dep-form[data-flat] {
+  gap: 0;
+  padding-top: 0;
+}
+.mar-dep-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 18px;
+  box-shadow: inset 0 1px 0 var(--dep-line);
+}
+.mar-dep-sec:first-child {
+  padding-top: 4px;
+  box-shadow: none;
+}
+.mar-dep-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mar-dep-sec-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.mar-dep-sec-head span {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-sec .mar-dep-versions {
+  gap: 2px;
+  margin: 0 -8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-sec .mar-dep-row {
+  min-height: 36px;
+  gap: 12px;
+  padding: 4px 10px;
+}
+.mar-dep-row-text[data-inline] {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.mar-dep-row-text[data-inline] > b {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-row-text[data-inline] > span {
+  min-width: 0;
+  font-weight: 400;
+}
+.mar-dep-row-text[data-inline] > small {
+  flex-shrink: 0;
+}
+
+/* Release: one line, the file list on demand */
+.mar-dep-sec .mar-dep-release {
+  gap: 0;
+  border-radius: 12px;
+  padding: 0;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-release-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.mar-dep-release-line > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--dep-info);
+}
+.mar-dep-release-line > span {
+  min-width: 0;
+  flex: 1;
+  text-wrap: pretty;
+}
+.mar-dep-release-line b {
+  color: var(--dep-ink);
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-disclose {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  margin: -3px 0;
+  border-radius: 7px;
+  padding: 0 6px 0 8px;
+  color: var(--dep-ink);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-disclose:hover {
+  background: var(--dep-well-2);
+}
+.mar-dep-disclose > svg {
+  color: var(--color-subtle-foreground);
+  transition: transform 160ms ease;
+}
+.mar-dep-disclose[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+.mar-dep-release-more {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 12px 10px 36px;
+  animation: mar-dep-fade 200ms ease-out;
+}
+.mar-dep-release-more .mar-dep-release-note {
+  font-size: 12px;
+}
+
+.mar-dep-sec .mar-dep-gpu {
+  padding: 10px 12px 9px;
+}
+.mar-dep-sec .mar-dep-name {
+  padding: 0;
+}
+.mar-dep-sec .mar-dep-stepper {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+.mar-dep-sec .mar-dep-stepper > small {
+  flex-basis: 100%;
+}
+
+/* Summary rail: what happens, then the cost */
+.mar-dep-summary {
+  gap: 12px;
+  padding: 14px 12px 12px;
+}
+.mar-dep-summary > hr {
+  margin: 2px 4px;
+  border: 0;
+  border-top: 1px solid var(--dep-line);
+}
+.mar-dep-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 4px;
+}
+.mar-dep-hero > b {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-hero > b[data-zero] {
+  color: var(--dep-ok);
+}
+.mar-dep-hero > span {
+  color: var(--color-muted-foreground);
+}
+.mar-dep-summary .mar-dep-cost {
+  gap: 4px 12px;
+  font-size: 12.5px;
+}
+.mar-dep-summary .mar-dep-balance {
+  margin-top: 2px;
+}
+
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  border-radius: 12px;
+  padding: 0 16px;
+  color: var(--dep-ink);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary:hover:not(:disabled) {
+  background: var(--dep-well-3);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* The UI Playground stays usable over the modal: Deploy state lives there. */
+:root body:has(.mar-dep) .proto-ui[aria-label='UI tuner'] {
+  z-index: 60;
+  pointer-events: auto;
+}
+/* …and its select menus open above it (reka sets their z-index inline). */
+:root body:has(.mar-dep) [data-reka-popper-content-wrapper] {
+  z-index: 61 !important;
+  pointer-events: auto;
 }

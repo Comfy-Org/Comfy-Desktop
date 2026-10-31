@@ -43,17 +43,44 @@ const crumb = (active: boolean): string =>
   <nav v-else class="proto-ui flex min-w-0 items-center gap-0.5" aria-label="Breadcrumb">
     <button
       type="button"
-      :class="[crumb(state.home), 'shrink-0 pr-2.5 pl-2', !state.home && 'bg-transparent']"
+      :class="[
+        crumb(state.home && !state.trail),
+        'shrink-0 pr-2.5 pl-2',
+        (!state.home || state.trail) && 'bg-transparent'
+      ]"
       :title="state.milestone >= 7 ? 'Home (⌘⇧H)' : undefined"
-      :aria-current="state.home ? 'page' : undefined"
+      :aria-current="state.home && !state.trail ? 'page' : undefined"
       @click="emit('command', { type: 'home' })"
     >
       <template v-if="state.milestone >= 4"><Home :size="15" />Home</template>
       <template v-else><LayoutGrid :size="15" />Builds</template>
     </button>
     <ChevronRight :size="14" class="shrink-0 text-subtle-foreground" aria-hidden="true" />
+    <!-- Mar's page trail (mar/build/buildNav.ts): where the page on view sits. -->
+    <template v-if="state.trail && !state.front">
+      <template v-for="(t, i) in state.trail" :key="i">
+        <button
+          v-if="t.page"
+          type="button"
+          :class="[crumb(false), 'shrink-0 px-2']"
+          @click="emit('command', { type: 'page', page: t.page })"
+        >
+          {{ t.label }}
+        </button>
+        <span v-else :class="[crumb(true), 'min-w-0 bg-transparent px-2']" aria-current="page">
+          <LocationIcon v-if="t.kind" :kind="t.kind" :size="15" />
+          <span class="max-w-48 truncate">{{ t.label }}</span>
+        </span>
+        <ChevronRight
+          v-if="i < state.trail.length - 1"
+          :size="14"
+          class="shrink-0 text-subtle-foreground"
+          aria-hidden="true"
+        />
+      </template>
+    </template>
     <button
-      v-if="state.front"
+      v-else-if="state.front"
       type="button"
       :class="[crumb(true), 'min-w-0 bg-transparent px-2']"
       aria-current="page"
@@ -66,13 +93,16 @@ const crumb = (active: boolean): string =>
     </button>
     <button
       type="button"
-      :class="[crumb(state.menuOpen), state.front ? 'w-6 justify-center' : 'pr-1.5 pl-2']"
+      :class="[
+        crumb(state.menuOpen),
+        state.front || state.trail ? 'w-6 justify-center' : 'pr-1.5 pl-2'
+      ]"
       aria-label="Switch build"
       aria-haspopup="menu"
       :aria-expanded="state.menuOpen"
       @click="openSwitcher"
     >
-      <span v-if="!state.front">Open a build</span>
+      <span v-if="!state.front && !state.trail">Open a build</span>
       <ChevronDown :size="13" />
     </button>
 

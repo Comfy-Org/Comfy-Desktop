@@ -6,10 +6,11 @@ import MarStatus, { type ItemStatus } from './MarStatus.vue'
  * The header of one thing's page (a project, a space) in Mar's proposal:
  * the way back, then cover, title and state with one quiet meta line on
  * the left; one action group on the right (secondary, the single primary,
- * ⋯ last), every control at the Corners radius, no pills.
+ * ⋯ last), every control at the Corners radius, no pills. No `back` when
+ * the title bar's breadcrumb already says where the page sits.
  */
 const { back, title, status, statusLabel } = defineProps<{
-  back: string
+  back?: string
   title: string
   status?: ItemStatus
   statusLabel?: string
@@ -19,7 +20,7 @@ const emit = defineEmits<{ back: [] }>()
 
 <template>
   <div class="mar-eh">
-    <button type="button" class="mar-eh-crumb" @click="emit('back')">
+    <button v-if="back" type="button" class="mar-eh-crumb" @click="emit('back')">
       <ArrowLeft :size="14" />{{ back }}
     </button>
     <section class="mar-eh-head">

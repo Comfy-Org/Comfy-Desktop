@@ -80,7 +80,7 @@ export const IDLE_STOP_S = 30
 export const gpuById = (id: GpuId): Gpu => GPUS.find((g) => g.id === id)!
 export const regionById = (id: RegionId) => REGIONS.find((r) => r.id === id)!
 
-// ── States (UI Playground › the modal's own "Deploy state" corner) ──────
+// ── States (UI Playground › States › Deploy state) ─────────────────────
 
 export const SCENARIOS = [
   { id: 'configure', label: 'Configure (released version)' },
@@ -97,6 +97,10 @@ export const SCENARIOS = [
   { id: 'updating', label: 'Updating to a new release' }
 ] as const
 export type Scenario = (typeof SCENARIOS)[number]['id']
+
+/** A state asked for from the UI Playground; the open modal applies it
+ *  (it owns the draft) and clears it. */
+export const scenarioPick = reactive({ want: null as Scenario | null })
 
 // ── Account ─────────────────────────────────────────────────────────────
 
@@ -467,7 +471,7 @@ export function testRun(): void {
 }
 
 /** Put the whole flow in one of the states, with believable data. The
- *  modal calls this from its "Deploy state" corner and on open. */
+ *  modal calls this on open and when the UI Playground picks a state. */
 export function applyScenario(s: Scenario, draft: Draft, b: BuildInfo): void {
   stopTimer()
   dep.scenario = s

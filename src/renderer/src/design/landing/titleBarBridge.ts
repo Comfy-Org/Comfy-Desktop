@@ -54,6 +54,9 @@ export interface TitleBarState {
   tabFront?: string | null
   runsOn?: { name: string; kind: 'local' | 'cloud' }
   agent?: boolean
+  /** Mar's proposal (mar/build/buildNav.ts): where the page on view sits,
+   *  after Home - each step a page to go back to, the last one current. */
+  trail?: { label: string; page?: string; kind?: 'local' | 'cloud' }[]
   /** The Prototype menu: each switch and its current value. */
   options: {
     key: string
@@ -73,6 +76,8 @@ export type TitleBarCommand =
   | { type: 'tab'; id: string }
   | { type: 'closeTab'; id: string }
   | { type: 'agent' }
+  /** A step of Mar's page trail: go to that page. */
+  | { type: 'page'; page: string }
   /** Toggle the build switcher under the chevron (window px). */
   | { type: 'switcher'; left: number; width: number; bottom: number }
   /** The pointer entered / left the build's name, or it was clicked - its

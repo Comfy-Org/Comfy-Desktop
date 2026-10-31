@@ -6,17 +6,13 @@ import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
 import { isMariana, proposal, PROPOSALS } from './proposal'
 import { onCloud, SURFACES, surface } from './shell/surface'
-import {
-  homeBackground,
-  marNav,
-  type HomeBackground,
-  type MarNav
-} from './shell/marShell'
+import { homeBackground, marNav, type HomeBackground, type MarNav } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
 import { MODE_STYLES, modeStyle } from './modes/modeStyle'
 import { COVERS, cover } from './cover'
+import { BUILD_NAVS, buildNav } from './build/buildNav'
 import { homeBuilds } from './homeBuilds'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -29,6 +25,7 @@ import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { CRITS, crit } from './crit/crit'
+import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
 import { proto } from '../useProto'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import PabloPortsTuner from './PabloPortsTuner.vue'
@@ -72,6 +69,11 @@ const SURFACE_OPTIONS = SURFACES.map((sf) => ({
   value: sf.value,
   label: sf.value === 'desktop' ? 'Desktop' : 'Cloud'
 }))
+const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
+const deployState = computed({
+  get: () => dep.scenario,
+  set: (s: Scenario) => (scenarioPick.want = s)
+})
 const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }))
 const THEMES = [
   { value: 'dark', label: 'Dark', icon: Moon },
@@ -115,7 +117,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBuilds', show: () => when.homeBuilds.value },
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
-  { id: 'credits', show: () => when.credits.value }
+  { id: 'credits', show: () => when.credits.value },
+  { id: 'deployState', show: () => when.deployState.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
@@ -126,6 +129,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'cover', show: () => when.cover.value },
   { id: 'modeSwitch', show: () => when.modeSwitch.value },
   { id: 'graph', show: () => when.graph.value },
+  { id: 'buildNav', show: () => when.buildNav.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs', 'p20']
@@ -216,6 +220,10 @@ function onScroll(e: Event): void {
              only where it applies. -->
         <section v-if="isMariana" aria-label="States" class="mt-6 flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
+          <!-- The Deploy as API modal's states, first while it's open. -->
+          <Row :show="shows('deployState')" label="Deploy state">
+            <Select v-model="deployState" :options="DEPLOY_STATES" class="w-full" />
+          </Row>
           <!-- Who is looking, and what is on this computer: two axes. A
                first-time user starts with no local install; a returning
                one may have none either (they work on Cloud). -->
@@ -285,6 +293,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('graph')" label="Graph look">
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
+          </Row>
+          <Row :show="shows('buildNav')" label="Build navigation">
+            <Seg v-model="buildNav.id" label="Build navigation" :options="BUILD_NAVS" />
           </Row>
           <Row :show="shows('ports')"><PabloPortsTuner /></Row>
         </section>
