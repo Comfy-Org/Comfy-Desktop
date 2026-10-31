@@ -150,7 +150,7 @@ function openLocal(): void {
           >Open the node editor</span
         >
         <span class="text-ui text-subtle-foreground"
-          >Know ComfyUI? Build any workflow from nodes.</span
+          >For ComfyUI users: build any workflow from nodes.</span
         >
       </div>
       <div

@@ -1,4 +1,4 @@
-import { hostActions, instances } from '../../useProto'
+import { hostActions } from '../../useProto'
 import { INSTANCES } from '../../mock'
 import { mock } from '../assets/mock'
 
@@ -47,10 +47,11 @@ export const EXAMPLES: Example[] = [
   }
 ]
 
-/** Picking an example runs it on Comfy Cloud: nothing to set up first. */
+/** Picking an example opens it in ComfyUI on Comfy Cloud (a new tab with
+ *  its workflow, asking to sign in if needed), never the prompt or the
+ *  agent: an example is a workflow to run. */
 export function runExample(x: Example): void {
-  const cloud = instances.value.find((i) => i.kind === 'cloud') ?? INSTANCES[0]!
-  hostActions.launch(cloud, x.label)
+  hostActions.launch(INSTANCES[0]!, x.label)
 }
 
 export const reducedMotion = (): boolean =>

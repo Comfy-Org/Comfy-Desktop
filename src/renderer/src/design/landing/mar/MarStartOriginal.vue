@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ArrowRight, Cloud, Laptop } from 'lucide-vue-next'
+import { ArrowRight, Cloud, Download, Laptop } from 'lucide-vue-next'
 import { go, hostActions, proto } from '../useProto'
 import { INSTANCES } from '../mock'
+import { onCloud } from './shell/surface'
 import { can } from '../milestones'
 import SectionHeader from '../ui/SectionHeader.vue'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
@@ -40,7 +41,7 @@ function openCloud(): void {
   </section>
 
   <section class="mt-10">
-    <SectionHeader v-if="editorEntry.id !== 'banner'" title="Know ComfyUI? Open the node editor" />
+    <SectionHeader v-if="editorEntry.id !== 'banner'" title="For ComfyUI users" />
     <EditorEntry v-if="editorEntry.id !== 'rows'" />
     <div v-else class="mar-start-ways">
       <button type="button" class="mar-start-way" @click="openCloud">
@@ -55,9 +56,13 @@ function openCloud(): void {
         <span class="mar-start-icon"><Laptop :size="17" /></span>
         <span class="flex min-w-0 flex-1 flex-col text-left">
           <span class="text-ui font-medium text-base-foreground">This computer</span>
-          <span class="text-ui text-subtle-foreground">Runs on your GPU, works offline</span>
+          <span class="text-ui text-subtle-foreground">{{
+            onCloud
+              ? 'Install the Desktop app, runs on your GPU'
+              : 'Set up: runs on your GPU, works offline'
+          }}</span>
         </span>
-        <ArrowRight :size="15" class="mar-start-go" />
+        <component :is="onCloud ? Download : ArrowRight" :size="15" class="mar-start-go" />
       </button>
     </div>
   </section>
