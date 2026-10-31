@@ -139,50 +139,13 @@ const emit = defineEmits<{ back: [] }>()
   :is(button, .mar-kebab):not(.mar-split-main, .mar-split-more) {
   border-radius: var(--radius-control);
 }
-/* Under the header: one row of section tabs, left; a page may dock
-   its filters on the right of the same row. */
+/* Under the header: one row of section tabs (MarSeg), left; a page may
+   dock its filters on the right of the same row. */
 .mar-eh-row {
   display: flex;
-  align-items: flex-end;
+  min-height: 34px;
+  align-items: center;
   gap: 16px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border-default);
-}
-.mar-eh-row > .ml-auto {
-  padding-bottom: 8px;
-}
-.mar-eh-tabs {
-  display: flex;
-  gap: 22px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-eh-tab {
-  position: relative;
-  display: inline-flex;
-  height: 42px;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-eh-tab:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-eh-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-.mar-eh-tab[aria-selected='true']::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--color-base-foreground);
-  content: '';
-}
-.mar-eh-count {
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -23,7 +23,14 @@ const SORTS = [
   { value: 'recent', label: 'Last opened' },
   { value: 'name', label: 'Name' }
 ]
+// Section tabs on an entity page (Project), the same component.
+const SECTIONS = [
+  { value: 'workflows', label: 'Workflows' },
+  { value: 'assets', label: 'Assets' },
+  { value: 'people', label: 'People' }
+]
 const where = ref('all')
+const section = ref('people')
 const type = ref('any')
 const sort = ref('recent')
 const empty = ref('')
@@ -59,9 +66,12 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 
   <Section
     title="Tabs"
-    note="A soft track, no border; an indicator slides to the picked tab. Counts are hidden for now."
+    note="One tab for every page: MarSeg (mar/pages/MarSeg.vue). A soft track, no border; an indicator slides to the picked tab. Counts are hidden for now. Underline tabs are retired: Pablo's ui/Tabs.vue draws this same track in the New UI."
   >
     <Cells :min="320">
+      <Cell label="sections · Project">
+        <MarSeg v-model="section" :options="SECTIONS" label="In this project" />
+      </Cell>
       <Cell label="idle"><MarSeg v-model="where" :options="WHERE" label="Where" /></Cell>
       <Cell label="tab hover" force="hover" target="button:nth-of-type(2)">
         <MarSeg v-model="where" :options="WHERE" label="Where" />
