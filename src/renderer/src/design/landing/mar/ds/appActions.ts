@@ -20,8 +20,8 @@ export type AppAction =
 
 const later = (ms: number, fn: () => void): void => void setTimeout(fn, ms)
 
-/** Opens the search, types each of `texts` in turn (a `w␣` prefix scopes
- *  it, a `\t` presses Tab), then presses ↓ `down` times. */
+/** Opens the search, types each of `texts` in turn (a `\t` presses Tab,
+ *  which moves to the next scope), then presses ↓ `down` times. */
 function searchFor(texts: string[] = [], down = 0): () => void {
   return () => {
     search.open = true
@@ -53,9 +53,9 @@ export const APP_ACTIONS: Record<AppAction, () => void> = {
   'search-typed': searchFor(['pro']),
   'search-keys': searchFor(['pro'], 2),
   'search-none': searchFor(['zzqx']),
-  'search-scoped': searchFor(['w ', 're']),
-  'search-tab': searchFor(['temp', '\t', 'video']),
-  'search-empty-keys': searchFor([], 3),
+  'search-scoped': searchFor(['\t', '\t', 're']),
+  'search-tab': searchFor(['pro', '\t']),
+  'search-empty-keys': searchFor([], 6),
   // A local build's tab, which shows Mar's graph editor.
   graph: () => {
     const local = instances.value.find((i) => i.kind === 'local')

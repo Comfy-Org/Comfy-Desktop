@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import {
+  ArrowRight,
   BookOpen,
   Circle,
   Cloud,
@@ -13,6 +14,7 @@ import {
   Search,
   Settings2,
   Sun,
+  WifiOff,
   X
 } from 'lucide-vue-next'
 import { ComfyAssets, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
@@ -30,29 +32,47 @@ import {
 } from '../../useProto'
 import { look } from '../../look'
 import { newProject, projects } from '../pages/projectsStore'
+import { retry, shownState } from '../pages/pageState'
 import MarEmpty from '../pages/MarEmpty.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { search } from './search'
 import { match, segments } from './match'
 import './search.css'
 
 /**
- * Global search (⌘K) in Mar's proposal, a command palette: one line to
- * type in, scopes (chips, a `w␣` prefix or Tab), and the panel sizes to
- * what it shows. Empty: your recent work, four suggested templates and
- * the quick actions. Typing: results grouped by kind, matched letters in
- * bold, a docs search as the last way out. ↑↓ move a raised highlight
- * (the pointer moves it too), ↵ opens, ⌘↵ opens in Comfy Cloud where
- * that applies, Esc or ⌘K closes.
+ * Global search (⌘K) in Mar's proposal: a command palette. One field,
+ * the scopes as the New UI tab group, and one list under them: rows with
+ * a small picture, the name, what it is and where it lives, grouped and
+ * capped per group with a "See all" row. Empty: recent work, suggested
+ * templates, actions with their shortcuts. Follows the Page state
+ * (loading skeletons, offline, a first-time user with nothing yet).
+ *
+ * Keys: ↑↓ move through the one list (the pointer moves the same
+ * highlight), ↵ opens, ⌘↵ opens in Comfy Cloud where that applies;
+ * Tab / ⇧Tab, ←→ on an empty field or ⌘1–7 switch scope, ⌫ on an empty
+ * field goes back to All; Esc or ⌘K closes. The footer says what ↵ does
+ * for the row you're on.
  */
 type Scope = 'all' | 'templates' | 'workflows' | 'projects' | 'spaces' | 'apps' | 'assets'
+type Kind =
+  | 'template'
+  | 'workflow'
+  | 'project'
+  | 'space'
+  | 'app'
+  | 'asset'
+  | 'action'
+  | 'more'
+  | 'docs'
 
 interface Item {
   key: string
-  group: string
+  kind: Kind
   label: string
+  /** Matched character indices, for bold. */
   at?: number[]
-  /** One short muted word: when, what kind, or the state. */
-  word?: string
+  /** Where it lives or its state, after the type. */
+  meta?: string
   image?: string
   tile?: { mark: string; bg: string; fg: string }
   icon: Component
@@ -61,24 +81,33 @@ interface Item {
   open: () => void
   cloud?: () => void
 }
-interface Section {
+interface Group {
   name: string
-  /** rows: a list; tiles: pictures in a row; chips: icon + label in a row. */
-  layout: 'rows' | 'tiles' | 'chips'
-  label?: boolean
   items: (Item & { index: number })[]
 }
 
-const SCOPES: { id: Scope; label: string; prefix?: string; icon?: Component }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'templates', label: 'Templates', prefix: 't', icon: ComfyTemplate },
-  { id: 'workflows', label: 'Workflows', prefix: 'w', icon: ComfyWorkflow },
-  { id: 'projects', label: 'Projects', prefix: 'p', icon: Folder },
-  { id: 'spaces', label: 'Spaces', prefix: 's', icon: Circle },
-  { id: 'apps', label: 'Apps', prefix: 'a', icon: PanelsTopLeft },
-  { id: 'assets', label: 'Assets', prefix: 'as', icon: ComfyAssets }
+const SCOPES: { value: Scope; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'templates', label: 'Templates' },
+  { value: 'workflows', label: 'Workflows' },
+  { value: 'projects', label: 'Projects' },
+  { value: 'spaces', label: 'Spaces' },
+  { value: 'apps', label: 'Apps' },
+  { value: 'assets', label: 'Assets' }
 ]
-const PER_GROUP = 3
+const TYPE: Record<Kind, string> = {
+  template: 'Template',
+  workflow: 'Workflow',
+  project: 'Project',
+  space: 'Space',
+  app: 'App',
+  asset: 'Asset',
+  action: '',
+  more: '',
+  docs: ''
+}
+/** Results per group in All before "See all". */
+const CAP = 3
 
 const query = ref('')
 const scope = ref<Scope>('all')
@@ -89,16 +118,20 @@ const active = ref(0)
 // --- What can be found ----------------------------------------------------
 
 const CATEGORY = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
-/** "12 min ago" → "12m", "Yesterday" → "1d": a time in one short word. */
-function ago(when: string): string | undefined {
+const WHERE = { local: 'Local', cloud: 'Comfy Cloud', both: 'Local or Cloud' } as const
+const cloudInstance = (): ReturnType<typeof instanceById> =>
+  instances.value.find((i) => i.kind === 'cloud')
+
+/** "12 min ago" → "12m", "Yesterday" → "1d". */
+function ago(when: string): string {
   const w = when.toLowerCase()
   if (w === 'just now') return 'now'
   if (w === 'yesterday') return '1d'
   if (w === 'last week') return '1w'
   const m = w.match(/^(\d+) (min|hour|day|week)/)
-  return m ? `${m[1]}${{ min: 'm', hour: 'h', day: 'd', week: 'w' }[m[2]!]}` : undefined
+  return m ? `${m[1]}${{ min: 'm', hour: 'h', day: 'd', week: 'w' }[m[2]!]}` : when
 }
-const cloud = (): ReturnType<typeof instanceById> => instances.value.find((i) => i.kind === 'cloud')
+const dot = (...parts: (string | undefined)[]): string => parts.filter(Boolean).join(' · ')
 
 function inCloud(what: string, then: () => void): () => void {
   return () => {
@@ -109,9 +142,9 @@ function inCloud(what: string, then: () => void): () => void {
 
 const templateItem = (t: Template): Item => ({
   key: `t:${t.id}`,
-  group: 'Templates',
+  kind: 'template',
   label: t.title,
-  word: CATEGORY[t.category],
+  meta: dot(CATEGORY[t.category], WHERE[t.runs]),
   image: thumb(t.id),
   icon: t.kind === 'app' ? PanelsTopLeft : ComfyTemplate,
   open: () => openDetail('template', t.id),
@@ -122,18 +155,16 @@ const templates = computed(() => TEMPLATES.map(templateItem))
 const workflows = computed<Item[]>(() =>
   WORKFLOWS.map((w) => {
     const name = w.name.replace(/\.json$/, '')
+    const on = instanceById(w.instanceId)
     return {
       key: `w:${w.name}`,
-      group: 'Workflows',
+      kind: 'workflow',
       label: name,
-      word: ago(w.modified),
+      meta: dot(w.project ?? on?.name, ago(w.modified)),
       image: thumb(w.thumbId),
       icon: ComfyWorkflow,
       open: () => openDetail('workflow', w.name),
-      cloud:
-        instanceById(w.instanceId)?.kind === 'cloud'
-          ? undefined
-          : inCloud(name, () => openDetail('workflow', w.name))
+      cloud: on?.kind === 'cloud' ? undefined : inCloud(name, () => openDetail('workflow', w.name))
     }
   })
 )
@@ -141,26 +172,24 @@ const workflows = computed<Item[]>(() =>
 const projectItems = computed<Item[]>(() =>
   projects.items
     .filter((p) => !p.archived)
-    .map((p) => {
-      return {
-        key: `p:${p.id}`,
-        group: 'Projects',
-        label: p.name,
-        word: ago(p.updated),
-        image: p.art,
-        icon: Folder,
-        open: () => go(`project:${p.id}` as Page)
-      }
-    })
+    .map((p) => ({
+      key: `p:${p.id}`,
+      kind: 'project',
+      label: p.name,
+      meta: dot(instanceById(p.envId)?.name, ago(p.updated)),
+      image: p.art,
+      icon: Folder,
+      open: () => go(`project:${p.id}` as Page)
+    }))
 )
 
 const STATUS = { live: 'Live', draft: 'Draft', paused: 'Paused' } as const
 const spaces = computed<Item[]>(() =>
   SPACES.map((s) => ({
     key: `s:${s.id}`,
-    group: 'Spaces',
+    kind: 'space',
     label: s.name,
-    word: STATUS[s.status],
+    meta: dot(STATUS[s.status], s.domain),
     tile: {
       mark: s.brand.logo.mark,
       bg: s.brand.logo.bg ?? s.brand.color,
@@ -175,32 +204,35 @@ const compact = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` 
 const apps = computed<Item[]>(() =>
   APPS.map((a) => ({
     key: `a:${a.id}`,
-    group: 'Apps',
+    kind: 'app',
     label: a.name,
-    word: `${compact(a.runs)} runs`,
+    meta: dot(a.you ? 'Yours' : a.owner, `${compact(a.runs)} runs`),
     image: thumb(a.thumbId),
     icon: PanelsTopLeft,
     open: () => go(`app:${a.id}` as Page)
   }))
 )
 
-const TYPE = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
+const MEDIA = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
 const assets = computed<Item[]>(() =>
   CLOUD_ASSETS.map((a) => ({
     key: `m:${a.id}`,
-    group: 'Assets',
+    kind: 'asset',
     label: a.name,
-    word: TYPE[a.type],
+    meta: dot(MEDIA[a.type], a.project ?? a.when),
     image: thumb(a.thumbId),
     icon: ComfyAssets,
     open: () => go('assets')
   }))
 )
 
+function toggleTheme(): void {
+  look.theme = look.theme === 'light' ? 'dark' : 'light'
+}
 const actions = computed<Item[]>(() => [
   {
     key: 'x:new-workflow',
-    group: 'Actions',
+    kind: 'action',
     label: 'New workflow',
     icon: Plus,
     shortcut: ['⌘', 'N'],
@@ -211,7 +243,7 @@ const actions = computed<Item[]>(() => [
   },
   {
     key: 'x:new-project',
-    group: 'Actions',
+    kind: 'action',
     label: 'New project',
     icon: FolderPlus,
     shortcut: ['⇧', '⌘', 'P'],
@@ -219,37 +251,35 @@ const actions = computed<Item[]>(() => [
   },
   {
     key: 'x:cloud',
-    group: 'Actions',
-    label: 'Comfy Cloud',
+    kind: 'action',
+    label: 'Open Comfy Cloud',
     icon: Cloud,
     shortcut: ['⇧', '⌘', 'C'],
     open: () => {
-      const c = cloud()
+      const c = cloudInstance()
       if (c) hostActions.launch(c)
     }
   },
   {
     key: 'x:settings',
-    group: 'Actions',
-    label: 'Settings',
+    kind: 'action',
+    label: 'Go to Settings',
     icon: Settings2,
     shortcut: ['⌘', ','],
     open: () => go('settings' as Page)
   },
   {
     key: 'x:theme',
-    group: 'Actions',
-    label: look.theme === 'light' ? 'Dark theme' : 'Light theme',
+    kind: 'action',
+    label: look.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
     icon: look.theme === 'light' ? Moon : Sun,
     shortcut: ['⇧', '⌘', 'L'],
     open: toggleTheme
   }
 ])
-function toggleTheme(): void {
-  look.theme = look.theme === 'light' ? 'dark' : 'light'
-}
 
-const BY_SCOPE = computed<Record<Exclude<Scope, 'all'>, Item[]>>(() => ({
+type Library = Exclude<Scope, 'all'>
+const BY_SCOPE = computed<Record<Library, Item[]>>(() => ({
   templates: templates.value,
   workflows: workflows.value,
   projects: projectItems.value,
@@ -257,12 +287,15 @@ const BY_SCOPE = computed<Record<Exclude<Scope, 'all'>, Item[]>>(() => ({
   apps: apps.value,
   assets: assets.value
 }))
+const scopeLabel = (s: Scope): string => SCOPES.find((x) => x.value === s)!.label
 
 // --- What shows -----------------------------------------------------------
 
-const scopeLabel = computed(() => SCOPES.find((s) => s.id === scope.value)!.label)
-
 const q = computed(() => query.value.trim())
+/** Templates come from the catalog, the rest from your library, which
+ *  follows the Page state (loading, offline, nothing yet). */
+const state = computed(() => shownState.value)
+const reachable = (s: Library): boolean => state.value === 'live' || s === 'templates'
 
 function hits(items: Item[]): Item[] {
   const out: (Item & { score: number })[] = []
@@ -273,114 +306,102 @@ function hits(items: Item[]): Item[] {
   return out.sort((a, b) => b.score - a.score)
 }
 
-/** How many results each scope has for the query (on the chips). */
-const counts = computed(() => {
-  const out: Partial<Record<Scope, number>> = {}
-  if (!q.value) return out
-  let all = 0
-  for (const s of SCOPES) {
-    if (s.id === 'all') continue
-    const n = hits(BY_SCOPE.value[s.id]).length
-    out[s.id] = n
-    all += n
+function seeAll(s: Library, n: number): Item {
+  return {
+    key: `more:${s}`,
+    kind: 'more',
+    label: `See all ${n} in ${scopeLabel(s)}`,
+    icon: ArrowRight,
+    shortcut: ['⌘', String(SCOPES.findIndex((x) => x.value === s) + 1)],
+    open: () => setScope(s)
   }
-  out.all = all + hits(actions.value).length
-  return out
-})
-
+}
 const docs = computed<Item>(() => ({
-  key: 'd:docs',
-  group: 'Docs',
-  label: `Search docs for “${q.value}”`,
+  key: 'docs',
+  kind: 'docs',
+  label: `Search the docs for “${q.value}”`,
   icon: BookOpen,
   open: () => toast(`Searching the docs for “${q.value}”`)
 }))
 
 const QUICK = ['x:new-workflow', 'x:new-project', 'x:cloud', 'x:settings']
-const sections = computed<Section[]>(() => {
-  const out: (Omit<Section, 'items'> & { items: Item[] })[] = []
-  const list = (s: Scope): Item[] => BY_SCOPE.value[s as Exclude<Scope, 'all'>]
-  if (!q.value) {
-    if (scope.value === 'all') {
+const groups = computed<Group[]>(() => {
+  const out: { name: string; items: Item[] }[] = []
+  if (!q.value && scope.value === 'all') {
+    if (state.value === 'live') {
       const w = workflows.value
       const p = projectItems.value
-      out.push({
-        name: 'Recent',
-        layout: 'tiles',
-        label: true,
-        items: [w[0], p[3], w[1], w[2], p[0], w[3]].filter((it): it is Item => !!it)
-      })
-      out.push({
-        name: 'Templates',
-        layout: 'tiles',
-        label: true,
-        items: [4, 1, 6, 9, 2, 11].map((i) => templates.value[i]).filter((it): it is Item => !!it)
-      })
-      out.push({
-        name: 'Actions',
-        layout: 'chips',
-        items: actions.value.filter((a) => QUICK.includes(a.key))
-      })
-    } else out.push({ name: scopeLabel.value, layout: 'rows', items: list(scope.value) })
+      out.push({ name: 'Recent', items: [w[0], p[3], w[1]].filter((it): it is Item => !!it) })
+    }
+    out.push({
+      name: 'Suggested templates',
+      items: [
+        ...[4, 1].map((i) => templates.value[i]).filter((it): it is Item => !!it),
+        seeAll('templates', templates.value.length)
+      ]
+    })
+    out.push({ name: 'Actions', items: actions.value.filter((a) => QUICK.includes(a.key)) })
+  } else if (!q.value) {
+    const s = scope.value as Library
+    if (reachable(s)) out.push({ name: scopeLabel(s), items: BY_SCOPE.value[s] })
   } else if (scope.value === 'all') {
-    const groups = [
-      ...SCOPES.filter((s) => s.id !== 'all').map((s) => ({
+    const found = (SCOPES.slice(1) as { value: Library; label: string }[])
+      .filter((s) => reachable(s.value))
+      .map((s) => ({
+        scope: s.value as Library | undefined,
         name: s.label,
-        items: hits(list(s.id))
-      })),
-      { name: 'Actions', items: hits(actions.value) }
-    ]
+        items: hits(BY_SCOPE.value[s.value])
+      }))
+    const all = [...found, { scope: undefined, name: 'Actions', items: hits(actions.value) }]
       .filter((g) => g.items.length)
       .sort((a, b) => (b.items[0]!.score ?? 0) - (a.items[0]!.score ?? 0))
-    for (const g of groups) out.push({ ...g, layout: 'rows', items: g.items.slice(0, PER_GROUP) })
+    for (const g of all)
+      out.push({
+        name: g.name,
+        items:
+          g.scope && g.items.length > CAP
+            ? [...g.items.slice(0, CAP), seeAll(g.scope, g.items.length)]
+            : g.items
+      })
   } else {
-    const items = hits(list(scope.value))
-    if (items.length) out.push({ name: scopeLabel.value, layout: 'rows', items })
+    const s = scope.value as Library
+    const items = reachable(s) ? hits(BY_SCOPE.value[s]) : []
+    if (items.length) out.push({ name: scopeLabel(s), items })
   }
-  if (q.value && out.length) out.push({ name: 'Docs', layout: 'rows', items: [docs.value] })
+  if (q.value && out.length) out.push({ name: 'Docs', items: [docs.value] })
 
   let index = 0
-  return out.map((s) => ({ ...s, items: s.items.map((it) => ({ ...it, index: index++ })) }))
+  return out.map((g) => ({ ...g, items: g.items.map((it) => ({ ...it, index: index++ })) }))
 })
-/** The one muted word on a row: what kind it is when everything is
- *  mixed, otherwise its own word (when, state). */
-const wordOf = (it: Item): string | undefined =>
-  q.value && scope.value === 'all' && it.group !== 'Docs' ? it.group.replace(/s$/, '') : it.word
-const flat = computed(() => sections.value.flatMap((s) => s.items))
+const flat = computed(() => groups.value.flatMap((g) => g.items))
 const current = computed(() => flat.value[active.value])
-const none = computed(() => !!q.value && !flat.value.length)
+const inLibrary = computed(() => scope.value !== 'all' && scope.value !== 'templates')
+const loading = computed(() => state.value === 'loading' && inLibrary.value)
+const offline = computed(() => state.value === 'error' && inLibrary.value)
+const none = computed(() => !!q.value && !flat.value.length && !loading.value && !offline.value)
+const nothingYet = computed(
+  () => !q.value && !flat.value.length && !loading.value && !offline.value
+)
+
+/** Type and meta on a row; inside a scope the type goes without saying. */
+function sub(it: Item): string {
+  return dot(scope.value === 'all' ? TYPE[it.kind] : undefined, it.meta)
+}
 
 // --- Scopes ---------------------------------------------------------------
 
 function setScope(s: Scope): void {
   scope.value = s
-  active.value = 0
   input.value?.focus()
 }
-/** `w␣` scopes to Workflows (the letters are the scope's prefix). */
-watch(query, (v) => {
-  const prefix = v.match(/^([a-z]{1,2}) $/i)?.[1]?.toLowerCase()
-  const s = prefix && scope.value === 'all' && SCOPES.find((x) => x.prefix === prefix)
-  if (s) {
-    scope.value = s.id
-    query.value = ''
-  }
-  active.value = 0
-})
-
-function onTab(back: boolean): void {
-  // A word that starts a scope's name: Tab completes it ("work⇥").
-  const typed = q.value.toLowerCase()
-  const named =
-    typed && SCOPES.find((s) => s.id !== 'all' && s.label.toLowerCase().startsWith(typed))
-  if (named && scope.value === 'all') {
-    query.value = ''
-    setScope(named.id)
-    return
-  }
-  const i = SCOPES.findIndex((s) => s.id === scope.value)
-  setScope(SCOPES[(i + (back ? -1 : 1) + SCOPES.length) % SCOPES.length]!.id)
+function stepScope(by: number): void {
+  const i = SCOPES.findIndex((s) => s.value === scope.value)
+  setScope(SCOPES[(i + by + SCOPES.length) % SCOPES.length]!.value)
 }
+watch([query, scope], () => {
+  active.value = 0
+  nextTick(() => list.value?.scrollTo({ top: 0 }))
+})
 
 // --- Keyboard and pointer -------------------------------------------------
 
@@ -388,46 +409,15 @@ function close(): void {
   search.open = false
 }
 function choose(it: Item | undefined, inCloud = false): void {
-  if (!it) {
-    if (none.value) docs.value.open()
-    close()
-    return
-  }
-  close()
+  if (!it) return
+  if (it.kind !== 'more') close()
   if (inCloud && it.cloud) it.cloud()
   else it.open()
 }
-/** ↑↓ go row by row in a list and section by section across a row of
- *  pictures or chips; ←→ move along such a row. */
-function move(by: 1 | -1): void {
+function move(by: number): void {
   const n = flat.value.length
   if (!n) return
-  const secs = sections.value
-  const at = secs.findIndex((g) => g.items.some((it) => it.index === active.value))
-  const sec = secs[at]
-  const first = (g: Section): number => g.items[0]!.index
-  const last = (g: Section): number => g.items[g.items.length - 1]!.index
-  const entry = (g: Section, down: boolean): number =>
-    g.layout === 'rows' && !down ? last(g) : first(g)
-  let next: number
-  if (!sec) next = 0
-  else if (
-    sec.layout !== 'rows' ||
-    (by > 0 ? active.value === last(sec) : active.value === first(sec))
-  ) {
-    const g = secs[(at + by + secs.length) % secs.length]!
-    next = entry(g, by > 0)
-  } else next = active.value + by
-  active.value = next
-  pointerMoved = false
-}
-function along(by: 1 | -1): boolean {
-  const sec = sections.value.find((g) => g.items.some((it) => it.index === active.value))
-  if (!sec || sec.layout === 'rows') return false
-  const i = sec.items.findIndex((it) => it.index === active.value) + by
-  if (i >= 0 && i < sec.items.length) active.value = sec.items[i]!.index
-  pointerMoved = false
-  return true
+  active.value = (active.value + by + n) % n
 }
 
 const SHORTCUTS: Record<string, string> = {
@@ -439,27 +429,31 @@ const SHORTCUTS: Record<string, string> = {
 }
 function onKey(e: KeyboardEvent): void {
   const mod = e.metaKey || e.ctrlKey
-  if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
+  if (e.key === 'ArrowDown') {
     e.preventDefault()
     move(1)
-  } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+  } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     move(-1)
   } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !query.value) {
-    if (along(e.key === 'ArrowRight' ? 1 : -1)) e.preventDefault()
+    e.preventDefault()
+    stepScope(e.key === 'ArrowRight' ? 1 : -1)
+  } else if (e.key === 'Tab') {
+    e.preventDefault()
+    stepScope(e.shiftKey ? -1 : 1)
   } else if (e.key === 'Enter') {
     e.preventDefault()
     choose(current.value, mod)
-  } else if (e.key === 'Tab') {
-    e.preventDefault()
-    onTab(e.shiftKey)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     close()
   } else if (e.key === 'Backspace' && !query.value && scope.value !== 'all') {
     e.preventDefault()
     setScope('all')
-  } else if (mod && e.key !== 'k') {
+  } else if (mod && /^[1-7]$/.test(e.key)) {
+    e.preventDefault()
+    setScope(SCOPES[Number(e.key) - 1]!.value)
+  } else if (mod && e.key.toLowerCase() !== 'k') {
     const key = SHORTCUTS[e.shiftKey ? e.key.toUpperCase() : e.key]
     const it = key && actions.value.find((a) => a.key === key)
     if (it) {
@@ -469,39 +463,25 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
-/** The pointer only takes the highlight once it moves, so a list that
- *  scrolls under a still pointer doesn't steal it from the keyboard. */
-let pointerMoved = false
-function onPointer(i: number): void {
-  if (!pointerMoved) {
-    pointerMoved = true
-    return
-  }
+/** The pointer takes the highlight only when it really moves, so a list
+ *  scrolling under a still pointer doesn't steal it from the keys. */
+let last = { x: -1, y: -1 }
+function onPointer(e: PointerEvent, i: number): void {
+  if (e.clientX === last.x && e.clientY === last.y) return
+  last = { x: e.clientX, y: e.clientY }
   active.value = i
 }
 
-// --- The raised highlight -------------------------------------------------
-
-const hl = ref<{ x: number; y: number; w: number; h: number } | null>(null)
-const hlReady = ref(false)
-function place(scroll: boolean): void {
-  const el = list.value?.querySelector<HTMLElement>(`[data-i="${active.value}"]`)
-  if (!el) {
-    hl.value = null
-    return
-  }
-  hl.value = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }
-  if (scroll) el.scrollIntoView({ block: 'nearest' })
-}
-watch(active, () => nextTick(() => place(true)))
-watch(sections, () => {
-  hlReady.value = false
+/** Keep the active row in view; the first row of a group brings its title. */
+watch(active, (i) =>
   nextTick(() => {
-    place(false)
-    list.value?.scrollTo({ top: 0 })
-    requestAnimationFrame(() => (hlReady.value = true))
+    const el = list.value?.querySelector<HTMLElement>(`[data-i="${i}"]`)
+    if (!el) return
+    const head = el.previousElementSibling
+    if (head?.classList.contains('mar-search-head')) head.scrollIntoView({ block: 'nearest' })
+    el.scrollIntoView({ block: 'nearest' })
   })
-})
+)
 
 // --- Open and close -------------------------------------------------------
 
@@ -513,13 +493,7 @@ watch(
     query.value = ''
     scope.value = 'all'
     active.value = 0
-    pointerMoved = false
-    hlReady.value = false
-    nextTick(() => {
-      input.value?.focus()
-      place(false)
-      requestAnimationFrame(() => (hlReady.value = true))
-    })
+    nextTick(() => input.value?.focus())
   }
 )
 
@@ -536,16 +510,24 @@ onBeforeUnmount(() => {
 })
 
 const placeholder = computed(() =>
-  scope.value === 'all' ? 'Search or jump to…' : `Search ${scopeLabel.value.toLowerCase()}…`
+  scope.value === 'all' ? 'Search or jump to…' : `Search ${scopeLabel(scope.value).toLowerCase()}…`
 )
 const optionId = (i: number): string => `mar-search-opt-${i}`
-const verb = computed(() =>
-  current.value?.group === 'Actions' ? 'Run' : current.value?.group === 'Docs' ? 'Search' : 'Open'
-)
-const hlTile = computed(
-  () =>
-    sections.value.find((g) => g.items.some((it) => it.index === active.value))?.layout === 'tiles'
-)
+/** What ↵ (and ⌘↵) do for the row you're on, for the footer. */
+const verbs = computed(() => {
+  const it = current.value
+  if (!it) return []
+  const main = {
+    action: 'Run',
+    more: 'Show all',
+    docs: 'Search',
+    asset: 'Show in Assets'
+  }[it.kind as string]
+  return [
+    { keys: ['↵'], label: main ?? 'Open' },
+    ...(it.cloud ? [{ keys: ['⌘', '↵'], label: 'Open in Cloud' }] : [])
+  ]
+})
 </script>
 
 <template>
@@ -561,18 +543,7 @@ const hlTile = computed(
           @mousedown="($event.target as HTMLElement).closest('input') || $event.preventDefault()"
         >
           <div class="mar-search-field">
-            <Search :size="18" class="mar-search-glass" />
-            <span v-if="scope !== 'all'" class="mar-search-token">
-              {{ scopeLabel }}
-              <button
-                type="button"
-                tabindex="-1"
-                :aria-label="`Search everything, not only ${scopeLabel}`"
-                @click="setScope('all')"
-              >
-                <X :size="12" />
-              </button>
-            </span>
+            <Search :size="17" class="mar-search-glass" />
             <input
               ref="input"
               v-model="query"
@@ -587,22 +558,20 @@ const hlTile = computed(
               spellcheck="false"
               autocomplete="off"
             />
+            <button
+              v-if="query"
+              type="button"
+              tabindex="-1"
+              class="mar-search-clear"
+              aria-label="Clear"
+              @click="((query = ''), input?.focus())"
+            >
+              <X :size="14" />
+            </button>
           </div>
 
-          <div class="mar-search-scopes" role="tablist" aria-label="Search in">
-            <button
-              v-for="s in SCOPES"
-              :key="s.id"
-              type="button"
-              role="tab"
-              tabindex="-1"
-              :aria-selected="scope === s.id"
-              class="mar-search-scope"
-              :class="[scope === s.id && 'is-on', counts[s.id] === 0 && 'is-zero']"
-              @click="setScope(s.id)"
-            >
-              {{ s.label }}
-            </button>
+          <div class="mar-search-scopes">
+            <MarSeg v-model="scope" :options="SCOPES" label="Search in" />
           </div>
 
           <div
@@ -612,64 +581,32 @@ const hlTile = computed(
             role="listbox"
             aria-label="Results"
           >
-            <span
-              v-if="hl"
-              class="mar-search-hl"
-              :class="[hlReady && 'is-moving', hlTile && 'is-tile']"
-              :style="{
-                transform: `translate(${hl.x}px, ${hl.y}px)`,
-                width: `${hl.w}px`,
-                height: `${hl.h}px`
-              }"
-              aria-hidden="true"
-            />
-
-            <section
-              v-for="g in sections"
-              :key="g.name"
-              class="mar-search-group"
-              :class="`is-${g.layout}`"
-            >
-              <div v-if="g.label" class="mar-search-head">{{ g.name }}</div>
-
-              <div v-if="g.layout === 'tiles'" class="mar-search-tiles">
-                <div
-                  v-for="it in g.items"
-                  :id="optionId(it.index)"
-                  :key="it.key"
-                  role="option"
-                  :aria-selected="active === it.index"
-                  :aria-label="it.label"
-                  :data-i="it.index"
-                  class="mar-search-tile"
-                  :class="active === it.index && 'is-on'"
-                  @pointermove="onPointer(it.index)"
-                  @click="choose(it)"
-                >
-                  <img :src="it.image" alt="" />
-                  <span class="mar-search-tile-t">{{ it.label }}</span>
-                </div>
+            <div v-if="loading" class="mar-search-group" aria-busy="true" aria-label="Loading">
+              <div class="mar-search-head"><span class="mar-search-skel is-head" /></div>
+              <div v-for="n in 5" :key="n" class="mar-search-row is-skel">
+                <span class="mar-search-lead mar-search-skel" />
+                <span
+                  class="mar-search-skel"
+                  :style="{ width: `${[38, 52, 30, 46, 34][n - 1]}%` }"
+                />
               </div>
+            </div>
 
-              <div v-else-if="g.layout === 'chips'" class="mar-search-chips">
-                <div
-                  v-for="it in g.items"
-                  :id="optionId(it.index)"
-                  :key="it.key"
-                  role="option"
-                  :aria-selected="active === it.index"
-                  :data-i="it.index"
-                  class="mar-search-chip"
-                  :class="active === it.index && 'is-on'"
-                  @pointermove="onPointer(it.index)"
-                  @click="choose(it)"
-                >
-                  <component :is="it.icon" :size="16" />
-                  <span class="truncate">{{ it.label }}</span>
-                </div>
-              </div>
+            <div v-else-if="offline" class="mar-search-none">
+              <MarEmpty
+                compact
+                tone="error"
+                :icon="WifiOff"
+                title="Can’t reach your library"
+                text="Check your connection, then try again."
+                action="Try again"
+                @action="retry"
+              />
+            </div>
 
-              <template v-else>
+            <template v-else>
+              <section v-for="g in groups" :key="g.name" class="mar-search-group">
+                <div class="mar-search-head">{{ g.name }}</div>
                 <div
                   v-for="it in g.items"
                   :id="optionId(it.index)"
@@ -678,8 +615,8 @@ const hlTile = computed(
                   :aria-selected="active === it.index"
                   :data-i="it.index"
                   class="mar-search-row"
-                  :class="active === it.index && 'is-on'"
-                  @pointermove="onPointer(it.index)"
+                  :class="[active === it.index && 'is-on', `is-${it.kind}`]"
+                  @pointermove="onPointer($event, it.index)"
                   @click="choose(it)"
                 >
                   <span class="mar-search-lead" :class="!it.image && !it.tile && 'is-icon'">
@@ -690,7 +627,7 @@ const hlTile = computed(
                       :style="{ background: it.tile.bg, color: it.tile.fg }"
                       >{{ it.tile.mark }}</span
                     >
-                    <component :is="it.icon" v-else :size="16" />
+                    <component :is="it.icon" v-else :size="15" />
                   </span>
                   <span class="mar-search-label"
                     ><template v-for="(s, k) in segments(it.label, it.at ?? [])" :key="k"
@@ -698,41 +635,51 @@ const hlTile = computed(
                       ><template v-else>{{ s.text }}</template></template
                     ></span
                   >
-                  <span v-if="wordOf(it)" class="mar-search-word">{{ wordOf(it) }}</span>
-                  <span class="flex-1" />
-                  <span v-if="active === it.index" class="mar-search-do">
-                    <span v-if="it.cloud" class="mar-search-hint" title="Open in Comfy Cloud"
-                      ><Cloud :size="13" /><kbd>⌘</kbd><kbd>↵</kbd></span
-                    >
-                    <kbd class="is-main"><CornerDownLeft :size="11" /></kbd>
+                  <span v-if="sub(it)" class="mar-search-sub">{{ sub(it) }}</span>
+                  <span class="mar-search-fill" />
+                  <span v-if="it.shortcut" class="mar-search-keys">
+                    <kbd v-for="k in it.shortcut" :key="k">{{ k }}</kbd>
+                  </span>
+                  <span v-else-if="active === it.index" class="mar-search-keys">
+                    <kbd><CornerDownLeft :size="11" /></kbd>
                   </span>
                 </div>
-              </template>
-            </section>
+              </section>
 
-            <div v-if="none" class="mar-search-none">
-              <MarEmpty
-                compact
-                :icon="Search"
-                :title="`Nothing called “${q}”`"
-                :text="
-                  scope === 'all'
-                    ? 'Try another word, or the docs.'
-                    : `No ${scopeLabel.toLowerCase()} match.`
-                "
-                action="Search docs"
-                :second="scope === 'all' ? undefined : 'Search everything'"
-                @action="choose(undefined)"
-                @second="setScope('all')"
-              />
-            </div>
+              <div v-if="none" class="mar-search-none">
+                <MarEmpty
+                  compact
+                  :icon="Search"
+                  :title="`No results for “${q}”`"
+                  :text="
+                    scope === 'all'
+                      ? 'Try another word, or search the docs.'
+                      : `Nothing in ${scopeLabel(scope)}. Try All.`
+                  "
+                  :action="scope === 'all' ? 'Search the docs' : 'Search everything'"
+                  @action="scope === 'all' ? choose(docs) : setScope('all')"
+                />
+              </div>
+              <div v-else-if="nothingYet" class="mar-search-none">
+                <MarEmpty
+                  compact
+                  :icon="Search"
+                  :title="`No ${scopeLabel(scope).toLowerCase()} yet`"
+                  text="What you make shows up here."
+                />
+              </div>
+            </template>
           </div>
 
           <footer class="mar-search-foot">
-            <span v-if="current"
-              ><kbd><CornerDownLeft :size="11" /></kbd>{{ verb }}</span
-            >
-            <span><kbd>esc</kbd>Close</span>
+            <span v-for="v in verbs" :key="v.label" class="mar-search-verb">
+              <kbd v-for="k in v.keys" :key="k">{{ k }}</kbd
+              >{{ v.label }}
+            </span>
+            <span class="mar-search-fill" />
+            <span v-if="flat.length" class="mar-search-verb"><kbd>↑</kbd><kbd>↓</kbd>Move</span>
+            <span class="mar-search-verb"><kbd>⇥</kbd>Scope</span>
+            <span class="mar-search-verb"><kbd>esc</kbd>Close</span>
           </footer>
         </div>
       </div>

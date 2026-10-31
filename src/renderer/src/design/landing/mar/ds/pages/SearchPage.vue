@@ -9,23 +9,15 @@ import ShotsPage, { type Shot } from './ShotsPage.vue'
 const PALETTE: Shot['crop'] = [296, 96, 688, 680]
 const SHOTS: Shot[] = [
   {
-    label: 'empty · recent work and templates as pictures, four actions',
+    label: 'empty · recent, suggested templates, actions with shortcuts',
     run: 'search',
     crop: PALETTE
   },
-  {
-    label: 'keyboard · ↓ moves between rows, the name shows on the active picture',
-    run: 'search-empty-keys',
-    crop: PALETTE
-  },
-  { label: 'typing · one word per row, groups apart by space', run: 'search-typed', crop: PALETTE },
-  {
-    label: 'active row · ↵, and ⌘↵ to open in Cloud where it runs there',
-    run: 'search-keys',
-    crop: PALETTE
-  },
-  { label: 'scoped · “w␣” searches only workflows', run: 'search-scoped', crop: PALETTE },
-  { label: 'scoped · “temp⇥” completes the scope', run: 'search-tab', crop: PALETTE },
+  { label: 'keyboard · ↓ moves through one list', run: 'search-empty-keys', crop: PALETTE },
+  { label: 'typing · grouped, 3 per group, “See all in …”', run: 'search-typed', crop: PALETTE },
+  { label: 'active row · the footer says what ↵ and ⌘↵ do', run: 'search-keys', crop: PALETTE },
+  { label: 'scoped · Tab to Workflows, then typing', run: 'search-scoped', crop: PALETTE },
+  { label: 'scoped · Tab keeps the query', run: 'search-tab', crop: PALETTE },
   {
     label: 'no results · the shared empty state, docs as the way out',
     run: 'search-none',
@@ -51,7 +43,7 @@ const SHOTS: Shot[] = [
   </Section>
   <ShotsPage
     title="Palette"
-    note="Everything in one place: templates, workflows, projects, spaces, apps, assets and quick actions. Pictures over words: recent work and templates are thumbnails, rows carry one muted word, keys show only on the active row. Sizes to what it shows. Scope with the chips, a prefix (w, p, s, a, t or as, then a space), or Tab; ⌫ on an empty field searches everything again. Live: type in it."
+    note="One list: a small picture, the name, the type and where it lives. Scopes are the New UI tab group: Tab / ⇧Tab, ←→ on an empty field or ⌘1–7; ⌫ on an empty field goes back to All. The footer says what ↵ does for the row you are on. Live: type in it."
     :shots="SHOTS"
   />
 </template>
