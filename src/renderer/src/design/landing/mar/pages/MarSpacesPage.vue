@@ -128,7 +128,6 @@ function lines(s: Space): MenuLine[] {
 <template>
   <MarPage
     title="Spaces"
-    description="Branded places where your clients run the tools you publish for them."
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && SPACES.length === 0 ? 'empty' : undefined"

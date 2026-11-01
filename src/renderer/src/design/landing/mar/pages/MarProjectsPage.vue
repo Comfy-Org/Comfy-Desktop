@@ -128,7 +128,6 @@ function lines(p: MarProject): MenuLine[] {
 <template>
   <MarPage
     title="Projects"
-    description="A shared place for a piece of work. Each runs on one build, so everyone gets the same result."
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && !!query"
     :state="

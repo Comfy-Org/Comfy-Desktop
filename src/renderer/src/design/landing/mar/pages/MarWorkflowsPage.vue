@@ -163,11 +163,6 @@ function lines(w: MarWorkflow): MenuLine[] {
     title="Workflows"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
-    :description="
-      fixedProject
-        ? undefined
-        : 'Every workflow, on this computer and in the cloud. Each opens in its build.'
-    "
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && base.length === 0 ? 'empty' : undefined"

@@ -162,7 +162,6 @@ function lines(a: LibApp): MenuLine[] {
 <template>
   <MarPage
     title="Apps"
-    description="Tools anyone can run from a link. No graph to learn."
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && LIB.length === 0 ? 'empty' : undefined"

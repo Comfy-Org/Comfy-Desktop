@@ -18,7 +18,7 @@ import {
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
-import { hostActions, instances, proto, toast, type Page } from '../../useProto'
+import { hostActions, instances, toast, type Page } from '../../useProto'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
@@ -252,11 +252,6 @@ const newLabel = computed(() =>
 <template>
   <MarPage
     title="Builds"
-    :description="
-      proto.mode === 'build'
-        ? 'A ComfyUI version, custom nodes and models. Save versions, then deploy them.'
-        : 'Where your work runs. Each has its own ComfyUI version, custom nodes and models.'
-    "
     :skeleton="view === 'grid' ? 'cards' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && builds.items.length === 0 ? 'empty' : undefined"

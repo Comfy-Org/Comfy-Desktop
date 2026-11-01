@@ -40,8 +40,7 @@ const sections = computed(() =>
     .map((tr) => ({
       ...tr,
       items: TUTORIALS.filter(
-        (t) =>
-          t.category === tr.id && `${t.title} ${t.blurb}`.toLowerCase().includes(query.value)
+        (t) => t.category === tr.id && `${t.title} ${t.blurb}`.toLowerCase().includes(query.value)
       )
     }))
     .filter((s) => s.items.length)
@@ -53,10 +52,7 @@ const open = (t: Tutorial): void => toast(`Watch: ${t.title}`)
 
 <template>
   <div class="mar-learn mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Learn"
-      description="Hands-on lessons, from your first node graph to VFX, animation and ads."
-    />
+    <PageHeader title="Learn" />
     <div class="mb-8 flex items-center justify-between gap-3">
       <SegmentedControl
         v-model="tab"

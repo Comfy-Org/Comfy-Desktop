@@ -28,7 +28,6 @@ export interface EmptyCopy {
 
 const {
   title,
-  description,
   skeleton = 'grid',
   empty,
   errorTitle = "Can't reach Comfy Cloud",
@@ -39,7 +38,6 @@ const {
   toolbarTo
 } = defineProps<{
   title: string
-  description?: string
   skeleton?: 'grid' | 'list' | 'cards' | 'settings'
   empty?: EmptyCopy
   errorTitle?: string
@@ -77,7 +75,6 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
             <h1 class="mar-page-title">{{ title }}</h1>
             <slot name="meta" />
           </div>
-          <p v-if="description" class="mar-page-desc">{{ description }}</p>
         </div>
         <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
           <slot name="actions" :state="shown" />
@@ -203,11 +200,6 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   font-size: var(--text-title, 24px);
   font-weight: 600;
   letter-spacing: -0.01em;
-}
-.mar-page-desc {
-  margin: 4px 0 0;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
 }
 .mar-page-bar {
   display: flex;

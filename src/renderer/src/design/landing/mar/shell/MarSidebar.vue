@@ -217,7 +217,9 @@ function newChat(): void {
 
     <RailFlyout v-if="!open && p20.rail === 'flyout'" />
     <nav class="mar-side-scroll">
+      <!-- Search finds media and workflows: a Create thing, not in Build. -->
       <button
+        v-if="proto.mode !== 'build'"
         type="button"
         class="mar-side-row"
         :title="open ? undefined : 'Search · ⌘K'"

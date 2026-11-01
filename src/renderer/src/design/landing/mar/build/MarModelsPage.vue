@@ -199,16 +199,6 @@ const SCOPES = computed(() => [
   { value: 'favorites' as const, label: 'Favorites', n: modelsState.favorites.length },
   { value: 'partner' as const, label: 'Partner API', n: ROUTER_MODELS.length }
 ])
-const TITLE: Record<Scope, string> = {
-  all: 'All models',
-  installed: 'On this computer',
-  available: 'Available to download',
-  downloads: 'Downloads',
-  favorites: 'Favorites',
-  missing: `Missing for ${need.workflow}`,
-  unused: 'Not used by anything',
-  partner: 'Partner API'
-}
 
 watch(scope, () => {
   picked.value = []
@@ -346,14 +336,6 @@ const lowDisk = computed(() => freeGb.value < 120)
       <header class="mm-head flex items-end justify-between gap-4 pb-5">
         <div class="min-w-0">
           <h1 class="mm-title">Models</h1>
-          <p class="mt-2 text-ui text-muted-foreground">
-            {{ TITLE[scope] }}
-            <template v-if="scope !== 'partner'"> · {{ list.length }}</template>
-            <template v-if="scope === 'installed'">
-              · {{ fmtSize(usedGb) }}, shared by every build</template
-            >
-            <template v-if="scope === 'partner'"> · run in the cloud, nothing to download</template>
-          </p>
         </div>
         <!-- Pablo keeps provider keys in admin; they belong next to the
              models they unlock. -->

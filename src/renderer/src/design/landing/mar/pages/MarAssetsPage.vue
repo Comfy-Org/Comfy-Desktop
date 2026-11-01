@@ -169,7 +169,6 @@ function lines(a: MarAsset): MenuLine[] {
 <template>
   <MarPage
     title="Assets"
-    description="What your runs made and what you brought in, on this computer and in the cloud."
     :skeleton="assetView.layout === 'list' ? 'list' : 'grid'"
     :no-results="shown.length === 0 && filtered"
     :embedded="!!fixedProject"
