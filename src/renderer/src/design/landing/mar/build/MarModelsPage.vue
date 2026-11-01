@@ -747,7 +747,7 @@ const lowDisk = computed(() => freeGb.value < 120)
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-radius);
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mm-view-btn {
@@ -757,7 +757,7 @@ const lowDisk = computed(() => freeGb.value < 120)
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-item-radius);
   color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mm-view-btn[aria-checked='true'] {
@@ -808,7 +808,7 @@ const lowDisk = computed(() => freeGb.value < 120)
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   font-size: 12px;
 }

@@ -37,7 +37,7 @@ import { buildsView } from './buildsView'
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-radius);
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bv-btn {
@@ -47,7 +47,7 @@ import { buildsView } from './buildsView'
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--mar-tab-item-radius);
   color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bv-btn[aria-checked='true'] {

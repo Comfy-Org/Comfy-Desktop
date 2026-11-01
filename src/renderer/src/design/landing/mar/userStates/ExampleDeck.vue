@@ -269,7 +269,7 @@ function pick(i: number): void {
   align-items: center;
   gap: 6px;
   padding: 0 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--color-inverted-background);
   color: var(--color-inverted-foreground);
   font-size: 13px;

@@ -5,7 +5,7 @@ import { envKind } from '../parts/env/env'
 import { hostActions } from '../useProto'
 import type { ProtoInstance } from '../mock'
 
-/** A build to launch, as a compact pill: where it runs in a circle, name
+/** A build to launch, as a compact row: where it runs in a well, name
  *  and place, then its state. Click launches ComfyUI on that build. */
 const { inst } = defineProps<{ inst: ProtoInstance }>()
 
@@ -23,10 +23,10 @@ const state = computed(() => {
 <template>
   <button
     type="button"
-    class="mar-surface flex min-w-0 items-center gap-3 rounded-full p-1.5 pr-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus"
+    class="mar-surface flex min-w-0 items-center gap-3 rounded-card p-1.5 pr-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus"
     @click="hostActions.launch(inst)"
   >
-    <span class="mar-well flex size-10 shrink-0 items-center justify-center rounded-full">
+    <span class="mar-well flex size-10 shrink-0 items-center justify-center rounded-control">
       <LocationIcon :kind="inst.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
     </span>
     <span class="min-w-0 flex-1">

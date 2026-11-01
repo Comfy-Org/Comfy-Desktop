@@ -10,7 +10,7 @@ import { EXAMPLES, playLoop, runExample } from './examples'
  * carrying its own name, type and run time at the top. The covers turn
  * into depth like Coverflow; arrow keys, a click on a side cover, a drag
  * or a sideways scroll bring one to the front. Pointing at a cover (or
- * focusing it) shows its Run pill at the bottom; Enter on the front cover
+ * focusing it) shows its Run button at the bottom; Enter on the front cover
  * runs it too. Run never says where: on Desktop it runs on Desktop, on
  * Cloud on Cloud.
  */
@@ -50,7 +50,7 @@ function pick(i: number): void {
   if (i === active.value) runExample(EXAMPLES[i]!)
   else void go(i)
 }
-/** The pill on a cover runs that one, front or side; anywhere else on a
+/** The Run button on a cover runs that one, front or side; anywhere else on a
  *  side cover only brings it to the front. */
 function runFrom(i: number): void {
   if (!moved) runExample(EXAMPLES[i]!)
@@ -239,7 +239,7 @@ function wheel(e: WheelEvent): void {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-/* Run at the bottom: a full-width white pill over a soft scrim, shown on
+/* Run at the bottom: a full-width white button over a soft scrim, shown on
    the cover you point at (or focus). */
 .mar-ff-scrim {
   position: absolute;
@@ -259,7 +259,7 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   justify-content: center;
   padding: 0 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: #fff;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),
@@ -354,7 +354,7 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
   outline: none;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUp, Bell, Mic, Plus } from 'lucide-vue-next'
+import { ArrowUp, Bell, Mic, Play, Plus } from 'lucide-vue-next'
 import Button from '../../../ui/Button.vue'
 import portraitSun from '../../assets/portrait-sun.jpg'
 import Cell from '../kit/Cell.vue'
@@ -46,6 +46,24 @@ const STATES = [
         >
           <Button :variant="b.v" disabled>{{ b.label }}</Button>
         </div>
+      </Cell>
+    </Cells>
+  </Section>
+  <Section
+    title="Corners"
+    note="Buttons use the control radius (--radius-control), so they follow the Corners tweak. Only icon-only circular buttons are round (send, play, an arrow on a picture). No pill buttons; pills are for tags and badges."
+  >
+    <Cells :min="140">
+      <Cell label="text · control radius"><Button variant="primary">Log in</Button></Cell>
+      <Cell label="on a picture · control radius">
+        <div class="ds-photo ds-btn-photo" :style="{ backgroundImage: `url(${portraitSun})` }">
+          <Button variant="primary"><Play :size="12" fill="currentColor" />Run</Button>
+        </div>
+      </Cell>
+      <Cell label="icon-only · round">
+        <Button variant="primary" size="icon" aria-label="Send" class="rounded-full!"
+          ><ArrowUp :size="15"
+        /></Button>
       </Cell>
     </Cells>
   </Section>

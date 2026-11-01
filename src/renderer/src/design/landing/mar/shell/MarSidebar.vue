@@ -637,7 +637,7 @@ function newChat(): void {
   gap: 5px;
   margin-left: auto;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   color: var(--color-base-foreground);
   font-size: 12px;

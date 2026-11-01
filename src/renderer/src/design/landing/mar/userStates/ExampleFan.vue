@@ -304,7 +304,7 @@ async function key(e: KeyboardEvent): Promise<void> {
   align-items: center;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
   outline: none;

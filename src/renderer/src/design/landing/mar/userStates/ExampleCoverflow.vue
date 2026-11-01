@@ -221,7 +221,7 @@ function up(): void {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 5px 11px;
   background: #fff;
   color: #111;

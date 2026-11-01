@@ -12,7 +12,7 @@ import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
  * carries its own name and run time at the top, so nothing below it moves
  * when you flip. The arc wraps around and turns on a spring: ← →, a click
  * on a side card, a drag or a sideways scroll. Pointing at a card (or
- * focusing it) shows its Run pill at the bottom; Enter runs the front one.
+ * focusing it) shows its Run button at the bottom; Enter runs the front one.
  * Run never says where: on Desktop it runs on Desktop, on Cloud on Cloud.
  */
 const N = EXAMPLES.length
@@ -96,7 +96,7 @@ function pick(i: number): void {
   if (i === active.value) runExample(EXAMPLES[i]!)
   else void turn(Math.round(offset(i) + pos.value - target.value))
 }
-/** The pill on a cover runs that one, front or side; anywhere else on a
+/** The Run button on a cover runs that one, front or side; anywhere else on a
  *  side cover only brings it to the front. */
 function runFrom(i: number): void {
   if (!moved) runExample(EXAMPLES[i]!)
@@ -292,7 +292,7 @@ function wheel(e: WheelEvent): void {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-/* Run at the bottom: a white pill over a soft scrim, shown on the card
+/* Run at the bottom: a white button over a soft scrim, shown on the card
    you point at (or focus). */
 .mar-arc-scrim {
   position: absolute;
@@ -312,7 +312,7 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   justify-content: center;
   padding: 0 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: #fff;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),
@@ -414,7 +414,7 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   gap: 6px;
   padding: 0 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
   outline: none;

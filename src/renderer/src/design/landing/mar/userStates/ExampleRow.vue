@@ -103,7 +103,7 @@ import { EXAMPLES, playLoop, runExample } from './examples'
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 5px 10px;
   background: #fff;
   color: #111;

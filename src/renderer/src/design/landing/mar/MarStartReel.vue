@@ -139,7 +139,7 @@ function tryIdea(p: Piece): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 5px 9px 5px 11px;
   background: #fff;
   color: #111;

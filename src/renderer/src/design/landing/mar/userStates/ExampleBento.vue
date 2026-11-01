@@ -129,7 +129,7 @@ const rest = computed(() => EXAMPLES.filter((_, i) => i !== heroIndex).slice(0, 
   height: 32px;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 0 14px;
   background: #fff;
   color: #111;

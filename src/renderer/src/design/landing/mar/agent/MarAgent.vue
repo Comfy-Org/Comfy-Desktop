@@ -431,7 +431,7 @@ const ARTIFACT_LABEL: Record<string, string> = {
   font-size: 12px;
 }
 .mar-chip {
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 6px 12px;
   background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
   color: var(--color-muted-foreground);
