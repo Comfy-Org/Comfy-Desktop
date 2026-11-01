@@ -198,7 +198,7 @@ export const TWEAKS = {
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
   firstRun: one(firstRun, 'original'),
-  exampleLook: one(exampleLook, 'fanflow'),
+  exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   cover: one(cover, 'graph'),
