@@ -6,6 +6,12 @@
 :root[data-mar-ui='on'] {
   --mar-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --mar-ease-io: cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* Page transition (pageTransition.ts): in only, never out. */
+  --mar-ease-page: cubic-bezier(0.22, 1, 0.36, 1);
+  --mar-page-in: 240ms;
+  --mar-page-fade: 160ms;
+  --mar-page-rise: 6px;
+  --mar-page-step: 40ms;
 }
 
 /* Tabs: one pill slides behind the picked option (tabSlide.ts). A track
@@ -35,10 +41,12 @@
     width 280ms var(--mar-ease);
 }
 
-/* Page entry: Home's blocks rise in, one after another. */
-:root[data-mar-ui='on'] .mar-home > section,
-:root[data-mar-ui='on'] .mar-home > div > section,
-:root[data-mar-ui='on'] .mar-home > div > * {
+/* Page entry: Home's blocks rise in, one after another. A Page
+   transition (pageTransition.ts) plays on Home too, so this one steps
+   aside while it's on. */
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > section,
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > div > section,
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > div > * {
   animation: mar-rise 520ms var(--mar-ease) both;
 }
 :root[data-mar-ui='on'] .mar-home > div > *:nth-child(2) {

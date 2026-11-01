@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bell } from 'lucide-vue-next'
 import portraitSun from '../../assets/portrait-sun.jpg'
 import Button from '../../../ui/Button.vue'
@@ -14,7 +14,8 @@ import MarSeg from '../../pages/MarSeg.vue'
 import MarStatus from '../../pages/MarStatus.vue'
 import MarUndoToast from '../../pages/MarUndoToast.vue'
 import { notify } from '../../pages/undo'
-import { onPlayback, readPlayback } from '../kit/playback'
+import { onPlayback, previewReduced, readPlayback } from '../kit/playback'
+import { playPageIn, type PageTransition } from '../../motion/pageIn'
 // Their stylesheets, as the app loads them with the component.
 import '../../search/search.css'
 import '../../templateModal/templateModal.css'
@@ -44,7 +45,8 @@ const LOOPED = [
   'press',
   'progress',
   'palette',
-  'graph'
+  'graph',
+  'page'
 ]
 // Toasts leave on their own: they come back once they're gone.
 const AGAIN = ['toast', 'undo']
@@ -113,6 +115,23 @@ const PROGRESS = [8, 35, 62, 100]
 const progress = computed(() => PROGRESS[step.value % 4])
 const force = (state: string): Record<string, string> =>
   on.value ? { 'data-ds-force': state } : {}
+
+// Page transition: the three options side by side, each page swapping
+// for the next on the loop while the sidebar beside it stays still.
+const PAGE_KINDS: { kind: PageTransition; label: string }[] = [
+  { kind: 'fade', label: 'Fade' },
+  { kind: 'rise', label: 'Fade and rise' },
+  { kind: 'stagger', label: 'Stagger' }
+]
+if (id === 'page')
+  watch([step, run], async () => {
+    await nextTick()
+    for (const { kind } of PAGE_KINDS) {
+      const page = root.value?.querySelector<HTMLElement>(`[data-page-kind='${kind}']`)
+      if (!page) continue
+      for (const a of playPageIn([page], kind, previewReduced())) a.playbackRate = speed.value
+    }
+  })
 
 // The Classic sidebar's style is scoped to VariantModes.vue.
 const sideScope = { [(VariantModes as { __scopeId?: string }).__scopeId ?? 'data-x']: '' }
@@ -199,6 +218,26 @@ const sideScope = { [(VariantModes as { __scopeId?: string }).__scopeId ?? 'data
       <div>
         <section v-for="i in 4" :key="i" class="ds-mo-block" />
       </div>
+    </div>
+
+    <div v-else-if="id === 'page'" class="ds-mo-pages">
+      <figure v-for="p in PAGE_KINDS" :key="p.kind">
+        <div class="ds-mo-box ds-mo-shell">
+          <aside class="ds-mo-pageside" />
+          <div class="ds-mo-pagearea">
+            <div :key="`${step}-${run}`" :data-page-kind="p.kind" class="ds-mo-page">
+              <span class="ds-mo-title" :style="{ width: step % 2 ? '40%' : '58%' }" />
+              <div>
+                <span v-for="i in step % 2 ? 3 : 4" :key="i" class="ds-mo-block" />
+              </div>
+              <div>
+                <span v-for="i in step % 2 ? 3 : 4" :key="i" class="ds-mo-block" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>{{ p.label }}</figcaption>
+      </figure>
     </div>
 
     <LaunchBanner v-else-if="id === 'banner'" :key="run" />
@@ -317,6 +356,51 @@ const sideScope = { [(VariantModes as { __scopeId?: string }).__scopeId ?? 'data
 }
 .ds-mo-card {
   width: 220px;
+}
+.ds-mo-pages {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.ds-mo-pages .ds-mo-box {
+  height: 120px;
+}
+.ds-mo-pages figcaption {
+  margin-top: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+.ds-mo-pageside {
+  width: 22%;
+  margin: 6px 0 6px 6px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.ds-mo-pagearea {
+  flex: 1;
+  overflow: hidden;
+  padding: 10px;
+}
+.ds-mo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ds-mo-page > div {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.ds-mo-page .ds-mo-block {
+  height: 22px;
+  border-radius: 4px;
+}
+.ds-mo-title {
+  height: 8px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
 }
 .ds-mo-cover {
   position: relative;

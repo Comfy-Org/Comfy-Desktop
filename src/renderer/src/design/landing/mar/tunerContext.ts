@@ -29,6 +29,7 @@ import { PORTS, ports, type Port } from './pabloPorts'
 import { active as parts } from './marParts'
 import { dep, scenarioPick } from './deploy/deployData'
 import { buildNav } from './build/buildNav'
+import { pageTransition } from './motion/pageTransition'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -192,6 +193,7 @@ export const TWEAKS = {
   nav: one(marNav, 'panels'),
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
+  pageTransition: one(pageTransition, 'off'),
   crit: one(crit, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),

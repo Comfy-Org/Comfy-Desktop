@@ -13,6 +13,7 @@ import { PALETTES, palette } from './palette'
 import { MODE_STYLES, modeStyle } from './modes/modeStyle'
 import { COVERS, cover } from './cover'
 import { BUILD_NAVS, buildNav } from './build/buildNav'
+import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -109,7 +110,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'nav', 'palette', 'theme']
+const GLOBAL: TweakId[] = ['surface', 'nav', 'pageTransition', 'palette', 'theme']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -195,6 +196,10 @@ function onScroll(e: Event): void {
           </Row>
           <Row v-if="isMariana" label="Navigation">
             <Select v-model="marNav.id" :options="NAVS" class="w-full" />
+          </Row>
+          <!-- How a page comes in on a sidebar click, ⌘K or a back link. -->
+          <Row v-if="isMariana" label="Page transition">
+            <Select v-model="pageTransition.id" :options="PAGE_TRANSITIONS" class="w-full" />
           </Row>
           <Row :label="isMariana ? 'Palette and theme' : 'Theme'">
             <div class="flex items-center gap-1.5">

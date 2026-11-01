@@ -31,6 +31,7 @@ import './homeBackgrounds.css'
 import '../menus/layers.css'
 import '../motion/motion.css'
 import '../motion/tabSlide'
+import '../motion/pageTransition'
 
 /**
  * The blurred photo behind the top of a page. It scrolls away with the
