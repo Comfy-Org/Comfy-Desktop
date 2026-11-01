@@ -18,7 +18,8 @@ import {
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
-import { hostActions, instances, toast, type Page } from '../../useProto'
+import { hostActions, instances, proto, toast, type Page } from '../../useProto'
+import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
@@ -60,7 +61,10 @@ type Where = 'all' | 'local' | 'cloud'
 const where = ref<Where>('all')
 const sort = ref('used')
 const query = ref('')
-const view = ref<'grid' | 'list'>('grid')
+// One Builds page for both modes. Build looks at what ships (versions,
+// deployments), so it opens on the list with those columns.
+const building = computed(() => proto.mode === 'build')
+const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
 
 const WHERE = computed(() => [
   { value: 'all' as const, label: 'All', count: builds.items.length },
@@ -368,8 +372,10 @@ const newLabel = computed(() =>
     </div>
     <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 220px) 120px">
       <div class="mar-table-head">
-        <span>Build</span><span>Runs on</span><span>Last used</span><span class="is-end">State</span
-        ><span />
+        <span>Build</span
+        ><template v-if="building"><span>Latest version</span><span>Deployments</span></template
+        ><template v-else><span>Runs on</span><span>Last used</span></template
+        ><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="b in shown"
@@ -399,7 +405,11 @@ const newLabel = computed(() =>
             ><LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="20"
           /></span>
         </template>
-        <template #cols>
+        <template v-if="building" #cols>
+          <span class="mar-item-col">{{ versionsOf(b)[0]?.label ?? 'Latest' }}</span>
+          <span class="mar-item-col">{{ deploymentsOf(b.id).length || '—' }}</span>
+        </template>
+        <template v-else #cols>
           <span class="mar-item-col">{{ b.gpu }}</span>
           <span class="mar-item-col">{{ b.state === 'running' ? 'Now' : b.lastUsed }}</span>
         </template>

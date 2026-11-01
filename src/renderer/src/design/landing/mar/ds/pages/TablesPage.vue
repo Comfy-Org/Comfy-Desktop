@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Copy, Pencil, Trash2 } from 'lucide-vue-next'
-import { thumb } from '../../../mock'
-import { instances } from '../../../useProto'
+import { PROJECTS, thumb } from '../../../mock'
+import { deployments } from '../../../parts/env/env'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
-import BuildsTable from '../../builds/BuildsTable.vue'
+import DeploymentsTable from '../../deploy/DeploymentsTable.vue'
 import MarItem from '../../pages/MarItem.vue'
 import type { MenuLine } from '../../pages/menu'
 import Section from '../kit/Section.vue'
@@ -15,6 +15,8 @@ const LINES: MenuLine[] = [
   'sep',
   { label: 'Delete', icon: Trash2, danger: true }
 ]
+const projectsOf = (envId: string): string[] =>
+  PROJECTS.filter((p) => p.envId === envId).map((p) => p.name)
 const ROWS = [
   {
     name: 'hero-shot-v4',
@@ -49,9 +51,9 @@ const ROWS = [
 <template>
   <Section
     title="Data table"
-    note="Builds in Build mode. One grid for the head and the rows; numbers on the right; the last column ends on the right."
+    note="Deployments (Build). One grid for the head and the rows; numbers on the right; the last column ends on the right. Logs and API keys use the same rows."
   >
-    <BuildsTable :list="instances" />
+    <DeploymentsTable :list="deployments" :projects-of="projectsOf" />
   </Section>
   <Section
     title="Item rows"
@@ -84,6 +86,6 @@ const ROWS = [
     </div>
   </Section>
   <Section title="Empty" note="One quiet row in the table's place, under the head.">
-    <BuildsTable :list="[]" />
+    <DeploymentsTable :list="[]" :projects-of="projectsOf" />
   </Section>
 </template>

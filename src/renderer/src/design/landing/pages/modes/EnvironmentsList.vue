@@ -19,11 +19,6 @@ import {
   versionsOf
 } from '../../parts/env/env'
 import { go, hostActions, instances, proto } from '../../useProto'
-import { isMariana } from '../../mar/proposal'
-import BuildsCompact from '../../mar/builds/BuildsCompact.vue'
-import BuildsViewToggle from '../../mar/builds/BuildsViewToggle.vue'
-import BuildsTable from '../../mar/builds/BuildsTable.vue'
-import { buildsView } from '../../mar/builds/buildsView'
 
 /**
  * Environments, framed by the lens.
@@ -57,34 +52,28 @@ const COLS = 'grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1.2fr)_minmax(0,1fr)_110
       </template>
     </PageHeader>
 
-    <div class="mb-4 flex items-center">
-      <SegmentedControl
-        v-model="where"
-        variant="contained"
-        :options="[
-          { value: 'all', label: 'All', count: instances.length },
-          {
-            value: 'local',
-            label: 'This computer',
-            count: instances.filter((i) => i.kind === 'local').length
-          },
-          {
-            value: 'cloud',
-            label: 'Cloud',
-            count: instances.filter((i) => i.kind === 'cloud').length
-          }
-        ]"
-      />
-      <!-- Mar's proposal: cards or a compact summary (mar/builds). -->
-      <BuildsViewToggle v-if="isMariana" class="ml-auto" />
-    </div>
-
-    <BuildsCompact v-if="isMariana && buildsView.id === 'compact'" :list />
-    <BuildsTable v-else-if="isMariana && proto.mode === 'build'" :list />
+    <SegmentedControl
+      v-model="where"
+      variant="contained"
+      class="mb-4"
+      :options="[
+        { value: 'all', label: 'All', count: instances.length },
+        {
+          value: 'local',
+          label: 'This computer',
+          count: instances.filter((i) => i.kind === 'local').length
+        },
+        {
+          value: 'cloud',
+          label: 'Cloud',
+          count: instances.filter((i) => i.kind === 'cloud').length
+        }
+      ]"
+    />
 
     <!-- Create lens: cards -->
     <div
-      v-else-if="proto.mode !== 'build'"
+      v-if="proto.mode !== 'build'"
       class="grid grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-3.5"
     >
       <Card

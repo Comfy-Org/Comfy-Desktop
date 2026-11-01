@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Sparkline from '../../ui/Sparkline.vue'
-import StatusDot from '../../ui/StatusDot.vue'
 import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import SpaceMark from '../../parts/space/SpaceMark.vue'
 import { envById, fmt, fmtCompact } from '../../parts/env/env'
 import { SPACES } from '../../spaces'
 import type { Deployment } from '../../mock'
 import { go, proto } from '../../useProto'
+import MarStatus from '../pages/MarStatus.vue'
 import '../table/table.css'
 
 /** Deployments (Mar's proposal): the same columns as the original list,
@@ -72,11 +72,11 @@ const spaceOf = (id?: string) => (id ? SPACES.find((s) => s.id === id) : undefin
       <code class="mar-table-cell is-quiet font-mono" role="cell">{{
         d.endpoint.replace('https://', '')
       }}</code>
-      <span class="mar-table-cell flex items-center gap-1.5" role="cell"
-        ><StatusDot :status="d.status === 'running' ? 'running' : 'idle'" />{{
-          d.status === 'running' ? 'Running' : 'Scaled to zero'
-        }}</span
-      >
+      <span class="mar-table-cell" role="cell"
+        ><MarStatus
+          :status="d.status === 'running' ? 'running' : 'stopped'"
+          :label="d.status === 'running' ? 'Running' : 'Scaled to zero'"
+      /></span>
       <span class="mar-table-cell is-num" role="cell">{{ fmtCompact(d.requests7d) }}</span>
       <span
         class="mar-table-cell is-num"

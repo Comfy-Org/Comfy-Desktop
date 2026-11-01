@@ -12,11 +12,15 @@ import MarSpacePage from './MarSpacePage.vue'
 import MarSettingsPage from './MarSettingsPage.vue'
 import MarStateGate from './MarStateGate.vue'
 import MarFavoritesPage from '../MarFavoritesPage.vue'
+import MarKeysPage from './MarKeysPage.vue'
+import MarDeploymentsPage from '../deploy/MarDeploymentsPage.vue'
+import MarLogsPage from '../deploy/MarLogsPage.vue'
 
 /**
  * Mar's library pages (Workflows, Apps, Assets, Builds, Projects, Spaces,
- * Settings), each with its states. ModePages hands these pages here in
- * Mar's proposal; Pablo's stay as they are in his.
+ * Settings, and Build's Deployments, Logs and API keys), each with its
+ * states. ModePages hands these pages here in Mar's proposal; Pablo's
+ * stay as they are in his.
  */
 const page = computed<string>(() => proto.page)
 </script>
@@ -31,6 +35,9 @@ const page = computed<string>(() => proto.page)
   <MarSpacesPage v-else-if="page === 'spaces'" />
   <MarSpacePage v-else-if="page.startsWith('space:')" :id="page.slice(6)" :key="page" />
   <MarSettingsPage v-else-if="page === 'settings'" />
+  <MarDeploymentsPage v-else-if="page === 'deployments'" />
+  <MarLogsPage v-else-if="page === 'logs'" />
+  <MarKeysPage v-else-if="page === 'keys'" />
   <MarStateGate
     v-else-if="page === 'favorites'"
     title="Favorites"

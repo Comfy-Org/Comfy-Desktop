@@ -335,8 +335,8 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Tables',
     source:
-      'mar/table/table.css (mar/builds/BuildsTable.vue, MarItem list rows, is-mar-* hooks in shared parts)',
-    use: 'The one table: every list view (Builds, Workflows, Apps, Assets, Projects, Spaces, Space members and tools, Models).',
+      'mar/table/table.css (mar/deploy/DeploymentsTable.vue, MarItem list rows, is-mar-* hooks in shared parts)',
+    use: 'The one table: every list view (Builds, Workflows, Apps, Assets, Projects, Spaces, Space members and tools, Models, Deployments, Logs, API keys).',
     component: lazy(() => import('./pages/TablesPage.vue'))
   },
   {

@@ -1,9 +1,9 @@
 import { isMariana } from '../proposal'
-import { go, proto, type Page } from '../../useProto'
+import { go, type Page } from '../../useProto'
 
 /** The pages Mar's proposal draws itself (MarPages.vue). A trailing ':'
- *  takes every page under it (project:…, space:…). Builds only in Create:
- *  Build's lens (versions, deployments) stays Pablo's. */
+ *  takes every page under it (project:…, space:…). Builds, Deployments,
+ *  Logs and API keys are the same pages in Create and Build. */
 export const MAR_PAGES = [
   'workflows',
   'apps',
@@ -15,12 +15,14 @@ export const MAR_PAGES = [
   'spaces',
   'space:',
   'settings',
-  'favorites'
+  'favorites',
+  'deployments',
+  'logs',
+  'keys'
 ]
 
 export const marOwns = (page: string): boolean =>
   isMariana.value &&
-  !(proto.mode === 'build' && (page === 'environments' || page === 'instances')) &&
   (MAR_PAGES.includes(page) || MAR_PAGES.some((p) => p.endsWith(':') && page.startsWith(p)))
 
 // Screenshots and the console reach any page, sidebar or not.
