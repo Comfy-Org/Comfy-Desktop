@@ -22,7 +22,8 @@ import SpaceHomeBrand from '../../pages/spaces/SpaceHomeBrand.vue'
 import SpaceAccess from '../../pages/spaces/SpaceAccess.vue'
 import SpaceSettings from '../../pages/spaces/SpaceSettings.vue'
 import SpaceUsage from '../../pages/spaces/SpaceUsage.vue'
-import { SPACES, goLive, previewSpace } from '../../spaces'
+import { SPACES, goLive, previewSpace, type Space } from '../../spaces'
+import { shownState } from './pageState'
 import { go, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
 import MarEmpty from './MarEmpty.vue'
@@ -33,6 +34,7 @@ import MarAddress from './MarAddress.vue'
 import MarSplitButton from './MarSplitButton.vue'
 import MarSeg from './MarSeg.vue'
 import MarSpaceOverview from './MarSpaceOverview.vue'
+import MarSpaceSetup from './MarSpaceSetup.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
@@ -47,15 +49,41 @@ import type { MenuLine } from './menu'
  */
 const { id } = defineProps<{ id: string }>()
 const space = computed(() => SPACES.find((s) => s.id === id))
+// Page state Empty shows the space as just made: a draft with nothing in
+// it yet. Live shows its own data.
+const fresh = computed(() => shownState.value === 'empty')
+const view = computed<Space | undefined>(() => {
+  const s = space.value
+  if (!s || !fresh.value) return s
+  const made = s.activity.find((a) => a.what === 'created the space')
+  return {
+    ...s,
+    status: 'draft',
+    brand: { ...s.brand, headline: '' },
+    catalog: [],
+    members: [],
+    requests: [],
+    used: 0,
+    trend: s.trend.map(() => 0),
+    activity: [made ?? { who: 'You', what: 'created the space', when: 'Today', studio: true }]
+  }
+})
+
+// Nothing to measure yet (no runs, nobody in it): the overview becomes the
+// steps that get the space ready instead of a dashboard of zeros.
+const setup = computed(
+  () => !!view.value && !view.value.members.length && !view.value.catalog.some((c) => c.runs)
+)
+const created = computed(() => view.value?.activity.find((a) => a.what === 'created the space'))
 
 type Tab = 'overview' | 'catalog' | 'home' | 'members' | 'usage' | 'activity' | 'settings'
 const tab = ref<Tab>('overview')
 const members = ref<InstanceType<typeof MembersTable>>()
 const TABS = computed(() => [
   { value: 'overview' as Tab, label: 'Overview' },
-  { value: 'catalog' as Tab, label: 'Tools', count: space.value?.catalog.length },
+  { value: 'catalog' as Tab, label: 'Tools', count: view.value?.catalog.length },
   { value: 'home' as Tab, label: 'Home & brand' },
-  { value: 'members' as Tab, label: 'Members', count: space.value?.members.length },
+  { value: 'members' as Tab, label: 'Members', count: view.value?.members.length },
   { value: 'usage' as Tab, label: 'Usage' },
   { value: 'activity' as Tab, label: 'Activity' },
   { value: 'settings' as Tab, label: 'Settings' }
@@ -101,7 +129,7 @@ const draftLines = computed<MenuLine[]>(() => {
   ]
 })
 const lastActive = computed(() => {
-  const m = space.value?.members ?? []
+  const m = view.value?.members ?? []
   return (m.find((x) => x.lastActive === 'Now') ?? m[0])?.lastActive.toLowerCase()
 })
 
@@ -147,6 +175,7 @@ const lines = computed<MenuLine[]>(() => {
     :title="space.name"
     skeleton="settings"
     error-title="Can't load this space"
+    :state="fresh ? 'live' : undefined"
     error-text="It lives in Comfy Cloud, which is out of reach. Its members can't run anything until it's back either."
   >
     <template #header>
@@ -155,7 +184,7 @@ const lines = computed<MenuLine[]>(() => {
         :style="{ '--space-accent': space.brand.color }"
         back="Spaces"
         :title="space.name"
-        :status="space.status"
+        :status="view!.status"
         @back="go('spaces')"
       >
         <template #cover
@@ -167,23 +196,27 @@ const lines = computed<MenuLine[]>(() => {
           <button type="button" class="mar-eh-link" @click="tab = 'members'">
             <span class="mar-eh-faces">
               <MemberAvatar
-                v-for="m in space.members.slice(0, 4)"
+                v-for="m in view!.members.slice(0, 4)"
                 :key="m.email"
                 :name="m.name"
                 size="sm"
               />
             </span>
-            {{ space.members.length }} {{ space.members.length === 1 ? 'member' : 'members' }}
+            {{ view!.members.length }} {{ view!.members.length === 1 ? 'member' : 'members' }}
           </button>
           <template v-if="lastActive">
             <span class="mar-eh-dot" />
             <span>Last activity {{ lastActive }}</span>
           </template>
+          <template v-else-if="created">
+            <span class="mar-eh-dot" />
+            <span>Created {{ created.when.toLowerCase() }} by {{ created.who }}</span>
+          </template>
         </template>
         <template #actions>
           <Button @click="invite"><UserPlus :size="15" />Invite</Button>
           <MarSplitButton
-            v-if="space.status === 'draft'"
+            v-if="view!.status === 'draft'"
             label="Preview"
             :icon="Eye"
             :lines="draftLines"
@@ -209,14 +242,21 @@ const lines = computed<MenuLine[]>(() => {
       </div>
     </template>
 
+    <MarSpaceSetup
+      v-if="tab === 'overview' && setup"
+      :space="view!"
+      @tab="(t: Tab) => (tab = t)"
+      @invite="invite"
+      @live="goLive(space.id)"
+    />
     <MarSpaceOverview
-      v-if="tab === 'overview'"
-      :space
+      v-else-if="tab === 'overview'"
+      :space="view!"
       @tab="(t: Tab) => (tab = t)"
       @invite="invite"
     />
     <MarEmpty
-      v-else-if="tab === 'catalog' && !space.catalog.length && !opened.catalog"
+      v-else-if="tab === 'catalog' && !view!.catalog.length && !opened.catalog"
       :icon="Wrench"
       title="No tools in this space yet"
       text="Publish an app or a workflow here and its members can run it, in their brand, without seeing a graph."
@@ -228,7 +268,7 @@ const lines = computed<MenuLine[]>(() => {
     <SpaceCatalog v-else-if="tab === 'catalog'" :space-id="space.id" />
     <SpaceHomeBrand v-else-if="tab === 'home'" :space-id="space.id" />
     <MarEmpty
-      v-else-if="tab === 'members' && !space.members.length && !opened.members"
+      v-else-if="tab === 'members' && !view!.members.length && !opened.members"
       :icon="Users"
       title="Nobody in this space yet"
       text="Invite the client’s team. They sign in at the space’s address and only ever see this space."
@@ -243,7 +283,7 @@ const lines = computed<MenuLine[]>(() => {
     </div>
     <SpaceUsage v-else-if="tab === 'usage'" :space-id="space.id" />
     <MarEmpty
-      v-else-if="tab === 'activity' && (space.status === 'draft' || !space.members.length)"
+      v-else-if="tab === 'activity' && (view!.status === 'draft' || !view!.members.length)"
       :icon="Activity"
       title="Nothing has happened here yet"
       text="Runs, invites and requests from members show up here once the space is live and people use it."
@@ -278,6 +318,11 @@ const lines = computed<MenuLine[]>(() => {
   padding: 17px;
   border-radius: 0;
   box-shadow: none;
+}
+/* A narrow window: the meta wraps instead of running under the actions. */
+.mar-space-head .mar-eh-meta {
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 /* The tabs sit on their own track, so no rule under them. */
 .mar-space-tabs {

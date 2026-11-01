@@ -60,11 +60,19 @@ const STATUS: { value: SpaceRequest['status']; label: string }[] = [
 ]
 const ISOLATION = computed(() => [
   { icon: Database, label: 'Storage', value: 'Own bucket, encrypted' },
-  { icon: Server, label: 'Endpoints', value: `${space.catalog.length}, one per tool` },
+  {
+    icon: Server,
+    label: 'Endpoints',
+    value: space.catalog.length
+      ? `${space.catalog.length}, one per tool`
+      : 'One per tool, once published'
+  },
   {
     icon: MapPin,
     label: 'Regions',
-    value: [...new Set(space.catalog.map((c) => c.endpoint?.region.split(' · ')[0]))].join(', ')
+    value:
+      [...new Set(space.catalog.map((c) => c.endpoint?.region.split(' · ')[0]))].join(', ') ||
+      space.region.split(' · ')[0]
   },
   { icon: Lock, label: 'Training', value: 'Never used to train models' }
 ])
@@ -72,6 +80,8 @@ const ISOLATION = computed(() => [
 
 <template>
   <div class="mar-so" :style="{ '--space-accent': space.brand.color }">
+    <!-- The brand's colour is for the cover and the chart only; every
+         other icon and accent stays in the UI's own colours. -->
     <!-- The pulse: four tiles. A zero says what it's waiting for. -->
     <div class="mar-so-stats">
       <Card class="mar-so-stat">
@@ -140,69 +150,72 @@ const ISOLATION = computed(() => [
       </Card>
     </div>
 
-    <div class="mar-so-grid">
-      <div class="mar-so-col">
-        <!-- What the space holds: its tools, most used first. -->
-        <Card class="overflow-hidden">
-          <div class="mar-so-head">
-            <p class="mar-so-title flex-1">
-              Tools<span class="mar-so-count">{{ space.catalog.length }}</span>
-            </p>
-            <Button variant="link" size="sm" @click="emit('tab', 'catalog')">All</Button>
-          </div>
-          <div v-for="t in tools" :key="t.id" class="mar-so-tool">
-            <img :src="thumb(t.thumbId)" alt="" class="mar-so-thumb" />
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-ui font-medium">{{ t.name }}</p>
-              <p class="truncate text-ui text-subtle-foreground">
-                {{ FLAVOR_LABEL[t.flavor] }} · {{ t.cost }} credits a run
-              </p>
-            </div>
-            <span class="mar-so-runs">{{ t.runs ? `${fmt(t.runs)} runs` : 'Not run yet' }}</span>
-          </div>
-        </Card>
-
-        <Card class="overflow-hidden">
-          <div class="mar-so-head">
-            <p class="mar-so-title flex-1">
-              Requests<span v-if="open" class="mar-so-count">{{ open }} open</span>
-            </p>
-          </div>
-          <div v-for="r in space.requests" :key="r.id" class="mar-so-row">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-ui font-medium">{{ r.title }}</p>
-              <p class="text-ui text-subtle-foreground">{{ r.by }} · {{ r.when }}</p>
-            </div>
-            <Select v-model="r.status" variant="ghost" size="sm" class="w-32" :options="STATUS" />
-          </div>
-          <p v-if="!space.requests.length" class="mar-so-none">
-            No requests yet. Members ask for new tools from the space.
+    <!-- What the space holds: its tools, most used first. -->
+    <Card class="overflow-hidden">
+      <div class="mar-so-head">
+        <p class="mar-so-title flex-1">
+          Tools<span v-if="space.catalog.length" class="mar-so-count">{{
+            space.catalog.length
+          }}</span
+          ><span v-else class="mar-so-count"
+            >None yet. Publish an app or a workflow and members can run it here.</span
+          >
+        </p>
+        <Button v-if="space.catalog.length" variant="link" size="sm" @click="emit('tab', 'catalog')"
+          >All</Button
+        >
+      </div>
+      <div v-for="t in tools" :key="t.id" class="mar-so-tool">
+        <img :src="thumb(t.thumbId)" alt="" class="mar-so-thumb" />
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-ui font-medium">{{ t.name }}</p>
+          <p class="truncate text-ui text-subtle-foreground">
+            {{ FLAVOR_LABEL[t.flavor] }} · {{ t.cost }} credits a run
           </p>
-        </Card>
+        </div>
+        <span class="mar-so-runs">{{ t.runs ? `${fmt(t.runs)} runs` : 'Not run yet' }}</span>
       </div>
+    </Card>
 
-      <div class="mar-so-col">
-        <Card class="p-5">
-          <div class="mb-2 flex items-center">
-            <p class="mar-so-title flex-1">Recent activity</p>
-            <Button variant="link" size="sm" @click="emit('tab', 'activity')">All</Button>
-          </div>
-          <MarActivityTimeline :items="space.activity.slice(0, 5)" />
-        </Card>
-
-        <Card class="p-5">
-          <div class="mb-3 flex items-center">
-            <p class="mar-so-title flex-1">Isolation</p>
-            <Badge size="sm">Enforced</Badge>
-          </div>
-          <dl class="mar-so-facts">
-            <div v-for="i in ISOLATION" :key="i.label" class="mar-so-fact">
-              <dt><component :is="i.icon" :size="13" />{{ i.label }}</dt>
-              <dd>{{ i.value }}</dd>
-            </div>
-          </dl>
-        </Card>
+    <Card class="overflow-hidden">
+      <div class="mar-so-head">
+        <p class="mar-so-title flex-1">
+          Requests<span v-if="open" class="mar-so-count">{{ open }} open</span
+          ><span v-else-if="!space.requests.length" class="mar-so-count"
+            >None yet. Members ask for new tools from the space.</span
+          >
+        </p>
       </div>
+      <div v-for="r in space.requests" :key="r.id" class="mar-so-row">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-ui font-medium">{{ r.title }}</p>
+          <p class="text-ui text-subtle-foreground">{{ r.by }} · {{ r.when }}</p>
+        </div>
+        <Select v-model="r.status" variant="ghost" size="sm" class="w-32" :options="STATUS" />
+      </div>
+    </Card>
+    <!-- Two columns that size to what they hold; they stack when narrow. -->
+    <div class="mar-so-pair">
+      <Card class="p-5">
+        <div class="mb-2 flex items-center">
+          <p class="mar-so-title flex-1">Recent activity</p>
+          <Button variant="link" size="sm" @click="emit('tab', 'activity')">All</Button>
+        </div>
+        <MarActivityTimeline :items="space.activity.slice(0, 5)" />
+      </Card>
+
+      <Card class="p-5">
+        <div class="mb-3 flex items-center">
+          <p class="mar-so-title flex-1">Isolation</p>
+          <Badge size="sm">Enforced</Badge>
+        </div>
+        <dl class="mar-so-facts">
+          <div v-for="i in ISOLATION" :key="i.label" class="mar-so-fact">
+            <dt><component :is="i.icon" :size="13" />{{ i.label }}</dt>
+            <dd>{{ i.value }}</dd>
+          </div>
+        </dl>
+      </Card>
     </div>
   </div>
 </template>
@@ -236,7 +249,7 @@ const ISOLATION = computed(() => [
   font-size: 13px;
 }
 .mar-so-label > svg {
-  color: var(--space-accent);
+  color: var(--color-subtle-foreground);
 }
 .mar-so-value {
   margin-top: 12px;
@@ -317,26 +330,32 @@ const ISOLATION = computed(() => [
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--space-accent);
+  background: color-mix(in oklch, var(--color-base-foreground) 70%, transparent);
 }
 .mar-so-meter.is-high > i {
-  background: var(--color-status-warning, var(--space-accent));
+  background: var(--color-status-warning, var(--color-base-foreground));
 }
 .mar-so-meter + .mar-so-hint {
   margin-top: 0;
 }
 
-.mar-so-grid {
+.mar-so {
+  container-type: inline-size;
+}
+/* Activity and Isolation: side by side, each as tall as its content. */
+.mar-so-pair {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
-.mar-so-col {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 14px;
+@container (max-width: 760px) {
+  .mar-so-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mar-so-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .mar-so-head {
   display: flex;
@@ -377,38 +396,26 @@ const ISOLATION = computed(() => [
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.mar-so-none {
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--color-border-default);
-  color: var(--color-subtle-foreground);
-  font-size: 13px;
-}
+/* Isolation: each value under its label, wrapping, two to a row. */
 .mar-so-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
   margin: 0;
 }
 .mar-so-fact {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  min-width: 0;
   font-size: 13px;
 }
 .mar-so-fact dt {
-  display: inline-flex;
-  flex-shrink: 0;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   color: var(--color-muted-foreground);
 }
 .mar-so-fact dd {
-  overflow: hidden;
-  margin: 0;
+  margin: 4px 0 0;
   color: var(--color-base-foreground);
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 </style>
