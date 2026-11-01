@@ -55,7 +55,12 @@ const crumb = (active: boolean): string =>
       <template v-if="state.milestone >= 4"><Home :size="15" />Home</template>
       <template v-else><LayoutGrid :size="15" />Builds</template>
     </button>
-    <ChevronRight :size="14" class="shrink-0 text-subtle-foreground" aria-hidden="true" />
+    <ChevronRight
+      v-if="!state.noSwitcher || state.front || state.trail"
+      :size="14"
+      class="shrink-0 text-subtle-foreground"
+      aria-hidden="true"
+    />
     <!-- Mar's page trail (mar/build/buildNav.ts): where the page on view sits. -->
     <template v-if="state.trail && !state.front">
       <template v-for="(t, i) in state.trail" :key="i">
@@ -92,6 +97,7 @@ const crumb = (active: boolean): string =>
       <span class="max-w-48 truncate">{{ state.front.name }}</span>
     </button>
     <button
+      v-if="!state.noSwitcher"
       type="button"
       :class="[
         crumb(state.menuOpen),

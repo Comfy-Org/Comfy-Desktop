@@ -14,6 +14,7 @@ import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
 import { marTabsOn } from './mar/shell/titleTabs'
 import { buildTrail } from './mar/build/buildNav'
+import { onCloud } from './mar/shell/surface'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -106,6 +107,7 @@ export const titleBarState = computed<TitleBarState>(() => ({
   ...(marTabsOn.value ? marTabs() : {}),
   // Mar's page trail (mar/build/buildNav.ts): only while it's on.
   ...(buildTrail.value ? { trail: buildTrail.value } : {}),
+  ...(onCloud.value ? { noSwitcher: true } : {}),
   options: prototypeGroups.value.map((g) => ({
     key: g.key,
     label: g.label,

@@ -57,6 +57,8 @@ export interface TitleBarState {
   /** Mar's proposal (mar/build/buildNav.ts): where the page on view sits,
    *  after Home - each step a page to go back to, the last one current. */
   trail?: { label: string; page?: string; kind?: 'local' | 'cloud' }[]
+  /** Mar's proposal on Comfy Cloud: no build to pick, so no switcher. */
+  noSwitcher?: boolean
   /** The Prototype menu: each switch and its current value. */
   options: {
     key: string
