@@ -80,7 +80,10 @@ withDefaults(
   padding: clamp(2rem, 5vw, 48px);
   border-radius: 8px;
   background: var(--neutral-800);
-  overflow: hidden;
+  /* clip, not hidden: a hidden frame is still a scroll container, so a step
+     that turns scrollContent off (the wizard's Template step) kept the
+     Configure step's scroll offset with no way to scroll back. */
+  overflow: clip;
   isolation: isolate;
 }
 
