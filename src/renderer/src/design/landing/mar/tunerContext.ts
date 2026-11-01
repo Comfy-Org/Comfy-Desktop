@@ -193,7 +193,7 @@ export const TWEAKS = {
   nav: one(marNav, 'panels'),
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
-  pageTransition: one(pageTransition, 'off'),
+  pageTransition: one(pageTransition, 'rise'),
   crit: one(crit, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),

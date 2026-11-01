@@ -31,15 +31,16 @@ export const PAGE_TRANSITIONS: { value: PageTransition; label: string }[] = [
 
 export type { PageTransition }
 
-const KEY = 'comfy.design.mar.pageTransition'
+// v2: Fade and rise is the default (Mar, Nov 1).
+const KEY = 'comfy.design.mar.pageTransition.v2'
 
 export const pageTransition = reactive<{ id: PageTransition }>({
   id: (() => {
     try {
       const v = localStorage.getItem(KEY)
-      return PAGE_TRANSITIONS.some((t) => t.value === v) ? (v as PageTransition) : 'off'
+      return PAGE_TRANSITIONS.some((t) => t.value === v) ? (v as PageTransition) : 'rise'
     } catch {
-      return 'off'
+      return 'rise'
     }
   })()
 })
