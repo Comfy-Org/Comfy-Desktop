@@ -213,7 +213,7 @@ export const TWEAKS = {
     }
   },
   graph: one(graphStyle, 'glass'),
-  buildNav: one(buildNav, 'current'),
+  buildNav: one(buildNav, 'proposed'),
   ports: {
     isDefault: () => PORTS.every((p) => !ports[p.key]),
     reset: () => PORTS.forEach((p) => (ports[p.key] = false))

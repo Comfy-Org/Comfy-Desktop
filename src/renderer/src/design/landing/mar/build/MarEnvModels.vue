@@ -1,19 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  ArrowDownToLine,
-  ArrowRight,
-  Boxes,
-  Download,
-  Puzzle,
-  TriangleAlert
-} from 'lucide-vue-next'
+import { ArrowDownToLine, ArrowRight, Download, TriangleAlert } from 'lucide-vue-next'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
-import SearchInput from '../../ui/SearchInput.vue'
-import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { ENV_NODES, type ProtoInstance } from '../../mock'
 import { go, toast } from '../../useProto'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
 import ModelStatus from './ModelStatus.vue'
 import ModelTile from './ModelTile.vue'
 import {
@@ -56,18 +49,18 @@ function downloadAll(ids: string[]): void {
 <template>
   <div class="mt-4">
     <div class="mb-3 flex items-center justify-between gap-3">
-      <SegmentedControl
+      <MarSeg
         v-model="tab"
+        label="In this build's models"
         :options="[
-          { value: 'models', label: 'Models', icon: Boxes, count: models.length },
-          { value: 'nodes', label: 'Custom nodes', icon: Puzzle, count: env.nodes }
+          { value: 'models', label: 'Models', count: models.length },
+          { value: 'nodes', label: 'Custom nodes', count: env.nodes }
         ]"
       />
       <div class="flex items-center gap-2">
-        <SearchInput
+        <MarSearchField
           v-model="q"
           :placeholder="tab === 'models' ? 'Search models' : 'Search node packs'"
-          class="w-52"
         />
         <Button v-if="tab === 'models'" variant="ghost" @click="go('router')"
           >All models<ArrowRight :size="13"

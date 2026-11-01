@@ -1014,8 +1014,8 @@
   align-items: center;
   gap: 8px;
 }
-.mar-dep-code-head > .mar-dep-seg {
-  flex: 1;
+.mar-dep-code-head > .mar-pseg {
+  margin-right: auto;
 }
 .mar-dep-test {
   gap: 12px;

@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronLeft, Copy, KeyRound, Pause, Play, SquareArrowOutUpRight } from 'lucide-vue-next'
-import Badge from '../../ui/Badge.vue'
+import { Copy, KeyRound, Pause, Play, Rocket, SquareArrowOutUpRight } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import Select from '../../ui/Select.vue'
-import StatusDot from '../../ui/StatusDot.vue'
 import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import { envById, fmt, fmtCompact, versionsOf } from '../../parts/env/env'
 import { spaceById } from '../../spaces'
 import { go, goIn, hostActions, toast } from '../../useProto'
 import type { Deployment } from '../../mock'
+import MarEntityHeader from '../pages/MarEntityHeader.vue'
 
 /**
  * Mar's deployment page. Same facts and actions as Pablo's
@@ -66,29 +65,30 @@ function copy(text: string, what: string): void {
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <Button variant="link" size="sm" class="mt-6" @click="go('deployments')"
-      ><ChevronLeft :size="14" />Deployments</Button
+    <MarEntityHeader
+      back="Deployments"
+      :title="dep.name"
+      :status="running ? 'running' : 'stopped'"
+      :status-label="running ? 'Running' : 'Scaled to zero'"
+      @back="go('deployments')"
     >
-
-    <header class="flex items-end gap-4 pt-5 pb-6">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2.5">
-          <h1 class="truncate font-mono text-title font-semibold">{{ dep.name }}</h1>
-          <Badge size="md">{{ dep.stage }}</Badge>
-        </div>
-        <p class="mt-1.5 flex items-center gap-2 text-ui text-muted-foreground">
-          <StatusDot :status="running ? 'running' : 'idle'" />
-          <span class="text-base-foreground">{{ running ? 'Running' : 'Scaled to zero' }}</span>
-          <template v-if="space && dep.tool"
-            ><span class="text-subtle-foreground">·</span>Serves {{ dep.tool }} in
-            {{ space.name }}</template
-          >
-        </p>
-      </div>
-      <Button size="lg" @click="toast(running ? 'Pausing…' : 'Resuming…')">
-        <component :is="running ? Pause : Play" :size="13" />{{ running ? 'Pause' : 'Resume' }}
-      </Button>
-    </header>
+      <template #cover>
+        <span class="mar-dd-glyph"><Rocket :size="24" /></span>
+      </template>
+      <template #meta>
+        <span class="capitalize">{{ dep.stage }}</span>
+        <template v-if="space && dep.tool"
+          ><span class="mar-eh-dot" /><span
+            >Serves {{ dep.tool }} in {{ space.name }}</span
+          ></template
+        >
+      </template>
+      <template #actions>
+        <Button @click="toast(running ? 'Pausing…' : 'Resuming…')">
+          <component :is="running ? Pause : Play" :size="13" />{{ running ? 'Pause' : 'Resume' }}
+        </Button>
+      </template>
+    </MarEntityHeader>
 
     <Card class="grid grid-cols-4 divide-x divide-border-default">
       <div v-for="s in stats" :key="s.label" class="flex min-w-0 flex-col gap-1 px-5 py-4">
@@ -214,3 +214,15 @@ function copy(text: string, what: string): void {
     </div>
   </div>
 </template>
+
+<style>
+/* The cover tile of a build's page (MarBuildPage's .mar-bp-glyph), with
+   the Deployments icon. */
+.mar-dd-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  color: var(--color-muted-foreground);
+}
+</style>

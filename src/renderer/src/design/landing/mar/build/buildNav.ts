@@ -10,7 +10,8 @@ import { isMariana } from '../proposal'
  * Proposed: the title bar's breadcrumb says where you are (Home › Builds ›
  * the build), so the page drops its back link; the header is one compact
  * row with its meta inline; the sections are the New UI tab group, each
- * with content or an empty state. Mar's proposal only.
+ * with content or an empty state. Mar's proposal only. Proposed is the
+ * default: its tabs and header are the ones every other page uses.
  */
 export type BuildNav = 'current' | 'proposed'
 
@@ -24,9 +25,9 @@ const KEY = 'comfy.design.mar.buildNav'
 export const buildNav = reactive<{ id: BuildNav }>({
   id: (() => {
     try {
-      return localStorage.getItem(KEY) === 'proposed' ? 'proposed' : 'current'
+      return localStorage.getItem(KEY) === 'current' ? 'current' : 'proposed'
     } catch {
-      return 'current'
+      return 'proposed'
     }
   })()
 })

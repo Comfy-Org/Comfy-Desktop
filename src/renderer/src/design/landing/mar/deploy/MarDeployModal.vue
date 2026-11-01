@@ -66,6 +66,7 @@ import {
   type SampleLang,
   type Scenario
 } from './deployData'
+import MarSeg from '../pages/MarSeg.vue'
 import './deploy.css'
 
 /**
@@ -308,10 +309,10 @@ watch(
 
 const endpoint = computed(() => `https://${dep.draft?.name ?? draft.value.name}.run.comfy.app`)
 const lang = ref<SampleLang>('curl')
-const LANGS: { id: SampleLang; label: string }[] = [
-  { id: 'curl', label: 'curl' },
-  { id: 'python', label: 'Python' },
-  { id: 'ts', label: 'TypeScript' }
+const LANGS: { value: SampleLang; label: string }[] = [
+  { value: 'curl', label: 'cURL' },
+  { value: 'python', label: 'Python' },
+  { value: 'ts', label: 'TypeScript' }
 ]
 const samples = computed(() =>
   build.value ? samplesFor(dep.draft?.name ?? draft.value.name, build.value) : undefined
@@ -920,18 +921,7 @@ watch(
           <aside class="mar-dep-side">
             <section class="mar-dep-panel mar-dep-code-panel">
               <div class="mar-dep-code-head">
-                <div class="mar-dep-seg" role="tablist" aria-label="Language">
-                  <button
-                    v-for="l in LANGS"
-                    :key="l.id"
-                    type="button"
-                    role="tab"
-                    :aria-selected="lang === l.id"
-                    @click="lang = l.id"
-                  >
-                    {{ l.label }}
-                  </button>
-                </div>
+                <MarSeg v-model="lang" :options="LANGS" label="Language" />
                 <button
                   type="button"
                   class="mar-dep-icon-btn"

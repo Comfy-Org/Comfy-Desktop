@@ -14,6 +14,7 @@ import {
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
+import SectionHeader from '../../ui/SectionHeader.vue'
 import Sparkline from '../../ui/Sparkline.vue'
 import StatusDot from '../../ui/StatusDot.vue'
 import AssetsPage from '../../pages/AssetsPage.vue'
@@ -219,17 +220,12 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
           "
         />
       </Card>
-      <div class="mar-bp-sub">
-        <h2>Recent workflows</h2>
-        <button
-          v-if="wfs.length > recent.length"
-          type="button"
-          class="mar-eh-link"
-          @click="tab = 'workflows'"
-        >
-          See all {{ wfs.length }}
-        </button>
-      </div>
+      <SectionHeader
+        title="Recent workflows"
+        class="mt-7"
+        :link="wfs.length > recent.length ? 'See all' : undefined"
+        @link="tab = 'workflows'"
+      />
       <div
         v-if="recent.length"
         class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3.5"
@@ -380,17 +376,5 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
-}
-.mar-bp-sub {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 28px 0 12px;
-}
-.mar-bp-sub h2 {
-  margin: 0;
-  color: var(--color-base-foreground);
-  font-size: 14px;
-  font-weight: 600;
 }
 </style>
