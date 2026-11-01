@@ -131,9 +131,9 @@ function open(i: Item): void {
   <nav class="flex flex-col gap-px" :aria-label="mode === 'create' ? 'Create' : 'Build'">
     <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
       <!-- Mar's proposal: the global search (⌘K) right under the first
-           place (Home), by default. -->
+           place (Home), by default. Search finds Create things: not in Build. -->
       <Button
-        v-if="isMariana && idx === 1"
+        v-if="isMariana && idx === 1 && mode !== 'build'"
         variant="ghost"
         class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
         @click="search.open = true"
