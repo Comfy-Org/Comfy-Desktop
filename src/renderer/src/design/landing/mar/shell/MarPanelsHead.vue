@@ -4,22 +4,30 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import PanelToggleIcon from './PanelToggleIcon.vue'
 import { marNav, marPanelsOn } from './marShell'
+import { goModeHome } from '../modes/home'
 
 /**
  * Floating panels: the sidebar card's
  * head, after Magnific. Open, the Comfy wordmark and the collapse toggle;
  * collapsed to the rail, the Comfy iso over the toggle. In the text
- * colour: neutral first, branding later.
+ * colour: neutral first, branding later. The mark goes Home, in the last
+ * Create or Build mode.
  */
 const hover = ref(false)
 </script>
 
 <template>
   <div v-if="marPanelsOn" :class="['mar-panels-head', marNav.collapsed && 'is-rail']">
-    <span class="mar-panels-brand" aria-label="Comfy">
+    <button
+      type="button"
+      class="mar-panels-brand"
+      aria-label="Home"
+      title="Home"
+      @click="goModeHome()"
+    >
       <ComfyCLogo v-if="marNav.collapsed" :size="20" />
       <ComfyWordmark v-else />
-    </span>
+    </button>
     <button
       type="button"
       class="mar-panels-toggle"
@@ -55,7 +63,14 @@ const hover = ref(false)
 }
 .mar-panels-brand {
   display: flex;
+  padding: 2px;
+  border-radius: var(--mar-tab-item-radius, 7px);
   color: var(--color-base-foreground);
+  cursor: pointer;
+}
+.mar-panels-brand:focus-visible {
+  outline: 2px solid var(--color-base-foreground);
+  outline-offset: 2px;
 }
 .mar-panels-brand :deep(svg) {
   width: auto;

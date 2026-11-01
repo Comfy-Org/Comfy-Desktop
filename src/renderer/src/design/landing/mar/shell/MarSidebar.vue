@@ -54,6 +54,7 @@ import { search } from '../search/search'
 import { PROJECT_ART } from '../assets/mock'
 import { firstRunKeeps, firstRunLabel, ports } from '../pabloPorts'
 import MarSignIn from './MarSignIn.vue'
+import { goModeHome } from '../modes/home'
 
 /**
  * Mar's sidebar (Navigation: Sidebar or Floating): the lens switch and the
@@ -252,6 +253,14 @@ function newChat(): void {
       </template>
 
       <template v-if="proto.mode === 'agent'">
+        <button
+          type="button"
+          class="mar-side-row"
+          :title="open ? undefined : 'Home'"
+          @click="goModeHome()"
+        >
+          <Home :size="16" /><span v-if="open" class="flex-1 truncate">Home</span>
+        </button>
         <button
           type="button"
           class="mar-side-row"
