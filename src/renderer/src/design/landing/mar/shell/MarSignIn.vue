@@ -1,23 +1,35 @@
 <script setup lang="ts">
 import { LogIn } from 'lucide-vue-next'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
+import Button from '../../ui/Button.vue'
 import { hostActions } from '../../useProto'
+import hillsSunset from '../assets/hills-sunset.jpg'
+import portraitGarden from '../assets/portrait-garden.jpg'
+import portraitSun from '../assets/portrait-sun.jpg'
+import GradedImage from '../brand/GradedImage.vue'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
- *  SignInCard (From Pablo › Account), restyled. On the rail it's one icon. */
+ *  SignInCard (From Pablo › Account), restyled. A strip of outputs in the
+ *  Latent grade (DS › Brand imagery) shows what logging in is for; on hover
+ *  it drifts. On the rail it's one icon. */
 const { open = true } = defineProps<{ open?: boolean }>()
+
+const STRIP = [portraitSun, hillsSunset, portraitGarden]
 </script>
 
 <template>
   <div v-if="open" class="mar-signin">
-    <div class="flex items-start gap-2.5">
-      <span class="mar-signin-mark"><ComfyCLogo :size="13" /></span>
-      <div class="min-w-0">
-        <p class="font-medium text-base-foreground">Log in to Comfy</p>
-        <p class="mt-0.5 text-subtle-foreground">Sync your work and run it on Comfy Cloud.</p>
-      </div>
+    <div class="mar-signin-strip">
+      <span v-for="src in STRIP" :key="src" class="mar-signin-shot">
+        <GradedImage :src="src" class="size-full" />
+      </span>
+      <span class="mar-signin-mark"><ComfyCLogo :size="14" /></span>
     </div>
-    <button type="button" class="mar-signin-btn" @click="hostActions.signIn()">Log in</button>
+    <div class="px-2 pt-2.5 pb-3">
+      <p class="font-medium text-base-foreground">Log in to Comfy</p>
+      <p class="mt-0.5 text-subtle-foreground">Sync your work and run it on Comfy Cloud.</p>
+    </div>
+    <Button variant="primary" block @click="hostActions.signIn()">Log in</Button>
   </div>
   <button
     v-else
@@ -32,56 +44,66 @@ const { open = true } = defineProps<{ open?: boolean }>()
 </template>
 
 <style scoped>
-/* A faint light from the mark's corner, so it reads as an invitation,
-   not a form. */
+/* 4px around the strip and the button, so their corners sit concentric
+   inside the card's. */
 .mar-signin {
-  padding: 12px 10px 10px 12px;
-  border-radius: 14px;
-  background:
-    radial-gradient(
-      120% 90% at 0% 0%,
-      color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
-      transparent 70%
-    ),
-    color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  padding: 4px;
+  border-radius: calc(var(--radius-control) + 4px);
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   font-size: var(--text-ui);
   line-height: 1.35;
   text-wrap: pretty;
 }
+.mar-signin-strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+}
+.mar-signin-shot {
+  overflow: hidden;
+}
+.mar-signin-shot > * {
+  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mar-signin-shot:nth-child(2) > * {
+  transition-delay: 40ms;
+}
+.mar-signin-shot:nth-child(3) > * {
+  transition-delay: 80ms;
+}
+.mar-signin:hover .mar-signin-shot > * {
+  transform: scale(1.08) translateY(-2px);
+}
+/* The mark sits on the pictures, so it keeps one look in both themes. */
 .mar-signin-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   display: flex;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   align-items: center;
   justify-content: center;
-  margin-top: 1px;
-  border-radius: 8px;
-  background: var(--color-base-foreground);
-  color: var(--color-content-background);
+  border-radius: 9px;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+  transform: translate(-50%, -50%);
+  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-/* Mar's CTAs are pills (MarStartWhere, the home prompt). */
-:root .proto-ui.proto-ui.proto-ui .mar-signin-btn {
-  display: flex;
-  width: 100%;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  margin-top: 12px;
-  border-radius: 999px;
-  background: var(--color-base-foreground);
-  color: var(--color-content-background);
-  font-weight: 500;
-  transition:
-    opacity 150ms ease,
-    transform 150ms ease;
+.mar-signin:hover .mar-signin-mark {
+  transform: translate(-50%, calc(-50% - 2px)) scale(1.05);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-signin-btn:hover {
-  opacity: 0.88;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-signin-btn:active {
-  transform: scale(0.98);
+@media (prefers-reduced-motion: reduce) {
+  .mar-signin-shot > *,
+  .mar-signin-mark {
+    transition: none;
+  }
 }
 :root .proto-ui.proto-ui.proto-ui .mar-signin-icon {
   display: flex;

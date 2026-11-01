@@ -13,6 +13,7 @@ import MarWorkspaceMenu from '../mar/MarWorkspaceMenu.vue'
 import { isMariana } from '../mar/proposal'
 import MarCredits from '../mar/MarCredits.vue'
 import MarSignIn from '../mar/shell/MarSignIn.vue'
+import { marNav, marPanelsOn } from '../mar/shell/marShell'
 import MarCreditsFlyout from '../mar/MarCreditsFlyout.vue'
 import { creditsStyle, creditsTotal } from '../mar/credits'
 import { Gauge, KeyRound, ShieldAlert } from 'lucide-vue-next'
@@ -42,7 +43,7 @@ function signOut(): void {
 
 <template>
   <!-- Mar's proposal: her restyled card (mar/). -->
-  <MarSignIn v-if="!proto.signedIn && isMariana" />
+  <MarSignIn v-if="!proto.signedIn && isMariana" :open="!(marPanelsOn && marNav.collapsed)" />
   <SignInCard v-else-if="!proto.signedIn" />
   <div v-else class="flex flex-col gap-1">
     <!-- Mar's proposal: credits as a chip or meter instead (mar/). -->
