@@ -304,11 +304,11 @@ function wheel(e: WheelEvent): void {
 }
 .mar-arc-go {
   position: absolute;
-  bottom: 16px;
-  left: 50%;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
   display: flex;
-  min-width: 96px;
-  height: 34px;
+  height: 38px;
   align-items: center;
   justify-content: center;
   padding: 0 20px;
@@ -324,7 +324,7 @@ function wheel(e: WheelEvent): void {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 6px) scale(0.96);
+  transform: translateY(6px) scale(0.98);
   transition:
     opacity 200ms ease,
     transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
@@ -334,13 +334,13 @@ function wheel(e: WheelEvent): void {
 .mar-arc-card:focus-visible .mar-arc-go {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 .mar-arc-card .mar-arc-go:hover {
   background: rgb(255 255 255 / 0.9);
 }
 .mar-arc-card .mar-arc-go:active {
-  transform: translate(-50%, 0) scale(0.97);
+  transform: translateY(0) scale(0.98);
 }
 .mar-arc-card:hover .mar-arc-scrim,
 .mar-arc-card:focus-visible .mar-arc-scrim {
