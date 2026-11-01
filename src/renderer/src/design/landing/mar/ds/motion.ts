@@ -41,7 +41,8 @@ export const MOTIONS: Motion[] = [
   {
     id: 'tab-pill',
     name: 'Sliding tab pill',
-    trigger: 'Picking a tab in any segmented row.',
+    trigger:
+      'Picking an option in any tab group: tabs, segmented rows, Create / Build, Grid / List. Global, no opt-in.',
     duration: '280ms (label colour 200ms)',
     easing: 'var(--mar-ease)',
     props: 'transform, width',

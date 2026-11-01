@@ -4,6 +4,7 @@ import Select from '../../../ui/Select.vue'
 import MarSeg from '../../pages/MarSeg.vue'
 import MarSearchField from '../../pages/MarSearchField.vue'
 import MarViewToggle from '../../pages/MarViewToggle.vue'
+import TunerSeg from '../../tuner/TunerSeg.vue'
 import AppShot from '../kit/AppShot.vue'
 import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
@@ -37,6 +38,13 @@ const empty = ref('')
 const typed = ref('portrait')
 const grid = ref<'grid' | 'list'>('grid')
 const list = ref<'grid' | 'list'>('list')
+// The Create / Build switch: a radiogroup, so it slides too.
+const MODES = [
+  { value: 'create', label: 'Create' },
+  { value: 'build', label: 'Build' }
+]
+const mode = ref('create')
+const slid = ref<'grid' | 'list'>('grid')
 const TUNING = 'comfy.design.uiTuning.v5'
 // The Workflows toolbar, in app pixels.
 const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
@@ -66,7 +74,7 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 
   <Section
     title="Tabs"
-    note="One tab for every page: MarSeg (mar/pages/MarSeg.vue). A soft track, no border; an indicator slides to the picked tab. Counts are hidden for now. Underline tabs are retired: Pablo's ui/Tabs.vue draws this same track in the New UI."
+    note="One tab for every page: MarSeg (mar/pages/MarSeg.vue). A soft track, no border; a pill slides to the picked tab, built into every tab group (Sliding pill, below). Counts are hidden for now. Underline tabs are retired: Pablo's ui/Tabs.vue draws this same track in the New UI."
   >
     <Cells :min="320">
       <Cell label="sections · Project">
@@ -78,6 +86,34 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
       </Cell>
       <Cell label="tab focus" force="focus" target="button:nth-of-type(2)">
         <MarSeg v-model="where" :options="WHERE" label="Where" />
+      </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Sliding pill"
+    note="Part of every tab group, with no opt-in: one pill sits behind the picked option and glides to the next (280ms, out-expo). motion/tabSlide.ts finds each group as it mounts: tablists, radiogroups, toggle groups, .mar-seg and .mar-pseg rows, so MarSeg, Pablo's ui/Tabs.vue, the Create / Build switch, the view toggle and the Playground's Seg all get it. A group opts out with data-no-pill (carousel dots). Reduced motion: the pill jumps."
+  >
+    <Cells :min="260">
+      <Cell label="tabs · MarSeg"><MarSeg v-model="where" :options="WHERE" label="Where" /></Cell>
+      <Cell label="radiogroup · mode">
+        <div role="radiogroup" aria-label="Mode" class="mar-pseg">
+          <button
+            v-for="m in MODES"
+            :key="m.value"
+            type="button"
+            role="radio"
+            class="mar-pseg-btn"
+            :aria-checked="mode === m.value"
+            @click="mode = m.value"
+          >
+            {{ m.label }}
+          </button>
+        </div>
+      </Cell>
+      <Cell label="radiogroup · view"><MarViewToggle v-model="slid" /></Cell>
+      <Cell label="segmented · Playground">
+        <TunerSeg v-model="mode" :options="MODES" label="Mode" />
       </Cell>
     </Cells>
   </Section>

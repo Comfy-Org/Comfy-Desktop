@@ -11,18 +11,29 @@ import { isMariana } from '../proposal'
  * that mount later get the indicator too.
  */
 
-// Every segmented control, whatever it's built from: reka toggle groups,
-// `.mar-seg` rows and role=tablist rows (page tabs, Explore, Favorites,
-// template and deploy modals). Not tablists that aren't segmented: the
-// banner and carousel dots (`data-no-pill`), the code sample's buttons and
+// Every segmented control, whatever it's built from, with no opt-in: reka
+// toggle groups, `.mar-seg` / `.mar-pseg` rows, role=tablist rows (page
+// tabs, Explore, Favorites, template and deploy modals) and role=radiogroup
+// rows (the Create / Build switch, Grid / List views). Not the ones that
+// aren't segmented: the banner and carousel dots (`data-no-pill`) and
 // underline tabs (`.mar-proj-tabs`), which have their own indicator.
-const GROUPS =
-  "[role='group']:has(> button[data-state]), .mar-seg, [role='tablist']:not([data-no-pill], .mar-proj-tabs):has(> button[aria-selected])"
-const PICKED = "button[data-state='on'], button[aria-pressed='true'], button[aria-selected='true']"
+const GROUPS = [
+  "[role='group']:has(> button[data-state])",
+  '.mar-seg',
+  '.mar-pseg',
+  "[role='tablist']:has(> button[aria-selected])",
+  "[role='radiogroup']:has(> button[aria-checked])"
+]
+  .map((g) => `:is(${g}):not([data-no-pill], .mar-proj-tabs)`)
+  .join(', ')
+const PICKED =
+  "button[data-state='on'], button[aria-pressed='true'], button[aria-selected='true'], button[aria-checked='true']"
 
 function place(group: HTMLElement): void {
   let pill = group.querySelector<HTMLElement>(':scope > .mar-tab-pill')
-  const picked = group.querySelector<HTMLElement>(`:scope > ${PICKED}`)
+  const all = group.querySelectorAll<HTMLElement>(`:scope > :is(${PICKED})`)
+  // None picked, or several (a multi-select row): no pill to slide.
+  const picked = all.length === 1 ? all[0] : null
   if (!picked) {
     pill?.remove()
     return
@@ -68,7 +79,7 @@ watch(
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ['data-state', 'aria-pressed']
+        attributeFilter: ['data-state', 'aria-pressed', 'aria-selected', 'aria-checked']
       })
       window.addEventListener('resize', onResize)
       requestAnimationFrame(() => scan())

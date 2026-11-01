@@ -14,21 +14,23 @@
   --mar-page-step: 40ms;
 }
 
-/* Tabs: one pill slides behind the picked option (tabSlide.ts). A track
-   that floats (the space's Admin | Member view) keeps its `fixed`. */
-:root[data-mar-ui='on'] [data-mar-tabs]:not(.fixed) {
+/* Tabs: one pill slides behind the picked option (tabSlide.ts). Keyed on
+   `data-mar-tabs`, which only the script sets, so the DS site's own
+   chrome slides too. A track that floats (the space's Admin | Member
+   view) keeps its `fixed`. */
+:root [data-mar-tabs]:not(.fixed) {
   position: relative;
 }
-:root[data-mar-ui='on'] [data-mar-tabs] {
+:root [data-mar-tabs] {
   isolation: isolate;
 }
-:root[data-mar-ui='on'] [data-mar-tabs] > button {
+:root [data-mar-tabs] > button {
   position: relative;
   z-index: 1;
   background-color: transparent !important;
   transition: color 200ms ease;
 }
-:root[data-mar-ui='on'] .mar-tab-pill {
+:root .mar-tab-pill {
   position: absolute;
   top: 0;
   left: 0;
@@ -37,8 +39,8 @@
   background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
   pointer-events: none;
   transition:
-    transform 280ms var(--mar-ease),
-    width 280ms var(--mar-ease);
+    transform 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    width 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 /* Page entry: Home's blocks rise in, one after another. A Page
@@ -148,7 +150,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-mar-ui='on'] .mar-tab-pill {
+  :root .mar-tab-pill {
     transition: none;
   }
   :root[data-mar-ui='on'] :is(.mar-home *, .proto-main img, .mar-send, aside, [role='menu']),

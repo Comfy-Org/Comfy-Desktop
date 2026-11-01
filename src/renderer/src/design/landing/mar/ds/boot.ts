@@ -47,6 +47,9 @@ async function boot(): Promise<void> {
             ? (await import('./kit/PlayFrame.vue')).default
             : (await import('./kit/AppFrame.vue')).default
   } else {
+    // The site's own tabs and theme switch slide like the app's.
+    await import('../motion/tabSlide')
+    await import('../motion/motion.css')
     root = (await import('./DsApp.vue')).default
   }
   createApp(root).mount('#app')

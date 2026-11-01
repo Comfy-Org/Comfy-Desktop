@@ -33,6 +33,7 @@
 .ds-views button {
   height: 26px;
   padding: 0 10px;
+  border: 0;
   border-radius: 7px;
   color: #a1a1a8;
 }
@@ -414,21 +415,23 @@ html.ds-app-frame #app {
 }
 .ds-tabs {
   display: flex;
-  gap: 4px;
+  width: fit-content;
+  gap: 2px;
   margin-bottom: 16px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  padding: 3px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
 }
 .ds-tabs button {
-  margin-bottom: -1px;
-  padding: 8px 12px;
+  height: 28px;
+  padding: 0 12px;
   border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-radius: 7px;
   background: none;
   color: #a1a1a8;
 }
 .ds-tabs button[aria-selected='true'] {
-  border-bottom-color: #ececee;
+  background: rgb(255 255 255 / 0.11);
   color: #ececee;
 }
 /* The hero: one example, centred, with room around it. */
