@@ -1,40 +1,35 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import BrandBackground from './BrandBackground.vue'
 
-// happy-dom can't compute layout, so parse the .vue `<style>` directly.
-//
 // Regression: the install wizard's Configure step turns on `scrollContent`
-// (overflow-y: auto) and the Template step turns it off. With the base rule at
-// `overflow: hidden` the frame stayed a scroll container, so a Configure step
-// scrolled to its Continue button left the Template step shifted up with no way
-// to scroll back (the absolutely positioned light beams give the frame a scroll
-// range taller than the screen). `overflow: clip` makes the frame a
-// non-scrolling box, so the leftover offset is dropped and nothing (wheel,
-// focus, scrollIntoView) can scroll it.
+// (overflow-y: auto) and the Template step turns it off (overflow: hidden).
+// A hidden frame is still a scroll container, and the absolutely positioned
+// light beams give it a scroll range taller than the window, so a Configure
+// step scrolled down to Continue left the Template step shifted up (logo and
+// title cut off) with no way to scroll back.
+describe('BrandBackground — frame scroll offset', () => {
+  function frame(wrapper: ReturnType<typeof mount>): HTMLElement {
+    return wrapper.get('.brand-inner-frame').element as HTMLElement
+  }
 
-// Resolved against cwd (not import.meta.url, which happy-dom can mangle).
-const vueSource = readFileSync(
-  path.resolve('src/renderer/src/components/BrandBackground.vue'),
-  'utf8'
-)
+  it('returns the frame to the top when a step turns scrolling off', async () => {
+    const wrapper = mount(BrandBackground, { props: { scrollContent: true } })
+    frame(wrapper).scrollTop = 240
+    expect(frame(wrapper).scrollTop).toBe(240)
 
-function extractRule(selector: string): string {
-  // Anchor on a line start so we match the base rule, not a descendant override.
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = vueSource.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))
-  if (!match) throw new Error(`CSS rule for "${selector}" not found in BrandBackground.vue`)
-  return match[1]
-}
+    await wrapper.setProps({ scrollContent: false })
 
-describe('BrandBackground — frame scrolling', () => {
-  it('clips the frame instead of hiding overflow, so a non-scrolling step cannot keep a stale scroll offset', () => {
-    const body = extractRule('.brand-inner-frame')
-    expect(body).toMatch(/(?:^|\n)\s*overflow:\s*clip;/)
-    expect(body).not.toMatch(/overflow(?:-y)?:\s*hidden/)
+    expect(frame(wrapper).classList.contains('brand-inner-frame--scroll-content')).toBe(false)
+    expect(frame(wrapper).scrollTop).toBe(0)
   })
 
-  it('still lets steps that opt in scroll vertically', () => {
-    expect(extractRule('.brand-inner-frame--scroll-content')).toMatch(/overflow-y:\s*auto/)
+  it('keeps the offset while the step still scrolls', async () => {
+    const wrapper = mount(BrandBackground, { props: { scrollContent: true, vignette: false } })
+    frame(wrapper).scrollTop = 240
+
+    await wrapper.setProps({ vignette: true })
+
+    expect(frame(wrapper).scrollTop).toBe(240)
   })
 })
