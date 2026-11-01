@@ -12,12 +12,6 @@ const { options } = defineProps<{
   options: { value: string; label: string; icon: Component }[]
 }>()
 const model = defineModel<string>({ required: true })
-// Picking the mode you are already in goes back to its Home.
-const emit = defineEmits<{ home: [mode: string] }>()
-function pick(value: string): void {
-  if (model.value === value) emit('home', value)
-  else model.value = value
-}
 const current = computed(() => options.find((o) => o.value === model.value) ?? options[0]!)
 const agent = computed(() => options.find((o) => o.value === 'agent'))
 const pair = computed(() => options.filter((o) => o.value !== 'agent'))
@@ -68,33 +62,6 @@ const HINT: Record<string, string> = {
     </button>
   </div>
 
-  <!-- Three-way: Create · Build · Agent in one track, Agent as an icon, so
-       one is always picked. A `.mar-seg` row: the sliding pill
-       (motion/tabSlide.ts) follows the pressed option. -->
-  <div
-    v-else-if="modeStyle.id === 'three'"
-    class="mar-seg mms-tri"
-    role="radiogroup"
-    aria-label="Mode"
-  >
-    <button
-      v-for="o in options"
-      :key="o.value"
-      type="button"
-      role="radio"
-      :aria-checked="model === o.value"
-      :aria-pressed="model === o.value"
-      :aria-label="o.label"
-      :title="o.value === 'agent' ? o.label : undefined"
-      :class="['mms-tri-seg', o.value === 'agent' && 'is-icon']"
-      @click="pick(o.value)"
-    >
-      <component :is="o.icon" :size="14" /><span v-if="o.value !== 'agent'" class="mms-tri-label">{{
-        o.label
-      }}</span>
-    </button>
-  </div>
-
   <!-- Split (and Foot): Create / Build as a toggle, Agent its own button. -->
   <div v-else class="mms-split" :class="modeStyle.id === 'foot' && 'is-foot'">
     <div class="mms-pair" role="radiogroup" aria-label="Mode">
@@ -105,7 +72,7 @@ const HINT: Record<string, string> = {
         role="radio"
         :aria-checked="model === o.value"
         class="mms-seg"
-        @click="pick(o.value)"
+        @click="model = o.value"
       >
         <component :is="o.icon" :size="14" />{{ o.label }}
       </button>
@@ -186,40 +153,6 @@ const HINT: Record<string, string> = {
   font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.mms-tri {
-  display: flex;
-  width: 100%;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--mar-tab-radius, 10px);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mms-tri-seg {
-  display: inline-flex;
-  width: auto;
-  height: 28px;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0;
-  border-radius: var(--mar-tab-item-radius, 7px);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mms-tri-seg.is-icon {
-  width: 36px;
-  flex: none;
-}
-:root .proto-ui.proto-ui.proto-ui .mms-tri-seg:hover,
-:root .proto-ui.proto-ui.proto-ui .mms-tri-seg[aria-checked='true'] {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mms-tri-seg:focus-visible {
-  outline: 2px solid var(--color-base-foreground);
-  outline-offset: -2px;
 }
 .mms-split {
   display: flex;

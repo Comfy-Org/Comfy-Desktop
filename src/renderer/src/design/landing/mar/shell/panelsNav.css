@@ -116,18 +116,3 @@
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-agent {
   width: 100%;
 }
-/* The three-way switch: one column of icons, the pill slides down it. */
-:root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mb-3:has(.mms-tri) {
-  height: auto;
-}
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-tri {
-  flex-direction: column;
-}
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-tri-seg.mms-tri-seg {
-  width: 100%;
-  height: 32px;
-  flex: none;
-}
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-tri-label {
-  display: none;
-}

@@ -202,7 +202,7 @@ export const TWEAKS = {
   cover: one(cover, 'graph'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
-  modeSwitch: one(modeStyle, 'three'),
+  modeSwitch: one(modeStyle, 'split'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),

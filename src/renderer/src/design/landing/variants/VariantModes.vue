@@ -30,7 +30,6 @@ import { marSidebarClosed } from '../mar/shell/marShell'
 import MarLensSwitch from '../mar/shell/MarLensSwitch.vue'
 import MarModeSwitch from '../mar/modes/MarModeSwitch.vue'
 import { modeStyle } from '../mar/modes/modeStyle'
-import { goModeHome } from '../mar/modes/home'
 import { marTabsOn } from '../mar/shell/titleTabs'
 
 /**
@@ -90,7 +89,6 @@ const MODES = computed(() => [
             v-else-if="isMariana && modeStyle.id !== 'pablo'"
             v-model="mode"
             :options="MODES"
-            @home="(m: string) => m !== 'agent' && goModeHome(m as 'create' | 'build')"
           />
           <ModeSwitch v-else v-model="mode" :options="MODES" />
         </div>
