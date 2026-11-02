@@ -45,11 +45,11 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   // builds move here (the sidebar group lists projects instead).
   create: [
     { page: 'overview', label: 'Home', icon: Home },
+    ...(can.value.exploreApps
+      ? [{ page: 'explore' as Page, label: 'Explore', icon: Compass }]
+      : []),
     ...(can.value.explore
-      ? [
-          { page: 'explore' as Page, label: 'Explore', icon: Compass },
-          { page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }
-        ]
+      ? [{ page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }]
       : []),
     ...(can.value.projects
       ? [

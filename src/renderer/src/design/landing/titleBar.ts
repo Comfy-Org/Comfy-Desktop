@@ -9,7 +9,7 @@ import {
 } from './titleBarBridge'
 import { prototypeGroups, setPrototypeOption } from './prototypeOptions'
 import { buildState, openInNewWindow } from './buildTabs'
-import { landingPage } from './milestones'
+import { can, landingPage } from './milestones'
 import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
 
@@ -95,7 +95,7 @@ export const titleBarState = computed<TitleBarState>(() => ({
         update: i.state === 'update' ? 'Update available' : undefined
       }
     }),
-  apps: appsProto.tabs.flatMap((id) => {
+  apps: (can.value.exploreApps ? appsProto.tabs : []).flatMap((id) => {
     const app = libApp(id)
     return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),
