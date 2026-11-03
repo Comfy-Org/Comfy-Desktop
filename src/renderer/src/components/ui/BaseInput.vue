@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
+import Input from '@comfyorg/design-system/input/Input'
 
 interface Props {
   modelValue: string
@@ -73,8 +74,8 @@ function onChange(event: Event): void {
     >
       <slot name="leading" />
     </span>
-    <input
-      class="ui-input-control min-w-0 flex-1 border-none bg-transparent pt-0 pb-1.5 font-sans text-[14px] outline-none placeholder:text-neutral-100 placeholder:opacity-[0.67]"
+    <Input
+      class="ui-input-control block h-auto min-w-0 flex-1 appearance-auto border-none bg-transparent pt-0 pb-1.5 font-sans text-[14px] outline-none placeholder:text-neutral-100 placeholder:opacity-[0.67] focus-visible:ring-0 aria-invalid:ring-0"
       :class="[
         type === 'text' || type === 'number'
           ? 'mt-1.5 w-full rounded-md'
@@ -84,7 +85,7 @@ function onChange(event: Event): void {
         readonly ? 'cursor-default text-text-muted' : 'text-neutral-100'
       ]"
       :type="type"
-      :value="modelValue"
+      :model-value="modelValue"
       :placeholder="placeholder"
       :aria-label="ariaLabel"
       :aria-invalid="invalid || undefined"
