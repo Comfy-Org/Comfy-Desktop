@@ -235,6 +235,9 @@ describe('ProgressModal — brand branch state transitions', () => {
       flatPercent: 42
     })
 
+    expect(document.querySelector('.brand-takeover-root')?.getAttribute('aria-label')).toBe(
+      'Deleting — My Install'
+    )
     expect(body.exists('.brand-progress__banner')).toBe(false)
     expect(body.exists('.brand-progress__error-message')).toBe(false)
     expect(body.exists('.brand-progress__bar')).toBe(true)

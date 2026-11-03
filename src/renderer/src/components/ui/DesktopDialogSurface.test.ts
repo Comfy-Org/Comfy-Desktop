@@ -137,6 +137,20 @@ describe('DesktopDialogSurface', () => {
     expect(outerOpen.value).toBe(false)
   })
 
+  it('uses a supplied visible title without adding an empty accessible heading', async () => {
+    const wrapper = mount(DesktopDialogSurface, {
+      props: { open: true, ariaLabelledby: 'visible-dialog-title' },
+      slots: { default: '<h2 id="visible-dialog-title">Save snapshot</h2><button>Save</button>' },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    await settleDialog()
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.getAttribute('aria-labelledby')).toBe('visible-dialog-title')
+    expect(dialog.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')).toHaveLength(1)
+    expect(dialog.querySelector('h2')?.textContent).toBe('Save snapshot')
+  })
+
   it('preserves a non-dismissible dialog when Escape or its backdrop is pressed', async () => {
     const open = ref(true)
     const onClose = vi.fn()

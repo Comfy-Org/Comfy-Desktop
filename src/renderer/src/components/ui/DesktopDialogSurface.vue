@@ -95,9 +95,10 @@ function onOpenAutoFocus(event: Event): void {
           @pointer-down-outside="onPointerDownOutside"
           @open-auto-focus="onOpenAutoFocus"
         >
-          <!-- The visible heading can live anywhere in the consumer's chrome;
-               aria-labelledby below keeps it as the accessible name. -->
-          <DialogTitle class="sr-only">{{ ariaLabel }}</DialogTitle>
+          <!-- Register the package title context without announcing a second
+               heading. The dialog is named above by aria-label or by the
+               consumer's visible heading through aria-labelledby. -->
+          <DialogTitle as="span" class="hidden" aria-hidden="true" />
           <slot />
         </DialogContent>
       </div>

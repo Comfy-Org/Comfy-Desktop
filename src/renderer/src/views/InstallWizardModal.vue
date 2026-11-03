@@ -2,7 +2,7 @@
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -536,20 +536,7 @@ function rawSelections(): Record<string, FieldOption> {
 let installDirPromise: Promise<string> | null = null
 let sourcesPromise: Promise<Source[]> | null = null
 
-const brandShellRef = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
-
 onMounted(() => {
-  if (props.hideBackToDashboard) {
-    returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    void nextTick(() => {
-      const target = brandShellRef.value?.querySelector<HTMLElement>(
-        'input, button, select, textarea, [tabindex]:not([tabindex="-1"])'
-      )
-      target?.focus()
-    })
-  }
-
   window.api
     .detectGPU()
     .then((gpu) => {
@@ -580,10 +567,6 @@ onBeforeUnmount(() => {
       reason: 'wizard_cancelled'
     })
   }
-  if (returnFocusTo && document.contains(returnFocusTo)) {
-    returnFocusTo.focus()
-  }
-  returnFocusTo = null
   clearTimeout(templateNudgeTimer)
 })
 
@@ -1311,10 +1294,14 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout :scroll-content="step === 'configure'">
+  <BrandTakeoverLayout
+    :scroll-content="step === 'configure'"
+    :aria-label="
+      $t(step === 'template' ? 'standalone.templatePickerTitle' : 'newInstall.configureTitle')
+    "
+  >
     <div
       v-if="step === 'configure'"
-      ref="brandShellRef"
       class="config-shell mx-auto w-full max-w-[640px] self-stretch pt-[clamp(1.5rem,4vh,3rem)] pb-[max(5rem,8vh)] text-center"
     >
       <h1
@@ -1347,6 +1334,7 @@ defineExpose({ open })
             <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
               <InputGroupInput
                 id="inst-name-standalone"
+                :autofocus="hideBackToDashboard || undefined"
                 :model-value="instName"
                 type="text"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"

@@ -86,6 +86,19 @@ describe('ModalDialog shared controls', () => {
     await expect(result).resolves.toEqual({ cache: true })
   })
 
+  it('retains destructive styling for a simple danger-solid confirmation', async () => {
+    const result = modal.confirm({
+      title: 'Delete installation',
+      message: 'Delete files?',
+      confirmStyle: 'danger-solid'
+    })
+    await settle()
+    const action = getElement<HTMLButtonElement>('[data-testid="base-alert-action"]')
+    expect(action.getAttribute('data-variant')).toBe('destructive')
+    action.click()
+    await expect(result).resolves.toBe(true)
+  })
+
   it('keeps a loading confirmation disabled and dismisses it as cancellation', async () => {
     const result = modal.confirm({ title: 'Restore snapshot', message: '', loading: true })
     await settle()

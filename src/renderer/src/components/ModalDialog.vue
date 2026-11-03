@@ -38,7 +38,9 @@ const isSimpleConfirm = computed(
 const usesBaseAlert = computed(() => state.type === 'alert' || isSimpleConfirm.value)
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
-  state.type === 'confirm' && state.confirmStyle === 'danger' ? 'danger' : 'primary'
+  state.type === 'confirm' && ['danger', 'danger-solid'].includes(state.confirmStyle)
+    ? 'danger'
+    : 'primary'
 )
 
 /** Alert uses buttonLabel (single OK); simple confirm uses confirmLabel. */
