@@ -1498,6 +1498,33 @@ describe('core beta report placement', () => {
 
   const reportedEvents = (): string[] => events.map((e) => e.event)
 
+  describe('agent client context', () => {
+    let spawnEnv: Record<string, string | undefined> = {}
+    beforeEach(() => {
+      launchHarness.spawn = (_cmd: unknown, _args: unknown, _cwd: unknown, env: unknown) => {
+        spawnEnv = env as Record<string, string | undefined>
+        return fakeChild()
+      }
+    })
+    afterEach(() => {
+      settingsModule.set('telemetryEnabled', undefined)
+    })
+
+    it('hands the agent its client context only with telemetry consent', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      expect((await handleLaunch(ctxFor('harness-client-context-on'))).ok).toBe(true)
+      expect(spawnEnv.AGENT_CLIENT_CONTEXT).toBe('desktop')
+      expect(spawnEnv.AGENT_CLIENT_CHANNEL).toBeTruthy()
+    })
+
+    it.each([false, undefined])('sends none with telemetry consent %s', async (consent) => {
+      settingsModule.set('telemetryEnabled', consent)
+      expect((await handleLaunch(ctxFor(`harness-client-context-${consent}`))).ok).toBe(true)
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CHANNEL')
+    })
+  })
+
   /** Minimal live child: streams to attach to, a pid to kill, and no exit unless a test
    *  emits one, so a launch that reaches spawn settles instead of hanging. */
   function fakeChild(): FakeChild {

@@ -21,7 +21,10 @@ describe('agentClientContext', () => {
 
   it('carries the channel and the probed tier', async () => {
     setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
-    expect(await agentClientContext(true, '1.2.3-beta.1')).toEqual({ channel: 'beta', gpuTier: 'mid' })
+    expect(await agentClientContext(true, '1.2.3-beta.1')).toEqual({
+      channel: 'beta',
+      gpuTier: 'mid'
+    })
   })
 
   it('sends the channel alone when the probe fails or is not registered', async () => {
