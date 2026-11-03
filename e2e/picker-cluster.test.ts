@@ -12,17 +12,17 @@
  *      once without it so the chooser-backed launch path actually
  *      dispatches `runAction('launch')`. Neither variant needs a real
  *      ComfyUI process — the fake standalone install returns ok:false
- *      from `handleLaunch` immediately. (audit lifecycle #11)
+ *      from `handleLaunch` immediately.
  *
  *   2. `comfy-titlepopup:open-new-install`    — More-menu's `+ New
  *      Install` row → mounts the new-install Tier 3 takeover on the
- *      current host. (audit lifecycle #12)
+ *      current host.
  *
  *   3. `comfy-titlepopup:open-install-action` — More-menu's install-
  *      level entries (Open Folder / Copy / Untrack / Delete). Open
  *      Folder is the only non-modal entry, so this file exercises that
  *      one to pin the audit fix that keeps the popup visible for
- *      fire-and-forget actions. (audit lifecycle #13 + annoying #9)
+ *      fire-and-forget actions.
  *
  * Picker popup auto-blurs when focus moves, so the bridge calls fire
  * inside the popup itself — the same pattern `picker-stop-confirm`

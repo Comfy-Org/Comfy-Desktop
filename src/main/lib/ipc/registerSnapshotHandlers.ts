@@ -378,9 +378,9 @@ export function registerSnapshotHandlers(): void {
       // Stage the envelope as a restore target instead of committing it to the
       // live history. It only becomes history if/when the restore succeeds (see
       // the `snapshot-restore` action), so a failed restore can't leave a
-      // never-applied snapshot at the top of the timeline (#1137).
+      // never-applied snapshot at the top of the timeline.
       //
-      // Only the newest snapshot is staged (#1251): it is the restore target,
+      // Only the newest snapshot is staged: it is the restore target,
       // and committed history must only contain states THIS install has
       // actually been in — the file's older snapshots never were.
       const newest = pending.envelope.snapshots[0]!

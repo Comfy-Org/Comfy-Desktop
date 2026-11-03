@@ -75,10 +75,7 @@ export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
 
 /** User's pick from the close-window confirm:
  *   - `close`  — tear the window down (last window → app quits)
- *   - `cancel` — keep the window open
- *
- *  Returning to the dashboard is no longer a close-time choice: it's a
- *  deliberate user action via the title pill's "Open Dashboard" / New Window. */
+ *   - `cancel` — keep the window open */
 export type CloseWindowChoice = 'close' | 'cancel'
 
 export function buildFirebaseAuthForwardedError(
@@ -111,7 +108,7 @@ export function shouldBailAfterConsult(consult: CloseConsultResult, forceClose: 
  *  "Close Window". Confirm only when the user opted in via
  *  `confirmBeforeClosingWindow` (off by default) AND the close either kills a
  *  local ComfyUI process OR closes the last install window (which quits the
- *  app). Cloud/remote non-last windows skip the modal (issue #654) — closing
+ *  app). Cloud/remote non-last windows skip the modal — closing
  *  them never kills a local ComfyUI and the app stays alive. */
 export function installCloseNeedsConfirm(
   confirmEnabled: boolean,
@@ -168,9 +165,7 @@ export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} — v${APP_
  *  for chooser hosts. */
 const CHOOSER_HOST_BOUNDS_KEY = 'chooser'
 
-/** Late-bound dependencies on host machinery that still lives in
- *  `index.ts` (or other modules pending later extractions). Set once
- *  at the top of `whenReady` via `setHostWindowFactories(...)`. */
+/** Dependencies supplied by src/main/index.ts before any host window opens. */
 export interface HostWindowFactories {
   /** Async beforeunload-style consult through the panel renderer. Only
    *  resolves the in-flight Tier 2/3 overlay cancel-prompt:
@@ -181,10 +176,8 @@ export interface HostWindowFactories {
   consultPanelRendererClose: (
     panelView: WebContentsView | null | undefined
   ) => Promise<'cleared' | 'aborted' | 'defer'>
-  /** Shell-level "Close Window" confirm, owned by main so a hidden panel
-   *  renderer can't swallow it. Shared with the Close Window menu entry.
-   *  The last window adds a "Return to Dashboard" option so closing it
-   *  isn't a forced quit; `stopsLocalComfy` tailors the copy. */
+  /** Main-owned close confirmation shared with the Close Window menu entry.
+   *  isLastWindow and stopsLocalComfy tailor the copy. */
   confirmCloseInstanceWindow: (
     window: BrowserWindow,
     isLastWindow: boolean,
@@ -216,7 +209,7 @@ function getFactories(): HostWindowFactories {
 }
 
 /**
- * On macOS, Electron's WebAuthn/passkey support is broken (electron#24573).
+ * Electron's macOS auth popups do not support passkeys.
  * Inject a fixed warning banner into auth popups (Google, GitHub) so users
  * know to use password + OTP instead of passkeys.
  */
@@ -573,14 +566,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   })
   comfyWindow.setMenuBarVisibility(false)
 
-  // Pre-warm the title-bar dropdown popup (file menu / downloads tray /
-  // instance picker) as early as possible — fired here rather than from
-  // the `title-bar-ready` handler so the popup's WebContentsView + HTML/JS
-  // bundle starts loading in parallel with the title-bar renderer rather
-  // than after it. Cold-start cost is ~150-200ms; the user can click the
-  // pill before the title-bar even finishes painting, so every millisecond
-  // of head-start matters. `ensureTitlePopup` is idempotent so any later
-  // accidental call from the same parent is a no-op.
+  // Load the title-bar popup in parallel with the renderer so the file menu,
+  // downloads tray, and instance picker are ready for the first click.
   prewarmTitlePopup(comfyWindow)
 
   // Title bar view — bounded to TITLEBAR_HEIGHT, isolated from the body.
@@ -590,15 +577,10 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      // sandbox: false — comfyTitleBarPreload imports the shared
-      // src/preload/api.ts (window.api bridge), which Rollup emits as a
-      // separate chunk under out/preload/chunks/. Sandboxed preloads can
-      // only require() from electron/events/timers/url, so the chunk
-      // require would fail silently and leave window.api undefined,
-      // which historically blanked the title-bar renderer and broke
-      // renderer-side telemetry. contextIsolation + nodeIntegration:false
-      // remain on, so renderer JS still has no Node access.
-      // Tracked: issue #521 (build-time chunk inlining to re-enable sandbox).
+      // The preload imports src/preload/api.ts as a separate Rollup chunk.
+      // Sandboxed preloads cannot require that chunk, leaving window.api
+      // undefined. Context isolation and disabled Node integration keep
+      // renderer JS without Node access.
       sandbox: false,
       preload: path.join(__dirname, '../preload/comfyTitleBarPreload.js')
     }
@@ -774,11 +756,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       titleBarView.webContents.send('comfy-titlebar:theme-changed', entry.lastTheme)
       titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
       titleBarView.webContents.send('comfy-titlebar:source-category-changed', entry.sourceCategory)
-      // Authoritative installation-id push — the title bar is now a
-      // long-lived view that doesn't reload across attach / detach
-      // (see `loadTitleBarUrl` callers); the URL `installationId`
-      // query param is only a cold-boot seed for the renderer's
-      // initial `isInstallLess` paint.
+      // The title bar survives attach/detach without reloading. Push the
+      // current installation id; its URL query param only seeds the first paint.
       titleBarView.webContents.send('comfy-titlebar:installation-id-changed', entry.installationId)
       // Replay preview-mode so a re-mount during an in-progress preview
       // keeps showing the install-type icon next to the previewed name
@@ -843,12 +822,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       try {
         const entry = comfyWindows.get(windowKey)
         const skipConsult = fx.preClearedClose.has(comfyWindow)
-        // The OS ✕ on a local install window always shows the Close Window
-        // confirm — including the last window, where confirming tears the
-        // window down and the app quits via `window-all-closed`. Returning
-        // to the dashboard is a deliberate action via the title pill, not a
-        // close-time fallback. The renderer also uses `isLastWindow` to
-        // tailor its close-confirm copy.
+        // The renderer uses `isLastWindow` to tailor the close-confirm copy.
+        // Closing the last window quits via `window-all-closed`.
         const isLastWindow =
           Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
         // Hide any open title-bar popup before any confirm fires. The
@@ -856,13 +831,9 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
         // in the same BrowserWindow, so a modal would otherwise sit behind
         // the (visually opaque) popup and be unreachable.
         if (!skipConsult) hideTitlePopupForParent(comfyWindow)
-        // Step 1 — let the renderer handle any in-flight Tier 2/3 overlay
-        // (its cancel-prompt). With no overlay it returns `defer`: the
-        // close-window confirm is main's job, because a running instance's
-        // panel view is hidden behind the ComfyUI view and can't be relied
-        // on to surface a prompt (the ✕ was closing silently for exactly
-        // that reason). `skipConsult` (the menu pre-cleared this close) and
-        // chooser hosts skip straight through.
+        // Let the renderer handle an active overlay's cancel prompt. With no
+        // overlay it returns `defer`; main handles the close-window confirm
+        // because the panel view can be hidden behind ComfyUI.
         //
         // Every renderer-cancel path below re-checks `preClearedClose`
         // before bailing — a force-close (launch-guard eviction, bulk
@@ -873,10 +844,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
           ? 'cleared'
           : await fx.consultPanelRendererClose(entry?.panelView)
         if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return
-        // Step 2 — for a local install-backed host with no overlay, main
-        // shows the Close Window confirm (same as the menu item). The last
-        // window gets the same prompt — confirming it tears down and quits.
-        // The dashboard closes with no prompt.
+        // Apply the configured close-confirm policy to install hosts.
+        // Chooser hosts close without an extra prompt.
         const entryForClose = comfyWindows.get(windowKey)
         const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
         const isLastInstallWindow = isLastWindow && isInstallHostWindow
@@ -898,21 +867,11 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
           )
           if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
         }
-        // Drain the force-close flag (its only remaining consumer was the
-        // dashboard-detach fallback, now removed; kept here so a late
-        // pre-clear doesn't leak into a future close of a reused window).
+        // Consume any late force-close flag so it cannot affect a future close.
         fx.preClearedClose.delete(comfyWindow)
         if (comfyWindow.isDestroyed()) return
-        // Each cleanup step is wrapped via `safeTeardown` so a single
-        // throw can't skip the BrowserWindow.destroy() at the end.
-        // Without this, an exception in (e.g.) the comfy webContents
-        // close — observed in the in-place attach path where the
-        // chooser's reused comfyView's `.webContents` can come back
-        // undefined after the install's navigation churn — left the
-        // host window alive forever, with ComfyUI still loaded.
-        // Errors are forwarded to Datadog so silent teardown failures
-        // stay visible in telemetry instead of being swallowed by the
-        // safety net.
+        // Run every cleanup even if one fails, then destroy the host window.
+        // Forward individual failures to Datadog.
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()
@@ -952,10 +911,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
           titleBarView.webContents.close()
         )
         safeTeardown('host-window-close-comfy-webcontents-close', () => {
-          // `webContents` can come back undefined on a reused chooser
-          // comfyView after the install's navigation churn — the optional
-          // chain avoids a TypeError that would needlessly spam Datadog
-          // during otherwise expected teardowns.
+          // A reused chooser view can lose its webContents during navigation.
           if (activeComfyView.webContents && !activeComfyView.webContents.isDestroyed()) {
             activeComfyView.webContents.close()
           }
@@ -991,14 +947,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     lastTheme: opts.initialTheme,
     layoutViews,
     comfyUrl: '',
-    // ALWAYS install-less at construction. The install-backed wrapper
-    // calls `attachInstall()` immediately after this returns, which is
-    // the only place that populates `installationId` (and the secondary
-    // index). Pre-fix this field was seeded from `opts.installationId`,
-    // which made `attachInstall()` throw on its already-attached guard
-    // for every install-backed launch that fell past the existing-entry
-    // and claim branches in `onLaunch()` — broken for unique-partition
-    // installs (Standalone / Portable) launched from a chooser host.
+    // Every host starts install-less. Only attachInstall() sets the installation
+    // id and secondary index; pre-populating it trips the already-attached guard.
     installationId: null,
     constructedPartition:
       typeof opts.comfyWebPreferences.partition === 'string'
@@ -1056,10 +1006,6 @@ export function loadTitleBarUrl(titleBarView: WebContentsView, installationId: s
   void tbLoad.catch(() => {})
 }
 
-// Re-exported from the dependency-free `partition.ts` (see rationale there).
-// Used by both the install-backed wrapper (constructing a fresh comfyView)
-// and `rebuildComfyViewIfNeeded` to flip a chooser host's view onto a
-// partition that matches the install being attached in place.
 export { expectedPartitionFor }
 
 /**
@@ -1157,16 +1103,9 @@ export function buildComfyView(
         overrideBrowserWindowOptions: { webPreferences: { preload: undefined } }
       }
     }
-    // Capture downloads that the previous unconditional
-    // `shell.openExternal` branch was leaking to the system browser.
-    // The cloud "Download zip" button renders as a `window.open(zipUrl)`
-    // (no `<a download>` attribute), so Electron reports disposition
-    // `'foreground-tab'` — indistinguishable from a normal external
-    // link by disposition alone. We match on the URL's pathname
-    // extension via `isLikelyDownloadUrl` (archive / installer / model
-    // weights) and route the request through `session.downloadURL`,
-    // which fires the `will-download` listener attached above and
-    // surfaces the download in the launcher's downloads tray.
+    // window.open() downloads share the 'foreground-tab' disposition with
+    // external links. Match the URL extension and use the session download
+    // handler so they appear in the launcher's downloads tray.
     if (isLikelyDownloadUrl(childUrl)) {
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }

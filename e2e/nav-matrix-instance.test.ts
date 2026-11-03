@@ -1,5 +1,5 @@
 /**
- * E2E: instance/window navigation matrix — Instance → X (issue #926).
+ * E2E: instance/window navigation matrix — Instance → X.
  *
  * Asserts the bridge → main → window wiring for the instance-host deltas via
  * recorded IPC + window counts. The decision logic is exhaustively unit tested

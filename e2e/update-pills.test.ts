@@ -111,11 +111,8 @@ test('install-update chip stays hidden on the install-less chooser host even wit
   await setInstallUpdate(ctx.app, { available: true, version: '99.0.0' })
   // Wait a beat to make sure no background re-broadcast snuck the chip on.
   await new Promise((r) => setTimeout(r, 250))
-  // The instance update affordance now lives inside the center pill as
-  // `.title-install-update-chip` (the standalone trailing pill was
-  // removed). Poll rather than a one-shot evaluate so a transient
-  // title-bar re-render on the slow Windows runner can't destroy the
-  // execution context mid-check — matches the app-update checks above.
+  // The instance-update action is the title-install-update-chip inside the center pill.
+  // Poll its state so a title-bar rerender cannot invalidate a one-shot evaluation.
   await expect.poll(() => ctx.titleBar.exists('.title-install-update-chip'), {
     timeout: 3_000,
     intervals: [100, 200],

@@ -284,11 +284,9 @@ describe('settings path sanitization', () => {
     for (const sub of ['models', 'input', 'output']) {
       fs.mkdirSync(path.join(adminHomePath, 'ComfyUI-Shared', sub), { recursive: true })
     }
-    // systemDefault is no longer force-appended when the user's
-    // modelsDirs is non-empty. On Windows the foreign-admin path is
-    // dropped via sanitizeModelsDirs and the user is left with just
-    // their custom entry; on non-Windows the admin path stays because
-    // sanitization doesn't run.
+    // Do not append systemDefault to a nonempty modelsDirs setting.
+    // On Windows, sanitizeModelsDirs removes a foreign-admin path and keeps the
+    // custom entry; other platforms retain the supplied paths.
     const expectedModelsDirs = shouldRewriteCopiedDefaults
       ? [customModelsDir]
       : [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir]

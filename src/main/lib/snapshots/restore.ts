@@ -348,16 +348,13 @@ function stemBelongsTo(stem: string, normalizedName: string, versioned: boolean)
 }
 
 /**
- * Packages the plan calls "new" that are in fact already installed, judged from
- * site-packages rather than from the freeze.
+ * Packages the restore plan calls new that are already present in site-packages.
  *
- * The revert path may only uninstall packages this operation actually
- * installed. Deriving that set from the freeze diff alone is unsafe: any fault
- * that makes the freeze unreadable makes every target package look absent, and
- * the revert then uninstalls the user's whole environment (#1514 — a
- * colourised freeze produced exactly that, dropping 100 packages to 6).
- * Distribution metadata on disk is independent evidence that the package
- * predates this restore, so those names are excluded from the revert.
+ * Rollback may only uninstall packages this operation actually installed.
+ * An unreadable freeze can make every target package appear absent, so the
+ * freeze diff alone cannot establish that a package is new. Distribution
+ * metadata provides independent evidence that it predates this restore and
+ * must be excluded from rollback.
  */
 export function preexistingOnDisk(sitePackages: string, packageNames: string[]): string[] {
   if (packageNames.length === 0) return []
@@ -609,7 +606,7 @@ export async function restorePipPackages(
   // Ground truth for the revert, taken before anything is installed: of the
   // packages the plan calls new, these are already on disk and therefore
   // predate this restore. They are never uninstalled by the revert, however
-  // the freeze diff classified them (#1514).
+  // the freeze diff classified them.
   const alreadyInstalled = preexistingOnDisk(sitePackages, newPkgNames)
   const alreadyInstalledSet = new Set(alreadyInstalled)
   const revertUninstall = newPkgNames.filter((name) => !alreadyInstalledSet.has(name))
@@ -758,9 +755,7 @@ export async function restorePipPackages(
         }
       }
       if (mutationAttempted && uncapturedByBackup.length > 0) {
-        // Nothing was saved for these, so whatever the install did to them
-        // stands. Claiming a complete revert here would be the same false
-        // reassurance this change exists to remove.
+        // No backup exists for these packages, so a complete rollback cannot be claimed.
         complete = false
         sendOutput(
           `⚠ No backup was captured for ${uncapturedByBackup.length} package(s); ` +
@@ -768,10 +763,8 @@ export async function restorePipPackages(
         )
       }
 
-      // Use pre-computed revertUninstall (not result.installed): a killed bulk install may
-      // have partially installed packages without populating result.installed. Packages that
-      // were already on disk before the restore are excluded — uninstalling those is what
-      // destroyed environments in #1514.
+      // Only uninstall packages this restore added. Exclude distributions that were
+      // already on disk before the restore.
       const uninstalled: string[] = []
       if (revertUninstall.length > 0) {
         const code = await runUvPip(
@@ -823,12 +816,8 @@ export async function restorePipPackages(
 }
 
 /**
- * One sentence describing what the pip phase's revert actually did, for the
- * failure dialog. The old text asserted that "package changes were reverted
- * where possible" whatever happened — in #1514 that ran alongside a revert that
- * had just deleted 94 pre-existing packages. The claim is now derived from the
- * recorded outcome, and stays deliberately vague only when there is no outcome
- * to report (the phase threw before it could record one).
+ * Describe the pip rollback's recorded outcome in the failure dialog.
+ * Use an indeterminate message when the phase threw before recording an outcome.
  */
 export function describePackageRevert(revert: RestoreRevertOutcome | undefined): string {
   // No recorded outcome means the phase threw before it could record one. That
@@ -1190,7 +1179,7 @@ export async function restoreCustomNodes(
           result.failed.push({ id: targetNode.id, error: (err as Error).message })
         }
       } else if (targetNode.type === 'git') {
-        // Phantom entry from an older buggy scan (#1253): a directory recorded
+        // Phantom entry from an older buggy scan: a directory recorded
         // with no source at all cannot be restored and never could — skip it
         // instead of failing the whole restore.
         if (!targetNode.url && !targetNode.commit) {

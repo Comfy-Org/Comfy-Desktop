@@ -60,7 +60,7 @@ function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> | null {
 
   // Unmanaged directory: only a node if it carries a node marker
   // (pyproject.toml) or actually contains Python code. Stray directories
-  // (e.g. accidentally created model folders, #1253) would otherwise be
+  // (e.g. accidentally created model folders) would otherwise be
   // captured in snapshots as git nodes that can never be restored.
   if (fs.existsSync(tomlPath) || hasTopLevelPython(nodePath)) {
     return { id: dirName, type: 'git', dirName }
@@ -70,7 +70,7 @@ function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> | null {
 
 /** File nodes shipped inside the ComfyUI core checkout itself. They are
  *  restored by the core git checkout, not by node management, and listing
- *  them in snapshots only confuses users (#278). */
+ *  them in snapshots only confuses users. */
 const CORE_FILE_NODES = new Set(['websocket_image_save.py'])
 
 export async function scanCustomNodes(comfyuiDir: string): Promise<ScannedNode[]> {

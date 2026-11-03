@@ -524,10 +524,8 @@ function onComfyRestarted({
 }
 
 function onStop({ installationId }: { installationId?: string } = {}): void {
-  // Stopping the process no longer destroys the window — the window stays
-  // open so the user can re-launch, view logs, or open Settings.
-  // Window destruction stays bound to explicit close paths
-  // (user closes window, app quits, install deleted via close-comfy-window).
+  // Stopping a process leaves its window open for relaunch, logs, and Settings.
+  // Only explicit close, app quit, or installation deletion destroys the window.
   if (installationId) {
     refreshComfyTabBody(installationId)
   } else {
@@ -662,21 +660,10 @@ function onLaunch({
     const claimed = comfyWindows.get(claimedKey)
     if (claimed && !claimed.window.isDestroyed() && isChooserHost(claimed)) {
       rebuildComfyViewIfNeeded(claimed, installation)
-      // No title-bar URL reload here — `attachInstall` pushes the new
-      // installationId via `comfy-titlebar:installation-id-changed` and
-      // the renderer's `isInstallLess` is reactive on that channel.
-      // Keeping the long-lived title-bar webContents avoids the
-      // blank-then-rehydrate flicker the URL reload used to cause
-      // between preview identity and the post-attach steady state.
-      // Drop the chooser PanelApp before the install takes over the
-      // host. The chooser pick flow runs the launch action through a
-      // Tier 2 progress overlay mounted on this panel; once the
-      // install-backed comfyView is shown, the overlay would survive
-      // hidden behind it, and a later `consultPanelRendererClose`
-      // (window close) would funnel through its cancel-prompt and
-      // hang waiting for input the user can't see. The next
-      // `ensurePanelView` (Settings click, comfy-lifecycle body, …)
-      // builds a fresh install-backed panel.
+      // attachInstall pushes the installation id to the persistent title-bar view.
+      // Drop the chooser panel before showing the install view so a hidden progress
+      // overlay cannot intercept a later close and wait for invisible user input.
+      // ensurePanelView builds a fresh install-backed panel when needed.
       destroyPanelView(claimed)
       const ok = attachInstall(claimed, { installation, comfyUrl, isLocal: !url })
       if (ok) {
@@ -1437,7 +1424,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // destructive items like "Close All Windows" that bypass our
     // managed shutdown. See `installAppMenu` for the per-platform
     // template. The macOS app menu also exposes "Check for Updates…"
-    // (issue #693), wired to the existing `updater.runCheck` entry point
+    //, wired to the existing `updater.runCheck` entry point
     // — the result flows through the normal broadcast pipeline (title-bar
     // pill / Global Settings panel), so no new update logic is added.
     installAppMenu(process.platform, undefined, {
@@ -1506,7 +1493,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
 
     // Durable snapshot of the tracked global settings as person properties
-    // (issues #1220/#1223), so adoption of every setting is queryable across the
+    //, so adoption of every setting is queryable across the
     // whole base. Consent-gated: queued until granted. Re-registered on change in
     // `applySettingSet`.
     mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
@@ -1692,7 +1679,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
       // Install-backed parent → swap by detaching first, then routing
       // through the chooser-pick path. Confirm only when the swap will
-      // kill a *local* ComfyUI process (issue #654): chooser hosts have
+      // kill a *local* ComfyUI process: chooser hosts have
       // nothing to detach and cloud/remote hosts have no local process
       // at risk, so both skip the modal. `opts.confirmed` means the picker
       // already prompted in-drawer (and routed any "open in new window"
@@ -1706,7 +1693,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           } catch {
             // Name lookup is cosmetic — fall through with the id as the label.
           }
-          // Three-way choice (issue #926, matrix row 9): the current host is a
+          // Three-way choice: the current host is a
           // local install, so the swap would stop its process — offer to keep it
           // in a separate window instead of only "stop it and switch".
           // `secondary` routes to `openInstallInNewWindow` (parent untouched);
@@ -2147,7 +2134,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
         if (boundInstallationId !== installationId) return
         // Confirm only when the restart will kill a local process
-        // (issue #654). Cloud/remote restarts skip the modal.
+        //. Cloud/remote restarts skip the modal.
         //
         // The picker renderer shows its own in-drawer confirm before
         // sending the IPC and forwards `opts.confirmed: true` when the
@@ -2262,19 +2249,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // title-bar. Drives the always-visible tray icon / badge; newly-
     // opened windows pick up live transitions automatically.
     downloadEvents.on('tray-state-changed', _broadcastDownloadsToTitleBars)
-    // Tray / docking is disabled while the unified-window flow is being
-    // rebuilt — closing the last window quits the app instead of
-    // collapsing it into a hidden background process. The `onAppClose`
-    // setting (settings.ts), the settings-UI field
-    // (registerSettingsHandlers.ts), the `createTray()` startup call,
-    // and the tray-aware `window-all-closed` gating will all come back
-    // when the docked-app flow is reinstated. Until then, see git
-    // history for the previous tray construction code.
-    // Apply a previously-downloaded Desktop update at startup rather than on
-    // quit (installing on quit is what a Windows shutdown interrupts and
-    // corrupts). When an update is staged we show a brief "Updating…" splash
-    // while the bounded check runs; if it commits to installing, the app quits
-    // here and the installer relaunches it — so we skip opening the normal UI.
+    // Closing the last window quits the app; tray and docking are disabled.
+    // Apply staged Desktop updates at startup to avoid Windows shutdown interrupting
+    // the installer. Show the update splash during the readiness check; if installation
+    // commits, keep the normal UI closed while the installer restarts the app.
     const updateSplash = updater.hasPendingStartupUpdate() ? showUpdateInstallSplash() : undefined
     // Track whether the install actually started quitting the app. Quit intent
     // (`quitReason`) alone isn't proof — `restartAndInstall` can return without

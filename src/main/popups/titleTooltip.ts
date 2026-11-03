@@ -11,7 +11,7 @@ import { EmbeddedPopupView } from './embeddedPopupView'
 /** Initial dimensions before the renderer reports its measured size. */
 const TOOLTIP_POPUP_INITIAL_WIDTH = 280
 const TOOLTIP_POPUP_INITIAL_HEIGHT = 36
-/** Gap (px) below the trigger; matches the 6px offset `useTooltip.ts` uses. */
+/** Gap below the trigger, in pixels. */
 const TOOLTIP_VERTICAL_GAP = 6
 /** Gutter (px) reserved for the bubble's box-shadow so it isn't clipped. */
 const TOOLTIP_POPUP_SHADOW_GUTTER = 16

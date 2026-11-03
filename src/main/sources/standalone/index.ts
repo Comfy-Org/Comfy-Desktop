@@ -374,9 +374,8 @@ export const standalone: SourcePlugin = {
     //   - managed: pyvenv.cfg references `<installPath>/ComfyUI/.venv/...`
     //     → rewrite `<installPath>` → `<destPath>`.
     //   - adopted: pyvenv.cfg references `<adoptedBaseDir>/.venv/...`
-    //     → rewrite `<adoptedBaseDir>` → `<destPath>/ComfyUI`, since the
-    //     venv now lives one directory deeper than it did in the legacy
-    //     workspace.
+    //     → rewrite `<adoptedBaseDir>` → `<destPath>/ComfyUI`, because the
+    //     adopted environment lives under ComfyUI in the destination.
     const srcRewriteFrom = adopted && adoptedBaseDir ? adoptedBaseDir : inst.installPath
     const srcRewriteTo = adopted && adoptedBaseDir ? path.join(destPath, 'ComfyUI') : destPath
 
@@ -468,8 +467,7 @@ export const standalone: SourcePlugin = {
         // auto-update resolves to. Thread it through so the variant cards show
         // that (the latest stable tag for 'stable'; the same tag marked as a
         // nightly for 'latest', which fast-forwards a few commits past it)
-        // rather than the older ComfyUI baked into the standalone bundle
-        // (issues #708, #1068).
+        // rather than the older ComfyUI baked into the standalone bundle.
         const channelData = {
           tag: newestBundle.tag,
           vendorReleases,

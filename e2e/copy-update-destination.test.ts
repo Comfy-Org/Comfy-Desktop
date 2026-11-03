@@ -1,5 +1,5 @@
 /**
- * Copy / copy-update destination focus (issue #582 FLOW 2).
+ * Copy / copy-update destination focus.
  *
  * `handleCopy` / `handleCopyUpdate` / `handleReleaseUpdate` now return
  * `{ ok: true, navigate: 'list', newInstallationId }` and

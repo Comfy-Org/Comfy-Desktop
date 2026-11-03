@@ -1,5 +1,5 @@
 /**
- * Lifecycle coverage for the managed model-download system (issue #1322):
+ * Lifecycle coverage for the managed model-download system:
  * startup hydration of interrupted downloads, and the real transfer controls
  * (Resume / Pause / Retry / Cancel) driven through the actual Downloads UI
  * against a real local HTTP server. Zero mocks: the app's own manager,

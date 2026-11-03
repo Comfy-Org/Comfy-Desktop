@@ -120,11 +120,11 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
 
     // Fires on EVERY ComfyUI instance boot, not on new-install completion. The
     // legacy `installation_started` name below tracks the same thing; kept for
-    // one release cycle so existing dashboards survive migration (issue #1054).
+    // one release cycle so existing dashboards survive migration.
     const sourceCategory = sourceMap[ctx.source_id]?.category
     const instanceStartedProps = {
       ...(metadata as Record<string, string | number | boolean | null | undefined>),
-      // Point-in-time snapshot of the tracked global settings (issue #1223) so
+      // Point-in-time snapshot of the tracked global settings so
       // current state is queryable on a recurring event without a person-property
       // join.
       ...settings.getTrackedSettingsTelemetryProperties(),
@@ -144,10 +144,9 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       latest_snapshot_json_truncated: latestSnapshotJson.truncated
     }
     telemetry.capture('comfy.desktop.session.instance_started', instanceStartedProps)
-    // DEPRECATED 2026-06-12: misleadingly named — remove after 2026-07-01 once
-    // consumers migrate to `session.instance_started`. Tracked in issue #1054.
+    // Deprecated compatibility event; use session.instance_started.
     telemetry.capture('comfy.desktop.session.installation_started', instanceStartedProps)
-    // Durable per-person activation milestone (#1224). `$set_once` keeps the
+    // Durable per-person activation milestone. `$set_once` keeps the
     // earliest local-instance boot on the person profile, so the funnel can ask
     // "did this person EVER reach a running local instance?" independent of the
     // session in which it happened. LOCAL sources only — this emitter also runs

@@ -1,27 +1,13 @@
 /**
- * Instance-picker right-pane staleness regression (issues #582, #782).
+ * Instance-picker settings must follow the selected install.
  *
- * The picker's expanded mode mounts `ComfyUISettingsContent` against
- * the selected install. Two behaviours must hold when the user
- * clicks a different row in the left list:
+ * The wrapper's data-install-id changes immediately on selection. Keep the
+ * previous sections visible while the next get-detail-sections request runs;
+ * reserve the loading placeholder for an initial load. A late response from
+ * a previous selection must not overwrite the current pane.
  *
- *   - The wrapper's `data-install-id` must reflect the selected
- *     install immediately (bound to the prop). It must never stay on
- *     the previous install once the switch is initiated.
- *
- *   - The right pane must not flash the "Loading…" placeholder. The
- *     #782 fix keeps the previous install's sections painted while
- *     the new install's `get-detail-sections` IPC is in flight; the
- *     placeholder is reserved for true first-load (no prior payload).
- *
- *   - A slow out-of-order response from the previous install (#582)
- *     must not re-stamp its sections on top of the current install's
- *     pane. The composable's monotonic `requestSeq` guards this.
- *
- * The assertion below tolerates either intermediate state — the new
- * install's id OR the loading placeholder — so it stays valid under
- * both the pre-#782 (clear-then-load) and post-#782 (keep-and-swap)
- * behaviours.
+ * The intermediate-state assertion accepts either the new installation id or
+ * the loading placeholder; the settled pane must belong to the new selection.
  */
 
 import os from 'node:os'

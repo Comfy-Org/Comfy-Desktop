@@ -200,12 +200,10 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('ABSTAINS on a mid-read throw even when IndexedDB holds a user', async () => {
-    // The distinction between `unreadable` and `unavailable`, and the reason they are separate
-    // kinds. A per-key throw means localStorage HOLDS Firebase keys we cannot read, so it is the
-    // store in use and IndexedDB is drained — a record there is the stale copy, and trusting it
-    // would assert a definite signed_in off exactly the kind of record this change exists to stop
-    // honouring. Contrast the it.each below, where localStorage is ABSENT: there IndexedDB is the
-    // only store and its record IS the answer, which is what keeps legacy frontends working.
+    // Unreadable localStorage is distinct from an absent localStorage mechanism.
+    // An unreadable store may contain the live user, so a stale IndexedDB record
+    // must not establish sign-in. With no localStorage mechanism, IndexedDB can
+    // supply the answer for frontends that use it.
     installThrowingGetItem()
     installIndexedDb([
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'possibly-stale' } }
@@ -284,9 +282,7 @@ describe('local Firebase auth monitor', () => {
   )
 
   it('ABSTAINS when localStorage is empty and the IndexedDB getter throws', async () => {
-    // A blocked/partitioned IndexedDB is not an empty one. Without this the reader reports a
-    // definite signed_out having consulted neither store — and it used to throw out of the whole
-    // function instead, skipping the report for the tick entirely.
+    // An unreadable IndexedDB is distinct from an empty store and must not establish sign-out.
     installLocalStorage({})
     Object.defineProperty(globalThis, 'indexedDB', {
       configurable: true,

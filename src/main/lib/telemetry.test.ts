@@ -380,9 +380,8 @@ describe('telemetry.bucketError', () => {
     // Generic <Class>Error messages fall back to "python".
     ['RuntimeError: something broke', 'python'],
     ['ValueError: bad input', 'python'],
-    // scrubAll can strip a leading path and leave the class name in the
-    // middle; previously the `^`-anchored regex would miss this and the
-    // event landed in `other`.
+    // Scrubbing can remove a leading path and leave the exception class in the middle.
+    // Classify that remaining name rather than falling back to other.
     ['execution failed -> RuntimeError: bad input', 'python'],
     ['Got AttributeError while computing', 'python'],
     // The python regex requires an uppercase first letter on the class

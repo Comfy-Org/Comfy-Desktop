@@ -164,7 +164,7 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /** Initialize IPC listeners. Call once from App.vue. */
+  /** Initialize IPC listeners once from the panel entry point. */
   async function init(): Promise<void> {
     dispose()
     const instances = await window.api.getRunningInstances()
@@ -199,7 +199,7 @@ export const useSessionStore = defineStore('session', () => {
 
     // Hydrate retained crashes so a freshly-opened dashboard shows error tiles
     // for crashes that happened before it existed. Op-failure errors are
-    // renderer-owned and not covered here (see issue #900). Skip running /
+    // renderer-owned and not covered here. Skip running /
     // launching ids — the crash buffer clears on relaunch, but guard
     // defensively so an in-flight launch shows "Starting…", not a stale crash.
     const crashes = (await window.api.getCrashInstances?.()) ?? []

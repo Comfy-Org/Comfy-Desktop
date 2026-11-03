@@ -29,7 +29,7 @@ export function resolveDownloadContext(inst: installations.InstallationRecord): 
  * Every launcher-managed model root where staged model downloads (or legacy
  * final-path partials) may live: the shared models dirs plus each known
  * installation's model roots and extra model paths. Used by startup
- * migration/hydration of interrupted downloads (issue #1322). NOT
+ * migration/hydration of interrupted downloads. NOT
  * best-effort: a failure to list installations or resolve an install's
  * model paths propagates, because a root silently dropped from the scan
  * would let the legacy migration certify directories it never looked at.

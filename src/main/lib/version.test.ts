@@ -171,7 +171,7 @@ describe('coreGateVersion', () => {
   })
 
   it('never measures the unverified label, so it cannot satisfy a minimum the floor misses', () => {
-    // #1537's case: the label names a release the install does not contain in full.
+    // The label names a release the install does not contain in full.
     const inst = record({
       comfyVersion: {
         commit,

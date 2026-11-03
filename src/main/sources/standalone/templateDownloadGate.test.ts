@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // state that `startTemplateDownload` writes. We drive that state through the
 // real public API while mocking only the download manager underneath the task,
 // so the poller's branching (terminal / skip / abort / absent) is exercised
-// end-to-end against real managed-job orchestration (issue #1322).
+// end-to-end against real managed-job orchestration.
 
 const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>>>()
 const startManagedModelJob = vi.fn()

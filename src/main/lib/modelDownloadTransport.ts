@@ -645,7 +645,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
             if (effectiveSize <= 0) {
               // No caller expectation, no Content-Length, no persisted total:
               // the bytes cannot be verified complete, and an unverified file
-              // must never land under a model extension (issue #1322). Keep
+              // must never land under a model extension. Keep
               // the staged bytes - a Range retry learns the real total from
               // the 206 Content-Range and can then verify.
               settle({

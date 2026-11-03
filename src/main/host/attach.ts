@@ -242,7 +242,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   /**
    * Paint the Vue header and the OS window-controls overlay from ComfyUI's
    * reported `bg` in one call, so the strip behind the min/max/close controls
-   * stays seamless with the bar (the #647 divergence). `symbolColor` is
+   * stays seamless with the bar. `symbolColor` is
    * luminance-derived to keep the glyphs legible on any theme. Instance-only —
    * the install-less chooser keeps `--titlebar-bg`.
    */
@@ -293,37 +293,12 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `})()`
 
   /**
-   * Three cloud-only patches injected on every dom-ready of the comfy view:
-   *
-   *   1. popup-blocked toast suppressor — observes new toast DOM nodes
-   *      and removes any that mention `auth/popup-blocked` OR the
-   *      user-friendly variants the cloud frontend now maps that code
-   *      to ("Something went wrong while signing you in…"). That error
-   *      is fired by the cloud frontend's Firebase SDK every time our
-   *      `setWindowOpenHandler` denies the auth popup (so the bridge
-   *      can take over), and the user has no way to dismiss the toast
-   *      in time before the bridge completes the sign-in.
-   *
-   *   2. post-signin flicker hide — when the bridge's IndexedDB inject
-   *      flips a sessionStorage flag before `location.reload()`, this
-   *      script hides documentElement for ~1s on the next load so the
-   *      user doesn't see the cloud login page flash before the
-   *      Firebase rehydrate redirects to the workspace.
-   *
-   *   3. cloud-onboarding "Download ComfyUI" CTA hider — desktop users
-   *      who hit the cloud onboarding screen see a bottom-right CTA
-   *      ("Want to run ComfyUI locally instead? — Download ComfyUI")
-   *      pointing at comfy.org/download. They already have desktop;
-   *      the link is redundant + confusing. We inject a <style> with
-   *      a :has() rule keyed on the CloudTemplate.vue container's
-   *      Tailwind class chain (CSS-only path — no race vs SPA
-   *      hydration since the rule matches continuously). The
-   *      MutationObserver below also tags any <button> with the
-   *      literal text "Download ComfyUI" via data-comfy-desktop-hide,
-   *      which the same stylesheet hides — that's the text-based
-   *      fallback for when the class chain shifts build-to-build.
-   *      TODO(desktop band-aid): remove once Comfy-Org/ComfyUI_frontend
-   *      PR <link-here> lands (conditional skip when running in desktop).
+   * Cloud-page patches installed on each dom-ready:
+   * 1. Remove popup-blocked auth toasts while Desktop handles sign-in.
+   * 2. Hide the login page briefly during a bridge-triggered reload to avoid flicker.
+   * 3. Hide the Download ComfyUI onboarding CTA, since Desktop is already installed.
+   *    A persistent CSS selector handles SPA hydration; a text-based observer is
+   *    the fallback when the frontend's class chain changes.
    */
   const COMFY_CLOUD_PATCHES_JS =
     `(function(){` +
@@ -410,17 +385,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
-    // Inject the Terminal bottom-panel entry on local managed installs.
-    //
-    // Originally gated on `!supports_terminal` to avoid duplicating the
-    // flag-gated frontend tab. Day-3 launch feedback put terminal
-    // discoverability ("Why u delete cmd?") in the top tier of complaints,
-    // and the companion ComfyUI / ComfyUI_frontend PRs that would deliver
-    // the native tab are still in flight. So we ship the injection
-    // always-on now and dedupe in JS instead: the injected script checks
-    // `bottomPanelTabs` for an existing `command-terminal` entry and
-    // bails out before registering a second copy. See
-    // `comfyTerminalContentScript.ts` for the dedupe guard.
+    // Inject the Terminal entry on local managed installs. The content script
+    // checks bottomPanelTabs for command-terminal and avoids a duplicate entry.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
@@ -483,7 +449,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       return
     }
     // Restore Ctrl/Cmd + =/+/-/0 zoom on the comfy WebContentsView. The default
-    // accelerators target BrowserWindow.webContents (empty since #414) and the
+    // accelerators target BrowserWindow.webContents (empty) and the
     // app menu has no View > Zoom roles, so we wire it explicitly here. Step
     // 0.5 mirrors Electron's standard zoomLevel granularity (~91% / 110% / ...).
     // Exclude Alt to avoid AltGr / Ctrl+Alt collisions on non-US layouts.

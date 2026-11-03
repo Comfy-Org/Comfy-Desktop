@@ -1276,11 +1276,9 @@ describe('parseContentDispositionFilename', () => {
 })
 
 /**
- * The Preview Image "Save image..." right-click goes through Electron's
- * generic Save dialog; Windows collapses the "Save as type" dropdown to
- * "All Files (*.*)" if `filters` is omitted, which is the symptom field-
- * reported in #989. These tests lock the primary-extension inference and
- * the All Files fallback so the dialog always opens on a sensible format.
+ * The Preview Image Save command uses Electron's generic Save dialog.
+ * On Windows, omitting filters leaves only All Files in the file-type dropdown.
+ * These tests cover primary-extension inference and the All Files fallback.
  */
 describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
   it('picks PNG as the primary filter for a .png filename', () => {

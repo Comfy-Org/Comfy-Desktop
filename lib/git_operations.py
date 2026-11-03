@@ -466,10 +466,7 @@ def cmd_fetch_commit(repo_path, sha):
     object — leaving the next `cmd_rev_list_count` call to silently fail
     on `resolve_ref` because the SHA isn't in the object store.
 
-    Exit 0 only when the SHA is provably in the local object store, 1
-    otherwise.  Previously this function claimed success on any
-    non-throwing fetch attempt, which manifested upstream as a stuck
-    `commitsAhead=undefined` on the picker's Latest card.
+    Exit 0 only when the SHA is provably in the local object store, 1 otherwise.
     """
     repo = open_repo(repo_path)
     origin = get_origin(repo)

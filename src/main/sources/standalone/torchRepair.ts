@@ -109,12 +109,10 @@ function hasExpectedAccelerator(
 }
 
 /**
- * Detect a GPU-variant install whose torch lacks its expected accelerator — the
- * signature of the brief `--upgrade` bug that replaced the bundled CUDA/ROCm
- * torch with a CPU build. Keys on accelerator *capability* (version.py probe or
- * the wheel's local tag), never the version number, so a user freely choosing
- * any version is never flagged. Returns null when the install is fine, is
- * CPU/mac/adopted, or torch can't be read.
+ * Detect a GPU-variant install whose torch lacks its expected accelerator.
+ * Use capability evidence from version.py or the wheel's local tag rather than
+ * version numbers, so a user's choice of version is not treated as damage.
+ * Return null for a healthy, CPU, macOS, adopted, or unreadable torch install.
  */
 export function getTorchVendorMismatch(installation: InstallationRecord): TorchMismatch | null {
   if (installation.adopted === true) return null

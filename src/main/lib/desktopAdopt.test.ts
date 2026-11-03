@@ -1301,7 +1301,7 @@ describe('adoptDesktopInstall', () => {
         deps: buildDeps({ cloneSourceFromGit: cloneFn }, legacy.info)
       })
       // Frozen comfy: adoption must NOT roll the source forward to latest
-      // stable (issue #986). The user keeps their existing checkout.
+      // stable. The user keeps their existing checkout.
       expect(getLatestStableTagMock).not.toHaveBeenCalled()
       expect(gitCheckoutCommitMock).not.toHaveBeenCalled()
       expect(record).not.toHaveProperty('adoptedComfyTagAtMigration')
@@ -1444,7 +1444,7 @@ describe('adoptDesktopInstall', () => {
       expect(phases).toContain('snapshot')
       expect(phases).toContain('allocate')
       expect(phases).toContain('source')
-      // Frozen comfy (#986): adoption no longer has an auto-update step.
+      // Adoption must leave the existing ComfyUI checkout unchanged.
       expect(phases).not.toContain('comfy-update')
       expect(phases).toContain('requirements')
       expect(phases).toContain('settings')

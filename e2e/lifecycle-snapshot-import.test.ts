@@ -1,6 +1,6 @@
 /**
  * Lifecycle E2E: snapshot import staged-restore handshake driven through
- * the Snapshots tab UI (lifecycle audit gap #10).
+ * the Snapshots tab UI.
  *
  * Drives the production wiring from the toolbar Import button down to the
  * staged restore target:
@@ -12,7 +12,7 @@
  *     `importSnapshotsConfirm` stage the envelope as a restore target and
  *     fire the follow-on `snapshot-restore` runAction.
  *
- * Key invariant under test (#1137): importing does NOT commit the envelope
+ * Key invariant under test: importing does NOT commit the envelope
  * to history. The staged target only becomes history once a restore from
  * it succeeds; here the restore fails for real (the fixture install has no
  * git repos), the persistent error op card surfaces the failure, and the
@@ -152,7 +152,7 @@ test('Import via the toolbar stages a restore target without touching history @l
     { timeout: 60_000 },
   )
 
-  // The crux of #1137: the imported snapshot never landed in history (and
+  // The imported snapshot never landed in history (and
   // so can never show as "Latest"). A failed restore may write a live-state
   // `post-restore` correction snapshot on top, so assert on the imported
   // label and trigger, not on the raw count.

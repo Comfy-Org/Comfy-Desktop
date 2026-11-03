@@ -43,7 +43,7 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
  * `venv/base/python.exe`. That placement is what keeps the venv relocatable: CPython
  * resolves a venv's `sys.prefix` as `dirname(dirname(executable))`, so an interpreter
  * sitting AT the venv root resolves to the venv's parent and every entry point uv writes
- * bakes an absolute build path (Comfy-Org/cloud#6138). POSIX already had this shape via
+ * bakes an absolute build path. POSIX already had this shape via
  * `venv/bin/`.
  *
  * Falls back to the old root path so archives cut before that change still launch.

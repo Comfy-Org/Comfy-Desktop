@@ -172,10 +172,8 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
   it('neither commits nor releases the staged envelope when an abort lands during the final record reload', async () => {
     const controller = new AbortController()
-    // The abort arrives while the post-restore `installations.get()` reload is
-    // pending - after every mid-phase abort check has already passed. Without
-    // the post-reload guard this used to commit (or, on the adapted path,
-    // release) the staged envelope of a cancelled restore.
+    // Abort while the post-restore installations.get reload is pending. The guard
+    // after that await must prevent committing or releasing the cancelled envelope.
     installationsGet.mockImplementationOnce(async () => {
       controller.abort()
       return installation
@@ -196,10 +194,8 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     expect(snapshotsMock.ensureCurrentSnapshotOnTop).toHaveBeenCalled()
   })
 
-  // #1514: the failure dialog used to assert "package changes were reverted
-  // where possible" whatever the pip phase actually did, and the safety-net
-  // snapshot of the (possibly damaged) live state went in unlabelled, so the
-  // timeline read as a completed restore.
+  // The failure dialog must describe the actual pip rollback, and the timeline
+  // must label a failed or cancelled restore rather than imply completion.
   it('a failed package phase reports what the revert did, and labels the recorded state', async () => {
     snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
       snapshots: [{ ...stagedSnapshot, skipPipSync: false }]

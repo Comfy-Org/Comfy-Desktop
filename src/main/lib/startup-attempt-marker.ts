@@ -1,5 +1,5 @@
 /**
- * Durable sidecar for the startup-install loop-breaker (issue #1367).
+ * Durable sidecar for the startup-install loop-breaker.
  *
  * The settings copy of the marker (`lastStartupUpdateAttemptVersion`) is the
  * last write before the app quits into the installer, so settings.json.bak

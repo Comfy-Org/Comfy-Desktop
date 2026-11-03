@@ -84,11 +84,9 @@ export const STARTUP_STEPS: ReadonlySet<string> = new Set([
   'other'
 ])
 
-// What a failed startup step was refused on and which of the agent's own
-// files it named: byte-identical to cloud's
-// services/agent/packaging/testdata/startup_operations.txt and
-// startup_files.txt, as of Comfy-Org/cloud#16572 at d595cd23054. The host
-// already drops a value outside them.
+// Startup operation and file names mirror the Cloud agent's allowlists in
+// services/agent/packaging/testdata/startup_operations.txt and startup_files.txt.
+// The host drops values outside those allowlists.
 export const STARTUP_OPERATIONS: ReadonlySet<string> = new Set([
   'open',
   'stat',
