@@ -333,6 +333,9 @@ function toList(e: KeyboardEvent): void {
   align-items: center;
   gap: 10px;
   padding: 10px;
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui, 13px);
+  line-height: 1.35;
 }
 .mar-ro-current .mar-ro-tile {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
