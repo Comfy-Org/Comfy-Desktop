@@ -229,12 +229,28 @@ function correctRunCount(
   )
 }
 
-function correctWarmupRuns(): void {
-  warmupRuns.value = correctRunCount(warmupRuns.value, 0, 5, 1)
+function correctRunCountOnCommit(
+  event: Event | undefined,
+  currentValue: string,
+  minimum: number,
+  maximum: number,
+  fallback: number
+): string {
+  const input = event?.target instanceof HTMLInputElement ? event.target : undefined
+  const corrected = correctRunCount(input?.value ?? currentValue, minimum, maximum, fallback)
+  // Input and change can occur in one update batch (spinner buttons do this).
+  // If normalization returns the existing model, Vue has no changed prop to
+  // repaint. Commit the accepted text to the field as well as the model.
+  if (input) input.value = corrected
+  return corrected
 }
 
-function correctMeasuredRuns(): void {
-  measuredRuns.value = correctRunCount(measuredRuns.value, 1, 100, 5)
+function correctWarmupRuns(event?: Event): void {
+  warmupRuns.value = correctRunCountOnCommit(event, warmupRuns.value, 0, 5, 1)
+}
+
+function correctMeasuredRuns(event?: Event): void {
+  measuredRuns.value = correctRunCountOnCommit(event, measuredRuns.value, 1, 100, 5)
 }
 
 function secondsToMilliseconds(seconds: number | null | undefined): number | null {
