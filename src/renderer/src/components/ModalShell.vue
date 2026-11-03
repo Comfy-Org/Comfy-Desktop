@@ -56,6 +56,7 @@ const titleId = `view-modal-title-${useId()}`
     @close="emit('close')"
   >
     <div
+      :id="$slots.header ? titleId : undefined"
       class="view-modal-header flex shrink-0 items-center gap-3 border-b border-solid border-[var(--border)] px-5 py-4"
     >
       <slot name="header">

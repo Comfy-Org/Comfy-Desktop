@@ -123,6 +123,20 @@ describe('DesktopDialogSurface', () => {
     expect(document.body.style.overflow).toBe('auto')
   })
 
+  it('dismisses from a backdrop press, but not from a drag that started in the dialog', async () => {
+    const { outerOpen } = await openOuter()
+    const content = document.querySelector<HTMLElement>('.outer-dialog')!
+    const backdrop = document.querySelector<HTMLElement>('[data-slot="dialog-overlay"]')!
+    content.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    backdrop.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }))
+    await settleDialog()
+    expect(outerOpen.value).toBe(true)
+
+    backdrop.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    await settleDialog()
+    expect(outerOpen.value).toBe(false)
+  })
+
   it('preserves a non-dismissible dialog when Escape or its backdrop is pressed', async () => {
     const open = ref(true)
     const onClose = vi.fn()

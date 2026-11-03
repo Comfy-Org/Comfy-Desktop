@@ -14,7 +14,7 @@ import { formatNodeVersion } from '../lib/snapshots'
 
 const { t } = useI18n()
 
-const { state, close, dismiss } = useModal()
+const { state, close, dismiss, setCheckboxValue } = useModal()
 
 /** Migrate-to-Standalone flow; `snapshotPreview` is only set by
  *  useMigrateAction, so its presence reliably cues the brand layout. */
@@ -58,8 +58,7 @@ function onBaseAlertCancel(): void {
 /** Mirror checkbox flips back into state.checkboxes so
  *  useModal.getLastCheckboxValues() sees them at submit time. */
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
-  const cb = state.checkboxes.find((c) => c.id === id)
-  if (cb) cb.checked = checked
+  setCheckboxValue(id, checked)
 }
 
 const inputValue = ref('')
@@ -418,7 +417,7 @@ watch(
               <Checkbox
                 :model-value="cb.checked"
                 class="shrink-0"
-                @update:model-value="cb.checked = $event === true"
+                @update:model-value="setCheckboxValue(cb.id, $event === true)"
               />
               <span>{{ cb.label }}</span>
             </label>

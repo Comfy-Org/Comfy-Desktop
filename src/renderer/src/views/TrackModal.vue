@@ -2,7 +2,7 @@
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 import InputGroupAddon from '@comfyorg/design-system/input-group/InputGroupAddon'
-import { ref, computed, watch, onBeforeUnmount, nextTick, toRaw } from 'vue'
+import { ref, computed, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { TID } from '../../../shared/testIds'
@@ -38,41 +38,11 @@ const selectedProbe = ref<ProbeResult | null>(null)
 const venvOverride = ref<string | null>(null)
 const probing = ref(false)
 
-const cardRef = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
-
 const saveDisabled = computed(() => !trackPath.value || !selectedProbe.value)
 
 /** Generation counter — bumped on every probe so stale async responses
  *  from an earlier path are discarded once the field changes again. */
 let probeGeneration = 0
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && isOpen.value) emit('close')
-}
-
-watch(isOpen, async (open) => {
-  if (open) {
-    document.addEventListener('keydown', onKeydown)
-    returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    await nextTick()
-    // Prefer a real field (user types right away); otherwise focus the dialog
-    // container itself — never a button — so opening doesn't paint a focus-
-    // visible ring. Focus stays trapped for keyboard/AT either way.
-    const field = cardRef.value?.querySelector<HTMLElement>('input, select, textarea')
-    ;(field ?? cardRef.value)?.focus()
-  } else {
-    document.removeEventListener('keydown', onKeydown)
-    returnFocusTo?.focus()
-    returnFocusTo = null
-  }
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKeydown)
-  if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus()
-  returnFocusTo = null
-})
 
 function open(): void {
   // Bump so any probe still in flight from a previous session is
@@ -238,7 +208,12 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isOpen">
+  <BrandTakeoverLayout
+    v-if="isOpen"
+    dismissible
+    :aria-label="$t('track.grandTitle')"
+    @close="emit('close')"
+  >
     <div
       class="track-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[640px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
       data-testid="track-modal"
@@ -254,12 +229,7 @@ defineExpose({ open })
         {{ $t('track.grandSubtitle') }}
       </p>
       <div
-        ref="cardRef"
         class="track-card flex max-h-full w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="$t('track.grandTitle')"
-        tabindex="-1"
       >
         <div
           class="track-card-body flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -310,6 +280,7 @@ defineExpose({ open })
               <InputGroupInput
                 id="track-name"
                 v-model="trackName"
+                autofocus
                 type="text"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
               />

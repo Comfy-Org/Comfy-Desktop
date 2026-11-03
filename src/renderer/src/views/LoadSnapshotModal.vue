@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Input from '@comfyorg/design-system/input/Input'
-import { ref, computed, watch, toRaw, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, toRaw, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { ChevronRight, Upload } from 'lucide-vue-next'
@@ -44,7 +44,6 @@ const pipExpanded = ref(false)
 const timelineExpanded = ref(false)
 
 const cardRef = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
 
 const sortedVariants = computed(() => sortedCardOptions(variantOptions.value))
 
@@ -315,27 +314,6 @@ function preventNav(event: Event): void {
   event.preventDefault()
 }
 
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && isOpen.value) emit('close')
-}
-
-watch(isOpen, async (open) => {
-  if (open) {
-    document.addEventListener('keydown', onKeydown)
-    returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    await nextTick()
-    // Prefer a real field (user types right away); otherwise focus the dialog
-    // container itself — never a button — so opening doesn't paint a focus-
-    // visible ring. Focus stays trapped for keyboard/AT either way.
-    const field = cardRef.value?.querySelector<HTMLElement>('input, select, textarea')
-    ;(field ?? cardRef.value)?.focus()
-  } else {
-    document.removeEventListener('keydown', onKeydown)
-    returnFocusTo?.focus()
-    returnFocusTo = null
-  }
-})
-
 onMounted(() => {
   document.addEventListener('dragover', preventNav)
   document.addEventListener('drop', preventNav)
@@ -344,17 +322,16 @@ onUnmounted(() => {
   document.removeEventListener('dragover', preventNav)
   document.removeEventListener('drop', preventNav)
 })
-onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKeydown)
-  if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus()
-  returnFocusTo = null
-})
-
 defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isOpen">
+  <BrandTakeoverLayout
+    v-if="isOpen"
+    dismissible
+    :aria-label="$t('loadSnapshot.grandTitle')"
+    @close="emit('close')"
+  >
     <div
       class="load-snapshot-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[720px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
       data-testid="load-snapshot-modal"
@@ -372,10 +349,6 @@ defineExpose({ open })
       <div
         ref="cardRef"
         class="load-snapshot-card flex max-h-full w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="$t('loadSnapshot.grandTitle')"
-        tabindex="-1"
         @dragover="!preview && handleDragOver($event)"
         @dragleave="!preview && handleDragLeave($event)"
         @drop="!preview && handleDrop($event)"
@@ -437,6 +410,7 @@ defineExpose({ open })
               <Input
                 id="ls-name"
                 v-model="installName"
+                autofocus
                 class="load-snapshot-input"
                 type="text"
                 :placeholder="$t('common.namePlaceholder')"
