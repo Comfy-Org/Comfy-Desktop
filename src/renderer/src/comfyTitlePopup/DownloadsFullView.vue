@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
+import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -170,230 +173,244 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
       >
         {{ t('downloadsTab.title') }}
       </h2>
-      <button
+      <Button
         type="button"
-        class="dlm-close inline-flex size-8 flex-none items-center justify-center rounded-lg border border-solid border-transparent bg-[color-mix(in_oklab,var(--text)_4%,transparent)] p-0 text-neutral-100 opacity-70 cursor-pointer transition-[background,border-color,opacity] duration-[120ms] ease-[ease] hover:border-[color-mix(in_oklab,var(--neutral-100)_44%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-950)_85%,transparent)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]"
+        variant="textonly"
+        size="icon"
+        class="dlm-close shrink-0"
         :aria-label="t('common.close')"
         @click="bridge?.close()"
       >
         <X :size="18" />
-      </button>
+      </Button>
     </header>
 
     <div class="dlm-modal-body flex min-h-0 flex-auto flex-col overflow-y-auto px-6 py-4">
       <div class="dlm-body flex min-h-full flex-auto flex-col">
-        <div
+        <ToggleGroup
           v-if="visibleFilters.length > 0"
-          class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 flex gap-1.5 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] bg-[var(--modal-surface-bg,#27202d)] px-6 pt-3 pb-2.5"
-          role="tablist"
+          v-model="filter"
+          type="single"
+          :allow-empty="false"
+          roving-focus
+          class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
           :aria-label="t('downloadsTab.filterAriaLabel')"
         >
-          <button
+          <ToggleGroupItem
             v-for="f in visibleFilters"
             :key="f.key"
-            type="button"
-            class="dlm-filter-chip inline-flex flex-1 items-center justify-center rounded-md border border-solid px-2 py-[5px] text-[12px] text-inherit cursor-pointer transition-[opacity,background,border-color] duration-150 ease-[ease] hover:opacity-100"
-            :class="
-              filter === f.key
-                ? 'active bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] border-[color-mix(in_oklab,var(--neutral-100)_22%,transparent)] opacity-100'
-                : 'bg-transparent border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] opacity-65'
-            "
-            role="tab"
-            :aria-selected="filter === f.key"
-            @click="filter = f.key"
+            :value="f.key"
+            class="dlm-filter-chip flex-1 text-xs"
+            :class="{ active: filter === f.key }"
+            >{{ f.label }}</ToggleGroupItem
           >
-            {{ f.label }}
-          </button>
-        </div>
-
-        <div
-          v-if="filtered.length === 0"
-          class="dlm-empty flex flex-auto flex-col items-center justify-center gap-2 p-6 text-center"
-        >
+        </ToggleGroup>
+        <div class="m-0 flex min-h-0 flex-auto flex-col">
           <div
-            class="dlm-empty-icon mb-1 flex size-14 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--neutral-100)_5%,transparent)] text-text-muted"
+            v-if="filtered.length === 0"
+            class="dlm-empty flex flex-auto flex-col items-center justify-center gap-2 p-6 text-center"
           >
-            <ArrowDownToLine :size="28" />
+            <div
+              class="dlm-empty-icon mb-1 flex size-14 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--neutral-100)_5%,transparent)] text-text-muted"
+            >
+              <ArrowDownToLine :size="28" />
+            </div>
+            <span class="dlm-empty-title text-[14px] font-semibold text-neutral-100">{{
+              t('downloadsTab.empty')
+            }}</span>
+            <span class="dlm-empty-hint text-[13px] text-text-muted">{{
+              t('downloadsTab.emptyHint')
+            }}</span>
           </div>
-          <span class="dlm-empty-title text-[14px] font-semibold text-neutral-100">{{
-            t('downloadsTab.empty')
-          }}</span>
-          <span class="dlm-empty-hint text-[13px] text-text-muted">{{
-            t('downloadsTab.emptyHint')
-          }}</span>
-        </div>
 
-        <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
-          <li
-            v-for="d in filtered"
-            :key="d.id ?? d.url"
-            class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
-            :class="[
-              statusKindClass(d),
-              {
-                '[--download-close-opacity:0] hover:[--download-close-opacity:0.5]':
-                  d.status === 'pending' || d.status === 'downloading'
-              }
-            ]"
-          >
-            <span
+          <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
+            <li
+              v-for="d in filtered"
+              :key="d.id ?? d.url"
+              class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
               :class="[
-                'dlm-leading inline-flex flex-none items-center justify-center',
-                isCompletedImage(d)
-                  ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
-                  : 'size-9'
+                statusKindClass(d),
+                {
+                  '[--download-close-opacity:0] hover:[--download-close-opacity:0.5]':
+                    d.status === 'pending' || d.status === 'downloading'
+                }
               ]"
             >
-              <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
-                <template #fallback>
-                  <span
-                    v-if="d.status === 'completed'"
-                    class="dlm-icon-circle ok bg-[color-mix(in_oklab,var(--download-success)_15%,transparent)] text-[#22c55e] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <CheckCircle2 :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'error'"
-                    class="dlm-icon-circle error bg-[color-mix(in_oklab,var(--download-error)_15%,transparent)] text-[#ef4444] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <CircleAlert :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'cancelled'"
-                    class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-[var(--text-muted,#9ca0a8)] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <Ban :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'paused'"
-                    class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <PauseCircle :size="16" />
-                  </span>
-                  <span
-                    v-else
-                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--accent,#60a5fa)_15%,transparent)] text-[var(--accent,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <LoaderCircle
-                      :size="16"
-                      class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                    />
-                  </span>
-                </template>
-              </DownloadThumbnail>
-            </span>
+              <span
+                :class="[
+                  'dlm-leading inline-flex flex-none items-center justify-center',
+                  isCompletedImage(d)
+                    ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
+                    : 'size-9'
+                ]"
+              >
+                <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
+                  <template #fallback>
+                    <span
+                      v-if="d.status === 'completed'"
+                      class="dlm-icon-circle ok bg-[color-mix(in_oklab,var(--download-success)_15%,transparent)] text-[#22c55e] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <CheckCircle2 :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'error'"
+                      class="dlm-icon-circle error bg-[color-mix(in_oklab,var(--download-error)_15%,transparent)] text-[#ef4444] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <CircleAlert :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'cancelled'"
+                      class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-[var(--text-muted,#9ca0a8)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <Ban :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'paused'"
+                      class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <PauseCircle :size="16" />
+                    </span>
+                    <span
+                      v-else
+                      class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--accent,#60a5fa)_15%,transparent)] text-[var(--accent,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <LoaderCircle
+                        :size="16"
+                        class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                      />
+                    </span>
+                  </template>
+                </DownloadThumbnail>
+              </span>
 
-            <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
-              <span
-                class="dlm-name truncate text-[13px] font-medium text-neutral-100"
-                :title="fileLabel(d)"
-                >{{ fileLabel(d) }}</span
-              >
-              <span
-                class="dlm-sub truncate text-[12px] text-text-muted tabular-nums"
-                :title="d.savePath"
-                >{{ modalSubtitle(d, now) }}</span
-              >
-              <div
-                v-if="d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'"
-                class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
-              >
+              <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
+                <span
+                  class="dlm-name truncate text-[13px] font-medium text-neutral-100"
+                  :title="fileLabel(d)"
+                  >{{ fileLabel(d) }}</span
+                >
+                <span
+                  class="dlm-sub truncate text-[12px] text-text-muted tabular-nums"
+                  :title="d.savePath"
+                  >{{ modalSubtitle(d, now) }}</span
+                >
                 <div
-                  class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
-                  :class="
-                    d.status === 'pending'
-                      ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--accent,#60a5fa),var(--accent,#60a5fa)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
-                      : d.status === 'paused'
-                        ? 'paused bg-[#f59e0b]'
-                        : 'bg-[var(--accent,#60a5fa)]'
+                  v-if="
+                    d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'
                   "
-                  :style="
-                    d.status === 'pending' ? { width: '100%' } : { width: `${progressPercent(d)}%` }
-                  "
-                />
+                  class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
+                >
+                  <div
+                    class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
+                    :class="
+                      d.status === 'pending'
+                        ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--accent,#60a5fa),var(--accent,#60a5fa)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
+                        : d.status === 'paused'
+                          ? 'paused bg-[#f59e0b]'
+                          : 'bg-[var(--accent,#60a5fa)]'
+                    "
+                    :style="
+                      d.status === 'pending'
+                        ? { width: '100%' }
+                        : { width: `${progressPercent(d)}%` }
+                    "
+                  />
+                </div>
               </div>
-            </div>
 
-            <div class="dlm-actions flex flex-none items-center gap-1.5">
-              <span
-                v-if="statusBadgeFor[d.status]"
-                class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
-                :class="statusBadgeFor[d.status]!.cls"
-              >
-                {{ statusBadgeFor[d.status]!.label }}
-              </span>
+              <div class="dlm-actions flex flex-none items-center gap-1.5">
+                <span
+                  v-if="statusBadgeFor[d.status]"
+                  class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
+                  :class="statusBadgeFor[d.status]!.cls"
+                >
+                  {{ statusBadgeFor[d.status]!.label }}
+                </span>
 
-              <span
-                v-if="d.status === 'downloading'"
-                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--accent,#60a5fa)] tabular-nums"
-              >
-                {{ progressPercent(d) }}%
-              </span>
-              <button
-                v-if="d.status === 'downloading'"
-                type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
-                :title="t('downloadsPopup.pause')"
-                :aria-label="t('downloadsPopup.pause')"
-                @click="pause(d)"
-              >
-                <PauseCircle :size="14" />
-              </button>
-              <button
-                v-if="d.status === 'paused'"
-                type="button"
-                class="dlm-btn dlm-btn-primary border-transparent bg-[var(--accent,#3b82f6)] text-background hover:border-transparent hover:bg-[var(--accent-hover,#2563eb)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
-                :title="t('downloadsPopup.resume')"
-                :aria-label="t('downloadsPopup.resume')"
-                @click="resume(d)"
-              >
-                <PlayCircle :size="14" />
-                {{ t('downloadsPopup.resume') }}
-              </button>
-              <button
-                v-if="d.status === 'error' || d.status === 'cancelled'"
-                type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
-                :title="t('downloadsTab.retry')"
-                :aria-label="t('downloadsTab.retry')"
-                @click="retry(d)"
-              >
-                <RotateCcw :size="14" />
-                {{ t('downloadsTab.retry') }}
-              </button>
-              <button
-                v-if="d.status === 'completed' && d.savePath"
-                type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
-                @click="showInFolder(d)"
-              >
-                <FolderOpen :size="14" />
-                {{ revealLabel }}
-              </button>
+                <span
+                  v-if="d.status === 'downloading'"
+                  class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--accent,#60a5fa)] tabular-nums"
+                >
+                  {{ progressPercent(d) }}%
+                </span>
+                <Button
+                  v-if="d.status === 'downloading'"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  :title="t('downloadsPopup.pause')"
+                  :aria-label="t('downloadsPopup.pause')"
+                  @click="pause(d)"
+                >
+                  <PauseCircle :size="14" />
+                </Button>
+                <Button
+                  v-if="d.status === 'paused'"
+                  type="button"
+                  variant="inverted"
+                  size="md"
+                  class="dlm-btn dlm-btn-primary"
+                  :title="t('downloadsPopup.resume')"
+                  :aria-label="t('downloadsPopup.resume')"
+                  @click="resume(d)"
+                >
+                  <PlayCircle :size="14" />
+                  {{ t('downloadsPopup.resume') }}
+                </Button>
+                <Button
+                  v-if="d.status === 'error' || d.status === 'cancelled'"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  :title="t('downloadsTab.retry')"
+                  :aria-label="t('downloadsTab.retry')"
+                  @click="retry(d)"
+                >
+                  <RotateCcw :size="14" />
+                  {{ t('downloadsTab.retry') }}
+                </Button>
+                <Button
+                  v-if="d.status === 'completed' && d.savePath"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  @click="showInFolder(d)"
+                >
+                  <FolderOpen :size="14" />
+                  {{ revealLabel }}
+                </Button>
 
-              <button
-                v-if="!isTerminal(d.status)"
-                type="button"
-                class="dlm-x inline-flex size-6 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-[var(--download-close-opacity,0.5)] cursor-pointer transition-[opacity,background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100 hover:opacity-100"
-                :title="t('downloadsPopup.cancel')"
-                :aria-label="t('downloadsPopup.cancel')"
-                @click="cancel(d)"
-              >
-                <XCircle :size="14" />
-              </button>
-              <button
-                v-if="isTerminal(d.status)"
-                type="button"
-                class="dlm-x inline-flex size-6 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-[var(--download-close-opacity,0.5)] cursor-pointer transition-[opacity,background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100 hover:opacity-100"
-                :title="t('downloadsPopup.remove')"
-                :aria-label="t('downloadsPopup.remove')"
-                @click="dismissOne(d)"
-              >
-                <X :size="14" />
-              </button>
-            </div>
-          </li>
-        </ul>
+                <Button
+                  v-if="!isTerminal(d.status)"
+                  type="button"
+                  variant="muted-textonly"
+                  size="icon"
+                  class="dlm-x shrink-0"
+                  :title="t('downloadsPopup.cancel')"
+                  :aria-label="t('downloadsPopup.cancel')"
+                  @click="cancel(d)"
+                >
+                  <XCircle :size="14" />
+                </Button>
+                <Button
+                  v-if="isTerminal(d.status)"
+                  type="button"
+                  variant="muted-textonly"
+                  size="icon"
+                  class="dlm-x shrink-0"
+                  :title="t('downloadsPopup.remove')"
+                  :aria-label="t('downloadsPopup.remove')"
+                  @click="dismissOne(d)"
+                >
+                  <X :size="14" />
+                </Button>
+              </div>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -413,15 +430,17 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             {{ t('downloadsTab.footerCompleted', { n: completedCount }) }}
           </span>
         </span>
-        <button
+        <Button
           v-if="finishedCount > 0"
           type="button"
-          class="dlm-clear-btn inline-flex items-center gap-1 rounded-md border border-solid border-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] bg-transparent px-2.5 py-[5px] text-[12px] text-text-muted cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] hover:text-neutral-100"
+          variant="muted-textonly"
+          size="md"
+          class="dlm-clear-btn"
           @click="clearFinished"
         >
           <Trash2 :size="13" />
           {{ t('downloadsTab.clearFinished') }}
-        </button>
+        </Button>
       </div>
     </footer>
   </div>

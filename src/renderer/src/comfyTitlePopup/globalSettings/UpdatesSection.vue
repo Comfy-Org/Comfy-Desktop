@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
@@ -249,23 +250,27 @@ const progressDetail = computed<string | null>(() => {
       <div
         class="updates-card-footer flex flex-wrap items-center justify-end gap-2 border-t border-solid border-[var(--border-hover)] px-3.5 pt-2.5 pb-3"
       >
-        <button
+        <Button
           v-if="showSecondaryCheck"
           type="button"
-          class="updates-action inline-flex h-8 min-h-8 flex-none box-border items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-0 text-[13px] leading-none font-medium whitespace-nowrap text-neutral-100 cursor-pointer transition-[background-color] duration-100 ease-[ease] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:hover:outline-none enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed [&.updates-action--accent]:border-[var(--accent)] [&.updates-action--accent]:font-semibold [&.updates-action--accent]:text-[var(--accent)]"
+          variant="secondary"
+          size="md"
+          class="updates-action shrink-0"
           :disabled="actionsDisabled"
           @click="emit('check-for-update')"
         >
           {{ t('settings.checkForUpdates', 'Check for updates') }}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          class="updates-action updates-action--accent inline-flex h-8 min-h-8 flex-none box-border items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-0 text-[13px] leading-none font-medium whitespace-nowrap text-neutral-100 cursor-pointer transition-[background-color] duration-100 ease-[ease] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:hover:outline-none enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed [&.updates-action--accent]:border-[var(--accent)] [&.updates-action--accent]:font-semibold [&.updates-action--accent]:text-[var(--accent)] disabled:hover:bg-[var(--brand-surface-bg-hover)]"
+          variant="inverted"
+          size="md"
+          class="updates-action shrink-0 updates-action--accent"
           :disabled="actionsDisabled"
           @click="emit('update-now')"
         >
           {{ primaryActionLabel }}
-        </button>
+        </Button>
       </div>
     </div>
 

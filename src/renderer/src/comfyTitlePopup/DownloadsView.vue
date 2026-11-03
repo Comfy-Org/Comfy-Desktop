@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -247,52 +248,44 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
             subtitle(d)
           }}</span>
         </div>
-        <!-- TODO(brand-cleanup): redesign skips Pause/Resume — restore here if needed.
-        <button
-          v-if="d.status === 'downloading'"
-          type="button"
-          :aria-label="t('downloadsPopup.pause')"
-          @click.stop="pause(d)"
-        ><PauseCircle :size="14" /></button>
-        <button
-          v-if="d.status === 'paused'"
-          type="button"
-          :aria-label="t('downloadsPopup.resume')"
-          @click.stop="resume(d)"
-        ><PlayCircle :size="14" /></button>
-        -->
-        <button
+        <Button
           v-if="d.status === 'error' || d.status === 'cancelled'"
           type="button"
-          class="downloads-item-retry ml-1 inline-flex size-6 flex-none items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted cursor-pointer transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--neutral-500)_35%,transparent)] hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-50 focus-visible:[outline-style:solid]"
+          variant="muted-textonly"
+          size="icon"
+          class="downloads-item-retry ml-1 shrink-0"
           :title="t('downloadsPopup.retry')"
           :aria-label="t('downloadsPopup.retry')"
           @click.stop="retry(d)"
         >
           <RotateCcw :size="16" />
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          class="downloads-item-close ml-1 inline-flex size-6 flex-none items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted cursor-pointer transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--neutral-500)_35%,transparent)] hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-50 focus-visible:[outline-style:solid]"
+          variant="muted-textonly"
+          size="icon"
+          class="downloads-item-close ml-1 shrink-0"
           :title="closeLabel(d)"
           :aria-label="closeLabel(d)"
           @click.stop="handleClose(d)"
         >
           <X :size="16" />
-        </button>
+        </Button>
       </li>
     </ul>
 
     <footer
       class="downloads-foot flex flex-none items-center border-t border-solid border-white/10 p-2"
     >
-      <button
+      <Button
         type="button"
-        class="downloads-link flex flex-auto items-center rounded-md border-none bg-transparent p-2 text-left text-[14px] text-neutral-100 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--neutral-500)_25%,transparent)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-neutral-50 focus-visible:[outline-style:solid]"
+        variant="textonly"
+        size="md"
+        class="downloads-link flex-auto justify-start"
         @click="viewAllDownloads"
       >
         {{ t('downloadsPopup.viewAllInSettings') }}
-      </button>
+      </Button>
     </footer>
   </div>
 </template>

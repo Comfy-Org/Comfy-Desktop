@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Camera, RotateCcw, Trash2 } from 'lucide-vue-next'
@@ -56,14 +57,16 @@ function handleDelete(snapshot: SnapshotSummary): void {
 
 <template>
   <div class="picker-snapshots flex flex-col gap-2.5">
-    <button
+    <Button
       type="button"
-      class="picker-snapshots-save inline-flex items-center gap-1.5 self-start rounded-md border border-solid border-[rgba(255,255,255,0.12)] bg-[var(--chooser-surface-bg)] px-2.5 py-1.5 text-[12px] leading-4 text-neutral-100 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[rgba(255,255,255,0.08)] hover:outline-none focus-visible:bg-[rgba(255,255,255,0.08)] focus-visible:outline-none"
+      variant="secondary"
+      size="md"
+      class="picker-snapshots-save self-start"
       @click="emit('save')"
     >
       <Camera :size="14" aria-hidden="true" />
       <span>{{ t('snapshots.createSnapshot', 'Create Snapshot') }}</span>
-    </button>
+    </Button>
 
     <div v-if="hasSnapshots" class="picker-snapshots-list flex flex-col gap-2.5">
       <SnapshotRow
@@ -84,22 +87,26 @@ function handleDelete(snapshot: SnapshotSummary): void {
               {{ line }}
             </p>
             <div class="picker-snapshot-actions mt-0.5 flex gap-1.5">
-              <button
+              <Button
                 type="button"
-                class="picker-snapshot-action is-primary inline-flex items-center gap-1 rounded-md border border-solid border-[rgba(255,255,255,0.1)] bg-[var(--chooser-surface-bg)] px-2.5 py-[5px] text-[12px] leading-4 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[rgba(255,255,255,0.1)] hover:outline-none focus-visible:bg-[rgba(255,255,255,0.1)] focus-visible:outline-none text-[var(--accent-primary,#60a5fa)]"
+                variant="secondary"
+                size="md"
+                class="picker-snapshot-action is-primary"
                 @click="handleRestore(snap)"
               >
                 <RotateCcw :size="12" aria-hidden="true" />
                 <span>{{ t('snapshots.restore', 'Restore') }}</span>
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                class="picker-snapshot-action is-danger inline-flex items-center gap-1 rounded-md border border-solid border-[rgba(255,255,255,0.1)] bg-[var(--chooser-surface-bg)] px-2.5 py-[5px] text-[12px] leading-4 cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] hover:outline-none focus-visible:outline-none text-danger hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] hover:text-danger-hover focus-visible:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] focus-visible:text-danger-hover"
+                variant="destructive-textonly"
+                size="md"
+                class="picker-snapshot-action is-danger"
                 @click="handleDelete(snap)"
               >
                 <Trash2 :size="12" aria-hidden="true" />
                 <span>{{ t('snapshots.delete', 'Delete') }}</span>
-              </button>
+              </Button>
             </div>
           </div>
         </template>

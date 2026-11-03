@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 
@@ -171,6 +171,12 @@ function mountView(snapshot = makeSnapshot()) {
   })
 }
 
+function menuItems() {
+  return [...document.querySelectorAll<HTMLElement>('.models-dir-menu [role="menuitem"]')].map(
+    (el) => new DOMWrapper(el)
+  )
+}
+
 describe('GlobalSettingsView', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -187,10 +193,11 @@ describe('GlobalSettingsView', () => {
   it('moves focus with arrow-key tab navigation', async () => {
     installMockBridge()
     const wrapper = mountView()
+    await flushPromises()
     const generalTab = wrapper.findAll('.gs-tab')[0]!
     generalTab.element.focus()
     await generalTab.trigger('keydown', { key: 'ArrowDown' })
-    await nextTick()
+    await flushPromises()
 
     const updatesTab = wrapper.findAll('.gs-tab')[1]!
     expect(wrapper.find('.gs-tab.active').text()).toBe('Updates')
@@ -274,7 +281,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Updates')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.setProps({ snapshot: makeSnapshot({ initialTab: null }) as never })
     expect(wrapper.find('.gs-tab.active').text()).toBe('Updates')
@@ -289,7 +296,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'General')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.setProps({ snapshot: makeSnapshot({ initialTab: 'storage' }) as never })
     expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
@@ -311,14 +318,14 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
     expect(toggles).toHaveLength(1)
     await toggles[0]!.trigger('click')
     await nextTick()
     await flushPromises()
-    const makePrimary = wrapper.find('.models-dir-menu button[role="menuitem"]')
+    const makePrimary = menuItems()[0]!
     await makePrimary.trigger('click')
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
@@ -331,7 +338,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
     await browseBtns[0]!.trigger('click')
@@ -345,7 +352,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.find('.models-dir-add').text()).toBe('Add Shared Directory')
   })
@@ -357,7 +364,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-add').trigger('click')
     await flushPromises()
@@ -372,7 +379,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-add').trigger('click')
     await flushPromises()
@@ -386,7 +393,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-add').trigger('click')
     await flushPromises()
@@ -400,7 +407,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-add').trigger('click')
     await flushPromises()
@@ -414,7 +421,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
     await browseBtns[0]!.trigger('click')
@@ -428,13 +435,11 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
     await nextTick()
-    const remove = wrapper
-      .findAll('.models-dir-menu button[role="menuitem"]')
-      .find((item) => item.text().includes('Remove'))!
+    const remove = menuItems().find((item) => item.text().includes('Remove'))!
     await remove.trigger('click')
     await flushPromises()
     const modal = useModal()
@@ -450,13 +455,11 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
     await nextTick()
-    const remove = wrapper
-      .findAll('.models-dir-menu button[role="menuitem"]')
-      .find((item) => item.text().includes('Remove'))!
+    const remove = menuItems().find((item) => item.text().includes('Remove'))!
     await remove.trigger('click')
     await flushPromises()
     const modal = useModal()
@@ -472,7 +475,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const primaryRow = wrapper.findAll('.models-dir-row')[0]!
     expect(primaryRow.find('.tag-primary').text()).toContain('Downloads')
@@ -493,7 +496,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const rows = wrapper.findAll('.storage-dir-row')
     expect(rows).toHaveLength(2)
@@ -516,7 +519,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const outputRow = wrapper.findAll('.storage-dir-row')[1]!
     expect(outputRow.find('.storage-dir-name').text()).toBe('/shared/out')
@@ -539,7 +542,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const modelRows = wrapper.findAll('.models-dir-row')
     expect(modelRows.length).toBeGreaterThan(0)
@@ -564,7 +567,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const tooltips = wrapper
       .findAll('.gs-micro-title .info-tooltip-trigger')
@@ -587,7 +590,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.findAll('.storage-dir-row')[1]!.find('.storage-dir-name').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/shared/out'])
@@ -600,7 +603,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Advanced')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.text()).toContain('Default Install Location')
     // The install dir is the first path row in the Advanced tab.
@@ -633,7 +636,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Advanced')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     // Path rows in Advanced: [0] install location, [1] cache dir.
     const row = wrapper.findAll('.storage-dir-row')[1]!
@@ -654,14 +657,14 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((tab) => tab.text() === 'Advanced')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.text()).not.toContain('Diagnostics')
 
     await wrapper
       .findAll('.gs-tab')
       .find((tab) => tab.text() === 'Logs')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.text()).toContain('Diagnostics')
     expect(wrapper.find('.gs-logs-btn').text()).toContain('Open logs folder')
@@ -675,7 +678,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Storage')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.text()).not.toContain('Install Location')
   })
@@ -693,7 +696,7 @@ describe('GlobalSettingsView', () => {
     await wrapper
       .findAll('.gs-tab')
       .find((t) => t.text() === 'Updates')!
-      .trigger('click')
+      .trigger('keydown', { key: 'Enter' })
     await nextTick()
     const buttons = wrapper.findAll('button')
     const checkBtn = buttons.find((b) => /check/i.test(b.text()))

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import Tabs from '@comfyorg/design-system/tabs/Tabs'
+import TabsList from '@comfyorg/design-system/tabs/TabsList'
+import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
+import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
@@ -306,17 +311,6 @@ async function handleCheckForUpdate(): Promise<void> {
   }
 }
 
-function handleTabKey(event: KeyboardEvent): void {
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-  event.preventDefault()
-  const ids = tabs.value.map((tab) => tab.id)
-  const idx = ids.indexOf(activeTab.value)
-  const next =
-    event.key === 'ArrowDown' ? (idx + 1) % ids.length : (idx - 1 + ids.length) % ids.length
-  activeTab.value = ids[next] as TabId
-  void nextTick(() => document.getElementById(`gs-tab-${activeTab.value}`)?.focus())
-}
-
 onMounted(() => {
   if (!props.snapshot.appUpdate.lastCheckedAt) {
     try {
@@ -342,50 +336,43 @@ onMounted(() => {
       <h2 class="gs-title m-0 font-sans text-[length:var(--text-heading)] font-semibold text-text">
         {{ t('settingsModal.tabGlobal', 'Desktop Settings') }}
       </h2>
-      <button
+      <Button
         type="button"
-        class="gs-close inline-flex size-7 items-center justify-center rounded-lg border border-solid border-transparent bg-transparent p-0 text-neutral-100 opacity-70 cursor-pointer transition-[background,border-color,opacity] duration-[120ms] ease-[ease] hover:border-transparent hover:bg-secondary hover:opacity-100 hover:outline-none focus-visible:border-transparent focus-visible:bg-secondary focus-visible:opacity-100 focus-visible:outline-none"
+        variant="textonly"
+        size="icon"
+        class="gs-close shrink-0"
         :aria-label="t('common.close', 'Close')"
         @click="bridge?.close()"
       >
         <X :size="16" aria-hidden="true" />
-      </button>
+      </Button>
     </header>
 
-    <div class="gs-body flex min-h-0 flex-auto">
-      <nav
-        class="gs-tabs flex w-40 flex-[0_0_160px] flex-col gap-px overflow-y-auto border-r border-solid border-border bg-transparent p-2"
-        role="tablist"
-        aria-orientation="vertical"
-        @keydown="handleTabKey"
+    <Tabs
+      v-model="activeTab"
+      orientation="vertical"
+      class="gs-body min-h-0 flex-auto flex-row gap-0"
+    >
+      <TabsList
+        class="gs-tabs w-40 flex-[0_0_160px] flex-col items-stretch gap-px overflow-y-auto border-r border-solid border-border p-2"
+        :aria-label="t('settingsModal.tabGlobal', 'Desktop Settings')"
       >
-        <button
+        <TabsTrigger
           v-for="tab in tabs"
-          :id="`gs-tab-${tab.id}`"
           :key="tab.id"
-          type="button"
-          class="gs-tab inline-flex h-8 min-h-8 items-center gap-2.5 rounded-lg border-none px-2.5 py-0 text-left text-[length:var(--text-ui)] cursor-pointer transition-[background-color,opacity] duration-100 ease-[ease] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:[outline-style:solid]"
-          :class="
-            activeTab === tab.id
-              ? 'active bg-accent text-text opacity-100'
-              : 'bg-transparent text-neutral-100 opacity-[0.72] hover:bg-secondary hover:opacity-100'
-          "
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="`gs-panel-${tab.id}`"
-          :tabindex="activeTab === tab.id ? 0 : -1"
-          @click="activeTab = tab.id"
+          :value="tab.id"
+          class="gs-tab justify-start text-left"
+          :class="{ active: activeTab === tab.id }"
         >
           <component :is="tab.icon" :size="14" aria-hidden="true" />
           <span>{{ tab.label }}</span>
-        </button>
-      </nav>
+        </TabsTrigger>
+      </TabsList>
 
-      <section
-        :id="`gs-panel-${activeTab}`"
+      <TabsContent
+        :key="activeTab"
+        :value="activeTab"
         class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-[gs-field-flash_2.2s_ease-out] motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--accent)]"
-        role="tabpanel"
-        :aria-labelledby="`gs-tab-${activeTab}`"
       >
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
@@ -478,18 +465,20 @@ onMounted(() => {
 
         <template v-else-if="activeTab === 'logs'">
           <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
-            <button
+            <Button
               type="button"
-              class="gs-logs-btn inline-flex items-center gap-2 rounded-lg border border-solid border-[color-mix(in_oklab,var(--text)_12%,transparent)] bg-[color-mix(in_oklab,var(--text)_4%,transparent)] px-3 py-2 text-[13px] text-neutral-100 cursor-pointer hover:bg-[color-mix(in_oklab,var(--text)_8%,transparent)]"
+              variant="secondary"
+              size="md"
+              class="gs-logs-btn"
               @click="handleOpenLogsFolder"
             >
               <FileText :size="14" aria-hidden="true" />
               <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
-            </button>
+            </Button>
           </GlobalSettingsMicroSection>
         </template>
-      </section>
-    </div>
+      </TabsContent>
+    </Tabs>
   </div>
 </template>
 

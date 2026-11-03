@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 
@@ -196,6 +196,12 @@ function mountPaneWithSections(
   })
 }
 
+function menuItems() {
+  return [...document.querySelectorAll<HTMLElement>('.models-dir-menu [role="menuitem"]')].map(
+    (el) => new DOMWrapper(el)
+  )
+}
+
 describe('StoragePane', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -238,7 +244,7 @@ describe('StoragePane', () => {
     await toggles[0]!.trigger('click')
     await nextTick()
     await flushPromises()
-    const makePrimary = wrapper.find('.models-dir-menu button[role="menuitem"]')
+    const makePrimary = menuItems()[0]!
     await makePrimary.trigger('click')
     await flushPromises()
     const emitted = wrapper.emitted('update-field')
@@ -257,10 +263,13 @@ describe('StoragePane', () => {
     await toggle.trigger('click')
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('.models-dir-menu').exists()).toBe(true)
-    await wrapper.find('.models-dir-menu').trigger('keydown', { key: 'Escape' })
-    expect(wrapper.find('.models-dir-menu').exists()).toBe(false)
-    expect(document.activeElement).toBe(toggle.element)
+    expect(document.querySelector('.models-dir-menu')).not.toBeNull()
+    document
+      .querySelector('.models-dir-menu')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.models-dir-menu')).toBeNull()
+    await vi.waitFor(() => expect(document.activeElement).toBe(toggle.element))
   })
 
   // Shared dirs are edited in Global Desktop Settings; the instance pane only
@@ -334,7 +343,7 @@ describe('StoragePane', () => {
       await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
       await nextTick()
       await flushPromises()
-      await wrapper.find('.models-dir-menu button[role="menuitem"]').trigger('click')
+      await menuItems()[0]!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')
       expect(emitted).toBeTruthy()
@@ -499,7 +508,7 @@ describe('StoragePane', () => {
       await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
       await nextTick()
       await flushPromises()
-      await wrapper.find('.models-dir-menu button[role="menuitem"]').trigger('click')
+      await menuItems()[0]!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
       const [field, value] = emitted[0] as [{ id: string }, unknown]
@@ -521,7 +530,7 @@ describe('StoragePane', () => {
       await ownRow.find('.models-dir-menu-wrap > button').trigger('click')
       await nextTick()
       await flushPromises()
-      const items = ownRow.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       expect(items).toHaveLength(1)
       expect(items[0]!.text()).toContain('Use for Model Downloads')
     })
@@ -616,7 +625,7 @@ describe('StoragePane', () => {
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
       await nextTick()
       await flushPromises()
-      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       const removeItem = items.find((i) => i.text().includes('Remove'))!
       await removeItem.trigger('click')
       await flushPromises()
@@ -645,7 +654,7 @@ describe('StoragePane', () => {
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
       await nextTick()
       await flushPromises()
-      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       await items.find((i) => i.text().includes('Remove'))!.trigger('click')
       await flushPromises()
       const modal = useModal()
@@ -665,7 +674,7 @@ describe('StoragePane', () => {
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
       await nextTick()
       await flushPromises()
-      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       await items.find((i) => i.text().includes('Remove'))!.trigger('click')
       await flushPromises()
       const modal = useModal()
@@ -693,7 +702,7 @@ describe('StoragePane', () => {
       await toggles[1]!.trigger('click')
       await nextTick()
       await flushPromises()
-      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       await items.find((i) => i.text().includes('Use for Model Downloads'))!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
@@ -714,7 +723,7 @@ describe('StoragePane', () => {
       await toggles[1]!.trigger('click')
       await nextTick()
       await flushPromises()
-      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      const items = menuItems()
       await items.find((i) => i.text().includes('Use for Model Downloads'))!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
