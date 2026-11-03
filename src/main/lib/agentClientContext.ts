@@ -22,13 +22,15 @@ export function setHardwareProbe(probe: HardwareProbe | null): void {
   hardwareProbe = probe
 }
 
-async function gpuTierWithin(ms: number): Promise<GpuTier | undefined> {
+async function gpuTierWithin(): Promise<GpuTier | undefined> {
   if (!hardwareProbe) return undefined
   const probed = hardwareProbe().then(
     (h) => h.gpu_tier as GpuTier | undefined,
     () => undefined
   )
-  const timedOut = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))
+  const timedOut = new Promise<undefined>((resolve) =>
+    setTimeout(() => resolve(undefined), MAX_GPU_TIER_WAIT_MS)
+  )
   return Promise.race([probed, timedOut])
 }
 
@@ -37,6 +39,6 @@ export async function agentClientContext(
   appVersion: string
 ): Promise<AgentClientContext | undefined> {
   if (!telemetryGranted) return undefined
-  const gpuTier = await gpuTierWithin(MAX_GPU_TIER_WAIT_MS)
+  const gpuTier = await gpuTierWithin()
   return { channel: deriveAppChannel(appVersion), ...(gpuTier ? { gpuTier } : {}) }
 }

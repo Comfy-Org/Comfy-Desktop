@@ -1879,13 +1879,13 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
-  // Started before the port probes so its wait never sits between the port re-check and reserve.
-  const clientContextReady = launchClientContext()
+  // Before any port check, so the wait never sits between the port re-check and the reservation.
+  const clientContext = await launchClientContext()
 
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
-    const launchEnv = buildLaunchEnv(inst, undefined, await clientContextReady)
+    const launchEnv = buildLaunchEnv(inst, undefined, clientContext)
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
@@ -2232,8 +2232,6 @@ async function runLaunch(
       }
     }
   }
-
-  const clientContext = await clientContextReady
 
   // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
