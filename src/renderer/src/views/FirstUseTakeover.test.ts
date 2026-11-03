@@ -1,7 +1,11 @@
 // Start-screen tests for FirstUseTakeover. Heavy children are stubbed to focus on the start-step DOM.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type DOMWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+
+async function setChecked(control: DOMWrapper<Element>, checked: boolean): Promise<void> {
+  if (control.attributes('aria-checked') !== String(checked)) await control.trigger('click')
+}
 
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn()
@@ -199,9 +203,7 @@ describe('FirstUseTakeover start step', () => {
     const wrapper = mountTakeover()
     // Accept T&C (Continue is gated on it), pick Local, leave Express
     // at its default unchecked state, press Continue.
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
@@ -212,13 +214,12 @@ describe('FirstUseTakeover start step', () => {
 
   it('emits `chain-local` with `express: true` when Express is explicitly ticked', async () => {
     const wrapper = mountTakeover()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
-    await wrapper
-      .find('[data-testid="first-use-express-install"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(
+      wrapper.find('[data-testid="first-use-express-install"] [role="checkbox"]'),
+      true
+    )
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     const emitted = wrapper.emitted('chain-local')
@@ -233,16 +234,15 @@ describe('FirstUseTakeover start step', () => {
     ).open({
       hasLegacyDesktop: true
     })
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     // Express defaults to OFF; migrate is pre-ticked when legacy is
     // detected. The localBranch fork is only reachable when the user
     // explicitly opts out of migrate-existing too.
-    await wrapper
-      .find('[data-testid="first-use-migrate-existing"] input[type="checkbox"]')
-      .setValue(false)
+    await setChecked(
+      wrapper.find('[data-testid="first-use-migrate-existing"] [role="checkbox"]'),
+      false
+    )
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     // No chain-local fires — the user lands on the localBranch sub-step
@@ -276,17 +276,16 @@ describe('FirstUseTakeover start step', () => {
     ).open({
       hasLegacyDesktop: true
     })
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     // Migrate is pre-ticked on the legacy-desktop path; Express defaults
     // to OFF and must be ticked explicitly. The host uses the
     // `express: true` payload to skip the migrate confirm surface and
     // run preview + auto-pick + run straight through.
-    await wrapper
-      .find('[data-testid="first-use-express-install"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(
+      wrapper.find('[data-testid="first-use-express-install"] [role="checkbox"]'),
+      true
+    )
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     const emitted = wrapper.emitted('chain-migrate')
@@ -304,15 +303,14 @@ describe('FirstUseTakeover start step', () => {
     ).open({
       hasLegacyDesktop: true
     })
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     // Untick Express but leave Migrate on: the user wants migration
     // but with the confirm surface (not the express-skip path).
-    await wrapper
-      .find('[data-testid="first-use-express-install"] input[type="checkbox"]')
-      .setValue(false)
+    await setChecked(
+      wrapper.find('[data-testid="first-use-express-install"] [role="checkbox"]'),
+      false
+    )
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     const emitted = wrapper.emitted('chain-migrate')
@@ -327,19 +325,19 @@ describe('FirstUseTakeover start step', () => {
     ).open({
       hasLegacyDesktop: true
     })
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     // Untick migrate (returning user opts out, wants a clean Standalone)
     // and tick Express (now default-off, opt-in to the skip-Configure
     // path).
-    await wrapper
-      .find('[data-testid="first-use-migrate-existing"] input[type="checkbox"]')
-      .setValue(false)
-    await wrapper
-      .find('[data-testid="first-use-express-install"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(
+      wrapper.find('[data-testid="first-use-migrate-existing"] [role="checkbox"]'),
+      false
+    )
+    await setChecked(
+      wrapper.find('[data-testid="first-use-express-install"] [role="checkbox"]'),
+      true
+    )
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     expect(wrapper.emitted('chain-migrate')).toBeFalsy()
@@ -350,9 +348,7 @@ describe('FirstUseTakeover start step', () => {
 
   it('emits `complete-cloud` (not `chain-local`) when the user flips to Cloud and presses Continue', async () => {
     const wrapper = mountTakeover()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     // Local is the default — flip to Cloud, then Continue.
     await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
@@ -363,9 +359,7 @@ describe('FirstUseTakeover start step', () => {
 
   it('Continue button switches to the loading copy + becomes disabled while Continue is in flight', async () => {
     const wrapper = mountTakeover()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     const btn = wrapper.find('[data-testid="first-use-continue"]')
     expect(btn.text()).toBe('firstUse.startContinue')
     // Click — the express path's emit unmounts in real PanelApp, but in
@@ -384,9 +378,7 @@ describe('FirstUseTakeover start step', () => {
     // on the still-mounted instance with a stale `isContinuing=true`
     // — open() must reset it.
     const wrapper = mountTakeover()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
     // Sanity-check: the Continue button IS in the spinner state right
     // after click (the chain hasn't unmounted in the isolated test).
@@ -416,9 +408,7 @@ describe('FirstUseTakeover start step', () => {
 
   it('Continue without touching the picker routes to chain-local (Local is the default)', async () => {
     const wrapper = mountTakeover()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     expect(wrapper.emitted('chain-local')).toBeTruthy()
@@ -456,9 +446,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     const wrapper = mountTakeover()
     await flushPromises()
 
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     // Local is the resolved default → routed to chain-local without
@@ -479,9 +467,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     const wrapper = mountTakeover()
     await flushPromises()
 
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     // Cloud is now the resolved default → Continue without touching
@@ -500,9 +486,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     const wrapper = mountTakeover()
     await flushPromises()
 
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
 
     // Continue stays disabled even with ToS accepted — the no-default
     // arm requires an explicit pick before commit.
@@ -533,9 +517,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     )
     const wrapper = mountTakeover()
     await flushPromises()
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
     expect(wrapper.emitted('chain-local')).toBeTruthy()
     // 'control' is a string PostHog *might* return, so source is 'cache'
@@ -577,9 +559,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     await flushPromises()
 
     // Continue is immediately actionable — Local is pre-selected.
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     const btn = wrapper.find('[data-testid="first-use-continue"]')
     expect(btn.attributes('disabled')).toBeUndefined()
 
@@ -765,9 +745,7 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
     expect(wrapper.find('[data-testid="first-use-pick-cloud"]').attributes('data-tab-stop')).toBe(
       'true'
     )
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeDefined()
   })
 
@@ -849,9 +827,7 @@ describe('FirstUseTakeover recommendation telemetry', () => {
     const wrapper = mountTakeover()
     await flushPromises()
     await wrapper.find(`[data-testid="first-use-pick-${pick}"]`).trigger('click')
-    await wrapper
-      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
-      .setValue(true)
+    await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
     await flushPromises()
     return wrapper
@@ -912,36 +888,37 @@ describe('FirstUseTakeover beta-features opt-in', () => {
   }
 
   const betaRow = (w: Wrapper) => w.find('[data-testid="first-use-consent-beta"]')
-  const betaBox = (w: Wrapper) => w.find('[data-testid="first-use-consent-beta"] input')
-  const telemetryBox = (w: Wrapper) => w.find('[data-testid="first-use-consent-telemetry"] input')
-  const isChecked = (el: ReturnType<typeof betaBox>) => (el.element as HTMLInputElement).checked
+  const betaBox = (w: Wrapper) => w.find('[data-testid="first-use-consent-beta"] [role="checkbox"]')
+  const telemetryBox = (w: Wrapper) =>
+    w.find('[data-testid="first-use-consent-telemetry"] [role="checkbox"]')
+  const isChecked = (el: ReturnType<typeof betaBox>) => el.attributes('aria-checked') === 'true'
 
   it('mirrors the telemetry choice until the user touches it, then diverges', async () => {
     const w = await openWith({ telemetryEnabled: true })
     expect(isChecked(betaBox(w))).toBe(true)
 
-    await telemetryBox(w).setValue(false)
+    await setChecked(telemetryBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
-    expect(betaBox(w).attributes('aria-disabled')).toBe('true')
+    expect(betaBox(w).attributes('aria-readonly')).toBe('true')
 
-    await telemetryBox(w).setValue(true)
+    await setChecked(telemetryBox(w), true)
     expect(isChecked(betaBox(w))).toBe(true)
 
-    await betaBox(w).setValue(false)
+    await setChecked(betaBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
     expect(isChecked(telemetryBox(w))).toBe(true)
   })
 
   it('never re-enables a touched toggle when telemetry is switched back on', async () => {
     const w = await openWith({ telemetryEnabled: true })
-    await betaBox(w).setValue(false)
-    await betaBox(w).setValue(true)
+    await setChecked(betaBox(w), false)
+    await setChecked(betaBox(w), true)
     expect(isChecked(betaBox(w))).toBe(true)
 
-    await telemetryBox(w).setValue(false)
+    await setChecked(telemetryBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
 
-    await telemetryBox(w).setValue(true)
+    await setChecked(telemetryBox(w), true)
     expect(isChecked(betaBox(w))).toBe(false)
   })
 
@@ -950,10 +927,10 @@ describe('FirstUseTakeover beta-features opt-in', () => {
     expect(isChecked(betaBox(w))).toBe(false)
     expect(isChecked(telemetryBox(w))).toBe(true)
 
-    await telemetryBox(w).setValue(false)
+    await setChecked(telemetryBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
 
-    await telemetryBox(w).setValue(true)
+    await setChecked(telemetryBox(w), true)
     expect(isChecked(betaBox(w))).toBe(false)
   })
 
@@ -970,7 +947,7 @@ describe('FirstUseTakeover beta-features opt-in', () => {
     await flushPromises()
     expect(isChecked(betaBox(w))).toBe(true)
 
-    await w.find('[data-testid="first-use-consent-tos"] input[type="checkbox"]').setValue(true)
+    await setChecked(w.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await w.find('[data-testid="first-use-pick-local"]').trigger('click')
     await w.find('[data-testid="first-use-continue"]').trigger('click')
     await flushPromises()
@@ -979,7 +956,7 @@ describe('FirstUseTakeover beta-features opt-in', () => {
 
   it('allows a preserved persisted opt-in to be explicitly opted out', async () => {
     const w = await openWith({ telemetryEnabled: false, betaFeaturesEnabled: true })
-    await betaBox(w).setValue(false)
+    await setChecked(betaBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
   })
 
@@ -987,32 +964,31 @@ describe('FirstUseTakeover beta-features opt-in', () => {
     const w = await openWith({ telemetryEnabled: true })
     expect(isChecked(betaBox(w))).toBe(true)
 
-    await telemetryBox(w).setValue(false)
+    await setChecked(telemetryBox(w), false)
     expect(isChecked(betaBox(w))).toBe(false)
   })
 
-  it('keeps the checkbox focusable and blocks keyboard activation without telemetry', async () => {
+  it('keeps the checkbox focusable and blocks activation without telemetry', async () => {
     const w = await openWith({ telemetryEnabled: false })
     const box = betaBox(w)
     const reasonId = box.attributes('aria-describedby')
     expect(box.attributes('disabled')).toBeUndefined()
-    expect(box.attributes('aria-disabled')).toBe('true')
+    expect(box.attributes('aria-readonly')).toBe('true')
     expect(reasonId).toBeTruthy()
     expect(w.find(`#${reasonId}`).text()).toBe('tooltips.betaFeaturesNeedTelemetry')
-    ;(box.element as HTMLInputElement).checked = true
-    await box.trigger('change')
+    await box.trigger('click')
     expect(isChecked(betaBox(w))).toBe(false)
 
-    await telemetryBox(w).setValue(true)
-    expect(betaBox(w).attributes('aria-disabled')).toBe('false')
+    await setChecked(telemetryBox(w), true)
+    expect(betaBox(w).attributes('aria-readonly')).toBe('false')
     expect(betaRow(w).attributes('title')).toBeUndefined()
   })
 
   it('persists both the telemetry and the beta choice at the same commit point', async () => {
     const w = await openWith({ telemetryEnabled: true })
-    await w.find('[data-testid="first-use-consent-tos"] input[type="checkbox"]').setValue(true)
+    await setChecked(w.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await w.find('[data-testid="first-use-pick-local"]').trigger('click')
-    await betaBox(w).setValue(false)
+    await setChecked(betaBox(w), false)
     await w.find('[data-testid="first-use-continue"]').trigger('click')
     await flushPromises()
 

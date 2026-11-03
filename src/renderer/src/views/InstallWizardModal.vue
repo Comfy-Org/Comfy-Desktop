@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
+import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
+import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
@@ -36,7 +39,7 @@ import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
-import TooltipWrap from '../components/TooltipWrap.vue'
+import TooltipWrap from '../components/ui/Tooltip.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import type { Build, BuildTarget } from '../devplatform/types'
 
@@ -62,14 +65,6 @@ const selectedPillClass =
   'config-method--selected border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-neutral-100'
 const unselectedPillClass =
   'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-200'
-const inputWrapperClass =
-  'config-input flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-normal text-neutral-100 transition-[border-color,background] duration-120 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)]'
-const validInputClass =
-  '[&:has(input:focus-visible)]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
-const invalidInputClass =
-  'config-input--invalid [&:has(input:focus-visible)]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--danger)_35%,transparent)]'
-const textInputClass =
-  'm-0 box-content w-auto min-w-0 flex-auto cursor-text appearance-none rounded-none border-0 bg-transparent p-0 [font:inherit] text-inherit shadow-none outline-0 placeholder:text-neutral-400'
 const spinnerClass =
   'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[""] before:[animation-duration:600ms]'
 
@@ -1349,18 +1344,17 @@ defineExpose({ open })
             <label class="config-label text-[13px] text-neutral-200" for="inst-name-standalone">{{
               $t('common.name')
             }}</label>
-            <div :class="[inputWrapperClass, nameError ? invalidInputClass : validInputClass]">
-              <input
+            <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
+              <InputGroupInput
                 id="inst-name-standalone"
-                :value="instName"
+                :model-value="instName"
                 type="text"
-                :class="textInputClass"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
                 :aria-invalid="!!nameError"
                 :aria-describedby="nameError ? 'inst-name-error' : undefined"
                 @input="instName = ($event.target as HTMLInputElement).value"
               />
-            </div>
+            </InputGroup>
             <div
               v-if="nameError"
               id="inst-name-error"
@@ -1535,20 +1529,14 @@ defineExpose({ open })
 
                     <template v-if="field.type === 'text'">
                       <div class="config-text-action mt-1.5 flex items-stretch gap-2">
-                        <div
-                          class="config-source-text min-w-0 flex-auto"
-                          :class="[
-                            inputWrapperClass,
-                            field.id === 'url' && urlFieldError
-                              ? invalidInputClass
-                              : validInputClass
-                          ]"
+                        <InputGroup
+                          class="config-input config-source-text min-w-0 flex-auto"
+                          :class="{ 'config-input--invalid': field.id === 'url' && urlFieldError }"
                         >
-                          <input
+                          <InputGroupInput
                             :id="`sf-${field.id}`"
                             type="text"
-                            :class="textInputClass"
-                            :value="textFieldValues.get(field.id) ?? ''"
+                            :model-value="textFieldValues.get(field.id) ?? ''"
                             :placeholder="field.defaultValue || ''"
                             :aria-invalid="field.id === 'url' && !!urlFieldError"
                             :aria-describedby="
@@ -1563,7 +1551,7 @@ defineExpose({ open })
                               )
                             "
                           />
-                        </div>
+                        </InputGroup>
                         <Button
                           v-if="field.action"
                           :id="`sf-${field.id}-action`"
@@ -1659,10 +1647,7 @@ defineExpose({ open })
                 $t('newInstall.installLocation')
               }}</label>
               <div class="config-path-row flex items-stretch gap-2">
-                <div
-                  class="config-path-input min-w-0 flex-auto [&.config-path-input]:h-10 [&.config-path-input]:px-3 [&.config-path-input]:py-0"
-                  :class="inputWrapperClass"
-                >
+                <InputGroup class="config-input config-path-input min-w-0 flex-auto gap-2.5 px-3">
                   <HardDrive :size="14" aria-hidden="true" />
                   <Button
                     v-if="!currentSource?.skipInstall && instPath"
@@ -1681,7 +1666,7 @@ defineExpose({ open })
                     class="config-path-open config-path-open--static min-w-0 flex-[0_1_auto] cursor-default overflow-hidden border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit"
                     >{{ instPath }}</span
                   >
-                </div>
+                </InputGroup>
                 <Button
                   size="unset"
                   variant="textonly"
@@ -1840,10 +1825,9 @@ defineExpose({ open })
         v-if="hasLocalInstall"
         class="template-shell__opt-out mt-3.5 flex w-full cursor-pointer items-center justify-center gap-2.5 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-neutral-400"
       >
-        <input
-          v-model="dontShowTemplatePicker"
-          type="checkbox"
-          class="relative m-0 size-3.5 flex-none cursor-pointer appearance-none rounded border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] bg-size-[14px_14px] bg-center bg-no-repeat transition-[background-color,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] checked:bg-[var(--accent)] checked:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCc+PHBvbHlsaW5lIHBvaW50cz0nMyw5IDcsMTIgMTMsNScvPjwvc3ZnPg==)] after:hidden after:content-[''] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
+        <Checkbox
+          :model-value="dontShowTemplatePicker"
+          @update:model-value="dontShowTemplatePicker = $event === true"
         />
         <span class="template-opt-out-label flex flex-col gap-0.5 leading-[1.4]">{{
           $t('standalone.templateDontShowAgain')

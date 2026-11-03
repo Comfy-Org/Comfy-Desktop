@@ -410,24 +410,24 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // Configure before any files are written). Assert the default first
   // (read-only), then toggle the real checkbox control on and back off
   // so the non-express New Install takeover path is taken.
-  const expressCheckbox = '[data-testid="first-use-express-install"] input[type="checkbox"]'
+  const expressCheckbox = '[data-testid="first-use-express-install"] [role="checkbox"]'
   expect(
     await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'false'`,
     ),
     'Express Install should default to unchecked on Local pick',
   ).toBe(true)
   expect(await ctx.panel.click(expressCheckbox)).toBe(true)
   expect(
     await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === true`,
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'true'`,
     ),
     'Express Install checkbox did not check',
   ).toBe(true)
   expect(await ctx.panel.click(expressCheckbox)).toBe(true)
   expect(
     await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'false'`,
     ),
     'Express Install checkbox did not uncheck',
   ).toBe(true)

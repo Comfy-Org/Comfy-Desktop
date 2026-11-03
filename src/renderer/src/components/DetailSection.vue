@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
+import Switch from '@comfyorg/design-system/switch/Switch'
 // TODO(stale-old-modal): delete after Settings drawer (v2,
 // ComfyUISettingsPanel) reaches functional parity and ships everywhere.
 import { ref, reactive, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
+import BaseSelect, { type BaseSelectOption } from './ui/BaseSelect.vue'
 import type { DetailItem, DetailField, DetailFieldOption, ActionDef } from '../types/ipc'
 import InfoTooltip from './InfoTooltip.vue'
 import Button from '@comfyorg/design-system/button/Button'
-import TooltipWrap from './TooltipWrap.vue'
+import TooltipWrap from './ui/Tooltip.vue'
 import EnvVarsEditor from './EnvVarsEditor.vue'
 import { isOpenablePathString } from '../lib/openablePath'
 
@@ -18,6 +22,8 @@ interface Props {
   actions?: ActionDef[]
   installationId: string
 }
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<Props>(), {
   title: undefined,
@@ -44,8 +50,6 @@ const actionClasses = {
     'border-[var(--accent)] bg-surface text-[var(--accent)] font-semibold hover:bg-[var(--accent)] hover:text-bg',
   danger: 'border-danger bg-surface text-danger hover:bg-danger hover:text-bg'
 } as const
-const fieldControlClass =
-  'w-full rounded-md border border-solid border-[var(--border)] bg-surface text-[14px] text-text outline-none focus:border-[var(--accent)] disabled:opacity-40'
 const collapsibleTitleClass =
   "inline-block cursor-pointer select-none before:mr-1 before:inline-block before:content-['▸'] before:transition-transform before:duration-150 before:ease-[ease]"
 const openPathClass =
@@ -61,6 +65,19 @@ const sectionRef = ref<HTMLDivElement | null>(null)
 
 // Channel-cards local selection before committing.
 const draftValues = reactive<Record<string, string>>({})
+
+function getChannelOptions(field: DetailField): BaseSelectOption[] {
+  return (field.options ?? []).map((option) => ({
+    ...option,
+    label: `${option.label}${
+      String(field.value) === option.value
+        ? ` — ${t('channelCards.current')}`
+        : option.recommended
+          ? ` — ${t('newInstall.recommended')}`
+          : ''
+    }`
+  }))
+}
 
 function getDraft(f: DetailField): string {
   return draftValues[f.id] ?? String(f.value)
@@ -218,22 +235,13 @@ function handleOpenPath(value: unknown): void {
             <div class="detail-field-label text-[13px] text-text-muted">
               {{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" />
             </div>
-            <select
-              class="detail-field-input channel-select mt-1 max-w-[360px] px-2 py-1.5"
-              :class="fieldControlClass"
-              :value="getDraft(f)"
-              @change="draftValues[f.id] = ($event.target as HTMLSelectElement).value"
-            >
-              <option v-for="opt in f.options" :key="opt.value" :value="opt.value">
-                {{ opt.label
-                }}{{ String(f.value) === opt.value ? ` — ${$t('channelCards.current')}` : ''
-                }}{{
-                  String(f.value) !== opt.value && opt.recommended
-                    ? ` — ${$t('newInstall.recommended')}`
-                    : ''
-                }}
-              </option>
-            </select>
+            <BaseSelect
+              class="detail-field-input channel-select mt-1 max-w-[360px]"
+              :model-value="getDraft(f)"
+              :options="getChannelOptions(f)"
+              :aria-label="f.label"
+              @update:model-value="draftValues[f.id] = $event"
+            />
             <div
               v-if="getSelectedOption(f)?.description"
               class="channel-select-desc mt-1.5 text-[12px] text-text-muted"
@@ -334,23 +342,19 @@ function handleOpenPath(value: unknown): void {
             <div class="detail-field-label text-[13px] text-text-muted">
               {{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" />
             </div>
-            <select
+            <BaseSelect
               v-if="f.editable && f.editType === 'select'"
-              class="detail-field-input mt-1 px-2 py-1.5"
-              :class="fieldControlClass"
-              :value="f.value"
-              @change="handleFieldChange(f, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="opt in f.options" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <input
+              class="detail-field-input mt-1"
+              :model-value="String(f.value ?? '')"
+              :options="f.options ?? []"
+              :aria-label="f.label"
+              @update:model-value="handleFieldChange(f, $event)"
+            />
+            <Switch
               v-else-if="f.editable && f.editType === 'boolean'"
-              type="checkbox"
-              class="detail-field-toggle relative mt-2 h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-text after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:bg-background checked:after:[transform:translateX(16px)]"
-              :checked="f.value !== false"
-              @change="handleFieldChange(f, ($event.target as HTMLInputElement).checked)"
+              class="detail-field-toggle mt-2"
+              :model-value="f.value !== false"
+              @update:model-value="handleFieldChange(f, $event === true)"
             />
             <div
               v-else-if="f.editable && f.editType === 'path'"
@@ -372,12 +376,12 @@ function handleOpenPath(value: unknown): void {
                   {{ f.value }}
                 </button>
               </div>
-              <input
+              <Input
                 v-else
                 type="text"
+                :aria-label="f.label"
                 class="detail-field-input mt-0 flex-1 px-2.5 py-2"
-                :class="fieldControlClass"
-                :value="f.value ?? ''"
+                :model-value="String(f.value ?? '')"
                 @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
               />
               <Button
@@ -389,12 +393,12 @@ function handleOpenPath(value: unknown): void {
                 >{{ $t('common.browse') }}</Button
               >
             </div>
-            <input
+            <Input
               v-else-if="f.editable"
               type="text"
+              :aria-label="f.label"
               class="detail-field-input mt-1.5 px-2.5 py-2"
-              :class="fieldControlClass"
-              :value="f.value ?? ''"
+              :model-value="String(f.value ?? '')"
               @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
             />
             <button

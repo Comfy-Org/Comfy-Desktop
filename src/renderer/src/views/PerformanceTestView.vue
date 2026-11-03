@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
 import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
@@ -840,9 +841,9 @@ watch(performanceTestLogs, async () => {
                   <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
                 </span>
                 <div
-                  class="performance-test__setting-input box-border ml-auto flex-[0_1_260px] w-[260px] min-w-[180px] min-h-[30px] rounded-md border border-solid border-border bg-[var(--brand-surface-bg)] px-2 py-1 text-neutral-100 text-[length:var(--takeover-fs-caption)] transition-[border-color,background] duration-[120ms] ease-[ease] flex items-center gap-2.5 hover:bg-[var(--brand-surface-bg-hover)] has-[:focus-visible]:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)] [&_input]:appearance-none [&_input]:rounded-none [&_input]:box-content [&_input]:[border-style:none] [&_input]:[outline-style:none] [&_input]:text-left [&_input]:flex-auto [&_input]:min-w-0 [&_input]:w-auto [&_input]:m-0 [&_input]:p-0 [&_input]:border-0 [&_input]:bg-transparent [&_input]:text-inherit [&_input]:font-[inherit] [&_input]:[font-size:inherit] [&_input]:[line-height:inherit] [&_input]:[font-weight:inherit] [&_input]:cursor-text [&_input]:outline-0 [&_input::placeholder]:text-neutral-400"
+                  class="performance-test__setting-input ml-auto w-[260px] min-w-[180px] flex-[0_1_260px]"
                 >
-                  <input
+                  <Input
                     id="performance-test-warmup-runs"
                     v-model="warmupRuns"
                     type="number"
@@ -864,9 +865,9 @@ watch(performanceTestLogs, async () => {
                   <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
                 </span>
                 <div
-                  class="performance-test__setting-input box-border ml-auto flex-[0_1_260px] w-[260px] min-w-[180px] min-h-[30px] rounded-md border border-solid border-border bg-[var(--brand-surface-bg)] px-2 py-1 text-neutral-100 text-[length:var(--takeover-fs-caption)] transition-[border-color,background] duration-[120ms] ease-[ease] flex items-center gap-2.5 hover:bg-[var(--brand-surface-bg-hover)] has-[:focus-visible]:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)] [&_input]:appearance-none [&_input]:rounded-none [&_input]:box-content [&_input]:[border-style:none] [&_input]:[outline-style:none] [&_input]:text-left [&_input]:flex-auto [&_input]:min-w-0 [&_input]:w-auto [&_input]:m-0 [&_input]:p-0 [&_input]:border-0 [&_input]:bg-transparent [&_input]:text-inherit [&_input]:font-[inherit] [&_input]:[font-size:inherit] [&_input]:[line-height:inherit] [&_input]:[font-weight:inherit] [&_input]:cursor-text [&_input]:outline-0 [&_input::placeholder]:text-neutral-400"
+                  class="performance-test__setting-input ml-auto w-[260px] min-w-[180px] flex-[0_1_260px]"
                 >
-                  <input
+                  <Input
                     id="performance-test-measured-runs"
                     v-model="measuredRuns"
                     type="number"

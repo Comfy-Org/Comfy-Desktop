@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
 // TODO(stale-old-modal): delete after Settings drawer (v2,
 // ComfyUISettingsPanel + EnvVarsField) reaches functional parity and
 // ships everywhere.
@@ -6,8 +7,7 @@ import { ref, watch, computed } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { ShieldAlert } from 'lucide-vue-next'
 
-const inputClass =
-  'env-var-input mt-0 w-full rounded-md border border-solid bg-[var(--bg)] px-2 py-1.5 [font-family:monospace] text-[14px] leading-[inherit] text-text outline-none select-text'
+const inputClass = 'env-var-input mt-0 font-mono'
 const buttonClass =
   'static appearance-auto gap-0 border border-solid font-sans text-[14px] leading-[inherit] whitespace-normal touch-auto transition-none [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
 
@@ -96,21 +96,20 @@ function onValueChange(index: number, val: string): void {
         }}
       </div>
       <div v-for="(entry, i) in entries" :key="i" class="env-var-row flex items-center gap-1.5">
-        <input
+        <Input
           type="text"
-          :class="[
-            inputClass,
-            'env-var-key flex-[2]',
-            isDuplicate(i) ? 'env-var-duplicate border-[var(--danger)]' : 'border-[var(--border)]'
-          ]"
-          :value="entry.key"
+          :class="[inputClass, 'env-var-key flex-[2]', { 'env-var-duplicate': isDuplicate(i) }]"
+          :model-value="entry.key"
+          :aria-invalid="isDuplicate(i)"
+          :aria-label="$t('envVars.name')"
           :placeholder="$t('envVars.namePlaceholder')"
           @change="onKeyChange(i, ($event.target as HTMLInputElement).value)"
         />
-        <input
+        <Input
           type="text"
-          :class="[inputClass, 'env-var-value flex-[3] border-[var(--border)]']"
-          :value="entry.value"
+          :class="[inputClass, 'env-var-value flex-[3]']"
+          :model-value="entry.value"
+          :aria-label="$t('envVars.value')"
           :placeholder="$t('envVars.valuePlaceholder')"
           @change="onValueChange(i, ($event.target as HTMLInputElement).value)"
         />

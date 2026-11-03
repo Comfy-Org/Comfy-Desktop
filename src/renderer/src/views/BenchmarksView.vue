@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
+import Input from '@comfyorg/design-system/input/Input'
+import Switch from '@comfyorg/design-system/switch/Switch'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
@@ -63,7 +66,7 @@ const deletingIds = ref<Set<string>>(new Set())
 const editingSessionId = ref<string | null>(null)
 const renamingSessionId = ref<string | null>(null)
 const sessionNameDraft = ref('')
-const sessionNameInput = ref<HTMLInputElement | null>(null)
+const sessionNameInput = ref<Pick<HTMLInputElement, 'focus' | 'select'> | null>(null)
 const libraryColumnsPicker = ref<HTMLDetailsElement | null>(null)
 const comparisonColumnsPicker = ref<HTMLDetailsElement | null>(null)
 const searchQuery = ref('')
@@ -679,7 +682,10 @@ function refreshBenchmarks(): void {
 }
 
 function setSessionNameInput(element: unknown): void {
-  sessionNameInput.value = element instanceof HTMLInputElement ? element : null
+  sessionNameInput.value =
+    element && typeof element === 'object' && 'focus' in element && 'select' in element
+      ? (element as Pick<HTMLInputElement, 'focus' | 'select'>)
+      : null
 }
 
 function editSessionName(benchmark: PerformanceTestBenchmark): void {
@@ -898,13 +904,11 @@ onMounted(() => {
             >
               <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
               <label v-for="key in availableColumnKeys" :key="key">
-                <input
-                  type="checkbox"
-                  class="relative m-0 h-5 w-9 flex-none cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-[50%] after:bg-text after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:[transform:translateX(16px)] checked:after:bg-background disabled:cursor-not-allowed disabled:opacity-60"
-                  :checked="visibleColumnKeys.has(key)"
+                <Switch
+                  :model-value="visibleColumnKeys.has(key)"
                   :disabled="key === 'workflowName'"
                   :data-testid="`benchmark-column-${key}`"
-                  @change="toggleColumn(key)"
+                  @update:model-value="toggleColumn(key)"
                 />
                 <span>{{ columnLabel(key) }}</span>
               </label>
@@ -938,12 +942,10 @@ onMounted(() => {
                 <tr>
                   <th class="benchmarks__check-cell w-11 text-center">
                     <label class="benchmarks__checkbox inline-flex items-center justify-center">
-                      <input
-                        type="checkbox"
-                        class="relative m-0 size-4 shrink-0 cursor-pointer appearance-none rounded border border-solid border-[var(--brand-surface-border-hover)] bg-[var(--brand-surface-bg)] transition-[background] duration-200 ease-[ease] after:hidden checked:border-[var(--series-color,var(--accent))] checked:bg-[var(--series-color,var(--accent))] checked:bg-[url(data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%20fill%3D%27none%27%20stroke%3D%27white%27%20stroke-width%3D%272.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpolyline%20points%3D%273%2C9%207%2C12%2013%2C5%27%2F%3E%3C%2Fsvg%3E)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
-                        :checked="allFilteredSelected"
+                      <Checkbox
+                        :model-value="allFilteredSelected"
                         :aria-label="t('benchmarks.selectVisible')"
-                        @change="toggleAllFiltered"
+                        @update:model-value="toggleAllFiltered"
                       />
                     </label>
                   </th>
@@ -976,14 +978,12 @@ onMounted(() => {
                 >
                   <td class="benchmarks__check-cell w-11 text-center">
                     <label class="benchmarks__checkbox inline-flex items-center justify-center">
-                      <input
-                        type="checkbox"
-                        class="relative m-0 size-4 shrink-0 cursor-pointer appearance-none rounded border border-solid border-[var(--brand-surface-border-hover)] bg-[var(--brand-surface-bg)] transition-[background] duration-200 ease-[ease] after:hidden checked:border-[var(--series-color,var(--accent))] checked:bg-[var(--series-color,var(--accent))] checked:bg-[url(data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%20fill%3D%27none%27%20stroke%3D%27white%27%20stroke-width%3D%272.5%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpolyline%20points%3D%273%2C9%207%2C12%2013%2C5%27%2F%3E%3C%2Fsvg%3E)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
-                        :checked="selectedIds.has(benchmark.id)"
+                      <Checkbox
+                        :model-value="selectedIds.has(benchmark.id)"
                         :aria-label="
                           t('benchmarks.selectRun', { workflow: benchmark.workflowName })
                         "
-                        @change="toggleBenchmark(benchmark.id)"
+                        @update:model-value="toggleBenchmark(benchmark.id)"
                       />
                     </label>
                   </td>
@@ -1018,11 +1018,11 @@ onMounted(() => {
                             aria-hidden="true"
                           />
                         </button>
-                        <input
+                        <Input
                           v-if="editingSessionId === benchmark.id"
                           :ref="setSessionNameInput"
                           v-model="sessionNameDraft"
-                          class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 rounded-md border border-solid border-[var(--border)] bg-surface px-0.5 py-px text-text [font:inherit] disabled:opacity-40 focus:border-[var(--accent)] focus:outline-none"
+                          class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 px-0.5 py-px [font:inherit]"
                           type="text"
                           :disabled="renamingSessionId === benchmark.id"
                           :aria-label="t('benchmarks.sessionName')"
@@ -1176,13 +1176,11 @@ onMounted(() => {
               >
                 <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
                 <label v-for="key in availableColumnKeys" :key="key">
-                  <input
-                    type="checkbox"
-                    class="relative m-0 h-5 w-9 flex-none cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-[50%] after:bg-text after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:[transform:translateX(16px)] checked:after:bg-background disabled:cursor-not-allowed disabled:opacity-60"
-                    :checked="comparisonColumnKeys.has(key)"
+                  <Switch
+                    :model-value="comparisonColumnKeys.has(key)"
                     :disabled="key === 'workflowName'"
                     :data-testid="`benchmark-comparison-column-${key}`"
-                    @change="toggleComparisonColumn(key)"
+                    @update:model-value="toggleComparisonColumn(key)"
                   />
                   <span>{{ columnLabel(key) }}</span>
                 </label>

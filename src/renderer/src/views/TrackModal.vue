@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
+import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
+import InputGroupAddon from '@comfyorg/design-system/input-group/InputGroupAddon'
 import { ref, computed, watch, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
@@ -20,8 +23,6 @@ const emit = defineEmits<{
 
 const brandInputClass =
   'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
-const inputClass =
-  '[:where(&)]:[all:unset] m-0 min-w-0 w-auto flex-auto cursor-text appearance-none border-none bg-transparent p-0 text-inherit [font:inherit] outline-none placeholder:text-neutral-400'
 const browseClass =
   'static flex h-10 items-center justify-center rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-[inherit] font-medium whitespace-normal text-neutral-100 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
 
@@ -305,15 +306,14 @@ defineExpose({ open })
             <label class="track-label text-[13px] text-neutral-200" for="track-name">{{
               $t('common.name')
             }}</label>
-            <div :class="[brandInputClass, 'px-3.5 py-2.5']">
-              <input
+            <InputGroup>
+              <InputGroupInput
                 id="track-name"
                 v-model="trackName"
                 type="text"
-                :class="inputClass"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
               />
-            </div>
+            </InputGroup>
           </div>
 
           <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
@@ -352,15 +352,14 @@ defineExpose({ open })
           >
             <label class="track-label text-[13px] text-neutral-200">{{ $t('git.venv') }}</label>
             <div class="track-path-row flex items-stretch gap-2">
-              <div :class="[brandInputClass, 'track-path-input h-10 min-w-0 flex-auto px-3 py-0']">
-                <HardDrive :size="14" aria-hidden="true" />
-                <input
+              <InputGroup class="track-path-input min-w-0 flex-auto">
+                <InputGroupAddon><HardDrive :size="14" aria-hidden="true" /></InputGroupAddon>
+                <InputGroupInput
                   type="text"
-                  :class="inputClass"
-                  :value="effectiveVenvName || $t('git.venvNotFound')"
+                  :model-value="effectiveVenvName || $t('git.venvNotFound')"
                   disabled
                 />
-              </div>
+              </InputGroup>
               <Button
                 variant="textonly"
                 size="unset"

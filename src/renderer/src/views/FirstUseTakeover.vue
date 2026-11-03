@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 /**
  * First-use takeover.
  *
@@ -66,8 +67,6 @@ import type { CloudUserTier, SystemInfo } from '../../../types/ipc'
 const buttonClass =
   'touch-auto appearance-auto [&]:[appearance:button] whitespace-normal focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto'
 const legalLinkClass = `${buttonClass} static inline border-0 rounded-[2px] bg-transparent p-0 [font:inherit] text-neutral-100 underline transition-none hover:bg-transparent hover:text-comfy-yellow`
-const checkboxClass =
-  "relative size-3.5 flex-none appearance-none cursor-pointer rounded border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] bg-size-[14px_14px] bg-center bg-no-repeat transition-[background-color,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] checked:border-[var(--color-border)] checked:bg-[var(--accent)] checked:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCc+PHBvbHlsaW5lIHBvaW50cz0nMyw5IDcsMTIgMTMsNScvPjwvc3ZnPg==)] after:hidden after:content-[''] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
 const modifierClass =
   'inline-flex cursor-pointer items-start gap-2 text-[13px] text-neutral-300 transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none'
 const consentClass =
@@ -499,13 +498,9 @@ function applyBetaEntryRule(): void {
 
 watch(telemetryEnabled, applyBetaEntryRule)
 
-function onBetaFeaturesToggle(event: Event): void {
-  const input = event.target as HTMLInputElement
-  const next = input.checked
-  if (!telemetryEnabled.value && next) {
-    input.checked = betaFeaturesEnabled.value
-    return
-  }
+function onBetaFeaturesToggle(value: boolean | 'indeterminate'): void {
+  const next = value === true
+  if (!telemetryEnabled.value && next) return
   preservePersistedBetaOptIn.value = false
   betaTouched.value = true
   betaFeaturesEnabled.value = next
@@ -1046,11 +1041,11 @@ defineExpose({ open, resetContinue })
             :aria-hidden="!showMigrateExisting"
             data-testid="first-use-migrate-existing"
           >
-            <input
-              v-model="migrateExisting"
-              type="checkbox"
-              :class="[checkboxClass, 'mt-1 mr-0 mb-0 ml-0']"
+            <Checkbox
+              :model-value="migrateExisting"
+              class="mt-1"
               :tabindex="showMigrateExisting ? 0 : -1"
+              @update:model-value="migrateExisting = $event === true"
             />
             <span class="start-migrate-existing__body flex min-w-0 flex-col items-start gap-0.5">
               <span class="start-migrate-existing__label leading-[1.4]">
@@ -1074,11 +1069,11 @@ defineExpose({ open, resetContinue })
             :aria-hidden="pickedChoice !== 'local'"
             data-testid="first-use-express-install"
           >
-            <input
-              v-model="expressInstall"
-              type="checkbox"
-              :class="[checkboxClass, 'mt-1 mr-0 mb-0 ml-0']"
+            <Checkbox
+              :model-value="expressInstall"
+              class="mt-1"
               :tabindex="pickedChoice === 'local' ? 0 : -1"
+              @update:model-value="expressInstall = $event === true"
             />
             <span class="start-express__body flex min-w-0 flex-col items-start gap-0.5">
               <span class="start-express__label leading-[1.4]">{{
@@ -1129,17 +1124,15 @@ defineExpose({ open, resetContinue })
               ]"
               data-testid="first-use-consent-tos"
             >
-              <input
-                v-model="acceptedTos"
-                type="checkbox"
+              <Checkbox
+                :model-value="acceptedTos"
                 :class="[
-                  checkboxClass,
                   'm-0',
                   {
-                    '[&[type=checkbox]]:border-comfy-yellow [box-shadow:0_0_0_2px_color-mix(in_oklab,var(--comfy-yellow)_30%,transparent)] [&[type=checkbox]]:transition-[border-color,box-shadow] [&[type=checkbox]]:duration-150 [&[type=checkbox]]:ease-[ease]':
-                      tosNudge
+                    'ring-2 ring-ring/30': tosNudge
                   }
                 ]"
+                @update:model-value="acceptedTos = $event === true"
               />
               <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTosHintPrefix') }}
@@ -1171,7 +1164,11 @@ defineExpose({ open, resetContinue })
               :class="consentClass"
               data-testid="first-use-consent-telemetry"
             >
-              <input v-model="telemetryEnabled" type="checkbox" :class="[checkboxClass, 'm-0']" />
+              <Checkbox
+                :model-value="telemetryEnabled"
+                class="m-0"
+                @update:model-value="telemetryEnabled = $event === true"
+              />
               <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTelemetryHint') }}
                 <Button
@@ -1192,13 +1189,12 @@ defineExpose({ open, resetContinue })
               data-testid="first-use-consent-beta"
               :title="betaBlocked ? $t('tooltips.betaFeaturesNeedTelemetry') : undefined"
             >
-              <input
-                type="checkbox"
-                :class="[checkboxClass, 'm-0']"
-                :checked="betaFeaturesEnabled"
-                :aria-disabled="betaBlocked"
+              <Checkbox
+                class="m-0"
+                :model-value="betaFeaturesEnabled"
+                :aria-readonly="betaBlocked"
                 :aria-describedby="betaBlocked ? betaBlockedReasonId : undefined"
-                @change="onBetaFeaturesToggle"
+                @update:model-value="onBetaFeaturesToggle"
               />
               <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentBetaHint') }}

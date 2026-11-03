@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
 // TODO(stale-old-modal): delete after Settings drawer (v2,
 // ComfyUISettingsPanel) reaches functional parity and ships everywhere.
 import { computed, ref, watch } from 'vue'
@@ -202,10 +203,10 @@ const filteredPipPackages = computed(() => {
             v-else
             class="node-list flex flex-col gap-[3px] max-h-60 overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
           >
-            <input
+            <Input
               v-if="detail.customNodes.length > 5"
               v-model="nodeSearch"
-              class="inspector-search mt-1.5 mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
+              class="inspector-search my-1.5"
               type="text"
               :placeholder="t('snapshots.searchNodes')"
             />
@@ -259,9 +260,9 @@ const filteredPipPackages = computed(() => {
           <div
             class="pip-list flex flex-col gap-[3px] max-h-[300px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
           >
-            <input
+            <Input
               v-model="pipSearch"
-              class="inspector-search mt-1.5 mb-1.5 box-border w-full rounded-[5px] border border-solid border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-text focus:border-[var(--accent)] focus:outline-none"
+              class="inspector-search my-1.5"
               type="text"
               :placeholder="t('snapshots.searchPackages')"
             />

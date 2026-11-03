@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
 import { ref, computed, watch, toRaw, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
@@ -433,17 +434,13 @@ defineExpose({ open })
               <label class="load-snapshot-label text-[13px] text-neutral-200" for="ls-name">{{
                 $t('common.name')
               }}</label>
-              <div
-                class="load-snapshot-input flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 text-[length:var(--takeover-fs-body)] text-neutral-100 transition-[border-color,background] duration-120 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]"
-              >
-                <input
-                  id="ls-name"
-                  v-model="installName"
-                  class="m-0 min-w-0 w-auto flex-auto box-content rounded-none appearance-none border-0 bg-transparent p-0 text-inherit [font:inherit] cursor-text outline-0 placeholder:text-neutral-400"
-                  type="text"
-                  :placeholder="$t('common.namePlaceholder')"
-                />
-              </div>
+              <Input
+                id="ls-name"
+                v-model="installName"
+                class="load-snapshot-input"
+                type="text"
+                :placeholder="$t('common.namePlaceholder')"
+              />
               <div
                 v-if="nameHasInvalidChars"
                 class="load-snapshot-hint text-[length:var(--takeover-fs-caption)] text-neutral-300 [&.load-snapshot-hint--warn]:text-[var(--warning)] load-snapshot-hint--warn"
