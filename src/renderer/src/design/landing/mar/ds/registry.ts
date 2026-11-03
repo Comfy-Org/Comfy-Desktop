@@ -380,7 +380,7 @@ export const PAGES: DsPage[] = [
     label: `Library · ${l.label}`,
     group: 'Patterns',
     title: `Library · ${l.label}`,
-    source: `${l.source} (shell: mar/pages/MarPage.vue, MarStateGate.vue, pageState.ts)`,
+    source: `${l.source} (shell: mar/pages/MarPage.vue, pageState.ts)`,
     use: l.use,
     component: library(l.page)
   })),
@@ -408,7 +408,8 @@ export const PAGES: DsPage[] = [
     label: 'Build and deploy',
     group: 'Patterns',
     title: 'Build and deploy',
-    source: 'mar/build/ (MarBuildStart.vue, MarModelsPage.vue, ModelTile.vue), mar/deploy/MarDeployModal.vue',
+    source:
+      'mar/build/ (MarBuildStart.vue, MarModelsPage.vue, ModelTile.vue), mar/deploy/MarDeployModal.vue',
     use: 'The Build lens: a first call, the models, and shipping a build as an API.',
     component: lazy(() => import('./pages/BuildPage.vue'))
   },

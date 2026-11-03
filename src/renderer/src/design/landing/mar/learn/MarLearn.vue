@@ -1,22 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { GraduationCap } from 'lucide-vue-next'
-import Button from '../../ui/Button.vue'
-import EmptyState from '../../ui/EmptyState.vue'
-import PageHeader from '../../ui/PageHeader.vue'
-import SearchInput from '../../ui/SearchInput.vue'
-import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { TUTORIALS, type Tutorial } from '../../mock'
 import { toast } from '../../useProto'
 import LearnCard from './LearnCard.vue'
 import LearnCourse from './LearnCourse.vue'
+import MarPage from '../pages/MarPage.vue'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
 
 /**
  * Learn in Mar's proposal. Beginners get one obvious place to start: the
  * Basics lessons as a short course, in order, with what's done. Everything
  * else sits under its track (VFX, Animations, Ads), so no card has to say
  * which track it's in. The tabs narrow to one track; a search looks across
- * all of them, still grouped.
+ * all of them, still grouped. The frame (title, toolbar, Loading, Error,
+ * Nothing matches) is MarPage.
  */
 type Track = Tutorial['category']
 const TRACKS: { id: Track; blurb: string }[] = [
@@ -27,6 +25,10 @@ const TRACKS: { id: Track; blurb: string }[] = [
 ]
 
 const tab = ref<'All' | Track>('All')
+const TABS = (['All', 'Basics', 'VFX', 'Animations', 'Ads'] as const).map((c) => ({
+  value: c,
+  label: c
+}))
 const q = ref('')
 const query = computed(() => q.value.trim().toLowerCase())
 
@@ -51,20 +53,18 @@ const open = (t: Tutorial): void => toast(`Watch: ${t.title}`)
 </script>
 
 <template>
-  <div class="mar-learn mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Learn" />
-    <div class="mb-8 flex items-center justify-between gap-3">
-      <SegmentedControl
-        v-model="tab"
-        :options="
-          (['All', 'Basics', 'VFX', 'Animations', 'Ads'] as const).map((c) => ({
-            value: c,
-            label: c
-          }))
-        "
-      />
-      <SearchInput v-model="q" placeholder="Search tutorials" class="w-60" />
-    </div>
+  <MarPage
+    title="Learn"
+    class="mar-learn"
+    :no-results="empty"
+    error-title="Can't load Learn"
+    error-text="Tutorials come from the internet. Templates on this computer still open."
+    @clear="((tab = 'All'), (q = ''))"
+  >
+    <template #toolbar>
+      <MarSeg v-model="tab" :options="TABS" label="Tracks" />
+      <MarSearchField v-model="q" placeholder="Search tutorials" class="ml-auto" />
+    </template>
 
     <section v-if="showCourse">
       <header class="mar-learn-head">
@@ -90,19 +90,7 @@ const open = (t: Tutorial): void => toast(`Watch: ${t.title}`)
         <LearnCard v-for="t in s.items" :key="t.title" :t @open="open(t)" />
       </section>
     </div>
-
-    <EmptyState
-      v-if="empty"
-      :icon="GraduationCap"
-      title="No tutorials found"
-      :description="`Nothing matches “${q.trim()}”${tab === 'All' ? '' : ` in ${tab}`}.`"
-    >
-      <Button v-if="tab !== 'All'" variant="secondary" size="sm" @click="tab = 'All'"
-        >Search all tracks</Button
-      >
-      <Button variant="ghost" size="sm" @click="q = ''">Clear search</Button>
-    </EmptyState>
-  </div>
+  </MarPage>
 </template>
 
 <style>

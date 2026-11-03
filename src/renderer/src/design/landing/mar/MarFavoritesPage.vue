@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Star } from 'lucide-vue-next'
-import PageHeader from '../ui/PageHeader.vue'
 import AssetTile from '../parts/AssetTile.vue'
 import TemplateCard from '../parts/TemplateCard.vue'
 import { APPS, TEMPLATES, thumb } from '../mock'
@@ -10,12 +9,16 @@ import { go, toast, type Page } from '../useProto'
 import FavoriteStar from './FavoriteStar.vue'
 import { favoriteIds } from './favorites'
 import MarEmpty from './pages/MarEmpty.vue'
+import MarPage from './pages/MarPage.vue'
+import MarSeg from './pages/MarSeg.vue'
+import { shownState } from './pages/pageState'
 
 /**
  * Favorites (Mar's proposal), rescued from her usertest-home prototype:
  * one tab per place a star comes from, each with its count. The page opens
- * on a tab that has something and follows the newest star. Empty, the
- * shared MarEmpty (born here) says what starring saves here.
+ * on a tab that has something and follows the newest star. The frame is
+ * MarPage: Loading and Error from the UI Playground, Empty from the stars
+ * (with no stars, its MarEmpty says what starring saves here).
  */
 type Tab = 'templates' | 'apps' | 'assets'
 
@@ -57,84 +60,75 @@ watch(counts, (next, prev) => {
   else if (next[tab.value] === 0) tab.value = firstFilled()
 })
 
+// Loading and Error come from the Playground; Live or Empty from the stars.
+const state = computed(() =>
+  shownState.value === 'loading' || shownState.value === 'error'
+    ? undefined
+    : hasAny.value
+      ? 'live'
+      : 'empty'
+)
+
 // Three text-free pieces for the empty fan.
 const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2511'].map(thumb)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Favorites" />
-
-    <template v-if="hasAny">
-      <div class="mar-fav-tabs" role="tablist" aria-label="Favorites">
-        <button
-          v-for="t in TABS"
-          :key="t.value"
-          type="button"
-          role="tab"
-          :aria-selected="tab === t.value"
-          class="mar-ex-tab"
-          @click="tab = t.value"
-        >
-          {{ t.label }}<span class="mar-fav-count">{{ counts[t.value] }}</span>
-        </button>
-      </div>
-
-      <div v-if="tab === 'templates' && templates.length" class="mar-fav-grid">
-        <TemplateCard v-for="t in templates" :key="t.id" :t />
-      </div>
-      <div v-else-if="tab === 'apps' && apps.length" class="mar-fav-grid">
-        <button
-          v-for="a in apps"
-          :key="a.id"
-          type="button"
-          class="mar-ex-card group"
-          @click="go(`app:${a.id}` as Page)"
-        >
-          <span class="mar-fav-media"
-            ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-fav-corner"
-              ><FavoriteStar :id="a.id" kind="app" /></span
-          ></span>
-          <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
-            <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
-            <span class="truncate text-ui text-subtle-foreground"
-              >{{ a.owner }} · {{ a.runs.toLocaleString('en-US') }} runs</span
-            >
-          </span>
-        </button>
-      </div>
-      <div v-else-if="tab === 'assets' && assets.length" class="mar-fav-grid">
-        <AssetTile v-for="a in assets" :key="a.id" :asset="a" @open="toast(`Open ${a.name}`)" />
-      </div>
-      <p v-else class="py-16 text-center text-ui text-subtle-foreground">Nothing here yet.</p>
+  <MarPage
+    title="Favorites"
+    :state
+    :empty="{
+      icon: Star,
+      title: 'Star things to keep them here',
+      text: 'Star a template, an app or an asset and it shows up here and in your sidebar, one click away.',
+      pics: FAN,
+      action: 'Browse Explore'
+    }"
+    error-title="Can't load your favorites"
+    error-text="Starred things in Comfy Cloud are out of reach. Starred templates on this computer still open."
+    @action="go('explore')"
+  >
+    <template #toolbar>
+      <MarSeg v-model="tab" :options="TABS" label="Favorites" />
     </template>
 
+    <div v-if="tab === 'templates' && templates.length" class="mar-fav-grid">
+      <TemplateCard v-for="t in templates" :key="t.id" :t />
+    </div>
+    <div v-else-if="tab === 'apps' && apps.length" class="mar-fav-grid">
+      <button
+        v-for="a in apps"
+        :key="a.id"
+        type="button"
+        class="mar-ex-card group"
+        @click="go(`app:${a.id}` as Page)"
+      >
+        <span class="mar-fav-media"
+          ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-fav-corner"
+            ><FavoriteStar :id="a.id" kind="app" /></span
+        ></span>
+        <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
+          <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
+          <span class="truncate text-ui text-subtle-foreground"
+            >{{ a.owner }} · {{ a.runs.toLocaleString('en-US') }} runs</span
+          >
+        </span>
+      </button>
+    </div>
+    <div v-else-if="tab === 'assets' && assets.length" class="mar-fav-grid">
+      <AssetTile v-for="a in assets" :key="a.id" :asset="a" @open="toast(`Open ${a.name}`)" />
+    </div>
     <MarEmpty
       v-else
+      compact
       :icon="Star"
-      title="Star things to keep them here"
-      text="Star a template, an app or an asset and it shows up here and in your sidebar, one click away."
-      :pics="FAN"
-      action="Browse Explore"
-      @action="go('explore')"
+      :title="`No starred ${tab} yet`"
+      text="Star one and it shows up here."
     />
-  </div>
+  </MarPage>
 </template>
 
 <style scoped>
-.mar-fav-tabs {
-  display: inline-flex;
-  gap: 2px;
-  margin: 8px 0 20px;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-.mar-fav-count {
-  margin-left: 6px;
-  color: var(--color-subtle-foreground);
-  font-variant-numeric: tabular-nums;
-}
 .mar-fav-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
