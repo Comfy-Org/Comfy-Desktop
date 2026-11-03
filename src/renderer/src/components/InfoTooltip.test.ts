@@ -55,6 +55,23 @@ describe('InfoTooltip', () => {
     wrapper.unmount()
   })
 
+  it('keeps its explanation open when the help icon is clicked', async () => {
+    const wrapper = mount(InfoTooltip, {
+      props: { text: 'tip', delayMs: 0 } as Record<string, unknown>,
+      attachTo: document.body
+    })
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    await wrapper.get('.tooltip-wrap').trigger('pointerdown')
+    await wrapper.get('.tooltip-wrap').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+    wrapper.unmount()
+  })
+
   it('renders the bubble with a resolved `data-side` attribute', async () => {
     const wrapper = mount(InfoTooltip, {
       props: { text: 'tip', side: 'bottom', delayMs: 0 } as Record<string, unknown>,

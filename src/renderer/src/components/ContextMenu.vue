@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuAction from '@comfyorg/design-system/menu/MenuAction'
 import type { MenuItemAction } from '@comfyorg/design-system/lib/menu/types'
@@ -37,6 +37,8 @@ const entries = computed(() =>
     } satisfies MenuItemAction
   }))
 )
+// The menu takes focus when it opens, and its hidden trigger can't take it back.
+let focusToRestore: HTMLElement | null = null
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
   event.stopPropagation()
@@ -44,11 +46,29 @@ function onKeydown(event: KeyboardEvent): void {
 }
 function onInteractOutside(event: Event): void {
   const target = (event as CustomEvent<{ originalEvent: Event }>).detail?.originalEvent.target
-  if (target instanceof Element && target.closest('.tooltip-bubble--interactive'))
+  if (target instanceof Element && target.closest('.tooltip-bubble--interactive')) {
     event.preventDefault()
+    return
+  }
+  focusToRestore = null
 }
 function onWindowBlur(): void {
-  if (props.open) emit('close')
+  if (!props.open) return
+  focusToRestore = null
+  emit('close')
+}
+watch(visible, (isVisible) => {
+  if (isVisible) {
+    focusToRestore = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }
+})
+function onCloseAutoFocus(event: Event): void {
+  event.preventDefault()
+  const element = focusToRestore
+  focusToRestore = null
+  setTimeout(() => {
+    if (document.activeElement === document.body) element?.focus({ preventScroll: true })
+  })
 }
 onMounted(() => window.addEventListener('blur', onWindowBlur))
 onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
@@ -64,7 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     class="context-menu z-[10000] min-w-[200px]"
     @keydown.capture="onKeydown"
     @interact-outside="onInteractOutside"
-    @close-auto-focus="(event: Event) => event.preventDefault()"
+    @close-auto-focus="onCloseAutoFocus"
   >
     <template #trigger><span hidden aria-hidden="true" /></template>
     <template v-for="(item, index) in entries" :key="item.id">
@@ -87,6 +107,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           @pointerdown.stop
           @pointerup.stop
           @click.stop
+          @keydown.enter.stop
+          @keydown.space.stop
         />
       </MenuAction>
     </template>

@@ -59,6 +59,23 @@ describe('BaseMenu', () => {
     }
   })
 
+  it('returns focus to the trigger on Escape, even after the window lost focus while closed', async () => {
+    const wrapper = mount(BaseMenu, {
+      props: { items: [{ id: 'a', label: 'A' }] },
+      slots: { default: 'Open' },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    window.dispatchEvent(new Event('blur'))
+    const trigger = wrapper.get('button')
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    list().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
   it('skips disabled items when moving with the keyboard', async () => {
     await openMenu({
       items: [

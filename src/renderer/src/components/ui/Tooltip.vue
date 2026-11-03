@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId, useSlots } from 'vue'
 import SharedTooltip from '@comfyorg/design-system/tooltip/Tooltip'
 import TooltipContent from '@comfyorg/design-system/tooltip/TooltipContent'
 import TooltipProvider from '@comfyorg/design-system/tooltip/TooltipProvider'
@@ -16,6 +16,10 @@ const props = withDefaults(
     delayMs?: number
     disabled?: boolean
     interactive?: boolean
+    /** Stays open when the trigger is clicked, for triggers that only explain something. */
+    keepOpenOnClick?: boolean
+    /** Asked each time the tooltip is about to open, for conditions only measurable then. */
+    shouldOpen?: () => boolean
   }>(),
   {
     text: undefined,
@@ -23,31 +27,33 @@ const props = withDefaults(
     align: 'center',
     delayMs: 100,
     disabled: false,
-    interactive: false
+    interactive: false,
+    keepOpenOnClick: false,
+    shouldOpen: undefined
   }
 )
 defineOptions({ inheritAttrs: false })
 const slots = useSlots()
 const open = ref(false)
+const labelId = useId()
 const unavailable = computed(() => props.disabled || (!props.text && !slots.content))
+function setOpen(next: boolean): void {
+  open.value = next && !unavailable.value && (props.shouldOpen?.() ?? true)
+}
 function onFocusOut(event: FocusEvent): void {
-  if (
+  setOpen(
     props.interactive &&
-    event.relatedTarget instanceof Element &&
-    event.relatedTarget.closest('.tooltip-bubble--interactive')
-  ) {
-    open.value = !unavailable.value
-    return
-  }
-  close()
+      event.relatedTarget instanceof Element &&
+      event.relatedTarget.closest('.tooltip-bubble--interactive') !== null
+  )
 }
 function close(): void {
   open.value = false
 }
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return
+  if (event.key !== 'Escape' || !open.value) return
   event.stopPropagation()
-  open.value = false
+  close()
 }
 onMounted(() => window.addEventListener('blur', close))
 onBeforeUnmount(() => window.removeEventListener('blur', close))
@@ -56,18 +62,21 @@ onBeforeUnmount(() => window.removeEventListener('blur', close))
 <template>
   <TooltipProvider :delay-duration="delayMs" :skip-delay-duration="0">
     <SharedTooltip
-      v-model:open="open"
+      :open="open"
       :disabled="unavailable"
       :delay-duration="delayMs"
       :ignore-non-keyboard-focus="false"
       :disable-hoverable-content="!interactive"
+      :disable-closing-trigger="keepOpenOnClick"
+      @update:open="setOpen"
     >
       <TooltipTrigger as-child>
         <span
           v-bind="$attrs"
           class="tooltip-wrap inline-flex"
-          @focusin="open = !unavailable"
+          @focusin="setOpen(true)"
           @focusout="onFocusOut"
+          @keydown="onKeydown"
         >
           <slot />
         </span>
@@ -81,11 +90,12 @@ onBeforeUnmount(() => window.removeEventListener('blur', close))
         :align="align"
         :role="interactive ? 'dialog' : undefined"
         :aria-label="interactive ? text : undefined"
+        :aria-labelledby="interactive && text ? labelId : undefined"
         :collision-padding="8"
         @keydown.capture="onKeydown"
         @focusout="onFocusOut"
-        @escape-key-down="(event) => event.stopPropagation()"
       >
+        <span v-if="interactive && text" :id="labelId" hidden>{{ text }}</span>
         <slot name="content">{{ text }}</slot>
       </TooltipContent>
     </SharedTooltip>

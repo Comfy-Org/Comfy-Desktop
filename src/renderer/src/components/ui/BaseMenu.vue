@@ -23,7 +23,7 @@ interface Props {
   heading?: string
   listClass?: string
 }
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   triggerAriaLabel: undefined,
   minWidth: undefined,
   heading: undefined,
@@ -34,20 +34,10 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ select: [id: string] }>()
 const open = ref(false)
 let suppressFocusReturn = false
-function openPanel(): void {
-  if (props.items.length) open.value = true
-}
-function closePanel(returnFocus = true): void {
-  suppressFocusReturn = !returnFocus
-  open.value = false
-}
-function toggle(): void {
-  if (open.value) closePanel()
-  else openPanel()
-}
 function onWindowBlur(): void {
   if (!open.value) return
-  closePanel(false)
+  suppressFocusReturn = true
+  open.value = false
 }
 function onCloseAutoFocus(event: Event): void {
   if (suppressFocusReturn) event.preventDefault()
@@ -60,7 +50,6 @@ function onKeydown(event: KeyboardEvent): void {
 }
 onMounted(() => window.addEventListener('blur', onWindowBlur))
 onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
-defineExpose({ open: openPanel, close: closePanel, toggle })
 </script>
 
 <template>
@@ -75,7 +64,6 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
     :style="minWidth ? { minWidth: `${minWidth}px` } : undefined"
     :aria-label="triggerAriaLabel"
     @keydown.capture="onKeydown"
-    @escape-key-down="(event: KeyboardEvent) => event.stopPropagation()"
     @close-auto-focus="onCloseAutoFocus"
   >
     <template #trigger>

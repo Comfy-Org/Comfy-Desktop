@@ -84,7 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
   >
     <SelectTrigger
       v-bind="$attrs"
-      class="ui-select-trigger"
+      class="ui-select-trigger data-[state=open]:hover:bg-secondary"
       :class="{ 'ui-select-trigger--compact': compact }"
       :size="compact ? 'md' : 'lg'"
       :aria-label="ariaLabel"
@@ -95,14 +95,14 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       }}</SelectValue>
     </SelectTrigger>
     <SelectContent
-      class="ui-select-listbox z-[9999] mt-0 max-h-[min(280px,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] bg-popover"
+      class="ui-select-listbox z-[9999] mt-0 max-h-[min(280px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] bg-popover [overflow-wrap:anywhere]"
       :class="{ 'ui-select-listbox--compact': compact }"
       :side-offset="2"
       :collision-padding="8"
       :aria-label="ariaLabel"
       :body-lock="false"
+      :disable-outside-pointer-events="false"
       @keydown.capture="onKeydown"
-      @escape-key-down="(event) => event.stopPropagation()"
       @close-auto-focus="onCloseAutoFocus"
     >
       <SelectItem

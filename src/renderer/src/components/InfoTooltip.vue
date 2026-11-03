@@ -31,6 +31,7 @@ function openLink(): void {
     :side="props.side"
     :delay-ms="props.delayMs"
     :interactive="!!props.linkUrl"
+    keep-open-on-click
   >
     <span
       class="info-tooltip-trigger group/info-tooltip ml-1 inline-flex cursor-help items-center align-middle"

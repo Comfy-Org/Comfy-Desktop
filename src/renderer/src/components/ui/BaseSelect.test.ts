@@ -74,6 +74,13 @@ describe('BaseSelect shared adapter', () => {
     expect(document.querySelector('.ui-select-listbox')).toBeNull()
   })
 
+  it('leaves the rest of the page clickable while open', async () => {
+    const wrapper = mountSelect()
+    await open(wrapper)
+    expect(document.querySelector('.ui-select-listbox')).not.toBeNull()
+    expect(document.body.style.pointerEvents).not.toBe('none')
+  })
+
   it('contains Escape so it does not also close the host popup', async () => {
     const wrapper = mountSelect()
     await open(wrapper)

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useEventListener } from '@vueuse/core'
 import { FlaskConical, LoaderCircle } from 'lucide-vue-next'
 import BaseMenu, { type BaseMenuItem } from '../../components/ui/BaseMenu.vue'
 import { BETA_FEATURES_FIELD_ID } from '../../comfyTitleBar/useBetaActivationNotice'
@@ -28,7 +27,6 @@ const OPT_IN_KEYS = new Set(['betaFeaturesEnabled', 'telemetryEnabled'])
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
-const menu = useTemplateRef<InstanceType<typeof BaseMenu>>('menu')
 
 const data = ref<CoreBetaArgs | null>(null)
 const loading = ref(false)
@@ -75,8 +73,6 @@ const offSettings = window.api.onSettingsChanged?.(({ key }) => {
   if (OPT_IN_KEYS.has(key)) void refresh()
 })
 onBeforeUnmount(() => offSettings?.())
-// A click in another WebContents never reaches this document's pointer listener.
-useEventListener(window, 'blur', () => menu.value?.close(false))
 
 const args = computed(() => data.value?.args ?? [])
 const next = computed(() => data.value?.timing === 'next-launch')
@@ -113,10 +109,9 @@ function onSelect(id: string): void {
     :class="pillTriggerClass"
   >
     <BaseMenu
-      ref="menu"
       :items="items"
       align="end"
-      list-class="beta-args-menu w-[300px] [&_.ui-menu-item[aria-disabled=true]]:items-baseline [&_.ui-menu-item[aria-disabled=true]]:text-text [&_.ui-menu-item[aria-disabled=true]]:text-[12px] [&_.ui-menu-item[aria-disabled=true]]:cursor-default [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:flex-none [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:[font-family:ui-monospace,SFMono-Regular,Menlo,monospace] [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:font-semibold"
+      list-class="beta-args-menu w-[300px] [&_.ui-menu-item[aria-disabled=true]]:opacity-100 [&_.ui-menu-item[aria-disabled=true]]:items-baseline [&_.ui-menu-item[aria-disabled=true]]:text-text [&_.ui-menu-item[aria-disabled=true]]:text-[12px] [&_.ui-menu-item[aria-disabled=true]]:cursor-default [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:flex-none [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:[font-family:ui-monospace,SFMono-Regular,Menlo,monospace] [&_.ui-menu-item[aria-disabled=true]_.ui-menu-item-label]:font-semibold"
       :heading="t(next ? 'comfyUISettings.betaArgsHeadingNext' : 'comfyUISettings.betaArgsHeading')"
       :trigger-aria-label="
         t(
