@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { useId } from 'vue'
 import BaseModal from './BaseModal.vue'
 import Button from '@comfyorg/design-system/button/Button'
 
@@ -40,9 +40,7 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const TITLE_ID = 'base-action-sheet-title'
-
-const firstItemRef = ref<HTMLButtonElement | null>(null)
+const TITLE_ID = `base-action-sheet-title-${useId()}`
 
 function cancel(): void {
   emit('update:open', false)
@@ -53,16 +51,6 @@ function onItemClick(value: string): void {
   emit('update:open', false)
   emit('select', value)
 }
-
-watch(
-  () => props.open,
-  (isOpen, wasOpen) => {
-    if (isOpen && !wasOpen) {
-      void nextTick(() => firstItemRef.value?.focus())
-    }
-  },
-  { immediate: true }
-)
 </script>
 
 <template>
@@ -91,40 +79,26 @@ watch(
       </div>
       <div class="base-action-sheet-list flex flex-col gap-1.5">
         <Button
-          v-for="(item, idx) in items"
+          v-for="item in items"
           :key="item.value"
-          as-child
-          variant="textonly"
-          size="unset"
-          class="base-action-sheet-item flex w-full flex-col items-start gap-0.5 rounded-lg border border-solid bg-neutral-100/4 px-3 py-2.5 text-left whitespace-normal font-sans text-sm leading-[1.5] font-normal text-neutral-100 [appearance:button] transition-[border-color,background] duration-[120ms] ease-[ease] focus-visible:ring-0 focus-visible:outline-none"
-          :class="
-            item.tone === 'danger'
-              ? 'base-action-sheet-item--danger border-danger/35 hover:border-danger hover:bg-danger/12 focus-visible:border-danger focus-visible:bg-danger/12'
-              : 'border-neutral-100/10 hover:border-[var(--accent)] hover:bg-[color-mix(in_oklab,var(--accent)_10%,transparent)] focus-visible:border-[var(--accent)] focus-visible:bg-[color-mix(in_oklab,var(--accent)_10%,transparent)]'
-          "
+          :variant="item.tone === 'danger' ? 'destructive-textonly' : 'secondary'"
+          size="lg"
+          class="base-action-sheet-item h-auto w-full flex-col items-start gap-0.5 py-2.5 text-left whitespace-normal"
+          :data-testid="`base-action-sheet-item-${item.value}`"
+          :class="{ 'base-action-sheet-item--danger': item.tone === 'danger' }"
+          @click="onItemClick(item.value)"
         >
-          <button
-            :ref="
-              (el) => {
-                if (idx === 0) firstItemRef = el as HTMLButtonElement
-              }
-            "
-            type="button"
-            :data-testid="`base-action-sheet-item-${item.value}`"
-            @click="onItemClick(item.value)"
+          <span
+            class="base-action-sheet-item-label font-medium"
+            :class="item.tone === 'danger' ? 'text-danger' : 'text-neutral-100'"
+            >{{ item.label }}</span
           >
-            <span
-              class="base-action-sheet-item-label font-medium"
-              :class="item.tone === 'danger' ? 'text-danger' : 'text-neutral-100'"
-              >{{ item.label }}</span
-            >
-            <span
-              v-if="item.description"
-              class="base-action-sheet-item-desc text-xs leading-[1.5] text-text-muted"
-            >
-              {{ item.description }}
-            </span>
-          </button>
+          <span
+            v-if="item.description"
+            class="base-action-sheet-item-desc text-xs leading-[1.5] text-muted-foreground"
+          >
+            {{ item.description }}
+          </span>
         </Button>
       </div>
     </div>
@@ -133,8 +107,7 @@ watch(
       <Button
         type="button"
         variant="secondary"
-        size="unset"
-        class="rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal text-text [appearance:button] transition-none hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
+        size="lg"
         :data-testid="testIdCancel ?? 'base-action-sheet-cancel'"
         @click="cancel"
       >

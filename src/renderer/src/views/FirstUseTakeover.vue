@@ -907,7 +907,11 @@ defineExpose({ open, resetContinue })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isBrandStep" :vignette="step === 'start'">
+  <BrandTakeoverLayout
+    v-if="isBrandStep"
+    :vignette="step === 'start'"
+    :aria-label="$t(step === 'localBranch' ? 'firstUse.localBranchTitle' : 'firstUse.pickTitle')"
+  >
     <!-- Step 1: Merged start screen. Wordmark on top, Cloud-vs-Local
          radio cards in the middle, Express-Install opt-out modifier,
          then the legal/telemetry checkboxes and the Continue / Cancel

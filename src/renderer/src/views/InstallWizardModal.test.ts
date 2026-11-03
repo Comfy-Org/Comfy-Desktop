@@ -72,6 +72,7 @@ describe('InstallWizardModal heading', () => {
     await flushPromises()
 
     expect(wrapper.get('.wizard-title').text()).toBe('Create a New Instance')
+    expect(wrapper.find('[aria-label="Create a New Instance"]').exists()).toBe(true)
     expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
   })
 

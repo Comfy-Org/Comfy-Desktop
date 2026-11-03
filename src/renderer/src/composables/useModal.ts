@@ -178,6 +178,12 @@ export function useModal() {
     })
   }
 
+  function setCheckboxValue(id: string, checked: boolean): void {
+    if (!state.visible || state.type !== 'confirm') return
+    const checkbox = state.checkboxes.find((item) => item.id === id)
+    if (checkbox) checkbox.checked = checked
+  }
+
   function updateConfirm(opts: {
     loading?: boolean
     message?: string
@@ -267,6 +273,7 @@ export function useModal() {
     alert,
     confirm,
     updateConfirm,
+    setCheckboxValue,
     confirmWithOptions,
     prompt,
     select,

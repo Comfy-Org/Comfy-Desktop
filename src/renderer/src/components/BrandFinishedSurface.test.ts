@@ -167,6 +167,11 @@ describe('BrandFinishedSurface', () => {
     })
   })
 
+  it('uses the visible result title as the default accessible name', () => {
+    const wrapper = mountSurface({ title: 'ComfyUI stopped' })
+    expect(wrapper.findComponent(brandTakeoverStub).props('ariaLabel')).toBe('ComfyUI stopped')
+  })
+
   it('forwards ariaLabel to the BrandTakeoverLayout chrome', () => {
     const wrapper = mountSurface({ title: 'Crashed', ariaLabel: 'ComfyUI crashed' })
     const layout = wrapper.findComponent({ name: 'BrandTakeoverLayout' })

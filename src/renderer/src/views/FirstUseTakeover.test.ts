@@ -129,6 +129,13 @@ function mountTakeover() {
 }
 
 describe('FirstUseTakeover start step', () => {
+  it('names the takeover after the visible step heading', () => {
+    const wrapper = mountTakeover()
+    expect(wrapper.get('[data-testid="stub-brand-layout"]').attributes('aria-label')).toBe(
+      wrapper.get('.first-use-title').text()
+    )
+  })
+
   it('Continue triggers a nudge shake on the ToS row when terms are not accepted', async () => {
     const wrapper = mountTakeover()
     const tosRow = wrapper.find('[data-testid="first-use-consent-tos"]')
@@ -246,6 +253,9 @@ describe('FirstUseTakeover start step', () => {
     // to make the migrate-vs-fresh decision manually.
     expect(wrapper.emitted('chain-local')).toBeFalsy()
     expect(wrapper.find('[data-testid="first-use-local-migrate"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stub-brand-layout"]').attributes('aria-label')).toBe(
+      wrapper.get('.first-use-title').text()
+    )
   })
 
   it('renders the "Migrate existing install" checkbox only when hasLegacyDesktop is true', async () => {
