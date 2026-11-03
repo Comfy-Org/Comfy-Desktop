@@ -22,9 +22,23 @@ export function mock(slot: string): string {
   return url ?? ''
 }
 
+/**
+ * Template thumbnails, bundled from Comfy-Org/workflow_templates so the
+ * proposal shows them offline (the published preview blocks remote images).
+ * Missing ids fall back to the remote URL.
+ */
+const templateFiles = import.meta.glob<string>('../templates/*.webp', {
+  eager: true,
+  import: 'default'
+})
+const TEMPLATE_THUMBS: Record<string, string> = Object.fromEntries(
+  Object.entries(templateFiles).map(([path, url]) => [path.replace(/^.*\/|\.webp$/g, ''), url])
+)
+
 thumbSource.pick = (id) => {
-  const slot = id.split('~')[1]
-  return slot && isMariana.value ? MOCK[slot] : undefined
+  if (!isMariana.value) return undefined
+  const [template, slot] = id.split('~')
+  return (slot && MOCK[slot]) || TEMPLATE_THUMBS[template!]
 }
 
 /** Project covers, in PROJECTS order (sidebar and Projects page). */
