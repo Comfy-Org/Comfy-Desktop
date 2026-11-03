@@ -78,7 +78,7 @@ pnpm run test
 ```
 
 Typecheck and lint are enforced by a husky pre-commit hook. Flaky tests are not
-acceptable — fix them when discovered (see [`AGENTS.md`](AGENTS.md)).
+acceptable — fix them when discovered.
 
 ## CI mapping
 

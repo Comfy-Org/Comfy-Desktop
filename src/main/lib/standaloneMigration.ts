@@ -214,7 +214,7 @@ export async function restoreSnapshotIntoInstallation(
     // Validate the envelope as a restore *target* only — do NOT commit it to
     // history yet. A snapshot in history must record a state the install has
     // actually been in, so the envelope is committed via `importSnapshots` only
-    // after the restore below succeeds (see snapshots/AGENTS.md).
+    // after the restore below succeeds.
     const fileContent = await fs.promises.readFile(stagedFile, 'utf-8')
     const importEnvelope = validateExportEnvelope(JSON.parse(fileContent))
     const targetSnapshot = importEnvelope.snapshots[0]!
