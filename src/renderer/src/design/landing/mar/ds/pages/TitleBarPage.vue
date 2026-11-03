@@ -4,6 +4,15 @@ import Cell from '../kit/Cell.vue'
 import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 import Stage from '../kit/Stage.vue'
+import ShotsPage, { type Shot } from './ShotsPage.vue'
+
+const CLOUD: Shot[] = [
+  {
+    label: 'Comfy Cloud · no build switcher',
+    seed: { 'comfy.design.mar.surface': 'cloud' },
+    crop: [0, 0, 1280, 120]
+  }
+]
 </script>
 
 <template>
@@ -30,4 +39,9 @@ import Stage from '../kit/Stage.vue'
   <Section title="Build switch" note="Opens from Open a build.">
     <Cells :min="560"><Stage id="build-switch" label="open" /></Cells>
   </Section>
+  <ShotsPage
+    title="On Comfy Cloud"
+    note="There is no build to switch to on Comfy Cloud, so the title bar shows no switcher."
+    :shots="CLOUD"
+  />
 </template>

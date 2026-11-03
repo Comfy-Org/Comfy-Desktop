@@ -194,7 +194,7 @@ export const PAGES: DsPage[] = [
     label: 'User',
     group: 'Patterns',
     title: 'First-time and Returning',
-    source: 'mar/userStates/ (userState.ts, ExampleFan.vue, MarSpacesEmpty.vue)',
+    source: 'mar/userStates/ (userState.ts, ExampleArc.vue, MarSpacesEmpty.vue)',
     use: 'Check every page for someone who has made nothing yet.',
     component: lazy(() => import('./pages/UserPage.vue'))
   },
@@ -205,7 +205,7 @@ export const PAGES: DsPage[] = [
     title: 'Title bar',
     source:
       'parts/DesktopTitleBar.vue, parts/nav/TitleBarBreadcrumb.vue, parts/nav/SwitcherMenu.vue',
-    use: 'The browser stand-in for the app bar; the breadcrumb is where you switch builds.',
+    use: 'The browser stand-in for the app bar; the breadcrumb is where you switch builds (not on Comfy Cloud).',
     component: lazy(() => import('./pages/TitleBarPage.vue'))
   },
   {
@@ -214,7 +214,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Sidebar',
     source:
-      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
+      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarSignIn.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
     use: 'Navigation between lenses, pages, projects and spaces; credits and the workspace at the foot.',
     component: lazy(() => import('./pages/SidebarPage.vue'))
   },
@@ -224,7 +224,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Global search',
     source: 'mar/search/MarSearch.vue (search.ts), parts/env/ModeNav.vue (the sidebar row)',
-    use: "Find anything or run a quick action: ⌘K anywhere, or the sidebar's first row.",
+    use: "Find anything or run a quick action: ⌘K anywhere, or the first row of Create's sidebar.",
     component: lazy(() => import('./pages/SearchPage.vue'))
   },
   {
@@ -390,7 +390,7 @@ export const PAGES: DsPage[] = [
     group: 'Patterns',
     title: 'Page header',
     source:
-      'mar/pages/MarProjectPage.vue, mar/pages/MarSpacePage.vue, mar/pages/MarEntityHeader.vue, mar/pages/MarAddress.vue, mar/pages/MarSplitButton.vue',
+      'mar/pages/MarProjectPage.vue, mar/pages/MarSpacePage.vue, mar/pages/MarSpaceSetup.vue, mar/pages/MarEntityHeader.vue, mar/pages/MarAddress.vue, mar/pages/MarSplitButton.vue',
     use: 'One project or one space: what it holds, its latest output and activity.',
     component: lazy(() => import('./pages/ProjectSpacePage.vue'))
   },
@@ -408,7 +408,7 @@ export const PAGES: DsPage[] = [
     label: 'Build and deploy',
     group: 'Patterns',
     title: 'Build and deploy',
-    source: 'mar/build/ (MarBuildStart.vue, MarModelsPage.vue), mar/deploy/MarDeployModal.vue',
+    source: 'mar/build/ (MarBuildStart.vue, MarModelsPage.vue, ModelTile.vue), mar/deploy/MarDeployModal.vue',
     use: 'The Build lens: a first call, the models, and shipping a build as an API.',
     component: lazy(() => import('./pages/BuildPage.vue'))
   },

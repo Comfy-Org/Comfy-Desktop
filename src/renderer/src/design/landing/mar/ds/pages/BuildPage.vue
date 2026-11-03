@@ -13,12 +13,12 @@ const DEPLOY: Shot[] = [{ label: 'Deploy as API · configure', page: 'overview',
 <template>
   <ShotsPage
     title="Build › Get started"
-    note="From nothing to a first call: pick a model, try it, copy the code."
+    note="On the shared page frame, no subtitle: the first call as steps beside their code; Comfy Router, Comfy API and Comfy Cloud on the shared tabs; usage and resources below."
     :shots="START"
   />
   <ShotsPage
     title="Models"
-    note="Build › Models, mocked end to end; Partner API links to Provider keys."
+    note="Provider marks on neutral tiles (community files keep the type glyph). In Select mode the check replaces the tile. A steady filter rail that scrolls on its own."
     :shots="MODELS"
   />
   <ShotsPage

@@ -103,16 +103,21 @@ const url = `${location.origin}${location.pathname}`
           <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
           <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from
           UI Playground › Corners (Soft 10 / 7 by default, Default 6 / 3). No fully rounded controls
-          in filter bars; buttons keep --radius-control.
+          in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
+          icon-only circular buttons are round.
         </li>
         <li>
           Row cards (Home's builds, Where should Comfy run): one card, 72 tall, 16px corners, a 40px
           icon tile. Build cards on the Builds page: outputs, then specs on an 8px rhythm.
         </li>
         <li>
-          <strong>State chips sit top-left</strong> on a card and move right when the select check
-          shows. In a list the check sits over the thumbnail. With no picture yet, a card shows the
-          canvas's dot grid.
+          <strong>Top-left is the select check's</strong>, always: the star and ⋯ sit top-right, a
+          state chip bottom-left, and Shared is a people icon on the meta line. In a list the check
+          sits over the thumbnail. With no picture yet, a card shows the canvas's dot grid.
+        </li>
+        <li>
+          <strong>The New tile is shaped like a card</strong>: same picture ratio, a dashed slot with
+          + and the label.
         </li>
         <li>Progress for an item in flight is the bottom edge of its cover.</li>
       </ul>
@@ -120,8 +125,21 @@ const url = `${location.origin}${location.pathname}`
       <h3>Layout</h3>
       <ul>
         <li>
-          A page's toolbar: tabs on the left, with an indicator that slides to the pick (counts
-          hidden); filters, Sort (an icon), search and view on the right.
+          <strong>No page subtitles</strong>: the title and the tabs sit in the same place on every
+          page, Build's included.
+        </li>
+        <li>
+          <strong>One tab style</strong>: a soft track with a pill that slides to the pick, on every
+          tab group (counts hidden). A page's toolbar: tabs on the left; filters, Sort (an icon),
+          search and view on the right.
+        </li>
+        <li>
+          <strong>One table for every list view</strong> (<code>mar/table/table.css</code>):
+          Builds, Workflows, Apps, Assets, Projects, Spaces, Models, Deployments, Logs, API keys.
+        </li>
+        <li>
+          <strong>Build reuses Create's pages</strong>: the same page frame, headers, section heads,
+          tabs and table.
         </li>
         <li>
           <strong>Page header</strong> (project, space): cover, title, state and one meta line on
@@ -148,10 +166,17 @@ const url = `${location.origin}${location.pathname}`
           Each group has a single way to add.
         </li>
         <li>
-          <strong>Global search</strong> opens with <code>⌘K</code> anywhere and from the sidebar's
-          first row. (Notion still says “no global search for now”.)
+          <strong>Global search</strong> is one command palette surface. It opens with
+          <code>⌘K</code> anywhere and from the sidebar's first row in Create; Build's sidebar has no
+          Search.
         </li>
         <li>The graph editor goes back Home from the Comfy logo heading its rail.</li>
+        <li>On Comfy Cloud the title bar has no build switcher.</li>
+        <li>
+          Signed out, the sidebar's Log in card leads with a strip of graded outputs; the button is
+          the standard primary.
+        </li>
+        <li>Pages open with Fade and rise (UI Playground › Page transition).</li>
       </ul>
 
       <h3>Fidelity to the product</h3>
@@ -167,6 +192,23 @@ const url = `${location.origin}${location.pathname}`
         </li>
         <li>Graph nodes follow ComfyUI's Vue node anatomy.</li>
         <li>Credits flyout: Alex's 13 states, as designed (the Row; no style picker).</li>
+      </ul>
+
+      <h3>First run</h3>
+      <ul>
+        <li>
+          Examples default to the Arc look, with a full-width Run. No Guided or Agent first-run
+          Home.
+        </li>
+        <li>An empty Space shows the steps that get it ready, not a dashboard of zeros.</li>
+      </ul>
+
+      <h3>Imagery</h3>
+      <ul>
+        <li>
+          Pictures we make go through the Latent grade. Home backgrounds: Canvas, Wires, Latent
+          (Brand imagery).
+        </li>
       </ul>
 
       <h3>Themes</h3>

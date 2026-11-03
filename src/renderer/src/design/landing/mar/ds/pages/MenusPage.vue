@@ -27,7 +27,7 @@ import Stage from '../kit/Stage.vue'
   </Section>
   <Section
     title="Run on and build switch"
-    note="The prompt's build picker, grouped by where it runs (this computer, Cloud), each build with its state, GPU and what picking it costs; the current one raised. Then the title bar's switcher."
+    note="The prompt's build picker, grouped by where it runs (this computer, Cloud), each build with its state, GPU and what picking it costs; the current one raised. Then the title bar's switcher (none on Comfy Cloud)."
   >
     <Cells :min="520">
       <Stage id="run-on-menu" label="Run on" />

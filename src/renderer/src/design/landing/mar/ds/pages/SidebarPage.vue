@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { Code, Palette } from 'lucide-vue-next'
 import { AgentChat } from '../../icons/agentChat'
 import MarFavoritesGroup from '../../shell/MarFavoritesGroup.vue'
+import MarSignIn from '../../shell/MarSignIn.vue'
 import MarModeSwitch from '../../modes/MarModeSwitch.vue'
 import MarGroupTitle from '../../shell/MarGroupTitle.vue'
 import ModeNav from '../../../parts/env/ModeNav.vue'
@@ -170,6 +171,16 @@ const agent = ref('agent')
       >
         <WorkspaceMenu />
       </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Log in card"
+    note="Signed out, at the foot: a strip of three outputs in the Latent grade with the Comfy mark (it drifts on hover), one line, the standard primary Button. On the collapsed Floating panels rail it is one Log in icon."
+  >
+    <Cells :min="240">
+      <Cell label="idle" on="sidebar" fill><MarSignIn /></Cell>
+      <Cell label="hover" on="sidebar" fill force="hover" target=".mar-signin"><MarSignIn /></Cell>
     </Cells>
   </Section>
 </template>

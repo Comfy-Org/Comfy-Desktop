@@ -6,6 +6,7 @@ const PAGES: Shot[] = [
   { label: 'Project', page: 'project:first' },
   { label: 'Space', page: 'space:northwind' }
 ]
+const SETUP: Shot[] = [{ label: 'Space · nothing run, nobody in it', page: 'space:kite' }]
 const HEADERS: Shot[] = PAGES.map((s) => ({ ...s, label: `${s.label} · header`, crop: HEADER }))
 </script>
 
@@ -16,4 +17,9 @@ const HEADERS: Shot[] = PAGES.map((s) => ({ ...s, label: `${s.label} · header`,
     :shots="PAGES"
   />
   <ShotsPage title="The shared header" :shots="HEADERS" />
+  <ShotsPage
+    title="An empty Space"
+    note="With no runs and no members, a Space's Overview is the steps that get it ready instead of a dashboard of zeros."
+    :shots="SETUP"
+  />
 </template>

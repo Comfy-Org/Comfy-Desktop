@@ -29,7 +29,7 @@ const SHOTS: Shot[] = [
 <template>
   <Section
     title="Sidebar row"
-    note="Search heads the nav in both lenses, with its shortcut. It opens the palette, like ⌘K anywhere."
+    note="Search heads Create's nav, with its shortcut; Build's sidebar has none. It opens the palette, like ⌘K anywhere."
   >
     <Cells :min="240">
       <Cell label="idle" on="sidebar" fill><ModeNav mode="create" /></Cell>

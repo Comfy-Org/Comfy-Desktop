@@ -15,7 +15,7 @@ const SHOTS = [
 <template>
   <ShotsPage
     title="User"
-    note="UI Playground › User and Local install: a first-time user has made, run and starred nothing yet; Home and every library follow."
+    note="UI Playground › User and Local install: a first-time user has made, run and starred nothing yet; Home and every library follow. First-time examples use the Arc look with a full-width Run."
     :shots="SHOTS"
   />
 </template>

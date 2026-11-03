@@ -120,7 +120,7 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 
   <Section
     title="Filters and sort"
-    note="Pills: muted label, white value, no edge; a step lighter on hover and while open. Sort shows as an icon (ArrowUpDown)."
+    note="Controls on the tab corner, never fully round: muted label, white value, no edge; a step lighter on hover and while open. Sort shows as an icon (ArrowUpDown)."
   >
     <Cells :min="200">
       <Cell label="filter"><Select v-model="type" :options="TYPES" class="w-32" /></Cell>
