@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
-import Input from '@comfyorg/design-system/input/Input'
+import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
+import InputGroupAddon from '@comfyorg/design-system/input-group/InputGroupAddon'
+import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 
 interface Props {
   modelValue: string
@@ -41,9 +43,6 @@ const slots = useSlots()
 const hasLeading = computed(() => !!slots.leading)
 const hasTrailing = computed(() => !!slots.trailing)
 
-const slotButtonClass =
-  '[&_button]:inline-flex [&_button]:size-7 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-md [&_button]:border-none [&_button]:bg-transparent [&_button]:p-0 [&_button]:text-[14px] [&_button]:text-text-muted [&_button]:cursor-pointer [&_button]:transition-[color,background-color] [&_button]:duration-[150ms] [&_button]:ease-[ease] [&_button:hover]:bg-border-hover [&_button:hover]:text-text [&_button:focus-visible]:text-text [&_button:focus-visible]:outline-2 [&_button:focus-visible]:[outline-style:solid] [&_button:focus-visible]:outline-[var(--accent-primary)] [&_button:focus-visible]:outline-offset-[-2px]'
-
 function onInput(event: Event): void {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
 }
@@ -54,36 +53,20 @@ function onChange(event: Event): void {
 </script>
 
 <template>
-  <div
-    class="ui-input relative flex w-full items-center gap-2 rounded-lg border border-solid bg-neutral-800 transition-[border-color] duration-[150ms] ease-[ease]"
-    :class="
-      invalid
-        ? 'border-danger'
-        : 'border-[var(--chooser-surface-border)] focus-within:border-[var(--accent-primary)]'
-    "
+  <InputGroup
+    class="ui-input"
     :data-mono="mono ? '' : undefined"
     :data-readonly="readonly ? '' : undefined"
     :data-invalid="invalid ? '' : undefined"
     :data-leading="hasLeading ? '' : undefined"
     :data-trailing="hasTrailing ? '' : undefined"
   >
-    <span
-      v-if="hasLeading"
-      class="ui-input-leading inline-flex shrink-0 items-center pl-2 text-text-muted"
-      :class="slotButtonClass"
-    >
+    <InputGroupAddon v-if="hasLeading" class="ui-input-leading" align="inline-start">
       <slot name="leading" />
-    </span>
-    <Input
-      class="ui-input-control block h-auto min-w-0 flex-1 appearance-auto border-none bg-transparent pt-0 pb-1.5 font-sans text-[14px] outline-none placeholder:text-neutral-100 placeholder:opacity-[0.67] focus-visible:ring-0 aria-invalid:ring-0"
-      :class="[
-        type === 'text' || type === 'number'
-          ? 'mt-1.5 w-full rounded-md'
-          : 'mt-0 w-auto rounded-none',
-        hasLeading ? 'pl-1' : 'pl-2.5',
-        hasTrailing ? 'pr-1' : 'pr-2.5',
-        readonly ? 'cursor-default text-text-muted' : 'text-neutral-100'
-      ]"
+    </InputGroupAddon>
+    <InputGroupInput
+      class="ui-input-control"
+      :class="{ 'font-mono': mono, 'cursor-default text-muted-foreground': readonly }"
       :type="type"
       :model-value="modelValue"
       :placeholder="placeholder"
@@ -97,12 +80,8 @@ function onChange(event: Event): void {
       @input="onInput"
       @change="onChange"
     />
-    <span
-      v-if="hasTrailing"
-      class="ui-input-trailing inline-flex shrink-0 items-center pr-1.5 text-text-muted"
-      :class="slotButtonClass"
-    >
+    <InputGroupAddon v-if="hasTrailing" class="ui-input-trailing" align="inline-end">
       <slot name="trailing" />
-    </span>
-  </div>
+    </InputGroupAddon>
+  </InputGroup>
 </template>

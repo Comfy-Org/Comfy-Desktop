@@ -6,6 +6,7 @@ import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSv
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
+import { setChecked } from './testHelpers'
 
 const createResultsPngMock = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
@@ -253,11 +254,11 @@ describe('BenchmarksView', () => {
       true
     )
     expect(wrapper.find('[data-testid="benchmark-comparison-13-customScore"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="benchmark-column-customScore"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-column-customScore"]'), true)
     expect(wrapper.get('.benchmarks__table thead').text()).toContain('Custom Score')
     expect(wrapper.get('[data-testid="benchmark-row-13"]').text()).toContain('13')
     expect(wrapper.find('[data-testid="benchmark-comparison-13-customScore"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="benchmark-comparison-column-customScore"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-comparison-column-customScore"]'), true)
     expect(wrapper.get('[data-testid="benchmark-comparison-13-customScore"]').text()).toBe(
       'Custom Score: 13'
     )
@@ -288,7 +289,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').text()).toContain('landscape.json')
 
-    await wrapper.get('[data-testid="benchmark-row-10"] input[type="checkbox"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toContain(
       '--series-color: #ff8a65'
     )
@@ -301,12 +302,12 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__comparison').attributes('style')).toContain('display: none')
     await comparisonToggle.trigger('click')
 
-    await wrapper.get('[data-testid="benchmark-row-10"] input[type="checkbox"]').setValue(false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), false)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toBeUndefined()
     await wrapper.get('input[type="text"]').setValue('')
-    await wrapper.get('[data-testid="benchmark-row-13"] input[type="checkbox"]').setValue(false)
-    await wrapper.get('[data-testid="benchmark-row-12"] input[type="checkbox"]').setValue(false)
-    await wrapper.get('[data-testid="benchmark-row-11"] input[type="checkbox"]').setValue(false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-13"] [role="checkbox"]'), false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-12"] [role="checkbox"]'), false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-11"] [role="checkbox"]'), false)
     expect(wrapper.get('.benchmarks__comparison').text()).toContain(
       'Select runs from the library to compare them.'
     )
@@ -393,7 +394,7 @@ describe('BenchmarksView', () => {
     for (const picker of pickers) {
       const details = picker.element as HTMLDetailsElement
       details.open = true
-      await picker.get('input').trigger('pointerdown')
+      await picker.get('[role="switch"]').trigger('pointerdown')
       expect(details.open).toBe(true)
 
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))

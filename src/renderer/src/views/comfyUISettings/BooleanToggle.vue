@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Button from '@comfyorg/design-system/button/Button'
+import Switch from '@comfyorg/design-system/switch/Switch'
 import type { DetailField } from '../../types/ipc'
 
 /**
@@ -43,47 +43,25 @@ const blockedReason = computed(() =>
 // same element, so each one would announce the first one's reason.
 const descriptionId = useId()
 
-function handleClick(): void {
+function handleUpdate(next: boolean): void {
   if (blocked.value) return
-  const next = !visualOn.value
   visualOn.value = next
   emit('update', next)
 }
 </script>
 
 <template>
-  <Button
-    type="button"
-    role="switch"
-    variant="textonly"
-    size="unset"
-    class="bt-switch inline-flex shrink-0 items-center rounded-lg border-none bg-transparent p-0 hover:bg-transparent appearance-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-[0.45] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
-    :data-state="visualOn ? 'checked' : 'unchecked'"
-    :aria-checked="visualOn"
+  <Switch
+    class="bt-switch aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+    :model-value="visualOn"
+    :readonly="blocked"
     :aria-label="field.label"
     :aria-disabled="blocked"
     :aria-describedby="blocked && blockedReason ? descriptionId : undefined"
     :title="blockedReason"
-    @click="handleClick"
-  >
-    <span
-      class="bt-track relative inline-block h-5 w-9 rounded-[999px] transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0"
-      :class="visualOn ? 'bg-[var(--accent-primary)]' : 'bg-[oklch(1_0_0/0.14)]'"
-      :aria-hidden="true"
-    >
-      <span
-        class="bt-thumb absolute top-0.5 left-0.5 size-4 rounded-full transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:duration-0"
-        :class="
-          visualOn
-            ? '[transform:translateX(16px)] bg-background shadow-none'
-            : '[transform:translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
-        "
-      ></span>
-    </span>
-    <!-- `title` is mouse-only, so the reason is repeated here for the accessibility tree.
-         `aria-label` above owns the accessible NAME, so this text cannot leak into it. -->
-    <span v-if="blocked && blockedReason" :id="descriptionId" class="bt-blocked-reason sr-only">
-      {{ blockedReason }}
-    </span>
-  </Button>
+    @update:model-value="handleUpdate"
+  />
+  <span v-if="blocked && blockedReason" :id="descriptionId" class="bt-blocked-reason sr-only">
+    {{ blockedReason }}
+  </span>
 </template>

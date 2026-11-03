@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
 import Button from '@comfyorg/design-system/button/Button'
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
 import PathDiskInfo from './PathDiskInfo.vue'
@@ -28,11 +29,11 @@ defineEmits<{
 <template>
   <div class="install-name-field mt-4 flex flex-col">
     <label class="text-[14px] text-text-muted" for="inst-name">{{ $t('common.name') }}</label>
-    <input
+    <Input
       id="inst-name"
-      :value="name"
+      :model-value="name"
       type="text"
-      class="mt-1.5 w-full rounded-md border border-solid border-[var(--border)] bg-surface px-2.5 py-2 text-[14px] text-text outline-none focus:border-[var(--accent)]"
+      class="mt-1.5"
       :placeholder="$t('common.namePlaceholder')"
       @input="$emit('update:name', ($event.target as HTMLInputElement).value)"
     />

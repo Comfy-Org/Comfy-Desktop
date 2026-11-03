@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Switch from '@comfyorg/design-system/switch/Switch'
 import { Check } from 'lucide-vue-next'
 import type { SnapshotDetailData } from '../types/ipc'
 
@@ -23,9 +24,8 @@ const emit = defineEmits<{
   'toggle-checkbox': [id: string, checked: boolean]
 }>()
 
-function onCheckboxToggle(id: string, event: Event): void {
-  const target = event.target as HTMLInputElement
-  emit('toggle-checkbox', id, target.checked)
+function onCheckboxToggle(id: string, checked: boolean): void {
+  emit('toggle-checkbox', id, checked)
 }
 </script>
 
@@ -93,11 +93,10 @@ function onCheckboxToggle(id: string, event: Event): void {
         :key="cb.id"
         class="mig-option flex cursor-pointer items-center gap-2.5 text-[length:var(--takeover-fs-body)] text-neutral-200"
       >
-        <input
-          type="checkbox"
-          class="relative mt-2 h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-[10px] bg-[var(--border)] transition-[background] duration-200 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-[50%] after:bg-[var(--text)] after:content-[''] after:transition-transform after:duration-200 after:ease-[ease] checked:bg-[var(--accent)] checked:after:bg-[var(--color-background)] checked:after:[transform:translateX(16px)]"
-          :checked="cb.checked"
-          @change="onCheckboxToggle(cb.id, $event)"
+        <Switch
+          class="mt-2"
+          :model-value="cb.checked"
+          @update:model-value="onCheckboxToggle(cb.id, $event)"
         />
         <span>{{ cb.label }}</span>
       </label>

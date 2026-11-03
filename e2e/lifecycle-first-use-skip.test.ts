@@ -55,8 +55,8 @@ test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals t
   await ctx.panel.evaluate<void>(
     `(() => {
       const wrap = document.querySelector('[data-testid="first-use-express-install"]')
-      const cb = wrap && wrap.querySelector('input[type="checkbox"]')
-      if (cb && cb.checked) cb.click()
+      const cb = wrap && wrap.querySelector('[role="checkbox"]')
+      if (cb && cb.getAttribute('aria-checked') === 'true') cb.click()
     })()`,
   )
   expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
