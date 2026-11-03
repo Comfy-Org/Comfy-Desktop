@@ -1,0 +1,43 @@
+name: Visual regression
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual:
+    name: Visual components (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      # The renderer fixture doesn't run Electron or native addons.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install pinned browser and system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Compare visual baselines
+        run: pnpm run test:visual
+      - name: Upload report and baseline candidates
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-regression-linux
+          path: |
+            visual-playwright-report/
+            visual-test-results/
+            tests/visual/__screenshots__/linux/
+          retention-days: 14
+          if-no-files-found: ignore

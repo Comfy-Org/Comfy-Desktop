@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.web.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "composite": false
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.vue",
+    "../../src/renderer/src/env.d.ts",
+    "../../src/preload/*.d.ts"
+  ],
+  "exclude": []
+}

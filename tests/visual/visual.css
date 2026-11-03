@@ -1,0 +1,15 @@
+@import '../../src/renderer/src/assets/main.css';
+@source '../../src/renderer/src';
+@source '.';
+
+/* Tests exercise resting states; motion has separate behavior coverage. */
+*,
+*::before,
+*::after {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+body {
+  overflow: auto;
+}
