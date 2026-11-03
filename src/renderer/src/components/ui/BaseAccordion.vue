@@ -1,31 +1,27 @@
 <script setup lang="ts">
-// Height-animated disclosure via a CSS `grid-template-rows: 0fr → 1fr`
-// transition, which covers the exact content height without a max-height cap.
+import { usePreferredReducedMotion } from '@vueuse/core'
+import TransitionCollapse from '@comfyorg/design-system/transition/TransitionCollapse'
 
-interface Props {
-  open: boolean
-  duration?: number
-}
+// Desktop keeps hidden content mounted so in-progress forms survive collapsing.
+// The package owns measuring and animating the content height.
+defineOptions({ inheritAttrs: false })
 
-withDefaults(defineProps<Props>(), { duration: 220 })
+withDefaults(defineProps<{ open: boolean; duration?: number }>(), { duration: 220 })
+const reducedMotion = usePreferredReducedMotion()
 </script>
 
 <template>
-  <div
-    class="ui-accordion grid transition-[grid-template-rows] duration-[var(--ui-accordion-duration)] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-0"
-    :class="open ? 'is-open grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-    :style="{ '--ui-accordion-duration': `${duration}ms` }"
-    :data-state="open ? 'open' : 'closed'"
-  >
-    <!-- `inert` removes the collapsed content from the focus order and
-         the a11y tree, so Tab doesn't land on hidden buttons. -->
+  <TransitionCollapse :duration="duration" :disable="reducedMotion === 'reduce'">
     <div
-      class="ui-accordion-inner min-h-0 overflow-hidden transition-opacity duration-[var(--ui-accordion-duration)] ease-[ease] motion-reduce:duration-0"
-      :class="open ? 'opacity-100' : 'opacity-0'"
+      v-show="open"
+      v-bind="$attrs"
+      class="ui-accordion"
+      :class="{ 'is-open': open }"
+      :data-state="open ? 'open' : 'closed'"
       :aria-hidden="!open"
       :inert="!open || undefined"
     >
       <slot />
     </div>
-  </div>
+  </TransitionCollapse>
 </template>

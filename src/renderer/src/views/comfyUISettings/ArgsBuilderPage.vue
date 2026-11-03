@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTimeoutFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
+import InputGroupButton from '@comfyorg/design-system/input-group/InputGroupButton'
 import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
@@ -437,16 +438,14 @@ function onRawChange(value: string): void {
         <Search :size="14" />
       </template>
       <template v-if="search.length > 0" #trailing>
-        <Button
-          variant="textonly"
-          size="unset"
-          type="button"
-          class="args-page-search-clear static inline-flex gap-0 rounded-[4px] border-none p-0 font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0"
+        <InputGroupButton
+          size="icon-sm"
+          class="args-page-search-clear"
           :aria-label="t('common.clear', 'Clear')"
           @click="search = ''"
         >
           <X :size="14" />
-        </Button>
+        </InputGroupButton>
       </template>
     </BaseInput>
 
