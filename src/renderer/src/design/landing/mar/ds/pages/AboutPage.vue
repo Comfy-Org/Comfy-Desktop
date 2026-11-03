@@ -102,7 +102,7 @@ const url = `${location.origin}${location.pathname}`
         <li>
           <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
           <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from
-          UI Playground › Corners (Soft 10 / 7 by default, Default 6 / 3). No fully rounded controls
+          UI Playground › Corners (Default 10 / 7, the default; Soft 14 / 11). No fully rounded controls
           in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
           icon-only circular buttons are round.
         </li>

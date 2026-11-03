@@ -165,17 +165,17 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 
   <Section
     title="Corners"
-    note="UI Playground › Corners moves every tab, filter and search together: Soft (10 / 7, the default) or Default (6 / 3)."
+    note="UI Playground › Corners moves every tab, filter and search together: Default (10 / 7, the default) or Soft (14 / 11). The tab track sits 2px above the control radius."
   >
     <Cells :min="520">
       <AppShot
-        label="Soft · 10 / 7"
+        label="Soft · 14 / 11"
         page="workflows"
         :crop="TOOLBAR"
         :seed="{ [TUNING]: { radius: 'soft' } }"
       />
       <AppShot
-        label="Default · 6 / 3"
+        label="Default · 10 / 7 (default)"
         page="workflows"
         :crop="TOOLBAR"
         :seed="{ [TUNING]: { radius: 'default' } }"
