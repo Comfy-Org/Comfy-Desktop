@@ -130,7 +130,7 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
           cancellable: true
         }
       ]
-      // The Comfy Cloud entry is not user-renamable (issue #922).
+      // The Comfy Cloud entry is not user-renamable.
       if (category !== 'cloud') {
         actions.push(renameAction(installation.name))
       }

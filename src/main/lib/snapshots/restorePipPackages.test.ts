@@ -1,14 +1,8 @@
 // @vitest-environment node
 /**
- * Regression tests for the restore revert that deleted pre-existing packages
- * (seen in #1514: an unmodified install went from 100 packages to 6 and
- * ComfyUI no longer booted).
- *
- * The install step had been a no-op — every package was already present — but
- * the failure handler "reverted" those installs by uninstalling them. The
- * trigger there was a mangled package list, but the defect is independent of
- * how the list went wrong: the revert now only uninstalls packages that were
- * provably absent from site-packages before the restore began.
+ * Rollback must preserve packages that were installed before the restore.
+ * A malformed or incomplete freeze is not evidence that a package was absent;
+ * only packages proven absent from site-packages may be uninstalled.
  */
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
@@ -152,7 +146,7 @@ describe('restorePipPackages', () => {
 
   describe('the revert never uninstalls pre-existing packages', () => {
     /**
-     * The #1514 shape, reproduced without depending on bug A: the freeze
+     * The freeze
      * under-reports what is installed, so packages that are in fact present
      * are planned as fresh installs. A later removal failure then triggers the
      * revert. Those packages must survive it.
@@ -208,11 +202,9 @@ describe('restorePipPackages', () => {
       }
     })
 
-    // The backup gap both reviewers flagged: a package the freeze omits is
-    // planned as new, so the install overwrites the copy already on disk. Not
-    // uninstalling it is not the same as putting its original version back —
-    // only the backup does that, so it has to be backed up despite not
-    // appearing in the freeze.
+    // Back up packages that already exist on disk even if freeze omits them.
+    // An install may overwrite them; preserving the installed package is not enough
+    // to restore its original version after failure.
     it('backs up a disk-detected package whose installed version differs', async () => {
       installOnDisk('aiohttp', '1.0.0')
       const pkgFile = path.join(sitePackagesPath, 'aiohttp', '__init__.py')
@@ -456,7 +448,7 @@ describe('preexistingOnDisk', () => {
   })
 
   // "Can't tell" must never read as "nothing was installed before" — that is
-  // the reading that uninstalls the user's environment (#1514).
+  // the reading that uninstalls the user's environment.
   it('treats every candidate as pre-existing when site-packages cannot be read', () => {
     expect(preexistingOnDisk(path.join(tmp, 'does-not-exist'), ['aiohttp', 'numpy'])).toEqual([
       'aiohttp',

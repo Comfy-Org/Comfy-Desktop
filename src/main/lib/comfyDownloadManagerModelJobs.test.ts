@@ -5,7 +5,7 @@ import path from 'path'
 
 const netState = vi.hoisted(() => ({ online: true }))
 
-// Managed model-job identity semantics (issue #1322): jobs are keyed by a
+// Managed model-job identity semantics: jobs are keyed by a
 // stable job id, joined only by canonical final destination, and URL-based
 // control refs (the in-Comfy bridge compatibility path) resolve only when
 // unambiguous. The transport is mocked with controllable fake transfers so
@@ -1261,9 +1261,8 @@ describe('model-job lifecycle races (issue #1322)', () => {
     // transport and no closing stream for this destination.
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     await flush()
-    // Resume, but hold the new attempt inside its install/session lookup:
-    // the job now has NO transport, is NOT in preflight, and owns NO closing
-    // stream - the exact window a one-shot quit snapshot used to miss.
+    // Hold the resumed attempt in its install/session lookup, with no transport,
+    // preflight, or closing stream. Quit must still wait for this job.
     const gate = deferred()
     overrides.installationsGet = async () => {
       await gate.promise
@@ -1786,8 +1785,7 @@ describe('model download startup safety (issue #1322)', () => {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     // A truncated download from an affected release sits under the FINAL
     // model name. Checking existence before the migration pass finishes
-    // would certify it as a complete model (`alreadyPresent`) - the exact
-    // corruption #1322 is about.
+    // would certify it as a complete model (`alreadyPresent`).
     fs.writeFileSync(dest, 'truncated legacy bytes')
     migrateLegacyModelDownloadArtifacts.mockImplementationOnce(async () => {
       // Quarantine: the truncated final leaves the model namespace.

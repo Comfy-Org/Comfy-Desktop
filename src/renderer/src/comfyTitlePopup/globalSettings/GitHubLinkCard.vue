@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 // Intentionally NOT a variant of ChoiceCard.vue (an onboarding takeover
 // primitive); reusing it here would fork its typography and surface.
 import { computed } from 'vue'
@@ -31,9 +32,11 @@ const starCountLabel = computed(() => {
 </script>
 
 <template>
-  <button
+  <Button
     type="button"
-    class="github-link-card flex w-full items-center justify-between gap-3 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5 text-left text-neutral-100 cursor-pointer transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:outline-none focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none"
+    variant="outline"
+    size="unset"
+    class="github-link-card w-full justify-between gap-3 px-3 py-2.5 text-left"
     @click="emit('open', url)"
   >
     <span class="github-link-main inline-flex min-w-0 items-center gap-2">
@@ -66,7 +69,7 @@ const starCountLabel = computed(() => {
       />
       <span>{{ starCountLabel }}</span>
     </span>
-  </button>
+  </Button>
 </template>
 
 <style>

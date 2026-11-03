@@ -103,7 +103,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     // A local install whose folder is currently unavailable (e.g. an unplugged
     // removable drive, offline network share, renamed folder, or one we're
     // denied access to) is flagged with a danger pill rather than forgotten —
-    // restoring access clears it on the next refresh (issue #1155).
+    // restoring access clears it on the next refresh.
     const dirState = source.skipInstall ? undefined : getCachedInstallDirState(inst.id)
     const dirUnavailable = isInstallDirUnavailable(dirState)
     // `detail` backs the dashboard's clickable danger pill — the full,
@@ -175,10 +175,8 @@ export function registerInstallationHandlers(): void {
     const allInstalls = await installations.list()
     const { visible, enriched } = enrichInstallationsForRenderer(allInstalls)
 
-    // Resolve versions from git state in the background.  Coalesced +
-    // TTL-throttled so repeated renderer refreshes don't trigger
-    // pygit2 bursts (every get-installations used to fire a fresh
-    // background git pass — see scheduleResolveAndBroadcastVersions).
+    // Resolve git versions in the background through scheduleResolveAndBroadcastVersions.
+    // Coalescing and a TTL keep repeated renderer refreshes from spawning duplicate probes.
     scheduleResolveAndBroadcastVersions(visible)
 
     // Pre-warm the shared ComfyUI release cache so the dashboard /
@@ -293,14 +291,14 @@ export function registerInstallationHandlers(): void {
     // Capture the prior comfyVersion BEFORE the install runs so we can fire
     // comfy.desktop.comfyui.update.applied at the end. An install on a record that
     // already has a comfyVersion is a *version update*, not a fresh install
-    // (per 04 cross-cutting Add #5). Fresh installs have no prior version
+    //. Fresh installs have no prior version
     // populated; this handler runs the same source.install() for both, so
     // pre-vs-post comfyVersion is the cleanest signal.
     const priorComfyVersion = inst.comfyVersion as ComfyVersion | undefined
     const isComfyUpdate = priorComfyVersion != null
 
     if (source.install) {
-      // Durable per-person activation milestone (#1224). `$set_once` keeps the
+      // Durable per-person activation milestone. `$set_once` keeps the
       // earliest FRESH local-install dispatch on the person profile, so the
       // funnel can tell whether a user who onboarded ever actually started an
       // install — regardless of the session it happened in. Gated on
@@ -338,7 +336,7 @@ export function registerInstallationHandlers(): void {
       invalidateModelDownloadStartupPass()
 
       // A pending snapshot restore that fails after a successful base install
-      // must not fail the install itself — the env is bootable (#1255).
+      // must not fail the install itself — the env is bootable.
       let snapshotRestoreError: string | null = null
 
       // Kick off the starter-template model download in the BACKGROUND the
@@ -397,7 +395,7 @@ export function registerInstallationHandlers(): void {
             if (abort.signal.aborted) throw err
             // The base install completed and is bootable — only the snapshot
             // could not be fully applied. Don't condemn the whole install
-            // (#1255): drop the retry pointer so a later re-install/update
+            //: drop the retry pointer so a later re-install/update
             // can't replay the failed restore, keep the install, and surface
             // the failure to the user.
             snapshotRestoreError = (err as Error).message
@@ -564,7 +562,7 @@ export function registerInstallationHandlers(): void {
           }
         }
       }
-      // The Comfy Cloud entry is not user-renamable (issue #922); drop any
+      // The Comfy Cloud entry is not user-renamable; drop any
       // attempted name change so the canonical name is preserved.
       if (inst.sourceId === installations.CLOUD_SOURCE_ID) {
         allowedIds.delete('name')

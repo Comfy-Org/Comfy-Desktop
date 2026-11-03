@@ -196,7 +196,7 @@ describe('captureState commit-matching guard', () => {
   })
 
   it('freezes packages via the adopted-aware uv path so adopted installs do not snapshot 0 packages', async () => {
-    // Regression for issue #855: adopted Legacy Desktop installs have no
+    // Adopted Legacy Desktop installs have no
     // managed standalone-env, so `getUvPath(installPath)` resolved to a
     // file that doesn't exist and the freeze was silently skipped.
     // `captureState` must now consult `getActiveUvPath(installation)`,
@@ -532,7 +532,7 @@ describe('ensureCurrentSnapshotOnTop', () => {
     expect(result.filename).toMatch(/-post-restore-/)
   })
 
-  // #1514: a restore that failed or was cancelled must not leave a history
+  // A restore that failed or was cancelled must not leave a history
   // entry that reads as a completed restore. The trigger stays `post-restore`
   // (that IS the state's provenance), and the label carries the caveat.
   it('labels the written snapshot when the caller supplies one', async () => {

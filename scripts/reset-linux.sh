@@ -46,12 +46,8 @@ XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
-# Every historical app/package name. The userData folder on Linux is named
-# after the package.json "name" field (NOT productName). "Comfy Desktop"
-# is included for the upcoming post-rename productName. "ComfyUI" covers
-# the legacy v1.x desktop app (productName "ComfyUI") whose state can
-# survive an upgrade to the 2.0 beta and break a clean install (mirrors
-# #679's macOS findings).
+# App and package names whose state must be cleared, including legacy installs.
+# Linux userData uses the package.json name field rather than productName.
 APP_NAMES=(
   "comfyui-desktop-2"
   "comfyui-launcher"

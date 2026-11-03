@@ -22,7 +22,7 @@
  *     the real production parse/preview code paths.
  *
  * Importing stages the envelope as a restore target; it only becomes
- * history once a restore from it succeeds (#1137). B has no git repos,
+ * history once a restore from it succeeds. B has no git repos,
  * so the follow-on `snapshot-restore` fails for real and B's history
  * must stay free of the imported entries. Successful in-history restore
  * mechanics are covered by lifecycle-snapshot-restore.test.ts; the
@@ -238,7 +238,7 @@ test('Import into B previews the full envelope and stages it without committing 
     { timeout: 60_000 },
   )
 
-  // Staging must not commit the envelope into B's history (#1137). A failed
+  // Staging must not commit the envelope into B's history. A failed
   // restore may write a live-state `post-restore` correction snapshot on
   // top, so assert on the imported labels and trigger, not on the raw count.
   const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(

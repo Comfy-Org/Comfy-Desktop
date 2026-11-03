@@ -109,13 +109,9 @@ function activeSection(wrapper: VueWrapper) {
     .find((s) => s.find('.args-page-category-title').text() === 'Active')
 }
 
-// `emitArgsChanged` debounces on a 500ms `setTimeout`. The page now flushes it
-// on unmount, so a test that changes an arg and then ends no longer leaves a
-// timer armed to fire into a torn-down `window`. Fake timers stay because the
-// debounce still has to be driven deliberately rather than waited out, and
-// because `useRealTimers` below is the backstop if any path ever re-arms one.
-// Faking only `setTimeout` leaves `flushPromises` (which schedules on
-// `setImmediate`) alone.
+// Use fake setTimeout timers to drive emitArgsChanged's 500 ms debounce.
+// The page flushes on unmount; useRealTimers also clears any remaining fake timer.
+// Leave setImmediate real so flushPromises can drain pending work.
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   stubElectronApi()
@@ -300,8 +296,8 @@ describe('ArgsBuilderPage — raw-args validation', () => {
     // Unfocused: the partial is flagged as unsupported.
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
 
-    // Focused: the trailing flag being typed is no longer flagged. Dispatched from the text input,
-    // as a real focus is: the wrapper also hosts the trailing buttons, which must not count.
+    // Focus the text input so the flag being edited is excluded from validation.
+    // Focus on the adjacent buttons must not count as input focus.
     await wrapper.find('.args-raw-input input').trigger('focusin')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(false)

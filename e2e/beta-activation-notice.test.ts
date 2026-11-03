@@ -122,10 +122,9 @@ test.beforeAll(async () => {
         },
       },
     ],
-    // Delivered through `E2E_OPS_FLAGS_SEED` so main writes it to the real `configDir()`
-    // before its first read — the harness cannot place that file on macOS, where `userData`
-    // ignores the HOME override. Present from the app's first boot, which is how a returning
-    // user's already-granted flag actually arrives.
+    // Delivered through `E2E_OPS_FLAGS_SEED` so main writes it to `configDir()` before its
+    // first read. Present from the app's first boot, which is how a returning user's
+    // already-granted flag actually arrives.
     opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE }),
   })
   await expectChooserVisible(ctx.panel)
@@ -179,17 +178,8 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
 })
 
 test('the card is anchored on the bell it points at @linux', async () => {
-  // Asserted on the BEAK's own position in window coordinates, not the popup view's.
-  //
-  // This test used to compare the VIEW's centre against the bell, on the reasoning that the
-  // beak sits at a fixed position inside the card so centring the popup centres the beak. The
-  // middle step was false: the card is narrower than the view by a shadow gutter each side,
-  // and it was rendering flush-LEFT inside it rather than centred. So the view was centred on
-  // the bell — which this test checked, and which was never broken — while the card and its
-  // beak sat one gutter to the left, which is what a user sees. It shipped a real misalignment
-  // (-18px on Windows) under a green assertion for exactly that reason.
-  //
-  // Measuring the beak end to end is the only version that cannot pass while the card is off.
+  // Measure the beak itself in window coordinates. The popup view includes shadow
+  // gutters, so centering the view does not prove the card or beak is centered.
   const bellCentre = await ctx.titleBar.evaluate<number>(`(() => {
     const el = document.querySelector('.title-announcement-button')
     if (!el) return -1

@@ -17,8 +17,7 @@
 
            skipPick = true  - ANY install present beyond Cloud / Legacy
                               Desktop. T&C accept skips the cloud-vs-local
-                              fork and emits 'complete-skip' (bug #476
-                              was Cloud being auto-launched here).
+                              fork and emits 'complete-skip'.
            skipPick = false - Only Cloud / Legacy Desktop. T&C accept
                               advances to the cloud-vs-local pick step.
            hasLegacyDesktop - A sourceId='desktop' install was auto-
@@ -60,7 +59,7 @@
   # Reproduce first-use scenarios
   .\swap-installations.ps1 first-use status
   .\swap-installations.ps1 first-use fresh        # cloud-vs-local pick path
-  .\swap-installations.ps1 first-use returning    # bug #476 scenario
+  .\swap-installations.ps1 first-use returning    # returning-user scenario
   .\swap-installations.ps1 first-use legacy       # migrate sub-step path
   .\swap-installations.ps1 first-use complete     # clear the takeover
 

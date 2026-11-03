@@ -2,6 +2,9 @@
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import Input from '@comfyorg/design-system/input/Input'
 import Switch from '@comfyorg/design-system/switch/Switch'
+import Button from '@comfyorg/design-system/button/Button'
+import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
+import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
@@ -91,6 +94,9 @@ const comparisonSortAscending = ref(true)
 const comparisonMetric = ref<DurationKey>('medianJobDurationSeconds')
 const comparisonBaselineId = ref('')
 const comparisonVisualization = ref<ComparisonVisualization>('range')
+function setComparisonVisualization(value: unknown): void {
+  if (value === 'range' || value === 'relative') comparisonVisualization.value = value
+}
 const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
 
 const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff']
@@ -827,11 +833,13 @@ onMounted(() => {
         :aria-label="t('benchmarks.runsLibrary')"
       >
         <div
-          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 [&_.ui-input]:min-h-9 [&_.ui-select-trigger]:min-h-9 [&_.ui-input-control]:pt-1.5 [@media(max-width:1100px)]:grid-cols-[auto_repeat(4,minmax(0,1fr))] [@media(max-width:800px)]:grid-cols-[auto_minmax(0,1fr)]"
+          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 [@media(max-width:1100px)]:grid-cols-[auto_repeat(4,minmax(0,1fr))] [@media(max-width:800px)]:grid-cols-[auto_minmax(0,1fr)]"
         >
           <div class="benchmarks__folder-controls flex items-center gap-1">
-            <button
-              class="secondary benchmarks__open-folder rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex min-h-9 items-center gap-2 whitespace-nowrap"
+            <Button
+              variant="secondary"
+              size="lg"
+              class="benchmarks__open-folder"
               type="button"
               :disabled="loading"
               :title="benchmarksFolderPath"
@@ -839,9 +847,11 @@ onMounted(() => {
             >
               <FolderOpen :size="16" aria-hidden="true" />
               {{ t('benchmarks.openFolder') }}
-            </button>
-            <button
-              class="benchmarks__refresh inline-flex size-[30px] cursor-pointer items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 text-[14px] text-text-muted enabled:hover:border-[var(--chooser-surface-border-hover)] enabled:hover:bg-[var(--chooser-surface-bg-hover)] enabled:hover:text-neutral-100 disabled:cursor-default disabled:opacity-60 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
+            </Button>
+            <Button
+              variant="muted-textonly"
+              size="icon"
+              class="benchmarks__refresh"
               type="button"
               :disabled="loading"
               :aria-label="t('benchmarks.refresh')"
@@ -856,7 +866,7 @@ onMounted(() => {
                 }"
                 aria-hidden="true"
               />
-            </button>
+            </Button>
           </div>
           <BaseInput
             v-model="searchQuery"
@@ -895,10 +905,12 @@ onMounted(() => {
             ref="libraryColumnsPicker"
             class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
           >
-            <summary class="secondary">
-              <SlidersHorizontal :size="16" aria-hidden="true" />
-              {{ t('benchmarks.columns') }}
-            </summary>
+            <Button as-child variant="secondary" size="lg">
+              <summary class="secondary">
+                <SlidersHorizontal :size="16" aria-hidden="true" />
+                {{ t('benchmarks.columns') }}
+              </summary>
+            </Button>
             <div
               class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
             >
@@ -936,7 +948,7 @@ onMounted(() => {
             class="benchmarks__table-scroll mt-3 max-h-[260px] overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)]"
           >
             <table
-              class="benchmarks__table w-full min-w-[1040px] border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-800 [&_thead_th]:font-medium [&_thead_th]:text-neutral-200 [&_th_button]:inline-flex [&_th_button]:cursor-pointer [&_th_button]:gap-1 [&_th_button]:border-0 [&_th_button]:rounded-lg [&_th_button]:bg-transparent [&_th_button]:p-0 [&_th_button]:text-inherit [&_th_button]:[font:inherit]"
+              class="benchmarks__table w-full min-w-[1040px] border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-800 [&_thead_th]:font-medium [&_thead_th]:text-neutral-200"
             >
               <thead>
                 <tr>
@@ -950,10 +962,16 @@ onMounted(() => {
                     </label>
                   </th>
                   <th v-for="column in visibleColumns" :key="column.key">
-                    <button type="button" @click="setSort(column.key)">
+                    <Button
+                      variant="muted-textonly"
+                      size="sm"
+                      class="-ml-2"
+                      type="button"
+                      @click="setSort(column.key)"
+                    >
                       {{ column.label }}
                       <span v-if="sortKey === column.key">{{ sortAscending ? '↑' : '↓' }}</span>
-                    </button>
+                    </Button>
                   </th>
                   <th
                     class="benchmarks__actions-cell w-11 text-center"
@@ -1000,8 +1018,10 @@ onMounted(() => {
                       <span
                         class="benchmarks__session-name-editor relative inline-block align-middle"
                       >
-                        <button
-                          class="benchmarks__session-name inline-flex cursor-text items-center gap-[5px] rounded border-0 bg-transparent px-[3px] py-0.5 text-inherit [font:inherit] [&:hover_.benchmarks\_\_session-name-icon]:opacity-100 [&:focus-visible_.benchmarks\_\_session-name-icon]:opacity-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
+                        <Button
+                          variant="muted-textonly"
+                          size="sm"
+                          class="benchmarks__session-name group/session-name -mx-2"
                           :class="{
                             'benchmarks__session-name--editing invisible':
                               editingSessionId === benchmark.id
@@ -1014,11 +1034,11 @@ onMounted(() => {
                         >
                           <span>{{ benchmark.id }}</span>
                           <Pencil
-                            class="benchmarks__session-name-icon flex-none text-text-muted opacity-0 transition-opacity duration-[120ms] ease-[ease]"
+                            class="benchmarks__session-name-icon shrink-0 opacity-0 transition-opacity group-hover/session-name:opacity-100 group-focus-visible/session-name:opacity-100"
                             :size="12"
                             aria-hidden="true"
                           />
-                        </button>
+                        </Button>
                         <Input
                           v-if="editingSessionId === benchmark.id"
                           :ref="setSessionNameInput"
@@ -1038,8 +1058,10 @@ onMounted(() => {
                     </template>
                   </td>
                   <td class="benchmarks__actions-cell w-11 text-center">
-                    <button
-                      class="benchmarks__delete-record inline-flex size-[26px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent p-0 text-[14px] text-text-muted enabled:hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] enabled:hover:text-danger disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2"
+                    <Button
+                      variant="destructive-textonly"
+                      size="icon"
+                      class="benchmarks__delete-record"
                       type="button"
                       :disabled="deletingIds.has(benchmark.id) || editingSessionId === benchmark.id"
                       :aria-label="
@@ -1049,7 +1071,7 @@ onMounted(() => {
                       @click="confirmDeleteBenchmark(benchmark)"
                     >
                       <Trash2 :size="14" aria-hidden="true" />
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               </tbody>
@@ -1084,26 +1106,22 @@ onMounted(() => {
           <div
             class="benchmarks__comparison-toolbar mb-3.5 flex flex-wrap items-center justify-end gap-3"
           >
-            <div
-              class="benchmarks__visualization-tabs mr-auto inline-flex rounded-[7px] border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-0.5 [&_button]:cursor-pointer [&_button]:rounded-[5px] [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-2.5 [&_button]:py-[7px] [&_button]:text-[11px] [&_button]:text-text-muted [&_button]:whitespace-nowrap [&_button[aria-pressed=true]]:bg-[var(--chooser-surface-bg-hover)] [&_button[aria-pressed=true]]:text-neutral-100 [&_button[aria-pressed=true]]:shadow-[0_0_0_1px_var(--chooser-surface-border-hover)] [&_button:focus-visible]:outline-2 [&_button:focus-visible]:[outline-style:solid] [&_button:focus-visible]:outline-[var(--focus-ring)] [&_button:focus-visible]:outline-offset-2"
-              role="group"
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              :allow-empty="false"
+              class="benchmarks__visualization-tabs mr-auto"
+              :model-value="comparisonVisualization"
               :aria-label="t('benchmarks.visualization')"
+              @update:model-value="setComparisonVisualization"
             >
-              <button
-                type="button"
-                :aria-pressed="comparisonVisualization === 'range'"
-                @click="comparisonVisualization = 'range'"
-              >
-                {{ t('benchmarks.duration') }}
-              </button>
-              <button
-                type="button"
-                :aria-pressed="isRelativeView"
-                @click="comparisonVisualization = 'relative'"
-              >
-                {{ t('benchmarks.speed') }}
-              </button>
-            </div>
+              <ToggleGroupItem value="range" size="sm">{{
+                t('benchmarks.duration')
+              }}</ToggleGroupItem>
+              <ToggleGroupItem value="relative" size="sm">{{
+                t('benchmarks.speed')
+              }}</ToggleGroupItem>
+            </ToggleGroup>
             <span
               v-if="exportResultsError"
               class="benchmarks__export-error text-[12px] text-danger"
@@ -1133,8 +1151,10 @@ onMounted(() => {
                 compact
               />
             </div>
-            <button
-              class="secondary benchmarks__sort-direction rounded-lg border border-solid border-[var(--border)] bg-surface text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex size-9 min-w-9 items-center justify-center p-0"
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              class="benchmarks__sort-direction"
               type="button"
               :disabled="comparisonSortMetric === 'manual'"
               :aria-label="
@@ -1150,9 +1170,11 @@ onMounted(() => {
               @click="comparisonSortAscending = !comparisonSortAscending"
             >
               <ArrowUpDown :size="16" aria-hidden="true" />
-            </button>
-            <button
-              class="secondary benchmarks__export-results rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 text-[14px] text-text cursor-pointer hover:bg-[var(--border)] disabled:cursor-default disabled:opacity-40 inline-flex items-center gap-2"
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              class="benchmarks__export-results"
               type="button"
               :disabled="isExportingResults || selectedBenchmarks.length === 0"
               @click="exportComparisonImage"
@@ -1163,15 +1185,17 @@ onMounted(() => {
                   ? t('benchmarks.exportingImage')
                   : t('benchmarks.exportResultsImage')
               }}
-            </button>
+            </Button>
             <details
               ref="comparisonColumnsPicker"
               class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
             >
-              <summary class="secondary">
-                <SlidersHorizontal :size="16" aria-hidden="true" />
-                {{ t('benchmarks.columns') }}
-              </summary>
+              <Button as-child variant="secondary" size="lg">
+                <summary class="secondary">
+                  <SlidersHorizontal :size="16" aria-hidden="true" />
+                  {{ t('benchmarks.columns') }}
+                </summary>
+              </Button>
               <div
                 class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
               >

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
@@ -92,12 +93,16 @@ watch(
       >
         {{ title }}
       </div>
-      <button
-        class="view-modal-close rounded-lg shrink-0 border-none bg-transparent px-2 py-1 text-[18px] leading-none text-text-muted cursor-pointer hover:bg-transparent hover:text-text"
+      <Button
+        type="button"
+        variant="muted-textonly"
+        size="icon"
+        class="view-modal-close shrink-0"
+        :aria-label="t('common.close')"
         @click="emit('close')"
       >
         {{ !isExited && !errorInfo ? '−' : '✕' }}
-      </button>
+      </Button>
     </div>
     <div class="view-modal-body flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
       <div
@@ -106,15 +111,17 @@ watch(
       >
         {{ errorInfo.message }}
       </div>
-      <button
+      <Button
+        variant="muted-textonly"
+        size="md"
         type="button"
-        class="terminal-toggle rounded-lg flex shrink-0 items-center gap-1.5 border-none bg-transparent p-1.5 text-[14px] text-text-muted select-none cursor-pointer hover:bg-transparent hover:text-text"
+        class="terminal-toggle self-start"
         :aria-expanded="terminalExpanded"
         @click="terminalExpanded = !terminalExpanded"
       >
         <span class="terminal-toggle-icon text-[18px]">{{ terminalExpanded ? '▾' : '▸' }}</span>
         <span>{{ $t('list.console') }}</span>
-      </button>
+      </Button>
       <div
         v-show="terminalExpanded"
         id="console-terminal"
@@ -129,41 +136,56 @@ watch(
     <!-- Bottom bar (pinned outside scrollable body) -->
     <div class="view-modal-footer shrink-0 border-t border-solid border-[var(--border)] px-5 py-3">
       <div class="console-actions flex shrink-0 justify-end gap-2.5 pt-0">
-        <button
+        <Button
           v-if="showWindowBtn"
-          class="console-action--show rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--accent)] bg-[var(--surface)] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"
+          type="button"
+          variant="outline"
+          size="lg"
+          class="console-action--show"
           @click="api.focusComfyWindow(installationId!)"
         >
           {{ $t('running.showWindow') }}
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="comfyUrl && runningInfo?.mode === 'console'"
-          class="console-action--browser rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
+          type="button"
+          variant="secondary"
+          size="lg"
+          class="console-action--browser"
           @click="api.openPath(comfyUrl)"
         >
           {{ $t('console.openInBrowser') }}
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="isStopping"
-          class="console-action--stop rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]"
+          type="button"
+          variant="destructive"
+          size="lg"
+          class="console-action--stop"
           disabled
         >
           {{ $t('console.stopping') }}
-        </button>
-        <button
+        </Button>
+        <Button
           v-else-if="!isExited && !errorInfo"
-          class="console-action--stop rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]"
+          type="button"
+          variant="destructive"
+          size="lg"
+          class="console-action--stop"
           @click="api.stopComfyUI(installationId!)"
         >
           {{ $t('console.stop') }}
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="errorInfo"
-          class="console-action--dismiss rounded-lg border border-solid px-4 py-2 text-[14px] cursor-pointer disabled:cursor-default disabled:opacity-40 border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
+          type="button"
+          variant="secondary"
+          size="lg"
+          class="console-action--dismiss"
           @click="(sessionStore.clearErrorInstance(installationId!), emit('close'))"
         >
           {{ $t('running.dismiss') }}
-        </button>
+        </Button>
       </div>
     </div>
   </div>

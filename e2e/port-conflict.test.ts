@@ -1,6 +1,5 @@
 /**
- * Lifecycle E2E: ProgressModal port-conflict footer (lifecycle audit
- * gap #7).
+ * Lifecycle E2E: ProgressModal port-conflict footer.
  *
  * Drives the post-failure UI that fires when `runAction('launch')`
  * returns `{ ok: false, portConflict: {...} }`. The real port-conflict

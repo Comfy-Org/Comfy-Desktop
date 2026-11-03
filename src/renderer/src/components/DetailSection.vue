@@ -34,26 +34,15 @@ const props = withDefaults(defineProps<Props>(), {
   actions: undefined
 })
 
-const actionButtonClass =
-  '[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-[14px] leading-[1.5] font-normal whitespace-normal transition-none disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
 const actionVariants = {
   primary: 'inverted',
   accent: 'outline',
-  danger: 'outline',
+  danger: 'destructive',
   default: 'secondary'
-} as const
-const actionClasses = {
-  default: 'border-[var(--border)] bg-surface text-text hover:bg-[var(--border)]',
-  primary:
-    'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-background font-medium hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]',
-  accent:
-    'border-[var(--accent)] bg-surface text-[var(--accent)] font-semibold hover:bg-[var(--accent)] hover:text-bg',
-  danger: 'border-danger bg-surface text-danger hover:bg-danger hover:text-bg'
 } as const
 const collapsibleTitleClass =
   "inline-block cursor-pointer select-none before:mr-1 before:inline-block before:content-['▸'] before:transition-transform before:duration-150 before:ease-[ease]"
-const openPathClass =
-  'cursor-pointer rounded-lg min-w-0 border-0 bg-transparent p-0 text-left text-[14px] text-text hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none'
+const openPathClass = 'block min-w-0 max-w-full truncate p-0 text-left'
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef, button: HTMLButtonElement | null]
@@ -210,13 +199,9 @@ function handleOpenPath(value: unknown): void {
               v-for="a in item.actions"
               :key="a.id"
               type="button"
-              size="unset"
+              size="md"
               :variant="actionVariants[a.style ?? 'default']"
-              :class="[
-                actionButtonClass,
-                actionClasses[a.style ?? 'default'],
-                'px-2.5 py-[3px] text-[13px]'
-              ]"
+              :class="['h-6 px-2 text-xs']"
               :disabled="a.enabled === false && !a.disabledMessage"
               @click="handleItemAction(a, $event)"
             >
@@ -311,11 +296,9 @@ function handleOpenPath(value: unknown): void {
               <TooltipWrap v-for="a in getSelectedActions(f)" :key="a.id" :text="a.tooltip">
                 <Button
                   type="button"
-                  size="unset"
+                  size="md"
                   :variant="actionVariants[a.style ?? 'default']"
                   :class="[
-                    actionButtonClass,
-                    actionClasses[a.style ?? 'default'],
                     {
                       'looks-disabled opacity-40 cursor-default':
                         a.enabled === false && a.disabledMessage
@@ -365,8 +348,10 @@ function handleOpenPath(value: unknown): void {
                 v-if="f.browseOnly"
                 class="detail-path-open-wrap mt-1 flex min-w-0 flex-1 items-center rounded-md border border-solid border-[var(--border)] bg-surface px-2 py-1.5"
               >
-                <button
+                <Button
                   v-if="canOpenFieldValue(f)"
+                  variant="link"
+                  size="link"
                   type="button"
                   class="detail-path-open max-w-full truncate"
                   :class="openPathClass"
@@ -375,7 +360,7 @@ function handleOpenPath(value: unknown): void {
                   @click="handleOpenPath(f.value)"
                 >
                   {{ f.value }}
-                </button>
+                </Button>
               </div>
               <Input
                 v-else
@@ -385,14 +370,9 @@ function handleOpenPath(value: unknown): void {
                 :model-value="String(f.value ?? '')"
                 @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
               />
-              <Button
-                type="button"
-                size="unset"
-                variant="secondary"
-                :class="[actionButtonClass, actionClasses.default]"
-                @click="handleBrowseField(f)"
-                >{{ $t('common.browse') }}</Button
-              >
+              <Button type="button" size="md" variant="secondary" @click="handleBrowseField(f)">{{
+                $t('common.browse')
+              }}</Button>
             </div>
             <Input
               v-else-if="f.editable"
@@ -402,8 +382,10 @@ function handleOpenPath(value: unknown): void {
               :model-value="String(f.value ?? '')"
               @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
             />
-            <button
+            <Button
               v-else-if="canOpenFieldValue(f)"
+              variant="link"
+              size="link"
               type="button"
               class="detail-field-value detail-field-value-open mt-px"
               :class="openPathClass"
@@ -412,7 +394,7 @@ function handleOpenPath(value: unknown): void {
               @click="handleOpenPath(f.value)"
             >
               {{ f.value }}
-            </button>
+            </Button>
             <div v-else class="detail-field-value mt-px text-[14px]">{{ f.value }}</div>
           </template>
         </div>
@@ -422,11 +404,9 @@ function handleOpenPath(value: unknown): void {
         <TooltipWrap v-for="a in actions" :key="a.id" :text="a.tooltip">
           <Button
             type="button"
-            size="unset"
+            size="md"
             :variant="actionVariants[a.style ?? 'default']"
             :class="[
-              actionButtonClass,
-              actionClasses[a.style ?? 'default'],
               {
                 'looks-disabled opacity-40 cursor-default': a.enabled === false && a.disabledMessage
               }

@@ -382,22 +382,11 @@ onMounted(async () => {
     }
   })
 
-  // Main consults the panel renderer before tearing down the host
-  // window. Funnel the consult through `closeOverlay()` so a Tier 2
-  // progress / Tier 3 takeover op can prompt the user via the
-  // standardised cancel-prompt copy. `closeOverlay` returns true when
-  // the slot is empty or the user confirmed cancellation; false when
-  // the user dismissed the prompt. We echo the boolean back to main
-  // along with the original `requestId` so main can pair it with the
-  // request that fired it.
+  // Consult the active overlay's cancel prompt before closing the host window.
+  // Echo the result and requestId so main can pair the response with its request.
   //
-  // OS ✕ consult. This renderer only resolves an in-flight Tier 2/3
-  // operation (its cancel-prompt). With no overlay it DEFERS: the
-  // close-window confirm is main's job. The panel renderer can't own that
-  // confirm because for a running instance it's hidden behind the ComfyUI
-  // view and may never answer — main would time out and close silently
-  // (the bug this fixes). Main decides dashboard-vs-instance and last-
-  // window-vs-not from its own authoritative state.
+  // With no overlay, defer to main for the close confirmation. The panel can be
+  // hidden behind ComfyUI, so it cannot reliably display the host's confirmation.
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
     // Ack synchronously so main extends its hung-renderer timeout —
     // the actual response can take arbitrary time when the user is
@@ -608,13 +597,11 @@ onUnmounted(() => {
          ever holds one overlay in `current.value`.
 
          App-update is NOT in this chain — the title-bar app-update
-         pill click pops a `useModal.confirm` modal (issue #488) that
+         pill click pops a `useModal.confirm` modal that
          lives in the global ModalDialog mount below, not in the
          overlay slot. -->
-    <!-- Tier 3 takeover slot. ProgressModal renders as the universal
-         brand loader for every show-progress op (delete, install,
-         update, copy, migrate, snapshot, launch) — the legacy Tier 2
-         ModalShell branch was removed in the same phase. -->
+    <!-- ProgressModal renders the shared takeover loader for delete, install, update,
+         copy, migrate, snapshot, and launch operations. -->
     <template v-if="currentOverlay?.kind === 'takeover'">
       <ProgressModal
         v-if="currentOverlay.component === 'update'"

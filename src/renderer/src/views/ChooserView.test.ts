@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -182,6 +182,7 @@ function installMockApiSignedIn(
 
 function mountChooser() {
   return mount(ChooserView, {
+    attachTo: document.body,
     global: { plugins: [createTestI18n(), createPinia()] }
   })
 }
@@ -338,9 +339,7 @@ describe('ChooserView', () => {
   })
 
   it('renders no lifecycle CTA cluster on a tile - the instance window owns lifecycle', async () => {
-    // The dashboard no longer carries any stop/launch button. State is
-    // shown via a labelled status pill; lifecycle actions live in the
-    // instance window.
+    // The dashboard shows status pills; lifecycle actions live in instance windows.
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()
     await flushPromises()
@@ -664,9 +663,9 @@ describe('ChooserView', () => {
     expect(names).toContain('Unassigned Studio')
     expect(names).toContain('Personal Studio')
     expect(names).not.toContain('Workspace Studio')
-    expect(wrapper.get('[data-testid="devplatform-workspace-selector"]').text()).toContain(
-      'Personal'
-    )
+    expect(
+      new DOMWrapper(document.body).get('[data-testid="devplatform-workspace-selector"]').text()
+    ).toContain('Personal')
     expect(wrapper.get('.chooser-workspace-controls').classes()).toContain(
       'chooser-workspace-controls--no-refresh'
     )
@@ -691,7 +690,9 @@ describe('ChooserView', () => {
     expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
     const workspaceBar = wrapper.get('.chooser-workspace-bar')
     const controls = wrapper.get('.chooser-workspace-controls')
-    const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
+    const selector = new DOMWrapper(document.body).get(
+      '[data-testid="devplatform-workspace-selector"]'
+    )
     const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
     expect(controls.classes()).not.toContain('chooser-workspace-controls--no-refresh')
     expect(controls.element.parentElement).toBe(workspaceBar.element)
@@ -767,8 +768,13 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-personal"]')
+      .trigger('click')
     await flushPromises()
 
     const tile = wrapper.find(`[data-testid="${TID.dashboardTile('local')}"]`)
@@ -817,8 +823,13 @@ describe('ChooserView', () => {
       const wrapper = mountChooser()
       await flushPromises()
       if (useUnmanaged) {
-        await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-        await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+        await new DOMWrapper(document.body)
+          .get('[data-testid="devplatform-workspace-selector"]')
+          .trigger('click')
+        await flushPromises()
+        await new DOMWrapper(document.body)
+          .get('[data-testid="devplatform-workspace-personal"]')
+          .trigger('click')
         await flushPromises()
       }
 
@@ -858,8 +869,13 @@ describe('ChooserView', () => {
     await flushPromises()
     api.comfybuilder.listBuilds.mockClear()
 
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-w2"]')
+      .trigger('click')
     await flushPromises()
 
     expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
@@ -980,23 +996,38 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Workspace B Build')
     expect(wrapper.text()).not.toContain('LocalThing')
 
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-personal"]')
+      .trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('LocalThing')
     expect(wrapper.text()).not.toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('Workspace B Build')
     expect(api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-workspace-b"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-workspace-b"]')
+      .trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Workspace B Build')
     expect(wrapper.text()).not.toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('LocalThing')
 
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-workspace-a"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-workspace-a"]')
+      .trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('Workspace B Build')
@@ -1011,8 +1042,13 @@ describe('ChooserView', () => {
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
     expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual([])
 
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-selector"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-personal"]')
+      .trigger('click')
     await flushPromises()
     await wrapper.get('.chooser-tile-new').trigger('click')
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')

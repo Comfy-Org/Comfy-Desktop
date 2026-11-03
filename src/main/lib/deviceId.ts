@@ -6,9 +6,8 @@
  * survives a clean reinstall. Another Comfy product can emit the same value
  * for property-level analysis joins; this value is never a PostHog identity.
  *
- * On first boot post-upgrade, a legacy random `device-id.txt` is replaced by
- * the deterministic installation property. Desktop intentionally performs no
- * PostHog alias write; historical reconciliation is handled directly there.
+ * A legacy random device-id.txt is replaced when a deterministic installation
+ * id is available. This does not write a PostHog alias.
  *
  * On Linux the SMBIOS product UUID is usually root-only, so a normal user
  * gets no hardware id. There the machine id falls back to `/etc/machine-id`

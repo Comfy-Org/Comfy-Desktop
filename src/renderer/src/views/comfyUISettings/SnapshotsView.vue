@@ -228,7 +228,7 @@ const timeline = computed<TimelineItem[]>(() => {
 
 /** "Latest: 8d ago" stat from the newest snapshot; null when none. Copy
  * events are excluded so an interleaved "Copied from/as X" entry can't hijack
- * the stat (see issue #1007). */
+ * the stat. */
 const latestRelative = computed<string | null>(() => {
   const newest = snapshots.value[0]
   if (!newest) return null

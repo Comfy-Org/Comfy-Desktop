@@ -270,8 +270,7 @@ describe('describePackageRevert', () => {
     )
   })
 
-  // #1514: the old text asserted a revert unconditionally, alongside a revert
-  // that had just deleted 94 pre-existing packages.
+  // The failure message must describe the recorded rollback outcome.
   it('says so when the revert did not complete, instead of claiming one', () => {
     const text = describePackageRevert(outcome({ complete: false }))
     expect(text).toContain('could not be reverted')

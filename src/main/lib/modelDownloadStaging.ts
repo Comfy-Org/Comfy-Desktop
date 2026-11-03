@@ -8,7 +8,7 @@ import { ALLOWED_EXTENSIONS } from './downloadFilename'
  *
  * Incomplete model bytes are NEVER written under a recognized final model
  * extension (ComfyUI scans model dirs by extension, so a truncated
- * `foo.safetensors` would appear to be a loadable model - issue #1322).
+ * `foo.safetensors` would appear to be a loadable model).
  * Instead a transfer writes to `<final>.part` with a JSON sidecar
  * `<final>.part.dl-meta`, and only a size-verified completion atomically
  * renames the staged file onto the final name.

@@ -14,7 +14,7 @@ export const installationEvents = new EventEmitter()
 
 /** Source id of the always-seeded Comfy Cloud entry. */
 export const CLOUD_SOURCE_ID = 'cloud'
-/** Canonical, non-user-editable name of the Comfy Cloud entry (issue #922). */
+/** Canonical, non-user-editable name of the Comfy Cloud entry. */
 export const CLOUD_INSTALL_NAME = 'Comfy Cloud'
 
 export interface InstallationRecord {
@@ -423,7 +423,7 @@ export async function ensureExists(sourceId: string, data: Record<string, unknow
 }
 
 /** Force the seeded Cloud entry back to its canonical name. The Cloud install
- *  is not user-renamable (issue #922); this self-heals any entry that a prior
+ *  is not user-renamable; this self-heals any entry that a prior
  *  build let the user rename. No-op when the name already matches or no Cloud
  *  entry exists. */
 export async function enforceCloudName(): Promise<void> {

@@ -1,5 +1,5 @@
 /**
- * Lifecycle coverage for the managed model-download system (issue #1322):
+ * Lifecycle coverage for the managed model-download system:
  * startup hydration of interrupted downloads, and the real transfer controls
  * (Resume / Pause / Retry / Cancel) driven through the actual Downloads UI
  * against a real local HTTP server. Zero mocks: the app's own manager,
@@ -29,15 +29,6 @@ import {
 } from './support/cdpPages'
 import { getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
-
-// Profile reuse (quit + relaunch of the same dir) is unsupported on macOS:
-// Electron resolves userData outside the isolated HOME there. The whole spec
-// launches against an explicit profile dir so the restart test can rehydrate
-// it, so it is skipped on macOS; Windows + Linux lifecycle runs cover it.
-test.skip(
-  process.platform === 'darwin',
-  'profile reuse (restart hydration) is unsupported on macOS'
-)
 
 test.describe.configure({ mode: 'serial' })
 

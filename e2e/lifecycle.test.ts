@@ -11,7 +11,7 @@
  *
  * Requirements: network access, ~2 GB free disk.
  *
- * Redesign notes (vs. the pre-2.0-Beta lifecycle test):
+ * Installation flow:
  * - The new-install takeover is a single Configure screen wrapped in
  *   `BrandTakeoverLayout` (root: `.brand-takeover-root`). No multi-step
  *   wizard, no Next button.
@@ -22,12 +22,12 @@
  *   So by the time `saveDisabled` flips false, the form is fully
  *   pre-filled — no explicit release / variant picking needed.
  * - The primary CTA is `.config-continue` labelled
- *   "Continue" (formerly `button.primary` "Add Install").
+ *   "Continue".
  * - `handleSave` emits `show-progress` with `autoLaunchOnFinish: true`,
  *   so the install op chains directly into a launch op under the same
  *   brand-takeover chrome. There is no intermediate "Done" button and
  *   no need to click the chooser tile to launch — the chooser host
- *   transforms in place into the install host (issue #449 path).
+ *   transforms in place into the install host.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -313,19 +313,17 @@ test.beforeAll(async () => {
  *  never registered. */
 const _runCreatedInstallPaths = new Set<string>()
 
-/** The isolated profile's installations.json, or null on macOS where the
- *  harness cannot isolate userData (Application Support ignores HOME) and
- *  the store may list real installs that must never be swept. Mirrors
- *  `dataDir()` in src/main/lib/paths.ts under the harness's env overrides
- *  (APPDATA / XDG_DATA_HOME redirected into homeDir). */
-function isolatedInstallationsStorePath(homeDir: string): string | null {
+/** The isolated profile's installations.json. Mirrors `dataDir()` in
+ *  src/main/lib/paths.ts under the harness's env overrides (APPDATA /
+ *  XDG_DATA_HOME / CFFIXED_USER_HOME redirected into homeDir). */
+function isolatedInstallationsStorePath(homeDir: string): string {
   if (process.platform === 'win32') {
     return path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2', 'installations.json')
   }
   if (process.platform === 'linux') {
     return path.join(homeDir, '.local', 'share', 'comfyui-desktop-2', 'installations.json')
   }
-  return null
+  return path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2', 'installations.json')
 }
 
 test.afterAll(async () => {
@@ -339,17 +337,15 @@ test.afterAll(async () => {
   // run created, so this also catches installs orphaned by an abort
   // before any path-capturing test ran (e.g. mid-download).
   if (!process.env['LIFECYCLE_REUSE_DIR']) {
-    const storePath = isolatedInstallationsStorePath(ctx.homeDir)
-    if (storePath) {
-      try {
-        const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
-        for (const r of records) {
-          if (typeof r.installPath === 'string' && path.isAbsolute(r.installPath)) {
-            _runCreatedInstallPaths.add(r.installPath)
-          }
+    try {
+      const storePath = isolatedInstallationsStorePath(ctx.homeDir)
+      const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
+      for (const r of records) {
+        if (typeof r.installPath === 'string' && path.isAbsolute(r.installPath)) {
+          _runCreatedInstallPaths.add(r.installPath)
         }
-      } catch { /* store never materialized - run aborted before any install */ }
-    }
+      }
+    } catch { /* store never materialized - run aborted before any install */ }
   }
 
   await ctx.cleanup()
@@ -406,7 +402,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
 
-  // Express defaults to UNCHECKED on Local pick (#1020: users land on
+  // Express defaults to UNCHECKED on Local pick (users land on
   // Configure before any files are written). Assert the default first
   // (read-only), then toggle the real checkbox control on and back off
   // so the non-express New Install takeover path is taken.
@@ -594,7 +590,7 @@ test('auto-launch landed on a single host window (in-place attach) @sec-setup @l
 })
 
 /**
- * Regression guard for #449: per-install BrowserWindow uses the title-bar +
+ * Per-install BrowserWindow uses the title-bar +
  * content split-view (≥2 WebContentsView children) and the parent
  * BrowserWindow background is dark (#171717) so no white frame flashes
  * pre-load.
@@ -625,10 +621,8 @@ test('ComfyUI window has dark background and split-view architecture @sec-setup 
   expect(arch!.childCount).toBeGreaterThanOrEqual(2)
   expect(arch!.allWebContentsViews).toBe(true)
   expect(arch!.bg.toLowerCase()).toBe('#171717')
-  // Regression guard for the chooser-pick in-place attach onto a unique-
-  // partition install: rebuildComfyViewIfNeeded swaps entry.comfyView, and
-  // a stale closure in layoutViews used to leave the freshly-built view
-  // at default 0×0 invisible bounds — ComfyUI would load but never paint.
+  // A chooser attach can replace entry.comfyView for a unique partition.
+  // The replacement must receive visible layout bounds so ComfyUI can paint.
   expect(arch!.comfyVisible, 'comfyView is hidden').toBe(true)
   expect(arch!.comfyBounds.width, 'comfyView width is 0').toBeGreaterThan(0)
   expect(arch!.comfyBounds.height, 'comfyView height is 0').toBeGreaterThan(0)
@@ -839,11 +833,10 @@ function expectTorchFamilyUnchanged(message: string): void {
   expect(current, message).toEqual(baseline)
 }
 
-/** Untrack an install through the REAL production surface: the Manage
- *  drawer's Settings footer More menu -> Untrack (`remove` action) ->
- *  in-drawer BaseAlert confirm. The dashboard kebab no longer carries an
- *  Untrack item; the drawer's pin-bottom action list is its UI home. A
- *  successful untrack removes the install, which closes the drawer. */
+/**
+ * Untrack through the Manage drawer's Settings footer More menu, then confirm
+ * in the drawer. A successful remove action closes the drawer.
+ */
 async function untrackViaManageDrawer(installationId: string): Promise<void> {
   await ctx.panel.evaluate<boolean>(
     `(() => {
@@ -866,8 +859,7 @@ async function untrackViaManageDrawer(installationId: string): Promise<void> {
 /** Stop the running install and land back on the dashboard through the
  *  REAL production controls: title-bar install pill -> picker footer More
  *  -> Stop -> in-drawer BaseAlert confirm -> stopped lifecycle card ->
- *  "Return to Dashboard". Replaces the old `__e2e` return hook, which
- *  bypassed every one of those controls. No-ops when ComfyUI is already
+ *  "Return to Dashboard". No-ops when ComfyUI is already
  *  stopped and the window already shows the chooser. */
 async function stopAndReturnToDashboardViaUI(): Promise<void> {
   if (!(await comfyFrontendIsLoaded())) {
@@ -1860,29 +1852,10 @@ test('per-install Manager security level + network mode land in Manager config.i
   expectTorchFamilyUnchanged('manager security-level relaunch changed the installed torch family')
 })
 
-// ---------------------------------------------------------------------------
-// Picker-driven update — driven through the picker's ChannelPicker.
-// Drafts a non-current channel ('latest') in the BaseSelect, clicks the
-// per-channel Update Now button, and waits for the IN_PLACE_RELAUNCH
-// chain to complete. Pins the bug where `actionData.channel` on the
-// drafted action came off the sections payload as a Vue reactive proxy
-// and threw `"An object could not be cloned"` synchronously inside the
-// popup's `bridge.pickerForwardShowProgress` → `ipcRenderer.send` —
-// silently swallowing the show-progress hand-off so the user got stuck
-// on the picker with no feedback (fix in `InstancePickerView.vue`
-// `handleSettingsShowProgress` deep-clones `actionData` first).
-//
-// This is the single picker-driven update test in the suite. A
-// same-channel sibling used to exist but was deleted: the install
-// already updated to the latest stable in the direct-runAction test
-// above, so a same-channel stable picker click would have no
-// `updateAvailable` (the Update Now button wouldn't render). The
-// cross-channel path exercises the same `InstancePickerView` →
-// `pickerForwardShowProgress` → main → runAction IPC chain plus the
-// drafted-channel payload, which is the bug class that was
-// regressing — the same-channel variant added no unique coverage
-// beyond what's asserted below.
-// ---------------------------------------------------------------------------
+// Picker-driven cross-channel update through ChannelPicker.
+// Draft the latest channel, click Update Now, and wait for IN_PLACE_RELAUNCH.
+// This exercises the InstancePickerView → pickerForwardShowProgress → main →
+// runAction chain, including serialization of the drafted actionData payload.
 
 test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RELAUNCH while running @sec-crosschannel @lifecycle', async () => {
   // Real cross-channel update: switches the install's `updateChannel`
@@ -2284,7 +2257,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
 })
 
 // ---------------------------------------------------------------------------
-// Boot-window settings edits (issue #1300) + restart-during-boot.
+// Boot-window settings edits + restart-during-boot.
 //
 // The spawned ComfyUI process consumes its launch configuration at spawn,
 // so an edit made while it boots (spawn -> port-ready) is not reflected in
@@ -2294,9 +2267,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
 // 1. An edit during the boot window surfaces "Restart to apply changes"
 //    once the instance is running, and the CTA restart actually applies it.
 // 2. A restart clicked while STILL booting cancels the in-flight boot and
-//    relaunches on the edited config. This used to be a silent no-op:
-//    `stopRunning` had no registered session to stop and the relaunch was
-//    rejected by the in-flight-operation guard.
+//    relaunches on the edited config. This must cancel the in-flight launch before restarting it.
 // ---------------------------------------------------------------------------
 
 /** A currently-free loopback TCP port, probed from the test process. Both
@@ -2475,13 +2446,10 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
     'boot completed before the boot-window edit landed - cannot exercise restart-during-boot',
   ).toBeNull()
 
-  // THE regression: restart while STILL booting. Pre-fix this was a silent
-  // no-op (no session for stopRunning; relaunch rejected by the in-flight
-  // guard) and the instance came up on the stale pre-edit config. The CTA
-  // and in-drawer confirm are clicked inline (not via confirmPickerRestart)
-  // so the boot window can be proven open right before the confirm click -
-  // otherwise a fast boot would silently degrade this into an ordinary
-  // running restart that passes without exercising the cancellation path.
+  // Restart while the instance is still booting. Click the CTA and in-drawer
+  // confirmation inline so the boot window can be proven open immediately
+  // before confirmation; a completed boot would exercise ordinary restart
+  // instead of cancellation.
   await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
   expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
@@ -2540,13 +2508,9 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
-  // Fresh-boot precondition: stop and return to the chooser, so the next
-  // launch comes from an UNATTACHED chooser host. `attachInstall` only sets
-  // `entry.installationId` at port-ready, so for the whole boot the window
-  // carries nothing but the chooser's staked `previewInstallationId` - the
-  // exact state in which main's restart identity guard used to discard the
-  // IPC, making restart-during-first-boot a silent no-op. (The sibling tests
-  // above restart an already-ATTACHED window, so they can never catch this.)
+  // Stop and return to an unattached chooser before launching. Until port-ready,
+  // attachInstall has not set installationId; the window carries only the claimed
+  // previewInstallationId. This exercises restart during a first attach.
   await stopAndReturnToDashboardViaUI()
 
   const targetPort = await findFreeLoopbackPort(19700)
@@ -2598,10 +2562,8 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
       })
       .toBe(false)
 
-    // Decisive main-side proof: the restart handler accepted the preview-
-    // attached window AND cancelled the in-flight launch. Pre-fix, the
-    // identity guard returned before cancelLaunching, so this channel
-    // recorded no invocation at all and this poll times out.
+    // The restart handler must accept the preview-attached window and cancel
+    // the in-flight launch.
     await expect
       .poll(async () => {
         const calls = (await getIpcInvocations(ctx.app, 'picker-restart:cancel-launching')) as

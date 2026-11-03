@@ -38,7 +38,7 @@ function openPath(path: string): void {
   if (path && path !== '—') popupBridge?.globalSettingsOpenPath(path)
 }
 
-// The Comfy Cloud entry is not user-renamable (issue #922): render its name as
+// The Comfy Cloud entry is not user-renamable: render its name as
 // static text with no contenteditable / pencil affordance.
 const nameEditable = computed(() => props.installation?.sourceCategory !== 'cloud')
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -21,8 +22,7 @@ import {
   chooserTileClass,
   chooserTileIconClass,
   chooserTileNameClass,
-  chooserTilePillClass,
-  chooserTileDangerClass
+  chooserTilePillClass
 } from './chooserTileClasses'
 
 interface Props {
@@ -195,23 +195,14 @@ const actionPill = computed(() => {
       action: 'update' as const,
       icon: ArrowDownToLine,
       label: t('chooser.updatePill'),
-      tooltip: inst.value.statusTag?.label || t('chooser.updatePill'),
-      pillClass: 'chooser-tile-pill-update text-[var(--accent)] border-[var(--accent)]',
-      backgroundClass: 'bg-[var(--accent-soft,rgba(74,144,226,0.12))]',
-      interactiveClass:
-        'hover:bg-[var(--accent-soft-hover,rgba(74,144,226,0.22))] focus-visible:bg-[var(--accent-soft-hover,rgba(74,144,226,0.22))] focus-visible:outline-[var(--accent)]'
+      tooltip: inst.value.statusTag?.label || t('chooser.updatePill')
     }
   if (hasMigratePrompt.value)
     return {
       action: 'migrate' as const,
       icon: ArrowRightLeft,
       label: t('chooser.migratePill'),
-      tooltip: t('dashboard.migrateBannerTitle'),
-      pillClass:
-        'chooser-tile-pill-migrate text-[var(--accent-warning,#d97706)] border-[var(--accent-warning,#d97706)]',
-      backgroundClass: 'bg-[var(--accent-warning-soft,rgba(217,119,6,0.12))]',
-      interactiveClass:
-        'hover:bg-[var(--accent-warning-soft-hover,rgba(217,119,6,0.22))] focus-visible:bg-[var(--accent-warning-soft-hover,rgba(217,119,6,0.22))] focus-visible:outline-[var(--accent-warning,#d97706)]'
+      tooltip: t('dashboard.migrateBannerTitle')
     }
   return null
 })
@@ -264,19 +255,20 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         data-testid="chooser-cloud-runs-pill"
         >{{ $t('firstUse.cloudFreeRunsPill') }}</span
       >
-      <button
+      <Button
         v-if="hasError"
+        variant="destructive-textonly"
+        size="sm"
         type="button"
-        class="chooser-tile-error-badge"
-        :class="chooserTileDangerClass"
+        class="chooser-tile-error-badge rounded-full"
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-error', inst)"
-        @keydown.enter.stop="emit('view-error', inst)"
+        @keydown.enter.stop
         @keydown.space.stop
       >
         <AlertCircle :size="14" />
         {{ t('chooser.statusError') }}
-      </button>
+      </Button>
       <span
         v-else-if="statusPill"
         class="chooser-tile-pill chooser-tile-status border-[var(--border-subtle,rgba(127,127,127,0.18))] bg-[var(--bg-elev-2,rgba(127,127,127,0.14))] pointer-events-none shrink-0 gap-1.5 opacity-100"
@@ -299,23 +291,26 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         />
         {{ t(statusPill.label) }}
       </span>
-      <button
+      <Button
         v-else-if="dangerTag"
+        variant="destructive-textonly"
+        size="sm"
         type="button"
-        class="chooser-tile-danger-tag min-w-0 max-w-full shrink-0 overflow-hidden whitespace-nowrap"
-        :class="chooserTileDangerClass"
+        class="chooser-tile-danger-tag rounded-full"
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-danger', inst)"
-        @keydown.enter.stop="emit('view-danger', inst)"
+        @keydown.enter.stop
         @keydown.space.stop
       >
         <AlertCircle :size="13" />
         {{ dangerTag.label }}
-      </button>
-      <button
+      </Button>
+      <Button
         v-if="props.showMenu && !isUpdating"
+        variant="muted-textonly"
+        size="icon-sm"
         type="button"
-        class="chooser-tile-kebab flex items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-1 text-inherit opacity-[0.65] cursor-pointer transition-[background-color,opacity,border-color] duration-100 ease-[ease] hover:border-[var(--border-strong,rgba(127,127,127,0.4))] hover:bg-[var(--bg-elev-2,rgba(127,127,127,0.18))] hover:opacity-100 hover:outline-none focus-visible:border-[var(--border-strong,rgba(127,127,127,0.4))] focus-visible:bg-[var(--bg-elev-2,rgba(127,127,127,0.18))] focus-visible:opacity-100 focus-visible:outline-none"
+        class="chooser-tile-kebab"
         :title="t('chooser.moreActions')"
         :aria-label="t('chooser.moreActions')"
         :data-testid="TID.dashboardTileKebab(inst.id)"
@@ -325,7 +320,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         @keydown.space.stop
       >
         <MoreVertical :size="16" />
-      </button>
+      </Button>
     </div>
 
     <!-- Two lines: name, then one row with the meta facts left and the
@@ -340,9 +335,11 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           :text="inst.name"
         />
         <Tooltip v-if="showWhyCloudTrigger" class="flex-none" :text="t('firstUse.whyTryCloud')">
-          <button
+          <Button
+            variant="muted-textonly"
+            size="icon-sm"
             type="button"
-            class="chooser-tile-why-cloud inline-flex flex-none items-center justify-center rounded border-none bg-transparent p-0 text-text-muted opacity-70 cursor-pointer transition-[color,opacity] duration-100 ease-[ease] hover:text-comfy-yellow hover:opacity-100 focus-visible:text-comfy-yellow focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]"
+            class="chooser-tile-why-cloud flex-none"
             :aria-label="t('firstUse.whyTryCloud')"
             :data-testid="TID.dashboardTileWhyCloud(inst.id)"
             @click.stop="emit('why-cloud')"
@@ -350,7 +347,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             @keydown.space.stop
           >
             <Info :size="14" />
-          </button>
+          </Button>
         </Tooltip>
       </div>
       <div
@@ -384,29 +381,24 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           :text="actionPill.tooltip"
           class="chooser-tile-pill-action ml-auto shrink-0"
         >
-          <span
-            class="chooser-tile-pill shrink-0 gap-1 transition-[background-color,border-color,transform] duration-[120ms] ease-[ease]"
-            :class="[
-              chooserTilePillClass,
-              actionPill.pillClass,
-              actionPill.backgroundClass,
-              isStoppedActionGated
-                ? 'chooser-tile-pill-disabled opacity-45 cursor-default hover:outline-none focus-visible:outline-none'
-                : [
-                    'opacity-100 cursor-pointer hover:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-style:solid]',
-                    actionPill.interactiveClass
-                  ]
-            ]"
-            role="button"
-            tabindex="0"
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="chooser-tile-pill shrink-0 rounded-full"
+            :class="{
+              'chooser-tile-pill-update': actionPill.action === 'update',
+              'chooser-tile-pill-migrate': actionPill.action === 'migrate',
+              'chooser-tile-pill-disabled opacity-45': isStoppedActionGated
+            }"
             :aria-disabled="isStoppedActionGated || undefined"
             @click.stop="triggerInstallAction(actionPill.action)"
-            @keydown.enter.stop="triggerInstallAction(actionPill.action)"
-            @keydown.space.prevent.stop="triggerInstallAction(actionPill.action)"
+            @keydown.enter.stop
+            @keydown.space.stop
           >
             <component :is="actionPill.icon" :size="11" />
             {{ actionPill.label }}
-          </span>
+          </Button>
         </Tooltip>
       </div>
     </div>

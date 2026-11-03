@@ -2,7 +2,7 @@
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -51,20 +51,6 @@ const emit = defineEmits<{
   'back-to-local-branch': []
 }>()
 
-const buttonClass =
-  'static inline-flex appearance-auto items-center justify-center gap-0 border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
-const primaryClass =
-  'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
-const ghostClass =
-  'rounded-md border-transparent bg-transparent text-neutral-300 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100 disabled:hover:bg-transparent'
-const tertiaryClass =
-  'rounded-[var(--radius-control)] border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-100 enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] disabled:hover:bg-[var(--brand-surface-bg)]'
-const pillClass =
-  'static inline-flex appearance-auto items-center justify-normal gap-1.5 rounded-md border border-solid px-3.5 py-2 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal touch-auto transition-[border-color,background,color] duration-160 ease-[ease] [&]:[appearance:button] hover:border-[var(--brand-surface-border-hover)] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40'
-const selectedPillClass =
-  'config-method--selected border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-neutral-100'
-const unselectedPillClass =
-  'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-200'
 const spinnerClass =
   'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[""] before:[animation-duration:600ms]'
 
@@ -283,7 +269,7 @@ const estimatedInstallSize = computed(() => {
   return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
 })
 
-/** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
+/** Entrypoint that opened this wizard, for the handoff funnel events. */
 const entrypoint = ref('unknown')
 /** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
  *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
@@ -293,7 +279,7 @@ const entrypoint = ref('unknown')
  *  (-> wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
-/** Shared context for the install-handoff funnel events (#1224). */
+/** Shared context for the install-handoff funnel events. */
 function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
@@ -536,20 +522,7 @@ function rawSelections(): Record<string, FieldOption> {
 let installDirPromise: Promise<string> | null = null
 let sourcesPromise: Promise<Source[]> | null = null
 
-const brandShellRef = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
-
 onMounted(() => {
-  if (props.hideBackToDashboard) {
-    returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    void nextTick(() => {
-      const target = brandShellRef.value?.querySelector<HTMLElement>(
-        'input, button, select, textarea, [tabindex]:not([tabindex="-1"])'
-      )
-      target?.focus()
-    })
-  }
-
   window.api
     .detectGPU()
     .then((gpu) => {
@@ -568,7 +541,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // Onboarding->install drop-off (#1224): the wizard is unmounting without a
+  // Onboarding->install drop-off: the wizard is unmounting without a
   // resolved handoff outcome, so the user left the install path without
   // dispatching. `skipInstall` sources (Remote Connection) never install, so
   // they're not part of this funnel. The happy-path dispatch, the defensive
@@ -580,10 +553,6 @@ onBeforeUnmount(() => {
       reason: 'wizard_cancelled'
     })
   }
-  if (returnFocusTo && document.contains(returnFocusTo)) {
-    returnFocusTo.focus()
-  }
-  returnFocusTo = null
   clearTimeout(templateNudgeTimer)
 })
 
@@ -1311,10 +1280,14 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout :scroll-content="step === 'configure'">
+  <BrandTakeoverLayout
+    :scroll-content="step === 'configure'"
+    :aria-label="
+      $t(step === 'template' ? 'standalone.templatePickerTitle' : 'newInstall.configureTitle')
+    "
+  >
     <div
       v-if="step === 'configure'"
-      ref="brandShellRef"
       class="config-shell mx-auto w-full max-w-[640px] self-stretch pt-[clamp(1.5rem,4vh,3rem)] pb-[max(5rem,8vh)] text-center"
     >
       <h1
@@ -1347,6 +1320,7 @@ defineExpose({ open })
             <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
               <InputGroupInput
                 id="inst-name-standalone"
+                :data-initial-focus="hideBackToDashboard || undefined"
                 :model-value="instName"
                 type="text"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
@@ -1375,33 +1349,31 @@ defineExpose({ open })
             <template v-for="tab in installSourceTabs" :key="tab.key">
               <Button
                 v-if="tab.kind === 'managed'"
-                size="unset"
-                variant="textonly"
+                size="lg"
+                variant="outline"
                 type="button"
                 role="radio"
                 data-testid="workspace-install-source-managed"
                 :aria-checked="managedBuildMode"
                 :disabled="authorizingWorkspace"
-                :class="[pillClass, managedBuildMode ? selectedPillClass : unselectedPillClass]"
+                :class="{ 'config-method--selected ring-1 ring-ring': managedBuildMode }"
                 @click="selectManagedInstallMode"
               >
                 {{ $t('newInstall.managedBuilds') }}
               </Button>
               <Button
                 v-else
-                size="unset"
-                variant="textonly"
+                size="lg"
+                variant="outline"
                 type="button"
                 role="radio"
                 :data-testid="`install-source-${tab.source.id}`"
                 :aria-checked="!managedBuildMode && currentSource?.id === tab.source.id"
                 :disabled="authorizingWorkspace"
-                :class="[
-                  pillClass,
-                  !managedBuildMode && currentSource?.id === tab.source.id
-                    ? selectedPillClass
-                    : unselectedPillClass
-                ]"
+                :class="{
+                  'config-method--selected ring-1 ring-ring':
+                    !managedBuildMode && currentSource?.id === tab.source.id
+                }"
                 @click="selectSourceCard(tab.source)"
               >
                 {{
@@ -1422,20 +1394,20 @@ defineExpose({ open })
               }}</label>
               <div class="workspace-build-actions flex items-center gap-2">
                 <Button
-                  size="unset"
-                  variant="textonly"
+                  size="link"
+                  variant="link"
                   type="button"
-                  class="workspace-build-online static cursor-pointer appearance-auto rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] leading-[inherit] font-normal whitespace-normal text-neutral-300 touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:text-neutral-100 enabled:hover:underline focus-visible:rounded-[2px] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-55"
+                  class="workspace-build-online"
                   :disabled="initializing"
                   @click="openBuildsPage"
                 >
                   {{ $t('newInstall.viewBuildsOnline') }}
                 </Button>
                 <Button
-                  size="unset"
-                  variant="textonly"
+                  size="icon-sm"
+                  variant="muted-textonly"
                   type="button"
-                  class="workspace-build-refresh static inline-flex cursor-pointer appearance-auto items-center justify-center rounded-lg border-0 bg-transparent p-0.5 font-sans text-sm leading-[inherit] font-normal text-text-muted touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-40"
+                  class="workspace-build-refresh"
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
                   :disabled="authStore.loadingBuilds"
@@ -1463,10 +1435,10 @@ defineExpose({ open })
             />
             <Button
               v-if="authStore.buildsError"
-              size="unset"
-              variant="textonly"
+              size="md"
+              variant="destructive-textonly"
               type="button"
-              class="wizard-build-retry static block cursor-pointer appearance-auto rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] whitespace-normal text-[var(--danger)] touch-auto transition-none [&]:[appearance:button] hover:bg-transparent enabled:hover:underline focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
+              class="wizard-build-retry whitespace-normal text-left"
               :disabled="authStore.loadingBuilds"
               @click="authStore.fetchBuilds()"
             >
@@ -1555,10 +1527,10 @@ defineExpose({ open })
                         <Button
                           v-if="field.action"
                           :id="`sf-${field.id}-action`"
-                          size="unset"
-                          variant="textonly"
+                          size="lg"
+                          variant="secondary"
                           type="button"
-                          :class="[buttonClass, tertiaryClass, 'shrink-0']"
+                          :class="['shrink-0']"
                           @click="handleTextAction(field)"
                         >
                           {{ field.action.label }}
@@ -1651,10 +1623,10 @@ defineExpose({ open })
                   <HardDrive :size="14" aria-hidden="true" />
                   <Button
                     v-if="!currentSource?.skipInstall && instPath"
-                    size="unset"
-                    variant="textonly"
+                    size="link"
+                    variant="link"
                     type="button"
-                    class="config-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer appearance-auto overflow-hidden rounded-lg border-0 bg-transparent p-0 text-left [font:inherit] text-ellipsis whitespace-nowrap text-inherit touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                    class="config-path-open block min-w-0 flex-[0_1_auto] truncate py-0 text-left text-inherit"
                     :title="$t('actions.openDirectory', 'Open Directory')"
                     :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
@@ -1668,9 +1640,9 @@ defineExpose({ open })
                   >
                 </InputGroup>
                 <Button
-                  size="unset"
-                  variant="textonly"
-                  :class="[buttonClass, tertiaryClass, 'h-10 px-3.5 py-0 text-[13px]']"
+                  size="lg"
+                  variant="secondary"
+                  :class="['h-10 px-3.5 py-0 text-[13px]']"
                   type="button"
                   :disabled="!!currentSource?.skipInstall"
                   @click="handleBrowse"
@@ -1717,11 +1689,10 @@ defineExpose({ open })
           class="config-card__footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
         >
           <Button
-            size="unset"
+            size="lg"
             variant="textonly"
             type="button"
             class="config-back mr-auto"
-            :class="[buttonClass, ghostClass]"
             data-testid="config-back-to-local-branch"
             @click="handleBackToLocalBranch"
           >
@@ -1785,13 +1756,11 @@ defineExpose({ open })
         >
           <div class="template-card__footer-actions flex items-center justify-end gap-3">
             <Button
-              size="unset"
+              size="lg"
               variant="textonly"
               type="button"
               class="template-skip"
               :class="[
-                buttonClass,
-                ghostClass,
                 'h-[34px] border-[var(--brand-surface-border)] px-3.5 py-0 text-[length:var(--takeover-fs-caption)] text-neutral-200 enabled:hover:border-[var(--brand-surface-border-hover)]'
               ]"
               :aria-label="$t('standalone.templateSkipAndInstallAria')"
@@ -1800,13 +1769,11 @@ defineExpose({ open })
               {{ $t('standalone.templateSkipAndInstall') }}
             </Button>
             <Button
-              size="unset"
-              variant="textonly"
+              size="lg"
+              variant="inverted"
               type="button"
               class="template-install"
               :class="[
-                buttonClass,
-                primaryClass,
                 'h-[34px] min-w-[104px] px-3.5 py-0 text-[length:var(--takeover-fs-caption)]',
                 {
                   'template-install--blocked cursor-not-allowed opacity-55': templateInstallBlocked
@@ -1852,9 +1819,9 @@ defineExpose({ open })
     <template #footer>
       <Button
         v-if="step === 'configure'"
-        size="unset"
-        variant="textonly"
-        :class="[buttonClass, primaryClass]"
+        type="button"
+        size="lg"
+        variant="inverted"
         class="config-continue right-[clamp(1.25rem,2vw,2rem)] bottom-[clamp(1.25rem,2vw,2rem)] z-2 min-w-[120px] [&.config-continue]:absolute"
         :disabled="!canContinue"
         @click="handleConfigureContinue"

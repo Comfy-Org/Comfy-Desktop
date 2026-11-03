@@ -10,6 +10,3 @@ export const chooserTileNameClass =
 
 export const chooserTilePillClass =
   'inline-flex min-w-0 max-w-full items-center overflow-hidden rounded-[999px] border border-solid px-2 py-0.5 text-[11px] text-ellipsis whitespace-nowrap'
-
-export const chooserTileDangerClass =
-  'inline-flex items-center gap-1 rounded-[999px] border border-solid border-[var(--accent-danger,#d92d20)] bg-[var(--accent-danger-soft,rgba(217,45,32,0.12))] px-2 py-[3px] text-[11px] font-medium text-[var(--accent-danger,#d92d20)] cursor-pointer transition-[background-color,transform] duration-[120ms] ease-[ease] hover:bg-[var(--accent-danger-soft-hover,rgba(217,45,32,0.22))] hover:[transform:scale(1.03)] hover:outline-none focus-visible:bg-[var(--accent-danger-soft-hover,rgba(217,45,32,0.22))] focus-visible:[transform:scale(1.03)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-danger,#d92d20)] focus-visible:[outline-style:solid]'

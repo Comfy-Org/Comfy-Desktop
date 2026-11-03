@@ -33,8 +33,7 @@ import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers
 import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
-/** Both steps of the new-install wizard: the surface a missing launch action
- *  used to bounce the user into. */
+/** Both steps of the new-install wizard. */
 const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
 
 interface BuildCase {

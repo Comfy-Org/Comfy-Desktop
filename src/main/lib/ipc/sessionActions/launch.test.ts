@@ -1311,8 +1311,7 @@ describe('buildLaunchArgs core beta injection', () => {
     ['opted in', true],
     ['opted out', false]
   ])('carries the resolved beta toggle on the DTO when %s', (_label, betaEnabled) => {
-    // The DTO is the only carrier of `opt_state`: the report site no longer re-reads settings,
-    // so a launch that never reaches arg assembly still reports the real toggle.
+    // The DTO carries opt_state even when the launch never reaches argument assembly.
     expect(build({ schema: schemaOf('enable-assets'), betaEnabled }).beta.optedIn).toBe(betaEnabled)
   })
 
@@ -2930,8 +2929,8 @@ describe('core beta report placement', () => {
   })
 
   it('reports opt_state true when schema discovery is unavailable', async () => {
-    // Arg assembly never runs, so there are no grants — but the user IS opted in, and the
-    // report site no longer re-reads settings to find that out.
+    // Argument assembly does not run, so there are no grants; the DTO still reports
+    // that the user opted in.
     launchHarness.schemaThrows = true
     launchHarness.betaEnabled = true
 

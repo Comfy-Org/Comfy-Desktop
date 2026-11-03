@@ -55,7 +55,7 @@ export async function handleFirebasePopup(
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
 ): Promise<void> {
-  // Prefer the cloud login-code flow (GTM-93): sign-in happens on the
+  // Prefer the cloud login-code flow: sign-in happens on the
   // real Cloud login page and Desktop polls for a one-time custom token —
   // no loopback server. 'fallback' means the flow died before the browser
   // opened (e.g. backend without the endpoints), so the legacy bridge

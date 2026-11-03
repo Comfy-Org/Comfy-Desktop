@@ -145,6 +145,7 @@ vi.mock('../../views/comfyUISettings/ArgsBuilderPage.vue', () => ({
 }))
 vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
+    name: 'MoreMenu',
     props: ['open', 'actions'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>'
   }
@@ -262,7 +263,7 @@ describe('ComfyUISettingsContent', () => {
 
   describe('error overlay', () => {
     // Regression: the error was once rendered in a single-line, ellipsis-clamped
-    // <p>, hiding the actionable detail (issue #1023). It must render in full.
+    // <p>, hiding the actionable detail. It must render in full.
     it('renders the full multi-line error message with a copy button', async () => {
       const detail = [
         'Update process failed with exit code 1.',
@@ -826,10 +827,8 @@ describe('ComfyUISettingsContent', () => {
     })
 
     it('does NOT latch onto the Console tab when a local install retargets through stale/empty sections', async () => {
-      // Repro for "portable opens to the Terminal tab": for a local install,
-      // only the section-less Console tab survives a transient empty/stale
-      // sections list, so the tab-fallback used to latch onto it and never
-      // revert. The fix gates the fallback on `sectionsFresh`.
+      // A local install's Console tab survives an empty sections list. Delay tab
+      // fallback until sectionsFresh so a transient refresh cannot select Console.
       const priorSections = useComfyUISettingsState.sections.value
       const fullSections = [
         { tab: 'update', fields: [] },

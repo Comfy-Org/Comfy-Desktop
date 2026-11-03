@@ -353,7 +353,7 @@ export async function handleAction(
       //
       // `incomplete` labels the entry when one is genuinely written, so a
       // restore that failed or was cancelled can never leave a row that reads
-      // as a completed restore (#1514).
+      // as a completed restore.
       const ensureLiveStateOnTop = async (opts?: { incomplete?: boolean }): Promise<void> => {
         try {
           const currentInstallation = (await installations.get(installation.id)) || installation
@@ -473,7 +473,7 @@ export async function handleAction(
         // Leave the op marker so recoverInterruptedComfyOp retries on next launch
         // if the in-process rollback failed; a successful rollback makes it a no-op.
         // Describe what the pip phase's revert actually did rather than
-        // asserting one happened (#1514).
+        // asserting one happened.
         const packageNote = targetSnapshot.skipPipSync
           ? 'The package sync was skipped for this snapshot.'
           : snapshots.describePackageRevert(pipResult.revert)
@@ -686,7 +686,7 @@ export async function handleAction(
       // A staged import in exact mode whose protected packages still differ
       // from the snapshot's freeze — or could not be verified — did not
       // provably reach its recorded state. Like a skipped torch stack, that is
-      // a failure and the envelope must not be committed (#1137). In-history
+      // a failure and the envelope must not be committed. In-history
       // exact restores and compatible mode disclose the drift instead:
       // protected packages are skipped by design, so failing them would make
       // e.g. v1 snapshots permanently unrestorable.
@@ -792,7 +792,7 @@ export async function handleAction(
       if (stagedEnvelope && reachedTarget) {
         try {
           // Commit a staged import to history ONLY once the restore fully
-          // succeeded — the install has actually been in this state (#1137).
+          // succeeded — the install has actually been in this state.
           await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
         } catch (err) {
           console.warn('Committing imported snapshots failed:', err)
@@ -914,7 +914,6 @@ export async function handleAction(
     }
   }
 
-  // Handler kept for potential future use; the UI button was removed.
   if (actionId === 'snapshot-delete') {
     const file = actionData?.file as string | undefined
     if (!file) return { ok: false, message: t('standalone.snapshotNoFile') }

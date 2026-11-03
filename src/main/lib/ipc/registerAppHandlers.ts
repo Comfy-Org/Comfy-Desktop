@@ -579,10 +579,8 @@ export function registerAppHandlers(): void {
       cpu_model: cpus[0]?.model ?? 'unknown',
       cpu_cores: cpus.length,
       app_version: getAppVersion(),
-      // Issue #488 - repurposed to reflect the new `autoInstallUpdates`
-      // toggle (silent install vs prompt). The auto-check loop is no
-      // longer user-disablable, so this property captures what the
-      // remaining toggle actually controls.
+      // Report the autoInstallUpdates preference: automatic install or user prompt.
+      // Update checking itself is always enabled.
       auto_update: settings.get('autoInstallUpdates') !== false,
       locale: settings.get('language') || 'en',
       installation_count: allInstalls.length,

@@ -272,7 +272,7 @@ class InstallTerminal {
     // the user typed `exit` would leak the dead session's buffer into restore.
     this.sessionBuffer.length = 0
     const env = envResolver(inst) ?? defaultTerminalEnv(inst)
-    // Open the shell on the ComfyUI code folder (issue #1070); fall back to the
+    // Open the shell on the ComfyUI code folder; fall back to the
     // install path when the source didn't resolve one or it no longer exists.
     const cwd = env.cwd && fs.existsSync(env.cwd) ? env.cwd : inst.installPath
     const pty = await loadPty()

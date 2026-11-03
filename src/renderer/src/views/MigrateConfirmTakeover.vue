@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import MigrateConfirmBody, {
@@ -23,33 +23,10 @@ const confirmLabel = ref('')
 const preview = ref<SnapshotDetailData | null>(null)
 const details = ref<MigrateDetailGroup[]>([])
 const checkboxes = ref<MigrateCheckbox[]>([])
-const dialogRef = ref<HTMLElement | null>(null)
-/** Focus owner before open, restored on commit regardless of close path. */
-let returnFocusTo: HTMLElement | null = null
 
 let resolver:
   | ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void)
   | null = null
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && isOpen.value) commit(false)
-}
-
-// Bind/unbind ESC + focus per open() rather than onMounted, since the instance outlives the visible surface.
-watch(isOpen, async (open) => {
-  if (open) {
-    document.addEventListener('keydown', onKeydown)
-    returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    await nextTick()
-    // Focus the dialog container, not the cancel button — keeps focus trapped
-    // for keyboard/AT without painting a focus-visible ring on open.
-    dialogRef.value?.focus()
-  } else {
-    document.removeEventListener('keydown', onKeydown)
-    returnFocusTo?.focus()
-    returnFocusTo = null
-  }
-})
 
 async function open(
   initialTitle: string,
@@ -92,18 +69,18 @@ function commit(confirmed: boolean): void {
   resolver = null
 }
 
+// The host can remove the flow while its confirmation promise is pending.
+onBeforeUnmount(() => {
+  if (resolver) commit(false)
+})
+
 defineExpose({ open, update, commit })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isOpen">
+  <BrandTakeoverLayout v-if="isOpen" :aria-label="title" dismissible @close="commit(false)">
     <div
-      ref="dialogRef"
       class="migrate-takeover relative z-1 flex w-full max-w-[640px] flex-col items-center gap-[var(--takeover-gap-md)] text-center"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="title"
-      tabindex="-1"
     >
       <h1
         class="migrate-takeover__title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] opacity-85"

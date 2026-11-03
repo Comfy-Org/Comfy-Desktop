@@ -214,7 +214,6 @@ function actionButtonClass(running = false, itemRow = false, looksDisabled = fal
   return `${base} ${itemRow ? 'leading-[1.4]' : 'leading-[1.5]'} ${running ? 'is-running cursor-progress opacity-85 disabled:cursor-progress disabled:opacity-85' : looksDisabled ? 'cursor-default opacity-40 disabled:cursor-default disabled:opacity-40' : 'disabled:cursor-default disabled:opacity-40'}`
 }
 
-// Item actions forward every style; the shared footer historically styled only primary and danger.
 function actionVariantClass(action: ActionDef, directStyle = true): string {
   switch (action.style) {
     case 'primary':

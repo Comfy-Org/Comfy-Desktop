@@ -1,6 +1,6 @@
 /**
  * Lifecycle E2E: snapshot export (single + all) end-to-end through the
- * Snapshots tab UI (lifecycle audit gap #9).
+ * Snapshots tab UI.
  *
  * Drives the production wiring from the user click down to the JSON
  * envelope landing on disk:

@@ -1,5 +1,5 @@
 /**
- * Pure, total decision table for the #926 navigation matrix — single source of
+ * Pure, total decision table for the navigation matrix — single source of
  * truth, run identically in renderer and main. Keyed by `ViewKind × TargetKind ×
  * TargetRun`; a missing cell falls through to `NO_OP`. `remote` is folded into
  * `cloud` upstream (see `navClass`), so there are no `remote` cells.

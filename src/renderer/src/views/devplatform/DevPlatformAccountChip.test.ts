@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import DevPlatformAccountChip from './DevPlatformAccountChip.vue'
@@ -42,7 +42,7 @@ async function mountChip(status: AuthStatus = SIGNED_OUT) {
   installMockApi(status)
   setActivePinia(createPinia())
   const store = useAuthStore()
-  const wrapper = mount(DevPlatformAccountChip)
+  const wrapper = mount(DevPlatformAccountChip, { attachTo: document.body })
   await flushPromises()
   return { wrapper, store }
 }
@@ -54,15 +54,21 @@ beforeEach(() => {
 describe('DevPlatformAccountChip — signed out', () => {
   it('renders a login button instead of the account chip', async () => {
     const { wrapper } = await mountChip(SIGNED_OUT)
-    expect(wrapper.find('[data-testid="devplatform-account-signin"]').text()).toBe('Log in')
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-signin"]').text()
+    ).toBe('Log in')
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(false)
   })
 
   it('starts sign-in from the login button', async () => {
     const { wrapper, store } = await mountChip(SIGNED_OUT)
     store.signIn = vi.fn().mockResolvedValue(SIGNED_IN)
 
-    await wrapper.find('[data-testid="devplatform-account-signin"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-signin"]')
+      .trigger('click')
     await flushPromises()
 
     expect(store.signIn).toHaveBeenCalledOnce()
@@ -70,14 +76,18 @@ describe('DevPlatformAccountChip — signed out', () => {
 
   it('appears as soon as an out-of-band sign-in lands', async () => {
     const { wrapper, store } = await mountChip(SIGNED_OUT)
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(false)
 
     // What the file menu's Log in ultimately produces: main broadcasts the new
     // status and every surface re-renders off it.
     store.status = SIGNED_IN
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(true)
     expect(wrapper.text()).toContain('someone@comfy.org')
   })
 })
@@ -85,21 +95,34 @@ describe('DevPlatformAccountChip — signed out', () => {
 describe('DevPlatformAccountChip — signed in', () => {
   it('names only the account on the chip face', async () => {
     const { wrapper } = await mountChip(SIGNED_IN)
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(true)
     expect(wrapper.text()).toContain('someone@comfy.org')
     expect(wrapper.text()).not.toContain('Personal')
   })
 
   it('opens an account-only menu without pulling workspaces', async () => {
     const { wrapper } = await mountChip(SIGNED_IN)
-    expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(false)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-menu"]').exists()
+    ).toBe(false)
 
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-chip"]')
+      .trigger('click')
+    await flushPromises()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid^="devplatform-workspace-"]').exists()).toBe(false)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-menu"]').exists()
+    ).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-signout"]').exists()
+    ).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid^="devplatform-workspace-"]').exists()
+    ).toBe(false)
     expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
   })
 
@@ -110,8 +133,13 @@ describe('DevPlatformAccountChip — signed in', () => {
       return SIGNED_OUT
     })
 
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-chip"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-signout"]')
+      .trigger('click')
     await flushPromises()
     expect(store.signOut).toHaveBeenCalledOnce()
     expect(wrapper.emitted('signed-out')).toHaveLength(1)
@@ -121,12 +149,19 @@ describe('DevPlatformAccountChip — signed in', () => {
     const { wrapper, store } = await mountChip(SIGNED_IN)
     store.signOut = vi.fn().mockResolvedValue(SIGNED_IN)
 
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-chip"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-signout"]')
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.emitted('signed-out')).toBeUndefined()
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(true)
   })
 
   // Sign-out IPC failure must leave the chip visibly signed in rather than lie.
@@ -134,11 +169,18 @@ describe('DevPlatformAccountChip — signed in', () => {
     const { wrapper, store } = await mountChip(SIGNED_IN)
     store.signOut = vi.fn().mockRejectedValue(new Error('ipc down'))
 
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-chip"]')
+      .trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body)
+      .find('[data-testid="devplatform-account-signout"]')
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.emitted('signed-out')).toBeUndefined()
-    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(
+      new DOMWrapper(document.body).find('[data-testid="devplatform-account-chip"]').exists()
+    ).toBe(true)
   })
 })

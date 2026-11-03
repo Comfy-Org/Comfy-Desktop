@@ -235,8 +235,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(namesInOrder).toEqual(['New', 'Old', 'Never'])
     })
 
-    // Regression: cloud rows are no longer pinned ahead of more-recent
-    // installs — they sort by their own lastLaunchedAt like everyone else.
+    // Cloud rows sort by lastLaunchedAt alongside local installs.
     it('places a cloud row below a more-recent local row (no cloud pinning)', async () => {
       const wrapper = await mountPicker({
         installs: [

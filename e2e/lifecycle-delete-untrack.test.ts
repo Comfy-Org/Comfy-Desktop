@@ -4,7 +4,7 @@
  * Drives the two real removal surfaces a user reaches manually:
  *
  *   - **Untrack** lives in the Manage drawer's Settings footer More menu
- *     (the dashboard kebab no longer carries it). It confirms in-drawer,
+ *     and confirms in-drawer,
  *     then removes the installation from the registry while leaving its
  *     directory on disk.
  *   - **Delete** stays on the dashboard kebab: it confirms through the

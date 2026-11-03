@@ -1,8 +1,7 @@
 /**
- * Lifecycle E2E: ProgressModal "Reboot" of an errored install (lifecycle
- * audit gap #24).
+ * Lifecycle E2E: ProgressModal "Reboot" of an errored install.
  *
- * Distinct from the failure-then-retry path (#7) — here the install is
+ * Distinct from the failure-then-retry path — here the install is
  * already in `sessionStore.errorInstances` BEFORE the user interacts with
  * the ProgressModal. We seed an errorInstance directly, then drive a
  * retryable apiCall through `injectRetryableProgressError` so the op
@@ -56,10 +55,9 @@ test.afterAll(async () => {
 })
 
 test('ProgressModal Reboot re-runs the same apiCall to recover an errored install @windows @macos @linux', async () => {
-  // Seed a pre-existing errorInstance to mimic the audit's #24 setup —
-  // the install was already errored before the user took any action
-  // against it (distinct from #7, where the error originates inside the
-  // op the user just launched).
+  // Seed an install that is already errored before the user starts an operation.
+  // This exercises reboot from an existing error rather than retrying a failure
+  // produced by the operation under test.
   await ctx.panel.evaluate<void>(`(() => {
     window.__e2eRenderer.seedErrorInstance({
       installationId: ${JSON.stringify(INSTALL_ID)},

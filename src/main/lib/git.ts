@@ -9,27 +9,12 @@ import { removeQuarantine, codesignBinaries } from '../sources/standalone/macRep
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
 
-// ---------------------------------------------------------------------------
-// pygit2 fallback state + circuit breaker
+// pygit2 fallback for machines without a system git binary.
 //
-// Background: on machines without a global `git` binary we fall back to a
-// bundled Python interpreter (shipped in `standalone-env/`) plus our
-// `git_operations.py` helper.  On macOS in particular the Python binary
-// can be in a broken state (quarantine flag still set, codesignature
-// invalidated by extraction/copy/migration) - in which case every spawn
-// either hangs on Gatekeeper or fails fast.  Because various boot-time
-// paths (update checks, version resolution, renderer polling) call into
-// git frequently, an unhealthy Python helper used to manifest as a flood
-// of Python processes on application boot.
-//
-// To prevent that we:
-//   1. Probe with a real `--healthcheck` call before configuring.
-//   2. On macOS, repair the standalone-env (remove quarantine + adhoc
-//      codesign) once if the first probe fails, then re-probe.
-//   3. Track consecutive launch/timeout failures and disable the
-//      fallback for the rest of the session once a threshold is hit.
-//   4. Always run long-lived pygit2 spawns under a hard timeout.
-// ---------------------------------------------------------------------------
+// Probe the bundled Python helper with --healthcheck before configuring it.
+// On macOS, attempt quarantine and codesign repair once per environment and
+// re-probe. A circuit breaker disables the fallback after repeated launch or
+// timeout failures. Every long-running helper spawn has a hard timeout.
 
 type Pygit2State =
   | { status: 'unconfigured' }
@@ -189,10 +174,8 @@ async function repairEnvForPygit2(envDir: string): Promise<void> {
   if (_pygit2RepairedDirs.has(envDir)) return
   _pygit2RepairedDirs.add(envDir)
   if (!fs.existsSync(envDir)) return
-  // Fires at most once per env dir per session when the boot probe trips
-  // the macOS quarantine + codesign repair path. Adoption signal: how
-  // many users actually hit the broken-bundled-Python state we shipped
-  // #738 to fix. `result` flips to 'failed' if the repair itself throws.
+  // Emitted at most once per environment per session when the boot probe attempts
+  // macOS quarantine and codesign repair. The result is failed if repair throws.
   let result: 'ok' | 'failed' = 'ok'
   const log = (msg: string): void => {
     console.log('[git] pygit2 repair:', msg.trim())
@@ -239,9 +222,8 @@ export async function tryConfigurePygit2Fallback(installPath: string): Promise<b
 
   if (!probe.ok) {
     console.warn(`[git] pygit2 fallback rejected for ${installPath}: ${probe.reason}`)
-    // Probe still failing AFTER any repair attempt - the user is in the
-    // broken state we shipped #738 to detect. Datadog-mirrored so ops
-    // can correlate with release / signing-cert changes.
+    // The boot probe still fails after repair. Mirror the failure to Datadog
+    // so it can be correlated with release and signing-certificate changes.
     telemetry.emit('comfy.desktop.pygit2.probe_failed', {
       source: 'standalone',
       ...buildErrorFields(probe.reason)

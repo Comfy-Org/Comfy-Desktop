@@ -1,12 +1,7 @@
 <script setup lang="ts">
 /**
- * The Update tab's version summary: a headline with a status badge, over a
- * bordered table of version facts.
- *
- * Extracted from `ChannelPicker` so a Builder install - which has versions
- * but no release channel - gets the SAME table rather than a stacked list that
- * merely says the same words. Purely presentational: callers decide what the
- * rows mean.
+ * Shared version summary: a headline and status badge above a bordered table.
+ * Callers supply the version facts for release-channel and Builder installs.
  */
 import type { ActionDef, VersionStatRow } from '../../types/ipc'
 import SectionActionButton from './SectionActionButton.vue'

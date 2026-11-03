@@ -82,7 +82,7 @@ const hasPipChanges = computed(
 // Title pill: the snapshot's label, else a version transition `prev → this`, else
 // the resulting version. Any displayable label shows, not just a manual one — a
 // post-restore snapshot written after a failed or cancelled restore is labelled
-// so the row cannot read as a completed restore (#1514). Older builds also
+// so the row cannot read as a completed restore. Older builds also
 // wrote internal sentinels into `label`, which `isDisplayableLabel` filters out.
 const hasCustomLabel = computed(() => isDisplayableLabel(props.snapshot.label))
 const comfyuiChanged = computed(

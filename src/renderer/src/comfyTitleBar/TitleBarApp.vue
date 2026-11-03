@@ -26,10 +26,8 @@ import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 const { t, locale } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
-// Inlined to keep the title-bar renderer self-contained — the preload TS
-// file isn't visible to tsconfig.web (only its .d.ts would be). Kept in
-// sync with the literal union in src/preload/comfyTitleBarPreload.ts and
-// the ComfyPanelKey export in src/main/index.ts.
+// Mirror the title-bar panel keys in src/preload/comfyTitleBarPreload.ts;
+// these are a subset of ComfyPanelKey in src/main/host/registry.ts.
 type ComfyPanelKey =
   | 'comfy'
   | 'performance-test'
@@ -39,8 +37,7 @@ type ComfyPanelKey =
   | 'load-snapshot'
   | 'quick-install'
 
-/** Which feature owns the single sticky coachmark card. Same reason as `ComfyPanelKey` above:
- *  kept in sync with the `CoachmarkKind` union in src/preload/comfyTitleBarPreload.ts. */
+/** Card owner; keep in sync with CoachmarkKind in src/preload/comfyTitleBarPreload.ts. */
 type CoachmarkKind = 'pill-hint' | 'beta-notice'
 
 /** Position passed to main so the native menu pops below the anchor button.
@@ -51,11 +48,8 @@ interface MenuAnchor {
   y: number
 }
 
-/** Single download entry surfaced by the title-bar tray.
- *  Inline mirror of `DownloadsTrayEntry` in
- *  `src/preload/comfyTitleBarPreload.ts` — kept in sync because the
- *  title-bar renderer can't import preload TS directly (only its
- *  generated `.d.ts` would be visible, and we ship neither). */
+/** Download fields used by the title-bar tray; a subset of DownloadsTrayEntry
+ *  in src/preload/comfyTitleBarPreload.ts. */
 interface DownloadsTrayEntry {
   url: string
   filename: string
@@ -81,23 +75,12 @@ interface Bridge {
   openFileMenu: (anchor: MenuAnchor) => void
   /** Ask main to dismiss the File menu popup (toggle-close). */
   dismissFileMenu: () => void
-  /** Issue #514 — show a hover tooltip in the cached title-bar tooltip
-   *  popup. macOS-only path: native HTML `title` tooltips don't appear
-   *  reliably for sibling chrome WebContentsViews on macOS, so the
-   *  renderer routes hover through main → cached `WebContentsView`
-   *  popup. `leftX` / `rightX` / `bottomY` are title-bar-local pixels
-   *  (the title-bar view sits at parent-window content (0,0) so they
-   *  map directly to window coords on the main side). Main prefers to
-   *  anchor the bubble's left edge to `leftX` so the bubble extends
-   *  rightward from the trigger; it falls back to right-aligning
-   *  `rightX` when growing rightward would overflow. */
+  /** Cached macOS tooltip; native HTML tooltips are unreliable in sibling
+   *  WebContentsViews. Coordinates are title-bar-local (also window-local).
+   *  Main aligns the bubble at leftX, or at rightX when it would overflow. */
   showTooltip: (payload: { text: string; leftX: number; rightX: number; bottomY: number }) => void
-  /** Issue #514 — hide the title-bar hover tooltip popup. */
   hideTooltip: () => void
-  /** Sticky title-bar coachmark card (issue #701) — show/hide the card pointing at a
-   *  title-bar element, and subscribe to how it was retired. One popup per window serves
-   *  both the onboarding pill hint and the Core beta activation notice, so `kind` names the
-   *  owner on the way out and back. */
+  /** Shared popup for onboarding and beta notices; kind identifies its owner. */
   showCoachmark: (payload: {
     kind?: CoachmarkKind
     title: string
@@ -248,10 +231,7 @@ const titleDownloadsBadgeClass =
   'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--accent,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
 
 const isMac = ref(bridge?.isMac() ?? false)
-/** Active body-mode pill, mirrored from main. Drives the native Install
- *  menu's checkmark for install-scoped pages (Install Settings /
- *  Directories). The pill itself no longer reflects this — the pill is
- *  an identity label, not a tab indicator. */
+/** Active panel reported by main. */
 const activePanel = ref<ComfyPanelKey>('comfy')
 /**
  * Install-less host window flag — `true` when the host has no install
@@ -811,10 +791,8 @@ watch(
     void nextTick().then(() => {
       requestAnimationFrame(() => {
         if (unmounted) return
-        // AWAITED, not fired alongside: the hint's `maybeShow` suspends on an IPC read before
-        // it sets `isShowing`, so launching both together would leave the beta notice's
-        // suppression check reading a stale `false`. It happens to work today only because the
-        // two IPC replies come back in call order; awaiting makes the dependency real.
+        // Wait for the hint's IPC read to update isShowing before the beta notice
+        // checks whether another card is visible.
         void coachmark.maybeShow().then(() => {
           if (!unmounted) void betaNotice.maybeShow()
         })
@@ -834,9 +812,7 @@ watch(
     appUpdatePillLabel,
     showAppUpdatePill,
     showInstallUpdatePill,
-    // Trailing pills (update / feedback / downloads) hide on
-    // first-use lockdown only; loading-lockdown keeps them live, so
-    // the legacy `isChromeLocked` would over-invalidate.
+    // Trailing pills hide on first-use lockdown; loading-lockdown keeps them live.
     isFirstUseLockdown
   ],
   () => invalidateRestoreCosts()
@@ -896,20 +872,9 @@ onUnmounted(() => {
       '--title-trailing-width': `${trailingWidthPx}px`
     }"
   >
-    <!-- Left: app menu (hamburger). Anchors a native OS menu in main —
-         HTML popups would be clipped by the title bar's WebContentsView
-         bounds. We previously labelled this "File", but install-backed
-         windows host a ComfyUI WebContentsView whose own menus often
-         carry their own "File" — having two "File" entries stacked
-         vertically read as redundant. The hamburger reads as a
-         host-app-level menu and stays out of ComfyUI's namespace. -->
-    <!-- Left cluster: waffle menu. The app-update pill moved to the
-         right trailing cluster so all user-action controls
-         (update / feedback / downloads / settings) live together.
-         Hidden only on `consent-lockdown` — `post-consent` still
-         surfaces the "Skip Onboarding" escape, and `loading-lockdown`
-         keeps the full menu so the user can open a fresh window,
-         settings, feedback, or quit cleanly while an op runs. -->
+    <!-- The native app menu avoids clipping at the title-bar view's bounds.
+         Hidden only during consent; post-consent exposes Skip Onboarding
+         and loading-lockdown leaves the menu available. -->
     <div
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
@@ -940,10 +905,7 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Center: install pill + install-update pill. The downloads tray
-         moved to the right trailing cluster alongside the other
-         user-action controls; the install-update pill remains here so
-         it stays adjacent to the install identity. -->
+    <!-- Install identity and install-update controls. -->
     <div
       class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
     >
@@ -1060,11 +1022,7 @@ onUnmounted(() => {
     </div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
-      <!-- App-update pill ("Desktop Update") lives in the trailing
-           cluster. The instance-update CTA now lives inside the center
-           identity pill (next to the install name) so the two updates
-           stay visually distinct: install update = in the center pill;
-           Desktop app update = here. -->
+      <!-- Desktop updates stay separate from the install-update chip in the identity pill. -->
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
         type="button"

@@ -441,9 +441,9 @@ export function _getActiveLaunchIds(): string[] {
  */
 export const sessionLifecycleEvents = new EventEmitter()
 
-/** A snapshot restore failed after the install itself succeeded (#1255): the
+/** A snapshot restore failed after the install itself succeeded: the
  *  install is bootable, so surface the failure to the caller and record it in
- *  the app log (#1250) instead of condemning the install. */
+ *  the app log instead of condemning the install. */
 export function snapshotRestoreFailureResult(
   installationId: string,
   restoreError: string
@@ -566,7 +566,7 @@ export async function syncOemSeedBestEffort(): Promise<void> {
  *
  * Only an `empty` dir may be discarded as an aborted install; a `missing`/
  * `no-permission`/`inaccessible` dir must be kept so a temporarily-offline drive
- * doesn't lose the tracked instance and its settings (issue #1155).
+ * doesn't lose the tracked instance and its settings.
  */
 export type InstallDirState = 'missing' | 'no-permission' | 'inaccessible' | 'empty' | 'populated'
 

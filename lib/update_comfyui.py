@@ -274,7 +274,7 @@ def main():
     # Launcher-managed installations should not have local modifications to
     # tracked files. Using a hard reset instead of merge/stash avoids merge
     # conflicts and stash-pop conflict markers that can corrupt working-tree
-    # files (see issue #245).
+    # files.
     print("Resetting to origin/master…")
     try:
         remote_ref = repo.lookup_reference("refs/remotes/origin/master")
@@ -288,7 +288,7 @@ def main():
     # branch ref is advanced *before* the working-tree checkout below, so without
     # this a mid-checkout failure would leave the source pointing at the new
     # commit with a half-updated tree - new source paired with the old venv,
-    # which crashes ComfyUI on import (issue #1233). Capture the actual HEAD (not
+    # which crashes ComfyUI on import. Capture the actual HEAD (not
     # master's tip): launcher installs often run detached at a tag, where master
     # differs from the checked-out commit.
     pre_reset_head = repo.head.target

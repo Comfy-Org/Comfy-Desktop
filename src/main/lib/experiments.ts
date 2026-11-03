@@ -14,10 +14,6 @@
  * on disk for the NEXT boot. This keeps boot fast (no network on the
  * critical path) while still assigning new experiments on first run.
  *
- * The previous in-tree experiment-flag system was deliberately removed
- * (the old `feature-flags.ts` plus a sample-rate dial). This module
- * brings back only the experiment-evaluation subset, not the
- * kill-switch grab-bag.
  *
  * Consent: `loadFeatureFlagsImmediate` is already suppressed unless
  * consent is `'granted'`, so the boot refresh never ships a network

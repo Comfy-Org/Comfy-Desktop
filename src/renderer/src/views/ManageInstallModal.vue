@@ -6,8 +6,8 @@ import DetailModal from './DetailModal.vue'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
- * Per-install management modal carrying the per-install body (DetailModal in `embedded` mode); chrome comes from `BaseModal`.
- * The running-window title-bar Settings icon is a separate surface (`ComfyUISettingsPanel.vue`).
+ * Per-install management modal with an embedded DetailModal body and BaseModal chrome.
+ * The title-bar settings surface uses ComfyUISettingsContent in the instance picker.
  */
 
 type DetailTab = 'status' | 'update' | 'snapshots' | 'settings'
