@@ -30,7 +30,7 @@ import {
 import { REQUIRES_STOPPED } from '../types/ipc'
 import { Pencil } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
-import TooltipWrap from '../components/TooltipWrap.vue'
+import TooltipWrap from '../components/ui/Tooltip.vue'
 import type {
   Installation,
   ActionDef,

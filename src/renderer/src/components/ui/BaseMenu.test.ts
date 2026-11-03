@@ -11,7 +11,7 @@ async function openMenu(props: {
 }): Promise<VueWrapper> {
   const wrapper = mount(BaseMenu, { props, slots: { default: 'Open' }, attachTo: document.body })
   wrappers.push(wrapper)
-  await wrapper.get('button').trigger('click')
+  await wrapper.get('button').trigger('keydown', { key: 'ArrowDown' })
   await flushPromises()
   return wrapper
 }
@@ -47,9 +47,9 @@ describe('BaseMenu', () => {
     const onWindow = (): void => {
       reachedWindow = true
     }
+    await openMenu({ items: [{ id: 'a', label: 'A' }] })
     window.addEventListener('keydown', onWindow)
     try {
-      await openMenu({ items: [{ id: 'a', label: 'A' }] })
       list().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await flushPromises()
       expect(document.body.querySelector('.ui-menu-list')).toBeNull()
@@ -67,6 +67,6 @@ describe('BaseMenu', () => {
         { id: 'manage', label: 'Manage' }
       ]
     })
-    expect(list().querySelector('[data-active]')?.textContent).toBe('Manage')
+    expect(document.activeElement?.textContent).toBe('Manage')
   })
 })

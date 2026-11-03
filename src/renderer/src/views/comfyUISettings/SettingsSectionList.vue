@@ -14,7 +14,7 @@ import SectionActionButton from './SectionActionButton.vue'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
-import TooltipWrap from '../../components/TooltipWrap.vue'
+import TooltipWrap from '../../components/ui/Tooltip.vue'
 import { isOpenablePathString } from '../../lib/openablePath'
 import type {
   ActionDef,

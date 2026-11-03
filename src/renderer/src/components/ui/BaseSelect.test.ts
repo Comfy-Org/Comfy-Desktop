@@ -1,109 +1,96 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import SelectContent from '@comfyorg/design-system/select/SelectContent'
 import BaseSelect from './BaseSelect.vue'
 
 const wrappers: VueWrapper[] = []
-const originalInnerHeight = window.innerHeight
-
-function rect(top: number, bottom: number): DOMRect {
-  return {
-    top,
-    bottom,
-    left: 20,
-    right: 220,
-    width: 200,
-    height: bottom - top,
-    x: 20,
-    y: top,
-    toJSON: () => ({})
-  }
-}
-
-function mountSelect(options = ['One', 'Two', 'Three'], compact = false): VueWrapper {
+function mountSelect(
+  options = [
+    { value: '', label: 'All' },
+    { value: 'one', label: 'One' },
+    { value: 'disabled', label: 'Unavailable', disabled: true }
+  ]
+) {
   const wrapper = mount(BaseSelect, {
-    props: {
-      modelValue: 'One',
-      options: options.map((label) => ({ value: label, label })),
-      ariaLabel: 'Test select',
-      compact
-    },
+    props: { modelValue: '', options, ariaLabel: 'Test select' },
     attachTo: document.body
   })
   wrappers.push(wrapper)
   return wrapper
 }
-
+async function open(wrapper: VueWrapper) {
+  await wrapper.get('.ui-select-trigger').trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
 afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
-  document.querySelectorAll('.ui-select-listbox').forEach((element) => element.remove())
-  Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight })
-  vi.restoreAllMocks()
 })
 
-it('applies compact text sizing to both the trigger and teleported listbox', async () => {
-  const wrapper = mountSelect(['One', 'All'], true)
-  expect(wrapper.get('.ui-select-trigger').classes()).toContain('ui-select-trigger--compact')
-
-  await wrapper.get('.ui-select-trigger').trigger('click')
-  await flushPromises()
-
-  expect(document.querySelector('.ui-select-listbox')?.classList).toContain(
-    'ui-select-listbox--compact'
-  )
-})
-
-it('shows a loading label without replacing the selectable options', async () => {
-  const wrapper = mountSelect(['One', 'Two'])
-  await wrapper.setProps({ loading: true, loadingLabel: 'Refreshing builds...' })
-
-  expect(wrapper.get('.ui-select-label').text()).toBe('Refreshing builds...')
-  expect(wrapper.get('.ui-select-trigger').attributes('aria-busy')).toBe('true')
-
-  await wrapper.get('.ui-select-trigger').trigger('click')
-  await flushPromises()
-  expect(
-    Array.from(document.querySelectorAll('.ui-select-option-label')).map((el) => el.textContent)
-  ).toEqual(['One', 'Two'])
-})
-
-describe('BaseSelect positioning', () => {
-  it('uses the rendered list height to flip a dropdown above the trigger', async () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 380 })
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-      return this.classList.contains('ui-select-trigger') ? rect(200, 240) : rect(0, 0)
-    })
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
-      return this.classList.contains('ui-select-listbox') ? 170 : 0
-    })
-
+describe('BaseSelect shared adapter', () => {
+  it('preserves an empty-string All option and emits its original value', async () => {
     const wrapper = mountSelect()
-    await wrapper.get('.ui-select-trigger').trigger('click')
+    await wrapper.setProps({ modelValue: 'one' })
+    await open(wrapper)
+    const all = document.querySelector<HTMLElement>('.ui-select-option')!
+    all.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
-
-    const listbox = document.querySelector<HTMLElement>('.ui-select-listbox')
-    expect(listbox).not.toBeNull()
-    expect(listbox!.style.top).toBe('auto')
-    expect(listbox!.style.bottom).toBe('182px')
-    expect(listbox!.style.maxHeight).toBe('190px')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['']])
   })
 
-  it('clamps a dropdown to the available space on its chosen side', async () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 160 })
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-      return this.classList.contains('ui-select-trigger') ? rect(30, 70) : rect(0, 0)
-    })
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
-      return this.classList.contains('ui-select-listbox') ? 200 : 0
-    })
-
-    const wrapper = mountSelect(['One', 'Two', 'Three', 'Four', 'Five'])
-    await wrapper.get('.ui-select-trigger').trigger('click')
+  it('renders disabled options and descriptions through shared items', async () => {
+    const wrapper = mountSelect([
+      { value: 'one', label: 'One', description: 'Installed locally' },
+      { value: 'disabled', label: 'Unavailable', disabled: true }
+    ])
+    await open(wrapper)
+    expect(document.querySelector('.ui-select-option-desc')?.textContent).toBe('Installed locally')
+    const disabled = document.querySelector<HTMLElement>('[role="option"][aria-disabled="true"]')!
+    disabled.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
 
-    const listbox = document.querySelector<HTMLElement>('.ui-select-listbox')
-    expect(listbox).not.toBeNull()
-    expect(listbox!.style.top).toBe('72px')
-    expect(listbox!.style.bottom).toBe('auto')
-    expect(listbox!.style.maxHeight).toBe('80px')
+  it('shows loading text without removing selectable choices', async () => {
+    const wrapper = mountSelect()
+    await wrapper.setProps({ loading: true, loadingLabel: 'Refreshing builds…', compact: true })
+    expect(wrapper.get('.ui-select-label').text()).toBe('Refreshing builds…')
+    expect(wrapper.get('.ui-select-trigger').attributes('aria-busy')).toBe('true')
+    await open(wrapper)
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(3)
+    expect(document.querySelector('.ui-select-listbox')?.classList).toContain(
+      'ui-select-listbox--compact'
+    )
+  })
+
+  it('closes on window blur and suppresses focus restoration into that window', async () => {
+    const wrapper = mountSelect()
+    await open(wrapper)
+    const content = wrapper.findComponent(SelectContent)
+    window.dispatchEvent(new Event('blur'))
+    const event = new Event('closeAutoFocus', { cancelable: true })
+    content.vm.$emit('closeAutoFocus', event)
+    expect(event.defaultPrevented).toBe(true)
+    await flushPromises()
+    expect(document.querySelector('.ui-select-listbox')).toBeNull()
+  })
+
+  it('contains Escape so it does not also close the host popup', async () => {
+    const wrapper = mountSelect()
+    await open(wrapper)
+    let reachedWindow = false
+    const listener = () => {
+      reachedWindow = true
+    }
+    window.addEventListener('keydown', listener)
+    try {
+      document
+        .querySelector('.ui-select-listbox')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(reachedWindow).toBe(false)
+      expect(document.querySelector('.ui-select-listbox')).toBeNull()
+    } finally {
+      window.removeEventListener('keydown', listener)
+    }
   })
 })

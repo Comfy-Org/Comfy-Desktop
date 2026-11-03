@@ -35,6 +35,8 @@ describe('ContextMenu', () => {
       }
     })
 
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1)
     const item = document.body.querySelector(
       `[data-testid="${TID.contextMenuItem('promote-to-workspace')}"]`
     )
@@ -48,8 +50,10 @@ describe('ContextMenu', () => {
     expect(info.getAttribute('tabindex')).toBe('0')
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
 
-    info.parentElement?.dispatchEvent(new Event('mouseenter'))
-    await vi.advanceTimersByTimeAsync(100)
+    info.parentElement!.dispatchEvent(
+      new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 })
+    )
+    await vi.advanceTimersByTimeAsync(101)
     await flushPromises()
 
     const bubble = document.querySelector('.tooltip-bubble')
@@ -70,5 +74,61 @@ describe('ContextMenu', () => {
     link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     expect(openExternal).toHaveBeenCalledWith('https://platform.comfy.org/profile/deploy')
     expect(wrapper.emitted('close')).toBeUndefined()
+  })
+
+  it('keeps a disabled action with a help link inert', async () => {
+    wrapper = mount(ContextMenu, {
+      props: {
+        open: true,
+        x: 40,
+        y: 40,
+        items: [
+          { id: 'disabled', label: 'Unavailable', disabled: true, hint: 'Why it is unavailable' }
+        ]
+      },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const item = document.querySelector<HTMLElement>('[role="menuitem"]')!
+    item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(item.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('emits the action id and closes after keyboard selection', async () => {
+    wrapper = mount(ContextMenu, {
+      props: { open: true, x: 40, y: 40, items: [{ id: 'manage', label: 'Manage' }] },
+      attachTo: document.body
+    })
+    await flushPromises()
+    document
+      .querySelector<HTMLElement>('[role="menuitem"]')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('select')).toEqual([['manage']])
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('closes on window focus loss and contains Escape inside the menu', async () => {
+    wrapper = mount(ContextMenu, {
+      props: { open: true, x: 40, y: 40, items: [{ id: 'manage', label: 'Manage' }] },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const listener = vi.fn()
+    window.addEventListener('keydown', listener)
+    try {
+      document
+        .querySelector('.context-menu')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(listener).not.toHaveBeenCalled()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      window.dispatchEvent(new Event('blur'))
+      expect(wrapper.emitted('close')).toHaveLength(2)
+    } finally {
+      window.removeEventListener('keydown', listener)
+    }
   })
 })

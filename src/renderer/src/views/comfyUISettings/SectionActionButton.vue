@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { Loader2 } from 'lucide-vue-next'
-import TooltipWrap from '../../components/TooltipWrap.vue'
+import TooltipWrap from '../../components/ui/Tooltip.vue'
 import type { ActionDef } from '../../types/ipc'
 
 const props = withDefaults(

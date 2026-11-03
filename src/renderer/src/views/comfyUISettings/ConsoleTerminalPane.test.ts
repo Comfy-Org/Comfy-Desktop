@@ -287,7 +287,7 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
 
       await w.find(`[data-testid="${TID.consoleTerminal}"]`).trigger('contextmenu')
       const copyItem = document.body.querySelector(`[data-testid="${TID.contextMenuItem('copy')}"]`)
-      expect(copyItem?.classList.contains('disabled')).toBe(true)
+      expect(copyItem?.closest('[role="menuitem"]')?.getAttribute('aria-disabled')).toBe('true')
     })
   })
 })

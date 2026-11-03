@@ -1,200 +1,139 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import Tooltip from './Tooltip.vue'
 
 const wrappers: VueWrapper[] = []
-
+beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
   vi.useRealTimers()
 })
-
-function mountTooltip(props: Record<string, unknown> = {}) {
+function mountTooltip(props: Record<string, unknown> = {}, content?: string) {
   const wrapper = mount(Tooltip, {
     props: { text: 'Hello tooltip', delayMs: 0, ...props },
-    slots: { default: '<button data-testid="trigger">trigger</button>' },
+    slots: {
+      default: '<button data-testid="trigger">trigger</button>',
+      ...(content ? { content } : {})
+    },
     attachTo: document.body
   })
   wrappers.push(wrapper)
   return wrapper
 }
-
-// jsdom returns zero-sized rects, so stub them for the placement resolver.
-function stubViewport(width: number, height: number) {
-  Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
-  Object.defineProperty(window, 'innerHeight', { value: height, configurable: true })
+async function hover(wrapper: VueWrapper) {
+  wrapper
+    .get('.tooltip-wrap')
+    .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+  await vi.advanceTimersByTimeAsync(1)
+  await flushPromises()
 }
 
-function stubTriggerRect(rect: Partial<DOMRect>) {
-  const original = Element.prototype.getBoundingClientRect
-  Element.prototype.getBoundingClientRect = function (this: Element) {
-    if (this.matches('[data-testid="trigger"]')) {
-      return {
-        x: 0,
-        y: 0,
-        width: 20,
-        height: 20,
-        top: 0,
-        bottom: 20,
-        left: 0,
-        right: 20,
-        toJSON: () => ({}),
-        ...rect
-      } as DOMRect
+describe('Tooltip shared adapter', () => {
+  it('opens on hover outside the trigger tree with its text', async () => {
+    const wrapper = mountTooltip()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    await hover(wrapper)
+    const bubble = document.querySelector('.tooltip-bubble')!
+    expect(bubble.textContent).toContain('Hello tooltip')
+    expect(wrapper.element.contains(bubble)).toBe(false)
+  })
+
+  it('closes a noninteractive tooltip on pointer leave', async () => {
+    const wrapper = mountTooltip()
+    await hover(wrapper)
+    await wrapper.get('.tooltip-wrap').trigger('pointerleave', { pointerType: 'mouse' })
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
+  it('keeps linked content interactive and focusable', async () => {
+    const wrapper = mountTooltip(
+      { interactive: true },
+      '<a href="https://example.com">Read more</a>'
+    )
+    await hover(wrapper)
+    const bubble = document.querySelector<HTMLElement>('.tooltip-bubble')!
+    expect(bubble.classList).toContain('pointer-events-auto')
+    expect(bubble.getAttribute('role')).toBe('dialog')
+    const link = bubble.querySelector('a')!
+    link.focus()
+    await flushPromises()
+    expect(document.activeElement).toBe(link)
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+  })
+
+  it('keeps a help link open when focus moves from its focusable wrapper, then closes on exit', async () => {
+    const wrapper = mountTooltip(
+      { interactive: true, tabindex: 0 },
+      '<a href="https://example.com">Read more</a>'
+    )
+    ;(wrapper.get('.tooltip-wrap').element as HTMLElement).focus()
+    await flushPromises()
+    const link = document.querySelector<HTMLAnchorElement>('.tooltip-bubble a')!
+    link.focus()
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    try {
+      outside.focus()
+      await flushPromises()
+      expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    } finally {
+      outside.remove()
     }
-    if (this.matches('.tooltip-bubble')) {
-      return {
-        x: 0,
-        y: 0,
-        width: 120,
-        height: 40,
-        top: 0,
-        bottom: 40,
-        left: 0,
-        right: 120,
-        toJSON: () => ({})
-      } as DOMRect
+  })
+
+  it('opens on keyboard focus and closes on Escape without closing the host', async () => {
+    const wrapper = mountTooltip()
+    wrapper.get('button').element.focus()
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+    let reachedWindow = false
+    const listener = () => {
+      reachedWindow = true
     }
-    return original.call(this)
-  }
-  return () => {
-    Element.prototype.getBoundingClientRect = original
-  }
-}
-
-describe('Tooltip (ui primitive)', () => {
-  it('does not render the bubble before the trigger is hovered', () => {
-    mountTooltip()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    window.addEventListener('keydown', listener)
+    try {
+      document
+        .querySelector('.tooltip-bubble')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(reachedWindow).toBe(false)
+      expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    } finally {
+      window.removeEventListener('keydown', listener)
+    }
   })
 
-  it('shows the bubble on mouseenter with the trigger text', async () => {
+  it('hides when disabled and cannot open without text or content', async () => {
     const wrapper = mountTooltip()
-    await wrapper.trigger('mouseenter')
-    await flushPromises()
-    const bubble = document.querySelector('.tooltip-bubble')
-    expect(bubble).not.toBeNull()
-    expect(bubble!.textContent?.trim()).toContain('Hello tooltip')
-  })
-
-  it('hides the bubble on mouseleave', async () => {
-    const wrapper = mountTooltip()
-    await wrapper.trigger('mouseenter')
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
-    wrapper.element.dispatchEvent(new Event('mouseleave'))
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
-  it('keeps an interactive bubble open while the pointer moves onto its content', async () => {
-    vi.useFakeTimers()
-    const wrapper = mount(Tooltip, {
-      props: { text: 'Learn more', delayMs: 0, interactive: true },
-      slots: {
-        default: '<button data-testid="trigger">trigger</button>',
-        content: '<a href="https://example.com">Read more</a>'
-      },
-      attachTo: document.body
-    })
-    wrappers.push(wrapper)
-
-    await wrapper.trigger('mouseenter')
-    await flushPromises()
-    const bubble = document.querySelector('.tooltip-bubble') as HTMLElement
-    wrapper.element.dispatchEvent(new Event('mouseleave'))
-    bubble.dispatchEvent(new Event('mouseenter'))
-    await vi.advanceTimersByTimeAsync(100)
-    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
-
-    bubble.dispatchEvent(new Event('mouseleave'))
-    await vi.advanceTimersByTimeAsync(100)
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
-  it('teleports the bubble to document.body (outside any overflow:hidden parent)', async () => {
-    const wrapper = mountTooltip()
-    await wrapper.trigger('mouseenter')
-    await flushPromises()
-    const bubble = document.querySelector('.tooltip-bubble')
-    expect(bubble?.parentElement).toBe(document.body)
-  })
-
-  it('does not show the bubble when `disabled` is true', async () => {
-    const wrapper = mountTooltip({ disabled: true })
-    await wrapper.trigger('mouseenter')
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
-  it('hides a visible bubble when `disabled` turns true', async () => {
-    const wrapper = mountTooltip()
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
-
+    await hover(wrapper)
     await wrapper.setProps({ disabled: true })
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    await hover(wrapper)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    await wrapper.setProps({ disabled: false, text: '' })
+    await hover(wrapper)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
-  it('cancels a pending open when `disabled` turns true mid-delay', async () => {
+  it('cancels a pending open when disabled during the delay', async () => {
     vi.useFakeTimers()
     const wrapper = mountTooltip({ delayMs: 100 })
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    await hover(wrapper)
     await wrapper.setProps({ disabled: true })
-    vi.advanceTimersByTime(200)
+    await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
-  it('does not show the bubble when `text` is empty', async () => {
-    const wrapper = mountTooltip({ text: '' })
-    await wrapper.trigger('mouseenter')
+  it('closes when focus leaves the Electron window', async () => {
+    const wrapper = mountTooltip()
+    await hover(wrapper)
+    window.dispatchEvent(new Event('blur'))
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
-  it('flips `side="top"` to `bottom` when the trigger sits flush against the top edge', async () => {
-    stubViewport(1024, 768)
-    const restore = stubTriggerRect({
-      top: 0,
-      bottom: 20,
-      left: 100,
-      right: 120
-    })
-    try {
-      const wrapper = mountTooltip({ side: 'top' })
-      await wrapper.trigger('mouseenter')
-      await flushPromises()
-      const bubble = document.querySelector('.tooltip-bubble')
-      expect(bubble?.getAttribute('data-side')).toBe('bottom')
-    } finally {
-      restore()
-    }
-  })
-
-  it('clamps the bubble inside the viewport when the trigger is near the right edge', async () => {
-    stubViewport(800, 600)
-    const restore = stubTriggerRect({
-      top: 300,
-      bottom: 320,
-      left: 790,
-      right: 800,
-      width: 10
-    })
-    try {
-      const wrapper = mountTooltip({ side: 'top' })
-      await wrapper.trigger('mouseenter')
-      await flushPromises()
-      const bubble = document.querySelector('.tooltip-bubble') as HTMLElement
-      // Bubble is 120px wide (stub), viewport is 800, edgePadding is 8 →
-      // clamp upper bound is 800 - 120 - 8 = 672. Without clamping the
-      // bubble's left would be 790 + 5 - 60 = 735.
-      const left = parseFloat(bubble.style.left)
-      expect(left).toBeLessThanOrEqual(672)
-    } finally {
-      restore()
-    }
   })
 })
