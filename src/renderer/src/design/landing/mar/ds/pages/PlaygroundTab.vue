@@ -103,6 +103,7 @@ const src = computed(() => {
   display: block;
   width: 100%;
   border: 0;
+  border-radius: 16px;
   background: transparent;
 }
 </style>

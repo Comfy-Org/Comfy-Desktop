@@ -28,7 +28,8 @@ const replay = (): void => setPlayback({ replay: Date.now() })
 <style>
 .ds-motion-bar {
   position: sticky;
-  top: -28px;
+  /* Flush with the page's top edge, past its padding. */
+  top: calc(-1 * var(--ds-pad-top));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -36,9 +37,9 @@ const replay = (): void => setPlayback({ replay: Date.now() })
   margin: 0 0 14px;
   padding: 10px 14px;
   border-radius: 12px;
-  background: #1c1c20;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
-  color: #c8c8cd;
+  background: var(--color-app-background);
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  color: var(--color-muted-foreground);
   font-size: 12.5px;
 }
 .ds-motion-bar label {
@@ -57,6 +58,7 @@ const replay = (): void => setPlayback({ replay: Date.now() })
   margin-left: auto;
   padding: 4px 10px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.08);
+  background: var(--color-secondary-background-hover);
+  color: var(--color-base-foreground);
 }
 </style>

@@ -80,37 +80,60 @@ async function copy(): Promise<void> {
 <style>
 .ds-code {
   display: flex;
-  max-width: 720px;
+  max-width: 820px;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 .ds-code-props {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  font-size: 13px;
+  line-height: 20px;
 }
 .ds-code-props th {
-  padding: 6px 10px;
-  color: #6e6e76;
+  padding: 10px 14px;
+  background: var(--color-secondary-background);
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.06em;
   text-align: left;
+  text-transform: uppercase;
 }
 .ds-code-props td {
-  padding: 7px 10px;
-  border-top: 1px solid rgb(255 255 255 / 0.06);
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border-default);
+  vertical-align: top;
   overflow-wrap: anywhere;
+}
+.ds-code-props td:not(:first-child) code {
+  color: var(--color-muted-foreground);
 }
 .ds-code code {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
-}
-.ds-code-src {
-  color: #6e6e76;
   font-size: 12px;
 }
+.ds-code-src {
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
+}
+.ds-code-src code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--color-secondary-background);
+  color: var(--color-muted-foreground);
+}
 .ds-play-code-head a {
-  color: #a1a1a8;
+  color: var(--color-muted-foreground);
   text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
   text-underline-offset: 3px;
+}
+.ds-play-code-head a:hover {
+  color: var(--color-base-foreground);
 }
 </style>

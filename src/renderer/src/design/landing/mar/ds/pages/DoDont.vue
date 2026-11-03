@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, Workflow } from 'lucide-vue-next'
+import { Bell, Check, Workflow, X } from 'lucide-vue-next'
 import portraitSun from '../../assets/portrait-sun.jpg'
 import Button from '../../../ui/Button.vue'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
@@ -106,7 +106,12 @@ const TABS = [
           </div>
         </div>
         <figcaption>
-          <b>{{ side === 'do' ? '✓ Do' : '✗ Don’t' }}</b> {{ side === 'do' ? p.do : p.dont }}
+          <b
+            ><component :is="side === 'do' ? Check : X" :size="13" :stroke-width="2.5" />{{
+              side === 'do' ? 'Do' : 'Don’t'
+            }}</b
+          >
+          <span>{{ side === 'do' ? p.do : p.dont }}</span>
         </figcaption>
       </figure>
     </template>
@@ -116,34 +121,52 @@ const TABS = [
 <style>
 .ds-dd {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 28px 16px;
 }
 .ds-dd-cell {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .ds-dd-pic.proto-main.proto-main.proto-main {
   position: relative;
   display: flex;
-  min-height: 180px;
+  min-height: 200px;
   margin: 0;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 24px;
   border-radius: 12px;
   overflow: hidden;
 }
 .ds-dd-cell.is-do .ds-dd-pic {
-  box-shadow: inset 0 -3px 0 var(--color-status-running);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    inset 0 -3px 0 var(--color-status-running);
 }
 .ds-dd-cell.is-dont .ds-dd-pic {
-  box-shadow: inset 0 -3px 0 var(--color-status-danger);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    inset 0 -3px 0 var(--color-status-danger);
 }
 .ds-dd-cell figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 2px;
   color: var(--color-muted-foreground);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 20px;
+  text-wrap: pretty;
+}
+.ds-dd-cell figcaption b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .ds-dd-cell.is-do b {
   color: var(--color-status-running);
