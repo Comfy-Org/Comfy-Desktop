@@ -888,7 +888,7 @@ watch(performanceTestLogs, async () => {
               <div class="performance-test__run-actions mt-auto flex self-end gap-2">
                 <Button
                   class="performance-test__stop min-w-24"
-                  variant="secondary"
+                  variant="destructive"
                   size="lg"
                   :class="['whitespace-normal']"
                   type="button"

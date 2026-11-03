@@ -42,7 +42,7 @@ const actionVariants = {
 } as const
 const collapsibleTitleClass =
   "inline-block cursor-pointer select-none before:mr-1 before:inline-block before:content-['▸'] before:transition-transform before:duration-150 before:ease-[ease]"
-const openPathClass = 'min-w-0 max-w-full truncate p-0 text-left'
+const openPathClass = 'block min-w-0 max-w-full truncate p-0 text-left'
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef, button: HTMLButtonElement | null]

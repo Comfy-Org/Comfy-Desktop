@@ -47,7 +47,7 @@ defineEmits<{
           size="link"
           variant="link"
           type="button"
-          class="path-open min-w-0 max-w-full truncate py-0 text-left"
+          class="path-open block min-w-0 max-w-full truncate py-0 text-left"
           :title="$t('actions.openDirectory', 'Open Directory')"
           :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
           @click="$emit('open')"

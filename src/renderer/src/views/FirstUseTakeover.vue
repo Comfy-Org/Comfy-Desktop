@@ -62,8 +62,6 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import type { GpuTier } from '../../../shared/gpuTier'
 import type { CloudUserTier, SystemInfo } from '../../../types/ipc'
 
-// These native-control adapters retain the existing onboarding dimensions,
-// wrapping and focus outlines while using the shared button component.
 const legalLinkClass = 'inline h-auto whitespace-normal p-0 text-inherit underline [font:inherit]'
 const modifierClass =
   'inline-flex cursor-pointer items-start gap-2 text-[13px] text-neutral-300 transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none'
@@ -961,8 +959,8 @@ defineExpose({ open, resetContinue })
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
                 <Button
-                  size="lg"
-                  variant="textonly"
+                  size="icon-sm"
+                  variant="muted-textonly"
                   type="button"
                   class="start-cloud-info"
                   :aria-label="$t('firstUse.whyTryCloud')"
@@ -1210,7 +1208,7 @@ defineExpose({ open, resetContinue })
             size="lg"
             variant="inverted"
             class="start-continue min-w-40 shrink-0"
-            :class="{ 'start-continue--locked opacity-45': !acceptedTos }"
+            :class="{ 'start-continue--locked cursor-not-allowed opacity-45': !acceptedTos }"
             type="button"
             data-testid="first-use-continue"
             :disabled="isContinuing || pickedChoice === null"
@@ -1221,7 +1219,7 @@ defineExpose({ open, resetContinue })
             <Loader2
               v-if="isContinuing"
               :size="16"
-              class="start-continue min-w-40 shrink-0"
+              class="start-continue__spinner shrink-0 animate-spin [animation-duration:750ms]"
               aria-hidden="true"
             />
             <span>{{
