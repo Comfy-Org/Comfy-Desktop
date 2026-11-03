@@ -410,7 +410,7 @@ defineExpose({ open })
               <Input
                 id="ls-name"
                 v-model="installName"
-                autofocus
+                data-initial-focus
                 class="load-snapshot-input"
                 type="text"
                 :placeholder="$t('common.namePlaceholder')"

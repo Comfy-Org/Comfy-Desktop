@@ -67,7 +67,6 @@ const emit = defineEmits<{ close: []; cancel: []; secondary: [] }>()
 
 const TITLE_ID = `base-alert-title-${useId()}`
 
-const dialogAriaLabel = computed(() => props.ariaLabel)
 const dialogAriaLabelledby = computed(
   () => props.ariaLabelledby ?? (props.ariaLabel ? undefined : TITLE_ID)
 )
@@ -93,29 +92,13 @@ const panelWidthClass = computed(() => {
 
 const linkClass =
   '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--accent)] [&_.modal-link]:underline'
-
-function onCancelClick(): void {
-  emit('cancel')
-}
-
-function onActionClick(): void {
-  emit('close')
-}
-
-function onSecondaryClick(): void {
-  emit('secondary')
-}
-
-function onCloseIconClick(): void {
-  emit('cancel')
-}
 </script>
 
 <template>
   <DesktopDialogSurface
     :open="open"
     role="alertdialog"
-    :aria-label="dialogAriaLabel"
+    :aria-label="ariaLabel"
     :aria-labelledby="dialogAriaLabelledby"
     :dismiss-on-escape="dismissOnEscape"
     :dismiss-on-outside="dismissOnOutside"
@@ -144,7 +127,7 @@ function onCloseIconClick(): void {
         class="base-alert-close-icon absolute -top-1 right-[18px]"
         :aria-label="$t('common.close')"
         :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
-        @click="onCloseIconClick"
+        @click="emit('cancel')"
       >
         <X :size="16" />
       </Button>
@@ -204,7 +187,7 @@ function onCloseIconClick(): void {
           variant="secondary"
           size="lg"
           :data-testid="testIdCancel ?? 'base-alert-cancel'"
-          @click="onCancelClick"
+          @click="emit('cancel')"
         >
           <span class="truncate">{{ cancelLabel ?? $t('common.cancel') }}</span>
         </Button>
@@ -214,7 +197,7 @@ function onCloseIconClick(): void {
           :variant="actionVariants[secondaryTone]"
           size="lg"
           :data-testid="testIdSecondary ?? 'base-alert-secondary'"
-          @click="onSecondaryClick"
+          @click="emit('secondary')"
         >
           <span class="truncate">{{ secondaryLabel }}</span>
         </Button>
@@ -223,7 +206,7 @@ function onCloseIconClick(): void {
           :variant="actionVariants[tone]"
           size="lg"
           :data-testid="testIdAction ?? 'base-alert-action'"
-          @click="onActionClick"
+          @click="emit('close')"
         >
           <span class="truncate">{{ buttonLabel ?? $t('modal.ok') }}</span>
         </Button>

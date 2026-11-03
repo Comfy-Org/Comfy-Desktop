@@ -142,7 +142,7 @@ describe('DesktopDialogSurface', () => {
       props: { open: true, ariaLabel: 'Track installation' },
       slots: {
         default:
-          '<button id="browse-first">Browse</button><input id="focused-name" autofocus value="My installation" />'
+          '<button id="browse-first">Browse</button><input id="focused-name" data-initial-focus value="My installation" />'
       },
       attachTo: document.body
     })
@@ -151,11 +151,28 @@ describe('DesktopDialogSurface', () => {
     expect(document.activeElement).toBe(document.getElementById('focused-name'))
   })
 
+  it('keeps focus on the dialog when its blank space takes focus away from the field', async () => {
+    const wrapper = mount(DesktopDialogSurface, {
+      props: { open: true, ariaLabel: 'Name snapshot', contentClass: 'blank-space-focus' },
+      slots: { default: '<input id="snapshot-name" data-initial-focus value="My snapshot" />' },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    await settleDialog()
+    expect(document.activeElement).toBe(document.getElementById('snapshot-name'))
+
+    const content = document.querySelector<HTMLElement>('.blank-space-focus')!
+    content.focus()
+    await settleDialog()
+    expect(document.activeElement).toBe(content)
+  })
+
   it('falls back to the dialog when its marked field cannot receive focus', async () => {
     const wrapper = mount(DesktopDialogSurface, {
       props: { open: true, ariaLabel: 'Unavailable field', contentClass: 'focus-fallback' },
       slots: {
-        default: '<button>Delete</button><input autofocus disabled aria-label="Install name" />'
+        default:
+          '<button>Delete</button><input data-initial-focus disabled aria-label="Install name" />'
       },
       attachTo: document.body
     })

@@ -153,7 +153,7 @@ watch(
         <Input
           :id="inputId"
           v-model="inputValue"
-          autofocus
+          data-initial-focus
           type="text"
           class="base-prompt-input mt-1.5 w-full"
           :placeholder="placeholder"

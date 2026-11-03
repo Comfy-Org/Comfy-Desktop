@@ -1334,7 +1334,7 @@ defineExpose({ open })
             <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
               <InputGroupInput
                 id="inst-name-standalone"
-                :autofocus="hideBackToDashboard || undefined"
+                :data-initial-focus="hideBackToDashboard || undefined"
                 :model-value="instName"
                 type="text"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"

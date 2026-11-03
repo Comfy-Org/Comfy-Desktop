@@ -37,7 +37,6 @@ const props = withDefaults(
 
 const resolvedOpacity = computed<Opacity>(() => props.opacity ?? (props.binding ? 'opaque' : 'dim'))
 
-// Width defaults have zero specificity so contentClass can override them with a utility.
 const emit = defineEmits<{
   close: []
 }>()
@@ -69,7 +68,7 @@ const emit = defineEmits<{
     ]"
     :content-class="[
       'mx-[30px] flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)]',
-      width === 'regular' ? '[:where(&)]:max-w-[600px]' : '[:where(&)]:max-w-[900px]',
+      width === 'regular' ? 'max-w-[600px]' : 'max-w-[900px]',
       contentClass
     ]"
     :data-modal-content="width"

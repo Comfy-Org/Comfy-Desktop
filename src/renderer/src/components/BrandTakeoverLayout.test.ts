@@ -27,7 +27,7 @@ describe('BrandTakeoverLayout shared dialog behavior', () => {
   it('focuses an opted-in first-use field and keeps binding flows open on Escape', async () => {
     const wrapper = mount(BrandTakeoverLayout, {
       props: { ariaLabel: 'Set up ComfyUI' },
-      slots: { default: '<input id="setup-name" autofocus aria-label="Install name" />' },
+      slots: { default: '<input id="setup-name" data-initial-focus aria-label="Install name" />' },
       attachTo: document.body
     })
     wrappers.push(wrapper)
@@ -45,7 +45,7 @@ describe('BrandTakeoverLayout shared dialog behavior', () => {
   it('allows cancellable takeovers to opt into Escape dismissal', async () => {
     const wrapper = mount(BrandTakeoverLayout, {
       props: { ariaLabel: 'Track installation', dismissible: true },
-      slots: { default: '<input id="track-name" autofocus aria-label="Install name" />' },
+      slots: { default: '<input id="track-name" data-initial-focus aria-label="Install name" />' },
       attachTo: document.body
     })
     wrappers.push(wrapper)

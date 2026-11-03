@@ -29,8 +29,8 @@ const emit = defineEmits<{ close: [] }>()
     :dismiss-on-escape="dismissible"
     :dismiss-on-outside="false"
     :data-theme="theme"
-    overlay-class="fixed inset-0 z-50 flex"
-    content-class="brand-takeover-root flex size-full max-w-none max-h-none animate-brand-takeover motion-reduce:animate-none"
+    overlay-class="fixed inset-0 z-50 flex animate-brand-takeover motion-reduce:animate-none"
+    content-class="brand-takeover-root flex size-full max-w-none max-h-none"
     @close="emit('close')"
   >
     <BrandBackground :vignette="vignette" :scroll-content="scrollContent">

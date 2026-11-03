@@ -10,6 +10,7 @@ import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
 import MigrateConfirmBody from './MigrateConfirmBody.vue'
 import BaseAlert from './ui/BaseAlert.vue'
+import { linkify, handleModalLinkClick } from '../lib/modalLinkify'
 import { formatNodeVersion } from '../lib/snapshots'
 
 const { t } = useI18n()
@@ -78,39 +79,7 @@ const confirmVariant = computed(() => {
   return 'secondary'
 })
 
-function escapeHtml(text: string): string {
-  const div = document.createElement('div')
-  div.textContent = text
-  return div.innerHTML
-}
-
-function linkify(text: string): string {
-  if (!text) return ''
-  const parts = text.split(/(https?:\/\/[^\s<>"']+)/g)
-  return parts
-    .map((part, i) => {
-      const escaped = escapeHtml(part)
-      if (i % 2 === 1) {
-        return `<a href="#" class="modal-link" data-url="${escaped}">${escaped}</a>`
-      }
-      return escaped
-    })
-    .join('')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-}
-
 const linkifiedMessage = computed(() => linkify(state.message))
-
-function handleMessageClick(event: MouseEvent): void {
-  const target = event.target as HTMLElement
-  if (target.classList.contains('modal-link')) {
-    event.preventDefault()
-    const url = target.dataset.url
-    if (url) {
-      window.api.openExternal(url)
-    }
-  }
-}
 
 function submitPrompt(): void {
   const value = inputValue.value.trim()
@@ -199,7 +168,6 @@ watch(
     :open="state.visible && !usesBaseAlert"
     :aria-label="state.title"
     overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-8"
-    content-class="max-w-full"
     @close="dismiss"
   >
     <!-- Rich confirm; simple confirms fall through to BaseAlert above. -->
@@ -208,14 +176,14 @@ watch(
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
       :class="
         isMigrateConfirm
-          ? 'mig-modal w-[min(100%,600px)] max-w-[600px] border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
           : [
               'border-[var(--border)] py-4',
               state.snapshotPreview ||
               state.loading ||
               state.variantLoading ||
               state.variantCards.length > 0
-                ? 'w-[720px] max-w-[720px]'
+                ? 'w-[720px] max-w-full'
                 : 'max-w-[400px]'
             ]
       "
@@ -245,7 +213,7 @@ watch(
         <div
           v-if="state.message"
           class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
-          @click="handleMessageClick"
+          @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
 
@@ -396,7 +364,7 @@ watch(
               >
               <div
                 class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-                @click="handleMessageClick"
+                @click="handleModalLinkClick"
               >
                 <div
                   v-for="(item, ii) in group.items"
@@ -503,7 +471,7 @@ watch(
     <div
       v-else-if="state.type === 'prompt'"
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
-      :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-[720px]' : 'max-w-[400px]'"
+      :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
     >
       <div
         class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
@@ -530,7 +498,7 @@ watch(
             >
             <div
               class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-              @click="handleMessageClick"
+              @click="handleModalLinkClick"
             >
               <div
                 v-for="(item, ii) in group.items"
@@ -547,7 +515,7 @@ watch(
           }}</label>
           <Input
             v-model="inputValue"
-            autofocus
+            data-initial-focus
             type="text"
             class="dialog-input mt-1.5 w-full"
             :data-testid="TID.modalPromptInput"

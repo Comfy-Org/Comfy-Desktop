@@ -61,10 +61,12 @@ function onPointerDownOutside(event: Event): void {
 function onOpenAutoFocus(event: Event): void {
   // Prefer an explicitly marked field over the library's first tabbable
   // element. Other dialogs start on their content, never a destructive CTA.
+  // Not [autofocus]: the package refocuses that on every focus of the content,
+  // so clicking blank dialog space would jump to the field and select its text.
   const content = event.target
   if (event.defaultPrevented || !(content instanceof HTMLElement)) return
   event.preventDefault()
-  const target = content.querySelector<HTMLElement>('[autofocus]')
+  const target = content.querySelector<HTMLElement>('[data-initial-focus]')
   target?.focus()
   // A disabled or hidden target may refuse focus. Keep it on the dialog
   // rather than allowing the library to pick an unrelated first button.
@@ -75,7 +77,7 @@ function onOpenAutoFocus(event: Event): void {
 <template>
   <Dialog :open="open" @update:open="onOpenChange">
     <DialogPortal v-if="open">
-      <div class="desktop-dialog-layer pointer-events-none" :class="overlayClass">
+      <div class="pointer-events-none" :class="overlayClass">
         <!-- The package overlay owns its reference-counted body scroll lock.
              Omitting it preserves the explicit preventScroll=false contract. -->
         <DialogOverlay

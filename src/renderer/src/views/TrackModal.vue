@@ -280,7 +280,7 @@ defineExpose({ open })
               <InputGroupInput
                 id="track-name"
                 v-model="trackName"
-                autofocus
+                data-initial-focus
                 type="text"
                 :placeholder="suggestedName || $t('common.namePlaceholder')"
               />
