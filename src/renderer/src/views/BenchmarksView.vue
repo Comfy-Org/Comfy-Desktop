@@ -979,6 +979,7 @@ onMounted(() => {
                   <td class="benchmarks__check-cell w-11 text-center">
                     <label class="benchmarks__checkbox inline-flex items-center justify-center">
                       <Checkbox
+                        class="data-[state=checked]:border-[var(--series-color)] data-[state=checked]:bg-[var(--series-color)]"
                         :model-value="selectedIds.has(benchmark.id)"
                         :aria-label="
                           t('benchmarks.selectRun', { workflow: benchmark.workflowName })

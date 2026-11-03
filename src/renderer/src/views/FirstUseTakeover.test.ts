@@ -1,11 +1,8 @@
 // Start-screen tests for FirstUseTakeover. Heavy children are stubbed to focus on the start-step DOM.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises, type DOMWrapper } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-
-async function setChecked(control: DOMWrapper<Element>, checked: boolean): Promise<void> {
-  if (control.attributes('aria-checked') !== String(checked)) await control.trigger('click')
-}
+import { setChecked } from './testHelpers'
 
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn()

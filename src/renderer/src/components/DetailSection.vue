@@ -353,6 +353,7 @@ function handleOpenPath(value: unknown): void {
             <Switch
               v-else-if="f.editable && f.editType === 'boolean'"
               class="detail-field-toggle mt-2"
+              :aria-label="f.label"
               :model-value="f.value !== false"
               @update:model-value="handleFieldChange(f, $event === true)"
             />

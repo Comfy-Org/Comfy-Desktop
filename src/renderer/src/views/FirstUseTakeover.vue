@@ -1129,7 +1129,8 @@ defineExpose({ open, resetContinue })
                 :class="[
                   'm-0',
                   {
-                    'ring-2 ring-ring/30': tosNudge
+                    'border-comfy-yellow shadow-[0_0_0_2px_color-mix(in_oklab,var(--comfy-yellow)_30%,transparent)] transition-[border-color,box-shadow] duration-150':
+                      tosNudge
                   }
                 ]"
                 @update:model-value="acceptedTos = $event === true"

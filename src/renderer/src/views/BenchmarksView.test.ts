@@ -1,15 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
-
-async function setChecked(control: DOMWrapper<Element>, checked: boolean): Promise<void> {
-  if (control.attributes('aria-checked') !== String(checked)) await control.trigger('click')
-}
+import { setChecked } from './testHelpers'
 
 const createResultsPngMock = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
