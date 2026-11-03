@@ -195,22 +195,6 @@
     "dismiss": "忽略",
     "showWindow": "显示窗口"
   },
-  "downloads": {
-    "title": "模型下载",
-    "empty": "当前没有下载任务。",
-    "pause": "暂停",
-    "resume": "继续",
-    "cancel": "取消",
-    "dismiss": "忽略",
-    "view": "查看",
-    "pending": "正在启动…",
-    "downloading": "正在下载… {percent}%",
-    "paused": "已暂停 · {percent}%",
-    "completed": "完成",
-    "cancelled": "已取消",
-    "error": "失败",
-    "sizeProgress": "{received} / {total}"
-  },
   "media": {
     "sharedDirs": "媒体",
     "inputDir": "共享输入",
@@ -735,47 +719,6 @@
     "localDescRecommendedGpu": "使用针对 **{gpu}** 调整的推荐设置快速安装。如果这不是你的硬件，请选择**配置**。"
   },
   "announcement": {
-    "minimax": {
-      "title": "MiniMax H3 \u73b0\u5df2\u767b\u9646 ComfyUI",
-      "lead": "MiniMax \u6700\u65b0\u7684\u5f00\u6e90 SOTA \u89c6\u9891\u6a21\u578b\uff0c\u73b0\u5df2\u4e0a\u7ebf",
-      "highlights": [
-        "\u5728 Comfy Cloud \u6216 Comfy Desktop \u4e0a\u514d\u8d39\u8fd0\u884c",
-        "\u517c\u5bb9\u4f60\u73b0\u6709\u7684 ComfyUI \u5de5\u4f5c\u6d41",
-        "\u60f3\u7528\u4e8e\u5546\u4e1a\u7528\u9014\uff1f\u8054\u7cfb\u6211\u4eec\u83b7\u53d6\u6388\u6743"
-      ],
-      "requestLicenseCta": "\u7533\u8bf7\u6388\u6743",
-      "learnMoreCta": "\u4e86\u89e3\u66f4\u591a",
-      "imageAlt": "MiniMax H3 \u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
-    },
-    "cloudNodes": {
-      "title": "\u5728 Comfy Cloud GPU \u4e0a\u8fd0\u884c\u5f00\u653e\u6743\u91cd\u6a21\u578b",
-      "lead": "\u5168\u65b0 Comfy Cloud \u8282\u70b9\u8ba9\u4f60\u5728\u81ea\u5df1\u7684\u5de5\u4f5c\u6d41\u4e2d\uff0c\u7528\u6211\u4eec\u7684\u786c\u4ef6\u8fd0\u884c\u6700\u65b0\u7684\u5f00\u653e\u6743\u91cd\u6a21\u578b",
-      "highlights": [
-        "\u65e0\u9700\u8ba2\u9605\uff1a\u6709\u8d26\u53f7\u548c\u79ef\u5206\u5373\u53ef\u4f7f\u7528",
-        "\u65e0\u9700\u4e0b\u8f7d\uff0c\u6ca1\u6709\u663e\u5b58\u95e8\u69db"
-      ],
-      "primaryCta": "\u4e86\u89e3\u66f4\u591a",
-      "beta": "\u6d4b\u8bd5\u7248\uff1a\u7cbe\u9009\u8282\u70b9\u96c6\u4ecd\u5728\u8c03\u6574\uff0c\u9009\u9879\u53ef\u80fd\u589e\u51cf\uff0c\u67d0\u4e2a\u5de5\u4f5c\u6d41\u4e5f\u53ef\u80fd\u88ab\u4e0b\u7ebf\u3002",
-      "docsCta": "\u67e5\u770b\u6587\u6863",
-      "imageAlt": "Comfy Cloud \u8282\u70b9\u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
-    },
-    "comfyRouter": {
-      "title": "Comfy Router \u73b0\u5df2\u63a8\u51fa",
-      "lead": "\u4e00\u4e2a API\uff0c\u8c03\u7528\u6700\u65b0\u7684\u524d\u6cbf\u5a92\u4f53\u6a21\u578b",
-      "highlights": [
-        "\u7528\u4f60\u5df2\u6709\u7684 Comfy \u79ef\u5206\uff0c\u4ece\u81ea\u5df1\u7684\u811a\u672c\u3001\u5de5\u5177\u548c\u5e94\u7528\u4e2d\u8c03\u7528\u6700\u65b0\u7684\u56fe\u50cf\u3001\u89c6\u9891\u30013D \u548c\u97f3\u9891\u6a21\u578b\u3002",
-        "\u65e0\u9700\u4e3a\u6bcf\u4e2a\u63d0\u4f9b\u5546\u5355\u72ec\u6ce8\u518c\u8d26\u53f7\u6216\u505a\u96c6\u6210\uff0c\u5373\u53ef\u6dfb\u52a0\u65b0\u6a21\u578b\u3002",
-        "\u5f53\u4e00\u4e2a\u6a21\u578b\u6709\u591a\u4e2a\u63d0\u4f9b\u5546\u65f6\uff0c\u53ef\u6309\u4ef7\u683c\u6216\u53ef\u7528\u6027\u9009\u62e9\uff0c\u5e76\u5728\u4e0d\u91cd\u5199\u96c6\u6210\u7684\u60c5\u51b5\u4e0b\u5207\u6362\u3002"
-      ],
-      "primaryCta": "\u4e86\u89e3 Comfy Router",
-      "imageAlt": "Comfy Router \u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
-    },
     "comfyApi": {
       "title": "Comfy API \u73b0\u5df2\u63a8\u51fa",
       "lead": "\u5c06\u4f60\u7684 ComfyUI \u5de5\u4f5c\u6d41\u90e8\u7f72\u4e3a\u751f\u4ea7\u73af\u5883 API\u3002\u5c06\u5de5\u4f5c\u6d41\u4e0e\u5176\u81ea\u5b9a\u4e49\u8282\u70b9\u548c\u6a21\u578b\u6253\u5305\uff0c\u90e8\u7f72\u4e3a\u5e94\u7528\u548c\u5de5\u5177\u53ef\u4ee5\u8c03\u7528\u7684\u63a5\u53e3\u3002\u4f60\u4f7f\u7528 ComfyUI \u7684\u65b9\u5f0f\u4e0d\u4f1a\u6709\u4efb\u4f55\u53d8\u5316\u3002",
