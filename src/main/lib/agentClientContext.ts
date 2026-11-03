@@ -31,21 +31,12 @@ export function setHardwareProbe(probe: HardwareProbe | null): void {
 
 async function gpuTierWithin(ms: number): Promise<GpuTier | undefined> {
   if (!hardwareProbe) return undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), ms)
-  })
-  try {
-    const tier = await Promise.race([
-      hardwareProbe().then((h) => h.gpu_tier as GpuTier | undefined),
-      timeout
-    ])
-    return tier || undefined
-  } catch {
-    return undefined
-  } finally {
-    clearTimeout(timer)
-  }
+  const probed = hardwareProbe().then(
+    (h) => h.gpu_tier as GpuTier | undefined,
+    () => undefined
+  )
+  const timedOut = new Promise<undefined>((resolve) => setTimeout(resolve, ms))
+  return (await Promise.race([probed, timedOut])) || undefined
 }
 
 /** The context for this launch, or undefined without telemetry consent. */
