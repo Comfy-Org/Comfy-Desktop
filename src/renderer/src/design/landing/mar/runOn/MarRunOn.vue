@@ -27,7 +27,8 @@ import { runOnBlocked, runOnHint, runOnMeta, runOnShort } from './runOn'
  * run: This computer, then Cloud. Each row says what matters for choosing
  * (state · GPU · VRAM) and what picking it costs (time to start, credits).
  * With no local build, This computer invites you to set one up. More than
- * six builds: type to filter.
+ * six builds: type to filter. Laid out like the account menu: the build
+ * you're on is the raised panel up top; the list holds the others.
  */
 const open = ref(false)
 const query = ref('')
@@ -50,8 +51,12 @@ const needsLogin = computed(() => activeInstance.value.kind === 'cloud' && !prot
 const filterable = computed(() => local.value.length + cloud.value.length > 6)
 
 const q = computed(() => query.value.trim().toLowerCase())
+// The current build lives in the panel, so the list shows the rest, until
+// you search, when everything that matches counts.
 const match = (i: ProtoInstance): boolean =>
-  !q.value || `${i.name} ${runOnMeta(i)}`.toLowerCase().includes(q.value)
+  q.value
+    ? `${i.name} ${runOnMeta(i)}`.toLowerCase().includes(q.value)
+    : i.id !== activeInstance.value.id
 const shownLocal = computed(() => local.value.filter(match))
 const shownCloud = computed(() => cloud.value.filter(match))
 const showSetup = computed(() => !local.value.length && !q.value)
@@ -123,6 +128,26 @@ function toList(e: KeyboardEvent): void {
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" class="mar-ro-menu w-[340px]">
+      <div class="mar-ro-current mar-menu-panel">
+        <span class="mar-ro-tile">
+          <LocationIcon v-if="activeInstance.kind === 'local'" kind="local" :size="18" />
+          <LocationIcon v-else-if="activeInstance.deployment" kind="cloud" :size="18" />
+          <ComfyCLogo v-else :size="16" />
+        </span>
+        <span class="mar-ro-text">
+          <span class="mar-ro-name">{{ activeInstance.name }}</span>
+          <span class="mar-ro-meta"
+            ><span
+              v-if="activeInstance.kind === 'local' || activeInstance.deployment"
+              :class="[
+                'mar-ro-dot',
+                activeInstance.state === 'running' ? 'is-running' : 'is-stopped'
+              ]"
+            />{{ runOnMeta(activeInstance) }}</span
+          >
+        </span>
+      </div>
+
       <label v-if="filterable" class="mar-ro-filter">
         <Search :size="14" />
         <input
@@ -301,6 +326,16 @@ function toList(e: KeyboardEvent): void {
   min-height: 48px;
   gap: 10px;
   padding-block: 7px;
+}
+/* The build you're on: the account menu's raised panel. */
+.mar-ro-current {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+.mar-ro-current .mar-ro-tile {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mar-ro-tile {
   position: relative;
