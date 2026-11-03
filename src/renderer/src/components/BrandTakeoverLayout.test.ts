@@ -93,6 +93,8 @@ describe('BrandTakeoverLayout shared dialog behavior', () => {
     await settle()
     const promptInput = document.querySelector<HTMLInputElement>('.base-prompt-input')!
     expect(document.activeElement).toBe(promptInput)
+    expect(promptInput.selectionStart).toBe(0)
+    expect(promptInput.selectionEnd).toBe('Snapshot'.length)
     promptInput.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     )

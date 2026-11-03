@@ -59,12 +59,16 @@ function onPointerDownOutside(event: Event): void {
 }
 
 function onOpenAutoFocus(event: Event): void {
-  // A prompt can opt into the package's autofocus behavior. Other dialogs
-  // start on their content, avoiding an automatically focused destructive CTA.
+  // Prefer an explicitly marked field over the library's first tabbable
+  // element. Other dialogs start on their content, never a destructive CTA.
   const content = event.target
-  if (!(content instanceof HTMLElement) || content.querySelector('[autofocus]')) return
+  if (event.defaultPrevented || !(content instanceof HTMLElement)) return
   event.preventDefault()
-  content.focus()
+  const target = content.querySelector<HTMLElement>('[autofocus]')
+  target?.focus()
+  // A disabled or hidden target may refuse focus. Keep it on the dialog
+  // rather than allowing the library to pick an unrelated first button.
+  if (content.ownerDocument.activeElement !== target) content.focus()
 }
 </script>
 
