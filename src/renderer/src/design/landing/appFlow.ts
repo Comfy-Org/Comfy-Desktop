@@ -1,5 +1,6 @@
 import { computed, reactive, watch } from 'vue'
 import { go, goIn, proto, toast } from './useProto'
+import { APPS } from './mock'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
 /**
@@ -24,6 +25,7 @@ const saved = ((): {
   look?: LookVariant
   tabs?: string[]
   front?: string
+  added?: string[]
   preview?: Record<string, PreviewAs>
 } => {
   try {
@@ -39,6 +41,8 @@ export const appsProto = reactive({
    *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
   front: saved.front ?? '',
+  /** Explore apps added to the library (ids). */
+  added: (saved.added ?? []) as string[],
   /** Tabs the creator is previewing as someone else (app id -> who). */
   preview: (saved.preview ?? {}) as Record<string, PreviewAs>
 })
@@ -487,6 +491,40 @@ function hub(
   })
 }
 const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
+
+/** Add an Explore app to your library, or take it out. You stay its user:
+ *  it opens as the app, never the admin page. */
+export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
+export const isAdded = (id: string): boolean => appsProto.added.includes(id)
+export function toggleAdded(a: LibApp): void {
+  const i = appsProto.added.indexOf(a.id)
+  if (i >= 0) {
+    appsProto.added.splice(i, 1)
+    const j = APPS.findIndex((x) => x.id === a.id)
+    if (j >= 0) APPS.splice(j, 1)
+    toast(`Removed ${a.name} from your apps`)
+    return
+  }
+  appsProto.added.push(a.id)
+  syncAdded(a)
+  toast(`Added ${a.name} to your apps`)
+}
+// Milestones 9-10 still show the earlier Apps page, which reads APPS.
+function syncAdded(a: LibApp): void {
+  if (APPS.some((x) => x.id === a.id)) return
+  APPS.push({
+    id: a.id,
+    name: a.name,
+    thumbId: a.thumbId,
+    owner: a.owner,
+    you: false,
+    shared: 'everyone',
+    updated: 'Just now',
+    runs: a.runs,
+    envId: 'cloud'
+  })
+}
+EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
 
 export const libApp = (id: string): LibApp | undefined =>
   LIB.find((a) => a.id === id) ?? EXPLORE_APPS.find((a) => a.id === id)

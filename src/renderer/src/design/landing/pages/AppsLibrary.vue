@@ -18,7 +18,10 @@ import {
   accessKey,
   accessLabel,
   LIB,
+  addedApps,
+  isAdded,
   openApp,
+  type LibApp,
   openAppUrl,
   payerLabel,
   resetFlow,
@@ -35,15 +38,19 @@ import {
 // Two groups only: apps you made, and apps other people shared with you
 // (teammates or other companies).
 const tab = ref<'mine' | 'shared'>('mine')
+// Apps added from Explore sit in My apps, but you stay their user.
 const inTab = (a: { group: string }, t: string): boolean =>
   t === 'mine' ? a.group === 'yours' : a.group !== 'yours'
+const inList = (t: string): LibApp[] => [
+  ...LIB.filter((a) => inTab(a, t)),
+  ...(t === 'mine' ? addedApps.value : [])
+]
+const open = (a: LibApp): void => (isAdded(a.id) ? openAppUrl(a.id) : openApp(a.id))
 const q = ref('')
 const list = computed(() =>
-  LIB.filter((a) => inTab(a, tab.value)).filter((a) =>
-    a.name.toLowerCase().includes(q.value.toLowerCase())
-  )
+  inList(tab.value).filter((a) => a.name.toLowerCase().includes(q.value.toLowerCase()))
 )
-const count = (t: string): number => LIB.filter((a) => inTab(a, t)).length
+const count = (t: string): number => inList(t).length
 const ICON: Record<AccessKey, unknown> = {
   'only-you': Lock,
   team: Users,
@@ -105,8 +112,8 @@ function describe(): void {
         tabindex="0"
         class="row grid w-full grid-cols-[minmax(0,1fr)_180px_140px_70px_112px] items-center gap-6 border-t border-border-default px-2 py-3 text-left outline-none hover:bg-secondary-background/50 focus-visible:bg-secondary-background"
         :style="{ animationDelay: `${i * 40}ms` }"
-        @click="openApp(a.id)"
-        @keydown.enter="openApp(a.id)"
+        @click="open(a)"
+        @keydown.enter="open(a)"
       >
         <span class="flex min-w-0 items-center gap-4">
           <img
@@ -117,7 +124,8 @@ function describe(): void {
           <span class="min-w-0">
             <span class="flex items-center gap-2">
               <span class="truncate text-ui font-medium">{{ a.name }}</span>
-              <Badge v-if="a.state === 'draft'">Draft</Badge>
+              <Badge v-if="isAdded(a.id)">Added</Badge>
+              <Badge v-else-if="a.state === 'draft'">Draft</Badge>
               <Badge v-else-if="a.unpublished" variant="outline">Unpublished changes</Badge>
             </span>
             <span class="block truncate text-ui text-subtle-foreground">{{
