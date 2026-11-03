@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CONTENT } from './content'
-import { GROUPS, PAGES } from './registry'
+import { GROUPS, PAGES, type DsPage } from './registry'
 import AboutPage from './pages/AboutPage.vue'
 import CodeTab from './pages/CodeTab.vue'
 import PlaygroundTab from './pages/PlaygroundTab.vue'
@@ -92,15 +92,24 @@ function pick(id: string): void {
 }
 
 const query = ref('')
-const nav = computed(() =>
-  GROUPS.map((g) => ({
-    group: g,
-    pages: PAGES.filter(
-      (p) =>
-        p.group === g && `${p.label} ${p.title}`.toLowerCase().includes(query.value.toLowerCase())
-    )
-  })).filter((g) => g.pages.length)
-)
+// A search finds a page by its name first, then by what it holds: its id,
+// what it's for and its source files ("tab" finds Filters bar, which is
+// built from MarSeg's tabs). Name matches come first in each group.
+const words = (p: DsPage): string =>
+  `${p.id} ${p.use ?? ''} ${(p.source ?? '').replace(/[^,]*\//g, '')}`.toLowerCase()
+const nav = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  const named = (p: DsPage): boolean => `${p.label} ${p.title}`.toLowerCase().includes(q)
+  return GROUPS.map((g) => {
+    const inGroup = PAGES.filter((p) => p.group === g)
+    return {
+      group: g,
+      pages: q
+        ? [...inGroup.filter(named), ...inGroup.filter((p) => !named(p) && words(p).includes(q))]
+        : inGroup
+    }
+  }).filter((g) => g.pages.length)
+})
 
 // Pages whose hero is their only example (kit/PageFrame.vue says so):
 // as patterns they need no tabs.
