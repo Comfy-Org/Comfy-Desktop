@@ -1536,7 +1536,11 @@ describe('core beta report placement', () => {
       const res = await handleLaunch(ctxFor(`harness-client-context-${consent}-${pathName}`))
       expect(res.ok).toBe(true)
       expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
-      for (const name of ['AGENT_CLIENT_CONTEXT', 'AGENT_CLIENT_CHANNEL', 'AGENT_CLIENT_GPU_TIER']) {
+      for (const name of [
+        'AGENT_CLIENT_CONTEXT',
+        'AGENT_CLIENT_CHANNEL',
+        'AGENT_CLIENT_GPU_TIER'
+      ]) {
         expect(spawnEnv).not.toHaveProperty(name)
       }
     })
