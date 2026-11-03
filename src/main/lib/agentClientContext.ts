@@ -28,7 +28,7 @@ async function gpuTierWithin(ms: number): Promise<GpuTier | undefined> {
     (h) => h.gpu_tier as GpuTier | undefined,
     () => undefined
   )
-  const timedOut = new Promise<undefined>((resolve) => setTimeout(resolve, ms))
+  const timedOut = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))
   return Promise.race([probed, timedOut])
 }
 
