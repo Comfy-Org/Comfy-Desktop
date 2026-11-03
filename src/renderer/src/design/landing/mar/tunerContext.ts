@@ -24,7 +24,6 @@ import { firstTime, marUser, setUser } from './userStates/userState'
 import { pageState } from './pages/pageState'
 import { marOwns } from './pages/owns'
 import { marLook } from './looks/looks'
-import { crit } from './crit/crit'
 import { PORTS, ports, type Port } from './pabloPorts'
 import { active as parts } from './marParts'
 import { dep, scenarioPick } from './deploy/deployData'
@@ -194,7 +193,6 @@ export const TWEAKS = {
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   pageTransition: one(pageTransition, 'rise'),
-  crit: one(crit, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
   firstRun: one(firstRun, 'original'),

@@ -27,7 +27,6 @@ import GradientSpacesRow from './p20/GradientSpacesRow.vue'
 import BuildHealthRow from './p20/BuildHealthRow.vue'
 import Button from '../ui/Button.vue'
 import ScrollRow from '../ui/ScrollRow.vue'
-import { vScrollFade } from './crit/crit'
 import SectionHeader from '../ui/SectionHeader.vue'
 import BuildPill from './BuildPill.vue'
 import CreateMenu from './CreateMenu.vue'
@@ -201,7 +200,7 @@ const recent = computed(() =>
         <SectionHeader title="Recently used" link="See all" @link="go('workflows')" />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
-        <ScrollRow v-else v-scroll-fade :columns="5" class="mar-recent-row">
+        <ScrollRow v-else :columns="5" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"
             :key="r.w.id"

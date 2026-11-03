@@ -25,7 +25,6 @@ import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
-import { CRITS, crit } from './crit/crit'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
 import { proto } from '../useProto'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
@@ -37,7 +36,7 @@ import GroupHead from './tuner/TunerGroupHead.vue'
 /** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Global
  *  (proposal, where, navigation, colour), States (the situation being
  *  simulated), This page (design options for the screen you're on),
- *  Crit feedback, and More, folded (rare and exploratory). States and
+ *  and More, folded (rare and exploratory). States and
  *  This page list only what changes the screen now (tunerContext.ts says
  *  when); a hidden tweak keeps its value. */
 const NAVS: { value: MarNav; label: string }[] = [
@@ -303,19 +302,6 @@ function onScroll(e: Event): void {
             <Seg v-model="buildNav.id" label="Build navigation" :options="BUILD_NAVS" />
           </Row>
           <Row :show="shows('ports')"><PabloPortsTuner /></Row>
-        </section>
-
-        <!-- The Oct 29 Weekly Design Crit's notes, all at once (crit/crit.ts). -->
-        <section v-if="isMariana" aria-label="Crit feedback" class="mt-6 flex flex-col">
-          <GroupHead
-            title="Crit feedback"
-            note="Oct 29"
-            :changed="dirty(['crit'])"
-            @reset="resetGroup(['crit'])"
-          />
-          <Row>
-            <Seg v-model="crit.id" label="Crit feedback" :options="CRITS" />
-          </Row>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma

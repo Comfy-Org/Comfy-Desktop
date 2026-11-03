@@ -71,8 +71,8 @@ const url = `${location.origin}${location.pathname}`
       <ul>
         <li>
           <strong>Blur only on what floats over content</strong> (menus, tooltips, the palette,
-          modals and their scrim, chips on pictures). Cards on the page are solid with Crit feedback
-          On. No blur inside blur. Levels, values and CSS: Foundations › Materials · Blur.
+          modals and their scrim, chips on pictures). No blur inside blur. Levels, values and CSS:
+          Foundations › Materials · Blur.
         </li>
         <li>Chips on pictures: grey at 60% over a blur, 11px.</li>
         <li>Text on glass passes contrast against the busiest picture behind it.</li>

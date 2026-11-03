@@ -177,7 +177,7 @@ export const CONTENT: Record<string, Content> = {
       {
         name: 'background-color',
         selector: "[role='button']",
-        use: 'The foreground at 5% (solid card colour with Crit feedback On)'
+        use: 'The foreground at 5%'
       }
     ]
   },
