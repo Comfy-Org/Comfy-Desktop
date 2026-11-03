@@ -1514,10 +1514,12 @@ describe('core beta report placement', () => {
       }
       launchHarness.launchCommand = { ...launchHarness.launchCommand, skipPortWait, port: ++port }
       launchHarness.waitForPort = async () => {}
+      launchHarness.busyPorts = []
     })
     afterEach(() => {
       settingsModule.set('telemetryEnabled', undefined)
       setHardwareProbe(null)
+      launchHarness.busyPorts = null
     })
 
     it('hands the agent its channel and the probed GPU tier with telemetry consent', async () => {

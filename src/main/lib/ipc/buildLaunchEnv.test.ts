@@ -25,7 +25,7 @@ import type { InstallationRecord } from '../../installations'
 import type * as nodeCrypto from 'crypto'
 import os from 'os'
 import path from 'path'
-import { buildLaunchEnv, createSessionPath } from './shared'
+import { buildLaunchEnv, createSessionPath, sanitizeEnvVars } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -125,6 +125,14 @@ describe('buildLaunchEnv agent client context', () => {
       expect(env).not.toHaveProperty(name)
     }
     expect(env).not.toHaveProperty('agent_client_channel')
+  })
+
+  it('strips the names from per-install vars when they are saved', () => {
+    expect(
+      sanitizeEnvVars({ AGENT_CLIENT_CONTEXT: 'desktop', agent_client_gpu_tier: 'high', KEEP: '1' })
+    ).toEqual({
+      KEEP: '1'
+    })
   })
 
   it('drops an inherited name in any case, as Windows env names are case-insensitive', () => {
