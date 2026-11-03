@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import Tabs from '@comfyorg/design-system/tabs/Tabs'
+import TabsList from '@comfyorg/design-system/tabs/TabsList'
+import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
+import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -419,20 +424,9 @@ function isTabLabelHidden(key: ComfyUISettingsTab): boolean {
   return tabsCollapsed.value && activeTab.value !== key
 }
 
-function handleTabKeydown(event: KeyboardEvent, index: number): void {
-  if (opInflight.value) return
-  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
-  event.preventDefault()
-  const delta = event.key === 'ArrowRight' ? 1 : -1
-  const next = (index + delta + tabs.value.length) % tabs.value.length
-  const nextKey = tabs.value[next]?.key
-  if (nextKey) {
-    selectTab(nextKey)
-    nextTick(() => {
-      const buttons = rootRef.value?.querySelectorAll<HTMLButtonElement>('.settings-v2-tab')
-      buttons?.[next]?.focus()
-    })
-  }
+function onTabValueChange(value: string | number): void {
+  const tab = tabs.value.find((item) => item.key === value)
+  if (tab) selectTab(tab.key)
 }
 
 const moreMenuOpen = ref(false)
@@ -862,445 +856,461 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
-    <nav
-      ref="tabs"
-      class="settings-v2-tabs @container/settings-tabs flex min-w-0 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden border-b border-solid border-[var(--chooser-surface-border)] p-3"
-      :class="{ 'is-subpage-active opacity-60': subPage !== null }"
-      role="tablist"
-      :aria-label="t('comfyUISettings.title', 'Settings')"
-    >
-      <Tooltip
-        v-for="(tab, i) in tabs"
-        :key="tab.key"
-        :text="tab.tooltip ?? tab.label"
-        side="bottom"
-        :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
-      >
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.key"
-          :tabindex="activeTab === tab.key ? 0 : -1"
-          :disabled="opInflight && activeTab !== tab.key"
-          class="settings-v2-tab group/settings-tab disabled:cursor-not-allowed inline-flex min-w-0 items-center rounded-lg border-none text-[13px] font-normal cursor-pointer transition-[color,background-color,opacity] duration-[120ms] ease-[ease] [-webkit-app-region:no-drag] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:[outline-style:solid] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
-          :class="[
-            activeTab === tab.key
-              ? 'is-active bg-accent text-text opacity-100'
-              : opInflight
-                ? 'is-locked bg-transparent text-neutral-100 opacity-40 hover:bg-transparent hover:opacity-40 cursor-not-allowed'
-                : 'bg-transparent text-neutral-100 opacity-72 hover:bg-secondary hover:opacity-100',
-            'gap-1.5 px-3 py-1.5 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden'
-          ]"
-          :data-testid="TID.settingsTab(tab.key)"
-          @click="selectTab(tab.key)"
-          @keydown="handleTabKeydown($event, i)"
+  <Tabs :model-value="activeTab" as-child @update:model-value="onTabValueChange">
+    <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
+      <TabsList as-child>
+        <nav
+          ref="tabs"
+          class="settings-v2-tabs @container/settings-tabs flex min-w-0 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden border-b border-solid border-[var(--chooser-surface-border)] p-3"
+          :class="{ 'is-subpage-active opacity-60': subPage !== null }"
+          :aria-label="t('comfyUISettings.title', 'Settings')"
         >
-          <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
-            <component
-              :is="tab.icon"
-              :size="14"
-              aria-hidden="true"
-              class="settings-v2-tab-icon shrink-0 opacity-85"
-            />
-            <span
-              v-if="tab.key === 'update' && showUpdateBadge"
-              :class="
-                activeTab === tab.key ? 'border-neutral-700' : 'border-[var(--modal-surface-bg)]'
-              "
-              class="settings-v2-tab-badge absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-              aria-hidden="true"
-            ></span>
-          </span>
-          <span>{{ tab.label }}</span>
-        </button>
-      </Tooltip>
-    </nav>
-
-    <section
-      class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-4"
-    >
-      <p
-        v-if="!installation"
-        class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
-      >
-        {{ t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.') }}
-      </p>
-      <p
-        v-else-if="loading && !visibleSections.length && activeTab !== 'console'"
-        class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
-        :data-testid="TID.pickerSettingsLoading"
-      >
-        {{ t('common.loading', 'Loading…') }}
-      </p>
-      <p
-        v-else-if="error && activeTab !== 'console'"
-        class="empty error m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
-      >
-        {{ error }}
-      </p>
-
-      <Transition
-        v-else
-        :name="subPageTransition"
-        mode="out-in"
-        :enter-active-class="`${subPageTransition}-enter-active ${subpageTransitionActiveClass}`"
-        :leave-active-class="`${subPageTransition}-leave-active ${subpageTransitionActiveClass}`"
-        :enter-from-class="subpageTransitionClasses[subPageTransition].enter"
-        :leave-to-class="subpageTransitionClasses[subPageTransition].leave"
-      >
-        <ArgsBuilderPage
-          v-if="subPage === 'args' && installation"
-          key="subpage-args"
-          :installation-id="installation.id"
-          :initial-value="argsValue"
-          :pending-restart="argsField != null && pendingRestartFieldIds.has(argsField.id)"
-          @back="closeSubPage"
-          @update="handleArgsUpdate"
-        />
-
-        <div
-          v-else
-          key="subpage-root"
-          class="settings-v2-body-root flex flex-auto flex-col gap-[inherit]"
-          :class="{ 'is-stale pointer-events-none': !sectionsFresh }"
-          :data-testid="TID.pickerSettingsSections"
-          :data-install-id="installation?.id"
-        >
-          <Transition
-            :name="tabTransition"
-            mode="out-in"
-            :enter-active-class="`${tabTransition}-enter-active ${subpageTransitionActiveClass}`"
-            :leave-active-class="`${tabTransition}-leave-active ${subpageTransitionActiveClass}`"
-            :enter-from-class="subpageTransitionClasses[tabTransition].enter"
-            :leave-to-class="subpageTransitionClasses[tabTransition].leave"
+          <Tooltip
+            v-for="tab in tabs"
+            :key="tab.key"
+            :text="tab.tooltip ?? tab.label"
+            side="bottom"
+            :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
           >
-            <div
-              v-if="activeTab === 'snapshots' && installation"
-              :key="`tab-snapshots-${paneInstallKey}`"
-              class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+            <TabsTrigger
+              :value="tab.key"
+              variant="panel"
+              :disabled="opInflight && activeTab !== tab.key"
+              class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
+              :class="{
+                'is-active': activeTab === tab.key,
+                'is-locked': opInflight && activeTab !== tab.key
+              }"
+              :data-testid="TID.settingsTab(tab.key)"
+              @click="selectTab(tab.key)"
             >
-              <SnapshotsView
-                :installation-id="installation.id"
-                :active-operation="activeOperation"
-                @run-action="handleSnapshotAction"
-                @refresh-all="handleSnapshotsRefresh"
-                @op-cancel="emit('op-cancel')"
-                @op-retry="emit('op-retry')"
-                @op-dismiss="emit('op-dismiss')"
-              />
-            </div>
-            <div
-              v-else-if="activeTab === 'status' && installation"
-              :key="`tab-status-${paneInstallKey}`"
-              class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
-            >
-              <StatusFactPanel
-                :installation="installation"
-                :sections="statusSections"
-                :disk-usage="diskUsageItem"
-                :on-rename="renameInstallation"
-                :on-update-url="handleUrlUpdate"
-                :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
-              />
-            </div>
-            <div
-              v-else-if="activeTab === 'storage'"
-              :key="`tab-storage-${paneInstallKey}`"
-              class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
-            >
-              <!-- Lazy-mounted via `v-else-if` so picker opens that never
-                   visit Storage skip rendering the global model-dir UI. -->
-              <StoragePane
-                :snapshot="globalSettingsSnapshot"
-                :sections="storageSections"
-                :pending-restart-field-ids="pendingRestartFieldIds"
-                @update-field="updateField"
-                @refresh="reload"
-              />
-            </div>
-            <div
-              v-else-if="activeTab === 'console' && installation"
-              :key="`tab-console-${paneInstallKey}`"
-              class="settings-v2-tab-pane settings-v2-tab-pane--console flex w-full flex-auto flex-col gap-[inherit]"
-            >
-              <ConsoleTerminalPane :installation-id="installation.id" />
-            </div>
+              <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
+                <component
+                  :is="tab.icon"
+                  :size="14"
+                  aria-hidden="true"
+                  class="settings-v2-tab-icon shrink-0 opacity-85"
+                />
+                <span
+                  v-if="tab.key === 'update' && showUpdateBadge"
+                  :class="
+                    activeTab === tab.key
+                      ? 'border-neutral-700'
+                      : 'border-[var(--modal-surface-bg)]'
+                  "
+                  class="settings-v2-tab-badge absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                  aria-hidden="true"
+                ></span>
+              </span>
+              <span>{{ tab.label }}</span>
+            </TabsTrigger>
+          </Tooltip>
+        </nav>
+      </TabsList>
+
+      <TabsContent :value="activeTab" as-child force-mount>
+        <section
+          class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-4"
+        >
+          <p
+            v-if="!installation"
+            class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
+          >
+            {{
+              t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.')
+            }}
+          </p>
+          <p
+            v-else-if="loading && !visibleSections.length && activeTab !== 'console'"
+            class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
+            :data-testid="TID.pickerSettingsLoading"
+          >
+            {{ t('common.loading', 'Loading…') }}
+          </p>
+          <p
+            v-else-if="error && activeTab !== 'console'"
+            class="empty error m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
+          >
+            {{ error }}
+          </p>
+
+          <Transition
+            v-else
+            :name="subPageTransition"
+            mode="out-in"
+            :enter-active-class="`${subPageTransition}-enter-active ${subpageTransitionActiveClass}`"
+            :leave-active-class="`${subPageTransition}-leave-active ${subpageTransitionActiveClass}`"
+            :enter-from-class="subpageTransitionClasses[subPageTransition].enter"
+            :leave-to-class="subpageTransitionClasses[subPageTransition].leave"
+          >
+            <ArgsBuilderPage
+              v-if="subPage === 'args' && installation"
+              key="subpage-args"
+              :installation-id="installation.id"
+              :initial-value="argsValue"
+              :pending-restart="argsField != null && pendingRestartFieldIds.has(argsField.id)"
+              @back="closeSubPage"
+              @update="handleArgsUpdate"
+            />
+
             <div
               v-else
-              :key="`tab-${activeTab}-${paneInstallKey}`"
-              class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+              key="subpage-root"
+              class="settings-v2-body-root flex flex-auto flex-col gap-[inherit]"
+              :class="{ 'is-stale pointer-events-none': !sectionsFresh }"
+              :data-testid="TID.pickerSettingsSections"
+              :data-install-id="installation?.id"
             >
               <Transition
-                name="op-overlay"
+                :name="tabTransition"
                 mode="out-in"
-                enter-active-class="op-overlay-enter-active transition-[opacity,transform] duration-200 ease-[ease]"
-                leave-active-class="op-overlay-leave-active transition-[opacity,transform] duration-200 ease-[ease]"
-                enter-from-class="op-overlay-enter-from opacity-0 [transform:translateY(5px)]"
-                leave-to-class="op-overlay-leave-to opacity-0 [transform:translateY(5px)]"
+                :enter-active-class="`${tabTransition}-enter-active ${subpageTransitionActiveClass}`"
+                :leave-active-class="`${tabTransition}-leave-active ${subpageTransitionActiveClass}`"
+                :enter-from-class="subpageTransitionClasses[tabTransition].enter"
+                :leave-to-class="subpageTransitionClasses[tabTransition].leave"
               >
                 <div
-                  v-if="showOpOverlay"
-                  key="op-overlay"
-                  class="op-overlay flex min-h-[200px] w-full flex-auto box-border flex-col items-center justify-center gap-3 p-6 text-center"
-                >
-                  <template v-if="opInflight">
-                    <p
-                      class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
-                    >
-                      {{ opTitleLabel }}
-                    </p>
-                    <p
-                      class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
-                    >
-                      {{ installation?.name }}
-                    </p>
-
-                    <div
-                      class="op-bar-wrap mt-1 flex w-full max-w-[260px] flex-col gap-[5px]"
-                      role="progressbar"
-                      :aria-valuenow="opIsIndeterminate ? undefined : opProgressPct"
-                      aria-valuemin="0"
-                      aria-valuemax="100"
-                    >
-                      <div class="op-bar-header flex items-baseline justify-between gap-2">
-                        <span
-                          class="op-bar-status min-w-0 flex-auto truncate text-left text-[11px] text-text-muted"
-                          >{{ opStatusLabel }}</span
-                        >
-                        <span class="op-bar-right flex shrink-0 items-baseline gap-1.5">
-                          <span
-                            v-if="opSpeedLabel"
-                            class="op-speed text-[11px] text-text-muted opacity-65 tabular-nums"
-                            >{{ opSpeedLabel }}</span
-                          >
-                          <span
-                            v-if="!opIsIndeterminate"
-                            class="op-pct text-[11px] font-semibold text-text tabular-nums"
-                            >{{ opProgressPct }}%</span
-                          >
-                        </span>
-                      </div>
-                      <div
-                        class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
-                      >
-                        <div
-                          class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
-                          :class="{
-                            'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
-                              opIsIndeterminate
-                          }"
-                          :style="opIsIndeterminate ? {} : { width: `${opProgressPct}%` }"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      v-if="activeOperation?.cancellable"
-                      type="button"
-                      class="op-ghost-btn h-7 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3.5 py-0 text-[11px] text-text-muted cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] hover:border-[var(--text-muted)] hover:text-text"
-                      @click="emit('op-cancel')"
-                    >
-                      {{ t('instancePicker.progressCancel') }}
-                    </button>
-                  </template>
-
-                  <template v-else-if="opSuccess">
-                    <div
-                      class="op-icon op-icon--success mb-0.5 flex items-center justify-center text-[var(--brand-success,#27ae60)]"
-                    >
-                      <CheckCircle :size="32" />
-                    </div>
-                    <p
-                      class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
-                    >
-                      {{ opSuccessLabel }}
-                    </p>
-                    <p
-                      class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
-                    >
-                      {{ installation?.name }}
-                    </p>
-                    <p
-                      v-if="successCountdown > 0"
-                      class="op-countdown m-0 text-[11px] text-text-muted opacity-55"
-                    >
-                      {{ t('instancePicker.progressSuccessCountdown', { n: successCountdown }) }}
-                    </p>
-                  </template>
-
-                  <template v-else-if="opError">
-                    <div
-                      class="op-icon op-icon--error mb-0.5 flex items-center justify-center text-[var(--brand-error,#e74c3c)]"
-                    >
-                      <XCircle :size="32" />
-                    </div>
-                    <p
-                      class="op-title op-title--error m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
-                    >
-                      {{ t('instancePicker.progressError') }}
-                    </p>
-                    <OperationErrorDetail
-                      v-if="activeOperation?.error"
-                      :error="activeOperation.error"
-                    />
-                    <div class="op-actions mt-1 flex flex-col items-center gap-2">
-                      <button
-                        type="button"
-                        class="op-primary-btn h-8 rounded-lg border-none bg-[var(--brand-accent,#f5c518)] px-[18px] py-0 text-[12px] font-semibold text-black cursor-pointer transition-opacity duration-[120ms] ease-[ease] hover:opacity-85 active:opacity-70"
-                        @click="emit('op-retry')"
-                      >
-                        {{ t('instancePicker.progressRetry') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="op-ghost-btn h-7 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3.5 py-0 text-[11px] text-text-muted cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] hover:border-[var(--text-muted)] hover:text-text"
-                        @click="emit('op-dismiss')"
-                      >
-                        {{ t('instancePicker.progressDismiss') }}
-                      </button>
-                    </div>
-                  </template>
-
-                  <template v-else-if="opCancelled">
-                    <p
-                      class="op-title op-title--muted m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
-                    >
-                      {{ t('instancePicker.progressCancelled') }}
-                    </p>
-                    <button
-                      type="button"
-                      class="op-ghost-btn h-7 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3.5 py-0 text-[11px] text-text-muted cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] hover:border-[var(--text-muted)] hover:text-text"
-                      @click="emit('op-dismiss')"
-                    >
-                      {{ t('instancePicker.progressDismiss') }}
-                    </button>
-                  </template>
-                </div>
-
-                <div
-                  v-else
-                  key="sections"
+                  v-if="activeTab === 'snapshots' && installation"
+                  :key="`tab-snapshots-${paneInstallKey}`"
                   class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
                 >
-                  <SettingsSectionList
-                    :sections="visibleSections"
-                    :installation-id="installation?.id"
-                    :running-action-ids="runningActionIds"
-                    :pending-restart-field-ids="pendingRestartFieldIds"
-                    :field-error-messages="fieldErrorMessages"
-                    @update-field="updateField"
-                    @run-action="runAction"
-                    @open-args-page="openArgsPage"
-                    @open-path="handleOpenPath"
+                  <SnapshotsView
+                    :installation-id="installation.id"
+                    :active-operation="activeOperation"
+                    @run-action="handleSnapshotAction"
+                    @refresh-all="handleSnapshotsRefresh"
+                    @op-cancel="emit('op-cancel')"
+                    @op-retry="emit('op-retry')"
+                    @op-dismiss="emit('op-dismiss')"
                   />
+                </div>
+                <div
+                  v-else-if="activeTab === 'status' && installation"
+                  :key="`tab-status-${paneInstallKey}`"
+                  class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+                >
+                  <StatusFactPanel
+                    :installation="installation"
+                    :sections="statusSections"
+                    :disk-usage="diskUsageItem"
+                    :on-rename="renameInstallation"
+                    :on-update-url="handleUrlUpdate"
+                    :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
+                  />
+                </div>
+                <div
+                  v-else-if="activeTab === 'storage'"
+                  :key="`tab-storage-${paneInstallKey}`"
+                  class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+                >
+                  <!-- Lazy-mounted via `v-else-if` so picker opens that never
+                   visit Storage skip rendering the global model-dir UI. -->
+                  <StoragePane
+                    :snapshot="globalSettingsSnapshot"
+                    :sections="storageSections"
+                    :pending-restart-field-ids="pendingRestartFieldIds"
+                    @update-field="updateField"
+                    @refresh="reload"
+                  />
+                </div>
+                <div
+                  v-else-if="activeTab === 'console' && installation"
+                  :key="`tab-console-${paneInstallKey}`"
+                  class="settings-v2-tab-pane settings-v2-tab-pane--console flex w-full flex-auto flex-col gap-[inherit]"
+                >
+                  <ConsoleTerminalPane :installation-id="installation.id" />
+                </div>
+                <div
+                  v-else
+                  :key="`tab-${activeTab}-${paneInstallKey}`"
+                  class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+                >
+                  <Transition
+                    name="op-overlay"
+                    mode="out-in"
+                    enter-active-class="op-overlay-enter-active transition-[opacity,transform] duration-200 ease-[ease]"
+                    leave-active-class="op-overlay-leave-active transition-[opacity,transform] duration-200 ease-[ease]"
+                    enter-from-class="op-overlay-enter-from opacity-0 [transform:translateY(5px)]"
+                    leave-to-class="op-overlay-leave-to opacity-0 [transform:translateY(5px)]"
+                  >
+                    <div
+                      v-if="showOpOverlay"
+                      key="op-overlay"
+                      class="op-overlay flex min-h-[200px] w-full flex-auto box-border flex-col items-center justify-center gap-3 p-6 text-center"
+                    >
+                      <template v-if="opInflight">
+                        <p
+                          class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                        >
+                          {{ opTitleLabel }}
+                        </p>
+                        <p
+                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
+                        >
+                          {{ installation?.name }}
+                        </p>
+
+                        <div
+                          class="op-bar-wrap mt-1 flex w-full max-w-[260px] flex-col gap-[5px]"
+                          role="progressbar"
+                          :aria-valuenow="opIsIndeterminate ? undefined : opProgressPct"
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                        >
+                          <div class="op-bar-header flex items-baseline justify-between gap-2">
+                            <span
+                              class="op-bar-status min-w-0 flex-auto truncate text-left text-[11px] text-text-muted"
+                              >{{ opStatusLabel }}</span
+                            >
+                            <span class="op-bar-right flex shrink-0 items-baseline gap-1.5">
+                              <span
+                                v-if="opSpeedLabel"
+                                class="op-speed text-[11px] text-text-muted opacity-65 tabular-nums"
+                                >{{ opSpeedLabel }}</span
+                              >
+                              <span
+                                v-if="!opIsIndeterminate"
+                                class="op-pct text-[11px] font-semibold text-text tabular-nums"
+                                >{{ opProgressPct }}%</span
+                              >
+                            </span>
+                          </div>
+                          <div
+                            class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
+                          >
+                            <div
+                              class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
+                              :class="{
+                                'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
+                                  opIsIndeterminate
+                              }"
+                              :style="opIsIndeterminate ? {} : { width: `${opProgressPct}%` }"
+                            />
+                          </div>
+                        </div>
+
+                        <Button
+                          v-if="activeOperation?.cancellable"
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          class="op-ghost-btn"
+                          @click="emit('op-cancel')"
+                        >
+                          {{ t('instancePicker.progressCancel') }}
+                        </Button>
+                      </template>
+
+                      <template v-else-if="opSuccess">
+                        <div
+                          class="op-icon op-icon--success mb-0.5 flex items-center justify-center text-[var(--brand-success,#27ae60)]"
+                        >
+                          <CheckCircle :size="32" />
+                        </div>
+                        <p
+                          class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                        >
+                          {{ opSuccessLabel }}
+                        </p>
+                        <p
+                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
+                        >
+                          {{ installation?.name }}
+                        </p>
+                        <p
+                          v-if="successCountdown > 0"
+                          class="op-countdown m-0 text-[11px] text-text-muted opacity-55"
+                        >
+                          {{
+                            t('instancePicker.progressSuccessCountdown', { n: successCountdown })
+                          }}
+                        </p>
+                      </template>
+
+                      <template v-else-if="opError">
+                        <div
+                          class="op-icon op-icon--error mb-0.5 flex items-center justify-center text-[var(--brand-error,#e74c3c)]"
+                        >
+                          <XCircle :size="32" />
+                        </div>
+                        <p
+                          class="op-title op-title--error m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                        >
+                          {{ t('instancePicker.progressError') }}
+                        </p>
+                        <OperationErrorDetail
+                          v-if="activeOperation?.error"
+                          :error="activeOperation.error"
+                        />
+                        <div class="op-actions mt-1 flex flex-col items-center gap-2">
+                          <Button
+                            variant="inverted"
+                            size="md"
+                            type="button"
+                            class="op-primary-btn"
+                            @click="emit('op-retry')"
+                          >
+                            {{ t('instancePicker.progressRetry') }}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            class="op-ghost-btn"
+                            @click="emit('op-dismiss')"
+                          >
+                            {{ t('instancePicker.progressDismiss') }}
+                          </Button>
+                        </div>
+                      </template>
+
+                      <template v-else-if="opCancelled">
+                        <p
+                          class="op-title op-title--muted m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                        >
+                          {{ t('instancePicker.progressCancelled') }}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          class="op-ghost-btn"
+                          @click="emit('op-dismiss')"
+                        >
+                          {{ t('instancePicker.progressDismiss') }}
+                        </Button>
+                      </template>
+                    </div>
+
+                    <div
+                      v-else
+                      key="sections"
+                      class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
+                    >
+                      <SettingsSectionList
+                        :sections="visibleSections"
+                        :installation-id="installation?.id"
+                        :running-action-ids="runningActionIds"
+                        :pending-restart-field-ids="pendingRestartFieldIds"
+                        :field-error-messages="fieldErrorMessages"
+                        @update-field="updateField"
+                        @run-action="runAction"
+                        @open-args-page="openArgsPage"
+                        @open-path="handleOpenPath"
+                      />
+                    </div>
+                  </Transition>
                 </div>
               </Transition>
             </div>
           </Transition>
-        </div>
-      </Transition>
-    </section>
+        </section>
+      </TabsContent>
 
-    <footer
-      class="settings-v2-footer flex shrink-0 items-center justify-end gap-2 border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
-    >
-      <Transition
-        name="settings-v2-notice-fade"
-        enter-active-class="settings-v2-notice-fade-enter-active transition-opacity duration-300 ease-[ease]"
-        leave-active-class="settings-v2-notice-fade-leave-active transition-opacity duration-300 ease-[ease]"
-        enter-from-class="settings-v2-notice-fade-enter-from opacity-0"
-        leave-to-class="settings-v2-notice-fade-leave-to opacity-0"
+      <footer
+        class="settings-v2-footer flex shrink-0 items-center justify-end gap-2 border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
       >
-        <span
-          v-if="notice"
-          class="settings-v2-notice mr-auto text-[13px] leading-[1.3] text-text-muted"
-          role="status"
-          aria-live="polite"
+        <Transition
+          name="settings-v2-notice-fade"
+          enter-active-class="settings-v2-notice-fade-enter-active transition-opacity duration-300 ease-[ease]"
+          leave-active-class="settings-v2-notice-fade-leave-active transition-opacity duration-300 ease-[ease]"
+          enter-from-class="settings-v2-notice-fade-enter-from opacity-0"
+          leave-to-class="settings-v2-notice-fade-leave-to opacity-0"
         >
-          {{ notice }}
-        </span>
-      </Transition>
-
-      <div
-        class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
-        :class="{ 'has-caret': caretActions.length > 0 }"
-      >
-        <button
-          type="button"
-          class="settings-v2-relaunch inline-flex h-8 min-w-[200px] flex-[0_1_auto] items-center justify-center gap-[7px] rounded-lg border border-solid px-3.5 py-0 text-[12px] leading-4 font-medium cursor-pointer transition-[background-color,border-color,color] duration-[160ms] ease-[ease] hover:transition-[background,border-color] hover:duration-[120ms] disabled:opacity-40 disabled:cursor-default [&.is-split]:rounded-r-none"
-          :class="[
-            hasPendingRestart
-              ? 'is-pending-restart border-neutral-50 bg-neutral-50 text-background hover:text-neutral-950 enabled:hover:border-accent-hover enabled:hover:bg-accent-hover disabled:hover:border-neutral-50 disabled:hover:bg-neutral-50'
-              : 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-background enabled:hover:border-accent-hover enabled:hover:bg-accent-hover disabled:hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] disabled:hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)]',
-            { 'is-split': caretActions.length > 0 }
-          ]"
-          :disabled="!installation || opBlocksFooter"
-          :data-testid="TID.pickerPrimaryCta"
-          @click="handlePrimaryAction"
-        >
-          <component
-            :is="primaryActionIcon"
-            :size="15"
-            class="settings-v2-relaunch-icon shrink-0 opacity-85"
-            aria-hidden="true"
-          />
-          <span>{{ primaryActionLabel }}</span>
-        </button>
-        <template v-if="caretActions.length > 0">
-          <button
-            type="button"
-            class="settings-v2-cta-caret font-medium inline-flex h-8 w-[30px] items-center justify-center rounded-r-lg rounded-l-none border border-solid border-[var(--accent-primary)] border-l-[color-mix(in_srgb,var(--neutral-950)_18%,transparent)] bg-[var(--accent-primary)] p-0 text-background cursor-pointer enabled:hover:border-accent-hover enabled:hover:bg-accent-hover disabled:hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] disabled:hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease] disabled:opacity-40 disabled:cursor-default"
-            data-more-trigger
-            :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
-            aria-haspopup="menu"
-            :aria-expanded="caretMenuOpen"
-            :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
-            :disabled="!installation || opBlocksFooter"
-            :data-testid="TID.pickerNewWindow"
-            @click="toggleCaretMenu"
+          <span
+            v-if="notice"
+            class="settings-v2-notice mr-auto text-[13px] leading-[1.3] text-text-muted"
+            role="status"
+            aria-live="polite"
           >
-            <ChevronUp :size="14" />
-          </button>
-          <MoreMenu
-            :open="caretMenuOpen"
-            :actions="caretActions"
-            :heading="t('instancePicker.windowOptions', 'Window options')"
-            @close="closeCaretMenu"
-            @pick="handleCaretPick"
-          />
-        </template>
-      </div>
+            {{ notice }}
+          </span>
+        </Transition>
 
-      <div class="settings-v2-more-wrap relative inline-flex">
-        <button
-          type="button"
-          class="settings-v2-more inline-flex h-8 items-center gap-1 rounded-lg border-none px-3.5 py-0 text-[12px] leading-4 font-medium cursor-pointer disabled:opacity-40 disabled:cursor-default hover:bg-[var(--brand-surface-border-hover)] hover:text-text hover:outline-none focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none"
-          data-more-trigger
-          :class="
-            moreMenuOpen
-              ? 'is-active bg-[var(--brand-surface-border-hover)] text-text'
-              : 'bg-[var(--chooser-surface-border-hover)] text-neutral-100'
-          "
-          aria-haspopup="menu"
-          :aria-expanded="moreMenuOpen"
-          :aria-label="t('comfyUISettings.more', 'More')"
-          :disabled="!installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh"
-          :data-testid="TID.pickerMoreTrigger"
-          @click="toggleMoreMenu"
+        <div
+          class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
+          :class="{ 'has-caret': caretActions.length > 0 }"
         >
-          {{ t('comfyUISettings.more', 'More') }}
-          <ChevronUp :size="14" />
-        </button>
-        <MoreMenu
-          :open="moreMenuOpen"
-          :actions="pinBottomMenuActions"
-          @close="closeMoreMenu"
-          @pick="runAction"
-        />
-      </div>
-    </footer>
-  </div>
+          <Button
+            variant="inverted"
+            size="md"
+            type="button"
+            class="settings-v2-relaunch min-w-[200px] flex-[0_1_auto] [&.is-split]:rounded-r-none"
+            :class="[
+              { 'is-pending-restart': hasPendingRestart },
+              { 'is-split': caretActions.length > 0 }
+            ]"
+            :disabled="!installation || opBlocksFooter"
+            :data-testid="TID.pickerPrimaryCta"
+            @click="handlePrimaryAction"
+          >
+            <component
+              :is="primaryActionIcon"
+              :size="15"
+              class="settings-v2-relaunch-icon shrink-0 opacity-85"
+              aria-hidden="true"
+            />
+            <span>{{ primaryActionLabel }}</span>
+          </Button>
+          <template v-if="caretActions.length > 0">
+            <Button
+              variant="inverted"
+              size="icon"
+              type="button"
+              class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
+              data-more-trigger
+              :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
+              aria-haspopup="menu"
+              :aria-expanded="caretMenuOpen"
+              :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
+              :disabled="!installation || opBlocksFooter"
+              :data-testid="TID.pickerNewWindow"
+              @click="toggleCaretMenu"
+            >
+              <ChevronUp :size="14" />
+            </Button>
+            <MoreMenu
+              :open="caretMenuOpen"
+              :anchor="rootRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
+              :actions="caretActions"
+              :heading="t('instancePicker.windowOptions', 'Window options')"
+              @close="closeCaretMenu"
+              @pick="handleCaretPick"
+            />
+          </template>
+        </div>
+
+        <div class="settings-v2-more-wrap relative inline-flex">
+          <Button
+            variant="secondary"
+            size="md"
+            type="button"
+            class="settings-v2-more"
+            data-more-trigger
+            :class="{ 'is-active': moreMenuOpen }"
+            aria-haspopup="menu"
+            :aria-expanded="moreMenuOpen"
+            :aria-label="t('comfyUISettings.more', 'More')"
+            :disabled="
+              !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
+            "
+            :data-testid="TID.pickerMoreTrigger"
+            @click="toggleMoreMenu"
+          >
+            {{ t('comfyUISettings.more', 'More') }}
+            <ChevronUp :size="14" />
+          </Button>
+          <MoreMenu
+            :open="moreMenuOpen"
+            :anchor="rootRef?.querySelector<HTMLElement>('.settings-v2-more')"
+            :actions="pinBottomMenuActions"
+            @close="closeMoreMenu"
+            @pick="runAction"
+          />
+        </div>
+      </footer>
+    </div>
+  </Tabs>
 </template>
 
 <style>

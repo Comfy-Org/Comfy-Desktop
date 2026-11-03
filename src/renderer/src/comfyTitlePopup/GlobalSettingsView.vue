@@ -331,9 +331,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="global-settings flex size-full flex-col text-[14px] text-neutral-100 [&_.ui-input]:min-h-7 [&_.ui-input]:rounded-md [&_.ui-select-trigger]:min-h-7 [&_.ui-select-trigger]:rounded-md [&_.ui-select-trigger]:text-[13px] [&_.ui-input-control]:text-[13px] [&_.ui-input-trailing_button]:size-[26px]"
-  >
+  <div class="global-settings flex size-full flex-col text-sm text-foreground">
     <header
       class="gs-header flex flex-none items-center justify-between border-b border-solid border-border py-2.5 pr-3 pl-5"
     >

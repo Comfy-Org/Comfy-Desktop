@@ -145,6 +145,7 @@ vi.mock('../../views/comfyUISettings/ArgsBuilderPage.vue', () => ({
 }))
 vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
+    name: 'MoreMenu',
     props: ['open', 'actions'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>'
   }

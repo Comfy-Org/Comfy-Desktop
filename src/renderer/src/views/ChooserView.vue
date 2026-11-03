@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
@@ -317,7 +318,6 @@ const gridHandlers = {
         <div class="chooser-search flex min-w-[180px] flex-[1_1_600px]">
           <BaseInput
             v-model="searchQuery"
-            class="rounded-xl [&.ui-input]:border-[var(--chooser-surface-border)] [&.ui-input]:bg-[var(--chooser-surface-bg)] p-2 [&_.ui-input-control]:pt-0 [&_.ui-input-control]:text-[14px]"
             :placeholder="t('chooser.searchPlaceholder')"
             :aria-label="t('chooser.searchPlaceholder')"
           >
@@ -341,10 +341,12 @@ const gridHandlers = {
             "
           >
             <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
-            <button
+            <Button
               v-if="authStore.isSignedIn"
+              variant="muted-textonly"
+              size="icon"
               type="button"
-              class="chooser-workspace-refresh inline-flex size-[var(--chooser-workspace-refresh-size)] items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 text-text-muted cursor-pointer enabled:hover:border-[var(--chooser-surface-border-hover)] enabled:hover:bg-[var(--chooser-surface-bg-hover)] enabled:hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:opacity-60 disabled:cursor-default"
+              class="chooser-workspace-refresh"
               :disabled="refreshingWorkspace"
               :aria-label="t('devPlatform.workspace.refresh')"
               :title="t('devPlatform.workspace.refresh')"
@@ -358,7 +360,7 @@ const gridHandlers = {
                     refreshingWorkspace
                 }"
               />
-            </button>
+            </Button>
           </div>
           <div
             class="chooser-workspace-divider h-px min-w-4 flex-auto bg-[var(--chooser-surface-border)] [@media(width<=640px)]:hidden"

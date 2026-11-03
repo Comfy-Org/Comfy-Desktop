@@ -516,17 +516,15 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
 <template>
   <div class="picker flex size-full box-border flex-col bg-[var(--modal-surface-bg)]">
     <div
-      class="picker-search flex items-center gap-1 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] pt-1.5 pr-2 pb-2 pl-3 [&_.ui-input]:gap-2 [&_.ui-input]:rounded-none [&_.ui-input]:border-none [&_.ui-input]:bg-transparent [&_.ui-input]:p-0 [&_.ui-input:focus-within]:border-transparent [&_.ui-input-leading]:text-text [&_.ui-input-control]:px-0 [&_.ui-input-control]:pt-0.5 [&_.ui-input-control]:pb-0 [&_.ui-input-control]:text-[14px] [&_.ui-input-control]:leading-5 [&_.ui-input-control]:text-text [&_.ui-input-control::placeholder]:text-text [&_.ui-input-control::placeholder]:opacity-60"
+      class="picker-search flex items-center gap-1 border-b border-solid border-border px-3 py-2"
     >
       <BaseInput
         v-model="searchQuery"
-        class="picker-search-input min-w-0 flex-auto"
+        class="picker-search-input min-w-0 flex-auto bg-transparent"
         :placeholder="$t('chooser.searchPlaceholder')"
         :aria-label="$t('chooser.searchPlaceholder')"
       >
-        <template #leading
-          ><Search :size="20" class="picker-search-icon mt-0.5 text-[var(--accent-label)]"
-        /></template>
+        <template #leading><Search :size="16" class="picker-search-icon" /></template>
       </BaseInput>
       <Button
         type="button"
