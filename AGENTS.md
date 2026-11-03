@@ -1,5 +1,11 @@
 This repository has a zero tolerance policy for flaky tests.
 
+## Code comments
+
+Keep code comments focused on current behavior, non-obvious constraints, and invariants. Put change history, change rationale, and ticket/PR references in commit messages and PR descriptions.
+
+When touching a file, trim comments that narrate changes or restate the code. Verify any remaining file and symbol references against the current source.
+
 ## Pull request descriptions
 
 Every PR description must include a change breakdown that separates product code from test code. For each category, report its file count and paths, added lines, deleted lines, and share of total changed lines. Calculate total changed lines as added lines plus deleted lines. List documentation, configuration, generated files, lockfiles, and vendored code separately when present; do not count merge-only changes.
