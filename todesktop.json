@@ -7,8 +7,6 @@
     "**",
     "!electron-builder.yml",
     "!out/**/*.map",
-    "!tests/**",
-    "!visual-report/**",
     "!bootstrap-python/**",
     "!todesktop-targets/**"
   ],

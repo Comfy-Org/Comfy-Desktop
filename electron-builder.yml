@@ -11,8 +11,6 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{.env,.env.*,.npmrc}'
   - '!docs/*'
-  - '!tests/**'
-  - '!visual-report/**'
   - '!out/**/*.map'
   - '!reference/*'
   - '!**/*.wsb'

@@ -21,6 +21,16 @@ The `lifecycle` Playwright project has a 180 s default per-test timeout
 > which downloads ~500 MB and performs real installs. Use the per-platform or
 > per-project scripts unless that is what you want.
 
+## Test profile isolation
+
+Every launch through `launchApp` or `launchLauncherApp` points the app at a per-run
+profile through the environment, so tests never touch a developer's real Desktop data.
+macOS ignores `HOME` for Electron's paths, so the harness also sets `CFFIXED_USER_HOME`.
+Windows redirects `APPDATA` and `LOCALAPPDATA`. `e2e/profile-isolation.test.ts` checks
+this on every OS; it skips `home` and `downloads` on Windows, where Electron cannot
+resolve the Downloads folder inside a redirected profile. Running `electron .` directly
+bypasses the harness and uses the real profile.
+
 ## Zero-mock policy (lifecycle tests)
 
 Lifecycle tests replace manual release testing. A human tester does not mock the app,

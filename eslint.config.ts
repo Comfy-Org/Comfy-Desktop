@@ -25,7 +25,6 @@ export default defineConfig([
     ignores: [
       'out/*',
       'dist/*',
-      'visual-report/**',
       'node_modules/*',
       '.claude/**',
       '.worktrees/**',

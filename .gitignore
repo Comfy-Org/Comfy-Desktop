@@ -6,7 +6,6 @@ out/
 !**/__fixtures__/**/*.log
 *.tsbuildinfo
 result
-visual-report/
 test-results/
 playwright-report/
 # Composited window screenshots from the e2e specs. Generated output like the two above:
