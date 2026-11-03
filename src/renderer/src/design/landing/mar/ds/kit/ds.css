@@ -367,12 +367,20 @@ html.ds-app-frame #app {
 }
 .ds-nav-search {
   height: 30px;
+  /* The nav scrolls; the field keeps its height instead of shrinking. */
+  flex-shrink: 0;
   margin: 0 0 6px;
   padding: 0 10px;
   border-radius: 8px;
   background: rgb(255 255 255 / 0.06);
   color: #ececee;
   outline: none;
+}
+/* The native clear button, grey like the chrome instead of system blue. */
+.ds-nav-search::-webkit-search-cancel-button {
+  filter: grayscale(1) brightness(1.6);
+  opacity: 0.6;
+  cursor: pointer;
 }
 .ds-nav-none {
   padding: 6px 10px;
