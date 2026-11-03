@@ -409,6 +409,8 @@ import {
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
+import { setHardwareProbe } from '../../agentClientContext'
+import { getAppVersion } from '../shared'
 import { instanceModelPathsYaml } from '../../models'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
@@ -1498,30 +1500,45 @@ describe('core beta report placement', () => {
 
   const reportedEvents = (): string[] => events.map((e) => e.event)
 
-  describe('agent client context', () => {
-    let spawnEnv: Record<string, string | undefined> = {}
+  describe.each([
+    ['skip-port', true],
+    ['port-wait', false]
+  ])('agent client context (%s path)', (pathName, skipPortWait) => {
+    let spawnEnv: Record<string, string | undefined> | undefined
+    let port = 48240 + (skipPortWait ? 0 : 10)
     beforeEach(() => {
+      spawnEnv = undefined
       launchHarness.spawn = (_cmd: unknown, _args: unknown, _cwd: unknown, env: unknown) => {
         spawnEnv = env as Record<string, string | undefined>
         return fakeChild()
       }
+      launchHarness.launchCommand = { ...launchHarness.launchCommand, skipPortWait, port: ++port }
+      launchHarness.waitForPort = async () => {}
     })
     afterEach(() => {
       settingsModule.set('telemetryEnabled', undefined)
+      setHardwareProbe(null)
     })
 
-    it('hands the agent its client context only with telemetry consent', async () => {
+    it('hands the agent its channel and the probed GPU tier with telemetry consent', async () => {
       settingsModule.set('telemetryEnabled', true)
-      expect((await handleLaunch(ctxFor('harness-client-context-on'))).ok).toBe(true)
-      expect(spawnEnv.AGENT_CLIENT_CONTEXT).toBe('desktop')
-      expect(spawnEnv.AGENT_CLIENT_CHANNEL).toBeTruthy()
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      expect((await handleLaunch(ctxFor(`harness-client-context-on-${pathName}`))).ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv!.AGENT_CLIENT_CONTEXT).toBe('desktop')
+      expect(spawnEnv!.AGENT_CLIENT_CHANNEL).toBe(telemetry.deriveAppChannel(getAppVersion()))
+      expect(spawnEnv!.AGENT_CLIENT_GPU_TIER).toBe('mid')
     })
 
     it.each([false, undefined])('sends none with telemetry consent %s', async (consent) => {
       settingsModule.set('telemetryEnabled', consent)
-      expect((await handleLaunch(ctxFor(`harness-client-context-${consent}`))).ok).toBe(true)
-      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
-      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CHANNEL')
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-${consent}-${pathName}`))
+      expect(res.ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      for (const name of ['AGENT_CLIENT_CONTEXT', 'AGENT_CLIENT_CHANNEL', 'AGENT_CLIENT_GPU_TIER']) {
+        expect(spawnEnv).not.toHaveProperty(name)
+      }
     })
   })
 

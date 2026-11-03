@@ -127,6 +127,14 @@ describe('buildLaunchEnv agent client context', () => {
     expect(env).not.toHaveProperty('agent_client_channel')
   })
 
+  it('drops an inherited name in any case, as Windows env names are case-insensitive', () => {
+    vi.stubEnv('agent_client_channel', 'beta')
+    vi.stubEnv('Agent_Client_Context', 'desktop')
+    const env = buildLaunchEnv(inst('standalone'))
+    expect(env).not.toHaveProperty('agent_client_channel')
+    expect(env).not.toHaveProperty('Agent_Client_Context')
+  })
+
   it('does not let an inherited tier ride along with a context that has none', () => {
     vi.stubEnv('AGENT_CLIENT_GPU_TIER', 'high')
     const env = buildLaunchEnv(inst('standalone'), undefined, { channel: 'stable' })

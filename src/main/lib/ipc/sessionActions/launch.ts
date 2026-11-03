@@ -173,12 +173,6 @@ import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
-/** The agent's client context for this launch: fixed at spawn, like enable_telemetry, so a
- *  consent change takes effect at the next launch. */
-function launchClientContext(): ReturnType<typeof agentClientContext> {
-  return agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
-}
-
 export function desktopFeatureFlags(
   inst: InstallationRecord,
   telemetryEnabled: boolean
@@ -195,6 +189,12 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** The agent's client context for this launch: fixed at spawn, like enable_telemetry, so a
+ *  consent change takes effect at the next launch. */
+function launchClientContext(): ReturnType<typeof agentClientContext> {
+  return agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
 }
 
 /** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
@@ -1880,10 +1880,14 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
+  // Resolved alongside the port probes, so the wait for the GPU tier never sits between the
+  // final port re-check and the reservation.
+  const clientContextReady = launchClientContext()
+
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
-    const launchEnv = buildLaunchEnv(inst, undefined, await launchClientContext())
+    const launchEnv = buildLaunchEnv(inst, undefined, await clientContextReady)
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
@@ -2231,6 +2235,8 @@ async function runLaunch(
     }
   }
 
+  const clientContext = await clientContextReady
+
   // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
@@ -2272,7 +2278,7 @@ async function runLaunch(
   // Session path / env / progress plumbing before the port is reserved, so a
   // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
-  const launchEnv = buildLaunchEnv(inst, sessionPath, await launchClientContext())
+  const launchEnv = buildLaunchEnv(inst, sessionPath, clientContext)
   const sendOutput = makeSendOutput(sender, sessionId)
 
   // Port reservation and launching marker sit INSIDE the guard: even the

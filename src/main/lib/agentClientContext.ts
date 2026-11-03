@@ -36,16 +36,15 @@ async function gpuTierWithin(ms: number): Promise<GpuTier | undefined> {
     () => undefined
   )
   const timedOut = new Promise<undefined>((resolve) => setTimeout(resolve, ms))
-  return (await Promise.race([probed, timedOut])) || undefined
+  return Promise.race([probed, timedOut])
 }
 
 /** The context for this launch, or undefined without telemetry consent. */
 export async function agentClientContext(
   telemetryGranted: boolean,
-  appVersion: string,
-  waitMs = GPU_TIER_WAIT_MS
+  appVersion: string
 ): Promise<AgentClientContext | undefined> {
   if (!telemetryGranted) return undefined
-  const gpuTier = await gpuTierWithin(waitMs)
+  const gpuTier = await gpuTierWithin(GPU_TIER_WAIT_MS)
   return { channel: deriveAppChannel(appVersion), ...(gpuTier ? { gpuTier } : {}) }
 }

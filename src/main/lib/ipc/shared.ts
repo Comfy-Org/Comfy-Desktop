@@ -1065,8 +1065,11 @@ export function buildLaunchEnv(
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
   // The agent's client context goes out only with telemetry consent (the caller passes
   // undefined otherwise). Written last so neither process.env nor a per-install var can
-  // supply or override it, and deleted when absent so an inherited value cannot leak through.
-  for (const name of AGENT_CLIENT_ENV_VARS) delete env[name]
+  // supply or override it, and deleted (in any case, as Windows env names are case-insensitive) so an inherited value
+  // cannot leak through.
+  for (const key of Object.keys(env)) {
+    if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
+  }
   if (clientContext) {
     env.AGENT_CLIENT_CONTEXT = 'desktop'
     env.AGENT_CLIENT_CHANNEL = clientContext.channel
