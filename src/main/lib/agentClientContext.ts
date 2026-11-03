@@ -13,7 +13,7 @@ export interface AgentClientContext {
   gpuTier?: GpuTier
 }
 
-const GPU_TIER_WAIT_MS = 2000
+const MAX_GPU_TIER_WAIT_MS = 2000
 
 type HardwareProbe = () => Promise<{ gpu_tier?: unknown }>
 let hardwareProbe: HardwareProbe | null = null
@@ -37,6 +37,6 @@ export async function agentClientContext(
   appVersion: string
 ): Promise<AgentClientContext | undefined> {
   if (!telemetryGranted) return undefined
-  const gpuTier = await gpuTierWithin(GPU_TIER_WAIT_MS)
+  const gpuTier = await gpuTierWithin(MAX_GPU_TIER_WAIT_MS)
   return { channel: deriveAppChannel(appVersion), ...(gpuTier ? { gpuTier } : {}) }
 }
