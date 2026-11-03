@@ -5,11 +5,13 @@ Run `pnpm test:visual` after installing the pinned browser with
 components, the real dashboard, and the real Desktop Settings view with an
 in-memory host bridge. It never launches ComfyUI or reads an installed profile.
 
-CI uses Ubuntu 24.04, Node 22, and the Chromium revision pinned by the locked
-Playwright dependency. The viewport, pixel ratio, locale, time zone, dark theme,
+CI uses the Ubuntu 24.04 runner family, Node 22, and the Chromium revision pinned
+by the locked Playwright dependency. The viewport, pixel ratio, locale, time zone, dark theme,
 and reduced-motion preference are explicit. Inter is loaded from the repository
-and fonts settle before capture. Screenshot comparison uses zero changed pixels;
-the suite has no retries.
+and fonts settle before capture. Screenshot comparison allows zero counted pixel
+differences at threshold 0, with Playwright's standard antialias handling. This
+is a rendered-image regression check, not a byte-for-byte image equality check.
+The suite has no retries.
 
 Baselines are platform-specific. Linux images are the canonical CI gate; macOS
 images support local development. A browser version, font, OS, or intended
@@ -26,7 +28,8 @@ design change can require a deliberate baseline update.
    failing check.
 
 When the initial Linux baseline directory is absent, CI generates all candidate
-images and deliberately fails until they have been reviewed and committed.
+images and deliberately fails until baselines are committed. Review is a manual
+requirement; CI checks that the committed images match, not who reviewed them.
 An individual missing baseline also fails and uploads its candidate image.
 Download the `visual-regression-linux` artifact, inspect the candidates, and add
 them to the corresponding Linux snapshot paths. Subsequent runs must compare
