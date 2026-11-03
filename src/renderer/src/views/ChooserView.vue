@@ -318,7 +318,6 @@ const gridHandlers = {
         <div class="chooser-search flex min-w-[180px] flex-[1_1_600px]">
           <BaseInput
             v-model="searchQuery"
-            class="rounded-xl [&.ui-input]:border-[var(--chooser-surface-border)] [&.ui-input]:bg-[var(--chooser-surface-bg)] p-2 [&_.ui-input-control]:pt-0 [&_.ui-input-control]:text-[14px]"
             :placeholder="t('chooser.searchPlaceholder')"
             :aria-label="t('chooser.searchPlaceholder')"
           >
