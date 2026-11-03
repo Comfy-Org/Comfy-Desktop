@@ -241,7 +241,7 @@ Pass `--yes` (or `-Yes` on Windows) to skip the prompt. After cleanup, reinstall
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR, please run `pnpm run typecheck`, `pnpm run lint`, and `pnpm test` locally — see [Development](#development). For coding conventions, see [`AGENTS.md`](AGENTS.md).
+Issues and pull requests are welcome. Before opening a PR, please run `pnpm run typecheck`, `pnpm run lint`, and `pnpm test` locally — see [Development](#development).
 
 ## Community
 

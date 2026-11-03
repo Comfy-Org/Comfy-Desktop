@@ -7,7 +7,7 @@ files:
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!eslint.config.ts'
-  - '!{.eslintcache,.prettierrc.json,README.md,AGENTS.md}'
+  - '!{.eslintcache,.prettierrc.json,README.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{.env,.env.*,.npmrc}'
   - '!docs/*'
