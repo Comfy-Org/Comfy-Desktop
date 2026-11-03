@@ -26,7 +26,7 @@ import Checkbox from '../../ui/Checkbox.vue'
 import DialogContent from '../../ui/DialogContent.vue'
 import Input from '../../ui/Input.vue'
 import MediaCard from '../../ui/MediaCard.vue'
-import SegmentedControl from '../../ui/SegmentedControl.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { cn } from '../../ui/cn'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, toast } from '../../useProto'
@@ -428,7 +428,7 @@ const nowPhase = computed(() => (phases[phaseIndex.value] ?? phases[2]).label)
             <div class="mss-field">
               <span class="text-ui font-medium text-base-foreground">Version</span>
               <div class="flex items-center gap-3">
-                <SegmentedControl v-model="channel" variant="contained" :options="CHANNELS" />
+                <MarSeg v-model="channel" label="Version" :options="CHANNELS" />
                 <span class="text-ui text-subtle-foreground">ComfyUI {{ DETECTED.version }}</span>
               </div>
             </div>
@@ -575,13 +575,14 @@ const nowPhase = computed(() => (phases[phaseIndex.value] ?? phases[2]).label)
                   ComfyUI opens as soon as it is ready. Models keep downloading in the background.
                 </p>
               </div>
-              <SegmentedControl v-model="flow.tab" variant="contained" size="sm" :options="TABS" />
+              <MarSeg v-model="flow.tab" label="Workflow type" :options="TABS" />
             </div>
             <div class="mss-cards">
+              <!-- Card corners as on Mar's pages: the check top-left, the
+                   chip bottom-left. -->
               <MediaCard
                 v-for="s in STARTERS[flow.tab]"
                 :key="s.id"
-                :src="imgUrl(s.img)"
                 ratio="4/3"
                 :selected="flow.picked?.id === s.id"
                 :aria-pressed="flow.picked?.id === s.id"
@@ -591,10 +592,13 @@ const nowPhase = computed(() => (phases[phaseIndex.value] ?? phases[2]).label)
                 @keydown.enter.prevent="pick(s)"
                 @keydown.space.prevent="pick(s)"
               >
-                <template v-if="s.tag || s.credits" #top-left>
-                  <Badge variant="overlay">{{ s.credits ? 'Uses credits' : s.tag }}</Badge>
+                <template #media>
+                  <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
+                  <span v-if="s.tag || s.credits" class="mss-card-chip">
+                    <Badge variant="overlay">{{ s.credits ? 'Uses credits' : s.tag }}</Badge>
+                  </span>
                 </template>
-                <template v-if="flow.picked?.id === s.id" #top-right>
+                <template v-if="flow.picked?.id === s.id" #top-left>
                   <span class="mss-card-check"><Check :size="12" :stroke-width="3" /></span>
                 </template>
                 <span class="line-clamp-2 text-ui font-medium text-base-foreground">{{

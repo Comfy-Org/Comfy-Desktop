@@ -20,6 +20,8 @@
     --mss-soft-hover: color-mix(in oklch, var(--wiz-ink) 7%, transparent);
     --mss-line: color-mix(in oklch, var(--wiz-ink) 8%, transparent);
     --mss-line-strong: color-mix(in oklch, var(--wiz-ink) 16%, transparent);
+    /* Surfaces inside take their ring from UI Playground › Borders (None by
+     * default, as on every New UI surface); fills tell them apart. */
     --mss-danger-soft: color-mix(in oklch, var(--color-status-danger) 10%, transparent);
     --mss-danger-line: color-mix(in oklch, var(--color-status-danger) 32%, transparent);
   }
@@ -67,7 +69,7 @@
     padding: 12px 16px;
     border-radius: 16px;
     background-color: var(--mss-soft);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
     text-align: left;
     outline: none;
     transition:
@@ -255,6 +257,7 @@
     color: oklch(0.78 0.15 30);
   }
   .mss-chip.is-btn {
+    border-radius: var(--radius-control, 8px);
     outline: none;
     transition:
       background-color 160ms ease,
@@ -282,7 +285,7 @@
     padding: 12px 14px 12px 12px;
     border-radius: 14px;
     background-color: var(--mss-soft);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
   }
   .mss-tile.is-bad ~ .mss-tile {
     grid-column: 1 / -1;
@@ -346,7 +349,7 @@
     padding: 12px 16px 14px 12px;
     border-radius: 14px;
     background-color: var(--mss-soft);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
   }
   .mss-callout > .grid {
     padding-top: 6px;
@@ -397,7 +400,7 @@
     padding: 12px 14px;
     border-radius: 12px;
     background-color: var(--mss-soft);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
     text-align: left;
     outline: none;
     transition:
@@ -570,7 +573,7 @@
     padding: 12px;
     border-radius: 10px;
     background-color: color-mix(in oklch, var(--wiz-ink) 5%, transparent);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
     color: var(--color-muted-foreground);
     font:
       12px/1.6 ui-monospace,
@@ -598,20 +601,8 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
   }
-  /* Cards lift on hover like the Home's example cards. */
   .mss-card {
     min-width: 0;
-    transition:
-      transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
-      box-shadow 240ms ease;
-  }
-  .mss-card:not(.is-nofit):hover {
-    transform: translateY(-3px);
-    box-shadow: 0 14px 28px -14px rgb(0 0 0 / 0.45);
-  }
-  .mss-card > div:last-child {
-    gap: 2px;
-    padding: 8px 6px 4px;
   }
   .mss-card.is-nofit {
     cursor: not-allowed;
@@ -620,16 +611,28 @@
   .mss-card.is-nofit img {
     filter: grayscale(0.6);
   }
+  /* The pick's check: Mar's card check (pages/MarItem.vue), filled. */
   .mss-card-check {
     display: inline-flex;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: 6px;
     background-color: var(--color-inverted-background);
     color: var(--color-inverted-foreground);
     animation: mss-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .mss-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .mss-card-chip {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    display: flex;
   }
   @keyframes mss-pop {
     from {
@@ -663,10 +666,14 @@
       inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent),
       var(--shadow-popover);
     outline: none;
-    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color 160ms ease;
   }
   .mss-pill:hover {
-    transform: translateY(-2px);
+    background-color: color-mix(
+      in oklch,
+      color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background)) 92%,
+      transparent
+    );
   }
   .mss-pill:focus-visible {
     box-shadow:
@@ -728,11 +735,7 @@
     .mss-phase-pulse {
       animation: none;
     }
-    .mss-card:not(.is-nofit):hover {
-      transform: none;
-    }
     .mss-pill,
-    .mss-card,
     .mss-opt-arrow,
     .mss-pill-enter-active,
     .mss-pill-leave-active {
