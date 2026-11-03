@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircle, XCircle, Ban } from 'lucide-vue-next'
@@ -93,14 +94,16 @@ const statusLabel = computed(() => {
           {{ statusLabel }}
         </p>
 
-        <button
+        <Button
           v-if="operation.cancellable"
           type="button"
-          class="pip__ghost-btn h-[30px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-4 py-0 text-[12px] text-text-muted cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] hover:border-[var(--text-muted,var(--neutral-100))] hover:text-text"
+          variant="outline"
+          size="md"
+          class="pip__ghost-btn"
           @click="emit('cancel')"
         >
           {{ t('instancePicker.progressCancel') }}
-        </button>
+        </Button>
       </div>
 
       <div
@@ -121,13 +124,15 @@ const statusLabel = computed(() => {
         >
           {{ installationName }} {{ t('instancePicker.progressSuccessSubtext') }}
         </p>
-        <button
+        <Button
           type="button"
-          class="pip__primary-btn mt-1 h-[34px] rounded-lg border-none bg-[var(--brand-accent,#f5c518)] px-5 py-0 text-[13px] font-semibold text-black cursor-pointer transition-opacity duration-[120ms] ease-[ease] hover:opacity-[0.85] active:opacity-70"
+          variant="inverted"
+          size="md"
+          class="pip__primary-btn mt-1"
           @click="emit('open')"
         >
           {{ t('instancePicker.progressOpenInstance') }}
-        </button>
+        </Button>
       </div>
 
       <div
@@ -147,20 +152,24 @@ const statusLabel = computed(() => {
         </p>
         <OperationErrorDetail v-if="operation.error" :error="operation.error" compact />
         <div class="pip__actions mt-1 flex w-full flex-col items-center gap-2">
-          <button
+          <Button
             type="button"
-            class="pip__primary-btn mt-1 h-[34px] rounded-lg border-none bg-[var(--brand-accent,#f5c518)] px-5 py-0 text-[13px] font-semibold text-black cursor-pointer transition-opacity duration-[120ms] ease-[ease] hover:opacity-[0.85] active:opacity-70"
+            variant="inverted"
+            size="md"
+            class="pip__primary-btn mt-1"
             @click="emit('retry')"
           >
             {{ t('instancePicker.progressRetry') }}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class="pip__ghost-btn h-[30px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-4 py-0 text-[12px] text-text-muted cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] hover:border-[var(--text-muted,var(--neutral-100))] hover:text-text"
+            variant="outline"
+            size="md"
+            class="pip__ghost-btn"
             @click="emit('dismiss')"
           >
             {{ t('instancePicker.progressDismiss') }}
-          </button>
+          </Button>
         </div>
       </div>
 

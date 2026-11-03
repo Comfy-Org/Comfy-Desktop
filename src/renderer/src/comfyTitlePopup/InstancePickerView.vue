@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
+import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
@@ -525,15 +528,17 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           ><Search :size="20" class="picker-search-icon mt-0.5 text-[var(--accent-label)]"
         /></template>
       </BaseInput>
-      <button
+      <Button
         type="button"
-        class="picker-close inline-flex size-7 flex-none items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 text-text-muted cursor-pointer transition-[background-color,color,border-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 hover:outline-none focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none"
+        variant="muted-textonly"
+        size="icon"
+        class="picker-close shrink-0"
         :aria-label="$t('common.close')"
         :title="$t('common.close')"
         @click="handleClose"
       >
         <X :size="18" />
-      </button>
+      </Button>
     </div>
 
     <div
@@ -541,9 +546,11 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     >
       <template v-if="isInstallHost">
         <Tooltip :text="$t('instancePicker.openDashboardHint')" side="bottom">
-          <button
+          <Button
             type="button"
-            class="picker-home inline-flex h-[22px] flex-none items-center justify-center gap-1.5 border-none bg-transparent py-0 pr-1.5 pl-0.5 text-neutral-100 cursor-pointer transition-[color] duration-100 ease-[ease] hover:text-text hover:outline-none focus-visible:text-text focus-visible:outline-none"
+            variant="textonly"
+            size="sm"
+            class="picker-home shrink-0"
             :aria-label="$t('instancePicker.openDashboard')"
             @click="handleOpenDashboard"
           >
@@ -551,35 +558,30 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
             <span class="picker-home-label text-[11px] leading-4 font-medium whitespace-nowrap">{{
               $t('instancePicker.openDashboard')
             }}</span>
-          </button>
+          </Button>
         </Tooltip>
         <span
           class="picker-chips-divider inline-block h-4 w-px flex-none bg-[var(--brand-surface-border-hover,var(--chooser-surface-border))]"
           aria-hidden="true"
         ></span>
       </template>
-      <div
-        class="picker-chips flex min-w-0 flex-wrap items-center gap-1.5"
-        role="tablist"
+      <ToggleGroup
+        v-model="activeFilter"
+        type="single"
+        :allow-empty="false"
+        roving-focus
+        class="picker-chips min-w-0 flex-wrap gap-1.5"
         :aria-label="$t('chooser.filterLabel', 'Source filter')"
       >
-        <button
+        <ToggleGroupItem
           v-for="chip in visibleChips"
           :key="chip.key"
-          type="button"
-          role="tab"
-          class="picker-chip inline-flex h-[22px] items-center rounded-lg border border-solid px-2.5 py-0.5 text-[11px] leading-4 font-medium cursor-pointer transition-[background-color,border-color,color] duration-100 ease-[ease] hover:outline-none focus-visible:outline-none"
-          :class="
-            activeFilter === chip.key
-              ? 'is-active border-transparent bg-accent text-text'
-              : 'border-border bg-transparent text-neutral-100 hover:bg-secondary hover:text-text focus-visible:text-text'
-          "
-          :aria-selected="activeFilter === chip.key"
-          @click="activeFilter = chip.key"
+          :value="chip.key"
+          class="picker-chip text-xs"
+          :class="{ 'is-active': activeFilter === chip.key }"
+          >{{ $t(chip.labelKey) }}</ToggleGroupItem
         >
-          {{ $t(chip.labelKey) }}
-        </button>
-      </div>
+      </ToggleGroup>
     </div>
 
     <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
@@ -632,14 +634,16 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
         <footer
           class="picker-left-footer flex shrink-0 items-center border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
         >
-          <button
+          <Button
             type="button"
-            class="picker-new-install inline-flex h-8 w-fit flex-none items-center justify-center gap-1 rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 cursor-pointer transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text hover:outline-none focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none"
+            variant="secondary"
+            size="md"
+            class="picker-new-install w-fit shrink-0"
             @click="handleNewInstall"
           >
             <Plus :size="16" />
             <span>{{ $t('instancePicker.newInstance') }}</span>
-          </button>
+          </Button>
         </footer>
       </div>
 

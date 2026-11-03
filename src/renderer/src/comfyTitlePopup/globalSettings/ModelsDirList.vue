@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import {
   ChevronRight,
   FileText,
@@ -55,24 +57,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const actionClass =
-  'models-dir-action cursor-pointer text-[14px] static inline-flex size-7 items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0'
-const menuItemClass =
-  'static block w-full rounded-md border-none bg-transparent px-2.5 py-1.5 text-left text-[12px] leading-[1.5] font-normal whitespace-normal appearance-auto hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0'
-
+const actionClass = 'models-dir-action shrink-0'
 const openMenuIndex = ref<number | null>(null)
-const menuToggleRefs = new Map<number, HTMLButtonElement>()
-const menuRefs = new Map<number, HTMLDivElement>()
-
-function setMenuToggleRef(index: number, el: Element | null): void {
-  if (el instanceof HTMLButtonElement) menuToggleRefs.set(index, el)
-  else menuToggleRefs.delete(index)
-}
-
-function setMenuRef(index: number, el: Element | null): void {
-  if (el instanceof HTMLDivElement) menuRefs.set(index, el)
-  else menuRefs.delete(index)
-}
 
 function canPromote(dir: ModelsDir): boolean {
   return dir.kind !== 'extra' && !dir.isPrimary && dir.promotable !== false
@@ -86,39 +72,16 @@ function hasMenuActions(dir: ModelsDir): boolean {
   return canPromote(dir) || canRemove(dir)
 }
 
-async function toggleMenu(index: number): Promise<void> {
-  const willOpen = openMenuIndex.value !== index
-  openMenuIndex.value = willOpen ? index : null
-  if (willOpen) {
-    await nextTick()
-    focusFirstMenuItem(index)
-  }
-}
-
-function closeMenu(restoreFocus = false): void {
-  const prev = openMenuIndex.value
+function closeMenu(): void {
   openMenuIndex.value = null
-  if (restoreFocus && prev != null) menuToggleRefs.get(prev)?.focus()
 }
-
-function focusFirstMenuItem(index: number): void {
-  menuItemsFor(index)[0]?.focus()
+function onMenuKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.stopPropagation()
+  closeMenu()
 }
-
-function menuItemsFor(index: number): HTMLButtonElement[] {
-  const menu = menuRefs.get(index)
-  if (!menu) return []
-  return Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]'))
-}
-
-function handleMenuArrow(index: number, direction: 1 | -1, event: KeyboardEvent): void {
-  event.preventDefault()
-  const items = menuItemsFor(index)
-  if (items.length === 0) return
-  const current = items.indexOf(document.activeElement as HTMLButtonElement)
-  const next = (current + direction + items.length) % items.length
-  items[next]?.focus()
-}
+onMounted(() => window.addEventListener('blur', closeMenu))
+onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
 
 function handleChange(index: number): void {
   closeMenu()
@@ -195,9 +158,9 @@ const rows = computed(() =>
       <div class="models-dir-main flex min-w-0 flex-auto items-center">
         <Button
           type="button"
-          variant="textonly"
+          variant="link"
           size="unset"
-          class="models-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left text-[13px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+          class="models-dir-name block min-w-0 max-w-full truncate p-0 text-left text-[13px] leading-[18px] font-normal"
           :title="
             row.isExtra
               ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details')
@@ -233,7 +196,7 @@ const rows = computed(() =>
           v-if="row.isExtra"
           type="button"
           variant="textonly"
-          size="unset"
+          size="icon"
           :class="actionClass"
           :aria-label="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
           :title="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
@@ -245,7 +208,7 @@ const rows = computed(() =>
           v-if="!row.locked && !row.isExtra && !row.readonly"
           type="button"
           variant="textonly"
-          size="unset"
+          size="icon"
           :class="actionClass"
           :aria-label="t('common.browse', 'Browse')"
           :title="t('common.browse', 'Browse')"
@@ -253,62 +216,47 @@ const rows = computed(() =>
         >
           <FolderOpen :size="14" aria-hidden="true" />
         </Button>
-        <div v-if="row.showMenu" class="models-dir-menu-wrap relative">
-          <!-- Keep a native ref: closing the menu restores focus to this element. -->
-          <button
-            :ref="(el) => setMenuToggleRef(row.index, el as Element | null)"
-            type="button"
-            :class="actionClass"
-            :aria-label="t('models.moreActions', 'More actions')"
-            :aria-expanded="openMenuIndex === row.index"
-            aria-haspopup="menu"
-            @click.stop="toggleMenu(row.index)"
-            @keydown.esc.stop.prevent="closeMenu(true)"
+        <div v-if="row.showMenu" class="models-dir-menu-wrap">
+          <Menu
+            :open="openMenuIndex === row.index"
+            :modal="false"
+            align="end"
+            class="models-dir-menu"
+            @update:open="(isOpen) => (openMenuIndex = isOpen ? row.index : null)"
+            @keydown.capture="onMenuKeydown"
           >
-            <MoreHorizontal :size="14" aria-hidden="true" />
-          </button>
-          <div
-            v-if="openMenuIndex === row.index"
-            :ref="(el) => setMenuRef(row.index, el as Element | null)"
-            class="models-dir-menu absolute top-[calc(100%+4px)] right-0 z-10 min-w-[140px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-1 shadow-[0_8px_24px_color-mix(in_oklab,var(--neutral-950)_40%,transparent)]"
-            role="menu"
-            @click.stop
-            @keydown.esc.stop.prevent="closeMenu(true)"
-            @keydown.down.stop.prevent="handleMenuArrow(row.index, 1, $event)"
-            @keydown.up.stop.prevent="handleMenuArrow(row.index, -1, $event)"
-          >
-            <Button
-              v-if="row.canPromote"
-              type="button"
-              role="menuitem"
-              variant="textonly"
-              size="unset"
-              :class="[menuItemClass, 'text-neutral-100']"
-              @click="handleMakePrimary(row.index)"
-            >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="textonly"
+                size="icon"
+                :class="actionClass"
+                :aria-label="t('models.moreActions', 'More actions')"
+                @click.stop
+              >
+                <MoreHorizontal :size="14" aria-hidden="true" />
+              </Button>
+            </template>
+            <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
               {{ t('models.makePrimary', 'Use for Model Downloads') }}
-            </Button>
-            <Button
+            </MenuItem>
+            <MenuItem
               v-if="row.canRemove"
-              type="button"
-              role="menuitem"
-              variant="destructive-textonly"
-              size="unset"
-              :class="[menuItemClass, 'text-danger']"
-              @click="handleRemove(row.index)"
+              class="text-destructive"
+              @select="handleRemove(row.index)"
             >
               {{ t('models.removeDir', 'Remove') }}
-            </Button>
-          </div>
+            </MenuItem>
+          </Menu>
         </div>
       </div>
     </div>
 
     <Button
       type="button"
-      variant="textonly"
-      size="unset"
-      class="models-dir-add static inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border-0 border-t border-solid border-border-hover bg-transparent px-2.5 py-2 text-[13px] leading-[1.5] font-medium text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
+      variant="muted-textonly"
+      size="md"
+      class="models-dir-add w-full rounded-none border-t border-solid border-border-hover"
       @click="emit('add')"
     >
       <Plus :size="14" aria-hidden="true" />
