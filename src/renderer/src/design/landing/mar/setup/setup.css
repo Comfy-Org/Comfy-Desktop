@@ -97,6 +97,15 @@
     background: linear-gradient(135deg, #f9d7e6, #d9d4fb 50%, #c9f0e1);
     color: #3b2f55;
   }
+  /* Install ComfyUI wears the bloom's colours: the same stage it opens. */
+  .mss-opt-icon.is-bloom {
+    background:
+      radial-gradient(circle at 25% 70%, oklch(0.62 0.1 305) 0, transparent 60%),
+      radial-gradient(circle at 80% 40%, oklch(0.72 0.07 60) 0, transparent 60%),
+      radial-gradient(circle at 55% 10%, oklch(0.88 0.12 110) 0, transparent 50%),
+      oklch(0.22 0.01 300);
+    color: oklch(1 0 0);
+  }
   .mss-opt-text {
     display: flex;
     min-width: 0;
@@ -130,35 +139,178 @@
     color: var(--color-muted-foreground);
   }
 
-  /* What the checks found: one soft panel, a hairline between rows. */
-  .mss-sum {
+  /* Stage: the bloom as a picture, dark in both themes like the template
+   * modal's canvas, so the glass chips and white type over it hold. Modal
+   * 20 → stage 16 → chips 8. */
+  .mss-stage {
+    position: relative;
+    height: 168px;
+    flex-shrink: 0;
     overflow: hidden;
+    border-radius: 16px;
+    background-color: oklch(0.17 0.006 300);
+    color: oklch(1 0 0);
+    isolation: isolate;
+  }
+  .mss-stage.is-short {
+    height: 96px;
+  }
+  .mss-stage.is-tall {
+    height: 212px;
+  }
+  .mss-stage > canvas {
+    position: absolute;
+    inset: 0;
+  }
+  /* Hairline and a soft floor so the type at the bottom always reads. */
+  .mss-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to top, oklch(0.12 0.006 300 / 0.55), transparent 55%);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+    pointer-events: none;
+  }
+  .mss-stage-ui {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 12px;
+  }
+  .mss-stage.is-short .mss-stage-ui {
+    justify-content: center;
+  }
+  .mss-stage-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .mss-stage-subject {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 4px 4px;
+  }
+  .mss-stage-glyph {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: oklch(1 0 0 / 0.12);
+    backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14);
+  }
+  .mss-stage-title {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 22px;
+    letter-spacing: -0.015em;
+    text-shadow: 0 1px 12px oklch(0 0 0 / 0.3);
+  }
+  .mss-stage-title.is-big {
+    font-size: 20px;
+    line-height: 26px;
+    letter-spacing: -0.02em;
+  }
+  .mss-stage-sub {
+    color: oklch(1 0 0 / 0.72);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-stage-foot {
+    display: grid;
+    gap: 10px;
+    padding: 0 4px 4px;
+  }
+
+  /* Glass chips over the stage: dark, blurred, as on the template modal. */
+  .mss-chip {
+    display: inline-flex;
+    height: 26px;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: oklch(0.16 0.004 285 / 0.55);
+    backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+    color: oklch(1 0 0 / 0.92);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .mss-chip.is-ok svg {
+    color: oklch(0.82 0.16 150);
+  }
+  .mss-chip.is-bad svg {
+    color: oklch(0.78 0.15 30);
+  }
+  .mss-chip.is-btn {
+    outline: none;
+    transition:
+      background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .mss-chip.is-btn:hover {
+    background: oklch(0.16 0.004 285 / 0.75);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.2);
+  }
+  .mss-chip.is-btn:focus-visible {
+    box-shadow: 0 0 0 2px oklch(1 0 0 / 0.7);
+  }
+
+  /* What the checks found: two tiles, the fix spans both. */
+  .mss-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mss-tile {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 16px;
+    align-items: start;
+    gap: 12px;
+    padding: 12px 14px 12px 12px;
     border-radius: 14px;
     background-color: var(--mss-soft);
     box-shadow: inset 0 0 0 1px var(--mss-line);
   }
-  .mss-sum-head {
-    display: flex;
-    min-height: 44px;
+  .mss-tile.is-bad ~ .mss-tile {
+    grid-column: 1 / -1;
+  }
+  .mss-tile.is-bad {
+    grid-column: 1 / -1;
+    background-color: var(--mss-danger-soft);
+    box-shadow: inset 0 0 0 1px var(--mss-danger-line);
+  }
+  .mss-tile-icon {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 8px 0 16px;
-    box-shadow: inset 0 -1px 0 var(--mss-line);
+    justify-content: center;
+    border-radius: 9px;
+    background-color: var(--mss-soft-hover);
+    color: var(--color-muted-foreground);
   }
-  .mss-sum-row {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr) 16px;
-    align-items: start;
-    gap: 16px;
-    padding: 12px 16px;
-  }
-  .mss-sum-row + .mss-sum-row {
-    box-shadow: inset 0 1px 0 var(--mss-line);
+  .mss-tile.is-bad .mss-tile-icon,
+  .mss-callout.is-err .mss-tile-icon {
+    background-color: var(--mss-danger-soft);
+    color: var(--color-status-danger);
   }
   .mss-sum-key {
     color: var(--color-subtle-foreground);
-    font-size: var(--text-ui);
-    line-height: var(--text-ui--line-height);
+    font-size: 12px;
+    line-height: 16px;
   }
   .mss-sum-val {
     display: flex;
@@ -170,16 +322,13 @@
   }
   .mss-ok,
   .mss-bad {
-    margin-top: 2px;
+    margin-top: 8px;
   }
   .mss-ok {
     color: var(--color-status-running);
   }
   .mss-bad {
     color: var(--color-status-danger);
-  }
-  .mss-sum-row.is-bad {
-    background-color: var(--mss-danger-soft);
   }
   .mss-fix {
     display: flex;
@@ -191,23 +340,20 @@
   /* Callouts: an earlier install (info) or a failed step (error). */
   .mss-callout {
     display: grid;
-    grid-template-columns: 16px minmax(0, 1fr);
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
     gap: 12px;
-    padding: 14px 16px;
+    padding: 12px 16px 14px 12px;
     border-radius: 14px;
     background-color: var(--mss-soft);
     box-shadow: inset 0 0 0 1px var(--mss-line);
   }
-  .mss-callout-icon {
-    margin-top: 2px;
-    color: var(--color-muted-foreground);
+  .mss-callout > .grid {
+    padding-top: 6px;
   }
   .mss-callout.is-err {
     background-color: var(--mss-danger-soft);
     box-shadow: inset 0 0 0 1px var(--mss-danger-line);
-  }
-  .mss-callout.is-err .mss-callout-icon {
-    color: var(--color-status-danger);
   }
 
   /* Consent: the box and its sentence on one line, links underlined. */
@@ -272,69 +418,121 @@
   /* Progress */
   .mss-prog {
     display: grid;
-    gap: 12px;
-    padding: 16px;
-    border-radius: 14px;
-    background-color: var(--mss-soft);
-    box-shadow: inset 0 0 0 1px var(--mss-line);
+    gap: 14px;
   }
   .mss-prog-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
-    padding-right: 24px;
   }
+  /* On the stage: a glass track, the brand yellow with a soft glow. The
+   * stage is dark in both themes, so the bright yellow stays. */
   .mss-bar {
-    height: 4px;
+    height: 6px;
     overflow: hidden;
     border-radius: 999px;
-    background-color: var(--mss-line);
+    background-color: oklch(1 0 0 / 0.14);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06);
   }
   .mss-bar i {
     display: block;
     height: 100%;
     border-radius: inherit;
-    background-color: var(--mss-brand);
+    background: linear-gradient(90deg, oklch(0.93 0.19 110 / 0.7), oklch(0.93 0.19 110));
+    box-shadow: 0 0 12px oklch(0.93 0.19 110 / 0.6);
     transition: width 180ms linear;
   }
   .mss-prog.is-err .mss-bar i {
-    background-color: var(--color-status-danger);
+    background: oklch(0.7 0.17 25);
+    box-shadow: none;
+  }
+
+  /* Phases: a stepper, nodes joined by a line that fills as each ends. */
+  .mss-steps-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
   .mss-phases {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px 20px;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
     color: var(--color-subtle-foreground);
     font-size: var(--text-ui);
     line-height: var(--text-ui--line-height);
   }
   .mss-phases li {
-    display: inline-flex;
+    display: flex;
+    min-width: 0;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+  }
+  .mss-phases li + li::before {
+    content: '';
+    width: 24px;
+    height: 1.5px;
+    flex-shrink: 1;
+    margin: 0 4px;
+    border-radius: 1px;
+    background-color: var(--mss-line-strong);
+  }
+  .mss-phases li:is([data-phase='done'], [data-phase='now'], [data-phase='fail'])::before {
+    background-color: var(--color-status-running);
+  }
+  .mss-phase-node {
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px var(--mss-line-strong);
   }
   .mss-phases [data-phase='done'] {
     color: var(--color-muted-foreground);
   }
-  .mss-phases [data-phase='done'] svg {
-    color: var(--color-status-running);
+  .mss-phases [data-phase='done'] .mss-phase-node {
+    background-color: var(--color-status-running);
+    box-shadow: none;
+    color: var(--color-content-background);
   }
   .mss-phases [data-phase='now'] {
     color: var(--color-base-foreground);
+    font-weight: 500;
   }
-  .mss-phases [data-phase='now'] svg {
-    color: var(--mss-brand);
+  .mss-phases [data-phase='now'] .mss-phase-node {
+    box-shadow: inset 0 0 0 1.5px var(--mss-brand);
   }
   .mss-phases [data-phase='fail'] {
     color: var(--color-status-danger);
+    font-weight: 500;
   }
-  .mss-phase-dot {
-    width: 12px;
-    height: 12px;
+  .mss-phases [data-phase='fail'] .mss-phase-node {
+    background-color: var(--mss-danger-soft);
+    box-shadow: inset 0 0 0 1.5px var(--mss-danger-line);
+  }
+  .mss-phase-pulse {
+    width: 8px;
+    height: 8px;
     border-radius: 999px;
-    box-shadow: inset 0 0 0 1.5px currentColor;
-    opacity: 0.6;
+    background-color: var(--mss-brand);
+    animation: mss-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes mss-pulse {
+    50% {
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--mss-brand) 25%, transparent);
+    }
+  }
+  .mss-fade-enter-active,
+  .mss-fade-leave-active {
+    transition: opacity 160ms ease;
+  }
+  .mss-fade-enter-from,
+  .mss-fade-leave-to {
+    opacity: 0;
   }
   .mss-spin {
     animation: mss-spin 900ms linear infinite;
@@ -346,7 +544,7 @@
   }
   .mss-logs-toggle {
     display: inline-flex;
-    justify-self: start;
+    flex-shrink: 0;
     align-items: center;
     gap: 4px;
     margin-left: -4px;
@@ -400,8 +598,16 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
   }
+  /* Cards lift on hover like the Home's example cards. */
   .mss-card {
     min-width: 0;
+    transition:
+      transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 240ms ease;
+  }
+  .mss-card:not(.is-nofit):hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 28px -14px rgb(0 0 0 / 0.45);
   }
   .mss-card > div:last-child {
     gap: 2px;
@@ -440,6 +646,8 @@
     z-index: 65;
   }
   .mss-pill {
+    position: relative;
+    isolation: isolate;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -474,6 +682,20 @@
       color-mix(in oklch, var(--color-base-foreground) 12%, transparent) 0
     );
     mask: radial-gradient(circle, transparent 7px, black 7.5px);
+    filter: drop-shadow(0 0 6px color-mix(in oklch, var(--mss-brand) 55%, transparent));
+  }
+  /* A faint bloom behind the pill: the install is still the stage. */
+  .mss-pill::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    background:
+      radial-gradient(circle at 12% 50%, oklch(0.62 0.1 305 / 0.35), transparent 55%),
+      radial-gradient(circle at 70% 60%, oklch(0.72 0.07 60 / 0.25), transparent 60%);
+    filter: blur(10px);
+    opacity: 0.9;
   }
   .mss-pill-enter-active,
   .mss-pill-leave-active {
@@ -495,14 +717,22 @@
       flex-direction: column;
       align-items: flex-start;
     }
+    .mss-tiles {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .mss-body,
     .mss-card-check,
-    .mss-spin {
+    .mss-spin,
+    .mss-phase-pulse {
       animation: none;
     }
+    .mss-card:not(.is-nofit):hover {
+      transform: none;
+    }
     .mss-pill,
+    .mss-card,
     .mss-opt-arrow,
     .mss-pill-enter-active,
     .mss-pill-leave-active {

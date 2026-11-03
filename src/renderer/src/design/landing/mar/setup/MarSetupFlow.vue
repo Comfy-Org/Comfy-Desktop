@@ -13,7 +13,10 @@ import {
   HardDrive,
   History,
   Info,
+  Laptop,
   LoaderCircle,
+  Package,
+  SlidersHorizontal,
   TriangleAlert
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
@@ -47,6 +50,7 @@ import {
   unsupported,
   type Starter
 } from './setupFlow'
+import SetupBloom from './SetupBloom.vue'
 import './setup.css'
 
 /**
@@ -117,6 +121,8 @@ const freeAfter = computed(() =>
 )
 
 const failed = computed(() => flow.step === 'error')
+// The phase on the stage chip; at 100% the last one is still the one running.
+const nowPhase = computed(() => (phases[phaseIndex.value] ?? phases[2]).label)
 </script>
 
 <template>
@@ -146,7 +152,7 @@ const failed = computed(() => flow.step === 'error')
           <DialogDescription>Add another place to run ComfyUI.</DialogDescription>
           <div class="mss-opts">
             <button type="button" class="mss-opt" @click="flow.step = 'setup'">
-              <span class="mss-opt-icon"><ArrowDownToLine :size="18" /></span>
+              <span class="mss-opt-icon is-bloom"><ArrowDownToLine :size="18" /></span>
               <span class="mss-opt-text">
                 <span class="text-ui font-medium text-base-foreground">Install ComfyUI</span>
                 <span class="text-ui text-subtle-foreground"
@@ -213,8 +219,37 @@ const failed = computed(() => flow.step === 'error')
               install.</DialogDescription
             >
 
+            <!-- The machine it checked, on the bloom stage. -->
+            <div class="mss-stage">
+              <SetupBloom />
+              <div class="mss-stage-ui">
+                <div class="mss-stage-top">
+                  <span class="mss-chip" :class="lowSpace ? 'is-bad' : 'is-ok'">
+                    <TriangleAlert v-if="lowSpace" :size="12" />
+                    <Check v-else :size="12" :stroke-width="2.5" />{{
+                      lowSpace ? 'One thing to fix before installing' : 'Ready to install'
+                    }}
+                  </span>
+                  <button type="button" class="mss-chip is-btn" @click="flow.step = 'change'">
+                    <SlidersHorizontal :size="12" />Change
+                  </button>
+                </div>
+                <div class="mss-stage-subject">
+                  <span class="mss-stage-glyph"><Laptop :size="20" /></span>
+                  <span class="grid">
+                    <span class="mss-stage-title"
+                      >{{ DETECTED.chip }} · {{ DETECTED.memGb }} GB</span
+                    >
+                    <span class="mss-stage-sub"
+                      >Detected. Uses the {{ DETECTED.build }} build.</span
+                    >
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div v-if="localSetup.machine === 'legacy'" class="mss-callout">
-              <Info :size="16" class="mss-callout-icon" />
+              <span class="mss-tile-icon"><Info :size="16" /></span>
               <div class="grid gap-2">
                 <p class="text-ui font-medium text-base-foreground">
                   We found ComfyUI Desktop on this computer
@@ -230,28 +265,13 @@ const failed = computed(() => flow.step === 'error')
             </div>
 
             <section
-              class="mss-sum"
+              class="mss-tiles"
               :aria-label="lowSpace ? 'One thing to fix' : 'Ready to install'"
             >
-              <header class="mss-sum-head">
-                <span class="text-ui font-medium text-base-foreground">{{
-                  lowSpace ? 'One thing to fix before installing' : 'Ready to install'
-                }}</span>
-                <Button size="sm" variant="ghost" @click="flow.step = 'change'">Change</Button>
-              </header>
-              <div class="mss-sum-row">
-                <span class="mss-sum-key">Hardware</span>
+              <div class="mss-tile" :class="lowSpace && 'is-bad'">
+                <span class="mss-tile-icon"><HardDrive :size="16" /></span>
                 <span class="mss-sum-val">
-                  <span>{{ DETECTED.chip }} · {{ DETECTED.memGb }} GB</span>
-                  <span class="text-subtle-foreground"
-                    >Detected. Uses the {{ DETECTED.build }} build.</span
-                  >
-                </span>
-                <CircleCheck :size="16" class="mss-ok" aria-label="Checked" />
-              </div>
-              <div class="mss-sum-row" :class="lowSpace && 'is-bad'">
-                <span class="mss-sum-key">Location</span>
-                <span class="mss-sum-val">
+                  <span class="mss-sum-key">Location</span>
                   <span class="truncate">{{ where }}</span>
                   <span v-if="!lowSpace" class="text-subtle-foreground"
                     >{{ freeLabel(free) }} free{{
@@ -280,9 +300,10 @@ const failed = computed(() => flow.step === 'error')
                 />
                 <CircleCheck v-else :size="16" class="mss-ok" aria-label="Checked" />
               </div>
-              <div class="mss-sum-row">
-                <span class="mss-sum-key">Version</span>
+              <div class="mss-tile">
+                <span class="mss-tile-icon"><Package :size="16" /></span>
                 <span class="mss-sum-val">
+                  <span class="mss-sum-key">Version</span>
                   <span>ComfyUI {{ DETECTED.version }} · Stable</span>
                   <span class="text-subtle-foreground">{{ DETECTED.downloadGb }} GB download</span>
                 </span>
@@ -300,6 +321,18 @@ const failed = computed(() => flow.step === 'error')
               >It needs a Mac with Apple Silicon (M1 or later). This Mac has an Intel
               processor.</DialogDescription
             >
+            <div class="mss-stage is-short">
+              <SetupBloom tone="err" />
+              <div class="mss-stage-ui">
+                <div class="mss-stage-subject">
+                  <span class="mss-stage-glyph"><Laptop :size="20" /></span>
+                  <span class="mss-stage-title">Intel processor</span>
+                  <span class="mss-chip is-bad ml-auto"
+                    ><TriangleAlert :size="12" />Not supported</span
+                  >
+                </div>
+              </div>
+            </div>
             <RadioGroupRoot v-model="intelWay" class="mss-opts" aria-label="Run ComfyUI">
               <RadioGroupItem value="cloud" class="mss-opt">
                 <span class="mss-opt-icon is-cloud"><Cloud :size="18" /></span>
@@ -433,50 +466,78 @@ const failed = computed(() => flow.step === 'error')
             failed ? 'The install stopped' : 'Installing ComfyUI'
           }}</DialogTitle>
           <section class="mss-prog" :class="failed && 'is-err'">
-            <div class="mss-prog-head">
-              <span class="text-heading font-semibold text-base-foreground">{{
-                failed ? 'The install stopped' : 'Installing ComfyUI'
-              }}</span>
-              <span v-if="!failed" class="text-ui text-muted-foreground tabular-nums"
-                >{{ flow.percent }}% · about {{ minutesLeft }} min left</span
-              >
+            <!-- The bloom resolves with the install, toward what opens first. -->
+            <div class="mss-stage is-tall">
+              <SetupBloom
+                :resolve="flow.percent / 100"
+                :src="flow.picked ? imgUrl(flow.picked.img) : undefined"
+                :tone="failed ? 'err' : 'idle'"
+              />
+              <div class="mss-stage-ui">
+                <div class="mss-stage-top">
+                  <span class="mss-chip" :class="failed && 'is-bad'">
+                    <TriangleAlert v-if="failed" :size="12" />
+                    <LoaderCircle v-else :size="12" class="mss-spin" />{{ nowPhase }}
+                  </span>
+                  <Transition name="mss-fade" mode="out-in">
+                    <span v-if="!failed" :key="flow.picked?.id ?? 'blank'" class="mss-chip">{{
+                      flow.picked ? `Opens with ${flow.picked.title}` : 'Opens with a blank canvas'
+                    }}</span>
+                  </Transition>
+                </div>
+                <div class="mss-stage-foot">
+                  <div class="mss-prog-head">
+                    <span class="mss-stage-title is-big">{{
+                      failed ? 'The install stopped' : 'Installing ComfyUI'
+                    }}</span>
+                    <span v-if="!failed" class="mss-stage-sub tabular-nums"
+                      >{{ flow.percent }}% · about {{ minutesLeft }} min left</span
+                    >
+                  </div>
+                  <div
+                    class="mss-bar"
+                    role="progressbar"
+                    :aria-valuenow="flow.percent"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-label="Install progress"
+                  >
+                    <i :style="{ width: flow.percent + '%' }"></i>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div
-              class="mss-bar"
-              role="progressbar"
-              :aria-valuenow="flow.percent"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-label="Install progress"
-            >
-              <i :style="{ width: flow.percent + '%' }"></i>
-            </div>
-            <ol class="mss-phases">
-              <li
-                v-for="(p, i) in phases"
-                :key="p.label"
-                :data-phase="
-                  i < phaseIndex ? 'done' : i === phaseIndex ? (failed ? 'fail' : 'now') : 'todo'
-                "
+            <div class="mss-steps-row">
+              <ol class="mss-phases">
+                <li
+                  v-for="(p, i) in phases"
+                  :key="p.label"
+                  :data-phase="
+                    i < phaseIndex ? 'done' : i === phaseIndex ? (failed ? 'fail' : 'now') : 'todo'
+                  "
+                >
+                  <span class="mss-phase-node">
+                    <Check v-if="i < phaseIndex" :size="11" :stroke-width="3" />
+                    <TriangleAlert v-else-if="i === phaseIndex && failed" :size="11" />
+                    <span v-else-if="i === phaseIndex" class="mss-phase-pulse"></span>
+                  </span>
+                  <span class="truncate"
+                    >{{ p.label }}{{ i === 0 ? ` · ${DETECTED.downloadGb} GB` : '' }}</span
+                  >
+                </li>
+              </ol>
+              <button
+                v-if="!failed"
+                type="button"
+                class="mss-logs-toggle"
+                :aria-expanded="flow.logs"
+                @click="flow.logs = !flow.logs"
               >
-                <Check v-if="i < phaseIndex" :size="12" :stroke-width="2.5" />
-                <TriangleAlert v-else-if="i === phaseIndex && failed" :size="12" />
-                <LoaderCircle v-else-if="i === phaseIndex" :size="12" class="mss-spin" />
-                <span v-else class="mss-phase-dot"></span>
-                {{ p.label }}{{ i === 0 ? ` · ${DETECTED.downloadGb} GB` : '' }}
-              </li>
-            </ol>
-            <button
-              v-if="!failed"
-              type="button"
-              class="mss-logs-toggle"
-              :aria-expanded="flow.logs"
-              @click="flow.logs = !flow.logs"
-            >
-              <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />{{
-                flow.logs ? 'Hide logs' : 'View logs'
-              }}
-            </button>
+                <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />{{
+                  flow.logs ? 'Hide logs' : 'View logs'
+                }}
+              </button>
+            </div>
             <pre v-if="flow.logs && !failed" class="mss-logs">
 [setup] Installing torch==2.7.1 …
 [setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)</pre
@@ -486,7 +547,7 @@ const failed = computed(() => flow.step === 'error')
           <!-- Error: what happened and what to do next. -->
           <template v-if="failed">
             <div class="mss-callout is-err" role="alert">
-              <TriangleAlert :size="16" class="mss-callout-icon" />
+              <span class="mss-tile-icon"><TriangleAlert :size="16" /></span>
               <div class="grid gap-1">
                 <p class="text-ui font-medium text-base-foreground">
                   The network connection dropped while downloading packages.
