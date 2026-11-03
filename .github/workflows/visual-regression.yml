@@ -29,7 +29,13 @@ jobs:
       - name: Install pinned browser and system dependencies
         run: pnpm exec playwright install --with-deps chromium
       - name: Compare visual baselines
-        run: pnpm run test:visual
+        run: |
+          if [ ! -d tests/visual/__screenshots__/linux ]; then
+            pnpm run test:visual:update
+            echo "::error::Initial Linux baselines generated. Review and commit the uploaded candidates."
+            exit 1
+          fi
+          pnpm run test:visual
       - name: Upload report and baseline candidates
         if: always()
         uses: actions/upload-artifact@v7

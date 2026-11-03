@@ -25,10 +25,12 @@ design change can require a deliberate baseline update.
 4. Commit only reviewed baselines. Never regenerate them just to silence a
    failing check.
 
-When a new Linux baseline is missing, CI fails and uploads its candidate image
-alongside the report. Download the `visual-regression-linux` artifact, inspect
-the candidate, and add it to the corresponding Linux snapshot path. Subsequent
-runs must compare successfully without update mode.
+When the initial Linux baseline directory is absent, CI generates all candidate
+images and deliberately fails until they have been reviewed and committed.
+An individual missing baseline also fails and uploads its candidate image.
+Download the `visual-regression-linux` artifact, inspect the candidates, and add
+them to the corresponding Linux snapshot paths. Subsequent runs must compare
+successfully without update mode.
 
 ## Coverage and limits
 

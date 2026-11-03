@@ -1,5 +1,15 @@
 import { test, expect, type Page } from '@playwright/test'
 
+const pageErrors = new WeakMap<Page, string[]>()
+test.beforeEach(({ page }) => {
+  const errors: string[] = []
+  pageErrors.set(page, errors)
+  page.on('pageerror', (error) => errors.push(error.message))
+})
+test.afterEach(({ page }) => {
+  expect(pageErrors.get(page) ?? [], 'The fixture must not hide runtime errors').toEqual([])
+})
+
 async function openScene(page: Page, scene = 'controls') {
   await page.goto(`/?scene=${scene}`)
   await page.evaluate(() => document.fonts.ready)
