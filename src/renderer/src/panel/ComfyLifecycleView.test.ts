@@ -128,9 +128,8 @@ describe('ComfyLifecycleView', () => {
   })
 
   it('renders the stopped surface in the not-running state so a clean stop is not a black window', async () => {
-    // A user-initiated Stop leaves no live ComfyUI view covering the panel, so
-    // the not-running state must paint its own relaunch card (regression: it
-    // previously rendered nothing → black window).
+    // After a user-initiated stop, no live ComfyUI view covers the panel.
+    // The not-running state must display its relaunch card.
     const wrapper = mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('ComfyUI is stopped')
@@ -331,7 +330,7 @@ describe('ComfyLifecycleView', () => {
     expect(logs.exists()).toBe(true)
     // PII scrubbing belongs on the telemetry path, not the local-UI path.
     // If any of these fail, we've regressed back to scrubbing logs the user
-    // sees on their own machine (issue #674).
+    // sees on their own machine.
     expect(logs.text()).toContain('C:\\Users\\alice\\ComfyUI\\main.py')
     expect(logs.text()).toContain('/Users/bob/ComfyUI/main.py')
     expect(logs.text()).toContain('/home/carol/ComfyUI/main.py')

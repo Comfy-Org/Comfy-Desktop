@@ -48,7 +48,7 @@ describe('launch', () => {
     fs.mkdirSync(path.dirname(staged), { recursive: true })
     fs.writeFileSync(staged, '')
     // Current archives stage it below the venv root; that placement is what keeps the
-    // venv's entry points relocatable (Comfy-Org/cloud#6138).
+    // venv's entry points relocatable.
     expect(venvPython(dir)).toBe(staged)
   })
 

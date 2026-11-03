@@ -182,10 +182,8 @@ describe('isUpdateAvailable', () => {
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
   })
 
-  // v-prefix tolerance: legacy code paths (notably the legacy-desktop
-  // adoption pre-fix) persisted bare version strings like "0.24.0" via
-  // installation.version while GitHub tag names are "v"-prefixed. The
-  // comparison must treat them as equal.
+  // Persisted versions can be bare (0.24.0) or v-prefixed (v0.24.0).
+  // Treat both forms as the same version.
   it('returns false when installedTag is bare and latestTag is "v"-prefixed', () => {
     const installation = {}
     const info: ReleaseCacheEntry = { latestTag: 'v0.24.0', installedTag: '0.24.0' }

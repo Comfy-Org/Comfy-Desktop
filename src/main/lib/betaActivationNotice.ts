@@ -101,10 +101,8 @@ export function selectNewlyActiveBetaGrants(
     seen.add(grant.arg)
     if (grant.notice?.silent === true) continue
     const description = grant.notice?.description ?? null
-    // Derived from the prefix PAIR, not as a binary else. An allowlist entry with neither
-    // prefix is possible (`oppositeArg` already handles that case, and the list is documented
-    // as growing ahead of Core); defaulting it to `disabled` would turn a card that used to
-    // stay silent into one that actively says a feature was switched off when it was not.
+    // Derive state from both prefixes. An allowlist entry with neither prefix has
+    // no asserted state and must not produce a notice that the feature was disabled.
     if (!grant.arg.startsWith(ENABLE_PREFIX) && !grant.arg.startsWith(DISABLE_PREFIX)) continue
     const direction = grant.arg.startsWith(ENABLE_PREFIX) ? 'enabled' : 'disabled'
     if (direction === 'disabled' && description === null) continue

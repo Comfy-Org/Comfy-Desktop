@@ -409,7 +409,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
 
       // Reliable "install actually began" gate that pairs 1:1 with
-      // first_use.completed (#1224). The express path skips the wizard, so it
+      // first_use.completed. The express path skips the wizard, so it
       // emits the dispatch marker itself rather than relying on the wizard.
       const variantId = selections.variant?.data?.variantId as string | undefined
       emitTelemetryAction('comfy.desktop.install.dispatched', {

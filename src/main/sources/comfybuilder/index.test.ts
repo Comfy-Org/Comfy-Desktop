@@ -333,7 +333,7 @@ describe('comfybuilder.install wiring', () => {
 
   it('keeps the manager flag of a governed allowlist install whose record carries no manager answer', async () => {
     // A record can lag the archive (an update interrupted before its last
-    // write, or a record from an older Desktop); the policy on disk no longer
+    // write, or a record from an older Desktop); the policy on disk does not
     // changes the launch args.
     const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-launch-'))

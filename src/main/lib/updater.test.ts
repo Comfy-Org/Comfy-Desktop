@@ -47,8 +47,7 @@ vi.mock('./quit-state', () => ({
   isSessionEnding: vi.fn(() => false)
 }))
 
-// In-memory stand-in for the durable sidecar loop-breaker marker (issue
-// #1367). The real module writes under configDir(), which the electron mock
+// In-memory stand-in for the durable sidecar loop-breaker marker. The real module writes under configDir(), which the electron mock
 // resolves to '' here; an in-memory store keeps these suites hermetic while
 // letting tests seed a marker, make it unreadable, or force persistence
 // failure.
@@ -278,12 +277,8 @@ describe('app-update telemetry dedup (volume regression)', () => {
     fire('update-available', { version: '9.9.9' })
     fire('update-available', { version: '9.9.9' })
 
-    // The pre-fix bug: `runCheck('auto-download')` inside the
-    // update-available handler called `updater.checkForUpdates`
-    // recursively. Post-fix the handler relies on electron-updater's
-    // default `autoDownload: true` and never re-enters. Pinning this:
-    // no auto-download trigger means no checkForUpdates call from the
-    // handler path.
+    // The update-available handler relies on electron-updater autoDownload and must
+    // not re-enter checkForUpdates to initiate a download.
     expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled()
   })
 
@@ -332,10 +327,8 @@ describe('app-update telemetry dedup (volume regression)', () => {
 })
 
 /**
- * Download visibility: any in-flight download (auto-on background included)
- * must surface as the `'downloading'` state so the title-bar pill and the
- * Settings progress bar reflect it. Auto-on downloads used to keep the state
- * `null`, leaving the UI claiming "up to date" for the whole download.
+ * Every in-flight update download, including an automatic background download,
+ * must publish downloading state for the title-bar pill and Settings progress bar.
  */
 describe('app-update state during downloads', () => {
   let listeners: Record<string, Array<(...args: unknown[]) => void>>
@@ -438,7 +431,7 @@ describe('app-update state during downloads', () => {
 })
 
 /**
- * Issue #1065 — install staged Desktop updates at startup instead of
+ * install staged Desktop updates at startup instead of
  * silently on quit, and never spawn the installer while the OS session is
  * ending. Installing on quit is what a Windows shutdown interrupts mid-write,
  * corrupting the install and forcing endless reinstalls.
@@ -576,7 +569,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
-  // Issue #1104 — auto-install off: the update still downloads, but it must
+  // auto-install off: the update still downloads, but it must
   // never install without an explicit pill click (no startup install, no
   // install-on-quit).
   it('register() disables install-on-quit when auto-install is off (opted out of startup install)', async () => {
@@ -584,8 +577,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['autoInstallUpdates'] = false
     const updater = await import('./updater')
     updater.register()
-    // Without the #1104 gate this would stay armed (the opt-out path) and a
-    // staged update would install on the next quit.
+    // Disabling auto-install must disarm install-on-quit for an already-staged update.
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
   })
 
@@ -811,7 +803,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(installing).toBe(true)
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBe('1.0.1')
-    // The install event carries the .bak-fallback diagnostic (issue #1367).
+    // The install event carries the .bak-fallback diagnostic.
     const installs = findEmitCalls('comfy.desktop.app_update.startup_install')
     expect(installs).toHaveLength(1)
     expect(installs[0]?.[1]).toMatchObject({
@@ -1253,7 +1245,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
   })
 
-  // Issue #1367 - a stale .bak restore of settings.json can erase the settings
+  // a stale .bak restore of settings.json can erase the settings
   // copy of the loop-breaker marker while the pending-update marker survives.
   // The durable sidecar marker must break the loop on its own, and installs
   // must fail closed when it can't persist.
@@ -1267,8 +1259,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
     const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
     expect(skipped).toHaveLength(1)
-    // source: 'sidecar' is the field signal that the settings marker was
-    // erased between launches - the rollback mechanism suspected in #1367.
+    // The sidecar source identifies an attempt missing from the settings copy.
     expect(skipped[0]?.[1]).toMatchObject({
       reason: 'loop_breaker',
       version: '1.0.1',
@@ -1358,7 +1349,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
 })
 
 /**
- * Issue #1161 — the updater must only ever act on a version that is STRICTLY
+ * the updater must only ever act on a version that is STRICTLY
  * newer than the running build. The engine can re-surface the current (or an
  * older, or an equal-build-restringed) version; acting on it drives the
  * download -> "Updating..." splash -> install -> relaunch loop that never

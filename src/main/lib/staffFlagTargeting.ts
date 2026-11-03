@@ -1,11 +1,8 @@
 /**
  * Makes ops flags targetable at Comfy staff, which the installation hash alone cannot express.
  *
- * Ops flags are evaluated at boot against the installation hash (`deviceId.ts`), which PostHog
- * cannot resolve to a person. A release condition on any person attribute therefore never
- * matches — not "matches late", never — so a staff rollout silently reached nobody and
- * distinct-id allowlisting was the only mechanism that worked. This supplies a person property
- * the condition CAN match.
+ * The installation hash used for boot evaluation does not resolve to a PostHog
+ * person. Staff conditions require a request-scoped comfy_staff property.
  *
  * ## What is stored, and what is not
  *
@@ -54,7 +51,7 @@
  *
  * Still NOT an authorization boundary, and the consensus does not make it one. Both the
  * classification and the reports that consensus reconciles come from pages, reading the same
- * IndexedDB, so page-level code — a custom-node extension, or XSS on a hosted frontend — that can
+ * Firebase persistence, so page-level code — a custom-node extension, or XSS on a hosted frontend — that can
  * forge a `firebase:authUser:*` record can forge both halves and self-classify as staff. What the
  * cross-check removes is *non-hostile* wrongness: the last document to load deciding, a stale
  * second record deciding, and a classification landing while two views disagree.
@@ -83,13 +80,10 @@
  * re-evaluates the same way, so a grant held only through staff targeting is withdrawn for the
  * next launch rather than the next boot — the same answer the next boot would give.
  *
- * This is a REPLACEMENT of the boot evaluation, not a second one beside it. An earlier design
- * kept the boot answer and added an authenticated evaluation that persisted separately; the
- * anonymous boot evaluation answers an explicit `false`, not a miss, and overwrote it at every
- * launch. Here the refresh uses the same id and properties the next boot will send (the
- * classification is on disk first), and a boot fetch still in flight cannot land over it
- * (`opsFlag.ts`, `fetchSeq`). An unreachable server keeps the current answers; the next boot
- * evaluates with the stored classification as before.
+ * A refresh replaces the boot evaluation under the same id and properties. Persist
+ * the classification first; opsFlag.ts uses fetchSeq to prevent an in-flight boot
+ * response from overwriting the refresh. An unreachable server preserves the
+ * current answers, and the next boot uses the stored classification.
  *
  * ## Consent
  *
@@ -518,11 +512,8 @@ function persistClassification(isStaff: boolean): void {
 }
 
 /**
- * Run the classification script in a view, giving up if the page does not answer.
- *
- * The timeout bounds THIS await, not the page's work — `executeJavaScript` cannot be cancelled, so
- * a wedged page keeps its own promise. What it does buy is that one such page no longer holds up
- * every view behind it, and no read is awaited for the life of the session.
+ * Bound the wait for one view's classification. executeJavaScript cannot cancel
+ * page work, but a timed-out view must not block classification in other views.
  */
 async function readClassificationFromPage(webContents: WebContents): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined

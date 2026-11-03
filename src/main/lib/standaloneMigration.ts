@@ -214,7 +214,7 @@ export async function restoreSnapshotIntoInstallation(
     // Validate the envelope as a restore *target* only — do NOT commit it to
     // history yet. A snapshot in history must record a state the install has
     // actually been in, so the envelope is committed via `importSnapshots` only
-    // after the restore below succeeds (see snapshots/AGENTS.md, #1137).
+    // after the restore below succeeds (see snapshots/AGENTS.md).
     const fileContent = await fs.promises.readFile(stagedFile, 'utf-8')
     const importEnvelope = validateExportEnvelope(JSON.parse(fileContent))
     const targetSnapshot = importEnvelope.snapshots[0]!
@@ -355,8 +355,7 @@ export async function restoreSnapshotIntoInstallation(
     // The restore "succeeded" only if the target state was actually reached.
     // restoreComfyUIVersion/restorePipPackages report failures by RETURNING a
     // result (they revert their own changes) rather than throwing, so we must
-    // inspect them — otherwise a pip install that can't be satisfied (the #1137
-    // repro) would still commit the never-applied target to history.
+    // inspect them — otherwise a pip install that can't be satisfied would still commit the never-applied target to history.
     const restoreSucceeded =
       !comfyResult.error &&
       !signal.aborted &&
@@ -381,7 +380,7 @@ export async function restoreSnapshotIntoInstallation(
     currentForSnapshot = updatedInst
 
     // Only commit the imported envelope to history once the install has
-    // actually been in that state (#1137), and commit only the restored
+    // actually been in that state, and commit only the restored
     // snapshot: the envelope may carry the source install's older history,
     // states this install has never been in.
     if (reachedTarget) {
@@ -628,7 +627,7 @@ export async function migrateToStandaloneFromSnapshot(
     // 4. Restore snapshot (custom nodes + pip packages). A restore failure
     // after the successful env install must not condemn the new install - it
     // is bootable, and its newest snapshot already records the actual state
-    // (#1255). Finish the migration and report the failure to the caller.
+    //. Finish the migration and report the failure to the caller.
     // `canonicalError` + `emitError: false` isolate the step: a tolerated
     // failure must not poison the canonical flow scope's `failed_stage` (a
     // later step's failure would be misattributed), and a cancellation must

@@ -147,11 +147,8 @@ test('per-status row close button maps to the right action @windows @macos @linu
   await waitForPopupVisible(ctx.app)
   await waitForStableBounds(ctx.app)
 
-  // The redesign replaced the per-row pause/resume/cancel/dismiss
-  // button row with a single right-edge close X whose aria-label
-  // switches between "Cancel" (active rows) and "Remove from list"
-  // (terminal rows). Check the affordance via that aria-label so the
-  // test asserts what the user actually sees.
+  // Each download row has one right-edge close action: Cancel for an active job
+  // and Remove from list for a terminal entry. Assert the visible aria-label.
   const summary = await popup.evaluate<Record<string, { close: string | null }>>(`(() => {
     const out = {}
     for (const li of document.querySelectorAll('.downloads-item')) {

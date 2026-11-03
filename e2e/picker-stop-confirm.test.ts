@@ -1,5 +1,5 @@
 /**
- * Picker self-stopping forward flow (issue #582 fix #6 + audit).
+ * Picker self-stopping forward flow.
  *
  * The instance-picker's expanded right pane (`ComfyUISettingsContent`)
  * dispatches REQUIRES_STOPPED actions (Update Now / Restore Snapshot /

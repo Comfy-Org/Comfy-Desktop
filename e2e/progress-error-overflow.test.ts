@@ -1,17 +1,10 @@
 /**
- * ProgressModal error-message overflow regression (issue #582 fix #7).
+ * Long ProgressModal errors must scroll within the message block and leave
+ * the footer visible. The max-height is clamp(120px, 22vh, 240px), with
+ * overflow-y: auto.
  *
- * A long failure message previously stretched the brand-progress
- * `.brand-progress__error-message` div unbounded, blowing the modal
- * footer off-screen on smaller heights. The fix added
- * `max-height: clamp(120px, 22vh, 240px)` + `overflow-y: auto` so the
- * block scrolls internally instead.
- *
- * This is a layout regression that jsdom can't compute, so it lives
- * here rather than in unit tests. We seed an install, drive the
- * renderer's `injectProgressError` dev hook with a paragraph
- * ~5,000 chars long, and assert on the actual computed style + the
- * scroll/client-height delta proves the cap took effect.
+ * This browser test injects an approximately 5,000-character error and checks
+ * computed styles and scroll/client heights, which a DOM-only test cannot measure.
  */
 
 import os from 'node:os'

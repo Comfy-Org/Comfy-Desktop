@@ -36,12 +36,8 @@ if ($running) {
   exit 1
 }
 
-# Every historical app/package name. The userData folder on Windows is named
-# after the productName (or package.json "name") field. "Comfy Desktop"
-# is included for the upcoming post-rename productName. "ComfyUI" covers
-# the legacy v1.x desktop app (productName "ComfyUI") whose state can
-# survive an upgrade to the 2.0 beta and break a clean install (mirrors
-# #679's macOS findings).
+# App and package names whose state must be cleared, including legacy installs.
+# Windows userData uses productName or the package.json name field.
 $appNames = @(
   'ComfyUI',
   'Comfy Desktop',

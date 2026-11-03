@@ -162,7 +162,7 @@ describe('parsePipFreeze', () => {
     })
   })
 
-  // #1514: uv honours FORCE_COLOR/CLICOLOR_FORCE even into a pipe, so the
+  // uv honours FORCE_COLOR/CLICOLOR_FORCE even into a pipe, so the
   // freeze can arrive as `ESC[1mname ESC[0m==version`. A name carrying those
   // bytes matches nothing in the snapshot and is rejected by `uv pip
   // uninstall` — which is what tipped a no-op restore into a destructive one.

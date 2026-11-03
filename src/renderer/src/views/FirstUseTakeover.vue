@@ -85,7 +85,7 @@ const emit = defineEmits<{
   /** Local branch picked — host should chain into the new-install
    *  Tier 3 takeover (Tier 3 → Tier 3 swap is silent) and mark
    *  `firstUseCompleted` once new-install ends successfully. Naming
-   *  happens inline on the Configure screen now. The optional payload
+   *  happens inline on the Configure screen. The optional payload
    *  flags whether the chain was reached via the Local → Start Fresh
    *  sub-step (vs. the direct no-legacy path) so the Configure screen
    *  can surface a Back link to return the user to localBranch, and

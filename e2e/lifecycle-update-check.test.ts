@@ -307,7 +307,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
   await ageReleaseCache(ctx.app, stalenessTs)
 
   // Sanity-check via INSTALL_ID_B (the install we're about to open the
-  // picker for): the sections pipeline now reports the stale timestamp,
+  // picker for): the sections pipeline reports the stale timestamp,
   // proving the hook reached the same map `getEffectiveInfo` reads.
   // The release cache is shared per-repo, so install A and B see the
   // same staled entries.

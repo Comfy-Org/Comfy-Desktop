@@ -269,7 +269,7 @@ const estimatedInstallSize = computed(() => {
   return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
 })
 
-/** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
+/** Entrypoint that opened this wizard, for the handoff funnel events. */
 const entrypoint = ref('unknown')
 /** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
  *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
@@ -279,7 +279,7 @@ const entrypoint = ref('unknown')
  *  (-> wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
-/** Shared context for the install-handoff funnel events (#1224). */
+/** Shared context for the install-handoff funnel events. */
 function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
@@ -541,7 +541,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // Onboarding->install drop-off (#1224): the wizard is unmounting without a
+  // Onboarding->install drop-off: the wizard is unmounting without a
   // resolved handoff outcome, so the user left the install path without
   // dispatching. `skipInstall` sources (Remote Connection) never install, so
   // they're not part of this funnel. The happy-path dispatch, the defensive

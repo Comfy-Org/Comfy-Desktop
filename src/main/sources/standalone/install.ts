@@ -426,7 +426,7 @@ export async function migrateEnvLayout(
 
   await fs.promises.rename(legacyEnvDir, venvDir)
 
-  // Rewrite the pyvenv.cfg home path (old path included envs/default/).
+  // Rewrite pyvenv.cfg home after relocating the environment.
   const cfgPath = path.join(venvDir, 'pyvenv.cfg')
   if (fs.existsSync(cfgPath)) {
     let content = await fs.promises.readFile(cfgPath, 'utf-8')

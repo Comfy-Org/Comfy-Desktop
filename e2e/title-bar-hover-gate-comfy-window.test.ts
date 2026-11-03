@@ -4,11 +4,8 @@
  * clicking the always-seeded Cloud chooser tile, which transitions
  * the host's title bar into install-backed mode (`sourceCategory='cloud'`,
  * `is-install-less` dropped) reactively over IPC — the title-bar
- * WebContentsView is long-lived and no longer reloads on identity
- * flips. Past title-bar bugs have surfaced only once an install
- * attached, so the install-backed surface needs its own regression
- * net even though the underlying composable is shared with the
- * chooser host.
+ * WebContentsView persists across identity changes. This covers the
+ * install-backed surface as well as the chooser.
  *
  * Network: the cloud launch path runs `waitForUrl(remoteUrl, 15s)`
  * against `https://cloud.comfy.org/`. The probe accepts any HTTP

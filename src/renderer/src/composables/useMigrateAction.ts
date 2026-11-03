@@ -222,10 +222,8 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
       })
     }
 
-    // Fetch release + variant options. The variant cards used to be
-    // surfaced to the user; now `findBestVariant` silently picks the
-    // recommended one and `result.target` carries it through to
-    // `runAction('migrate-to-standalone', …)` unchanged.
+    // Fetch release and variant options, then use findBestVariant to select the
+    // recommended variant. result.target carries it into migrate-to-standalone.
     let migrateRelease: FieldOption | null = null
     let autoPickedVariant: FieldOption | null = null
     try {

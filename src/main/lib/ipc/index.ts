@@ -69,8 +69,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   wireReleaseCacheBroadcast()
 
   // These startup writes go through loadForWrite(), which rejects when
-  // installations.json cannot be safely modified right now (locked or corrupt,
-  // issue #1367) - log and continue instead of an unhandled rejection.
+  // installations.json cannot be safely modified right now (locked or corrupt) - log and continue instead of an unhandled rejection.
   const warnStartupWrite = (op: string) => (err: unknown) => {
     console.warn(`[ipc] Skipped startup installations ${op}:`, err)
   }
@@ -96,7 +95,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
     })
     .catch(warnStartupWrite('ensureExists(cloud)'))
   // The Cloud entry is not user-renamable; reset any entry a prior build
-  // let the user rename back to the canonical name (issue #922). Runs after
+  // let the user rename back to the canonical name. Runs after
   // ensureExists via the shared FIFO write queue.
   installations.enforceCloudName().catch(warnStartupWrite('enforceCloudName'))
 
@@ -156,7 +155,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   // Sweep leftover empty local install dirs (aborted installs) after recovery.
   // Only reclaim dirs that exist but are effectively empty - never a missing
   // or unreadable dir, which would silently forget a tracked instance whose
-  // drive is merely offline/renamed (issue #1155).
+  // drive is merely offline/renamed.
   void startupRecovery.then(async (recovery) => {
     if (!recovery) return
     try {
@@ -172,7 +171,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       })
       // Probe in parallel so a few offline paths don't serialize their timeouts.
       // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
-      // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
+      // access-denied, or timed-out ('inaccessible') dir is kept.
       const states = await Promise.all(
         sweepable.map(async (inst) => ({
           inst,

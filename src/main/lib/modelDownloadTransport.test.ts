@@ -188,7 +188,7 @@ describe('completion', () => {
   it('never finalizes a body whose total size cannot be verified', async () => {
     // Fresh 200 with no Content-Length, no caller expectation and no
     // persisted total: the bytes cannot be proven complete, so they must
-    // never land under a recognized model extension (issue #1322).
+    // never land under a recognized model extension.
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, {})

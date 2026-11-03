@@ -623,19 +623,12 @@ export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
   return { arg: grant.arg, name: grant.notice?.description ?? null }
 }
 
-// Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving
-// `false` on this key is what takes a grant back. Deleting or archiving the key instead reads as
-// `unreachable` — indistinguishable from an offline launch — and HOLDS every grant already on
-// disk. Disable first, let clients pick it up, delete only afterwards.
+// Revoke persisted grants by serving false before deleting or archiving a flag.
+// An unreachable or missing key preserves the saved grant, including offline launches.
+// Late explicit values are persisted for the next launch.
 //
-// Unchanged by late-result persistence, which only moves WHEN a disable lands, never whether a
-// deletion counts as one. What it buys is convergence: a client whose `/flags` POST reliably
-// outruns the boot deadline used to lose the revocation on every launch and hold the grant
-// forever. It now persists the late `false`.
-//
-// A saved decision applies at once and is refreshed in the background; a cut lands on the first
-// ComfyUI launch after the refresh answers. Only an install with nothing saved, or a launch during a
-// staff-change refresh (`refreshCoreBetaFlags`), waits, up to 5 s.
+// Saved decisions apply immediately and refresh in the background. A launch waits
+// up to five seconds only when no decision is saved or a staff-change refresh is pending.
 const flag = makeOpsFlag<CoreBetaGrant[]>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: [],

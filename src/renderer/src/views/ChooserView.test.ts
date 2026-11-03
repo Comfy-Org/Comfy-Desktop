@@ -339,9 +339,7 @@ describe('ChooserView', () => {
   })
 
   it('renders no lifecycle CTA cluster on a tile - the instance window owns lifecycle', async () => {
-    // The dashboard no longer carries any stop/launch button. State is
-    // shown via a labelled status pill; lifecycle actions live in the
-    // instance window.
+    // The dashboard shows status pills; lifecycle actions live in instance windows.
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()
     await flushPromises()

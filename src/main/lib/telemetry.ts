@@ -47,8 +47,7 @@
  *     It is only an event/person property; it is never a PostHog identity.
  *     Caveat: many call sites still override this key per-call with the
  *     per-install record id (`inst-<ms>`, `installations.ts`), so the value
- *     is not yet uniformly machine-scoped; #1159 redirects those overrides
- *     to `install_id`.
+ *     is not yet uniformly machine-scoped.
  *   - Firebase UID (`F`) is set only after every live auth-reporting view agrees
  *     on the resolved user. This is the only `client.identify()` call and
  *     carries W/D as `$anon_distinct_id`, merging the anonymous history without
@@ -326,8 +325,7 @@ function canEmit(): boolean {
  * `installation_id` is added by `bindAnonymousId()` once installation metadata is known
  * at boot, so renderer events (routed in over IPC) and main events share the
  * machine hash as the default join key. Call sites that override it per-call
- * with a per-install record id still split that key - #1159 moves those
- * overrides to `install_id`.
+ * with a per-install record id still split that key.
  *
  * Per-call properties take precedence on key collision.
  */
@@ -352,7 +350,7 @@ export const DEFAULT_EVENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
 /**
  * The `deployment` analytics axis: which backend ran the work. Paired with
  * the `client` default event property (desktop | web | cli) to identify the
- * product surface (MAR-51). Shared by every site that tags `deployment` so
+ * product surface. Shared by every site that tags `deployment` so
  * the enum can't drift.
  */
 export type Deployment = 'local' | 'cloud' | 'remote'
@@ -747,29 +745,16 @@ export function initTelemetry(opts: InitOptions): void {
     is_packaged: opts.isPackaged,
     platform: process.platform,
     arch: process.arch,
-    // Cross-surface analytics axis (MAR-51); this pipe is always the desktop
+    // Cross-surface analytics axis; this pipe is always the desktop
     // app. `deployment` (see the `Deployment` type) is its per-event pair.
     client: 'desktop'
   }
 
-  // Suppress event capture on unpackaged (developer / `pnpm dev`) runs.
-  // Two reasons: (a) every hot-reload + every dev-tool action would
-  // otherwise pollute the same production project we read for product
-  // analytics, (b) dev-mode app-update behavior tends to produce
-  // pathological event shapes (e.g. the updater repeatedly
-  // "discovering" the staged build). Beta / canary / stable channels
-  // still emit normally - only the unpackaged local-source case is
-  // gated.
+  // Suppress analytics writes on unpackaged development runs so local activity
+  // does not enter production analytics. Packaged beta, canary, and stable builds emit.
   //
-  // FLAG READS are NOT suppressed: a dev working on a feature gated by
-  // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
-  // see the flag's resolved value at boot. Previously the entire
-  // PostHog client was skipped in dev, which made `getOpsFlagResult` /
-  // `loadFeatureFlagsImmediate` return defaults and stranded any
-  // operational-flag or experiment testing. Now the client is
-  // always created so reads work; only the emission paths
-  // (`capture`, `identify`, `captureException`,
-  // `registerPersonProperties`) bail when `suppressEmit` is set.
+  // Keep the PostHog client available for flag reads in development. Only capture,
+  // identify, captureException, and registerPersonProperties are gated by suppressEmit.
   suppressEmit = !opts.isPackaged
 
   const cfg = readPostHogConfig(opts.isPackaged)
@@ -1572,7 +1557,7 @@ export function captureInstallCompleted(opts: {
     method: opts.method,
     express: opts.express
   })
-  // Durable per-person activation milestone (#1224). All four methods
+  // Durable per-person activation milestone. All four methods
   // (express/manual/adopt/migrate) are local installs, so this stamps the
   // person the first time they EVER complete a local install - even across
   // quits, reinstalls, or a second machine. Lets the funnel distinguish
@@ -1817,19 +1802,11 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * bucketing is unchanged and the machine is still not linked to any account in
  * the person store.
  *
- * It exists because the installation hash CANNOT be resolved to a person: a
- * condition on any person attribute can never match a machine-derived id, so
- * staff targeting silently returned nothing for every install. Supplying a
- * property on the request is what makes such a condition evaluable at all. The
- * same holds for `app_version`: it is what lets a grant be version-gated.
+ * The installation key does not resolve to a person. Request-scoped properties
+ * enable staff and app-version targeting without storing person properties.
  *
- * One authoritative evaluation at a time. An earlier design added a second,
- * authenticated one beside the boot evaluation; it could not work, because the
- * anonymous boot evaluation of a person-targeted flag answers an explicit
- * `false` — not a miss — which `init` treats as authoritative and writes over
- * the persisted grant. A mid-session `refresh` (`opsFlag.ts`) instead REPLACES
- * the boot answer, under the same id and with the properties the next boot will
- * send, which keeps the revocation contract in `opsFlag.ts` unchanged.
+ * Use one authoritative evaluation at a time. A mid-session refresh replaces
+ * the boot answer under the same id and revocation contract.
  *
  * Classifies every outcome as exactly one `OpsFlagFetchResult`:
  *   - `value` — the server answered. A disabled flag is a value of `false`,
@@ -1843,13 +1820,9 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  *     `persist` option on `makeOpsFlag` (opsFlag.ts), the wrapper every caller
  *     uses.
  *
- * A timeout no longer LOSES the answer, only defers it. A cold `/flags` POST
- * measured ~2572 ms on Windows and is always cold at boot, so a 2000 ms deadline
- * lost every launch and an abandoned explicit `false` never reached disk — a
- * grant could not be withdrawn at all. `onLateResult` reports an explicit value
- * that arrives after the deadline, so the caller can persist it for the NEXT
- * launch. The returned classification is unaffected: this launch was already
- * answered `unreachable` and acts on that.
+ * onLateResult reports an explicit value received after the deadline so the
+ * caller can persist it for the next launch. The current launch remains
+ * classified as unreachable.
  *
  * Deletion is still not revocation. Only a TRUTHY resolution reaches
  * `onLateResult`; a late miss (deleted/archived/absent key) and a late rejection

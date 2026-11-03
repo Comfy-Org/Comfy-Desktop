@@ -47,18 +47,20 @@ const SUPPORTED_FLAGS = [
   ['--output-directory OUTPUT_DIRECTORY', 'Set the ComfyUI output directory.'],
   ['--extra-model-paths-config PATH', 'Load extra model paths from a YAML file.'],
   ['--feature-flag KEY=VALUE', 'Set a desktop feature flag.'],
-  ['--list-feature-flags', 'List supported feature flags and exit.'],
+  ['--list-feature-flags', 'List supported feature flags and exit.']
 ] as const
 
 function helpText(): string {
-  const options = SUPPORTED_FLAGS.map(([flag, help]) => `  ${flag}\n                        ${help}`)
+  const options = SUPPORTED_FLAGS.map(
+    ([flag, help]) => `  ${flag}\n                        ${help}`
+  )
   return [
     `usage: main.py [-h] [${SUPPORTED_FLAGS.map(([f]) => f.split(' ')[0]).join('] [')}]`,
     '',
     'options:',
     '  -h, --help            show this help message and exit',
     ...options,
-    '',
+    ''
   ].join('\n')
 }
 
@@ -198,7 +200,7 @@ export async function writeFakeComfyInstall(opts: {
     '    ;;',
     'esac',
     `exec "${process.execPath}" "${serverPath}" "$@"`,
-    '',
+    ''
   ].join('\n')
   const python = path.join(installPath, 'venv', 'bin', 'python3')
   await writeFile(python, sh)
@@ -233,10 +235,10 @@ export function opsFlagsGrantSeed(opts: {
               ? { min_core_version: opts.minCoreVersion }
               : { commit_ranges: opts.commitRanges }),
             ...(opts.description === undefined ? {} : { description: opts.description }),
-            ...(opts.notice === undefined ? {} : { notice: opts.notice }),
-          },
-        ],
-      },
-    },
+            ...(opts.notice === undefined ? {} : { notice: opts.notice })
+          }
+        ]
+      }
+    }
   }
 }

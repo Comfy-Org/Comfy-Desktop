@@ -72,10 +72,8 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['recent-local', 'old-cloud'])
     })
 
-    // Tie-break sanity: with equal recency, cloud is no longer pinned ahead
-    // of local — order falls back to whatever sort() lands on, which for a
-    // stable timsort is input order. The contract is "cloud isn't special",
-    // so we just assert both are present and neither got dropped.
+    // Equal-recency cloud and local installs have no category priority.
+    // Both must remain in the result.
     it('does not pin cloud ahead of a same-recency local install', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -150,7 +148,7 @@ describe('useInstallList', () => {
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
-      // 'all' is the default; cloud is no longer split out of the list.
+      // The default all filter includes cloud and local installs.
       expect(list.visibleInstalls.value.map((i) => i.id).sort()).toEqual(['c', 'd', 'l', 'r'])
     })
   })

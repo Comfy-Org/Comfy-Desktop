@@ -709,8 +709,7 @@ describe('applying a change without a restart', () => {
   })
 })
 
-// The three limitations #1550 shipped with, each of which is the same root cause: a classification
-// read from one view's page rather than from the state every view contributes to.
+// Classification must use the consensus of all reporting views, not one view's page.
 describe('what reading a single view got wrong', () => {
   beforeEach(() => {
     initStaffFlagTargeting()
@@ -718,9 +717,7 @@ describe('what reading a single view got wrong', () => {
   })
 
   it('reclassifies on a sign-out that never navigates', async () => {
-    // Limitation 1. The old path ran on `dom-ready`, so an in-page sign-out was invisible until
-    // the next navigation, reload or launch, and the machine kept presenting as staff across it.
-    // The consensus sees it as soon as the view reports, with no navigation involved.
+    // An in-page sign-out must update the consensus without navigation or reload.
     await consensusSignedIn([stubContents(true)])
     expect(nextLaunchBinding()).toBe(true)
 
@@ -1000,8 +997,7 @@ describe('outcomes that are the absence of an answer', () => {
   })
 })
 
-// `dom-ready` no longer classifies on its own authority; it offers a freshly loaded view as a
-// classifier for an account already agreed on.
+// A dom-ready view may classify an account only after identity consensus agrees on it.
 describe('refreshStaffFlagTargeting', () => {
   beforeEach(() => {
     initStaffFlagTargeting()
@@ -1197,10 +1193,8 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
   })
 
   it('answers a MISSING database the same as an empty one when localStorage is readable', async () => {
-    // Same world as the test above - nobody signed in anywhere - reached by a machine where the
-    // SDK never created the database. It used to return `{known:false}` from the `databases()`
-    // guard while the empty-database case returned a definite "no account", so the verdict
-    // depended on whether Firebase had ever run here. The two must agree.
+    // No signed-in account exists, and Firebase has never created the database.
+    // A missing database and an empty database must produce the same verdict.
     const { result } = await classify({ localStorage: [], databases: [] })
 
     expect(result).toEqual({ known: true, staff: false, userId: null })
@@ -1335,17 +1329,9 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
   })
 
   it('does not assert a sign-out when localStorage is unreadable and IndexedDB is drained', async () => {
-    // The row a human reviewer found open on the monitor side. localStorage could not be read, so
-    // the store that would hold the session was never consulted; an empty IndexedDB is then not
-    // evidence of a sign-out, because on a localStorage-primary frontend it is empty PRECISELY
-    // because the SDK drained it.
-    //
-    // This test previously asserted `{ known: true, staff: false, userId: null }` — which IS
-    // asserting a sign-out, the exact thing its name says it does not do — and excused it on the
-    // grounds that `classifyFromView` rejects a null user id downstream. Two independent reviewers
-    // flagged the underlying behaviour. Being safe because a guard in another file happens to
-    // reject the value is not the same as not making the claim, and a future consumer reading
-    // `known: true` as "no account" would act on it.
+    // When localStorage is unreadable, empty IndexedDB is not evidence of sign-out:
+    // the live session may be in localStorage and the SDK may have drained IndexedDB.
+    // Return an unresolved classification rather than a definite signed-out account.
     const { result } = await classify({
       localStorage: [],
       localStorageThrows: true,

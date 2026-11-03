@@ -141,7 +141,7 @@ export interface RestoreRevertOutcome {
   /** Packages this operation installed and has now uninstalled again. */
   uninstalled: string[]
   /** Packages the plan called new but that were already installed before the
-   *  restore — deliberately left in place rather than uninstalled (#1514). */
+   *  restore — deliberately left in place rather than uninstalled. */
   keptPreexisting: string[]
   /** The pre-restore file backup was put back in full. */
   restoredFromBackup: boolean

@@ -918,7 +918,7 @@ function carryLegacySettings(
 
   // This flow writes settings.json directly (not via applySettingSet), so refresh
   // the durable per-setting person properties for what we just changed instead of
-  // waiting for the next boot (issues #1220/#1223). Consent-gated + queued.
+  // waiting for the next boot. Consent-gated + queued.
   const changedKeys = additions.length > 0 ? [...carriedKeys, 'modelsDirs'] : carriedKeys
   const trackedProps = settings.getTrackedSettingsTelemetryProperties(changedKeys)
   if (Object.keys(trackedProps).length > 0) {

@@ -10,7 +10,7 @@ import {
 } from './startup-attempt-marker'
 
 /**
- * Issue #1367 - the durable sidecar loop-breaker marker. Its whole job is to
+ * the durable sidecar loop-breaker marker. Its whole job is to
  * survive the boot-into-installer transition on machines where settings.json
  * gets rolled back, so these tests exercise the real filesystem in a temp
  * config dir rather than mocking fs (except where a persistent lock must be

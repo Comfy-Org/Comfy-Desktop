@@ -29,7 +29,7 @@ export async function handleDelegateToSource(
     _operationAborts.delete(installationId)
     return { ok: false, message: i18n.t('errors.unknownSource') }
   }
-  // Failures surfaced to the UI must also land in the app log (#1250) —
+  // Failures surfaced to the UI must also land in the app log —
   // sendOutput covers per-step output, but the final failure summary is
   // otherwise only returned to the renderer.
   const logFailure = (message: string): void => {

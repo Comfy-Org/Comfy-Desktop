@@ -1,12 +1,10 @@
 <script setup lang="ts">
 /**
- * Square gradient avatar adapted from the ComfyUI frontend's
- * `WorkspaceProfilePic.vue`. It uses the same PRNG, saturation, and lightness
- * calculations with a narrower second-hue offset for a cohesive color pair.
+ * Square gradient avatar using the ComfyUI frontend's PRNG, saturation, and
+ * lightness calculations with a narrower second-hue offset.
  *
- * Used for both the account-chip face (seeded from the active workspace name,
- * falling back to the email) and the switcher rows (seeded from each workspace
- * name): the colour is a deterministic function of whatever string it is given.
+ * The account chip uses the workspace name, falling back to email; switcher rows
+ * use each workspace name. Colours are deterministic for the supplied string.
  */
 import { computed } from 'vue'
 

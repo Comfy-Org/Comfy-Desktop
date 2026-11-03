@@ -206,7 +206,7 @@ export interface ComfyTitleBarBridge {
   /** Reset the host comfyView's zoom to 100% (the title-bar zoom pill).
    *  Mirrors Ctrl/Cmd+0 and the hamburger-menu Reset Zoom item. */
   resetZoom(): void
-  /** Issue #514 — show the title-bar hover tooltip popup. Routed
+  /** show the title-bar hover tooltip popup. Routed
    *  through main, which positions a cached `WebContentsView` popup
    *  attached to the host window so the bubble escapes the title-bar
    *  view's 37px clip. Only fired on macOS (Win/Linux use the native
@@ -225,10 +225,10 @@ export interface ComfyTitleBarBridge {
    *  `bottomY` is the trigger's bottom edge for the same coordinate
    *  space; main offsets the popup a few pixels below it. */
   showTooltip(payload: { text: string; leftX: number; rightX: number; bottomY: number }): void
-  /** Issue #514 — hide the title-bar hover tooltip popup. Sent on
+  /** hide the title-bar hover tooltip popup. Sent on
    *  pointer leave, focus loss, menu open, or panel switch. */
   hideTooltip(): void
-  /** Sticky title-bar coachmark card (issue #701) — shown pointing at a title-bar
+  /** Sticky title-bar coachmark card — shown pointing at a title-bar
    *  element. Reuses the clip-escaping tooltip popup pipeline
    *  (`variant: 'coachmark'`). `leftX`/`rightX` bracket the anchor's edges,
    *  `bottomY` is its bottom edge — title-bar-local px (the title-bar view sits
@@ -491,20 +491,12 @@ const bridge: ComfyTitleBarBridge = {
   }
 }
 
-// Expose the standard window.api bridge alongside __comfyTitleBar so the
-// title-bar renderer can call initializeRendererBootstrap() (which depends
-// on window.api.getSetting / getDeviceId / onTelemetrySettingChanged /
-// etc.). Without this, telemetry only fired from the panel renderer (which
-// only mounts in chooser/lifecycle modes), leaving steady-state ComfyUI
-// sessions invisible to Datadog and PostHog.
+// Expose window.api alongside __comfyTitleBar for renderer bootstrap and
+// telemetry in the persistent title-bar view.
 //
-// The shared ./api import is safe here because the title-bar
-// WebContentsView opts out of the sandbox via sandbox: false in
-// src/main/index.ts. Sandboxed preloads can only require() from a
-// whitelist (electron, events, timers, url); the chunked require of
-// out/preload/chunks/api-*.js that Rollup emits would fail there. See
-// issue #521 for the planned build-time chunk-inlining plugin that
-// will let us re-enable sandbox without source duplication.
+// The shared api import emits a separate Rollup chunk. The title-bar view in
+// src/main/host/createHostWindow.ts uses sandbox: false because sandboxed
+// preloads cannot require that chunk.
 const api = buildElectronApi()
 
 if (process.contextIsolated) {

@@ -1,5 +1,5 @@
 /**
- * E2E: instance/window navigation matrix — cloud-target deltas (issue #926).
+ * E2E: instance/window navigation matrix — cloud-target deltas.
  *
  * Pins the dashboard cloud target's "Open in new window" picker action via
  * recorded IPC + window count. No real cloud attach or network is needed.
