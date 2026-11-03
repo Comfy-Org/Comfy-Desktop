@@ -5,8 +5,6 @@ import {
   Cloud,
   Download,
   KeyRound,
-  LayoutGrid,
-  List,
   Plus,
   SquareCheck,
   Star,
@@ -15,8 +13,6 @@ import {
   X
 } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
-import EmptyState from '../../ui/EmptyState.vue'
-import SearchInput from '../../ui/SearchInput.vue'
 import Select from '../../ui/Select.vue'
 import { ROUTER_MODELS } from '../../mock'
 import { go, toast } from '../../useProto'
@@ -26,6 +22,11 @@ import ModelDetail from './ModelDetail.vue'
 import ModelImportDialog from './ModelImportDialog.vue'
 import ModelStatus from './ModelStatus.vue'
 import ModelTile from './ModelTile.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
+import MarViewToggle from '../pages/MarViewToggle.vue'
+import MarSelectBar from '../pages/MarSelectBar.vue'
+import MarEmpty from '../pages/MarEmpty.vue'
+import type { MenuAction } from '../pages/menu'
 import {
   activeDownloads,
   diskTotalGb,
@@ -76,10 +77,6 @@ const facet = ref<{
 }>({})
 const sort = ref<'recent' | 'name' | 'size'>('size')
 const view = ref<'list' | 'grid'>('list')
-const VIEWS = [
-  { value: 'list' as const, label: 'List', icon: List },
-  { value: 'grid' as const, label: 'Grid', icon: LayoutGrid }
-]
 const selecting = ref(false)
 const picked = ref<string[]>([])
 const openId = ref<string>('')
@@ -216,6 +213,31 @@ function rowClick(x: Model): void {
   if (selecting.value) toggle(x.id)
   else openId.value = openId.value === x.id ? '' : x.id
 }
+// The shared selection bar (MarSelectBar): download what isn't on disk,
+// delete what is.
+const selActions = computed<MenuAction[]>(() => [
+  ...(pickedModels.value.some((x) => !x.installed)
+    ? [
+        {
+          label: 'Download',
+          icon: Download,
+          run: () => downloadAll(pickedModels.value.filter((x) => !x.installed).map((x) => x.id))
+        }
+      ]
+    : []),
+  ...(pickedModels.value.some((x) => x.installed)
+    ? [
+        {
+          label: 'Delete',
+          icon: Trash2,
+          danger: true,
+          run: () =>
+            (deleting.value = pickedModels.value.filter((x) => x.installed).map((x) => x.id))
+        }
+      ]
+    : [])
+])
+
 function downloadAll(ids: string[], forBuild?: string): void {
   let n = 0
   for (const id of ids) if (modelsApi.download(id, forBuild)) n++
@@ -268,21 +290,7 @@ const lowDisk = computed(() => freeGb.value < 120)
           ]"
           class="w-40"
         />
-        <div class="mm-view" role="radiogroup" aria-label="View">
-          <button
-            v-for="v in VIEWS"
-            :key="v.value"
-            type="button"
-            role="radio"
-            class="mm-view-btn"
-            :aria-checked="view === v.value"
-            :aria-label="v.label"
-            :title="v.label"
-            @click="view = v.value"
-          >
-            <component :is="v.icon" :size="14" />
-          </button>
-        </div>
+        <MarViewToggle v-model="view" />
         <Button
           :variant="selecting ? 'subtle' : 'secondary'"
           :aria-pressed="selecting"
@@ -297,7 +305,7 @@ const lowDisk = computed(() => freeGb.value < 120)
          It starts level with the content and stays put while the list scrolls. -->
     <nav class="mm-rail" aria-label="Models">
       <div class="shrink-0">
-        <SearchInput v-model="q" placeholder="Search models" class="w-full" />
+        <MarSearchField v-model="q" placeholder="Search models" style="width: 100%" />
       </div>
       <ul class="mm-group">
         <li v-for="s in SCOPES" :key="s.value">
@@ -439,26 +447,13 @@ const lowDisk = computed(() => freeGb.value < 120)
         <Button size="sm" variant="link" class="ml-1" @click="facet = {}">Clear</Button>
       </div>
 
-      <div v-if="selecting" class="mm-selbar">
-        <span class="flex-1 text-ui">{{ picked.length }} selected</span>
-        <Button size="sm" variant="ghost" @click="picked = list.map((x) => x.id)"
-          >Select all</Button
-        >
-        <Button
-          v-if="pickedModels.some((x) => !x.installed)"
-          size="sm"
-          :disabled="!picked.length"
-          @click="downloadAll(pickedModels.filter((x) => !x.installed).map((x) => x.id))"
-          ><Download :size="13" />Download</Button
-        >
-        <Button
-          size="sm"
-          variant="destructive"
-          :disabled="!pickedModels.some((x) => x.installed)"
-          @click="deleting = pickedModels.filter((x) => x.installed).map((x) => x.id)"
-          ><Trash2 :size="13" />Delete</Button
-        >
-      </div>
+      <MarSelectBar
+        :n="picked.length"
+        noun="model"
+        :actions="selActions"
+        @clear="((picked = []), (selecting = false))"
+        @all="picked = list.map((x) => x.id)"
+      />
 
       <!-- Partner models: Pablo's Router list, kept. -->
       <div v-if="scope === 'partner'" class="mm-list mar-surface">
@@ -474,8 +469,10 @@ const lowDisk = computed(() => freeGb.value < 120)
       </div>
 
       <template v-else>
-        <EmptyState
+        <MarEmpty
           v-if="!list.length && !finished.length"
+          compact
+          :tone="q || chips.length ? 'error' : undefined"
           :icon="scope === 'downloads' ? Download : ComfyModel"
           :title="
             q || chips.length
@@ -486,7 +483,7 @@ const lowDisk = computed(() => freeGb.value < 120)
                   ? 'No favorites yet'
                   : 'Nothing here'
           "
-          :description="
+          :text="
             q || chips.length
               ? 'Try another word, or clear the filters.'
               : scope === 'downloads'
@@ -766,27 +763,6 @@ const lowDisk = computed(() => freeGb.value < 120)
 .mm-disk-bar i.is-other {
   background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
 }
-.mm-view {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--mar-tab-radius);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mm-view-btn {
-  display: inline-flex;
-  width: 30px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: var(--mar-tab-item-radius);
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mm-view-btn[aria-checked='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
-  color: var(--color-base-foreground);
-}
 .mm-h {
   color: var(--color-subtle-foreground);
   font-size: 11px;
@@ -834,15 +810,6 @@ const lowDisk = computed(() => freeGb.value < 120)
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   font-size: 12px;
-}
-.mm-selbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding: 6px 6px 6px 14px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 .mm-list {
   overflow: hidden;
