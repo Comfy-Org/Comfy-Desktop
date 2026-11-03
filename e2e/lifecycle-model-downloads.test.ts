@@ -30,15 +30,6 @@ import {
 import { getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
 
-// Profile reuse (quit + relaunch of the same dir) is unsupported on macOS:
-// Electron resolves userData outside the isolated HOME there. The whole spec
-// launches against an explicit profile dir so the restart test can rehydrate
-// it, so it is skipped on macOS; Windows + Linux lifecycle runs cover it.
-test.skip(
-  process.platform === 'darwin',
-  'profile reuse (restart hydration) is unsupported on macOS'
-)
-
 test.describe.configure({ mode: 'serial' })
 
 const ETAG = '"lc-model-e2e-v1"'

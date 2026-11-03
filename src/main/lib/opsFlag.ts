@@ -53,13 +53,10 @@ interface PersistedFileRead {
 
 /** E2E-only: write `E2E_OPS_FLAGS_SEED` into `ops-flags.json` before the first read.
  *
- *  The harness cannot place this file itself. It isolates a run by overriding `HOME`, but
- *  `configDir()` resolves to Electron's `userData` off Linux, and on macOS Application Support
- *  ignores that override — so a file the harness writes under its temp home is never read, and
- *  seeding the real path would write into the developer's own profile. `settings.json` has the
- *  same problem and solves it exactly this way; this mirrors `maybeSeedFromEnv` in
- *  `settings.ts`, including the packaged-build guard and dropping the var so the payload cannot
- *  reach spawned children. Runs at most once per process. */
+ *  Only main knows where `configDir()` resolves on each platform, so the harness hands the seed
+ *  over through the environment. This mirrors `maybeSeedFromEnv` in `settings.ts`, including the
+ *  packaged-build guard and dropping the var so the payload cannot reach spawned children. Runs
+ *  at most once per process. */
 let e2eSeedApplied = false
 function maybeSeedFromEnv(): void {
   if (e2eSeedApplied) return

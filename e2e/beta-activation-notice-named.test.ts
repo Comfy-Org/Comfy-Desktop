@@ -80,8 +80,7 @@ test.beforeAll(async () => {
         }
       }
     ],
-    // Env-delivered so main writes it to the real `configDir()`; the harness cannot place
-    // that file on macOS, where `userData` ignores the HOME override.
+    // Env-delivered so main writes it to `configDir()` before its first read.
     opsFlags: opsFlagsGrantSeed({
       arg: GRANT_ARG,
       minCoreVersion: GRANT_MIN_CORE,

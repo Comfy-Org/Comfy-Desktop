@@ -15,7 +15,7 @@
  * Node runs the server rather than Python because there is no interpreter to depend on: the
  * absolute path of the node binary already running Playwright is baked into the stub.
  *
- * LINUX only, deliberately — two independent reasons.
+ * LINUX only.
  *
  * A Windows stub would have to be a real PE executable: `venvPython`
  * resolves to `venv/python.exe`, and both callers run it with no shell (`execFile` in
@@ -24,11 +24,8 @@
  * Windows hand off to `cmd.exe`. `e2e/comfybuilder-launch.test.ts` writes an EMPTY `python.exe`
  * for exactly this reason: its assertion is that the launch is attempted and fails.
  *
- * macOS is excluded for a different reason: nothing isolates it. `configDir()` resolves to
- * Electron's `userData` there, which ignores the harness's HOME override, so the ops-flag seed
- * these specs need would be written into the developer's (or runner's) REAL profile — leaving
- * the seeded rollout enabled after the run and leaking state into later tests. The harness must
- * redirect userData before main resolves paths to isolate macOS runs.
+ * macOS was excluded because the harness could not isolate its profile. It can now, so these
+ * specs have not been tried there rather than being known to fail.
  *
  * Specs using this fixture are therefore tagged `@linux` only.
  */
@@ -213,9 +210,7 @@ export async function writeFakeComfyInstall(opts: {
 /** The persisted ops-flag entry `coreBetaGrants` applies at launch, before any fetch. Unstamped,
  *  as v1.1.6 wrote it: any saved entry counts. Handed to
  *  `launchApp`'s `opsFlags`, which delivers it through `E2E_OPS_FLAGS_SEED` so MAIN writes it to
- *  the real `configDir()`. The harness cannot write it itself: that path is Electron's
- *  `userData` off Linux, and macOS ignores the HOME override for it, so a hand-placed file is
- *  read on Linux and silently ignored everywhere else. */
+ *  `configDir()` before its first read. */
 export function opsFlagsGrantSeed(opts: {
   arg: string
   /** A version-window grant from this release up... */
