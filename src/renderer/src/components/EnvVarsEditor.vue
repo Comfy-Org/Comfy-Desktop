@@ -8,8 +8,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import { ShieldAlert } from 'lucide-vue-next'
 
 const inputClass = 'env-var-input mt-0 font-mono'
-const buttonClass =
-  'static appearance-auto gap-0 border border-solid font-sans text-[14px] leading-[inherit] whitespace-normal touch-auto transition-none [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
 
 const props = defineProps<{
   modelValue: Record<string, string>
@@ -114,12 +112,9 @@ function onValueChange(index: number, val: string): void {
           @change="onValueChange(i, ($event.target as HTMLInputElement).value)"
         />
         <Button
-          size="unset"
-          variant="textonly"
-          :class="[
-            buttonClass,
-            'env-var-remove flex w-7 shrink-0 items-center justify-center rounded-md border-[var(--border)] bg-surface px-0 py-1.5 font-normal text-text-muted hover:border-[var(--danger)] hover:bg-surface hover:text-[var(--danger)]'
-          ]"
+          size="icon"
+          variant="destructive-textonly"
+          class="env-var-remove shrink-0"
           :title="$t('common.cancel')"
           aria-label="Remove variable"
           @click="removeEntry(i)"
@@ -128,15 +123,7 @@ function onValueChange(index: number, val: string): void {
         </Button>
       </div>
     </div>
-    <Button
-      size="unset"
-      variant="textonly"
-      :class="[
-        buttonClass,
-        'env-var-add inline-flex items-center justify-normal gap-1 self-start rounded-lg border-[var(--border)] bg-[rgba(255,255,255,0.1)] py-2 pr-4 pl-2 font-medium text-neutral-100 hover:bg-[rgba(255,255,255,0.15)] hover:text-text'
-      ]"
-      @click="addEntry"
-    >
+    <Button size="md" variant="secondary" class="env-var-add" @click="addEntry">
       + {{ $t('envVars.add') }}
     </Button>
   </div>

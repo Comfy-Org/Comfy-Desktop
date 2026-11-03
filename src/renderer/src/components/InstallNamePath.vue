@@ -4,9 +4,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
 import PathDiskInfo from './PathDiskInfo.vue'
 
-const buttonClass =
-  'static block shrink-0 appearance-auto rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 font-sans text-[14px] leading-[inherit] font-normal whitespace-normal text-text touch-auto transition-none [&]:[appearance:button] hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
-
 defineProps<{
   name: string
   path: string
@@ -43,14 +40,14 @@ defineEmits<{
     <label class="text-[14px] text-text-muted">{{ $t('newInstall.installLocation') }}</label>
     <div class="install-path-input mt-1.5 flex gap-2">
       <div
-        class="path-open-wrap mt-1.5 flex min-w-0 flex-1 items-center rounded-md border border-solid border-[var(--border)] bg-surface px-2.5 py-2"
+        class="path-open-wrap flex min-w-0 flex-1 items-center rounded-lg bg-secondary px-3 py-2"
       >
         <Button
           v-if="path"
-          size="unset"
-          variant="textonly"
+          size="link"
+          variant="link"
           type="button"
-          class="path-open static block min-w-0 max-w-full shrink-0 appearance-auto overflow-hidden rounded-lg border-0 bg-transparent p-0 text-left font-sans text-[14px] leading-[inherit] font-normal text-ellipsis whitespace-nowrap text-text touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:ring-0 focus-visible:outline-none"
+          class="path-open min-w-0 max-w-full truncate py-0 text-left"
           :title="$t('actions.openDirectory', 'Open Directory')"
           :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
           @click="$emit('open')"
@@ -58,14 +55,14 @@ defineEmits<{
           {{ path }}
         </Button>
       </div>
-      <Button size="unset" variant="textonly" :class="buttonClass" @click="$emit('browse')">{{
+      <Button type="button" size="lg" variant="secondary" @click="$emit('browse')">{{
         $t('common.browse')
       }}</Button>
       <Button
         v-if="path !== defaultPath"
-        size="unset"
-        variant="textonly"
-        :class="buttonClass"
+        type="button"
+        size="lg"
+        variant="secondary"
         @click="$emit('update:path', defaultPath)"
       >
         {{ $t('common.resetDefault') }}

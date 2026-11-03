@@ -31,14 +31,6 @@ import { performanceTestSessionKey } from '../../../shared/performanceTestSessio
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
-const brandButtonClass =
-  'inline-flex items-center justify-center rounded-lg border border-solid px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal appearance-auto transition-[background,border-color,color] duration-[120ms] ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
-const primaryButtonClass =
-  'border-comfy-yellow bg-comfy-yellow text-neutral-900 disabled:hover:border-comfy-yellow disabled:hover:bg-comfy-yellow hover:enabled:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
-const secondaryButtonClass =
-  'border-border bg-secondary text-foreground disabled:hover:border-border disabled:hover:bg-secondary hover:enabled:border-border-strong hover:enabled:bg-accent'
-const ordinaryButtonClass =
-  'inline-flex items-center gap-2 rounded-lg border border-solid border-[var(--border)] bg-surface px-4 py-2 font-sans text-[14px] leading-[1.5] font-normal whitespace-normal appearance-auto transition-none hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40'
 const resultListClass =
   'grid gap-x-6 m-0 [&>div]:min-w-0 [&_dt]:text-neutral-200 [&_dt]:[text-align:var(--perf-label-align,left)] [&_dd]:mt-[var(--perf-value-margin,4px)] [&_dd]:[overflow-wrap:anywhere] [&_dd]:[color:var(--perf-value-color,var(--text-primary))] [&_dd]:text-[length:var(--perf-value-size,24px)] [&_dd]:leading-[var(--perf-value-leading,1.25)] [&_dd]:[text-align:var(--perf-value-align,left)]'
 const compactResultListClass =
@@ -717,12 +709,8 @@ watch(performanceTestLogs, async () => {
               <Button
                 class="performance-test__example-workflow box-border h-[30px] w-full px-2 py-1 text-[length:var(--takeover-fs-caption)]"
                 variant="secondary"
-                size="unset"
-                :class="[
-                  brandButtonClass,
-                  secondaryButtonClass,
-                  'h-[30px] px-2 py-1 text-[length:var(--takeover-fs-caption)]'
-                ]"
+                size="lg"
+                :class="['h-[30px] px-2 py-1 text-[length:var(--takeover-fs-caption)]']"
                 type="button"
                 :disabled="
                   !selectedInstallationId ||
@@ -761,8 +749,10 @@ watch(performanceTestLogs, async () => {
                 @dragleave.prevent="isWorkflowDragging = false"
                 @drop.prevent="dropWorkflow"
               >
-                <button
-                  class="performance-test__drop-content rounded-lg disabled:opacity-40 flex min-h-[102px] w-full items-center border-0 bg-transparent p-5 font-[inherit] text-[13px] text-inherit cursor-pointer"
+                <Button
+                  variant="textonly"
+                  size="lg"
+                  class="performance-test__drop-content h-auto min-h-[102px] w-full whitespace-normal p-5"
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
@@ -811,12 +801,12 @@ watch(performanceTestLogs, async () => {
                     </template>
                     <code v-else>{{ workflowFilePath }}</code>
                   </span>
-                </button>
+                </Button>
                 <Button
                   v-if="workflowFilePath && !isWorkflowLocked"
-                  class="performance-test__delete-workflow absolute top-1/2 right-4 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 text-text-muted cursor-pointer hover:bg-[var(--chooser-surface-bg-hover)] hover:text-[var(--accent-danger,#d92d20)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] appearance-auto font-normal transition-none"
-                  variant="textonly"
-                  size="unset"
+                  class="performance-test__delete-workflow absolute top-1/2 right-4 -translate-y-1/2"
+                  variant="destructive-textonly"
+                  size="icon"
                   type="button"
                   :aria-label="
                     exampleDownload
@@ -898,12 +888,9 @@ watch(performanceTestLogs, async () => {
               <div class="performance-test__run-actions mt-auto flex self-end gap-2">
                 <Button
                   class="performance-test__stop min-w-24"
-                  variant="destructive"
-                  size="unset"
-                  :class="[
-                    ordinaryButtonClass,
-                    'border-danger bg-danger text-bg hover:bg-[color-mix(in_srgb,var(--danger)_85%,#000)]'
-                  ]"
+                  variant="secondary"
+                  size="lg"
+                  :class="['whitespace-normal']"
                   type="button"
                   :disabled="!canStop"
                   @click="stopPerformanceTestFromUser"
@@ -913,8 +900,7 @@ watch(performanceTestLogs, async () => {
                 <Button
                   class="performance-test__run min-w-24"
                   variant="inverted"
-                  size="unset"
-                  :class="[brandButtonClass, primaryButtonClass]"
+                  size="lg"
                   type="button"
                   :disabled="!canRun"
                   @click="runPerformanceTest"
@@ -1125,8 +1111,7 @@ watch(performanceTestLogs, async () => {
                 <Button
                   class="performance-test__open-results inline-flex items-center gap-2"
                   variant="secondary"
-                  size="unset"
-                  :class="ordinaryButtonClass"
+                  size="lg"
                   type="button"
                   @click="openResultsFolder"
                 >
@@ -1141,8 +1126,7 @@ watch(performanceTestLogs, async () => {
                   "
                   class="performance-test__export-results inline-flex items-center gap-2"
                   variant="secondary"
-                  size="unset"
-                  :class="ordinaryButtonClass"
+                  size="lg"
                   type="button"
                   :disabled="isExportingResults"
                   @click="exportResultsImage"
@@ -1215,19 +1199,12 @@ watch(performanceTestLogs, async () => {
         @select="selectedExampleWorkflowId = $event.value"
       />
       <template #footer>
-        <Button
-          variant="secondary"
-          size="unset"
-          :class="[brandButtonClass, secondaryButtonClass]"
-          type="button"
-          @click="isExamplePickerOpen = false"
-        >
+        <Button variant="secondary" size="lg" type="button" @click="isExamplePickerOpen = false">
           {{ t('common.cancel') }}
         </Button>
         <Button
           variant="inverted"
-          size="unset"
-          :class="[brandButtonClass, primaryButtonClass]"
+          size="lg"
           type="button"
           :disabled="!selectedExampleWorkflowId || !!exampleDiskError"
           data-testid="performance-test-use-example"

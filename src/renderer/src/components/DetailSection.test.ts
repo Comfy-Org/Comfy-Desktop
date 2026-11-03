@@ -72,6 +72,27 @@ describe('DetailSection', () => {
     expect(emitted[0]![0]).toEqual(actions[0])
   })
 
+  it('names a boolean setting and commits its new value through the shared switch', async () => {
+    const wrapper = mountComponent({
+      fields: [
+        {
+          id: 'autoUpdate',
+          label: 'Automatic updates',
+          value: false,
+          editable: true,
+          editType: 'boolean'
+        }
+      ]
+    })
+    const toggle = wrapper.get('[role="switch"]')
+    expect(toggle.attributes('aria-label')).toBe('Automatic updates')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    expect(window.api.updateInstallation).toHaveBeenCalledWith('test-install-1', {
+      autoUpdate: true
+    })
+  })
+
   it('opens the folder when a browse-only path is clicked', async () => {
     const wrapper = mountComponent({
       fields: [

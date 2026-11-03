@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 /** One grid of installed instances for the selected dashboard scope. */
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'
@@ -76,9 +77,11 @@ function unlockTileSize(el: Element): void {
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >
-    <button
+    <Button
       v-if="props.showNew"
       key="__new"
+      variant="textonly"
+      size="unset"
       type="button"
       class="chooser-tile chooser-tile-new"
       :class="chooserTileClass"
@@ -93,7 +96,7 @@ function unlockTileSize(el: Element): void {
       >
         {{ t('chooser.newInstallDesc') }}
       </div>
-    </button>
+    </Button>
 
     <ChooserInstallTile
       v-for="installation in props.installations"
