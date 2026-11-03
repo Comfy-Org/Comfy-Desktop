@@ -35,7 +35,7 @@ import type { InstallationRecord } from '../../installations'
  * launch driver are pure readers.
  *
  * Every model transfer is a REAL managed job in `comfyDownloadManager`
- * (issue #1322) - the same job type as in-Comfy model downloads. The jobs
+ * - the same job type as in-Comfy model downloads. The jobs
  * appear in the title-bar Downloads tray automatically with fully working
  * pause/resume/cancel/retry, download to a staged `.part` file (never partial
  * bytes under a model extension), and resume across app restarts. This task

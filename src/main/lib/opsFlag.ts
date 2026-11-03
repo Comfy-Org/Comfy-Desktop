@@ -127,7 +127,7 @@ export function readPersistedFile(file: string, strict = false): PersistedFileRe
  *  standing in): the follow-up write would replace an intact file with state reconstructed
  *  from the backup, resurrecting entries the primary had already superseded. Read-only callers
  *  use `readPersistedFile`, which degrades to "no cache". Mirrors `installations.ts`'
- *  `loadForWrite` (issue #1367). */
+ *  `loadForWrite`. */
 function readPersistedFileForWrite(file: string, strict = false): Record<string, unknown> {
   const { entries, primaryUnreadable } = readPersistedFile(file, strict)
   if (primaryUnreadable) {

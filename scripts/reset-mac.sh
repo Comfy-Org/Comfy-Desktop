@@ -43,11 +43,8 @@ if pgrep -x "Comfy Desktop"     >/dev/null 2>&1 \
   exit 1
 fi
 
-# Product (display) names that map to ~/Library/Application Support and Logs
-# folders. Includes the upcoming post-rename name ("Comfy Desktop") so
-# scripts shipped today still work after the 2.0 suffix drops, and the
-# legacy v1.x desktop productName ("ComfyUI") whose userData/logs survive
-# an upgrade to the 2.0 beta and have caused clean-install issues (#679).
+# Product names used for Application Support and Logs folders.
+# Include legacy installs so their state is cleared too.
 PRODUCT_NAMES=(
   "ComfyUI"
   "Comfy Desktop"

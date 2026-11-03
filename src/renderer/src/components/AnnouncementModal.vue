@@ -24,12 +24,9 @@ const ANNOUNCEMENT_ID = 'comfy_api'
 const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_api'
 const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
 
-// Comfy API launch hero on media.comfy.org. media.comfy.org caches for an
-// hour, so bump the version in the filename rather than re-uploading a key.
-// Poster paints immediately; the video muted-autoplays + loops.
-// TODO: no hero asset has been provided for Comfy API yet (tracked the same
-// way #1560 tracked the Router hero) - this path 404s until it's uploaded, so
-// the modal falls back to the `.announce-media` gradient in the meantime.
+// Comfy API launch media. The host caches assets for an hour, so use a new
+// filename version when replacing an asset. The poster paints immediately;
+// the muted video autoplays and loops. The gradient handles unavailable media.
 const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
 const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 

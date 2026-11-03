@@ -12,7 +12,7 @@ import {
 
 /**
  * Pins the `.bak` semantics that keep the startup-update loop-breaker marker
- * alive (issue #1367): transient locks are retried, a locked primary is served
+ * alive: transient locks are retried, a locked primary is served
  * from `.bak` WITHOUT restoring it (the primary is typically newer, so a
  * restore would roll back the most recent writes), and `.bak` is only restored
  * when the primary is genuinely missing or empty.
@@ -182,8 +182,7 @@ describe('readFileSafe', () => {
 
   it('restores .bak over a genuinely missing primary and counts the fallback', () => {
     fs.writeFileSync(bakPath, 'backup')
-    // The counter is process-wide and monotonic, so assert the delta - it is
-    // the field signal (telemetry `bakFallbacks`) for issue #1367 machines.
+    // The fallback counter is process-wide and monotonic, so assert its delta.
     const before = getSafeFileDiagnostics().bakFallbacks
     expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
     expect(getSafeFileDiagnostics().bakFallbacks).toBe(before + 1)

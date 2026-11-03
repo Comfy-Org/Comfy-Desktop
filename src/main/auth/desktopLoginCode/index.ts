@@ -72,7 +72,7 @@ function cancelActiveFlow(): void {
 
 /**
  * Sign in through the Cloud login page with a short-lived desktop login
- * code (GTM-93): mint a PKCE-bound code on the backend, open the system
+ * code: mint a PKCE-bound code on the backend, open the system
  * browser at the real Cloud login page carrying only the opaque code,
  * poll the exchange endpoint until the signed-in browser session redeems
  * it, then finish with the one-time Firebase custom token — no loopback

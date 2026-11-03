@@ -275,7 +275,7 @@ describe('scanForStagedDownloads', () => {
     // any byte landed: final name and .part are BOTH zero bytes. Two empty
     // files are byte-identical, so without the explicit zero-final guard the
     // redundant-staging branch would delete the pair and leave the zero-byte
-    // fake model visible to ComfyUI (#1322). The marker must still be parked
+    // fake model visible to ComfyUI. The marker must still be parked
     // and the empty pair must hydrate as a normal paused job.
     const finalPath = path.join(tmpDir, 'model.safetensors')
     fs.writeFileSync(finalPath, '')

@@ -38,19 +38,13 @@ function uidFromRecord(value: unknown): string | null {
 }
 
 /**
- * What localStorage can tell us. Three failure states, not two, because "I cannot read" splits:
+ * LocalStorage read outcomes:
+ * - unavailable: the localStorage mechanism is absent; IndexedDB may answer.
+ * - unreadable: access threw; do not infer either sign-in or sign-out.
+ * - empty: the store is readable but contains no Firebase records.
+ * - records: readable Firebase user records are available.
  *
- *   `unavailable`  there is NO `localStorage` object at all. The frontend cannot be using it, so
- *                  IndexedDB is the only store and answers alone — this is what keeps legacy
- *                  IndexedDB-primary frontends working.
- *   `unreadable`   the object EXISTS but access threw, at enumeration or on a single key. The
- *                  frontend may well be using it and we simply cannot see it, so nothing is
- *                  asserted in either direction.
- *   `empty`        readable, and holding no Firebase record. A real observation, not a failure.
- *
- * Collapsing `unreadable` into `unavailable` is the defect Codex and CodeRabbit both found: it hands
- * the answer to a store that, on a localStorage-primary frontend, holds only what the SDK's
- * best-effort cleanup failed to delete.
+ * A stale IndexedDB copy must not override unreadable localStorage.
  */
 type LocalStorageRead =
   | { kind: 'unavailable' }
@@ -219,19 +213,13 @@ async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
 }
 
 /**
- * How long "no record in either store" must PERSIST before it is a sign-out.
+ * Continuous empty-store duration required before reporting signed_out.
+ * The three-second delay is a conservative policy, not a measured bound on
+ * Firebase persistence handoffs. A transient empty state must not revoke
+ * an installation's authorization.
  *
- * NOT A MEASURED VALUE, and there is nothing to measure it against: the window it guards has never
- * been observed. An earlier ~8ms figure was inferred from two timestamps in a CURATED log excerpt
- * and is withdrawn — the complete log showed no both-empty sample at all. 3000ms was chosen because
- * the asymmetry is lopsided: being wrong toward "revokes three seconds later" costs nothing, being wrong
- * toward "still seals the install" costs the install. Do not tune this down on the assumption it was
- * derived from data.
- *
- * WALL-CLOCK, deliberately, not a count of polls. The poll runs at 1s only while the view is
- * VISIBLE; install views are toggled with `setVisible(false)` and nothing sets
- * `backgroundThrottling`, so a hidden view polls roughly once a minute and "three polls" would mean
- * three minutes.
+ * Use elapsed wall time rather than a count of polls: visible views poll each
+ * second, while background throttling can delay a hidden view's polls by a minute.
  */
 const SIGNED_OUT_SETTLE_MS = 3000
 

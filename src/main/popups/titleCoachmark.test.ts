@@ -88,11 +88,9 @@ describe('positionCoachmark beak tracking', () => {
   ])(
     'reports a card centre that lands on the anchor (card %s, clamped or not)',
     (width, anchor) => {
-      // Asserted against the ANCHOR, not against the formula. An earlier version of this test
-      // compared `cardLeftInView` to the gutter and re-used the same width it fed in, so both
-      // sides reduced to the same constant and it could not fail for any input. This varies
-      // the card width and the anchor — including one that clamps at the right edge — and
-      // checks the property that actually matters.
+      // Compare the beak position with its anchor while varying card width and anchor
+      // position, including right-edge clamping. Reusing the layout formula as the
+      // expectation would not independently verify alignment.
       const placement = positionCoachmark({
         anchor: { ...anchor, bottomY: 36 },
         bubble: { width, height: 90 },

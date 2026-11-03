@@ -19,25 +19,12 @@ import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
 /**
- * Title-bar status pills consume the current app-update state via
- * `getCurrentUpdateState()` for the initial push (when a title bar
- * mounts after the broadcast already fired) and via the
- * `onUpdateStateChanged` callback for live updates. The two stay in
- * sync because both writes go through `_setUpdateState`, which fans
- * out to every registered callback.
+ * Shared updater state for the title bar and Settings.
  *
- * `kind` is `'available'` after `update-available`, `'ready'` after
- * `update-downloaded`, and `null` when nothing is pending. `version`
- * carries the corresponding version string. `update-error` does NOT
- * clear the kind — the pill keeps reflecting the last-known state so
- * the user can still act on a previously-discovered update.
- *
- * `autoUpdate` mirrors the `autoUpdate` setting at the moment the
- * state was committed. With auto-updates ON the `'available'` state
- * is suppressed (main triggers the download itself) so the user only
- * ever sees the `'ready'` pill ("Desktop Update Ready"). With
- * auto-updates OFF the `'available'` pill ("Desktop Update Available")
- * surfaces a confirm-modal that runs the download.
+ * getCurrentUpdateState supplies the initial value; onUpdateStateChanged receives
+ * live updates. _setUpdateState updates the cache and notifies subscribers.
+ * kind distinguishes available, downloading, ready, and no pending update.
+ * autoUpdate snapshots the automatic-install preference when the state is emitted.
  */
 export interface AppUpdateState {
   kind: 'available' | 'downloading' | 'ready' | null
@@ -54,15 +41,11 @@ let _appUpdateState: AppUpdateState = { kind: null, version: null, autoUpdate: t
  *  `update-error` so a subsequent check for a NEW version can trigger
  *  again. */
 let _autoDownloadTriggeredFor: string | null = null
-/** Telemetry dedup per `(event-name × version)` per process. The
- *  todesktop / electron-updater state machine re-fires `update-available`
- *  and `update-downloaded` on every periodic check that finds a staged
- *  build, and our own `update-available` handler used to call
- *  `runCheck('auto-download')` re-entrantly — together they produced
- *  ~3M+ of each event in 24h across ~27 users (the volume incident
- *  this dedup was introduced for). One emit per version covers every
- *  analytical question (did this user see version X become available?
- *  did the download finish?) without per-cycle re-emit. */
+/**
+ * Deduplicate telemetry by event name and version within a process. Periodic
+ * checks can rediscover a staged update; availability and completion each emit
+ * once per version.
+ */
 const _appUpdateEmittedOnce: Map<string, Set<string>> = new Map()
 function _shouldEmitAppUpdateOnce(event: string, version: string | null): boolean {
   if (!version) return true
@@ -165,7 +148,7 @@ function _setUpdateState(next: AppUpdateState): void {
 const NO_UPDATE_AVAILABLE_MESSAGE = 'No update available. Try checking for updates first.'
 const UPDATER_UNAVAILABLE_MESSAGE = 'ToDesktop auto-updater is unavailable.'
 
-/** Issue #488 — single source of truth for the auto-install flag.
+/** single source of truth for the auto-install flag.
  *  Default-on: any non-`false` value (including missing) is treated as
  *  enabled. Reads the `autoInstallUpdates` key — auto-checks always
  *  run, and only the install behavior is user-controllable. The
@@ -178,7 +161,7 @@ function isAutoInstallEnabled(): boolean {
 /**
  * Settings handler calls this when the user toggles the auto-install
  * preference. Two effects:
- *   1. Re-applies the install-on-quit policy (Issue #1104) so flipping the
+ *   1. Re-applies the install-on-quit policy so flipping the
  *      setting arms/disarms install-on-quit immediately, without a restart.
  *      This runs regardless of whether an update is cached.
  *   2. Re-broadcasts the cached `_appUpdateState` with a refreshed `autoUpdate`
@@ -283,7 +266,7 @@ export function suppressInstallOnQuit(): void {
  *     (`suppressInstallOnQuit` — never re-arm mid-shutdown), or
  *   - the startup-install path owns the install (Windows default — the staged
  *     update applies on the next launch, not on quit), or
- *   - the user disabled auto-install (Issue #1104 — a staged update must wait
+ *   - the user disabled auto-install (a staged update must wait
  *     for an explicit "Desktop Update Ready" pill click rather than installing
  *     on the next quit/close).
  * It stays enabled only when none hold (non-Windows with auto-install on),
@@ -321,7 +304,7 @@ function versionFromPayload(payload: unknown): string | null {
  * higher-version RC like `1.0.25-rc.1` is newer than `1.0.24` but `1.0.24-rc.1`
  * is not), and a malformed version on either side is treated as not newer. This
  * is the guard that stops the updater from "updating" to a non-newer version
- * and looping (#1161).
+ * and looping.
  */
 function isStrictlyNewerVersion(offered: string | null | undefined, current: string): boolean {
   if (!offered) return false
@@ -547,10 +530,7 @@ function bindUpdaterEvents(): void {
   // flips the cached app-update state to `'downloading'`, so the title-bar
   // pill shows "Downloading update" and the Settings panel shows the
   // progress bar with percent / bytes / speed; clicking the pill routes to
-  // Settings. Auto-on downloads used to stay silent (state `null`) until
-  // `update-downloaded`, which left the UI claiming "up to date" while
-  // hundreds of megabytes were in flight - the same invisibility that hid
-  // the startup re-download behind the update loop.
+  // Settings.
   updater.on('download-progress', (info: unknown) => {
     for (const cb of _downloadProgressObservers) cb()
     const p = asRecord(info)
@@ -888,10 +868,10 @@ type StartupInstallDecision =
         | 'no_pending'
         | 'loop_breaker'
         | 'marker_unavailable'
-      /** Which marker home tripped a `loop_breaker` skip. `sidecar` means the
-       *  settings copy of the marker was GONE and only the sidecar remembered
-       *  the attempt - in the wild, that is direct evidence of the
-       *  settings.json rollback suspected in issue #1367. */
+      /**
+       * Marker source responsible for a loop-breaker skip. A sidecar-only match
+       * means the settings copy no longer records the attempt.
+       */
       loopBreakerSource?: 'settings' | 'sidecar'
     }
 
@@ -901,7 +881,7 @@ type StartupInstallDecision =
  *
  * Returns a skip for: the startup-install gate being off (non-Windows, or the
  * `installUpdatesOnStartup` opt-out — installs still happen on quit), auto-install
- * being disabled (Issue #1104 — staged update waits for an explicit pill click),
+ * being disabled (staged update waits for an explicit pill click),
  * E2E runs, system-package-managed installs (apt/dnf own
  * the update), an OS session that's already ending, no staged download (or one
  * that's already the running version), and the loop-breaker case (we already
@@ -909,7 +889,7 @@ type StartupInstallDecision =
  */
 function evaluateStartupInstall(sidecar: StartupAttemptMarkerRead): StartupInstallDecision {
   if (!isStartupInstallEnabled()) return { attempt: false, reason: 'disabled' }
-  // Issue #1104 — with auto-install off, a staged update must wait for an
+  // with auto-install off, a staged update must wait for an
   // explicit pill click; never apply it automatically at startup.
   if (!isAutoInstallEnabled()) return { attempt: false, reason: 'auto_install_disabled' }
   if (process.env['E2E'] === '1') return { attempt: false, reason: 'e2e' }
@@ -924,7 +904,7 @@ function evaluateStartupInstall(sidecar: StartupAttemptMarkerRead): StartupInsta
   // Loop-breaker: we already auto-attempted this exact version and are still
   // on the old one. Checked in BOTH homes because settings.json can be rolled
   // back to a stale .bak snapshot under AV/indexer interference, erasing its
-  // copy of the marker (issue #1367).
+  // copy of the marker.
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
   if (lastAttempt === pending) {
     return { attempt: false, reason: 'loop_breaker', loopBreakerSource: 'settings' }
@@ -1234,7 +1214,7 @@ export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): 
   // on the old version) trips the loop-breaker next boot. The verified sidecar
   // is the authoritative marker; if it cannot be made durable, fail closed
   // WITHOUT writing any marker - installing unguarded risks an unbounded
-  // reinstall loop (issue #1367), and a lone settings marker would block every
+  // reinstall loop, and a lone settings marker would block every
   // future auto-install of this version instead of retrying next launch.
   const attemptId = updateAttemptId(state.version, true)
   if (!attemptId || !recordStartupAttempt(state.version, attemptId)) {
@@ -1254,7 +1234,7 @@ export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): 
   emitUpdateTelemetry('comfy.desktop.app_update.startup_install', state.version, {
     version: state.version,
     // Non-zero means reads were served from `.bak` this session (primary
-    // missing, empty, or locked past retries - issue #1367's environment);
+    // missing, empty, or locked past retries);
     // lets telemetry correlate install loops with filesystem interference.
     bakFallbacks: getSafeFileDiagnostics().bakFallbacks
   })
@@ -1269,7 +1249,7 @@ export function register(): void {
   // `syncInstallOnQuitPolicy`). Disabled when the startup-install path owns the
   // install (the Windows default — the staged update applies on the next launch
   // instead of on quit, avoiding the Windows-shutdown mid-write corruption
-  // loop) or when auto-install is off (Issue #1104 — wait for an explicit pill
+  // loop) or when auto-install is off (wait for an explicit pill
   // click). Otherwise (non-Windows with auto-install on) install-on-quit stays
   // armed; the `session-end` guard (`suppressInstallOnQuit`) still flips it off
   // only while the OS is shutting down. `electronAutoUpdater` is the same
@@ -1303,10 +1283,8 @@ export function register(): void {
   // arrive via the `app-update:state-changed` event.
   ipcMain.handle('get-app-update-state', () => getCurrentUpdateState())
 
-  // Issue #488 — always check on startup and periodically. The
-  // user-controllable `autoInstallUpdates` setting only gates whether
-  // a discovered update silently downloads + installs vs prompts the
-  // user; the check loop itself is no longer user-disablable.
+  // Always check on startup and periodically. autoInstallUpdates controls whether
+  // a discovered update installs automatically or requires user confirmation.
   const runAutoCheck = (): void => {
     runCheck('auto-check').catch(() => {})
   }

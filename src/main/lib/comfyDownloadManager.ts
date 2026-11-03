@@ -38,7 +38,7 @@ export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
  * filename. Electron's `showSaveDialog`/`showSaveDialogSync` does not infer
  * filters from the default filename - on Windows the dropdown collapses to
  * "All Files (*.*)" if you omit `filters`, which is the symptom field-reported
- * as "Can't save image from Preview Image node" (#989). Pick a primary filter
+ * as "Can't save image from Preview Image node". Pick a primary filter
  * matching the file's actual extension so the dialog opens on the right
  * format, with "All Files" as a fallback escape hatch.
  */
@@ -853,7 +853,7 @@ function findPendingForItem(item: Electron.DownloadItem): PendingDownload | unde
   return undefined
 }
 
-// ---- Managed model jobs (issue #1322) ---------------------------------------
+// ---- Managed model jobs ---------------------------------------
 //
 // Every model transfer - in-Comfy missing-model downloads, starter-template
 // downloads, tray retries, and jobs restored after a restart - is one managed
@@ -1268,7 +1268,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   // quarantines legacy truncated files that sit under final model names.
   // Admitting a job (or worse, reporting `alreadyPresent` for such a file)
   // while that pass is still running would certify a truncated model as
-  // complete - the exact corruption #1322 is about. All callers share the
+  // complete. All callers share the
   // memoized pass. An unsafe pass is NARROW: it only refuses a job whose own
   // destination is a still-visible incomplete file (the quarantine rename
   // failed, e.g. the file is locked - a fresh transfer could not replace it
@@ -1300,8 +1300,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   // Report completed without downloading only when the file already exists
   // somewhere the install's ComfyUI actually searches. A known-incomplete
-  // file must never satisfy this check - it is exactly the truncated model
-  // #1322 is about. With an explicit destination root, only the exact
+  // file must never satisfy this check. With an explicit destination root, only the exact
   // destination counts (ComfyBuilder staging must place the file there).
   const existenceCandidates = opts.destinationBaseDir
     ? [savePath]
@@ -2469,28 +2468,15 @@ export function detachWindowDownloads(win: BrowserWindow): void {
 // ---- Restart lifecycle for managed model jobs --------------------------------
 
 /**
- * Startup pass over every launcher-managed model root, run BEFORE any ComfyUI
- * can scan the model dirs:
- *  1. migrate legacy `<model>` + `<model>.dl-meta` partials (affected releases
- *     wrote failed template downloads straight to the final path) so truncated
- *     files no longer masquerade as loadable models;
- *  2. restore every staged `.part` + sidecar as an actionable paused job in
- *     the Downloads surfaces (Resume continues with Range; Cancel removes the
- *     staged state).
+ * Check every managed model root before ComfyUI scans it. Quarantine incomplete
+ * final-path downloads and hydrate staged .part files and sidecars as paused jobs.
  *
- * Memoized while safe: the app kicks it off at startup, `handleLaunch` awaits
- * it before spawning any ComfyUI process, and `startManagedModelJob` awaits
- * it before admitting any model job; all share one pass. An UNSAFE pass
- * (known-incomplete files still visible under final model names) is NOT
- * memoized - the lock that blocked quarantine may have been released, so the
- * next launch attempt must re-run the migration instead of reusing a stale
- * "checked" result. A REJECTED pass is likewise not memoized.
+ * Startup, handleLaunch, and startManagedModelJob share this pass. Memoize only
+ * safe results; retry rejected or unsafe results because incomplete model files
+ * may still need quarantine. An unsafe pass must not certify those files as complete.
  *
- * `invalidateModelDownloadStartupPass` marks the memoized result stale (the
- * scan roots changed - e.g. a new installation was created whose model dirs
- * the startup pass never covered). The next call chains a fresh pass behind
- * any in-flight one so two passes can never migrate the same roots
- * concurrently.
+ * invalidateModelDownloadStartupPass marks results stale when the scan roots change.
+ * Chain the next pass behind an in-flight pass so roots are never migrated concurrently.
  */
 export function initializeModelDownloads(): Promise<ModelDownloadStartupSafety> {
   if (_modelDownloadsInit && !_modelDownloadsInitStale) return _modelDownloadsInit

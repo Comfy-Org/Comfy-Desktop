@@ -5,10 +5,7 @@
  *
  * Every renderer entry-point (title bar, title menu, panel) calls
  * `initializeRendererBootstrap(rendererRole)` so telemetry fires
- * regardless of which renderer the user is interacting with — the
- * panel renderer used to be the only entry that initialised this, which
- * caused steady-state ComfyUI sessions (no panel mounted) to emit zero
- * Datadog/PostHog events. The renderer-role tag (`renderer:title-bar |
+ * regardless of which renderer the user is interacting with. The renderer-role tag (`renderer:title-bar |
  * title-menu | panel`) is registered on every event so RUM/PostHog
  * queries can roll up or filter per surface.
  *
@@ -665,11 +662,8 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
   }
 
-  // `comfy-boot-log` → telemetry Action, gated to `'panel'` so it fires once
-  // (not per host-window title-bar). It's safe here because it runs while the
-  // panel is still alive. `exited` / `instance_started` / `installation_started`
-  // / `snapshot_history` used to live here too but now emit from main, since
-  // Desktop 2 tears the panel down before those callbacks could fire.
+  // Forward comfy-boot-log as a telemetry action from the panel only, so each
+  // boot log emits once.
   if (rendererRole === 'panel') {
     window.api.onComfyBootLog((data) => {
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {

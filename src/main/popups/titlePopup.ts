@@ -162,8 +162,7 @@ export interface InstancePickerSnapshot {
    *  renderer keys its "apply snapshot selection over my local pick"
    *  guard on this epoch so a stale snapshot whose
    *  `selectedInstallationId` echoes an older value can't snap the
-   *  user back to a previously-selected row after they've moved on
-   *  (issue #788). */
+   *  user back to a previously-selected row after they've moved on. */
   pickerSelectionEpoch: number
   selectedSettings: Record<string, unknown>[] | null
   selectedSnapshots: Record<string, unknown> | null
@@ -468,7 +467,7 @@ export interface TitlePopupEntry {
    *  snapshot as `pickerSelectionEpoch`; the renderer treats a snapshot
    *  selection as authoritative only when this advances, so a stale
    *  rebroadcast carrying an older `selectedInstallationId` can't snap
-   *  the user back after a fast click (issue #788). */
+   *  the user back after a fast click. */
   pickerSelectionEpoch: number
   /** Tab id the settings UI opens on. Forwarded into the snapshot for
    *  the picker view to consume on first render. */
@@ -534,10 +533,7 @@ const DOWNLOADS_REOPEN_SUPPRESS_MS = 250
  *     after the synchronous open so any change since the last cache
  *     hit lands within a tick via `installs-changed` push.
  *
- *  Without this cache the click handler would have to `await
- *  bindings.getInstancePickerInstalls()` (a disk read) before the
- *  popup can be shown, which was the source of the "first click feels
- *  laggy" symptom. */
+ *  The click path uses the cache without waiting for a disk read. */
 const cachedInstallsForPicker: InstancePickerInstall[] = []
 let cachedInstallsResolved = false
 
@@ -754,8 +750,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   }
   // Unified menu order — same item set on dashboard (install-less)
   // and instance (install-backed) hosts so the user has one mental
-  // model of what the waffle does regardless of where they opened it
-  // (issue #644):
+  // model of what the waffle does regardless of where they opened it:
   //
   //   New Window
   //   ── separator ──
@@ -1459,7 +1454,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     // alone doesn't resolve that Promise, so the next time the picker
     // opens (or re-renders) the modal would silently resurface.
     // Treat the kind-switch click as the same dismiss the modal's own
-    // backdrop fires (issue #770).
+    // backdrop fires.
     if (entry.kind === 'instance-picker' && !entry.view.popup.webContents.isDestroyed()) {
       entry.view.popup.webContents.send('comfy-titlepopup:dismiss-modals')
     }
@@ -1572,14 +1567,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     entry.pendingConfig = config
   }
 
-  // Show INSTANTLY in the same frame as the click — same as native
-  // apps / VS Code / Cursor. The render-ack handshake used to wait
-  // up to 250ms for Vue to repaint, but cold Vue mount itself takes
-  // ~270ms so the fallback timer was always the floor on first open.
-  // The "stale content flash" the ack was guarding against is a
-  // single frame of the previous open's content (~16ms on a warm
-  // renderer) — invisible in practice. The renderer's own paint
-  // settles within one frame of `set-config` arriving.
+  // Show the popup synchronously. The renderer applies set-config on its next paint.
   showTitlePopupNow(entry)
 }
 
@@ -1949,7 +1937,7 @@ function openInstancePickerForHost(
 
 /**
  * Waffle-menu item ids whose action is an install-creation / import
- * flow (#644). These are the only items that branch on host type at
+ * flow. These are the only items that branch on host type at
  * dispatch time — on the dashboard they take over the current window
  * in place, on an instance host they spawn a fresh chooser window
  * booted straight into the wizard so the running ComfyUI stays alive.
@@ -1971,7 +1959,7 @@ export function isFlowMenuItemId(id: string): id is FlowMenuItemId {
  * Where a flow-menu pick should land. Pure function — call sites
  * inject the side effects (`setActivePanel` vs `openChooserHostWindow`)
  * from the result kind so the dispatch policy stays one-decision-one-
- * test (#644).
+ * test.
  *
  *   - dashboard (install-less host) → `set-active-panel` (takeover in
  *     this window; the chooser body has no instance to disturb).
@@ -2043,16 +2031,9 @@ export function activateTitlePopupMenuItem(
       parentEntry && !parentEntry.window.isDestroyed() ? parentEntry.window : null
     void bindings.confirmAndCloseAllHostWindows(parentWindow)
   } else if (id === 'settings') {
-    // Open the Global Settings popup. The host's active installation
-    // (null on chooser hosts) drives the install-scoped Update Channel
-    // + Copy & Update controls.
-    //
-    // `openGlobalSettingsForHost` now opens synchronously (it no longer
-    // awaits the GitHub-stars fetch), reusing this popup's view via the
-    // kind-switch in `openTitlePopup` — which already dismisses the menu.
-    // Returning here skips the trailing `hideTitlePopup(entry)` below,
-    // which would otherwise immediately hide the settings popup we just
-    // opened on the same shared view.
+    // Open Global Settings for the host's active installation, or null on a chooser.
+    // The call reuses this popup view and dismisses the menu through openTitlePopup.
+    // Return immediately so the trailing hideTitlePopup does not hide the settings view.
     if (parentEntry && !parentEntry.window.isDestroyed()) {
       openGlobalSettingsForHost(
         parentEntry,
@@ -3026,7 +3007,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     // Reuse the current window only when it's the bare dashboard (no
     // install attached). An install-backed host opens a NEW window booted
     // straight into the new-install flow, so the running instance in this
-    // window keeps running undisturbed (issue #629).
+    // window keeps running undisturbed.
     if (parentEntry.installationId === null) {
       bindings.setActivePanel(entry.parentEntryId, 'new-install')
     } else {

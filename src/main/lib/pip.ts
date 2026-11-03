@@ -20,14 +20,11 @@ export const VALID_PIP_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const COLOUR_FORCING_VARS = new Set(['FORCE_COLOR', 'CLICOLOR_FORCE'])
 
 /**
- * Environment for a `uv` subprocess, with colour forced off.
+ * Environment for a uv subprocess with colour forced off.
  *
- * `uv` honours `FORCE_COLOR` / `CLICOLOR_FORCE` even when its stdout is a pipe,
- * so whatever env the app was launched with can wrap every package name in SGR
- * codes — `\x1b[1maiohttp\x1b[0m==3.9.5` instead of `aiohttp==3.9.5`. Parsed
- * output must never carry them: in #1514 those names were fed back to
- * `uv pip uninstall`, which rejected them all and tipped the restore into a
- * revert that deleted the user's environment.
+ * uv honours FORCE_COLOR and CLICOLOR_FORCE even when stdout is a pipe.
+ * ANSI escapes in package names make freeze output unusable as package names
+ * or uv pip arguments, so subprocess output must remain plain text.
  */
 export function uvEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: Record<string, string | undefined> = {}
@@ -262,7 +259,7 @@ export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean
  * ANSI escapes are stripped before parsing, not after: a colourised stream
  * yields `\x1b[1maiohttp\x1b[0m==3.9.5`, and a name carrying those bytes is
  * both unmatchable against a snapshot and unusable as a `uv pip` argument
- * (#1514). Callers pass the raw stdout; nothing downstream sees an escape.
+ *. Callers pass the raw stdout; nothing downstream sees an escape.
  */
 export function parsePipFreeze(output: string): Record<string, string> {
   // Null prototype: consumers test membership with `in`, so an inherited

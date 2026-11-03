@@ -63,8 +63,8 @@ async function fsyncDirBestEffortAsync(dirPath: string): Promise<void> {
 /** Times a read fell back to `.bak` content (primary missing, empty, or locked
  *  past the retry budget - the counter does not distinguish which). Exposed so
  *  telemetry can flag machines whose settings reads are being served from the
- *  backup - the environment behind the Desktop update reinstall loop
- *  (issue #1367). */
+ *  backup.
+ */
 let _bakFallbacks = 0
 
 export function getSafeFileDiagnostics(): { bakFallbacks: number } {
@@ -126,7 +126,7 @@ export interface SafeWriteOptions {
   /** fsync the temp file before the rename (plus a best-effort fsync of the
    *  parent directory after it) so the finished write survives power loss.
    *  Reserved for small files whose loss reopens a failure loop (the startup
-   *  attempt marker, issue #1367); ordinary settings-style writes skip the
+   *  attempt marker); ordinary settings-style writes skip the
    *  cost. */
   durable?: boolean
 }
@@ -192,7 +192,7 @@ export function writeFileSafe(
  *  `.bak` is only restored OVER the primary when the primary is genuinely
  *  absent (ENOENT) or empty. A transiently locked primary (antivirus, indexer)
  *  still exists and is typically NEWER than `.bak`, so restoring would roll
- *  back the most recent writes (issue #1367: that rollback erases the
+ *  back the most recent writes (that rollback erases the
  *  startup-update loop-breaker marker). Locked reads are retried, then served
  *  from `.bak` WITHOUT restoring, tagged `primaryUnreadable` so callers about
  *  to write back must fail closed (see `SafeReadOutcome`). */

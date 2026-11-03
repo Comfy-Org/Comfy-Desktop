@@ -140,7 +140,7 @@ describe('findAvailablePort', () => {
     }
   })
 
-  // Regression for #806: when a port is reported "free" by a flawed
+  // When a port is reported "free" by a flawed
   // single-bind probe but is actually owned by a process listening on a
   // wildcard or different-family interface, the old logic returned the busy
   // port. `findAvailablePort` must walk past *every* busy port in sequence,

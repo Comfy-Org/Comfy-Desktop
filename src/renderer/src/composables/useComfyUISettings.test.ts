@@ -799,7 +799,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     useSessionStore().launchingInstances.set(id, { installationName: id.toUpperCase() })
   }
 
-  // The boot window (#1300): the spawned process consumed its configuration
+  // The boot window: the spawned process consumed its configuration
   // at launch start, so an edit made while it boots is not reflected in it -
   // it must surface the restart CTA once the instance is running.
   it('marks dirty during the boot window and keeps it once the instance is running', async () => {

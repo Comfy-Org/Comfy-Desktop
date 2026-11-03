@@ -1156,10 +1156,9 @@ describe('agentTap consent gating', () => {
   })
 })
 
-// The host's startup records, byte-identical to cloud's
-// services/agent/packaging/testdata/startup_events.txt, and the step ids to
-// its startup_step_ids.txt. The events, operations and files were copied
-// from Comfy-Org/cloud#16572 at d595cd23054; re-copy them when cloud changes.
+// The startup events and step ids mirror the Cloud agent's contract in
+// services/agent/packaging/testdata/startup_events.txt and startup_step_ids.txt.
+// Keep the event, operation, and file fixtures in sync with that contract.
 const STARTUP_FIXTURE = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-events.txt'), 'utf8')
   .trimEnd()

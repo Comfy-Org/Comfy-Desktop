@@ -30,8 +30,10 @@ export interface KnownSettings {
   installDir: string
   language?: string
   theme?: string
-  /** Legacy "check for updates on startup" toggle. No longer gated on a setting;
-   *  kept in the schema so existing settings.json files don't lose data. */
+  /**
+   * Compatibility field retained so existing settings.json files preserve their data.
+   * Update checks do not read this setting.
+   */
   autoUpdate?: boolean
   /** When true (default), Desktop updates download and install silently; when
    *  false, the user is prompted before any download/install. */
@@ -184,7 +186,7 @@ type SettingEmitter<K extends keyof KnownSettings> =
   | { kind: 'presence'; prop: string }
 
 /**
- * Per-setting tracking policy (issue #1223). Every `SETTINGS_SCHEMA` entry MUST
+ * Per-setting tracking policy. Every `SETTINGS_SCHEMA` entry MUST
  * declare one, so a new setting can't silently ship untracked:
  *  - `'value'`   — emit the setting's value. Use `toTelemetry` to coalesce
  *                  default-on/off booleans and platform-gate Windows-only keys;
@@ -247,14 +249,12 @@ const SETTINGS_SCHEMA = {
   // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
   // it carries no signal.
   theme: { nullable: false, telemetry: { policy: 'omit' } },
-  // Legacy toggle no longer gated on a setting (see KnownSettings), so its value
-  // has no effective meaning — don't emit it as if it did.
+  // The compatibility update-check setting has no effect and must not emit a property.
   autoUpdate: { nullable: false, telemetry: { policy: 'omit' } },
   autoInstallUpdates: {
-    // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
-    // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.
-    // `auto_install_updates_explicit` separates users who explicitly chose a value
-    // from the default-on majority (the opt-in/out cohort from #1220).
+    // Default-on: any non-false value, including a missing one, is enabled.
+    // Mirrors isAutoInstallEnabled() in updater.ts. auto_install_updates_explicit
+    // separates an explicit choice from the default-on value.
     nullable: false,
     telemetry: {
       policy: 'multi',
@@ -315,9 +315,8 @@ const SETTINGS_SCHEMA = {
   pendingDesktopUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
   pendingDesktopUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   installUpdatesOnStartup: {
-    // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
-    // ("not applicable") to keep it distinct from an explicit opt-out. Exact
-    // prop name required by #1220.
+    // Windows-only and default-on. Report null on other platforms so an inapplicable
+    // gate is distinct from an explicit opt-out.
     nullable: false,
     telemetry: {
       policy: 'value',
@@ -476,8 +475,7 @@ function load(): Settings {
  *  budget), so this call is serving bare defaults or stale `.bak` content in
  *  its place. `set()` refuses to persist while that holds - the file's real
  *  content is unknown, so saving anything derived from the stand-in would
- *  overwrite the user's intact, newer settings (the failure environment of
- *  issue #1367). */
+ *  overwrite the user's intact, newer settings. */
 function loadOutcome(preRead?: SafeReadOutcome): {
   settings: Settings
   unreadable: boolean
@@ -510,11 +508,8 @@ function loadOutcome(preRead?: SafeReadOutcome): {
   const result: Settings = { ...defaults, ...(parsed || {}) }
   let changed = false
 
-  // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
-  // user-editable predecessor of `maxCachedDownloads`; its old value is
-  // discarded so everyone adopts the new default. `closeDirectlyOnLastWindow`
-  // backed the removed last-window quit toggle (close confirmation is now gated
-  // by `confirmBeforeClosingWindow`, off by default).
+  // Discard obsolete maxCachedFiles and closeDirectlyOnLastWindow keys.
+  // Cache limits and close confirmation use the current settings and defaults.
   for (const key of [
     'primaryInstallId',
     'pinnedInstallIds',
@@ -694,7 +689,7 @@ export function set<K extends string>(
 ): void {
   const { settings, unreadable } = loadOutcome()
   if (unreadable) {
-    // Fail closed (issue #1367): settings.json exists but can't be read right
+    // Fail closed: settings.json exists but can't be read right
     // now, so `settings` holds bare defaults or stale .bak content. Persisting
     // would replace the user's intact, newer file; dropping this write is the
     // lesser harm.
@@ -806,7 +801,7 @@ function toScalarOrNull(v: unknown): SettingTelemetryValue {
 
 /**
  * Build the durable telemetry snapshot of the tracked global settings, driven by
- * each `SETTINGS_SCHEMA` entry's `telemetry` policy (issue #1223). Returned as a
+ * each `SETTINGS_SCHEMA` entry's `telemetry` policy. Returned as a
  * flat `prop -> scalar` map suitable for PostHog person properties or as event
  * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean,
  * `'value'` keys emit their (optionally transformed) scalar, and `'multi'` keys

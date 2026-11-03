@@ -95,7 +95,7 @@ export async function captureState(
   // uv otherwise. Using the plain `getUvPath(installPath)` here meant
   // adopted installs (which have no standalone-env) failed `fs.existsSync`
   // and skipped the freeze, leaving every boot snapshot with `0 packages`
-  // in the UI for freshly-migrated installs (issue #855).
+  // in the UI for freshly-migrated installs.
   const uvPath = getActiveUvPath(installation)
   const pythonPath = getActivePythonPath(installation)
   if (fs.existsSync(uvPath) && pythonPath) {
@@ -451,9 +451,7 @@ function snapshotRepresentsCurrentState(
  * Repair safety-net: guarantee the newest snapshot reflects the actual live
  * environment.
  *
- * This is NOT the primary fix for the #1137 "failed restore shows the unapplied
- * target as Latest" bug — that is solved by never committing an imported target
- * to history until the restore succeeds (see exportImport.ts / AGENTS.md). After
+ * Imported targets enter history only after a successful restore. After
  * a normal failed restore the previous in-history snapshot already represents
  * the rolled-back live state, so this is a no-op.
  *
@@ -470,7 +468,7 @@ function snapshotRepresentsCurrentState(
  * `label` names the entry when one is genuinely written. Callers on a failed or
  * cancelled restore pass one so the resulting row does not read as a completed
  * restore: the trigger is still `post-restore` (that IS the state's provenance),
- * but the label says the restore did not finish (#1514).
+ * but the label says the restore did not finish.
  */
 export async function ensureCurrentSnapshotOnTop(
   installPath: string,

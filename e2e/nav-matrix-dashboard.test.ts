@@ -1,5 +1,5 @@
 /**
- * E2E: instance/window navigation matrix — Dashboard → X (issue #926).
+ * E2E: instance/window navigation matrix — Dashboard → X.
  *
  * Drives the real picker bridge (`window.__comfyTitlePopup`) from a dashboard
  * (chooser) host and asserts the navigation outcome via recorded IPC

@@ -27,9 +27,8 @@
  * macOS is excluded for a different reason: nothing isolates it. `configDir()` resolves to
  * Electron's `userData` there, which ignores the harness's HOME override, so the ops-flag seed
  * these specs need would be written into the developer's (or runner's) REAL profile — leaving
- * the seeded rollout enabled after the run and leaking state into later tests. Fixing that
- * needs the harness to redirect `userData` before main resolves any path, which is a change to
- * app startup and does not belong in this PR.
+ * the seeded rollout enabled after the run and leaking state into later tests. The harness must
+ * redirect userData before main resolves paths to isolate macOS runs.
  *
  * Specs using this fixture are therefore tagged `@linux` only.
  */

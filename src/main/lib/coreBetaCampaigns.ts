@@ -37,7 +37,7 @@ const ENROL_FUTURE_SKEW_MS = 60 * 60 * 1000
 /** Checked at every launch: `opsFlag` never expires a saved answer, so this is the only bound. */
 export const HOLD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-/** Read by the agent requirements override through `appliedPassThrough`, at #1559's install step. */
+/** Read by the agent requirements override through `appliedPassThrough` during installation. */
 const AGENT_PASS_THROUGH_FIELD = 'agent_requirements_override'
 
 export interface CampaignRegistryEntry {

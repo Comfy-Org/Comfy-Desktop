@@ -293,12 +293,8 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         actionId: showOpts.actionId
       })
     }
-    // Every show-progress op renders as a Tier 3 brand takeover now —
-    // delete, copy, migrate, install, update, launch, and snapshot ops
-    // share the same loader chrome (BrandTakeoverLayout + glyph +
-    // wordmark + brand progress bar + brand finished-state banner).
-    // The legacy ModalShell variant of ProgressModal was removed in
-    // the same phase; `brandChrome` is no longer a toggle.
+    // All show-progress operations share the takeover layout, progress bar,
+    // and finished-state banner.
     const ok = await openOverlay({
       kind: 'takeover',
       component: 'update',
@@ -464,10 +460,9 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   }
 
   /**
-   * Switch the underlying panel body. Flow keys divert into the Tier 3
-   * takeover overlay slot instead of swapping the body. Per-install settings
-   * is no longer a panel key — it's reached via `openInstancePicker(mode:
-   * 'expanded')`. Global Settings is reached via `openGlobalSettings()`.
+   * Switch the panel body, routing flow keys into the takeover overlay.
+   * Per-install settings open in the instance picker; global settings use
+   * openGlobalSettings().
    */
   async function switchPanel(panel: PanelKey, entrypoint: string = 'titlebar'): Promise<void> {
     const fromView = activePanel.value

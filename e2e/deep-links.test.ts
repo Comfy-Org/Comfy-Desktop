@@ -118,8 +118,7 @@ test('comfy://open-settings?tab=comfy on chooser host opens the picker (compact 
   const calls = await getIpcInvocations(ctx.app, PICKER_CHANNEL) as OpenInstancePickerCall[]
   // Chooser fallback fires `openInstancePicker()` with no args; the preload
   // bridge normalises that into a payload with `installationId` null so the
-  // picker opens unanchored to any install. (The compact/expanded mode split
-  // was removed — the picker has a single view now.)
+  // picker opens unanchored to any install.
   expect(calls[0]).toMatchObject({
     installationId: null,
     initialTab: null,

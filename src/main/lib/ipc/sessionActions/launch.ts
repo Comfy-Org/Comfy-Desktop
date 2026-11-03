@@ -1058,7 +1058,7 @@ async function runLaunch(
   // The startup model-download pass (migrate legacy final-path partials,
   // hydrate staged `.part` downloads) runs to completion before ComfyUI can
   // scan the model dirs, so a truncated file cannot masquerade as a loadable
-  // model (#1322). Memoized - normally already done long before the first
+  // model. Memoized - normally already done long before the first
   // launch. An UNSAFE result (a known-incomplete file is still visible under
   // a final model name, or the pass could not certify the roots) NEVER blocks
   // the launch: at worst ComfyUI sees a file that fails to load, which is
@@ -2099,7 +2099,7 @@ async function runLaunch(
   const portBusy = !pendingPortOwner && (await isPortListening(launchCmd.port!))
   const existingPids = pendingPortOwner || !portBusy ? [] : await findPidsByPort(launchCmd.port!)
   const portOccupied = !!pendingPortOwner || portBusy
-  // Where the pre-launch auto bump moved from, for `boot_started`.
+  // Version before the pre-launch auto-update, reported in boot_started.
   let portBumpedFrom: number | null = null
 
   if (portOccupied) {
@@ -2523,9 +2523,8 @@ async function runLaunch(
           return tryLaunch()
         } catch {}
       }
-      // Carry the in-memory stderr tail + exit info out so `boot_failed` can
-      // report the actual error. The buffer lives in main (survives a hard
-      // child crash) but was previously discarded on the failure path.
+      // Carry the main-process stderr tail and exit information into boot_failed so
+      // a hard child crash still reports the actual error.
       const failureStderr = spawned.getStderr()
       return {
         ok: false,

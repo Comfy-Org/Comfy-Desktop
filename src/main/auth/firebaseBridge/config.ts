@@ -1,7 +1,6 @@
 /**
- * Firebase project configs. Must mirror the cloud frontend's
- * `src/config/firebase.ts`. Values are public (apiKey is a project
- * identifier, not a secret), so hardcoding them here is fine.
+ * Public Firebase project configuration, kept in sync with the Cloud frontend.
+ * The apiKey identifies the project and is not a secret.
  */
 export interface FirebaseProjectConfig {
   apiKey: string

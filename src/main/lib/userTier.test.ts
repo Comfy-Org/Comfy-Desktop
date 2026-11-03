@@ -261,8 +261,7 @@ describe('FETCH_TIER_JS', () => {
   }
 
   it('reads the token from localStorage, where the session settles', async () => {
-    // The regression. Before this fix the script looked only in IndexedDB, which the SDK clears
-    // once the auth store moves the record — so every signed-in cloud session read as signed out.
+    // Read the live localStorage session after Firebase moves it out of IndexedDB.
     const { result, authHeaders } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]]
     })
@@ -297,8 +296,7 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('falls back when localStorage EXISTS but access throws', async () => {
-    // Blocked or partitioned storage — the case whose test previously never ran, because the stub
-    // returned undefined before it reached the throwing branch.
+    // Reading blocked or partitioned storage.
     const { result } = await run({
       localStorageThrows: true,
       entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]

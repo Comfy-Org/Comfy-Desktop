@@ -123,9 +123,8 @@ export function registerProcessErrorHandlers(): void {
   })
 
   app.on('render-process-gone', (_event, _webContents, details) => {
-    // Renderer crashes (Vue UI dying, OOM, integrity failure) are a separate
-    // event from child-process-gone and were not previously captured at the
-    // app level. `clean-exit` is normal teardown, so don't treat it as a fault.
+    // Report renderer crashes separately from child-process crashes.
+    // A clean-exit is normal teardown and must not be reported as a fault.
     if (details.reason === 'clean-exit') return
     writeAppLogSync(
       'CRITICAL',

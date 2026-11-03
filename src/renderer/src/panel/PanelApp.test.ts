@@ -2296,8 +2296,7 @@ describe('PanelApp', () => {
       // Without this IPC, main's `entry.activePanel` stays stuck on the
       // wizard key after the renderer-side dismiss; the next file-menu
       // pick of the same item hits `setActivePanel`'s same-panel
-      // early-return and the modal silently fails to reopen
-      // (Comfy-Org/Comfy-Desktop#486).
+      // early-return and the modal silently fails to reopen.
       window.history.replaceState({}, '', `/?panel=${panel}&firstUseCompleted=true`)
       const wrapper = mountPanel()
       await flushPromises()
@@ -2396,7 +2395,7 @@ describe('PanelApp', () => {
   })
 
   it('marks firstUseCompleted=true on returning-user complete-skip WITHOUT auto-launching cloud', async () => {
-    // Issue #476 — when `skipPick` is true (returning user with prior
+    // when `skipPick` is true (returning user with prior
     // local installs), accepting consent emits `complete-skip` rather
     // than `complete-cloud`. The host must mark completion and dismiss,
     // but MUST NOT launch the seeded cloud install: the user never
@@ -2526,8 +2525,7 @@ describe('PanelApp', () => {
     expect(feedbackTelemetry.map((e) => e.context?.source)).toEqual(['titlebar', 'menu'])
     // FeedbackModal teleports its iframe to <body>, so query the
     // document directly rather than the wrapper subtree. The iframe
-    // src is the resolved support URL — same payload we used to send
-    // through `openFeedback`.
+    // src is the resolved support URL.
     const frame = document.body.querySelector<HTMLIFrameElement>('iframe.feedback-modal-frame')
     expect(frame).not.toBeNull()
     const url = frame?.getAttribute('src') ?? ''
@@ -2561,14 +2559,9 @@ describe('PanelApp', () => {
   })
 
   it('opens the instance picker (expanded, Update tab) and auto-fires update when a panel-trigger-overlay install-update event arrives', async () => {
-    // The title-bar install-update pill click is forwarded by main
-    // as an `onPanelTriggerOverlay` event with
-    // `kind: 'install-update'`. Post-redesign the panel renderer
-    // routes that into the instance picker popup (expanded, Update
-    // tab) instead of mounting a Tier 1 DetailModal — same surface
-    // the chooser-card kebab Update entry now opens. It also seeds
-    // `autoAction: 'update-comfyui'` so the user lands directly on the
-    // update-confirm modal rather than just staring at the Update tab.
+    // Main forwards the title-bar install-update click as an install-update overlay
+    // event. Open the instance picker's Update tab with autoAction: update-comfyui
+    // so the confirmation opens immediately.
     mountPanel()
     await flushPromises()
     const api = (window as unknown as { api: { openInstancePicker: ReturnType<typeof vi.fn> } }).api
@@ -2703,7 +2696,7 @@ describe('PanelApp', () => {
   })
 
   it('shows the "Desktop Update Ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
-    // Issue #488 — auto-on click on the 'ready' pill (or the auto
+    // auto-on click on the 'ready' pill (or the auto
     // restart-prompt that fires on user-initiated download
     // completion) routes through `app-update-restart-prompt`. The
     // panel renderer pops a confirm modal; clicking Restart calls
@@ -2740,7 +2733,7 @@ describe('PanelApp', () => {
   })
 
   it('shows the "Desktop Update Available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
-    // Issue #488 — auto-off click on the 'available' pill routes
+    // auto-off click on the 'available' pill routes
     // through `app-update-download-prompt`. Clicking Download calls
     // `downloadUpdate()`; the auto restart-prompt fires later (covered
     // by `onAppUpdatePromptRestart`).
@@ -2762,8 +2755,7 @@ describe('PanelApp', () => {
   })
 
   it('auto-shows the restart prompt when onAppUpdatePromptRestart fires (auto-off post-download)', async () => {
-    // Closes the loop on the auto-off "Download → wait → Restart"
-    // single-gesture flow described in issue #488.
+    // Cover the auto-off Download → wait → Restart flow.
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -2805,7 +2797,7 @@ describe('PanelApp', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Telemetry (issue #485) — verify `comfy.desktop.install.flow.opened`
+  // Telemetry — verify `comfy.desktop.install.flow.opened`
   // and `comfy.desktop.view.opened` fire from PanelApp's
   // `openFlowTakeover` / `switchPanel`.
   //
@@ -2946,9 +2938,8 @@ describe('PanelApp', () => {
   })
 
   describe('window close consult', () => {
-    // With no Tier 2/3 overlay open, the renderer no longer confirms — it
-    // defers, and main owns the Close Window / dashboard / quit decision
-    // (the panel renderer is unreliable behind a running ComfyUI view).
+    // With no active overlay, the renderer defers close confirmation to main.
+    // The panel may be hidden behind a running ComfyUI view.
     it('defers an install-backed ✕ to main when no overlay is open (no renderer modal)', async () => {
       // Default URL already set in beforeEach: installationId=test-id
       mountPanel()

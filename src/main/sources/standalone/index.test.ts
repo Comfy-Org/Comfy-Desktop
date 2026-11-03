@@ -443,9 +443,8 @@ describe('standalone.getFieldOptions release', () => {
   })
 
   it('Stable entry threads the upstream stable tag through data.latestStableTag', async () => {
-    // The variant card reads `data.latestStableTag` to show the version
-    // the user lands on after post-install update — that survived the
-    // IPP-label cleanup so issue #708 stays fixed.
+    // The variant card uses data.latestStableTag for the version reached after
+    // the post-install update.
     setupMockReleases()
     mockedGetLatestStableTag.mockResolvedValue('v1.19.5')
     const options = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
@@ -595,7 +594,7 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   })
 })
 
-// --- getFieldOptions('variant') — version-display consistency (issue #708) ---
+// --- getFieldOptions('variant') — version-display consistency ---
 
 describe('standalone.getFieldOptions variant version display', () => {
   // The newest R2 standalone bundle ships an OLDER ComfyUI (0.20.1) than the
@@ -651,7 +650,7 @@ describe('standalone.getFieldOptions variant version display', () => {
     const card = variants.find((o) => o.value === vendorId)!
     // Picking 'latest' fast-forwards the install to master HEAD (a few commits
     // past the latest stable tag), so the card advertises that as a nightly â€”
-    // not the much older ComfyUI baked into the bundle (issue #1068).
+    // not the much older ComfyUI baked into the bundle.
     expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
     expect(card.description).not.toContain('ComfyUI 0.20.1')
   })

@@ -1,5 +1,5 @@
 /**
- * Dashboard Delete fast-path E2E (regression for issue #582 fix #4).
+ * Dashboard Delete fast-path E2E.
  *
  * Drives the full chooser-kebab → Delete confirm → ProgressModal →
  * directory removed flow and asserts:

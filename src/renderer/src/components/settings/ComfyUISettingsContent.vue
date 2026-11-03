@@ -198,8 +198,7 @@ watch(autoActionKey, (next, prev) => {
 watch(
   [() => autoActionKey.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
   async ([key, installId, isFresh]) => {
-    // `isFresh` guards against acting on a previous install's stale
-    // payload — sections are no longer blanked on switch.
+    // Only act on fresh sections; the visible payload can belong to the previous selection.
     if (!installId || !key || !isFresh) return
     if (consumedAutoActionKey.value === key) return
     const autoAction = props.autoAction

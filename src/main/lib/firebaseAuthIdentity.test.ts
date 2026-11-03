@@ -502,8 +502,8 @@ describe('firebaseAuthIdentity consensus', () => {
       vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
       vi.clearAllMocks()
 
-      // The wedge no longer vetoes: a real logout and account switch in the
-      // healthy window detach and rebind instead of staying attributed to F.
+      // Logout and account changes in a healthy window must detach and rebind identity
+      // even when another window cannot report.
       reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_out' })
       expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
 

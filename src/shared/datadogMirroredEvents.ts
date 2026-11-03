@@ -45,10 +45,9 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // monitor filters on `status:error` to page on a phase failure (e.g.
   // torch_deps_sync hard-failing for a population after a release).
   'comfy.desktop.install.phase',
-  // Onboarding→install handoff abort (#1224): the user left the install path
+  // Onboarding→install handoff abort: the user left the install path
   // without dispatching an install (wizard_cancelled / add_installation_failed /
-  // dispatch_no_entry / back_to_local_branch). This is the previously-silent
-  // new-user drop-off; a monitor filters on the failure-class `reason`s so a
+  // dispatch_no_entry / back_to_local_branch). A monitor filters on the failure-class `reason`s so a
   // spike after a release pages ops. `install.dispatched` is the paired success
   // gate and stays PostHog-only (product/funnel, not an alerting signal).
   'comfy.desktop.install.not_started',
@@ -99,8 +98,7 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   'comfy.desktop.pygit2.probe_failed',
   'comfy.desktop.pygit2.circuit_broken',
   // Assets scan-pipeline failures: the fourteen failure names in assetsTap's
-  // ALLOWED_EVENTS. Mirrored for failure-rate monitors; supersedes the
-  // mirroring capability of Comfy-Desktop#1490. The paired
+  // ALLOWED_EVENTS. Mirrored for failure-rate monitors. The paired
   // success/informational events (assets.enabled, seeder.scan_started/
   // scan_completed/scan_cancelled/marked_missing,
   // scanner.hash_discarded_modified) stay PostHog-only — the same split as

@@ -583,7 +583,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     })
   })
 
-  // Regression for #1007: a "Copied from/as X" event that sorts above the
+  // A "Copied from/as X" event that sorts above the
   // newest snapshot must not steal the "Latest" designation. Latest tracks the
   // newest *snapshot* (snapshotIndex === 0), not the merged timeline index.
   describe('latest detection with copy events (#1007)', () => {
