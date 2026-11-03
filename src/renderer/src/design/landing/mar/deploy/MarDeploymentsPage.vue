@@ -9,21 +9,42 @@ import { deployEnv, instances, proto } from '../../useProto'
 import { PROJECTS } from '../../mock'
 import { SPACES } from '../../spaces'
 import MarPage from '../pages/MarPage.vue'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
 import DeploymentsTable from './DeploymentsTable.vue'
 
 /**
  * Deployments (Mar's proposal): the library page frame every Create page
  * uses (MarPage): title and one primary action, the filters as the
- * toolbar, then the one table.
+ * toolbar (state on the left, filters and search on the right, as on
+ * Workflows), then the one table.
  */
 const firstLocal = computed(() => instances.value.find((i) => i.kind === 'local'))
+type State = 'all' | 'running' | 'idle'
+const live = ref<State>('all')
+const query = ref('')
 const project = ref('all')
 const space = ref('all')
 const projectsOf = (envId: string): string[] =>
   PROJECTS.filter((p) => p.envId === envId).map((p) => p.name)
+const STATES = computed(() => [
+  { value: 'all' as const, label: 'All', count: deployments.value.length },
+  {
+    value: 'running' as const,
+    label: 'Running',
+    count: deployments.value.filter((d) => d.status === 'running').length
+  },
+  {
+    value: 'idle' as const,
+    label: 'Scaled to zero',
+    count: deployments.value.filter((d) => d.status !== 'running').length
+  }
+])
 const list = computed(() =>
   deployments.value.filter(
     (d) =>
+      (live.value === 'all' || (live.value === 'running') === (d.status === 'running')) &&
+      d.name.toLowerCase().includes(query.value.trim().toLowerCase()) &&
       (!proto.projects || project.value === 'all' || projectsOf(d.envId).includes(project.value)) &&
       (!proto.spaces ||
         space.value === 'all' ||
@@ -66,10 +87,12 @@ const deploy = (): void => {
       >
     </template>
 
-    <template v-if="proto.signedIn && (proto.projects || proto.spaces)" #toolbar>
+    <template v-if="proto.signedIn" #toolbar>
+      <MarSeg v-model="live" :options="STATES" label="State" />
       <div class="ml-auto flex items-center gap-2">
-        <Select v-if="proto.projects" v-model="project" :options="PROJECT_OPTIONS" class="w-44" />
+        <Select v-if="proto.projects" v-model="project" :options="PROJECT_OPTIONS" class="w-40" />
         <Select v-if="proto.spaces" v-model="space" :options="SPACE_OPTIONS" class="w-40" />
+        <MarSearchField v-model="query" placeholder="Search deployments" />
       </div>
     </template>
 

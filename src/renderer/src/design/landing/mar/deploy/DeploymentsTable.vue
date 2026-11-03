@@ -20,7 +20,7 @@ const { list, projectsOf } = defineProps<{
 // Deployment, [Project], [Space], Build, Endpoint, Status, Req, Errors, Spend, Trend
 const grid = computed(
   () =>
-    `--mar-grid: minmax(0, 1.3fr) ${proto.projects ? 'minmax(0, 0.9fr) ' : ''}${proto.spaces ? '132px ' : ''}minmax(0, 1fr) minmax(0, 1fr) 120px 64px 56px 72px 88px`
+    `--mar-grid: minmax(0, 1.4fr) ${proto.projects ? 'minmax(0, 1fr) ' : ''}${proto.spaces ? 'minmax(0, 0.8fr) ' : ''}minmax(0, 1fr) minmax(0, 0.9fr) 132px 64px 56px 72px 88px`
 )
 const spaceOf = (id?: string) => (id ? SPACES.find((s) => s.id === id) : undefined)
 </script>
