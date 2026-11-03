@@ -195,22 +195,6 @@
     "dismiss": "Dismiss",
     "showWindow": "Show Window"
   },
-  "downloads": {
-    "title": "Model Downloads",
-    "empty": "No downloads in progress.",
-    "pause": "Pause",
-    "resume": "Resume",
-    "cancel": "Cancel",
-    "dismiss": "Dismiss",
-    "view": "View",
-    "pending": "Starting…",
-    "downloading": "Downloading… {percent}%",
-    "paused": "Paused · {percent}%",
-    "completed": "Complete",
-    "cancelled": "Cancelled",
-    "error": "Failed",
-    "sizeProgress": "{received} / {total}"
-  },
   "media": {
     "sharedDirs": "Media",
     "inputDir": "Shared Input",
@@ -735,47 +719,6 @@
     "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
   },
   "announcement": {
-    "minimax": {
-      "title": "MiniMax H3 is now on ComfyUI",
-      "lead": "MiniMax's latest open source, SOTA video model, available now",
-      "highlights": [
-        "Run for free on Comfy Cloud or Comfy Desktop",
-        "Works with your existing ComfyUI workflows",
-        "Want to use it commercially? Reach out to get a license"
-      ],
-      "requestLicenseCta": "Request License",
-      "learnMoreCta": "Learn More",
-      "imageAlt": "MiniMax H3 announcement",
-      "unmute": "Unmute video",
-      "mute": "Mute video"
-    },
-    "cloudNodes": {
-      "title": "Run open weight models on Comfy Cloud GPUs",
-      "lead": "New Comfy Cloud nodes run the latest open weight models on our hardware, from inside your own graph",
-      "highlights": [
-        "No subscription: an account and credits are enough",
-        "Nothing to download and no VRAM floor"
-      ],
-      "primaryCta": "Read More",
-      "beta": "In beta: the node set is still changing, so options may be added or removed and a workflow may be retired.",
-      "docsCta": "Read the Docs",
-      "imageAlt": "Comfy Cloud nodes announcement",
-      "unmute": "Unmute video",
-      "mute": "Mute video"
-    },
-    "comfyRouter": {
-      "title": "Introducing Comfy Router",
-      "lead": "One API for the latest frontier media models",
-      "highlights": [
-        "Call the latest image, video, 3D, and audio models from your own scripts, tools, and apps using the Comfy credits you already have.",
-        "Add new models without setting up a separate account or integration for every provider.",
-        "When a model has multiple providers, choose based on price or availability and switch without rewriting your integration."
-      ],
-      "primaryCta": "Learn About Comfy Router",
-      "imageAlt": "Comfy Router announcement",
-      "unmute": "Unmute video",
-      "mute": "Mute video"
-    },
     "comfyApi": {
       "title": "Introducing Comfy API",
       "lead": "Deploy your ComfyUI workflows as production APIs. Package your workflow with its custom nodes and models, and deploy it as an endpoint that apps and tools can call. Nothing changes in how you use ComfyUI.",
