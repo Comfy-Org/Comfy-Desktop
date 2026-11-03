@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Modal from './Modal.vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -40,6 +41,7 @@ withDefaults(
 const emit = defineEmits<{ close: [] }>()
 
 const { t } = useI18n()
+const titleId = `view-modal-title-${useId()}`
 </script>
 
 <template>
@@ -49,6 +51,8 @@ const { t } = useI18n()
     :width="width"
     :content-class="contentClass"
     :inline="inline"
+    :aria-label="title || undefined"
+    :aria-labelledby="title ? undefined : titleId"
     @close="emit('close')"
   >
     <div
@@ -56,15 +60,16 @@ const { t } = useI18n()
     >
       <slot name="header">
         <div
+          :id="titleId"
           class="view-modal-title flex min-w-0 flex-1 items-center gap-1.5 truncate text-[18px] font-semibold text-text [&:hover_.edit-name-hint]:opacity-60 [&:focus_.edit-name-hint]:opacity-0"
         >
           <slot name="title">{{ title }}</slot>
         </div>
         <Button
           v-if="!hideClose"
-          variant="textonly"
-          size="unset"
-          class="view-modal-close static inline-block shrink-0 rounded-lg border-none bg-transparent px-2 py-1 text-[18px] leading-none font-normal text-text-muted appearance-auto transition-none hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
+          variant="muted-textonly"
+          size="icon"
+          class="view-modal-close shrink-0 text-lg"
           :title="t('common.close')"
           :aria-label="t('common.close')"
           @click="emit('close')"

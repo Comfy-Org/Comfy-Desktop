@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
+import Input from '@comfyorg/design-system/input/Input'
 import BaseModal from './BaseModal.vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
@@ -53,16 +54,12 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const TITLE_ID = 'base-prompt-title'
+const TITLE_ID = `base-prompt-title-${useId()}`
+const inputId = `base-prompt-input-${useId()}`
 
-// Preserve the existing button sizing and native focus outline while using
-// the shared component. The main action is the current white/inverted action.
-const buttonClass =
-  '[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]'
 const linkClass =
   '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--accent)] [&_.modal-link]:underline'
 
-const inputRef = ref<HTMLInputElement | null>(null)
 const inputValue = ref('')
 const error = ref('')
 
@@ -89,10 +86,6 @@ watch(
     if (isOpen && !wasOpen) {
       inputValue.value = props.defaultValue
       error.value = ''
-      void nextTick(() => {
-        inputRef.value?.focus()
-        inputRef.value?.select()
-      })
     }
   },
   { immediate: true }
@@ -154,16 +147,19 @@ watch(
       </div>
 
       <div class="base-prompt-field flex flex-col gap-1">
-        <label class="base-prompt-field-label text-[13px] font-semibold text-text">
+        <label :for="inputId" class="base-prompt-field-label text-[13px] font-semibold text-text">
           {{ inputLabel ?? $t('common.name') }}
         </label>
-        <input
-          ref="inputRef"
+        <Input
+          :id="inputId"
           v-model="inputValue"
+          autofocus
           type="text"
-          class="base-prompt-input mt-1.5 w-full rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-100/4 px-2.5 py-2 text-[14px] text-neutral-100 outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)]"
+          class="base-prompt-input mt-1.5 w-full"
           :placeholder="placeholder"
+          :aria-invalid="error ? true : undefined"
           :data-testid="testIdInput ?? TID.basePromptInput"
+          @focus="($event.target as HTMLInputElement).select()"
           @keydown.enter.prevent.stop="submit"
         />
         <div v-if="error" class="base-prompt-error min-h-3 text-[13px] text-danger">
@@ -176,11 +172,7 @@ watch(
       <Button
         type="button"
         variant="secondary"
-        size="unset"
-        :class="[
-          buttonClass,
-          'border-[var(--border)] bg-surface text-text hover:bg-[var(--border)]'
-        ]"
+        size="lg"
         :data-testid="testIdCancel ?? TID.basePromptCancel"
         @click="cancel"
       >
@@ -189,11 +181,7 @@ watch(
       <Button
         type="button"
         variant="inverted"
-        size="unset"
-        :class="[
-          buttonClass,
-          'border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-background hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
-        ]"
+        size="lg"
         :data-testid="testIdAction ?? TID.basePromptAction"
         @click="submit"
       >

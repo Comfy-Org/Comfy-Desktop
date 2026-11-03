@@ -18,8 +18,9 @@ const i18n = createI18n({
 
 const wrappers: VueWrapper[] = []
 
-function mountPrompt(props: Record<string, unknown> = {}) {
+async function mountPrompt(props: Record<string, unknown> = {}) {
   const wrapper = mount(BasePrompt, {
+    attachTo: document.body,
     props: {
       open: true,
       title: 'Name this thing',
@@ -33,16 +34,18 @@ function mountPrompt(props: Record<string, unknown> = {}) {
     }
   })
   wrappers.push(wrapper)
+  await flushPromises()
   return wrapper
 }
 
 afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
+  document.body.innerHTML = ''
 })
 
-describe('BasePrompt', () => {
+describe('BasePrompt', async () => {
   it('renders title, message, and input prefilled with defaultValue', async () => {
-    const wrapper = mountPrompt()
+    const wrapper = await mountPrompt()
     await flushPromises()
     expect(wrapper.find('.base-prompt-title').text()).toBe('Name this thing')
     expect(wrapper.find('.base-prompt-message').text()).toBe('Pick a label.')
@@ -50,7 +53,7 @@ describe('BasePrompt', () => {
   })
 
   it('emits `submit` with the trimmed input value when the primary action fires', async () => {
-    const wrapper = mountPrompt()
+    const wrapper = await mountPrompt()
     await flushPromises()
     const input = wrapper.find<HTMLInputElement>('.base-prompt-input')
     await input.setValue('  Edited name  ')
@@ -59,7 +62,7 @@ describe('BasePrompt', () => {
   })
 
   it('emits `submit` on Enter inside the input', async () => {
-    const wrapper = mountPrompt({ defaultValue: '' })
+    const wrapper = await mountPrompt({ defaultValue: '' })
     await flushPromises()
     const input = wrapper.find<HTMLInputElement>('.base-prompt-input')
     await input.setValue('typed')
@@ -68,7 +71,7 @@ describe('BasePrompt', () => {
   })
 
   it('shows the default error and suppresses `submit` when required and empty', async () => {
-    const wrapper = mountPrompt({ defaultValue: '', required: true })
+    const wrapper = await mountPrompt({ defaultValue: '', required: true })
     await flushPromises()
     await wrapper.find('[data-testid="base-prompt-action"]').trigger('click')
     expect(wrapper.find('.base-prompt-error').text()).toBe('This field is required')
@@ -76,14 +79,14 @@ describe('BasePrompt', () => {
   })
 
   it('uses a custom required error string when `required` is a string', async () => {
-    const wrapper = mountPrompt({ defaultValue: '', required: 'Pick a name first.' })
+    const wrapper = await mountPrompt({ defaultValue: '', required: 'Pick a name first.' })
     await flushPromises()
     await wrapper.find('[data-testid="base-prompt-action"]').trigger('click')
     expect(wrapper.find('.base-prompt-error').text()).toBe('Pick a name first.')
   })
 
   it('emits `cancel` when the cancel button is clicked', async () => {
-    const wrapper = mountPrompt()
+    const wrapper = await mountPrompt()
     await flushPromises()
     await wrapper.find('[data-testid="base-prompt-cancel"]').trigger('click')
     expect(wrapper.emitted('cancel')).toHaveLength(1)
@@ -91,21 +94,21 @@ describe('BasePrompt', () => {
   })
 
   it('emits `update:open` false on submit so v-model:open consumers close', async () => {
-    const wrapper = mountPrompt()
+    const wrapper = await mountPrompt()
     await flushPromises()
     await wrapper.find('[data-testid="base-prompt-action"]').trigger('click')
     expect(wrapper.emitted('update:open')).toEqual([[false]])
   })
 
   it('emits `update:open` false on cancel', async () => {
-    const wrapper = mountPrompt()
+    const wrapper = await mountPrompt()
     await flushPromises()
     await wrapper.find('[data-testid="base-prompt-cancel"]').trigger('click')
     expect(wrapper.emitted('update:open')).toEqual([[false]])
   })
 
   it('renders messageDetails groups in recessed sub-blocks', async () => {
-    const wrapper = mountPrompt({
+    const wrapper = await mountPrompt({
       messageDetails: [{ label: 'Release notes', items: ['Line A', 'Line B'] }]
     })
     await flushPromises()
@@ -116,13 +119,13 @@ describe('BasePrompt', () => {
     expect(items[1].text()).toBe('Line B')
   })
 
-  it('renders nothing when open is false', () => {
-    const wrapper = mountPrompt({ open: false })
+  it('renders nothing when open is false', async () => {
+    const wrapper = await mountPrompt({ open: false })
     expect(wrapper.find('.base-prompt-title').exists()).toBe(false)
   })
 
   it('uses a custom confirmLabel + cancelLabel when provided', async () => {
-    const wrapper = mountPrompt({ confirmLabel: 'Copy and Update', cancelLabel: 'Back' })
+    const wrapper = await mountPrompt({ confirmLabel: 'Copy and Update', cancelLabel: 'Back' })
     await flushPromises()
     expect(wrapper.find('[data-testid="base-prompt-action"]').text()).toBe('Copy and Update')
     expect(wrapper.find('[data-testid="base-prompt-cancel"]').text()).toBe('Back')

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
+import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
 
 /**
  * Single modal primitive.
@@ -20,13 +21,17 @@ const props = withDefaults(
     contentClass?: string
     /** Render content frame only (no overlay/backdrop/dismiss). */
     inline?: boolean
+    ariaLabel?: string
+    ariaLabelledby?: string
   }>(),
   {
     binding: false,
     opacity: undefined,
     width: 'wide',
     contentClass: '',
-    inline: false
+    inline: false,
+    ariaLabel: undefined,
+    ariaLabelledby: undefined
   }
 )
 
@@ -36,36 +41,6 @@ const resolvedOpacity = computed<Opacity>(() => props.opacity ?? (props.binding 
 const emit = defineEmits<{
   close: []
 }>()
-
-const overlayRef = ref<HTMLDivElement | null>(null)
-const mouseDownOnOverlay = ref(false)
-
-function handleOverlayMouseDown(e: MouseEvent): void {
-  mouseDownOnOverlay.value = e.target === overlayRef.value
-}
-
-function handleOverlayClick(e: MouseEvent): void {
-  if (props.binding) return
-  if (e.target === overlayRef.value && mouseDownOnOverlay.value) {
-    emit('close')
-  }
-  mouseDownOnOverlay.value = false
-}
-
-function handleKeydown(e: KeyboardEvent): void {
-  if (props.binding || props.inline) return
-  if (e.key === 'Escape') {
-    emit('close')
-  }
-}
-
-onMounted(() => {
-  if (!props.inline) document.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  if (!props.inline) document.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>
@@ -77,30 +52,29 @@ onUnmounted(() => {
   >
     <slot />
   </div>
-  <Teleport v-else to="body">
-    <div
-      ref="overlayRef"
-      class="view-modal active fixed inset-0 z-50 flex items-center justify-center"
-      :class="
-        resolvedOpacity === 'heavy-dim'
-          ? 'view-modal--heavy-dim bg-[var(--overlay-bg-heavy)]'
-          : resolvedOpacity === 'opaque'
-            ? 'view-modal--opaque bg-[var(--overlay-bg-opaque)]'
-            : 'bg-[var(--overlay-bg)]'
-      "
-      @mousedown="handleOverlayMouseDown"
-      @click="handleOverlayClick"
-    >
-      <div
-        :data-modal-content="width"
-        class="mx-[30px] flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)]"
-        :class="[
-          width === 'regular' ? '[:where(&)]:max-w-[600px]' : '[:where(&)]:max-w-[900px]',
-          contentClass
-        ]"
-      >
-        <slot />
-      </div>
-    </div>
-  </Teleport>
+  <DesktopDialogSurface
+    v-else
+    :open="true"
+    :aria-label="ariaLabel"
+    :aria-labelledby="ariaLabelledby"
+    :dismiss-on-escape="!binding"
+    :dismiss-on-outside="!binding"
+    :overlay-class="[
+      'view-modal active fixed inset-0 z-50 flex items-center justify-center',
+      resolvedOpacity === 'heavy-dim'
+        ? 'view-modal--heavy-dim bg-[var(--overlay-bg-heavy)]'
+        : resolvedOpacity === 'opaque'
+          ? 'view-modal--opaque bg-[var(--overlay-bg-opaque)]'
+          : 'bg-[var(--overlay-bg)]'
+    ]"
+    :content-class="[
+      'mx-[30px] flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)]',
+      width === 'regular' ? '[:where(&)]:max-w-[600px]' : '[:where(&)]:max-w-[900px]',
+      contentClass
+    ]"
+    :data-modal-content="width"
+    @close="emit('close')"
+  >
+    <slot />
+  </DesktopDialogSurface>
 </template>
