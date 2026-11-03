@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, ref, watch, type Component } from 'vue'
-import { Check, Star } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch, type Component } from 'vue'
+import { Check, Star, Users } from 'lucide-vue-next'
 import FavoriteStar from '../FavoriteStar.vue'
 import type { FavoriteKind } from '../favorites'
 import MarItemMenu from './MarItemMenu.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
 import type { MenuLine } from './menu'
+import '../table/table.css'
 
 /**
  * One thing in a library (Mar's pages), as a card or a list row. Click
@@ -13,6 +14,11 @@ import type { MenuLine } from './menu'
  * once anything is selected a plain click selects too. Double-click the
  * name (or Rename in ⋯) to rename it in place. The card never grows on
  * hover; its surface lifts a shade and the controls show.
+ *
+ * Corners of a card's picture: top-left is the select check's, always;
+ * top-right holds the star and ⋯; a state chip sits bottom-left. Shared
+ * is not a state on a card: it reads as a small icon on the meta line,
+ * so nothing moves when the check appears.
  */
 const {
   name,
@@ -62,6 +68,7 @@ const emit = defineEmits<{
 }>()
 
 const menuOpen = ref(false)
+const isSharedCard = computed(() => layout === 'grid' && status === 'shared')
 const draft = ref(name)
 const input = ref<HTMLInputElement>()
 watch(
@@ -129,7 +136,7 @@ function click(e: MouseEvent): void {
         /></span>
       </slot>
       <template v-if="layout === 'grid'">
-        <span v-if="status" class="mar-item-status"
+        <span v-if="status && status !== 'shared'" class="mar-item-status"
           ><MarStatus :status :label="statusLabel" on-media
         /></span>
         <span class="mar-item-tools">
@@ -175,10 +182,20 @@ function click(e: MouseEvent): void {
         @blur="commit"
       />
       <span v-else class="mar-item-name" @dblclick.stop="emit('start-rename')">{{ name }}</span>
-      <span v-if="meta || $slots.meta" class="mar-item-meta"
+      <span v-if="meta || $slots.meta || isSharedCard" class="mar-item-meta"
+        ><span
+          v-if="isSharedCard"
+          class="mar-item-shared"
+          role="img"
+          aria-label="Shared"
+          title="Shared"
+          ><Users :size="12" aria-hidden="true" /></span
         ><slot name="meta">{{ meta }}</slot></span
       >
     </span>
+    <!-- Grid cards only: anything that sits under the name (a button, a
+         few facts); the page lays it out. -->
+    <slot v-if="layout === 'grid'" name="footer" />
 
     <template v-if="layout === 'list'">
       <slot name="cols" />
@@ -299,16 +316,18 @@ function click(e: MouseEvent): void {
     inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
     0 8px 24px -10px rgb(0 0 0 / 0.5);
 }
-/* State sits top-left (Mar), opposite the tools; when the select check
-   shows in that corner on hover, the chip steps aside for it. */
+/* State sits bottom-left: top-left belongs to the select check, so the
+   chip never has to step aside for it. */
 .mar-item-status {
   position: absolute;
-  top: 8px;
+  bottom: 8px;
   left: 8px;
-  transition: translate 160ms ease;
 }
-.mar-item:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-status {
-  translate: 26px 0;
+.mar-item-shared {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: -2px;
+  color: var(--color-muted-foreground);
 }
 .mar-item-tools {
   position: absolute;
@@ -365,7 +384,11 @@ function click(e: MouseEvent): void {
 .mar-item.is-list:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-media img {
   opacity: 0.45;
 }
-.mar-item:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-check {
+/* Same weight as the reset that hides it, or the check never shows. */
+:root
+  .proto-ui.proto-ui.proto-ui
+  .mar-item:is(:hover, :focus-within, .is-selecting, .is-selected)
+  .mar-item-check {
   opacity: 1;
 }
 .mar-item.is-selected .mar-item-check {
@@ -445,7 +468,7 @@ function click(e: MouseEvent): void {
   opacity: 1;
 }
 
-/* The grid and list every library page shares. */
+/* The grid every library page shares. */
 .mar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -454,20 +477,5 @@ function click(e: MouseEvent): void {
 .mar-grid.is-wide {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
-.mar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mar-list-head {
-  display: flex;
-  height: 28px;
-  align-items: center;
-  gap: 14px;
-  padding: 0 8px 0 64px;
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
+/* The list every library page shares is the one table: ../table/table.css. */
 </style>

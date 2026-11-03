@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Recent activity as milestones on a vertical line (Mar's proposal), the
- * Timeline idea (p20/TimelineHome): when on the left, a dot on one rail,
+ * Timeline idea from the Proposals · 20 Home: when on the left, a dot on one rail,
  * who did what on the right. The rail runs from the first dot to the last.
  */
 defineProps<{ items: { who: string; what: string; when: string }[] }>()

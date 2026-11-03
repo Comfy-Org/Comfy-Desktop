@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Clock, Play, Search, SearchX, X } from 'lucide-vue-next'
-import Button from '../../ui/Button.vue'
-import PageHeader from '../../ui/PageHeader.vue'
+import { Clock, Play } from 'lucide-vue-next'
 import Select from '../../ui/Select.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { APPS, ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
 import { go, toast } from '../../useProto'
 import FavoriteStar from '../FavoriteStar.vue'
+import MarPage from '../pages/MarPage.vue'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
 
 /**
  * Explore in Mar's proposal. One line holds everything that narrows the
  * page: what you're looking at (Templates, Models, Apps, Tutorials), its
  * type, and a search, so there is one kind of tab, not two. Each tab
- * shows its own things.
+ * shows its own things. The frame (title, toolbar, Loading, Error,
+ * Nothing matches) is MarPage; the catalogue is never empty.
  */
 type Tab = 'templates' | 'models' | 'apps' | 'tutorials'
 const tab = ref<Tab>('templates')
@@ -95,42 +97,21 @@ const empty = computed(
 </script>
 
 <template>
-  <div class="mar-explore mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Explore" />
-
+  <MarPage
+    title="Explore"
+    :no-results="empty"
+    error-title="Can't load Explore"
+    error-text="Templates, models and tutorials come from the internet. Your own workflows are still in Workflows."
+    @clear="((type = 'all'), (query = ''))"
+  >
     <!-- One line: what, which kind, search. -->
-    <div class="mar-ex-bar">
-      <div class="mar-seg mar-ex-tabs" role="tablist" aria-label="Explore">
-        <button
-          v-for="t in TABS"
-          :key="t.value"
-          type="button"
-          role="tab"
-          :aria-selected="tab === t.value"
-          :aria-pressed="tab === t.value"
-          class="mar-ex-tab"
-          @click="tab = t.value"
-        >
-          {{ t.label }}<span class="mar-ex-count">{{ t.count }}</span>
-        </button>
-      </div>
+    <template #toolbar>
+      <MarSeg v-model="tab" :options="TABS" label="Explore" />
       <div class="ml-auto flex items-center gap-2">
         <Select v-model="type" :options="TYPES[tab]" class="w-36" />
-        <label class="mar-ex-search">
-          <Search :size="14" />
-          <input v-model="query" type="search" :placeholder="PLACEHOLDER[tab]" />
-          <button
-            v-if="query"
-            type="button"
-            class="mar-ex-clear"
-            aria-label="Clear search"
-            @click="query = ''"
-          >
-            <X :size="13" />
-          </button>
-        </label>
+        <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
       </div>
-    </div>
+    </template>
 
     <!-- Templates -->
     <div v-if="tab === 'templates'" class="mar-ex-grid">
@@ -152,7 +133,7 @@ const empty = computed(
           <span class="truncate text-ui text-subtle-foreground">{{ m.provider }}</span>
         </span>
         <span class="flex flex-col items-end gap-1">
-          <span class="mar-ex-chip">{{ m.kind }}</span>
+          <span class="mar-tag">{{ m.kind }}</span>
           <span class="text-[12px] text-subtle-foreground tabular-nums">{{ m.price }}</span>
         </span>
       </button>
@@ -201,60 +182,10 @@ const empty = computed(
         </span>
       </button>
     </div>
-
-    <!-- Nothing matches: say so, and offer the way back to everything. -->
-    <section v-if="empty" class="flex flex-col items-center gap-4 py-16 text-center">
-      <span class="mar-ex-none"><SearchX :size="20" /></span>
-      <div class="flex flex-col gap-1">
-        <h2 class="m-0 text-[17px] font-semibold text-base-foreground">Nothing matches</h2>
-        <p class="m-0 text-ui text-muted-foreground">Try another word, or clear the filters.</p>
-      </div>
-      <Button @click="((type = 'all'), (query = ''))">Clear filters</Button>
-    </section>
-  </div>
+  </MarPage>
 </template>
 
 <style scoped>
-.mar-ex-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 8px 0 20px;
-}
-.mar-ex-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--mar-tab-radius, 10px);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-.mar-ex-count {
-  margin-left: 6px;
-  color: var(--color-subtle-foreground);
-  font-variant-numeric: tabular-nums;
-}
-.mar-ex-search {
-  display: flex;
-  width: 240px;
-  height: 32px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-radius: var(--mar-tab-radius, 10px);
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
-  color: var(--color-subtle-foreground);
-}
-.mar-ex-search input {
-  min-width: 0;
-  flex: 1;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font-size: 13px;
-  outline: none;
-}
-.mar-ex-search input::-webkit-search-cancel-button {
-  display: none;
-}
 .mar-ex-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -275,23 +206,6 @@ const empty = computed(
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   font-size: 15px;
   font-weight: 600;
-}
-.mar-ex-none {
-  display: inline-flex;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 13px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-}
-.mar-ex-chip {
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 11px;
 }
 .mar-ex-media {
   position: relative;
@@ -338,19 +252,7 @@ const empty = computed(
 </style>
 
 <style>
-/* Global: tabs and cards are buttons, past the prototype's button reset. */
-:root .proto-ui.proto-ui.proto-ui .mar-ex-tab {
-  width: auto;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--mar-tab-item-radius, 7px);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-tab[aria-selected='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  color: var(--color-base-foreground);
-}
+/* Global: cards are buttons, past the prototype's button reset. */
 :root .proto-ui.proto-ui.proto-ui .mar-ex-card,
 :root .proto-ui.proto-ui.proto-ui .mar-ex-model {
   width: auto;
@@ -372,35 +274,5 @@ const empty = computed(
 }
 :root .proto-ui.proto-ui.proto-ui :is(.mar-ex-card, .mar-ex-model):hover {
   background: color-mix(in oklch, var(--color-card-background-hover) 80%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-clear {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--color-subtle-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-search {
-  display: flex;
-  width: 240px;
-  height: 32px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-radius: var(--mar-tab-radius, 10px);
-  background-color: color-mix(
-    in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background)) 82%,
-    transparent
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-search input {
-  height: 100%;
-  padding: 0;
-  border: 0;
-  box-shadow: none;
 }
 </style>

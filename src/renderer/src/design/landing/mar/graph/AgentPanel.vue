@@ -181,7 +181,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   max-height: min(460px, calc(100% - var(--mg-top) - 360px));
   min-height: 220px;
   flex-direction: column;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--color-content-background) 80%, transparent);
   backdrop-filter: blur(32px) saturate(1.2);
   box-shadow: 0 18px 50px rgb(0 0 0 / 0.28);
@@ -209,7 +209,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-muted);
 }
@@ -230,7 +230,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
 }
 :root .proto-ui.proto-ui.proto-ui .ag-suggest {
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-well);
   color: var(--mg-text);
   font-size: 12.5px;
@@ -248,7 +248,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   align-self: flex-end;
   max-width: 85%;
   padding: 8px 12px;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-hover);
 }
 .ag-steps {
@@ -284,7 +284,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   gap: 6px;
   margin: 0 8px 8px;
   padding: 4px 4px 4px 12px;
-  border-radius: 14px;
+  border-radius: var(--mar-tab-radius);
   background: var(--mg-well);
 }
 :root .proto-ui.proto-ui.proto-ui .ag-compose input {
@@ -311,7 +311,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-run);
   color: var(--mg-run-text);
 }
@@ -319,7 +319,7 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
   opacity: 0.35;
 }
 .is-current .ag {
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--mg-chrome-2);
   box-shadow:
     0 0 0 1px var(--mg-chrome-line),

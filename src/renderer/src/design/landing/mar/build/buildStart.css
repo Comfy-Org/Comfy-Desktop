@@ -28,45 +28,6 @@
   --bs-code-bg: oklch(0.2 0.006 285);
 }
 
-/* ---------- Header ---------- */
-.mar-bs-eyebrow {
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-.mar-bs-title {
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-
-/* ---------- Announcement strip ---------- */
-.mar-bs-news {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 8px 8px 8px;
-  border-radius: 16px;
-  box-shadow: inset 0 0 0 1px var(--bs-line);
-}
-.mar-bs-news-art {
-  position: relative;
-  display: grid;
-  width: 72px;
-  height: 44px;
-  flex-shrink: 0;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 10px;
-  background:
-    radial-gradient(60px 40px at 20% 10%, oklch(0.7 0.16 300 / 0.55), transparent 70%),
-    radial-gradient(60px 40px at 90% 100%, oklch(0.75 0.13 200 / 0.5), transparent 70%),
-    oklch(0.22 0.01 285);
-  color: oklch(0.97 0 0);
-}
-
 /* ---------- The Get started card ---------- */
 .mar-bs-card {
   overflow: hidden;
@@ -78,7 +39,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: 26px 28px 0;
+  padding: 24px 28px 0;
 }
 .mar-bs-h2 {
   font-size: 20px;
@@ -125,7 +86,33 @@
 .mar-bs-steps {
   display: flex;
   flex-direction: column;
-  padding: 22px 28px 26px;
+  padding: 4px 0 0;
+}
+
+/* Steps on the left, the code they need on the right. */
+.mar-bs-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: start;
+  gap: 32px;
+  padding: 22px 28px 28px;
+}
+.mar-bs-codecol {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+.mar-bs-codecol > .mar-bs-code {
+  margin-top: 0;
+}
+.mar-bs-inline {
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: var(--bs-well);
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
 }
 .mar-bs-step {
   position: relative;
@@ -208,12 +195,6 @@
   letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.mar-bs-key-name {
-  flex-shrink: 0;
-  margin-right: 6px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
 }
 .mar-bs-note {
   display: flex;
@@ -331,14 +312,6 @@
 :root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-done {
   background: oklch(0.78 0.15 155 / 0.18);
   color: oklch(0.86 0.13 155);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-ghost {
-  background: transparent;
-  color: var(--bs-code-dim);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-ghost:hover {
-  background: oklch(1 0 0 / 0.06);
-  color: oklch(0.92 0 0);
 }
 
 /* Small icon buttons next to the key. */
@@ -475,13 +448,21 @@
 
 /* ---------- Usage + quick links ---------- */
 .mar-bs-h3 {
-  margin-bottom: 12px;
   font-size: 15px;
   font-weight: 600;
 }
+/* A section's title and its control (tabs, a link) on one line. */
+.mar-bs-sec-head {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
 .mar-bs-usage {
   display: flex;
-  height: calc(100% - 34px);
+  height: calc(100% - 44px);
   flex-direction: column;
   gap: 14px;
   padding: 20px;
@@ -568,6 +549,69 @@
   opacity: 1;
 }
 
+/* ---------- Take it further ---------- */
+.mar-bs-product {
+  display: grid;
+  min-height: 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  padding: 28px;
+  border-radius: 22px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+}
+.mar-bs-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+.mar-bs-facts li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mar-bs-facts svg {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+}
+.mar-bs-product-art {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bs-well);
+}
+.mar-bs-product-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: mar-bs-fade 320ms ease;
+}
+@keyframes mar-bs-fade {
+  from {
+    opacity: 0;
+  }
+}
+.mar-bs-tag {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(8px);
+  color: oklch(0.97 0 0);
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-bs-product-art img {
+    animation: none;
+  }
+}
+
 /* Spacing variants (Tailwind's mt-* lose to these unlayered rules). */
 .mar-bs-step-body.is-gap {
   margin-top: 16px;
@@ -575,4 +619,7 @@
 }
 .mar-bs-note.is-inline {
   margin-top: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-link.is-flush {
+  margin: 8px 0 0 -10px;
 }

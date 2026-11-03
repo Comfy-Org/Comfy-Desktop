@@ -22,6 +22,7 @@ import { runTask, startAgent } from '../agent'
 import { thumb } from '../mock'
 import { activeInstance, proto, requireLogin, toast } from '../useProto'
 import { isMariana } from '../mar/proposal'
+import MarRunOn from '../mar/runOn/MarRunOn.vue'
 
 /** `chat`: inside the agent view - sends to the current chat instead of
  *  starting a new one, and shows a static placeholder. */
@@ -205,7 +206,8 @@ function accept(e: KeyboardEvent): void {
       </div>
     </div>
     <div class="mt-1.5 flex items-center justify-between">
-      <DropdownMenuRoot v-if="target" :modal="false">
+      <MarRunOn v-if="target && isMariana" />
+      <DropdownMenuRoot v-else-if="target" :modal="false">
         <DropdownMenuTrigger as-child>
           <Button
             variant="ghost"

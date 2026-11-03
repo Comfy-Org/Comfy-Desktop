@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowUpRight } from 'lucide-vue-next'
-import { go, proto } from '../useProto'
+import { go, hostActions } from '../useProto'
+import { INSTANCES } from '../mock'
 import { can } from '../milestones'
 import MediaCard from '../ui/MediaCard.vue'
 import ScrollRow from '../ui/ScrollRow.vue'
@@ -63,8 +64,10 @@ const PIECES: Piece[] = [
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+/** Try it opens the example in ComfyUI on Comfy Cloud (a new tab with
+ *  its workflow), not the agent: the example is a workflow to run. */
 function tryIdea(p: Piece): void {
-  proto.draft = { text: p.prompt, intent: 'output' }
+  hostActions.launch(INSTANCES[0]!, p.title)
 }
 </script>
 
@@ -136,7 +139,7 @@ function tryIdea(p: Piece): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 5px 9px 5px 11px;
   background: #fff;
   color: #111;

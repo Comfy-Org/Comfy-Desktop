@@ -51,7 +51,11 @@
 
 /* A page under a photo: its title sits low on the photo, larger. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
-  padding-top: 168px;
+  padding-top: 88px;
+}
+/* Home's greeting sits a quarter higher, so less of the top is empty. */
+:root[data-mar-ui='on'] .mar-home > section:first-child {
+  padding-top: 12px;
 }
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child h1 {
   font-size: 52px;
@@ -156,18 +160,11 @@
 }
 
 /* Borders (Tune the UI): None hides every line; Hairline draws a faint
-   uniform line; Glass edge keeps only the soft highlight along the top. */
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine::after {
+   uniform line. Neither keeps edge-shine's lit top edge. */
+:root[data-mar-ui='on'] .edge-shine::after {
   display: none;
 }
-:root[data-mar-ui='on'][data-mar-borders='hairline']
-  :is(.mar-surface, .mar-composer, .mar-card, .mar-bubble) {
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
-}
-:root[data-mar-ui='on'][data-mar-borders='glass']
-  :is(.mar-surface, .mar-composer, .mar-card, .mar-bubble) {
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
-}
+/* Hairline on every surface: shell/borders.css. */
 
 /* Tabs and switches: a track behind every option, the picked one lighter. */
 :root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) {
@@ -674,14 +671,14 @@
   justify-content: center;
 }
 
-/* Borders: None and Hairline drop the card's lit top edge too (it lives in
-   the elevation shadow, not only in edge-shine). */
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev {
+/* No lit top edge on cards (it lives in the elevation shadow, not only in
+   edge-shine). */
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
   box-shadow:
     0 1px 2px oklch(0 0 0 / 0.35),
     0 6px 18px oklch(0 0 0 / 0.28);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev:hover {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
   box-shadow:
     0 2px 4px oklch(0 0 0 / 0.35),
     0 10px 26px oklch(0 0 0 / 0.34);
@@ -785,6 +782,19 @@
 :root .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
+/* Light: on the pale sidebar the 5% tint reads as dirt and the gold coin
+   washes out. A white tile with a barely-there hairline (4%), and the
+   credit gold a step deeper (production's #ddbd31 is tuned for dark). */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row {
+  background: var(--color-card-background, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
+  background: var(--color-card-background-hover, #fafafa);
+}
+:root[data-ds-theme='light'] .mar-credits-row .lucide-coins {
+  color: oklch(0.66 0.13 85);
+}
 
 /* Credits (UI Playground › Credits): the workspace and the meter fill
    the foot; the chip is small, next to the tabs. */
@@ -847,11 +857,12 @@
 /* The spotlight carries on down the whole page: the same light, weaker
    the further down you go, so the content never sits on a flat band.
    Painted on the page itself (scrolling with it), so it spans the full
-   width and height with no edge. */
+   height with no edge; kept to the middle so the panel's sides stay as
+   dark as the page and the edge never washes into the sidebar. */
 :root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight) {
   background:
     radial-gradient(
-      ellipse 90% 100% at 50% 0%,
+      ellipse 62% 100% at 50% 0%,
       color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
       color-mix(in oklch, var(--color-base-foreground) 2.5%, transparent) 50%,
       transparent 100%
@@ -871,7 +882,7 @@
 :root[data-mar-ui='on'][data-ds-theme='light'] .proto-main:has(> .mar-backdrop.is-spotlight) {
   background:
     radial-gradient(
-      ellipse 90% 100% at 50% 0%,
+      ellipse 62% 100% at 50% 0%,
       oklch(0.9 0.04 290 / 0.3),
       oklch(0.92 0.03 290 / 0.14) 40%,
       oklch(0.94 0.02 290 / 0.05) 70%,
@@ -947,14 +958,6 @@
 :root[data-mar-ui='on'] .mar-backdrop.mar-backdrop {
   height: 560px;
   mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
-}
-
-/* Borders: Glass is a whisper of light along the top edge, not a line. */
-:root[data-mar-ui='on'][data-mar-borders='glass'] .edge-shine {
-  --shine: 0.05;
-}
-:root[data-mar-ui='on'][data-mar-borders='glass'] .edge-shine:hover {
-  --shine: 0.08;
 }
 
 /* Page photos stay a hint of colour behind the header, not a picture
@@ -1238,10 +1241,10 @@
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.12), 0 6px 16px -6px oklch(0 0 0 / 0.18);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.14), 0 10px 22px -8px oklch(0 0 0 / 0.22);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
   box-shadow: var(--shadow-elev);
 }
-:root[data-mar-ui='on']:not([data-mar-borders='glass']) .edge-shine.shadow-elev:hover {
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
   box-shadow: var(--shadow-elev-hover);
 }
 :root[data-mar-ui='on'][data-ds-theme='light']:not([data-mar-shadows='off']) {
@@ -1619,11 +1622,12 @@
   border-radius: 10px;
 }
 
-/* Tab tracks and search fields follow UI Playground › Corners: Soft (the
-   default) gives 10 / 7; Default gives 6 / 3. The item nests inside the
-   track's 3px padding (inner = outer - padding). */
+/* Tab tracks and search fields follow UI Playground › Corners: Default
+   gives 10 / 7, Soft 14 / 11. Every tab group (the Create / Build switch
+   included) uses these, so all tabs share one corner. The item nests
+   inside the track's 3px padding (inner = outer - padding). */
 :root[data-mar-ui='on'] {
-  --mar-tab-radius: calc(var(--radius-control) - 2px);
+  --mar-tab-radius: calc(var(--radius-control) + 2px);
   --mar-tab-item-radius: calc(var(--mar-tab-radius) - 3px);
 }
 
@@ -1632,10 +1636,60 @@
 :root[data-mar-ui='on']
   :is(
     .mar-pseg-count,
-    .mar-ex-count,
-    .mar-fav-count,
     .mar-proj-count,
+    .mar-eh-count,
     [role='group'] > button[data-state] > .tabular-nums
   ) {
   display: none;
+}
+
+/* Text links (See all, All builds, All spaces, Learn more): the focus
+   ring sits around the label with room, not on its letters, at the
+   controls' corner; the arrow nudges right on hover. The padding is taken
+   back with negative margins, so the link doesn't move. */
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control {
+  margin-block: -2px;
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: var(--mar-tab-item-radius, 7px);
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:not(.ml-auto) {
+  margin-left: -6px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control > svg {
+  transition: translate 160ms ease;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+  translate: 2px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+    translate: none;
+  }
+}
+
+/* Sidebar foot (Classic, Panels): credits and the workspace stay in view;
+   everything above scrolls under them. */
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child {
+  position: sticky;
+  bottom: -8px;
+  z-index: 2;
+  margin-bottom: -8px;
+  padding-bottom: 8px;
+  background: var(--mar-side-bg, var(--color-app-background));
+}
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child::before {
+  content: '';
+  position: absolute;
+  inset: -20px 0 100%;
+  background: linear-gradient(to top, var(--mar-side-bg, var(--color-app-background)), transparent);
+  pointer-events: none;
+}
+:root[data-mar-nav='panels'] {
+  --mar-side-bg: var(--mar-panels-side);
 }

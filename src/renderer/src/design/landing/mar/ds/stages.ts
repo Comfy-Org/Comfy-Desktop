@@ -8,6 +8,7 @@ import PromptBox from '../../parts/PromptBox.vue'
 import DesktopTitleBar from '../../parts/DesktopTitleBar.vue'
 import SwitcherMenu from '../../parts/nav/SwitcherMenu.vue'
 import DeployedTo from '../../parts/space/DeployedTo.vue'
+import AssetViewMenu from '../assets/AssetViewMenu.vue'
 
 /**
  * Components shown open, each in its own frame (kit/Stage.vue). `open`
@@ -21,6 +22,8 @@ export interface StageDef {
   on?: 'main' | 'sidebar' | 'bare'
   open?: (root: HTMLElement) => void
 }
+
+const WORKSPACE = '[aria-haspopup="menu"]:not(.mar-credits-row)'
 
 function pressMenu(selector = '[aria-haspopup="menu"]', highlight?: number) {
   return (root: HTMLElement): void => {
@@ -69,14 +72,15 @@ export const STAGES = {
     height: 560,
     place: 'bottom-left',
     on: 'sidebar',
-    open: pressMenu()
+    // The workspace, not Credits (the row above it opens its own flyout).
+    open: pressMenu(WORKSPACE)
   },
   'workspace-menu-hover': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
     height: 560,
     place: 'bottom-left',
     on: 'sidebar',
-    open: pressMenu(undefined, 1)
+    open: pressMenu(WORKSPACE, 1)
   },
   'run-on-menu': {
     component: defineComponent(
@@ -87,7 +91,7 @@ export const STAGES = {
           h(PromptBox, { target: true, class: 'mar-prompt' })
         )
     ),
-    height: 470,
+    height: 600,
     place: 'top-center',
     open: pressMenu()
   },
@@ -102,6 +106,26 @@ export const STAGES = {
       )
       b?.click()
     }
+  },
+  'credits-flyout': {
+    component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
+    height: 420,
+    place: 'bottom-left',
+    on: 'sidebar',
+    open: (root) => root.querySelector<HTMLElement>('.mar-credits-row')?.click()
+  },
+  'view-menu': {
+    component: defineComponent(
+      () => () =>
+        h(
+          'div',
+          { class: 'mar-page is-embedded' },
+          h('div', { class: 'mar-page-bar' }, h(AssetViewMenu))
+        )
+    ),
+    height: 440,
+    place: 'top-right',
+    open: (root) => root.querySelector<HTMLElement>('.mar-view-trigger')?.click()
   },
   'tip-short': { component: tip('Notifications'), height: 110, open: focusTip },
   'tip-shortcut': { component: tip('Downloads (⌘⇧D)', Download), height: 110, open: focusTip },

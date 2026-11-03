@@ -111,7 +111,7 @@ onMounted(() => input.value?.focus())
   max-height: 420px;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--color-content-background) 84%, transparent);
   backdrop-filter: blur(32px) saturate(1.2);
   box-shadow: 0 18px 50px rgb(0 0 0 / 0.32);
@@ -178,7 +178,7 @@ onMounted(() => input.value?.focus())
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
-  border-radius: 10px;
+  border-radius: var(--mar-tab-item-radius);
   background: transparent;
   color: var(--mg-text);
   text-align: left;
@@ -193,7 +193,7 @@ onMounted(() => input.value?.focus())
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--mar-tab-item-radius);
   background: var(--mg-well);
   color: var(--mg-muted);
 }
@@ -221,7 +221,7 @@ onMounted(() => input.value?.focus())
   text-align: center;
 }
 .is-current .ns {
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--mg-chrome-2);
   box-shadow:
     0 0 0 1px var(--mg-chrome-line),

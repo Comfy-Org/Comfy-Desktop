@@ -1,18 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  Archive,
-  ArrowLeft,
-  Copy,
-  FolderX,
-  Pencil,
-  Plus,
-  Trash2,
-  UserPlus,
-  X
-} from 'lucide-vue-next'
+import { Archive, Copy, FolderX, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
-import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import { thumb } from '../../mock'
@@ -20,6 +9,10 @@ import { go, instances, type Page } from '../../useProto'
 import MarPage from './MarPage.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
+import MarSeg from './MarSeg.vue'
+import MarEntityHeader from './MarEntityHeader.vue'
+import MarEmpty from './MarEmpty.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarUndoToast from './MarUndoToast.vue'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
@@ -29,6 +22,7 @@ import { assets } from './assetsStore'
 import { notify } from './undo'
 import { shownState } from './pageState'
 import type { MenuLine } from './menu'
+import '../table/table.css'
 
 /**
  * One project (Mar's proposal), as a product page: its cover, name and
@@ -96,6 +90,7 @@ interface Event {
   what: string
   when: string
   status?: ItemStatus
+  thumbId?: string
 }
 const activity = computed<Event[]>(() => {
   const m = p.value?.members ?? ['You']
@@ -106,6 +101,7 @@ const activity = computed<Event[]>(() => {
       what: w.name,
       when: w.modified,
       status: w.status,
+      thumbId: w.thumbId,
       age: w.age
     })),
     ...made.value.slice(0, 3).map((a, i) => ({
@@ -114,6 +110,7 @@ const activity = computed<Event[]>(() => {
       what: a.name,
       when: a.when,
       status: a.status,
+      thumbId: a.thumbId,
       age: a.age
     }))
   ]
@@ -189,9 +186,12 @@ const ROLES = [
   { value: 'edit' as const, label: 'Can edit' },
   { value: 'run' as const, label: 'Can run' }
 ]
-const roles = ref<Record<string, Role>>({ Mariana: 'edit' })
+const roles = ref<Record<string, Role>>({ Mia: 'edit' })
 const roleOf = (m: string): Role => roles.value[m] ?? 'run'
 const invited = ref<string[]>([])
+// Invited people show the address they were invited at.
+const emails = ref<Record<string, string>>({})
+const emailOf = (m: string): string => emails.value[m] ?? `${m.toLowerCase()}@example.com`
 const email = ref('')
 const inviteRole = ref<Role>('edit')
 function invite(): void {
@@ -201,6 +201,7 @@ function invite(): void {
   const name = who.split('@')[0]!.replace(/^\w/, (c) => c.toUpperCase())
   project.members.push(name)
   roles.value[name] = inviteRole.value
+  emails.value[name] = who
   invited.value.push(name)
   email.value = ''
   notify(`Invited ${who}`, () => project.members.splice(project.members.indexOf(name), 1))
@@ -229,63 +230,62 @@ function removePerson(m: string): void {
     @action="go('projects')"
   />
   <div v-else class="mar-proj mx-auto w-full max-w-300 px-10 pb-24">
-    <button type="button" class="mar-proj-crumb" @click="go('projects' as Page)">
-      <ArrowLeft :size="14" />Projects
-    </button>
-
-    <section class="mar-proj-head">
-      <img :src="p.art" alt="" class="mar-proj-cover" />
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-1.5">
-          <input
-            v-if="renaming"
-            v-model="draft"
-            class="mar-proj-rename"
-            aria-label="Project name"
-            autofocus
-            @keydown.enter.prevent="commit"
-            @keydown.esc.prevent="renaming = false"
-            @blur="commit"
-          />
-          <template v-else>
-            <h1 class="mar-proj-title">{{ p.name }}</h1>
-            <button
-              type="button"
-              class="mar-proj-edit"
-              aria-label="Rename project"
-              @click="startRename"
-            >
-              <Pencil :size="13" />
-            </button>
-          </template>
-          <MarStatus v-if="p.archived" status="paused" label="Archived" />
-        </div>
-        <div class="mar-proj-meta">
-          <button type="button" class="mar-pj-who" @click="tab = 'people'">
-            <span class="mar-proj-faces">
-              <MemberAvatar v-for="m in p.members.slice(0, 4)" :key="m" :name="m" size="sm" />
-            </span>
-            {{ people }}
+    <MarEntityHeader
+      back="Projects"
+      :title="p.name"
+      :status="p.archived ? 'paused' : undefined"
+      :status-label="p.archived ? 'Archived' : undefined"
+      @back="go('projects' as Page)"
+    >
+      <template #cover><img :src="p.art" alt="" /></template>
+      <template #title>
+        <input
+          v-if="renaming"
+          v-model="draft"
+          class="mar-proj-rename"
+          aria-label="Project name"
+          autofocus
+          @keydown.enter.prevent="commit"
+          @keydown.esc.prevent="renaming = false"
+          @blur="commit"
+        />
+        <template v-else>
+          <h1 class="mar-eh-title">{{ p.name }}</h1>
+          <button
+            type="button"
+            class="mar-proj-edit"
+            aria-label="Rename project"
+            @click="startRename"
+          >
+            <Pencil :size="13" />
           </button>
-          <span class="mar-proj-dot" />
-          <Select
-            v-model="envId"
-            :options="BUILDS"
-            label="Runs on"
-            variant="ghost"
-            size="sm"
-            class="mar-proj-build"
-          />
-          <span class="mar-proj-dot" />
-          <span>Updated {{ p.updated.toLowerCase() }}</span>
-        </div>
-      </div>
-      <div class="flex shrink-0 items-center gap-2">
+        </template>
+      </template>
+      <template #meta>
+        <button type="button" class="mar-eh-link" @click="tab = 'people'">
+          <span class="mar-eh-faces">
+            <MemberAvatar v-for="m in p.members.slice(0, 4)" :key="m" :name="m" size="sm" />
+          </span>
+          {{ people }}
+        </button>
+        <span class="mar-eh-dot" />
+        <Select
+          v-model="envId"
+          :options="BUILDS"
+          label="Runs on"
+          variant="ghost"
+          size="sm"
+          class="mar-proj-build"
+        />
+        <span class="mar-eh-dot" />
+        <span>Updated {{ p.updated.toLowerCase() }}</span>
+      </template>
+      <template #actions>
         <Button @click="tab = 'people'"><UserPlus :size="15" />Invite</Button>
         <Button variant="primary" @click="newWorkflow"><Plus :size="15" />Workflow</Button>
         <MarItemMenu :lines label="Project actions" />
-      </div>
-    </section>
+      </template>
+    </MarEntityHeader>
 
     <!-- What it made last, and what happened in it. -->
     <section v-if="showOverview && latest" class="mar-proj-over">
@@ -306,33 +306,33 @@ function removePerson(m: string): void {
       <div class="mar-proj-feed">
         <h2 class="mar-proj-eyebrow">Recent activity</h2>
         <ol class="flex flex-col">
+          <!-- Who and when on top, what below, the thing itself on the right. -->
           <li v-for="(e, i) in activity" :key="i" class="mar-proj-event">
             <MemberAvatar :name="e.who" size="sm" />
-            <span class="min-w-0 flex-1 truncate text-ui text-muted-foreground">
-              <b class="font-medium text-base-foreground">{{ e.who }}</b> {{ e.verb }}
-              <span class="text-base-foreground">{{ e.what }}</span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-ui text-muted-foreground">
+                <b class="font-medium text-base-foreground">{{ e.who }}</b> {{ e.verb }}
+                <span class="mar-proj-event-when">· {{ e.when }}</span>
+              </span>
+              <span class="truncate text-ui text-base-foreground">{{ e.what }}</span>
             </span>
-            <span class="shrink-0 text-ui text-subtle-foreground">{{ e.when }}</span>
+            <span class="mar-proj-event-thumb">
+              <img v-if="e.thumbId" :src="thumb(e.thumbId)" alt="" />
+              <MarStatus
+                v-if="e.status === 'running' || e.status === 'executing' || e.status === 'queued'"
+                :status="e.status"
+                on-media
+                class="mar-proj-event-status"
+              />
+            </span>
           </li>
         </ol>
       </div>
     </section>
 
     <!-- One row: the sections left, the open section's filters right. -->
-    <div class="mar-proj-row">
-      <div class="mar-proj-tabs" role="tablist" aria-label="In this project">
-        <button
-          v-for="t in TABS"
-          :key="t.value"
-          type="button"
-          role="tab"
-          :aria-selected="tab === t.value"
-          class="mar-proj-tab"
-          @click="tab = t.value"
-        >
-          {{ t.label }}<span class="mar-proj-count">{{ t.count }}</span>
-        </button>
-      </div>
+    <div class="mar-eh-row">
+      <MarSeg v-model="tab" :options="TABS" label="In this project" />
       <div id="mar-proj-tools" class="ml-auto flex min-w-0 items-center" />
     </div>
 
@@ -347,44 +347,90 @@ function removePerson(m: string): void {
       error-text="Who's in this project lives in Comfy Cloud. It comes back when you reconnect."
     >
       <div class="mar-people">
+        <!-- Invite: one field, the role and the button inside it. -->
         <form class="mar-invite" @submit.prevent="invite">
-          <Input v-model="email" placeholder="Invite by email" class="flex-1" type="email">
-            <template #leading><UserPlus :size="14" class="text-subtle-foreground" /></template>
-          </Input>
-          <Select v-model="inviteRole" :options="ROLES" class="w-30" />
-          <Button variant="primary" type="submit" :disabled="!email.trim()">Invite</Button>
+          <!-- A div, not a label: the shell fills focused labels. -->
+          <div class="mar-invite-field">
+            <UserPlus :size="15" class="shrink-0 text-subtle-foreground" />
+            <input
+              v-model="email"
+              type="email"
+              placeholder="Invite by email"
+              aria-label="Email to invite"
+            />
+          </div>
+          <Select
+            v-model="inviteRole"
+            :options="ROLES"
+            variant="ghost"
+            size="sm"
+            class="mar-invite-role"
+          />
+          <Button variant="primary" size="sm" type="submit" :disabled="!email.trim()">
+            Invite
+          </Button>
         </form>
         <p class="mar-people-note">
           People here see this project’s workflows and assets, nothing else.
         </p>
-        <div v-for="(m, i) in p.members" :key="m" class="mar-person">
-          <MemberAvatar :name="m" />
-          <span class="flex min-w-0 flex-1 flex-col">
-            <span class="text-ui font-medium text-base-foreground"
-              >{{ m }}<span v-if="i === 0" class="text-subtle-foreground"> (you)</span></span
+
+        <!-- Members: the one table pattern (mar/table/table.css). -->
+        <div class="mar-table mar-people-table">
+          <div class="mar-table-head">
+            <span class="col-span-2"
+              >{{ p.members.length }} {{ p.members.length === 1 ? 'member' : 'members' }}</span
             >
-            <span class="text-ui text-subtle-foreground">{{ m.toLowerCase() }}@example.com</span>
-          </span>
-          <MarStatus v-if="invited.includes(m)" status="queued" label="Invite sent" />
-          <span v-if="i === 0" class="mar-person-role">Owner</span>
-          <template v-else>
-            <Select
-              :model-value="roleOf(m)"
-              :options="ROLES"
-              variant="ghost"
-              size="sm"
-              @update:model-value="roles[m] = $event"
-            />
-            <button
-              type="button"
-              class="mar-person-x"
-              :aria-label="`Remove ${m}`"
-              @click="removePerson(m)"
-            >
-              <X :size="14" />
-            </button>
-          </template>
+            <span />
+            <span class="mar-person-owner">Role</span>
+            <span />
+          </div>
+          <div v-for="(m, i) in p.members" :key="m" class="mar-table-row mar-person">
+            <MemberAvatar :name="m" class="is-center" />
+            <span class="mar-table-name">
+              <span class="mar-table-title"
+                >{{ m
+                }}<span v-if="i === 0" class="font-normal text-subtle-foreground">
+                  (you)</span
+                ></span
+              >
+              <span class="mar-table-sub">{{ emailOf(m) }}</span>
+            </span>
+            <span class="mar-table-cell">
+              <MarStatus v-if="invited.includes(m)" status="queued" label="Invite sent" />
+            </span>
+            <span class="mar-table-cell mar-person-role">
+              <span v-if="i === 0" class="mar-person-owner">Owner</span>
+              <Select
+                v-else
+                :model-value="roleOf(m)"
+                :options="ROLES"
+                variant="ghost"
+                size="sm"
+                class="w-full"
+                @update:model-value="roles[m] = $event"
+              />
+            </span>
+            <span class="mar-table-cell is-end">
+              <button
+                v-if="i > 0"
+                type="button"
+                class="mar-person-x"
+                :aria-label="`Remove ${m}`"
+                @click="removePerson(m)"
+              >
+                <X :size="14" />
+              </button>
+            </span>
+          </div>
         </div>
+        <MarEmpty
+          v-if="p.members.length === 1"
+          :icon="Users"
+          title="Work on this with someone"
+          text="Invite people by email above. They see this project’s workflows and assets, nothing else."
+          :pics="EMPTY_PICS.people"
+          compact
+        />
       </div>
     </MarPage>
 
@@ -393,46 +439,6 @@ function removePerson(m: string): void {
 </template>
 
 <style>
-:root .proto-ui.proto-ui.proto-ui .mar-proj-crumb {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 6px;
-  margin: 36px 0 14px -8px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-crumb:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-base-foreground);
-}
-.mar-proj-head {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding-bottom: 28px;
-}
-.mar-proj-cover {
-  width: 64px;
-  height: 64px;
-  flex-shrink: 0;
-  border-radius: var(--radius-card, 14px);
-  object-fit: cover;
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-title {
-  overflow: hidden;
-  margin: 0;
-  color: var(--color-base-foreground);
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-proj-edit {
   display: inline-flex;
   width: 28px;
@@ -449,7 +455,7 @@ function removePerson(m: string): void {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-proj-head:hover .mar-proj-edit,
+:root .proto-ui.proto-ui.proto-ui .mar-eh-head:hover .mar-proj-edit,
 :root .proto-ui.proto-ui.proto-ui .mar-proj-edit:focus-visible {
   opacity: 1;
 }
@@ -468,49 +474,13 @@ function removePerson(m: string): void {
   letter-spacing: -0.02em;
   outline: none;
 }
-.mar-proj-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  white-space: nowrap;
-}
-.mar-proj-dot {
-  width: 3px;
-  height: 3px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--color-subtle-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-pj-who {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 8px;
-  margin-left: -4px;
-  padding: 0 6px 0 4px;
-  border-radius: var(--radius-control);
-  color: inherit;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-pj-who:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build[data-state='open'] {
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build[data-state='open'] {
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
-.mar-proj-faces {
-  display: flex;
-  padding-left: 6px;
-}
-.mar-proj-faces > * {
-  margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--color-content-background);
-}
 /* Beats the shell's filled selects: this one reads as text until hovered. */
-:root .proto-ui.proto-ui.proto-ui .mar-proj-meta .mar-proj-build {
+:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build {
   height: 26px;
   margin: 0 -4px;
   backdrop-filter: none;
@@ -584,94 +554,141 @@ function removePerson(m: string): void {
   padding: 0;
   list-style: none;
 }
+.mar-proj-feed ol {
+  gap: 2px;
+}
 .mar-proj-event {
   display: flex;
-  height: 40px;
+  min-height: 48px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-inline: -8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control, 8px);
+  line-height: 18px;
+  transition: background-color 150ms ease;
 }
-.mar-proj-event + .mar-proj-event {
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+.mar-proj-event:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
 }
-
-/* The one row of tabs, with the filters docked right */
-.mar-proj-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border-default);
-}
-.mar-proj-row #mar-proj-tools {
-  padding-bottom: 8px;
-}
-.mar-proj-tabs {
-  display: flex;
-  gap: 22px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab {
-  position: relative;
-  display: inline-flex;
-  height: 42px;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-proj-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-.mar-proj-tab[aria-selected='true']::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--color-base-foreground);
-  content: '';
-}
-.mar-proj-count {
+.mar-proj-event-when {
   color: var(--color-subtle-foreground);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+.mar-proj-event-thumb {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.mar-proj-event-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mar-proj-event-status {
+  position: absolute;
+  inset: auto 2px 2px auto;
+}
 
-/* People */
+/* People: a narrow column, the invite on top, members in one list. */
 .mar-people {
   display: flex;
-  max-width: 680px;
+  max-width: 720px;
   flex-direction: column;
-  gap: 2px;
 }
 .mar-invite {
   display: flex;
-  gap: 8px;
+  height: 44px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 14px;
+  border-radius: calc(var(--mar-tab-radius, 10px) + 2px);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.mar-invite:focus-within {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-border-focus);
+}
+.mar-invite-field {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-invite-field input {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  outline: none;
+}
+.mar-invite-field input::placeholder {
+  color: var(--color-subtle-foreground);
 }
 .mar-people-note {
-  margin: 8px 0 14px;
+  margin: 10px 2px 28px;
   color: var(--color-subtle-foreground);
   font-size: 12px;
 }
-.mar-person {
-  display: flex;
-  height: 60px;
-  align-items: center;
-  gap: 12px;
-  margin: 0 -12px;
-  padding: 0 12px;
-  border-radius: var(--radius-card, 12px);
+/* Members follow the one table; rows hold a role picker, so their cells
+   stay centred, and nothing opens on a click. */
+.mar-people-table {
+  --mar-grid: 32px minmax(0, 1fr) auto 128px 28px;
 }
-.mar-person:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+:root .proto-ui.proto-ui.proto-ui .mar-people-table .mar-person {
+  align-items: center;
+  cursor: default;
 }
 .mar-person-role {
-  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+.mar-person-owner {
+  padding-left: 11px;
   color: var(--color-muted-foreground);
+}
+.mar-table-head .mar-person-owner {
+  color: inherit;
+}
+/* Quiet role pickers: text until hovered or open (beats the shell's pills). */
+:root .proto-ui.proto-ui.proto-ui :is(.mar-person-role, .mar-invite) button[role='combobox'] {
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-color: transparent;
+  border-radius: var(--mar-tab-item-radius, 7px);
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--color-base-foreground);
   font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui :is(.mar-person-role, .mar-invite) button[role='combobox']:hover,
+:root
+  .proto-ui.proto-ui.proto-ui
+  :is(.mar-person-role, .mar-invite)
+  button[role='combobox'][data-state='open'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-invite .mar-invite-role {
+  width: auto;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-invite button[type='submit'] {
+  height: 32px;
+  margin-left: 2px;
+  padding: 0 14px;
+  border-radius: var(--mar-tab-item-radius, 7px);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-person-x {
   display: inline-flex;

@@ -66,7 +66,7 @@ import MarCreditsFlyout from './MarCreditsFlyout.vue'
   gap: 6px;
   margin-left: 6px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
   font-size: 12px;

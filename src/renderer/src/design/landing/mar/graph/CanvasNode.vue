@@ -6,19 +6,27 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns2,
-  Copy,
   Download,
   LayoutGrid,
-  Pause,
+  LoaderCircle,
+  Minus,
   Play,
-  Trash2
+  Plus,
+  SlidersHorizontal,
+  Upload
 } from 'lucide-vue-next'
 import { NODE_ICONS } from './nodeIcons'
 import {
   SOCKETS,
   canvasNodeHeight,
-  controlsHeight,
+  hasCycler,
+  hasFileRow,
+  hasResult,
+  hasSettings,
   mediaOf,
+  settingsOpen,
+  nodeWidth,
+  slotsHeight,
   type CanvasGeometry,
   type Control,
   type SNode,
@@ -26,26 +34,27 @@ import {
 } from './canvasData'
 
 /**
- * One node of the Canvas mode (the simpler layer over ComfyUI). Its title
- * sits above it, its result fills it, its controls hang below in their
- * own panel, and its typed sockets stick out of the preview's edges.
- * Socket names show where a node takes more than one input, or all of
- * them with the socket labels switch (canvas controls). Its widgets are
- * live: the graph owns the values, the node only reports edits. Selected,
- * its title shows its actions (run up to here, duplicate, delete).
+ * One node, in ComfyUI's Vue node anatomy (renderer/extensions/vueNodes):
+ * a title bar with the collapse chevron and its badges; then the body,
+ * its typed slots at the top (inputs left, outputs right, their dots on
+ * the node's edges), its widget rows (a label, then the control), and its
+ * content (the text, or the result). States follow the product: selected
+ * and executing draw an outline around it, executing also runs a progress
+ * bar along the title's edge, an error rings it and opens a footer,
+ * bypassed tints it, muted fades it, collapsed folds it to its title.
+ * Output first, as Willie Falloon's Node Banana node: what a node made is
+ * its body, earlier results a step away under it, and its widgets fold
+ * into one row below that, open until the first result lands.
+ * Widgets are live: the graph owns the values, the node only reports edits.
  */
-const { node, g, current, labels, selected, wiring, locked, solo } = defineProps<{
+const { node, g, selected, wiring, locked } = defineProps<{
   node: SNode
   g: CanvasGeometry
-  current: boolean
-  labels: boolean
   selected: boolean
   /** A link being drawn: its type, and the side it started from. */
   wiring?: { type: SocketType; side: 'in' | 'out'; node: string }
   /** In a locked group: skipped by runs. */
   locked?: boolean
-  /** The only node selected: its title shows its actions. */
-  solo?: boolean
 }>()
 const emit = defineEmits<{
   set: [key: string, value: string | number]
@@ -59,48 +68,83 @@ const emit = defineEmits<{
 const ICONS = NODE_ICONS
 const media = computed(() => mediaOf(node))
 const height = computed(() => canvasNodeHeight(node, g))
-const controls = computed(() => controlsHeight(node, g))
+const slots = computed(() => slotsHeight(node, g))
 
 const running = computed(() => node.state === 'running')
-/** The step count over the preview, for the nodes that take a while. */
+/** The progress bar, for the nodes that take a while. */
 const showProgress = computed(() => running.value && (node.steps ?? 0) > 1)
+/** A picture or a clip: its run shows on the preview, not the title. */
+const framed = computed(() => media.value === 'image' || media.value === 'video')
+const settings = computed(() => hasSettings(node))
+/** What folds, and the actions (Save) that stay out under it. */
+const fields = computed(() => node.controls.filter((c) => c.kind !== 'button'))
+const actions = computed(() => node.controls.filter((c) => c.kind === 'button'))
+const isOpen = computed(() => settingsOpen(node))
+const made = computed(() => hasResult(node))
+/** The folded settings read as the model, then its values. */
+const summary = computed(() => {
+  const values = fields.value.map((c) => (c.kind === 'slider' ? c.value.toFixed(2) : c.value))
+  return { title: values[0] ?? '', values: values.slice(1, 3) }
+})
+/** The result on show: the latest, or an earlier run. */
+const latest = computed(() => !node.history.length || node.pick === node.history.length - 1)
+/** At most seven dots, around the one on show. */
+const dots = computed(() => {
+  const n = node.history.length
+  const start = Math.min(Math.max(0, node.pick - 3), Math.max(0, n - 7))
+  return Array.from({ length: Math.min(7, n) }, (_, i) => start + i)
+})
+const progress = computed(() => (node.step ?? 0) / (node.steps ?? 1))
 /** Text you write (a prompt, a template) or text a model wrote. */
 const editable = computed(() => node.kind === 'prompt' || node.kind === 'promptConstructor')
 const shown = computed(() => node.history[node.pick])
 const cutout = computed(() => !!node.cutout)
 
-/** A word beside the title for where the node stands. */
+/** ComfyUI names an output by its type; text travels as STRING. */
+const typeName = (t: SocketType): string => (t === 'TEXT' ? 'STRING' : t)
+
+/** A status badge in the title bar, where the node stands. */
 const tag = computed(() => {
   if (locked) return 'Skipped'
+  if (node.mode === 'bypass') return 'Bypassed'
+  if (node.mode === 'mute') return 'Muted'
   if (node.state === 'queued') return 'Queued'
   if (node.state === 'error') return 'Error'
-  if (node.state === 'running' && !showProgress.value) return 'Running'
+  if (showProgress.value) return `${node.step} / ${node.steps}`
+  if (running.value) return 'Running'
+  if (node.state === 'paused') return 'Paused'
   if (node.stale) return 'Outdated'
   if (node.state === 'done') return 'Done'
   return ''
 })
+const tagTone = computed(() => {
+  if (node.state === 'error') return 'is-error'
+  if (running.value || node.state === 'paused') return 'is-live'
+  if (node.stale && !locked && !node.mode) return 'is-stale'
+  return ''
+})
 
-// A combo's or the model's options open under it; a click elsewhere
-// (which selects another node, or none) closes them.
-const open = ref<number | null>(null)
+// A combo's options open under it; a click elsewhere (which selects
+// another node, or none) closes them.
+const open = ref<string | null>(null)
 watch(
-  () => selected,
+  () => selected && isOpen.value,
   (on) => !on && (open.value = null)
 )
 function choose(c: Control, value: string): void {
   emit('set', c.key, value)
   open.value = null
 }
-const menuTop = (i: number): string => `${6 + (i + 1) * (g.control + g.gap)}px`
 
-// Sliders follow the pointer, in steps of 0.05.
-function slide(c: Control, e: PointerEvent): void {
+// A number scrubs: drag across it, or step it with − and +.
+const STEP = 0.05
+const clamp = (v: number): number => Math.min(1, Math.max(0, Math.round(v * 20) / 20))
+function scrub(c: Control, e: PointerEvent): void {
   if (e.type === 'pointermove' && !(e.buttons & 1)) return
   const el = e.currentTarget as HTMLElement
   if (e.type === 'pointerdown') el.setPointerCapture(e.pointerId)
   const r = el.getBoundingClientRect()
-  const v = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-  emit('set', c.key, Math.round(v * 20) / 20)
+  emit('set', c.key, clamp((e.clientX - r.left) / r.width))
 }
 
 // Compare: the divider follows the pointer across the pictures.
@@ -130,7 +174,7 @@ const bars = computed(() =>
   })
 )
 
-/** A socket a link being drawn could end on, or one it can't. */
+/** A slot a link being drawn could end on, or one it can't. */
 function socketFit(side: 'in' | 'out', type: SocketType): string {
   if (!wiring) return ''
   if (wiring.node === node.id || wiring.side === side) return 'is-off'
@@ -146,6 +190,8 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
       selected && 'is-selected',
       running && 'is-running',
       node.state === 'error' && 'is-error',
+      node.mode && `is-${node.mode}`,
+      node.collapsed && 'is-collapsed',
       locked && 'is-locked',
       open !== null && 'is-menu'
     ]"
@@ -153,567 +199,987 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
     :style="{
       left: `${node.x}px`,
       top: `${node.y}px`,
-      width: `${node.w}px`,
+      width: `${nodeWidth(node)}px`,
       height: `${height}px`
     }"
     :aria-label="node.title"
   >
-    <header class="sg-head" :data-node-head="node.id" :style="{ height: `${g.head}px` }">
-      <component :is="ICONS[node.kind]" v-if="!current" :size="13" class="sg-head-icon" />
-      <span v-else class="sg-dot" />
-      <span class="sg-head-title">{{ node.title }}</span>
-      <span v-if="node.badge && !solo" class="sg-badge">{{ node.badge }}</span>
-      <span
-        v-if="tag && !solo"
-        class="sg-state"
-        :class="`is-${locked ? 'locked' : node.state === 'error' ? 'error' : node.stale && !running ? 'stale' : node.state}`"
-      >
-        <Check v-if="tag === 'Done'" :size="11" />{{ tag }}
+    <span v-if="selected || running" class="sg-outline" aria-hidden="true" />
+
+    <div class="sg-inner">
+      <header class="sg-head" :data-node-head="node.id" :style="{ height: `${g.head}px` }">
+        <button
+          type="button"
+          class="sg-collapse"
+          :aria-label="node.collapsed ? 'Expand node' : 'Collapse node'"
+          :aria-expanded="!node.collapsed"
+          @click="emit('action', 'collapse')"
+        >
+          <ChevronDown :size="16" />
+        </button>
+        <span class="sg-title">{{ node.title }}</span>
+        <span v-if="node.badge && !node.collapsed" class="sg-badge">{{ node.badge }}</span>
+        <span v-if="tag" class="sg-badge is-state" :class="tagTone">
+          <Check v-if="tag === 'Done'" :size="11" />{{ tag }}
+        </span>
+      </header>
+
+      <!-- Executing: the bar runs along the title's lower edge. -->
+      <span v-if="showProgress && !framed" class="sg-progress" aria-hidden="true">
+        <i :style="{ width: `${progress * 100}%` }" />
       </span>
-      <span v-if="solo" class="sg-actions">
-        <button
-          type="button"
-          class="sg-act"
-          title="Run up to here"
-          aria-label="Run up to here"
-          @click="emit('action', 'run')"
+
+      <div v-if="!node.collapsed" class="sg-body" :style="{ rowGap: `${g.gap}px` }">
+        <!-- Slots: inputs left, outputs right. Drag from a dot to wire it. -->
+        <div v-if="slots" class="sg-slots" :style="{ height: `${slots}px` }">
+          <div class="sg-col">
+            <div
+              v-for="(s, i) in node.ins"
+              :key="`i${i}`"
+              class="sg-slot is-in"
+              :class="socketFit('in', s.type)"
+              data-socket="in"
+              :data-socket-node="node.id"
+              :data-socket-index="i"
+              :style="{ height: `${g.slot}px`, '--sg-socket': SOCKETS[s.type] }"
+            >
+              <i class="sg-dot" /><span class="sg-slot-label">{{ s.name }}</span>
+            </div>
+          </div>
+          <div class="sg-col is-out">
+            <div
+              v-for="(s, i) in node.outs"
+              :key="`o${i}`"
+              class="sg-slot is-out"
+              :class="socketFit('out', s.type)"
+              data-socket="out"
+              :data-socket-node="node.id"
+              :data-socket-index="i"
+              :style="{ height: `${g.slot}px`, '--sg-socket': SOCKETS[s.type] }"
+            >
+              <span class="sg-slot-label">{{ typeName(s.type) }}</span
+              ><i class="sg-dot" />
+            </div>
+          </div>
+        </div>
+
+        <!-- An input's file, as a widget row over its preview. -->
+        <div v-if="hasFileRow(node)" class="sg-widgets">
+          <div class="sg-row" :style="{ height: `${g.control}px` }">
+            <span class="sg-label">{{ node.kind }}</span>
+            <span class="sg-w is-combo is-file">
+              <span class="sg-w-value">{{ node.chip ?? 'Choose a file' }}</span>
+              <Upload :size="12" class="sg-w-icon" />
+            </span>
+          </div>
+        </div>
+
+        <!-- Content: the text, or the result. -->
+        <div
+          v-if="node.body"
+          class="sg-content"
+          :class="`is-${media}`"
+          :style="{ height: `${node.body}px` }"
         >
-          <Play :size="11" fill="currentColor" />
-        </button>
-        <button
-          type="button"
-          class="sg-act"
-          title="Duplicate"
-          aria-label="Duplicate"
-          @click="emit('action', 'duplicate')"
-        >
-          <Copy :size="12" />
-        </button>
-        <button
-          type="button"
-          class="sg-act"
-          title="Delete"
-          aria-label="Delete"
-          @click="emit('action', 'delete')"
-        >
-          <Trash2 :size="12" />
-        </button>
-      </span>
-    </header>
-
-    <!-- The main element: the result, or the text. -->
-    <div class="sg-body" :style="{ height: `${node.body}px` }">
-      <template v-if="media === 'text'">
-        <textarea
-          v-if="editable"
-          ref="area"
-          class="sg-text"
-          :class="node.kind === 'promptConstructor' && 'has-foot'"
-          :value="node.text"
-          :aria-label="node.title"
-          spellcheck="false"
-          :placeholder="
-            node.kind === 'prompt' ? 'Describe the image' : 'Type @ to insert a variable'
-          "
-          @input="emit('text', ($event.target as HTMLTextAreaElement).value)"
-        />
-        <p v-else-if="node.text" class="sg-text is-result">{{ node.text }}</p>
-        <p v-else class="sg-empty">
-          <component :is="ICONS[node.kind]" :size="16" />Writes here when it runs
-        </p>
-        <span v-if="node.kind === 'prompt'" class="sg-count"
-          >{{ node.text?.length ?? 0 }} chars</span
-        >
-        <span v-if="node.kind === 'promptConstructor'" class="sg-vars">
-          <button
-            v-for="s in node.ins"
-            :key="s.name"
-            type="button"
-            class="sg-var"
-            @click="insertVar(s.name)"
-          >
-            @{{ s.name }}
-          </button>
-        </span>
-      </template>
-
-      <div v-else-if="media === 'pause'" class="sg-pause">
-        <span class="sg-pause-icon"><Pause :size="14" fill="currentColor" /></span>
-        <template v-if="node.state === 'paused'">
-          <span class="sg-pause-title">Paused</span>
-          <span class="sg-pause-note">Refine, then resume</span>
-          <button type="button" class="sg-resume" @click="emit('resume')">
-            <Play :size="11" fill="currentColor" />Resume
-          </button>
-        </template>
-        <template v-else>
-          <span class="sg-pause-title">Pause</span>
-          <span class="sg-pause-note">The run waits here for you</span>
-        </template>
-      </div>
-
-      <div v-else-if="media === 'audio'" class="sg-audio">
-        <span class="sg-play"><Play :size="12" fill="currentColor" /></span>
-        <span class="sg-wave" :class="running && 'is-working'">
-          <i v-for="(b, i) in bars" :key="i" :style="{ height: `${b * 100}%` }" />
-        </span>
-        <span class="sg-audio-time">{{ node.text ?? node.chip ?? '0:00' }}</span>
-      </div>
-
-      <div
-        v-else-if="media === 'compare'"
-        class="sg-compare"
-        @pointerdown="divide"
-        @pointermove="divide"
-      >
-        <template v-if="node.pair">
-          <img :src="node.pair[0]" alt="" draggable="false" class="sg-img" />
-          <img
-            :src="node.pair[1]"
-            alt=""
-            draggable="false"
-            class="sg-img"
-            :style="{ clipPath: `inset(0 0 0 ${split * 100}%)` }"
-          />
-          <span class="sg-divider" :style="{ left: `${split * 100}%` }"><i /></span>
-          <span class="sg-chip">Before</span>
-          <span class="sg-chip is-right">After</span>
-        </template>
-        <p v-else class="sg-empty"><Columns2 :size="16" />Connect two images</p>
-      </div>
-
-      <div v-else-if="media === 'gallery'" class="sg-gallery">
-        <img
-          v-for="(r, i) in [...node.history].reverse()"
-          :key="i"
-          :src="r.src"
-          alt=""
-          draggable="false"
-          @dblclick="(emit('pick', node.history.length - 1 - i), emit('view'))"
-        />
-        <p v-if="!node.history.length" class="sg-empty">
-          <LayoutGrid :size="16" />Every result that reaches it
-        </p>
-      </div>
-
-      <template v-else>
-        <Transition name="sg-swap">
-          <video
-            v-if="media === 'video' && node.video"
-            :key="node.video"
-            :src="node.video"
-            class="sg-img"
-            autoplay
-            muted
-            loop
-            playsinline
-            @dblclick="emit('view')"
-          />
-          <img
-            v-else-if="node.image"
-            :key="node.image"
-            :src="node.image"
-            alt=""
-            draggable="false"
-            class="sg-img"
-            :class="[
-              showProgress && 'is-working',
-              media === 'video' && !showProgress && 'is-motion',
-              cutout && 'is-cutout'
-            ]"
-            @dblclick="emit('view')"
-          />
-          <p v-else class="sg-empty" :class="showProgress && 'is-working'">
-            <component :is="ICONS[node.kind]" :size="16" />{{
-              node.ins.length ? 'Shows here when it runs' : 'Drop a file here'
-            }}
-          </p>
-        </Transition>
-        <span v-if="node.chip" class="sg-chip">{{ node.chip }}</span>
-        <span v-if="media === 'video' && (node.video || node.image)" class="sg-player">
-          <Play :size="10" fill="currentColor" /><span class="sg-player-track"><i /></span>0:05
-        </span>
-        <div v-if="showProgress" class="sg-progress">
-          <span class="sg-progress-label"
-            >{{ node.verb }} · {{ node.step }} of {{ node.steps }}</span
-          >
-          <span class="sg-progress-track">
-            <span
-              class="sg-progress-fill"
-              :style="{ width: `${((node.step ?? 0) / (node.steps ?? 1)) * 100}%` }"
+          <template v-if="media === 'text'">
+            <textarea
+              v-if="editable"
+              ref="area"
+              class="sg-text"
+              :class="node.kind === 'promptConstructor' && 'has-foot'"
+              :value="node.text"
+              :aria-label="node.title"
+              spellcheck="false"
+              :placeholder="
+                node.kind === 'prompt' ? 'Describe the image' : 'Type @ to insert a variable'
+              "
+              @pointerdown.stop
+              @input="emit('text', ($event.target as HTMLTextAreaElement).value)"
             />
-          </span>
-        </div>
-      </template>
+            <p v-else-if="node.text" class="sg-text is-result">{{ node.text }}</p>
+            <p v-else class="sg-empty">
+              <component :is="ICONS[node.kind]" :size="16" />Writes here when it runs
+            </p>
+            <span v-if="node.kind === 'prompt'" class="sg-count"
+              >{{ node.text?.length ?? 0 }} chars</span
+            >
+            <span v-if="node.kind === 'promptConstructor'" class="sg-vars">
+              <button
+                v-for="s in node.ins"
+                :key="s.name"
+                type="button"
+                class="sg-var"
+                @click="insertVar(s.name)"
+              >
+                @{{ s.name }}
+              </button>
+            </span>
+          </template>
 
-      <div v-if="node.state === 'error'" class="sg-progress" role="alert">
-        <span class="sg-progress-label">Couldn't run · {{ node.error }}</span>
-      </div>
+          <template v-else-if="media === 'pause'">
+            <template v-if="node.state === 'paused'">
+              <span class="sg-note">Paused. Refine, then resume.</span>
+              <button
+                type="button"
+                class="sg-w is-button is-primary sg-resume"
+                @click="emit('resume')"
+              >
+                <Play :size="11" fill="currentColor" />Resume
+              </button>
+            </template>
+            <span v-else class="sg-note">A run stops here until you resume it.</span>
+          </template>
 
-      <!-- Earlier results: 1 of N, tagged by their run. -->
-      <span
-        v-if="node.history.length > 1 && media !== 'gallery' && !showProgress"
-        class="sg-history"
-      >
-        <button
-          type="button"
-          aria-label="Earlier result"
-          :disabled="node.pick === 0"
-          @click="emit('pick', node.pick - 1)"
-        >
-          <ChevronLeft :size="12" />
-        </button>
-        <span :title="shown ? `Run ${shown.run}` : undefined"
-          >{{ node.pick + 1 }} / {{ node.history.length }}</span
-        >
-        <button
-          type="button"
-          aria-label="Later result"
-          :disabled="node.pick === node.history.length - 1"
-          @click="emit('pick', node.pick + 1)"
-        >
-          <ChevronRight :size="12" />
-        </button>
-      </span>
-    </div>
+          <div v-else-if="media === 'audio'" class="sg-audio">
+            <span class="sg-play"><Play :size="12" fill="currentColor" /></span>
+            <span class="sg-wave" :class="running && 'is-working'">
+              <i v-for="(b, i) in bars" :key="i" :style="{ height: `${b * 100}%` }" />
+            </span>
+            <span class="sg-audio-time">{{ node.text ?? '0:00' }}</span>
+          </div>
 
-    <!-- Controls, under the preview in their own panel. -->
-    <div
-      v-if="controls"
-      class="sg-controls"
-      :style="{ height: `${controls}px`, gap: `${g.gap}px`, marginTop: `${g.under}px` }"
-    >
-      <template v-for="(c, i) in node.controls" :key="i">
-        <button
-          v-if="c.kind === 'model' || c.kind === 'combo'"
-          type="button"
-          class="sg-c"
-          :class="[`is-${c.kind}`, open === i && 'is-open']"
-          :style="{ height: `${g.control}px` }"
-          :aria-expanded="open === i"
-          @click="open = open === i ? null : i"
-        >
-          <template v-if="c.kind === 'model'">
-            <span class="sg-model-dot" />
-            <span class="sg-c-value is-strong">{{ c.value }}</span>
-            <span class="sg-c-name">{{
-              c.options.find((o) => o.value === c.value)?.provider
+          <div
+            v-else-if="media === 'compare'"
+            class="sg-frame sg-compare"
+            @pointerdown="divide"
+            @pointermove="divide"
+          >
+            <template v-if="node.pair">
+              <img :src="node.pair[0]" alt="" draggable="false" class="sg-img" />
+              <img
+                :src="node.pair[1]"
+                alt=""
+                draggable="false"
+                class="sg-img"
+                :style="{ clipPath: `inset(0 0 0 ${split * 100}%)` }"
+              />
+              <span class="sg-divider" :style="{ left: `${split * 100}%` }"><i /></span>
+              <span class="sg-chip">Before</span>
+              <span class="sg-chip is-right">After</span>
+            </template>
+            <p v-else class="sg-empty"><Columns2 :size="16" />Connect two images</p>
+          </div>
+
+          <div v-else-if="media === 'gallery'" class="sg-gallery">
+            <img
+              v-for="(r, i) in [...node.history].reverse()"
+              :key="i"
+              :src="r.src"
+              alt=""
+              draggable="false"
+              @dblclick="(emit('pick', node.history.length - 1 - i), emit('view'))"
+            />
+            <p v-if="!node.history.length" class="sg-empty">
+              <LayoutGrid :size="16" />Every result that reaches it
+            </p>
+          </div>
+
+          <div v-else class="sg-frame" :class="cutout && 'is-cutout'">
+            <Transition name="sg-swap">
+              <video
+                v-if="media === 'video' && node.video"
+                :key="node.video"
+                :src="node.video"
+                class="sg-img"
+                autoplay
+                muted
+                loop
+                playsinline
+                @dblclick="emit('view')"
+              />
+              <img
+                v-else-if="node.image"
+                :key="node.image"
+                :src="node.image"
+                alt=""
+                draggable="false"
+                class="sg-img"
+                :class="[
+                  showProgress && 'is-working',
+                  media === 'video' && !showProgress && 'is-motion',
+                  cutout && 'is-cutout'
+                ]"
+                @dblclick="emit('view')"
+              />
+              <p v-else class="sg-empty" :class="showProgress && 'is-working'">
+                <component :is="ICONS[node.kind]" :size="16" />{{
+                  node.ins.length ? 'Run to generate' : 'Drop a file here'
+                }}
+              </p>
+            </Transition>
+            <span v-if="made && !running" class="sg-chip">{{
+              latest ? 'Latest' : `Run ${shown?.run}`
             }}</span>
-          </template>
-          <template v-else>
-            <span class="sg-c-name">{{ c.name }}</span>
-            <span class="sg-c-value">{{ c.value }}</span>
-          </template>
-          <ChevronDown :size="12" class="sg-c-arrow" />
-        </button>
-        <button
-          v-else-if="c.kind === 'button'"
-          type="button"
-          class="sg-c is-button"
-          :style="{ height: `${g.control}px` }"
-          @click="emit('action', c.key)"
-        >
-          <span class="sg-c-button"><Download :size="12" />{{ c.label }}</span>
-        </button>
-        <div
-          v-else-if="c.kind === 'seg'"
-          class="sg-c is-seg"
-          :style="{ height: `${g.control}px` }"
-          role="radiogroup"
-          :aria-label="c.name"
-        >
-          <span class="sg-c-name">{{ c.name }}</span>
-          <span class="sg-seg">
-            <button
-              v-for="o in c.options"
-              :key="o"
-              type="button"
-              role="radio"
-              :aria-checked="o === c.value"
-              :class="o === c.value && 'is-on'"
-              @click="emit('set', c.key, o)"
-            >
-              {{ o }}
-            </button>
-          </span>
+            <span v-else-if="node.chip && !hasFileRow(node) && !running" class="sg-chip">{{
+              node.chip
+            }}</span>
+            <!-- Running: the progress sits on the preview it is making. -->
+            <span v-if="running" class="sg-run" aria-live="polite">
+              <span class="sg-run-label"
+                ><LoaderCircle :size="12" class="sg-spin" />{{ node.verb ?? 'Running'
+                }}<template v-if="showProgress">
+                  · {{ Math.round(progress * 100) }}%</template
+                ></span
+              >
+              <i v-if="showProgress" class="sg-run-bar" :style="{ width: `${progress * 100}%` }" />
+            </span>
+          </div>
         </div>
-        <div
-          v-else
-          class="sg-c is-slider"
-          :style="{ height: `${g.control}px` }"
-          role="slider"
-          :aria-label="c.name"
-          :aria-valuenow="c.value"
-          aria-valuemin="0"
-          aria-valuemax="1"
-          tabindex="0"
-          @pointerdown="slide(c, $event)"
-          @pointermove="slide(c, $event)"
-          @keydown.left.prevent="
-            emit('set', c.key, Math.max(0, Math.round((c.value - 0.05) * 20) / 20))
-          "
-          @keydown.right.prevent="
-            emit('set', c.key, Math.min(1, Math.round((c.value + 0.05) * 20) / 20))
-          "
-        >
-          <span class="sg-fill" :style="{ width: `${c.value * 100}%` }" />
-          <span class="sg-c-name">{{ c.name }}</span>
-          <span class="sg-c-value">{{ c.value.toFixed(2) }}</span>
-        </div>
-      </template>
 
-      <!-- The open combo's options, under it. -->
-      <template v-for="(c, i) in node.controls" :key="`m${i}`">
+        <!-- Earlier results: step back through them, under the preview. -->
         <div
-          v-if="open === i && (c.kind === 'combo' || c.kind === 'model')"
-          class="sg-menu"
-          role="listbox"
-          :style="{ top: menuTop(i) }"
+          v-if="hasCycler(node)"
+          class="sg-cycler"
+          :class="running && 'is-off'"
+          :style="{ height: `${g.control}px` }"
         >
-          <template v-if="c.kind === 'model'">
-            <button
-              v-for="o in c.options"
-              :key="o.value"
-              type="button"
-              role="option"
-              :aria-selected="o.value === c.value"
-              class="sg-menu-item"
-              @click="choose(c, o.value)"
-            >
-              <span>{{ o.value }}</span
-              ><span class="sg-c-name">{{ o.provider }}</span>
-              <Check v-if="o.value === c.value" :size="12" />
-            </button>
-          </template>
-          <template v-else>
-            <button
-              v-for="o in c.options"
-              :key="o"
-              type="button"
-              role="option"
-              :aria-selected="o === c.value"
-              class="sg-menu-item"
-              @click="choose(c, o)"
-            >
-              <span>{{ o }}</span
-              ><Check v-if="o === c.value" :size="12" />
-            </button>
-          </template>
+          <button
+            type="button"
+            aria-label="Earlier result"
+            :disabled="node.pick === 0 || running"
+            @click="emit('pick', node.pick - 1)"
+          >
+            <ChevronLeft :size="12" />
+          </button>
+          <span class="sg-cycler-dots" aria-hidden="true">
+            <i v-for="i in dots" :key="i" :class="i === node.pick && 'is-on'" />
+          </span>
+          <span class="sg-cycler-count">{{ node.pick + 1 }} / {{ node.history.length }}</span>
+          <button
+            type="button"
+            aria-label="Later result"
+            :disabled="node.pick === node.history.length - 1 || running"
+            @click="emit('pick', node.pick + 1)"
+          >
+            <ChevronRight :size="12" />
+          </button>
         </div>
-      </template>
+
+        <!-- Settings: one row (the model, its values) that opens its widgets. -->
+        <div v-if="settings" class="sg-settings" :class="isOpen && 'is-open'">
+          <button
+            type="button"
+            class="sg-sum"
+            :style="{ height: `${g.control}px` }"
+            :aria-expanded="isOpen"
+            :aria-controls="`sg-settings-${node.id}`"
+            :aria-label="`Settings: ${[summary.title, ...summary.values].join(', ')}`"
+            @click="emit('action', 'settings')"
+          >
+            <SlidersHorizontal :size="12" class="sg-w-icon" />
+            <span class="sg-sum-title">{{ summary.title }}</span>
+            <span class="sg-sum-values">{{ summary.values.join(' · ') }}</span>
+            <ChevronDown :size="12" class="sg-w-icon sg-sum-chev" />
+          </button>
+          <div class="sg-panel">
+            <div
+              :id="`sg-settings-${node.id}`"
+              class="sg-widgets"
+              :style="{ rowGap: `${g.gap}px`, paddingTop: `${g.gap}px` }"
+              :inert="!isOpen"
+              :aria-hidden="!isOpen"
+            >
+              <div
+                v-for="c in fields"
+                :key="c.key"
+                class="sg-row"
+                :style="{ height: `${g.control}px` }"
+              >
+                <span class="sg-label">{{ c.kind === 'model' ? 'model' : c.name }}</span>
+
+                <button
+                  v-if="c.kind === 'model' || c.kind === 'combo'"
+                  type="button"
+                  class="sg-w is-combo"
+                  :class="open === c.key && 'is-open'"
+                  :aria-expanded="open === c.key"
+                  @click="open = open === c.key ? null : c.key"
+                >
+                  <span class="sg-w-value">{{ c.value }}</span>
+                  <ChevronDown :size="12" class="sg-w-icon" />
+                </button>
+
+                <span
+                  v-else-if="c.kind === 'seg'"
+                  class="sg-w is-seg"
+                  role="radiogroup"
+                  :aria-label="c.name"
+                >
+                  <button
+                    v-for="o in c.options"
+                    :key="o"
+                    type="button"
+                    role="radio"
+                    :aria-checked="o === c.value"
+                    :class="o === c.value && 'is-on'"
+                    @click="emit('set', c.key, o)"
+                  >
+                    {{ o }}
+                  </button>
+                </span>
+
+                <span v-else-if="c.kind === 'slider'" class="sg-w is-number">
+                  <span class="sg-fill" :style="{ width: `${c.value * 100}%` }" />
+                  <button
+                    type="button"
+                    class="sg-step"
+                    :aria-label="`Decrease ${c.name}`"
+                    :disabled="c.value <= 0"
+                    @click="emit('set', c.key, clamp(c.value - STEP))"
+                  >
+                    <Minus :size="12" />
+                  </button>
+                  <span
+                    class="sg-scrub"
+                    role="slider"
+                    :aria-label="c.name"
+                    :aria-valuenow="c.value"
+                    aria-valuemin="0"
+                    aria-valuemax="1"
+                    tabindex="0"
+                    @pointerdown="scrub(c, $event)"
+                    @pointermove="scrub(c, $event)"
+                    @keydown.left.prevent="emit('set', c.key, clamp(c.value - STEP))"
+                    @keydown.right.prevent="emit('set', c.key, clamp(c.value + STEP))"
+                    >{{ c.value.toFixed(2) }}</span
+                  >
+                  <button
+                    type="button"
+                    class="sg-step"
+                    :aria-label="`Increase ${c.name}`"
+                    :disabled="c.value >= 1"
+                    @click="emit('set', c.key, clamp(c.value + STEP))"
+                  >
+                    <Plus :size="12" />
+                  </button>
+                </span>
+
+                <!-- The open combo's options, under it. -->
+                <div
+                  v-if="open === c.key && (c.kind === 'combo' || c.kind === 'model')"
+                  class="sg-menu"
+                  role="listbox"
+                >
+                  <template v-if="c.kind === 'model'">
+                    <button
+                      v-for="o in c.options"
+                      :key="o.value"
+                      type="button"
+                      role="option"
+                      :aria-selected="o.value === c.value"
+                      class="sg-menu-item"
+                      @click="choose(c, o.value)"
+                    >
+                      <span>{{ o.value }}</span
+                      ><span class="sg-menu-note">{{ o.provider }}</span>
+                      <Check v-if="o.value === c.value" :size="12" />
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button
+                      v-for="o in c.options"
+                      :key="o"
+                      type="button"
+                      role="option"
+                      :aria-selected="o === c.value"
+                      class="sg-menu-item"
+                      @click="choose(c, o)"
+                    >
+                      <span>{{ o }}</span
+                      ><Check v-if="o === c.value" :size="12" />
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            v-for="c in actions"
+            :key="c.key"
+            class="sg-action"
+            :style="{ height: `${g.control}px`, marginTop: `${g.gap}px` }"
+          >
+            <button type="button" class="sg-w is-button" @click="emit('action', c.key)">
+              <Download :size="12" />{{ c.label }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Sockets: outside the node, on the preview's edge. Drag from one
-         to wire it. -->
-    <span
-      v-for="(s, i) in node.ins"
-      :key="`i${i}`"
-      class="sg-socket is-in"
-      :class="socketFit('in', s.type)"
-      data-socket="in"
-      :data-socket-node="node.id"
-      :data-socket-index="i"
-      :style="{ top: `${g.head + 34 + i * 34}px`, '--sg-socket': SOCKETS[s.type] }"
-    >
-      <span v-if="labels || node.ins.length > 1 || wiring" class="sg-socket-label">{{
-        s.name
-      }}</span
-      ><i />
-    </span>
-    <span
-      v-for="(s, i) in node.outs"
-      :key="`o${i}`"
-      class="sg-socket is-out"
-      :class="socketFit('out', s.type)"
-      data-socket="out"
-      :data-socket-node="node.id"
-      :data-socket-index="i"
-      :style="{ top: `${g.head + 34 + i * 34}px`, '--sg-socket': SOCKETS[s.type] }"
-    >
-      <i /><span v-if="labels" class="sg-socket-label">{{ s.name }}</span>
-    </span>
+    <!-- An error opens a footer tab under the node, as ComfyUI's does. -->
+    <footer v-if="node.state === 'error' && !node.collapsed" class="sg-footer" role="alert">
+      {{ node.error }}
+    </footer>
+
+    <!-- Collapsed: its slots gather on the title bar's ends. -->
+    <template v-if="node.collapsed">
+      <span
+        v-if="node.ins.length"
+        class="sg-slot is-in is-gathered"
+        data-socket="in"
+        :data-socket-node="node.id"
+        data-socket-index="0"
+        :style="{ '--sg-socket': SOCKETS[node.ins[0]!.type] }"
+        ><i class="sg-dot is-multi"
+      /></span>
+      <span
+        v-if="node.outs.length"
+        class="sg-slot is-out is-gathered"
+        data-socket="out"
+        :data-socket-node="node.id"
+        data-socket-index="0"
+        :style="{ '--sg-socket': SOCKETS[node.outs[0]!.type] }"
+        ><i class="sg-dot is-multi"
+      /></span>
+    </template>
   </section>
 </template>
 
 <style>
-/* Glass: the title floats above a borderless card; controls are a second
-   card a step lighter; sockets are coloured dots on the card's edge with
-   their name outside. Nodes drift a pixel or two, each on its own beat. */
+/* Colours: Glass reads the Void palette; Current uses ComfyUI's node
+   tokens (design-system style.css). Corners follow UI Playground ›
+   Corners: the node takes the control radius, as ComfyUI's rounded-xl;
+   widgets, badges and pictures the tab item radius, as its rounded-md. */
 .sg-node {
+  --n-head: color-mix(in oklch, var(--color-base-foreground) 9%, var(--mg-canvas));
+  --n-body: color-mix(in oklch, var(--color-base-foreground) 6%, var(--mg-canvas));
+  --n-widget: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  --n-widget-hover: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  --n-widget-on: color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  --n-text: var(--mg-text);
+  --n-slot-text: var(--mg-muted);
+  --n-icon: var(--mg-muted);
+  --n-outline: var(--color-base-foreground);
+  --n-exec: #0b8ce9;
+  --n-error: #c03a3a;
+  --n-bypass: #6a246a;
+  --n-dot-line: rgb(0 0 0 / 0.25);
+  --n-shadow: drop-shadow(0 6px 14px rgb(0 0 0 / 0.4));
+  --n-r: var(--radius-control, 12px);
+  --n-r-in: var(--mar-tab-item-radius, 7px);
   position: absolute;
   display: flex;
   flex-direction: column;
-  animation: sg-float 7s ease-in-out infinite;
-  animation-delay: var(--sg-delay, 0s);
+  color: var(--n-text);
+  font-size: 12px;
+  line-height: 16px;
+  filter: var(--n-shadow);
+  /* Settings opening and closing, and a new result's row, grow it. */
+  transition: height 0.16s ease-out;
 }
-@keyframes sg-float {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -3px;
-  }
+:root[data-ds-theme='light'] .sg-node {
+  --n-head: oklch(0.93 0.002 285);
+  --n-body: oklch(0.985 0.001 285);
+  --n-widget: oklch(0 0 0 / 0.05);
+  --n-widget-hover: oklch(0 0 0 / 0.08);
+  --n-widget-on: oklch(0 0 0 / 0.12);
+  --n-dot-line: rgb(0 0 0 / 0.08);
+  --n-shadow: drop-shadow(0 4px 10px rgb(0 0 0 / 0.12));
 }
-@media (prefers-reduced-motion: reduce) {
-  .sg-node {
-    animation: none;
-  }
+.is-current .sg-node {
+  --n-head: #202121;
+  --n-body: #262729;
+  --n-widget: #313235;
+  --n-widget-hover: #3c3d41;
+  --n-widget-on: #4a4b50;
+  --n-text: #fff;
+  --n-slot-text: #a0a0a0;
+  --n-icon: #8a8a8a;
+  --n-outline: #fff;
+  --n-error: #962a2a;
+  font-family: Inter, Arial, sans-serif;
 }
-/* The one being worked on, or with a menu open, sits over its neighbours. */
-.sg-node.is-selected {
-  z-index: 2;
+:root[data-ds-theme='light'] .is-current .sg-node {
+  --n-head: #e9e9e9;
+  --n-body: #fff;
+  --n-widget: #e9e9e9;
+  --n-widget-hover: #d9d9d9;
+  --n-widget-on: #c5c5c5;
+  --n-text: #171718;
+  --n-slot-text: #444;
+  --n-icon: #444;
+  --n-outline: #000;
 }
 .sg-node.is-menu {
   z-index: 3;
 }
+/* An open combo may reach past the node's foot. */
+.sg-node.is-menu .sg-inner {
+  overflow: visible;
+}
+
+/* Selected and executing: a 3px outline just outside the node. */
+.sg-outline {
+  position: absolute;
+  inset: -3px;
+  z-index: 0;
+  border: 3px solid var(--n-outline);
+  border-radius: calc(var(--n-r) + 3px);
+  pointer-events: none;
+}
+.sg-node.is-running:not(.is-selected) .sg-outline {
+  border-color: var(--n-exec);
+}
+.sg-inner {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--n-r);
+  background: var(--n-head);
+}
+.sg-node.is-error .sg-inner {
+  box-shadow: 0 0 0 4px var(--n-error);
+}
+/* Bypassed: tinted magenta; muted: faded. Neither runs as itself. */
+.sg-node.is-bypass .sg-inner::after,
+.sg-node.is-mute .sg-inner::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+.sg-node.is-bypass .sg-inner::after {
+  background: color-mix(in srgb, var(--n-bypass) 60%, transparent);
+}
+.sg-node.is-mute .sg-inner {
+  opacity: 0.5;
+}
+.sg-node.is-locked .sg-inner {
+  opacity: 0.55;
+}
+
+/* ── Title bar. ── */
 .sg-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 7px;
-  padding: 0 4px 6px;
-  align-self: stretch;
-  align-items: flex-end;
-  color: var(--mg-muted);
-  font-size: 12px;
-  font-weight: 500;
+  gap: 4px;
+  padding: 0 8px 0 4px;
+  color: var(--n-text);
   cursor: grab;
 }
-.sg-head-icon {
-  margin-bottom: 1px;
-  color: var(--mg-dim);
-}
-.sg-head-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--mg-text);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.sg-state {
+:root .proto-ui.proto-ui.proto-ui .sg-collapse {
   display: inline-flex;
+  width: 24px;
+  height: 24px;
   flex: none;
-  align-items: center;
-  gap: 3px;
-  color: var(--mg-dim);
-  font-size: 11px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.sg-state.is-running,
-.sg-state.is-queued {
-  color: var(--mg-muted);
-}
-.sg-state.is-stale::before {
-  width: 6px;
-  height: 6px;
-  margin-right: 2px;
-  border: 1.5px solid currentColor;
-  border-radius: 999px;
-  content: '';
-}
-.sg-state.is-error {
-  color: var(--color-status-danger, #e5484d);
-}
-.sg-state.is-locked {
-  color: var(--mg-dim);
-}
-.sg-actions {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  margin-bottom: -3px;
-}
-:root .proto-ui.proto-ui.proto-ui .sg-act {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 7px;
+  border-radius: var(--n-r-in);
   background: transparent;
-  color: var(--mg-muted);
+  color: var(--n-icon);
 }
-:root .proto-ui.proto-ui.proto-ui .sg-act:hover {
-  background: var(--mg-hover);
-  color: var(--mg-text);
+:root .proto-ui.proto-ui.proto-ui .sg-collapse:hover {
+  color: var(--n-text);
 }
-.sg-node.is-locked {
-  opacity: 0.45;
+.sg-collapse svg {
+  transition: rotate 0.15s ease;
+}
+.sg-node.is-collapsed .sg-collapse svg {
+  rotate: -90deg;
+}
+.sg-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .sg-badge {
-  padding: 2px 7px;
+  display: inline-flex;
+  height: 18px;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget);
+  color: var(--n-slot-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sg-badge.is-live {
+  background: color-mix(in srgb, var(--n-exec) 22%, transparent);
+  color: var(--n-text);
+}
+.sg-badge.is-stale {
+  background: color-mix(in srgb, #e0a030 22%, transparent);
+  color: var(--n-text);
+}
+.sg-badge.is-error {
+  background: var(--n-error);
+  color: #fff;
+}
+.sg-progress {
+  position: absolute;
+  top: calc(32px - 4px);
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 8px;
+  pointer-events: none;
+}
+.sg-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: var(--n-exec);
+  transition: width 0.2s linear;
+}
+
+/* ── Body. ── */
+.sg-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 4px 0 12px;
+  border-radius: 0 0 var(--n-r) var(--n-r);
+  background: var(--n-body);
+}
+
+/* Slots: the dot sits on the node's edge; its name beside it. */
+.sg-slots {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sg-col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.sg-col.is-out {
+  align-items: flex-end;
+}
+.sg-slot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--n-slot-text);
+  cursor: crosshair;
+}
+.sg-slot.is-in {
+  padding-right: 8px;
+}
+.sg-slot.is-out {
+  padding-left: 8px;
+}
+.sg-slot-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sg-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1px solid var(--n-dot-line);
   border-radius: 999px;
-  background: var(--mg-well);
-  color: var(--mg-dim);
+  background: var(--sg-socket);
+  transition: scale 0.15s ease;
+}
+.sg-slot.is-in .sg-dot {
+  margin-left: -4px;
+}
+.sg-slot.is-out .sg-dot {
+  margin-right: -4px;
+}
+.sg-slot:hover .sg-dot,
+.sg-slot.is-fit .sg-dot {
+  scale: 1.25;
+}
+.sg-slot.is-fit .sg-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sg-socket) 35%, transparent);
+}
+.sg-slot.is-off {
+  opacity: 0.35;
+}
+/* Collapsed: one dot per side, on the title bar. */
+.sg-slot.is-gathered {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  padding: 0;
+  translate: 0 -50%;
+}
+.sg-slot.is-gathered.is-in {
+  left: 0;
+}
+.sg-slot.is-gathered.is-out {
+  right: 0;
+}
+.sg-dot.is-multi {
+  width: 8px;
+  height: 20px;
+}
+
+/* Widgets: label, then the control, as ComfyUI's widget grid. */
+.sg-widgets {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 0 12px;
+}
+.sg-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(56px, 36%) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.sg-row.is-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sg-label {
+  overflow: hidden;
+  align-self: center;
+  color: var(--n-slot-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-w {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget);
+  color: var(--n-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+:root .proto-ui.proto-ui.proto-ui button.sg-w:hover,
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-open {
+  background: var(--n-widget-hover);
+}
+.sg-w-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sg-w-icon {
+  flex: none;
+  color: var(--n-icon);
+}
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-seg {
+  gap: 2px;
+  padding: 2px;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-seg button {
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border-radius: calc(var(--n-r-in) - 2px);
+  background: transparent;
+  color: var(--n-slot-text);
+  font: inherit;
   font-size: 11px;
 }
-.sg-body {
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-seg button.is-on {
+  background: var(--n-widget-on);
+  color: var(--n-text);
+}
+/* A number: − value +, the value's share of its range as a fill. */
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-number {
+  padding: 0;
+}
+.sg-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--n-exec) 16%, transparent);
+  pointer-events: none;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-step {
   position: relative;
+  display: inline-flex;
+  height: 100%;
+  aspect-ratio: 1;
   flex: none;
-  overflow: hidden;
-  border-radius: var(--mg-radius);
-  background: var(--mg-node);
-  backdrop-filter: blur(24px) saturate(1.15);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--n-icon);
 }
-.sg-node.is-selected .sg-body {
-  box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 36%, transparent);
+:root .proto-ui.proto-ui.proto-ui .sg-step:hover:not(:disabled) {
+  background: var(--n-widget-hover);
 }
-.sg-node.is-error .sg-body {
-  box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--color-status-danger, #e5484d) 70%, transparent);
+:root .proto-ui.proto-ui.proto-ui .sg-step:disabled {
+  opacity: 0.3;
 }
-.sg-text {
-  display: block;
+.sg-scrub {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  outline: none;
+  cursor: ew-resize;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  touch-action: none;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-button {
+  justify-content: center;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-w.is-button.is-primary {
+  height: 24px;
+  flex: none;
+  background: var(--n-exec);
+  color: #fff;
+}
+.sg-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 4;
+  display: flex;
+  min-width: 64%;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: var(--mar-tab-radius, 10px);
+  background: var(--n-head);
+  box-shadow:
+    0 0 0 1px var(--n-widget),
+    0 10px 28px rgb(0 0 0 / 0.35);
+  animation: sg-menu 0.12s ease-out;
+}
+@keyframes sg-menu {
+  from {
+    opacity: 0;
+    translate: 0 -3px;
+  }
+}
+:root .proto-ui.proto-ui.proto-ui .sg-menu-item {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: var(--n-r-in);
+  background: transparent;
+  color: var(--n-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.sg-menu-item > span:first-child {
+  flex: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-menu-item:hover {
+  background: var(--n-widget-hover);
+}
+.sg-menu-note {
+  color: var(--n-slot-text);
+  font-size: 11px;
+}
+
+/* ── Content. ── */
+.sg-content {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px;
+}
+.sg-content.is-pause {
+  justify-content: center;
+}
+.sg-note {
+  color: var(--n-slot-text);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-text {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 14px 16px;
+  padding: 8px 8px 22px;
+  overflow: auto;
   border: 0;
+  border-radius: var(--n-r-in);
   outline: none;
-  background: transparent;
-  color: var(--mg-text);
+  background: var(--n-widget);
+  box-shadow: none;
+  color: var(--n-text);
   font: inherit;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 17px;
   resize: none;
   user-select: text;
 }
+:root .proto-ui.proto-ui.proto-ui .sg-text:focus {
+  box-shadow: inset 0 0 0 1px var(--n-widget-on);
+}
 .sg-text.has-foot {
-  height: calc(100% - 34px);
+  padding-bottom: 34px;
 }
 .sg-text.is-result {
-  overflow: auto;
-  color: var(--mg-text);
-  user-select: text;
+  white-space: pre-wrap;
+}
+.sg-text::placeholder {
+  color: var(--n-slot-text);
 }
 .sg-count {
   position: absolute;
-  right: 12px;
-  bottom: 8px;
-  color: var(--mg-dim);
+  right: 20px;
+  bottom: 6px;
+  color: var(--n-slot-text);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 .sg-vars {
   position: absolute;
-  right: 10px;
-  bottom: 8px;
-  left: 10px;
+  right: 20px;
+  bottom: 6px;
+  left: 20px;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .sg-var {
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: color-mix(in oklch, #e8c07a 16%, transparent);
-  color: color-mix(in oklch, #e8c07a 85%, var(--mg-text));
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget-on);
+  color: var(--n-text);
+  font: inherit;
   font-size: 11px;
-  font-weight: 500;
+}
+.sg-frame {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget);
+}
+.sg-frame.is-cutout {
+  background:
+    repeating-conic-gradient(var(--n-widget-on) 0 25%, transparent 0 50%) 0 0 / 16px 16px,
+    var(--n-widget);
 }
 .sg-empty {
   display: flex;
@@ -723,7 +1189,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--mg-dim);
+  color: var(--n-slot-text);
   font-size: 12px;
   text-align: center;
 }
@@ -734,9 +1200,6 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   50% {
     opacity: 0.45;
   }
-}
-.sg-text::placeholder {
-  color: var(--mg-dim);
 }
 .sg-img {
   position: absolute;
@@ -759,24 +1222,13 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
 }
 /* A cut-out: the subject over a checkerboard. */
 .sg-img.is-cutout {
-  background: repeating-conic-gradient(rgb(255 255 255 / 0.1) 0 25%, transparent 0 50%) 0 0 / 16px
-    16px;
   mask: radial-gradient(ellipse 46% 58% at 50% 46%, #000 62%, transparent 64%);
 }
-.sg-body:has(.is-cutout) {
-  background:
-    repeating-conic-gradient(
-        color-mix(in oklch, var(--color-base-foreground) 10%, transparent) 0 25%,
-        transparent 0 50%
-      )
-      0 0 / 16px 16px,
-    var(--mg-node);
-}
+/* Executing: the preview stays soft until it lands. */
 .sg-img.is-working {
   filter: blur(6px) saturate(0.8) brightness(0.8);
   transform: scale(1.06);
 }
-/* A new result fades in over the last one. */
 .sg-swap-enter-active,
 .sg-swap-leave-active {
   transition: opacity 0.45s ease;
@@ -785,120 +1237,41 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
 .sg-swap-leave-to {
   opacity: 0;
 }
-.sg-progress-fill {
-  transition: width 0.15s linear;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sg-img,
-  .sg-progress-fill,
-  .sg-swap-enter-active,
-  .sg-swap-leave-active {
-    transition: none;
-  }
-}
 .sg-chip {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(12px);
-  color: rgb(255 255 255 / 0.92);
+  top: 8px;
+  left: 8px;
+  padding: 2px 6px;
+  border-radius: var(--n-r-in);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
   font-size: 11px;
-  font-weight: 500;
+  line-height: 14px;
+  pointer-events: none;
 }
 .sg-chip.is-right {
-  right: 10px;
+  right: 8px;
   left: auto;
-}
-.sg-player {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  left: 10px;
-  display: flex;
-  height: 24px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(12px);
-  color: rgb(255 255 255 / 0.92);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.sg-player-track {
-  height: 3px;
-  flex: 1;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.25);
-}
-.sg-player-track i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: #fff;
-  transform-origin: left;
-  animation: sg-play 5s linear infinite;
-}
-@keyframes sg-play {
-  from {
-    transform: scaleX(0);
-  }
-}
-.sg-history {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  height: 22px;
-  align-items: center;
-  gap: 2px;
-  padding: 0 2px;
-  border-radius: 999px;
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(12px);
-  color: rgb(255 255 255 / 0.92);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-:root .proto-ui.proto-ui.proto-ui .sg-history button {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-}
-:root .proto-ui.proto-ui.proto-ui .sg-history button:disabled {
-  opacity: 0.35;
 }
 .sg-audio {
   display: flex;
   height: 100%;
   align-items: center;
   gap: 10px;
-  padding: 0 14px;
+  padding: 0 10px;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget);
 }
 .sg-play {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   flex: none;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--mg-run);
-  color: var(--mg-run-text);
+  background: var(--n-text);
+  color: var(--n-body);
 }
 .sg-wave {
   display: flex;
@@ -911,20 +1284,18 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   width: 2px;
   flex: 1;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 45%, transparent);
+  background: var(--n-slot-text);
 }
 .sg-wave.is-working i {
   animation: sg-breathe 1.2s ease-in-out infinite;
 }
 .sg-audio-time {
-  color: var(--mg-dim);
+  color: var(--n-slot-text);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .sg-compare {
-  position: relative;
-  height: 100%;
   cursor: ew-resize;
   touch-action: none;
 }
@@ -933,467 +1304,234 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   top: 0;
   bottom: 0;
   width: 2px;
-  margin-left: -1px;
   background: #fff;
+  translate: -1px 0;
   pointer-events: none;
 }
 .sg-divider i {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
   translate: -50% -50%;
 }
 .sg-gallery {
   display: grid;
   height: 100%;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 1fr;
+  grid-auto-rows: calc((100% - 8px) / 3);
   gap: 4px;
-  padding: 6px;
   overflow: auto;
 }
 .sg-gallery img {
   width: 100%;
   height: 100%;
-  border-radius: 8px;
+  border-radius: var(--n-r-in);
   object-fit: cover;
 }
 .sg-gallery .sg-empty {
   grid-column: 1 / -1;
-  grid-row: 1 / 3;
-}
-.sg-progress {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  left: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(16px);
-  color: rgb(255 255 255 / 0.92);
-  font-size: 12px;
-  font-weight: 500;
-}
-.sg-progress-track {
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.2);
-}
-.sg-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: #fff;
-}
-.sg-pause {
-  display: flex;
-  height: 100%;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 12px;
-  text-align: center;
-}
-.sg-pause-icon {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-  border-radius: 999px;
-  background: var(--mg-well);
-  color: var(--mg-text);
-}
-.sg-pause-title {
-  color: var(--mg-text);
-  font-size: 13px;
-  font-weight: 500;
-}
-.sg-pause-note {
-  color: var(--mg-dim);
-  font-size: 11.5px;
-  line-height: 15px;
-}
-:root .proto-ui.proto-ui.proto-ui .sg-resume {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 5px;
-  margin-top: 8px;
-  padding: 0 11px;
-  border-radius: 999px;
-  background: var(--mg-hover);
-  color: var(--mg-text);
-  font-size: 12px;
-  font-weight: 500;
+  grid-row: 1 / 4;
 }
 
-.sg-controls {
-  position: relative;
+/* Running: what it does and how far, on the preview it is making. */
+.sg-run {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex: none;
-  flex-direction: column;
-  padding: 6px;
-  border-radius: 14px;
-  background: var(--mg-node);
-  backdrop-filter: blur(24px) saturate(1.15);
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
-/* Widgets are buttons where they open or act: the triple root beats the
-   app's button reset. */
-:root .proto-ui.proto-ui.proto-ui .sg-c {
-  position: relative;
+.sg-run-label {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--n-r-in);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
+}
+.sg-spin {
+  animation: sg-spin 0.9s linear infinite;
+}
+@keyframes sg-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+.sg-run-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--n-exec);
+  transition: width 0.2s linear;
+}
+
+/* Earlier results: ‹ dots n / N ›, under the preview. */
+.sg-cycler {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  overflow: hidden;
-  border-radius: var(--mg-radius-in);
-  background: var(--mg-well);
-  color: var(--mg-text);
+  justify-content: center;
+  gap: 6px;
+  color: var(--n-slot-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.sg-cycler.is-off {
+  opacity: 0.4;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-cycler button {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--n-r-in);
+  background: transparent;
+  color: var(--n-icon);
+}
+:root .proto-ui.proto-ui.proto-ui .sg-cycler button:hover:not(:disabled) {
+  background: var(--n-widget-hover);
+  color: var(--n-text);
+}
+:root .proto-ui.proto-ui.proto-ui .sg-cycler button:disabled {
+  opacity: 0.35;
+}
+.sg-cycler-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.sg-cycler-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--n-widget-on);
+}
+.sg-cycler-dots i.is-on {
+  width: 5px;
+  height: 5px;
+  background: var(--n-text);
+}
+.sg-cycler-count {
+  min-width: 32px;
+  text-align: center;
+}
+
+/* Settings: a summary row that opens the widgets under it. */
+.sg-settings {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 0 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .sg-sum {
+  display: grid;
+  min-width: 0;
+  flex: none;
+  grid-template-columns: 12px minmax(0, auto) minmax(0, 1fr) 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: var(--n-r-in);
+  background: var(--n-widget);
+  color: var(--n-text);
+  font: inherit;
   font-size: 12px;
-  font-weight: 400;
   text-align: left;
 }
-:root .proto-ui.proto-ui.proto-ui :is(button.sg-c:hover, .sg-c.is-open) {
-  background: var(--mg-hover);
+:root .proto-ui.proto-ui.proto-ui .sg-sum:hover {
+  background: var(--n-widget-hover);
 }
-.sg-c.is-slider {
-  cursor: ew-resize;
-  touch-action: none;
+:root .proto-ui.proto-ui.proto-ui .sg-sum:focus-visible {
+  outline: 2px solid var(--n-exec);
+  outline-offset: 1px;
 }
-.sg-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-}
-.sg-c-name {
-  position: relative;
-  flex: none;
-  color: var(--mg-dim);
-}
-.sg-c-value {
-  position: relative;
-  flex: 1;
+.sg-sum-title,
+.sg-sum-values {
   min-width: 0;
   overflow: hidden;
-  color: var(--mg-text);
-  text-align: right;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.sg-c-value.is-strong {
-  font-weight: 500;
-  text-align: left;
+.sg-sum-values {
+  color: var(--n-slot-text);
+  text-align: right;
 }
-.sg-c-arrow {
-  position: relative;
-  flex: none;
-  color: var(--mg-dim);
+.sg-sum-chev {
+  transition: rotate 0.16s ease;
 }
-.sg-model-dot {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  border-radius: 5px;
-  background: conic-gradient(from 200deg, #4f8df5, #a46cf0, #f0b44f, #4f8df5);
+.sg-settings.is-open .sg-sum-chev {
+  rotate: 180deg;
 }
-.sg-seg {
+.sg-action {
   display: flex;
+  flex: none;
+}
+.sg-action .sg-w {
   flex: 1;
-  justify-content: flex-end;
-  gap: 2px;
 }
-:root .proto-ui.proto-ui.proto-ui .sg-seg button {
-  height: auto;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--mg-dim);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.sg-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows 0.16s ease-out;
 }
-:root .proto-ui.proto-ui.proto-ui .sg-seg button:hover {
-  color: var(--mg-text);
+.sg-settings.is-open .sg-panel {
+  grid-template-rows: 1fr;
+  overflow: visible;
 }
-:root .proto-ui.proto-ui.proto-ui .sg-seg button.is-on {
-  background: var(--mg-hover);
-  color: var(--mg-text);
+.sg-panel > .sg-widgets {
+  min-height: 0;
+  padding: 0;
 }
-.sg-menu {
+
+/* An error's footer tab, tucked under the node. */
+.sg-footer {
   position: absolute;
-  right: 6px;
-  left: 6px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-content-background) 82%, transparent);
-  backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
-  animation: sg-menu 0.14s ease-out;
+  top: calc(100% - var(--n-r));
+  right: 0;
+  left: 0;
+  z-index: -1;
+  padding: calc(var(--n-r) + 6px) 12px 6px;
+  border-radius: 0 0 var(--n-r) var(--n-r);
+  background: var(--n-error);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 15px;
 }
-@keyframes sg-menu {
-  from {
-    opacity: 0;
-    translate: 0 -4px;
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
+  .sg-node,
+  .sg-panel,
+  .sg-sum-chev,
+  .sg-run-bar,
+  .sg-img,
+  .sg-progress i,
+  .sg-dot,
+  .sg-collapse svg,
+  .sg-swap-enter-active,
+  .sg-swap-leave-active {
+    transition: none;
+  }
+  .sg-img.is-motion,
+  .sg-img.is-working,
+  .sg-empty.is-working,
+  .sg-wave.is-working i,
+  .sg-spin,
   .sg-menu {
     animation: none;
   }
-}
-:root .proto-ui.proto-ui.proto-ui .sg-menu-item {
-  display: flex;
-  height: 28px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--mg-text);
-  font-size: 12px;
-  text-align: left;
-}
-.sg-menu-item > span:first-child {
-  flex: 1;
-}
-:root .proto-ui.proto-ui.proto-ui .sg-menu-item:hover {
-  background: var(--mg-hover);
-}
-.sg-c.is-button {
-  justify-content: center;
-}
-.sg-c-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mg-text);
-  font-weight: 500;
-}
-
-.sg-socket {
-  position: absolute;
-  z-index: 1;
-  display: inline-flex;
-  height: 18px;
-  align-items: center;
-  gap: 6px;
-  translate: 0 -50%;
-}
-.sg-socket.is-in {
-  right: calc(100% - 5px);
-}
-.sg-socket.is-out {
-  left: calc(100% - 5px);
-}
-.sg-socket i {
-  width: 10px;
-  height: 10px;
-  flex: none;
-  border-radius: 999px;
-  background: var(--sg-socket);
-  box-shadow: 0 0 0 2.5px var(--mg-ring);
-  cursor: crosshair;
-  transition:
-    scale 0.15s ease,
-    opacity 0.15s ease;
-}
-/* A larger target than the dot, so it is easy to grab. */
-.sg-socket i::after {
-  position: absolute;
-  inset: -6px;
-  content: '';
-}
-.sg-socket i {
-  position: relative;
-}
-.sg-socket:hover i,
-.sg-socket.is-fit i {
-  scale: 1.35;
-}
-.sg-socket.is-off {
-  opacity: 0.25;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sg-img.is-motion,
-  .sg-player-track i,
-  .sg-empty.is-working,
-  .sg-wave.is-working i {
-    animation: none;
-  }
-}
-.sg-socket-label {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--mg-float);
-  backdrop-filter: blur(12px);
-  color: var(--mg-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-/* Current: ComfyUI's grey node around the same parts. */
-.is-current .sg-node {
-  border-radius: var(--mg-radius);
-  background: var(--mg-node);
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.55),
-    3px 4px 10px rgb(0 0 0 / 0.35);
-}
-:root[data-ds-theme='light'] .is-current .sg-node {
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.18),
-    2px 3px 8px rgb(0 0 0 / 0.12);
-}
-.is-current .sg-node.is-selected {
-  box-shadow:
-    0 0 0 1.5px #fff,
-    3px 4px 10px rgb(0 0 0 / 0.35);
-}
-.is-current .sg-node.is-error {
-  box-shadow:
-    0 0 0 2px #e5484d,
-    3px 4px 10px rgb(0 0 0 / 0.35);
-}
-.is-current .sg-node.is-error .sg-body {
-  box-shadow: none;
-}
-.is-current .sg-node.is-running {
-  box-shadow:
-    0 0 0 2px #00d26a,
-    3px 4px 10px rgb(0 0 0 / 0.35);
-}
-:root[data-ds-theme='light'] .is-current .sg-node.is-running {
-  box-shadow: 0 0 0 2px #00b85c;
-}
-.is-current .sg-head {
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-radius: var(--mg-radius) var(--mg-radius) 0 0;
-  background: var(--mg-head-bg);
-}
-.sg-dot {
-  width: 10px;
-  height: 10px;
-  flex: none;
-  border-radius: 999px;
-  background: #777;
-}
-.is-current .sg-fill {
-  background: #4a4a4a;
-}
-:root[data-ds-theme='light'] .is-current .sg-fill {
-  background: #d4d4d4;
-}
-.is-current .sg-head-title {
-  color: var(--mg-title);
-  font-size: 13px;
-  font-weight: 400;
-}
-.is-current .sg-badge {
-  border-radius: 4px;
-  background: #445;
-  color: #ccd;
-}
-:root[data-ds-theme='light'] .is-current .sg-badge {
-  background: #d6d9e6;
-  color: #334;
-}
-.is-current .sg-body {
-  margin: 0 8px;
-  border-radius: 0;
-  background: transparent;
-  backdrop-filter: none;
-}
-.is-current .sg-node:not(:has(.sg-controls)) .sg-body {
-  padding: 6px 0 8px;
-}
-.is-current :is(.sg-text, .sg-pause) {
-  height: 100%;
-  border-radius: 4px;
-  background: var(--mg-well);
-}
-.is-current .sg-text {
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 17px;
-}
-.is-current .sg-chip,
-.is-current .sg-history,
-.is-current .sg-player,
-.is-current .sg-progress {
-  border-radius: 4px;
-  background: rgb(0 0 0 / 0.65);
-  backdrop-filter: none;
-}
-.is-current .sg-progress-fill {
-  background: #00d26a;
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-resume {
-  border-radius: 6px;
-  background: var(--mg-run);
-  color: var(--mg-run-text);
-}
-.is-current .sg-controls {
-  padding: 6px 8px;
-  border-radius: 0;
-  background: transparent;
-  backdrop-filter: none;
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-c {
-  padding: 0 8px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--mg-well-line);
-  font-size: 11.5px;
-}
-.is-current .sg-menu {
-  border-radius: 6px;
-  background: var(--mg-chrome-2);
-  box-shadow:
-    0 0 0 1px var(--mg-chrome-line),
-    0 8px 20px rgb(0 0 0 / 0.3);
-  backdrop-filter: none;
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-menu-item {
-  border-radius: 4px;
-}
-.is-current .sg-c-arrow {
-  color: var(--mg-text);
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-seg button {
-  padding: 0 6px;
-  border-radius: 999px;
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-c.is-button {
-  background: var(--mg-head-bg);
-}
-:root .proto-ui.proto-ui.proto-ui .is-current .sg-c.is-button:hover {
-  background: var(--mg-hover);
-}
-.is-current .sg-socket i {
-  box-shadow: none;
-}
-.is-current .sg-socket-label {
-  border-radius: 3px;
-  background: var(--mg-head-bg);
-  backdrop-filter: none;
-  color: var(--mg-text);
 }
 </style>

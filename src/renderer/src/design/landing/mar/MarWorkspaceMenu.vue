@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { CreditCard, Gauge, KeyRound, LogOut, Settings2, ShieldAlert, Users } from 'lucide-vue-next'
+import { computed } from 'vue'
+import {
+  CreditCard,
+  Gauge,
+  KeyRound,
+  LogOut,
+  Plus,
+  Settings2,
+  ShieldAlert,
+  Users
+} from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../ui/DropdownMenuItem.vue'
@@ -7,9 +17,11 @@ import DropdownMenuSeparator from '../ui/DropdownMenuSeparator.vue'
 import ContextSwitchSub from '../parts/ContextSwitchSub.vue'
 import WorkspaceAvatar from '../parts/WorkspaceAvatar.vue'
 import { go, proto, toast, type Page } from '../useProto'
+import { WORKSPACES } from '../mock'
 import {
   realAccount,
   realSignOut,
+  realWorkspaces,
   shownCredits,
   shownEmail,
   shownWorkspace as workspace
@@ -29,6 +41,12 @@ const ADMIN: { page: Page; label: string; icon: unknown }[] = [
   { page: 'people', label: 'People', icon: Users },
   { page: 'provider-keys', label: 'Provider keys', icon: KeyRound }
 ]
+
+// One workspace and no spaces: nothing to switch to; the card above says
+// where you are, and the row only offers a new one.
+const canSwitch = computed(
+  () => proto.spaces || (realAccount.value ? realWorkspaces.value : WORKSPACES).length > 1
+)
 
 const role = (r: string): string => r.charAt(0).toUpperCase() + r.slice(1).toLowerCase()
 
@@ -68,7 +86,10 @@ function signOut(): void {
         </button>
       </div>
 
-      <ContextSwitchSub />
+      <ContextSwitchSub v-if="canSwitch" />
+      <DropdownMenuItem v-else @select="toast('Create workspace')">
+        <Plus :size="15" class="text-subtle-foreground" />Create workspace
+      </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem v-for="i in ADMIN" :key="i.page" @select="go(i.page)">
         <component :is="i.icon" :size="15" class="text-subtle-foreground" />{{ i.label }}

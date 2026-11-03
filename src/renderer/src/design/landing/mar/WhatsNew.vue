@@ -5,14 +5,14 @@ import { ComfyModel } from './icons/comfyIcons'
 import Button from '../ui/Button.vue'
 import Card from '../ui/Card.vue'
 import ScrollRow from '../ui/ScrollRow.vue'
-import SegmentedControl from '../ui/SegmentedControl.vue'
 import MediaChip from './MediaChip.vue'
+import MarSeg from './pages/MarSeg.vue'
 import { toast } from '../useProto'
 import { LAUNCHES } from '../mock'
 
 /** Mar's take on Pablo's What's new (parts/LaunchesRow.vue): the tabs say
  *  what they hold, so there is no section title, and the chip on each card
- *  is the DS · Mar media chip. */
+ *  is the DS · Mar media chip. The tabs are MarSeg, like every tab row. */
 const tab = ref<'model' | 'feature'>('model')
 const list = computed(() => (tab.value === 'model' ? LAUNCHES : [...LAUNCHES].reverse()))
 </script>
@@ -20,12 +20,12 @@ const list = computed(() => (tab.value === 'model' ? LAUNCHES : [...LAUNCHES].re
 <template>
   <section class="mt-10">
     <div class="mb-3.5 flex items-center gap-3">
-      <SegmentedControl
+      <MarSeg
         v-model="tab"
-        variant="contained"
+        label="What's new"
         :options="[
-          { value: 'model', label: 'Latest models', icon: ComfyModel },
-          { value: 'feature', label: 'New features', icon: Sparkles }
+          { value: 'model', label: 'Latest models' },
+          { value: 'feature', label: 'New features' }
         ]"
       />
       <Button variant="link" size="sm" class="ml-auto" @click="toast('All launches')">

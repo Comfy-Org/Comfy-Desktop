@@ -11,7 +11,7 @@ for (const theme of themes) {
   const url = page.url() + '&proposal=mariana'
   for (const [name, clicks] of steps) {
     try {
-      await page.goto(url); await page.waitForTimeout(2200)
+      await page.goto(url); await page.waitForTimeout(6000)
       for (const [sel, text, nth] of clicks) {
         const l = text ? page.locator(sel, { hasText: text }) : page.locator(sel)
         await (nth === -1 ? l.last() : l.first()).click({ timeout: 4000 }); await page.waitForTimeout(700)

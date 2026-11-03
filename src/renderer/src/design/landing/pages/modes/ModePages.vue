@@ -22,9 +22,9 @@ import CreateHome from '../../mar/HomeEntry.vue'
 import MarFavoritesPage from '../../mar/MarFavoritesPage.vue'
 import MarPages from '../../mar/pages/MarPages.vue'
 import { marOwns } from '../../mar/pages/owns'
-import DeploymentDetail from './DeploymentDetail.vue'
+import DeploymentDetail from '../../mar/deploy/DeploymentEntry.vue'
 import DeploymentsPage from './DeploymentsPage.vue'
-import EnvironmentDetail from './EnvironmentDetail.vue'
+import EnvironmentDetail from '../../mar/build/EnvDetailEntry.vue'
 import EnvironmentsList from './EnvironmentsList.vue'
 import LogsPage from './LogsPage.vue'
 import RouterPage from '../../mar/build/ModelsEntry.vue'
@@ -65,10 +65,7 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
     <FirstEmpty :kind="libraryKind" />
   </div>
   <div v-else-if="proto.page === 'workflows'" class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Workflows"
-      description="Every workflow, on this computer and in the cloud. Each opens in its build."
-    >
+    <PageHeader title="Workflows">
       <template #actions
         ><Button variant="primary" size="lg" @click="toast('New workflow')"
           ><Plus :size="15" />Workflow</Button

@@ -17,7 +17,7 @@ import { MILESTONES } from '../milestones'
 
 export const PROPOSALS = [
   { value: 'pablo', label: 'Pablo' },
-  { value: 'mariana', label: 'Mar' }
+  { value: 'mariana', label: 'New UI' }
 ] as const
 
 export type Proposal = (typeof PROPOSALS)[number]['value']

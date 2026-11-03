@@ -33,6 +33,7 @@
 .ds-views button {
   height: 26px;
   padding: 0 10px;
+  border: 0;
   border-radius: 7px;
   color: #a1a1a8;
 }
@@ -152,6 +153,12 @@
   font-size: 15px;
   font-weight: 600;
 }
+.ds-doc h3 {
+  margin-top: 6px;
+  color: #ececee;
+  font-size: 13px;
+  font-weight: 600;
+}
 .ds-doc ul {
   display: flex;
   flex-direction: column;
@@ -224,6 +231,18 @@ html.ds-frame #app {
   margin: 0;
   overflow: visible;
   border-radius: 12px;
+  /* The page's plain surface: not the content panel's light and mesh. */
+  background: var(--color-content-background);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.ds-cell-surface.proto-main.proto-main.proto-main::before,
+.ds-cell-surface.proto-main.proto-main.proto-main::after {
+  display: none;
+}
+/* A specimen's own outer margin (a header's gap below it) isn't the
+   cell's: the padding around it stays even. */
+.ds-cell-stage > * {
+  margin-block: 0;
 }
 .ds-cell-surface.proto-sidebar {
   background: var(--color-app-background);
@@ -260,6 +279,18 @@ html.ds-frame #app {
   border-radius: 12px;
 }
 
+/* A sample over a picture (chips on media). */
+.ds-photo {
+  display: flex;
+  width: 100%;
+  min-height: 96px;
+  align-items: flex-end;
+  padding: 10px;
+  border-radius: 12px;
+  background-position: center;
+  background-size: cover;
+}
+
 /* A window (kit/Window.vue): a fixed-size app, scaled to the pane. */
 .ds-window {
   position: relative;
@@ -275,6 +306,24 @@ html.ds-frame #app {
   display: flex;
   flex-direction: column;
   transform-origin: 0 0;
+}
+
+/* An app shot (kit/AppShot.vue): the whole prototype, scaled. */
+.ds-app-shot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  transform-origin: 0 0;
+}
+html.ds-app-frame,
+html.ds-app-frame body,
+html.ds-app-frame #app {
+  height: 100%;
+}
+html.ds-app-frame #app {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Inside a stage frame (one component, opened) ─────────────────── */
@@ -310,4 +359,206 @@ html.ds-frame #app {
 .ds-stage-root.is-bottom-left {
   align-items: flex-end;
   justify-content: flex-start;
+}
+
+/* ── The page template (DsApp.vue) ────────────────────────────────── */
+.ds-main > * {
+  max-width: 1120px;
+}
+.ds-nav-search {
+  height: 30px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.06);
+  color: #ececee;
+  outline: none;
+}
+.ds-nav-none {
+  padding: 6px 10px;
+  color: #6e6e76;
+}
+/* Text reads in a column; examples go wider. */
+.ds-read {
+  max-width: 720px;
+}
+.ds-hero {
+  margin-bottom: 28px;
+}
+.ds-block {
+  margin: 0 0 28px;
+}
+.ds-when {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.ds-when h2,
+.ds-rules h2 {
+  margin-bottom: 8px;
+  color: #ececee;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ds-when ul,
+.ds-rules ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 18px;
+  color: #c8c8cd;
+  list-style: disc;
+}
+.ds-rules {
+  margin-bottom: 32px;
+}
+.ds-tabs {
+  display: flex;
+  width: fit-content;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+}
+.ds-tabs button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: #a1a1a8;
+}
+.ds-tabs button[aria-selected='true'] {
+  background: rgb(255 255 255 / 0.11);
+  color: #ececee;
+}
+/* The hero: one example, centred, with room around it. */
+.ds-section.is-hero {
+  gap: 0;
+}
+.ds-cells.is-hero {
+  display: flex;
+  justify-content: center;
+}
+/* At the component's own width: wide ones (rows, headers) take the
+   column, small ones sit centred with room around them. */
+.ds-cells.is-hero > .ds-cell {
+  width: var(--ds-hero-w, fit-content);
+  min-width: min(100%, 480px);
+  max-width: 100%;
+}
+.ds-frame-page.is-hero .ds-cell-surface {
+  min-height: 280px;
+}
+.ds-frame-page.is-hero .ds-cell-stage {
+  padding: 40px;
+}
+.ds-more {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.ds-more:hover {
+  color: var(--color-base-foreground);
+}
+
+.ds-play-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+}
+
+.ds-play-code {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #16161a;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+
+.ds-play-code-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.ds-play-code-head span {
+  margin-right: auto;
+  color: #6e6e76;
+}
+
+.ds-play-code-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.ds-play-code-head button:hover {
+  background: rgb(255 255 255 / 0.07);
+}
+
+.ds-play-code pre {
+  overflow-x: auto;
+  padding: 12px 14px;
+  color: #d4d4d8;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ds-fold summary {
+  margin-top: 14px;
+  color: #ececee;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ds-fold[open] summary {
+  margin-bottom: 8px;
+}
+
+.ds-frame-page.is-hero .ds-cell-label {
+  display: none;
+}
+
+.ds-more-all {
+  margin-top: 20px;
+}
+
+/* Stages sit on the same plain surface as the cells. */
+.ds-stage-root.proto-main.proto-main.proto-main {
+  background: var(--color-content-background);
+}
+.ds-stage-root.proto-main.proto-main.proto-main::before,
+.ds-stage-root.proto-main.proto-main.proto-main::after {
+  display: none;
+}
+/* The DS's own buttons, past the prototype's button reset. */
+:root .proto-ui.proto-ui .ds-more {
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui .ds-more:hover {
+  color: var(--color-base-foreground);
+}
+.ds-play-code-head button,
+.ds-play-code-head a {
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui .ds-motion-replay {
+  width: auto;
+  height: auto;
+  white-space: nowrap;
 }

@@ -1,116 +1,497 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
-import { Circle, FolderOpen, Search, X } from 'lucide-vue-next'
-import { ComfyWorkflow } from '../icons/comfyIcons'
-import { PROJECTS, TEMPLATES, WORKFLOWS, thumb } from '../../mock'
+import {
+  ArrowRight,
+  BookOpen,
+  Circle,
+  Cloud,
+  CornerDownLeft,
+  Folder,
+  FolderPlus,
+  Moon,
+  PanelsTopLeft,
+  Plus,
+  Search,
+  Settings2,
+  Sun,
+  WifiOff,
+  X
+} from 'lucide-vue-next'
+import { ComfyAssets, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
+import { APPS, CLOUD_ASSETS, TEMPLATES, WORKFLOWS, thumb, type Template } from '../../mock'
 import { SPACES } from '../../spaces'
-import { go, openDetail, type Page } from '../../useProto'
+import {
+  activeInstance,
+  go,
+  hostActions,
+  instanceById,
+  instances,
+  openDetail,
+  toast,
+  type Page
+} from '../../useProto'
+import { look } from '../../look'
+import { newProject, projects } from '../pages/projectsStore'
+import { retry, shownState } from '../pages/pageState'
+import MarEmpty from '../pages/MarEmpty.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { search } from './search'
-import { favorites } from '../favorites'
+import { match, segments } from './match'
+import './search.css'
 
 /**
- * Global search (⌘K) in Mar's proposal, kept from the comfy-home-v1 audit:
- * popular templates as pictures on top, then a list; typing searches
- * templates, workflows, projects and spaces at once. Arrows move, Enter
- * opens, Esc closes.
+ * Global search (⌘K) in Mar's proposal: a command palette. One field,
+ * the scopes as the New UI tab group, and one list under them: rows with
+ * a small picture, the name, what it is and where it lives, grouped and
+ * capped per group with a "See all" row. Empty: recent work, suggested
+ * templates, actions with their shortcuts. Follows the Page state
+ * (loading skeletons, offline, a first-time user with nothing yet).
+ *
+ * Keys: ↑↓ move through the one list (the pointer moves the same
+ * highlight), ↵ opens, ⌘↵ opens in Comfy Cloud where that applies;
+ * Tab / ⇧Tab, ←→ on an empty field or ⌘1–7 switch scope, ⌫ on an empty
+ * field goes back to All; Esc or ⌘K closes. The footer says what ↵ does
+ * for the row you're on.
  */
-interface Hit {
+type Scope = 'all' | 'templates' | 'workflows' | 'projects' | 'spaces' | 'apps' | 'assets'
+type Kind =
+  | 'template'
+  | 'workflow'
+  | 'project'
+  | 'space'
+  | 'app'
+  | 'asset'
+  | 'action'
+  | 'more'
+  | 'docs'
+
+interface Item {
   key: string
-  group: string
+  kind: Kind
   label: string
+  /** Matched character indices, for bold. */
+  at?: number[]
+  /** Where it lives or its state, after the type. */
   meta?: string
   image?: string
-  icon?: Component
+  tile?: { mark: string; bg: string; fg: string }
+  icon: Component
+  shortcut?: string[]
+  score?: number
   open: () => void
+  cloud?: () => void
+}
+interface Group {
+  name: string
+  items: (Item & { index: number })[]
 }
 
-const RUNS = ['7.9k', '7.5k', '6.5k', '4.5k', '3.4k', '3.4k', '3.3k', '2.9k', '2.1k']
+const SCOPES: { value: Scope; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'templates', label: 'Templates' },
+  { value: 'workflows', label: 'Workflows' },
+  { value: 'projects', label: 'Projects' },
+  { value: 'spaces', label: 'Spaces' },
+  { value: 'apps', label: 'Apps' },
+  { value: 'assets', label: 'Assets' }
+]
+const TYPE: Record<Kind, string> = {
+  template: 'Template',
+  workflow: 'Workflow',
+  project: 'Project',
+  space: 'Space',
+  app: 'App',
+  asset: 'Asset',
+  action: '',
+  more: '',
+  docs: ''
+}
+/** Results per group in All before "See all". */
+const CAP = 3
+
 const query = ref('')
+const scope = ref<Scope>('all')
 const input = ref<HTMLInputElement>()
+const list = ref<HTMLElement>()
 const active = ref(0)
 
-const templates = TEMPLATES.map((t, i) => ({
-  key: `t:${t.id}`,
-  group: 'Templates',
-  label: t.title,
-  meta: `${RUNS[i % RUNS.length]} runs`,
-  image: thumb(t.id),
-  open: () => openDetail('template', t.id)
-}))
-const popular = computed(() => templates.slice(0, 3))
+// --- What can be found ----------------------------------------------------
 
-const hits = computed<Hit[]>(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q)
-    return [
-      ...favorites.ids
-        .map((id) => templates.find((t) => t.key === `t:${id}`))
-        .filter((t) => t !== undefined)
-        .map((t) => ({ ...t, key: `f:${t.key}`, group: 'Favorites' })),
-      ...templates.slice(3, 10)
-    ]
-  const has = (s: string): boolean => s.toLowerCase().includes(q)
-  return [
-    ...templates.filter((t) => has(t.label)),
-    ...WORKFLOWS.filter((w) => has(w.name)).map((w) => ({
+const CATEGORY = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
+const WHERE = { local: 'Local', cloud: 'Comfy Cloud', both: 'Local or Cloud' } as const
+const cloudInstance = (): ReturnType<typeof instanceById> =>
+  instances.value.find((i) => i.kind === 'cloud')
+
+/** "12 min ago" → "12m", "Yesterday" → "1d". */
+function ago(when: string): string {
+  const w = when.toLowerCase()
+  if (w === 'just now') return 'now'
+  if (w === 'yesterday') return '1d'
+  if (w === 'last week') return '1w'
+  const m = w.match(/^(\d+) (min|hour|day|week)/)
+  return m ? `${m[1]}${{ min: 'm', hour: 'h', day: 'd', week: 'w' }[m[2]!]}` : when
+}
+const dot = (...parts: (string | undefined)[]): string => parts.filter(Boolean).join(' · ')
+
+function inCloud(what: string, then: () => void): () => void {
+  return () => {
+    toast(`Opening ${what} in Comfy Cloud`)
+    then()
+  }
+}
+
+const templateItem = (t: Template): Item => ({
+  key: `t:${t.id}`,
+  kind: 'template',
+  label: t.title,
+  meta: dot(CATEGORY[t.category], WHERE[t.runs]),
+  image: thumb(t.id),
+  icon: t.kind === 'app' ? PanelsTopLeft : ComfyTemplate,
+  open: () => openDetail('template', t.id),
+  cloud: t.runs === 'local' ? undefined : inCloud(t.title, () => openDetail('template', t.id))
+})
+const templates = computed(() => TEMPLATES.map(templateItem))
+
+const workflows = computed<Item[]>(() =>
+  WORKFLOWS.map((w) => {
+    const name = w.name.replace(/\.json$/, '')
+    const on = instanceById(w.instanceId)
+    return {
       key: `w:${w.name}`,
-      group: 'Workflows',
-      label: w.name.replace(/\.json$/, ''),
-      meta: w.modified,
+      kind: 'workflow',
+      label: name,
+      meta: dot(w.project ?? on?.name, ago(w.modified)),
       image: thumb(w.thumbId),
-      open: () => openDetail('workflow', w.name)
-    })),
-    ...PROJECTS.filter((p) => has(p.name)).map((p) => ({
-      key: `p:${p.id}`,
-      group: 'Projects',
-      label: p.name,
-      icon: FolderOpen,
-      open: () => go(`project:${p.id}` as Page)
-    })),
-    ...SPACES.filter((s) => has(s.name)).map((s) => ({
-      key: `s:${s.id}`,
-      group: 'Spaces',
-      label: s.name,
-      icon: Circle,
-      open: () => go(`space:${s.id}` as Page)
-    }))
-  ]
-})
-const groups = computed(() => {
-  const out: { name: string; items: (Hit & { index: number })[] }[] = []
-  hits.value.forEach((h, index) => {
-    let g = out.find((x) => x.name === h.group)
-    if (!g) out.push((g = { name: h.group, items: [] }))
-    g.items.push({ ...h, index })
+      icon: ComfyWorkflow,
+      open: () => openDetail('workflow', w.name),
+      cloud: on?.kind === 'cloud' ? undefined : inCloud(name, () => openDetail('workflow', w.name))
+    }
   })
-  return out
+)
+
+const projectItems = computed<Item[]>(() =>
+  projects.items
+    .filter((p) => !p.archived)
+    .map((p) => ({
+      key: `p:${p.id}`,
+      kind: 'project',
+      label: p.name,
+      meta: dot(instanceById(p.envId)?.name, ago(p.updated)),
+      image: p.art,
+      icon: Folder,
+      open: () => go(`project:${p.id}` as Page)
+    }))
+)
+
+const STATUS = { live: 'Live', draft: 'Draft', paused: 'Paused' } as const
+const spaces = computed<Item[]>(() =>
+  SPACES.map((s) => ({
+    key: `s:${s.id}`,
+    kind: 'space',
+    label: s.name,
+    meta: dot(STATUS[s.status], s.domain),
+    tile: {
+      mark: s.brand.logo.mark,
+      bg: s.brand.logo.bg ?? s.brand.color,
+      fg: s.brand.logo.fg ?? '#fff'
+    },
+    icon: Circle,
+    open: () => go(`space:${s.id}` as Page)
+  }))
+)
+
+const compact = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+const apps = computed<Item[]>(() =>
+  APPS.map((a) => ({
+    key: `a:${a.id}`,
+    kind: 'app',
+    label: a.name,
+    meta: dot(a.you ? 'Yours' : a.owner, `${compact(a.runs)} runs`),
+    image: thumb(a.thumbId),
+    icon: PanelsTopLeft,
+    open: () => go(`app:${a.id}` as Page)
+  }))
+)
+
+const MEDIA = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' } as const
+const assets = computed<Item[]>(() =>
+  CLOUD_ASSETS.map((a) => ({
+    key: `m:${a.id}`,
+    kind: 'asset',
+    label: a.name,
+    meta: dot(MEDIA[a.type], a.project ?? a.when),
+    image: thumb(a.thumbId),
+    icon: ComfyAssets,
+    open: () => go('assets')
+  }))
+)
+
+function toggleTheme(): void {
+  look.theme = look.theme === 'light' ? 'dark' : 'light'
+}
+const actions = computed<Item[]>(() => [
+  {
+    key: 'x:new-workflow',
+    kind: 'action',
+    label: 'New workflow',
+    icon: Plus,
+    shortcut: ['⌘', 'N'],
+    open: () => {
+      const on = activeInstance.value
+      if (on) hostActions.launch(on)
+    }
+  },
+  {
+    key: 'x:new-project',
+    kind: 'action',
+    label: 'New project',
+    icon: FolderPlus,
+    shortcut: ['⇧', '⌘', 'P'],
+    open: () => go(`project:${newProject().id}` as Page)
+  },
+  {
+    key: 'x:cloud',
+    kind: 'action',
+    label: 'Open Comfy Cloud',
+    icon: Cloud,
+    shortcut: ['⇧', '⌘', 'C'],
+    open: () => {
+      const c = cloudInstance()
+      if (c) hostActions.launch(c)
+    }
+  },
+  {
+    key: 'x:settings',
+    kind: 'action',
+    label: 'Go to Settings',
+    icon: Settings2,
+    shortcut: ['⌘', ','],
+    open: () => go('settings' as Page)
+  },
+  {
+    key: 'x:theme',
+    kind: 'action',
+    label: look.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
+    icon: look.theme === 'light' ? Moon : Sun,
+    shortcut: ['⇧', '⌘', 'L'],
+    open: toggleTheme
+  }
+])
+
+type Library = Exclude<Scope, 'all'>
+const BY_SCOPE = computed<Record<Library, Item[]>>(() => ({
+  templates: templates.value,
+  workflows: workflows.value,
+  projects: projectItems.value,
+  spaces: spaces.value,
+  apps: apps.value,
+  assets: assets.value
+}))
+const scopeLabel = (s: Scope): string => SCOPES.find((x) => x.value === s)!.label
+
+// --- What shows -----------------------------------------------------------
+
+const q = computed(() => query.value.trim())
+/** Templates come from the catalog, the rest from your library, which
+ *  follows the Page state (loading, offline, nothing yet). */
+const state = computed(() => shownState.value)
+const reachable = (s: Library): boolean => state.value === 'live' || s === 'templates'
+
+function hits(items: Item[]): Item[] {
+  const out: (Item & { score: number })[] = []
+  for (const it of items) {
+    const m = match(it.label, q.value)
+    if (m) out.push({ ...it, at: m.at, score: m.score })
+  }
+  return out.sort((a, b) => b.score - a.score)
+}
+
+function seeAll(s: Library, n: number): Item {
+  return {
+    key: `more:${s}`,
+    kind: 'more',
+    label: `See all ${n} in ${scopeLabel(s)}`,
+    icon: ArrowRight,
+    shortcut: ['⌘', String(SCOPES.findIndex((x) => x.value === s) + 1)],
+    open: () => setScope(s)
+  }
+}
+const docs = computed<Item>(() => ({
+  key: 'docs',
+  kind: 'docs',
+  label: `Search the docs for “${q.value}”`,
+  icon: BookOpen,
+  open: () => toast(`Searching the docs for “${q.value}”`)
+}))
+
+const QUICK = ['x:new-workflow', 'x:new-project', 'x:cloud', 'x:settings']
+const groups = computed<Group[]>(() => {
+  const out: { name: string; items: Item[] }[] = []
+  if (!q.value && scope.value === 'all') {
+    if (state.value === 'live') {
+      const w = workflows.value
+      const p = projectItems.value
+      out.push({ name: 'Recent', items: [w[0], p[3], w[1]].filter((it): it is Item => !!it) })
+    }
+    out.push({
+      name: 'Suggested templates',
+      items: [
+        ...[4, 1].map((i) => templates.value[i]).filter((it): it is Item => !!it),
+        seeAll('templates', templates.value.length)
+      ]
+    })
+    out.push({ name: 'Actions', items: actions.value.filter((a) => QUICK.includes(a.key)) })
+  } else if (!q.value) {
+    const s = scope.value as Library
+    if (reachable(s)) out.push({ name: scopeLabel(s), items: BY_SCOPE.value[s] })
+  } else if (scope.value === 'all') {
+    const found = (SCOPES.slice(1) as { value: Library; label: string }[])
+      .filter((s) => reachable(s.value))
+      .map((s) => ({
+        scope: s.value as Library | undefined,
+        name: s.label,
+        items: hits(BY_SCOPE.value[s.value])
+      }))
+    const all = [...found, { scope: undefined, name: 'Actions', items: hits(actions.value) }]
+      .filter((g) => g.items.length)
+      .sort((a, b) => (b.items[0]!.score ?? 0) - (a.items[0]!.score ?? 0))
+    for (const g of all)
+      out.push({
+        name: g.name,
+        items:
+          g.scope && g.items.length > CAP
+            ? [...g.items.slice(0, CAP), seeAll(g.scope, g.items.length)]
+            : g.items
+      })
+  } else {
+    const s = scope.value as Library
+    const items = reachable(s) ? hits(BY_SCOPE.value[s]) : []
+    if (items.length) out.push({ name: scopeLabel(s), items })
+  }
+  if (q.value && out.length) out.push({ name: 'Docs', items: [docs.value] })
+
+  let index = 0
+  return out.map((g) => ({ ...g, items: g.items.map((it) => ({ ...it, index: index++ })) }))
 })
+const flat = computed(() => groups.value.flatMap((g) => g.items))
+const current = computed(() => flat.value[active.value])
+const inLibrary = computed(() => scope.value !== 'all' && scope.value !== 'templates')
+const loading = computed(() => state.value === 'loading' && inLibrary.value)
+const offline = computed(() => state.value === 'error' && inLibrary.value)
+const none = computed(() => !!q.value && !flat.value.length && !loading.value && !offline.value)
+const nothingYet = computed(
+  () => !q.value && !flat.value.length && !loading.value && !offline.value
+)
+
+/** Type and meta on a row; inside a scope the type goes without saying. */
+function sub(it: Item): string {
+  return dot(scope.value === 'all' ? TYPE[it.kind] : undefined, it.meta)
+}
+
+// --- Scopes ---------------------------------------------------------------
+
+function setScope(s: Scope): void {
+  scope.value = s
+  input.value?.focus()
+}
+function stepScope(by: number): void {
+  const i = SCOPES.findIndex((s) => s.value === scope.value)
+  setScope(SCOPES[(i + by + SCOPES.length) % SCOPES.length]!.value)
+}
+watch([query, scope], () => {
+  active.value = 0
+  nextTick(() => list.value?.scrollTo({ top: 0 }))
+})
+
+// --- Keyboard and pointer -------------------------------------------------
 
 function close(): void {
   search.open = false
 }
-function choose(h: Hit): void {
-  close()
-  h.open()
+function choose(it: Item | undefined, inCloud = false): void {
+  if (!it) return
+  if (it.kind !== 'more') close()
+  if (inCloud && it.cloud) it.cloud()
+  else it.open()
+}
+function move(by: number): void {
+  const n = flat.value.length
+  if (!n) return
+  active.value = (active.value + by + n) % n
+}
+
+const SHORTCUTS: Record<string, string> = {
+  n: 'x:new-workflow',
+  P: 'x:new-project',
+  C: 'x:cloud',
+  ',': 'x:settings',
+  L: 'x:theme'
 }
 function onKey(e: KeyboardEvent): void {
+  const mod = e.metaKey || e.ctrlKey
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    active.value = Math.min(active.value + 1, hits.value.length - 1)
+    move(1)
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
-    active.value = Math.max(active.value - 1, 0)
-  } else if (e.key === 'Enter' && hits.value[active.value]) {
+    move(-1)
+  } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !query.value) {
     e.preventDefault()
-    choose(hits.value[active.value]!)
-  } else if (e.key === 'Escape') close()
+    stepScope(e.key === 'ArrowRight' ? 1 : -1)
+  } else if (e.key === 'Tab') {
+    e.preventDefault()
+    stepScope(e.shiftKey ? -1 : 1)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    choose(current.value, mod)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    close()
+  } else if (e.key === 'Backspace' && !query.value && scope.value !== 'all') {
+    e.preventDefault()
+    setScope('all')
+  } else if (mod && /^[1-7]$/.test(e.key)) {
+    e.preventDefault()
+    setScope(SCOPES[Number(e.key) - 1]!.value)
+  } else if (mod && e.key.toLowerCase() !== 'k') {
+    const key = SHORTCUTS[e.shiftKey ? e.key.toUpperCase() : e.key]
+    const it = key && actions.value.find((a) => a.key === key)
+    if (it) {
+      e.preventDefault()
+      choose(it)
+    }
+  }
 }
-watch(query, () => (active.value = 0))
+
+/** The pointer takes the highlight only when it really moves, so a list
+ *  scrolling under a still pointer doesn't steal it from the keys. */
+let last = { x: -1, y: -1 }
+function onPointer(e: PointerEvent, i: number): void {
+  if (e.clientX === last.x && e.clientY === last.y) return
+  last = { x: e.clientX, y: e.clientY }
+  active.value = i
+}
+
+/** Keep the active row in view; the first row of a group brings its title. */
+watch(active, (i) =>
+  nextTick(() => {
+    const el = list.value?.querySelector<HTMLElement>(`[data-i="${i}"]`)
+    if (!el) return
+    const head = el.previousElementSibling
+    if (head?.classList.contains('mar-search-head')) head.scrollIntoView({ block: 'nearest' })
+    el.scrollIntoView({ block: 'nearest' })
+  })
+)
+
+// --- Open and close -------------------------------------------------------
+
 watch(
   () => search.open,
   (open) => {
+    document.body.style.overflow = open ? 'hidden' : ''
     if (!open) return
     query.value = ''
+    scope.value = 'all'
     active.value = 0
     nextTick(() => input.value?.focus())
   }
@@ -123,269 +504,185 @@ function onGlobalKey(e: KeyboardEvent): void {
   }
 }
 onMounted(() => window.addEventListener('keydown', onGlobalKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKey)
+  document.body.style.overflow = ''
+})
+
+const placeholder = computed(() =>
+  scope.value === 'all' ? 'Search or jump to…' : `Search ${scopeLabel(scope.value).toLowerCase()}…`
+)
+const optionId = (i: number): string => `mar-search-opt-${i}`
+/** What ↵ (and ⌘↵) do for the row you're on, for the footer. */
+const verbs = computed(() => {
+  const it = current.value
+  if (!it) return []
+  const main = {
+    action: 'Run',
+    more: 'Show all',
+    docs: 'Search',
+    asset: 'Show in Assets'
+  }[it.kind as string]
+  return [
+    { keys: ['↵'], label: main ?? 'Open' },
+    ...(it.cloud ? [{ keys: ['⌘', '↵'], label: 'Open in Cloud' }] : [])
+  ]
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="search.open" class="proto-ui mar-search-scrim" @click.self="close">
-      <div class="mar-search" role="dialog" aria-label="Search" @keydown="onKey">
-        <label class="mar-search-field">
-          <Search :size="17" class="text-subtle-foreground" />
-          <input
-            ref="input"
-            v-model="query"
-            type="search"
-            placeholder="Search templates, workflows, projects…"
-            aria-label="Search"
-          />
-          <button type="button" class="mar-search-x" aria-label="Close" @click="close">
-            <X :size="15" />
-          </button>
-        </label>
-
-        <div class="mar-search-body">
-          <template v-if="!query.trim()">
-            <div class="mar-search-head">
-              <span>Popular templates</span>
-              <button type="button" @click="(close(), go('explore'))">See all</button>
-            </div>
-            <div class="mar-search-pop">
-              <button
-                v-for="p in popular"
-                :key="p.key"
-                type="button"
-                class="mar-search-tile"
-                @click="choose(p)"
-              >
-                <img :src="p.image" alt="" />
-                <span>{{ p.label }}</span>
-              </button>
-            </div>
-          </template>
-
-          <section v-for="g in groups" :key="g.name">
-            <div class="mar-search-head">
-              <span>{{ g.name }}</span>
-              <button v-if="g.name === 'Templates'" type="button" @click="(close(), go('explore'))">
-                See all
-              </button>
-            </div>
+    <Transition name="mar-search">
+      <div v-if="search.open" class="proto-ui mar-search-scrim" @pointerdown.self="close">
+        <div
+          class="mar-search"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search"
+          @keydown="onKey"
+          @mousedown="($event.target as HTMLElement).closest('input') || $event.preventDefault()"
+        >
+          <div class="mar-search-field">
+            <Search :size="17" class="mar-search-glass" />
+            <input
+              ref="input"
+              v-model="query"
+              type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="mar-search-list"
+              aria-autocomplete="list"
+              :aria-activedescendant="current ? optionId(active) : undefined"
+              :placeholder
+              aria-label="Search"
+              spellcheck="false"
+              autocomplete="off"
+            />
             <button
-              v-for="h in g.items"
-              :key="h.key"
+              v-if="query"
               type="button"
-              class="mar-search-row"
-              :class="active === h.index && 'is-on'"
-              @mouseenter="active = h.index"
-              @click="choose(h)"
+              tabindex="-1"
+              class="mar-search-clear"
+              aria-label="Clear"
+              @click="((query = ''), input?.focus())"
             >
-              <img v-if="h.image" :src="h.image" alt="" class="mar-search-thumb" />
-              <span v-else class="mar-search-thumb is-icon"
-                ><component :is="h.icon ?? ComfyWorkflow" :size="15"
-              /></span>
-              <span class="min-w-0 flex-1 truncate text-left">{{ h.label }}</span>
-              <span v-if="h.meta" class="mar-search-meta">{{ h.meta }}</span>
+              <X :size="14" />
             </button>
-          </section>
-          <p v-if="query.trim() && !hits.length" class="mar-search-empty">
-            Nothing matches “{{ query }}”.
-          </p>
-        </div>
+          </div>
 
-        <footer class="mar-search-foot">
-          <span><kbd>↑↓</kbd>navigate</span><span><kbd>↵</kbd>open</span
-          ><span><kbd>esc</kbd>close</span>
-        </footer>
+          <div class="mar-search-scopes">
+            <MarSeg v-model="scope" :options="SCOPES" label="Search in" />
+          </div>
+
+          <div
+            id="mar-search-list"
+            ref="list"
+            class="mar-search-list"
+            role="listbox"
+            aria-label="Results"
+          >
+            <div v-if="loading" class="mar-search-group" aria-busy="true" aria-label="Loading">
+              <div class="mar-search-head"><span class="mar-search-skel is-head" /></div>
+              <div v-for="n in 5" :key="n" class="mar-search-row is-skel">
+                <span class="mar-search-lead mar-search-skel" />
+                <span
+                  class="mar-search-skel"
+                  :style="{ width: `${[38, 52, 30, 46, 34][n - 1]}%` }"
+                />
+              </div>
+            </div>
+
+            <div v-else-if="offline" class="mar-search-none">
+              <MarEmpty
+                compact
+                tone="error"
+                :icon="WifiOff"
+                title="Can’t reach your library"
+                text="Check your connection, then try again."
+                action="Try again"
+                @action="retry"
+              />
+            </div>
+
+            <template v-else>
+              <section v-for="g in groups" :key="g.name" class="mar-search-group">
+                <div class="mar-search-head">{{ g.name }}</div>
+                <div
+                  v-for="it in g.items"
+                  :id="optionId(it.index)"
+                  :key="it.key"
+                  role="option"
+                  :aria-selected="active === it.index"
+                  :data-i="it.index"
+                  class="mar-search-row"
+                  :class="[active === it.index && 'is-on', `is-${it.kind}`]"
+                  @pointermove="onPointer($event, it.index)"
+                  @click="choose(it)"
+                >
+                  <span class="mar-search-lead" :class="!it.image && !it.tile && 'is-icon'">
+                    <img v-if="it.image" :src="it.image" alt="" />
+                    <span
+                      v-else-if="it.tile"
+                      class="mar-search-mark"
+                      :style="{ background: it.tile.bg, color: it.tile.fg }"
+                      >{{ it.tile.mark }}</span
+                    >
+                    <component :is="it.icon" v-else :size="15" />
+                  </span>
+                  <span class="mar-search-label"
+                    ><template v-for="(s, k) in segments(it.label, it.at ?? [])" :key="k"
+                      ><mark v-if="s.hit">{{ s.text }}</mark
+                      ><template v-else>{{ s.text }}</template></template
+                    ></span
+                  >
+                  <span v-if="sub(it)" class="mar-search-sub">{{ sub(it) }}</span>
+                  <span class="mar-search-fill" />
+                  <span v-if="it.shortcut" class="mar-search-keys">
+                    <kbd v-for="k in it.shortcut" :key="k">{{ k }}</kbd>
+                  </span>
+                  <span v-else-if="active === it.index" class="mar-search-keys">
+                    <kbd><CornerDownLeft :size="11" /></kbd>
+                  </span>
+                </div>
+              </section>
+
+              <div v-if="none" class="mar-search-none">
+                <MarEmpty
+                  compact
+                  :icon="Search"
+                  :title="`No results for “${q}”`"
+                  :text="
+                    scope === 'all'
+                      ? 'Try another word, or search the docs.'
+                      : `Nothing in ${scopeLabel(scope)}. Try All.`
+                  "
+                  :action="scope === 'all' ? 'Search the docs' : 'Search everything'"
+                  @action="scope === 'all' ? choose(docs) : setScope('all')"
+                />
+              </div>
+              <div v-else-if="nothingYet" class="mar-search-none">
+                <MarEmpty
+                  compact
+                  :icon="Search"
+                  :title="`No ${scopeLabel(scope).toLowerCase()} yet`"
+                  text="What you make shows up here."
+                />
+              </div>
+            </template>
+          </div>
+
+          <footer class="mar-search-foot">
+            <span v-for="v in verbs" :key="v.label" class="mar-search-verb">
+              <kbd v-for="k in v.keys" :key="k">{{ k }}</kbd
+              >{{ v.label }}
+            </span>
+            <span class="mar-search-fill" />
+            <span v-if="flat.length" class="mar-search-verb"><kbd>↑</kbd><kbd>↓</kbd>Move</span>
+            <span class="mar-search-verb"><kbd>⇥</kbd>Scope</span>
+            <span class="mar-search-verb"><kbd>esc</kbd>Close</span>
+          </footer>
+        </div>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.mar-search-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  justify-content: center;
-  padding-top: 12vh;
-  background: color-mix(in oklch, var(--color-content-background) 55%, transparent);
-  backdrop-filter: blur(6px);
-}
-.mar-search {
-  display: flex;
-  width: min(600px, calc(100vw - 32px));
-  max-height: 68vh;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 20px;
-  background: color-mix(
-    in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 90%,
-    transparent
-  );
-  backdrop-filter: blur(28px) saturate(1.3);
-  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.7);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-field {
-  display: flex;
-  height: 40px;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 10px 2px;
-  padding: 0 8px 0 14px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-field input {
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  box-shadow: none;
-  flex: 1;
-  background: transparent;
-  font-size: 13px;
-  outline: none;
-}
-.mar-search-field input::placeholder {
-  color: var(--color-subtle-foreground);
-}
-.mar-search-field input::-webkit-search-cancel-button {
-  display: none;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-x {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 8px;
-  color: var(--color-subtle-foreground);
-}
-.mar-search-x:hover {
-  color: var(--color-base-foreground);
-}
-.mar-search-body {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 12px 10px;
-  scrollbar-width: none;
-}
-.mar-search-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 8px 6px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
-.mar-search-head button {
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.mar-search-head button:hover {
-  color: var(--color-base-foreground);
-}
-.mar-search-pop {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 0 8px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-tile {
-  position: relative;
-  overflow: hidden;
-  padding: 0;
-  border-radius: 12px;
-  aspect-ratio: 16 / 10;
-}
-.mar-search-tile img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 400ms ease;
-}
-.mar-search-tile span {
-  position: absolute;
-  inset: auto 0 0;
-  padding: 24px 10px 8px;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.7), transparent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-row {
-  display: flex;
-  width: 100%;
-  height: 40px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-row.is-on {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-}
-.mar-search-thumb {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 7px;
-  object-fit: cover;
-}
-.mar-search-thumb.is-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-}
-.mar-search-meta {
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-.mar-search-empty {
-  padding: 24px 8px;
-  color: var(--color-subtle-foreground);
-  font-size: 13px;
-  text-align: center;
-}
-.mar-search-foot {
-  display: flex;
-  height: 36px;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 16px;
-  padding: 0 18px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-.mar-search-foot span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.mar-search-foot kbd {
-  border-radius: 5px;
-  padding: 1px 5px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  font-family: inherit;
-  font-size: 11px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-search-field input:focus,
-:root .proto-ui.proto-ui.proto-ui .mar-search-field input:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-</style>

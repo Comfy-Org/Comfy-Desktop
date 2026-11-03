@@ -3,6 +3,7 @@ import { proto } from '../../useProto'
 import { isMariana } from '../proposal'
 import { active } from '../marParts'
 import { mock } from '../assets/mock'
+import { spaceById } from '../../spaces'
 
 /**
  * Mar's shell (Figma "Exploration 01 · Cinema hero"): the sidebar floats
@@ -56,17 +57,17 @@ watch(
  *  (MarDock.vue), or Classic: Pablo's sidebar and layout as they are.
  *  Same places in all. */
 export type MarNav = 'sidebar' | 'floating' | 'dock' | 'classic' | 'tabs' | 'panels'
-// v2: Classic (Pablo's sidebar) is the default. The dock is no longer
-// offered (it read unclear); a stored pick of it falls back to Classic.
-const NAV_KEY = 'comfy.design.mar.nav.v2'
+// v3: Floating panels (sidebar and page as two cards) is the default
+// (Pablo/Mar, Oct 30). The dock is no longer offered; a stored pick of it
+// falls back to the default.
+const NAV_KEY = 'comfy.design.mar.nav.v3'
 function loadNav(): { id: MarNav; collapsed: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(NAV_KEY) ?? '{}')
-    // Classic (Pablo's sidebar) is the default; a stored dock falls back to it.
-    const id: MarNav = ['floating', 'classic', 'tabs', 'panels'].includes(v.id) ? v.id : 'classic'
+    const id: MarNav = ['floating', 'classic', 'tabs', 'panels'].includes(v.id) ? v.id : 'panels'
     return { id, collapsed: Boolean(v.collapsed) }
   } catch {
-    return { id: 'classic', collapsed: false }
+    return { id: 'panels', collapsed: false }
   }
 }
 export const marNav = reactive(loadNav())
@@ -143,7 +144,22 @@ watch(
   { immediate: true }
 )
 
+/** Floating panels: the sidebar card carries the Comfy wordmark and can
+ *  collapse to a rail (MarPanelsHead.vue). */
+export const marPanelsOn = computed(() => isMariana.value && marNav.id === 'panels')
+
 export const marSidebarClosed = computed(() => marShellOn.value && !marShell.open)
+
+// Floating panels, collapsed from its head (MarPanelsHead.vue): the card
+// narrows to a rail of icons (`data-mar-rail`, panelsNav.css).
+watch(
+  () => marPanelsOn.value && marNav.collapsed,
+  (rail) => {
+    if (rail) document.documentElement.dataset.marRail = 'on'
+    else delete document.documentElement.dataset.marRail
+  },
+  { immediate: true }
+)
 
 // Not every page gets a photo: tools (builds, the agent, admin) stay plain.
 const HERO: Record<string, string> = {
@@ -162,12 +178,23 @@ export const heroImage = computed<string | undefined>(() => {
   if (!isMariana.value) return undefined
   const page = proto.page
   if (page.startsWith('project:')) return HERO.projects
-  if (page.startsWith('space:')) return HERO.spaces
+  // A space gets its brand's colour instead of a photo (spaceCover).
+  if (page.startsWith('space:')) return undefined
   return HERO[page]
 })
 
-/** Home's background (UI Playground › Home background): Latent bloom
- *  (default), the photo, or one of the quieter alternatives. */
+/** One space's cover: its logo tile's colour washing down from the top,
+ *  with the brand colour as a glow, so a black tile (Spotify) still reads
+ *  on a dark page and a white one (Nike) on a light page. */
+export const spaceCover = computed<{ bg: string; accent: string } | undefined>(() => {
+  if (!isMariana.value || !proto.page.startsWith('space:')) return undefined
+  const brand = spaceById(proto.page.slice(6))?.brand
+  return brand && { bg: brand.logo.bg ?? brand.color, accent: brand.color }
+})
+
+/** Home's background (UI Playground › Home background): Spotlight
+ *  (default), Latent bloom, the photo, or one of the quieter alternatives.
+ *  Canvas, Wires and Latent grade follow DS › Brand imagery. */
 export type HomeBackground =
   | 'bloom'
   | 'photo'
@@ -176,13 +203,18 @@ export type HomeBackground =
   | 'aurora'
   | 'grain'
   | 'output'
+  | 'canvas'
+  | 'wires'
+  | 'grade'
 const BG_KEY = 'comfy.design.mar.homeBackground'
 function loadBackground(): HomeBackground {
   try {
     const v = localStorage.getItem(BG_KEY) as HomeBackground | null
     // Spotlight is the default; retired picks (photo, mesh, aurora, grain)
     // fall back to it.
-    return v && ['bloom', 'spotlight', 'output'].includes(v) ? v : 'spotlight'
+    return v && ['bloom', 'spotlight', 'output', 'canvas', 'wires', 'grade'].includes(v)
+      ? v
+      : 'spotlight'
   } catch {
     return 'spotlight'
   }

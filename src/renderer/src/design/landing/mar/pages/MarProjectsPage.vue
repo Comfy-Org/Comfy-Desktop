@@ -17,6 +17,7 @@ import Select from '../../ui/Select.vue'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import { go, instances, toast, type Page } from '../../useProto'
 import MarPage from './MarPage.vue'
+import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -127,14 +128,22 @@ function lines(p: MarProject): MenuLine[] {
 <template>
   <MarPage
     title="Projects"
-    description="A shared place for a piece of work. Each runs on one build, so everyone gets the same result."
-    skeleton="grid"
+    :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && !!query"
-    :state="shownState === 'live' && projects.items.length === 0 ? 'empty' : undefined"
+    :state="
+      projects.items.length === 0
+        ? shownState === 'live'
+          ? 'empty'
+          : undefined
+        : shownState === 'empty'
+          ? 'live'
+          : undefined
+    "
     :empty="{
       icon: FolderKanban,
       title: 'Keep a piece of work together',
       text: 'A project holds its workflows and assets, runs on one build, and can be shared with the people working on it.',
+      pics: EMPTY_PICS.projects,
       action: 'New project'
     }"
     error-text="Shared projects are out of reach. Workflows on this computer still open from Workflows."
@@ -195,11 +204,10 @@ function lines(p: MarProject): MenuLine[] {
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-list">
-      <div class="mar-list-head">
-        <span class="flex-1">Project</span><span class="w-44">Runs on</span
-        ><span class="w-28">People</span><span class="w-28">Updated</span
-        ><span class="w-[150px] text-right">State</span><span class="w-16" />
+    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 200px) 104px 120px">
+      <div class="mar-table-head">
+        <span>Project</span><span>Runs on</span><span>People</span><span>Updated</span
+        ><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="p in shown"
@@ -223,11 +231,11 @@ function lines(p: MarProject): MenuLine[] {
         @star="projects.star(p.id)"
       >
         <template #cols>
-          <span class="mar-item-col w-44">{{ buildName(p) }}</span>
-          <span class="mar-item-col w-28">{{
+          <span class="mar-item-col">{{ buildName(p) }}</span>
+          <span class="mar-item-col">{{
             count(p.members.length, 'person').replace('persons', 'people')
           }}</span>
-          <span class="mar-item-col w-28">{{ p.updated }}</span>
+          <span class="mar-item-col">{{ p.updated }}</span>
         </template>
       </MarItem>
     </div>

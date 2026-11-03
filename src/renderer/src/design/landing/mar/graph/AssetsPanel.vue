@@ -1,197 +1,362 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Search, X } from 'lucide-vue-next'
+import {
+  Calendar,
+  Copy,
+  Download,
+  FileOutput,
+  Grid3x3,
+  Image,
+  ImageOff,
+  Layers,
+  LayoutGrid,
+  SearchX,
+  SlidersHorizontal,
+  TableOfContents,
+  Trash2,
+  Workflow
+} from 'lucide-vue-next'
+import RailPanel from './panels/RailPanel.vue'
+import { PICTURES } from './panels/panelData'
 import { savedAssets } from './savedAssets'
+import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
+import MarItem from '../pages/MarItem.vue'
+import MarEmpty from '../pages/MarEmpty.vue'
+import MediaChip from '../MediaChip.vue'
+import type { MenuLine } from '../pages/menu'
 
 /**
- * The Assets panel (rail › Assets): everything made or brought in, to
- * search and drag onto the canvas. Opens beside the rail.
+ * Media Assets (ComfyUI's AssetsSidebarTab) with the DS's parts: the
+ * segmented tabs, the search field, library items (MarItem) and the
+ * empty state. One button beside the search holds view and, on Comfy
+ * Cloud, the filters and sort, with a dot while a filter is on. Names
+ * drop the extension (it moves to the meta line), so they truncate
+ * later; a stack reads as a chip on its picture. An asset drags onto
+ * the canvas as an Image node.
  */
+const { cloud } = defineProps<{ cloud: boolean }>()
 defineEmits<{ close: [] }>()
 
-const files = import.meta.glob('../assets/*.jpg', { eager: true, import: 'default' })
-const ALL = Object.entries(files).map(([path, src], i) => ({
-  name: path.split('/').pop()!.replace('.jpg', ''),
-  src: src as string,
-  kind: i % 3 === 0 ? 'Imported' : 'Generated'
-}))
-
-const FILTERS = ['All', 'Generated', 'Imported'] as const
-const filter = ref<(typeof FILTERS)[number]>('All')
+type View = 'list' | 'small' | 'large'
+type Tab = 'Generated' | 'Imported'
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'Generated', label: 'Generated' },
+  { value: 'Imported', label: 'Imported' }
+]
+const tab = ref<Tab>('Generated')
 const query = ref('')
-/** Dragged onto the canvas, an asset becomes an Image node. */
-function drop(a: { name: string; src: string }, e: DragEvent): void {
+const menu = ref(false)
+const view = ref<View>(
+  (() => {
+    try {
+      return (localStorage.getItem('Comfy.Assets.Sidebar.ViewMode') as View) || 'large'
+    } catch {
+      return 'large'
+    }
+  })()
+)
+function setView(v: View): void {
+  view.value = v
+  try {
+    localStorage.setItem('Comfy.Assets.Sidebar.ViewMode', v)
+  } catch {
+    // Storage blocked: the pick lasts for this window only.
+  }
+}
+const VIEWS = [
+  { value: 'list', label: 'List view', icon: TableOfContents },
+  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'large', label: 'Grid (large)', icon: LayoutGrid }
+] as const
+const sort = ref('Newest first')
+const date = ref('All time')
+const filtered = computed(() => date.value !== 'All time')
+const selected = ref<string>('')
+
+const ALL = PICTURES.map((p, i) => ({
+  ...p,
+  file: `${p.name}.png`,
+  kind: i % 3 === 0 ? ('Imported' as const) : ('Generated' as const),
+  seconds: 6 + ((i * 7.3) % 24),
+  outputs: i % 4 === 1 ? 4 : 1
+}))
+const shown = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  const list = [
+    ...savedAssets.map((a) => ({
+      ...a,
+      file: `${a.name}.png`,
+      kind: 'Generated' as const,
+      seconds: 12.4,
+      outputs: 1
+    })),
+    ...ALL
+  ].filter((a) => a.kind === tab.value && (!q || a.file.toLowerCase().includes(q)))
+  if (sort.value === 'Oldest first') return [...list].reverse()
+  if (sort.value.startsWith('Name')) {
+    const s = [...list].sort((a, b) => a.file.localeCompare(b.file))
+    return sort.value.includes('Z → A') ? s.reverse() : s
+  }
+  if (sort.value.startsWith('Generation time'))
+    return [...list].sort((a, b) =>
+      sort.value.includes('longest') ? b.seconds - a.seconds : a.seconds - b.seconds
+    )
+  return list
+})
+const SORTS = computed(() => [
+  'Newest first',
+  'Oldest first',
+  'Name (A → Z)',
+  'Name (Z → A)',
+  ...(tab.value === 'Generated'
+    ? ['Generation time (longest first)', 'Generation time (fastest first)']
+    : [])
+])
+/** "PNG · 13.3s" for a run's output, "PNG · 1.2 MB" for an import. */
+const meta = (a: { file: string; kind: Tab; seconds: number }): string =>
+  `${a.file.split('.').pop()!.toUpperCase()} · ${
+    a.kind === 'Generated' ? `${a.seconds.toFixed(1)}s` : '1.2 MB'
+  }`
+// The product's asset menu (MediaAssetContextMenu).
+const LINES: MenuLine[] = [
+  { label: 'Download', icon: Download },
+  { label: 'Open as workflow', icon: Workflow },
+  { label: 'Export workflow', icon: FileOutput },
+  { label: 'Copy job ID', icon: Copy },
+  'sep',
+  { label: 'Delete', icon: Trash2, danger: true }
+]
+function drag(a: { name: string; src: string }, e: DragEvent): void {
   e.dataTransfer?.setData('text/x-mg-asset', a.src)
   e.dataTransfer?.setData('text/x-mg-name', `${a.name}.jpg`)
 }
-const shown = computed(() =>
-  [...savedAssets.map((a) => ({ ...a, kind: 'Generated' })), ...ALL].filter(
-    (a) =>
-      (filter.value === 'All' || a.kind === filter.value) &&
-      a.name.toLowerCase().includes(query.value.trim().toLowerCase())
-  )
-)
 </script>
 
 <template>
-  <aside class="ga" aria-label="Assets">
-    <header class="ga-head">
-      <span class="ga-title">Assets</span>
-      <button type="button" class="ga-close" aria-label="Close" @click="$emit('close')">
-        <X :size="14" />
-      </button>
-    </header>
-    <label class="ga-search">
-      <Search :size="14" />
-      <input v-model="query" type="search" placeholder="Search assets" />
-    </label>
-    <div class="ga-filters">
-      <button
-        v-for="f in FILTERS"
-        :key="f"
-        type="button"
-        class="ga-filter"
-        :class="filter === f && 'is-on'"
-        @click="filter = f"
-      >
-        {{ f }}
-      </button>
-    </div>
-    <div class="ga-grid">
-      <figure
+  <RailPanel title="Media Assets" @close="$emit('close')">
+    <template #header>
+      <MarSeg v-model="tab" :options="TABS" label="Assets" />
+      <div class="rp-top">
+        <MarSearchField v-model="query" placeholder="Search Assets..." />
+        <span class="rp-anchor">
+          <button
+            type="button"
+            class="rp-icon is-field"
+            :class="menu && 'is-on'"
+            :title="cloud ? 'Filter, sort and view' : 'View settings'"
+            :aria-label="cloud ? 'Filter, sort and view' : 'View settings'"
+            :aria-expanded="menu"
+            @click="menu = !menu"
+          >
+            <SlidersHorizontal :size="15" /><i v-if="filtered" class="rp-dot" />
+          </button>
+          <div v-if="menu" class="rp-menu is-end ap-menu" role="menu">
+            <p class="rp-menu-label">View</p>
+            <div class="mar-pseg ap-views" role="radiogroup" aria-label="View">
+              <button
+                v-for="v in VIEWS"
+                :key="v.value"
+                type="button"
+                role="radio"
+                class="mar-pseg-btn is-icon"
+                :aria-checked="view === v.value"
+                :aria-selected="view === v.value"
+                :aria-label="v.label"
+                :title="v.label"
+                @click="setView(v.value)"
+              >
+                <component :is="v.icon" :size="14" />
+              </button>
+            </div>
+            <template v-if="cloud">
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label"><Image :size="12" />Media type</p>
+              <button
+                v-for="m in ['Image', 'Video', 'Audio', '3D', 'Text']"
+                :key="m"
+                type="button"
+                role="menuitemcheckbox"
+                class="rp-row"
+              >
+                {{ m }}
+              </button>
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label"><Calendar :size="12" />Date</p>
+              <button
+                v-for="d in ['All time', 'Today', 'Past 7 days', 'Past 30 days', 'This year']"
+                :key="d"
+                type="button"
+                role="menuitemradio"
+                class="rp-row"
+                :data-state="date === d ? 'checked' : 'unchecked'"
+                @click="((date = d), (menu = false))"
+              >
+                {{ d }}
+              </button>
+              <span class="rp-menu-sep" />
+              <p class="rp-menu-label">Sort by</p>
+              <button
+                v-for="s in SORTS"
+                :key="s"
+                type="button"
+                role="menuitemradio"
+                class="rp-row"
+                :data-state="sort === s ? 'checked' : 'unchecked'"
+                @click="((sort = s), (menu = false))"
+              >
+                {{ s }}
+              </button>
+            </template>
+          </div>
+        </span>
+      </div>
+    </template>
+
+    <div
+      v-if="shown.length"
+      class="ap-items"
+      :class="`is-${view}`"
+      :aria-label="`${tab} assets`"
+      @click.self="selected = ''"
+    >
+      <div
         v-for="a in shown"
-        :key="a.name"
-        class="ga-item"
+        :key="a.file"
+        class="ap-drag"
         draggable="true"
-        :title="`Drag ${a.name} onto the canvas`"
-        @dragstart="drop(a, $event)"
+        @dragstart="drag(a, $event)"
       >
-        <img :src="a.src" alt="" />
-        <figcaption>{{ a.name }}</figcaption>
-      </figure>
-      <p v-if="!shown.length" class="ga-empty">No assets match “{{ query }}”.</p>
+        <MarItem
+          :name="a.name"
+          :thumb="a.src"
+          :meta="view === 'small' ? undefined : meta(a)"
+          :layout="view === 'list' ? 'list' : 'grid'"
+          ratio="1 / 1"
+          :selected="selected === a.file"
+          :lines="LINES"
+          :title="`${a.file} · drag onto the canvas`"
+          @open="selected = a.file"
+          @select="selected = a.file"
+        >
+          <template v-if="a.outputs > 1 && tab === 'Generated'" #overlay>
+            <span class="ap-stack" :aria-label="`${a.outputs} outputs`">
+              <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
+            </span>
+          </template>
+          <template v-if="view === 'list' && a.outputs > 1 && tab === 'Generated'" #cols>
+            <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
+              ><Layers :size="12" />{{ a.outputs }}</span
+            >
+          </template>
+        </MarItem>
+      </div>
     </div>
-  </aside>
+    <MarEmpty
+      v-else-if="query"
+      compact
+      :icon="SearchX"
+      title="No results"
+      :text="`Nothing in ${tab} matches “${query}”.`"
+      action="Clear search"
+      @action="query = ''"
+    />
+    <MarEmpty
+      v-else
+      compact
+      :icon="ImageOff"
+      :title="tab === 'Generated' ? 'No generated files found' : 'No imported files found'"
+      text="Upload files or generate content to see them here"
+      :pics="PICTURES.slice(0, 3).map((p) => p.src)"
+    />
+  </RailPanel>
 </template>
 
 <style>
-.ga {
-  position: absolute;
-  top: calc(var(--mg-top) + 16px);
-  bottom: 16px;
-  left: 76px;
-  z-index: 4;
-  display: flex;
-  width: 280px;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 18px;
-  background: color-mix(in oklch, var(--color-content-background) 70%, transparent);
-  backdrop-filter: blur(32px) saturate(1.2);
-  color: var(--mg-text);
-}
-.ga-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 2px 0 6px;
-}
-.ga-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-:root .proto-ui.proto-ui.proto-ui .ga-close {
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--mg-muted);
-}
-.ga-search {
-  display: flex;
-  height: 34px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: var(--mg-well);
-  color: var(--mg-dim);
-}
-.ga-search input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--mg-text);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-}
-.ga-filters {
-  display: flex;
-  gap: 4px;
-}
-:root .proto-ui.proto-ui.proto-ui .ga-filter {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--mg-muted);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .ga-filter.is-on {
-  background: var(--mg-hover);
-  color: var(--mg-text);
-}
-.ga-grid {
+.ap-items {
   display: grid;
-  min-height: 0;
-  flex: 1;
-  grid-template-columns: 1fr 1fr;
-  align-content: start;
-  gap: 8px;
-  overflow-y: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 6px;
+  padding: 10px 10px 16px;
 }
-.ga-item {
-  margin: 0;
+.ap-items.is-small {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.ap-items.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px 8px 12px;
+}
+.ap-drag {
+  min-width: 0;
   cursor: grab;
 }
-.ga-item img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  border-radius: 10px;
-  object-fit: cover;
-}
-.ga-item figcaption {
-  overflow: hidden;
-  padding: 5px 2px 0;
-  color: var(--mg-muted);
-  font-size: 11.5px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ga-empty {
-  grid-column: 1 / -1;
-  color: var(--mg-dim);
-  font-size: 12px;
-}
-.is-current .ga {
-  top: calc(var(--mg-top) + 38px);
-  bottom: 0;
-  left: 52px;
-  border-radius: 0;
-  background: var(--mg-chrome);
-  box-shadow: inset -1px 0 0 var(--mg-chrome-line);
+/* In a panel the cards sit on the panel's own surface: no card behind
+   them until hover, so the pictures carry the grid. */
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid {
+  padding: 4px 4px 6px;
+  border-radius: var(--mar-tab-radius);
+  background: transparent;
   backdrop-filter: none;
 }
-.is-current .ga-search,
-.is-current .ga-item img {
-  border-radius: 4px;
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid:hover,
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid.is-menu {
+  background: var(--rp-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-grid .mar-item-media {
+  border-radius: var(--mar-tab-item-radius);
+}
+.rp .mar-item.is-grid .mar-item-text {
+  padding: 8px 4px 0;
+}
+.rp .mar-item .mar-item-meta {
+  color: var(--rp-meta);
+  font-variant-numeric: tabular-nums;
+}
+.rp .ap-items.is-small .mar-item-text {
+  padding-top: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp .ap-items.is-small .mar-item-name {
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item.is-list {
+  height: 52px;
+  gap: 10px;
+  padding: 0 6px;
+  border-radius: var(--mar-tab-radius);
+}
+.rp .mar-item.is-list .mar-item-media {
+  width: 40px;
+  height: 40px;
+}
+/* The selection checkbox is for library pages; a panel selects with a click. */
+:root .proto-ui.proto-ui.proto-ui .rp .mar-item-check {
+  display: none;
+}
+.ap-stack {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  pointer-events: none;
+}
+.ap-stack-row {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--rp-meta);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ap-menu {
+  min-width: 220px;
+}
+.ap-views {
+  display: flex;
+  margin: 2px 4px 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
+  flex: 1;
 }
 </style>

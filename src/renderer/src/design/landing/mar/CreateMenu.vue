@@ -11,9 +11,11 @@ import { onCloud } from './shell/surface'
 
 /** One Create button, top right; what used to be separate buttons (open
  *  ComfyUI, deploy) are its menu. Deploy shows once the Builder exists and
- *  there is a local build to deploy. */
+ *  there is a local build to deploy (not in a browser, which can't reach
+ *  one). With only one option there is no menu: the button does it. */
 const deployable = computed(
   () =>
+    !onCloud.value &&
     can.value.builder &&
     proto.signedIn &&
     instances.value.find((i) => !i.deployment && i.kind === 'local')
@@ -33,7 +35,10 @@ function deploy(): void {
 </script>
 
 <template>
-  <DropdownMenuRoot :modal="false">
+  <Button v-if="!deployable" variant="primary" class="gap-1.5" @click="hostActions.launch(target)">
+    <Play :size="14" />{{ onCloud ? 'Open ComfyUI ↗' : 'Open ComfyUI' }}
+  </Button>
+  <DropdownMenuRoot v-else :modal="false">
     <DropdownMenuTrigger as-child>
       <Button variant="primary" class="group gap-1.5 pr-2">
         <Plus :size="14" />Create

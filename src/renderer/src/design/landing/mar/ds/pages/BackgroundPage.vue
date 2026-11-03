@@ -7,7 +7,7 @@ import Window from '../kit/Window.vue'
 <template>
   <Section
     title="Home spotlight"
-    note="One soft light from above, carried down the page and fading; a faint lavender light in light mode. Painted on the page, so it has no edges."
+    note="One soft light from the top, kept to the middle of the page and fading as it goes down; a faint lavender in light mode. Painted on the page, so it has no edges; the content panel has no hairline."
   >
     <Window :height="640">
       <div class="proto-main relative m-0! size-full overflow-hidden">

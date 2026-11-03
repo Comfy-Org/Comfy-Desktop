@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Star } from 'lucide-vue-next'
-import Button from '../ui/Button.vue'
-import PageHeader from '../ui/PageHeader.vue'
 import AssetTile from '../parts/AssetTile.vue'
 import TemplateCard from '../parts/TemplateCard.vue'
 import { APPS, TEMPLATES, thumb } from '../mock'
@@ -10,12 +8,17 @@ import { allAssets } from '../gallery'
 import { go, toast, type Page } from '../useProto'
 import FavoriteStar from './FavoriteStar.vue'
 import { favoriteIds } from './favorites'
+import MarEmpty from './pages/MarEmpty.vue'
+import MarPage from './pages/MarPage.vue'
+import MarSeg from './pages/MarSeg.vue'
+import { shownState } from './pages/pageState'
 
 /**
  * Favorites (Mar's proposal), rescued from her usertest-home prototype:
  * one tab per place a star comes from, each with its count. The page opens
- * on a tab that has something and follows the newest star. Empty, a fan of
- * pieces with a star says what starring saves here.
+ * on a tab that has something and follows the newest star. The frame is
+ * MarPage: Loading and Error from the UI Playground, Empty from the stars
+ * (with no stars, its MarEmpty says what starring saves here).
  */
 type Tab = 'templates' | 'apps' | 'assets'
 
@@ -57,98 +60,75 @@ watch(counts, (next, prev) => {
   else if (next[tab.value] === 0) tab.value = firstFilled()
 })
 
+// Loading and Error come from the Playground; Live or Empty from the stars.
+const state = computed(() =>
+  shownState.value === 'loading' || shownState.value === 'error'
+    ? undefined
+    : hasAny.value
+      ? 'live'
+      : 'empty'
+)
+
 // Three text-free pieces for the empty fan.
 const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2511'].map(thumb)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Favorites" />
-
-    <template v-if="hasAny">
-      <div class="mar-fav-tabs" role="tablist" aria-label="Favorites">
-        <button
-          v-for="t in TABS"
-          :key="t.value"
-          type="button"
-          role="tab"
-          :aria-selected="tab === t.value"
-          class="mar-ex-tab"
-          @click="tab = t.value"
-        >
-          {{ t.label }}<span class="mar-fav-count">{{ counts[t.value] }}</span>
-        </button>
-      </div>
-
-      <div v-if="tab === 'templates' && templates.length" class="mar-fav-grid">
-        <TemplateCard v-for="t in templates" :key="t.id" :t />
-      </div>
-      <div v-else-if="tab === 'apps' && apps.length" class="mar-fav-grid">
-        <button
-          v-for="a in apps"
-          :key="a.id"
-          type="button"
-          class="mar-ex-card group"
-          @click="go(`app:${a.id}` as Page)"
-        >
-          <span class="mar-fav-media"
-            ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-fav-corner"
-              ><FavoriteStar :id="a.id" kind="app" /></span
-          ></span>
-          <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
-            <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
-            <span class="truncate text-ui text-subtle-foreground"
-              >{{ a.owner }} · {{ a.runs.toLocaleString('en-US') }} runs</span
-            >
-          </span>
-        </button>
-      </div>
-      <div v-else-if="tab === 'assets' && assets.length" class="mar-fav-grid">
-        <AssetTile v-for="a in assets" :key="a.id" :asset="a" @open="toast(`Open ${a.name}`)" />
-      </div>
-      <p v-else class="py-16 text-center text-ui text-subtle-foreground">Nothing here yet.</p>
+  <MarPage
+    title="Favorites"
+    :state
+    :empty="{
+      icon: Star,
+      title: 'Star things to keep them here',
+      text: 'Star a template, an app or an asset and it shows up here and in your sidebar, one click away.',
+      pics: FAN,
+      action: 'Browse Explore'
+    }"
+    error-title="Can't load your favorites"
+    error-text="Starred things in Comfy Cloud are out of reach. Starred templates on this computer still open."
+    @action="go('explore')"
+  >
+    <template #toolbar>
+      <MarSeg v-model="tab" :options="TABS" label="Favorites" />
     </template>
 
-    <section v-else class="flex flex-col items-center gap-6 py-24 text-center">
-      <div class="relative h-32 w-56" aria-hidden="true">
-        <img
-          v-for="(src, i) in FAN"
-          :key="src"
-          :src
-          alt=""
-          class="mar-fav-fan"
-          :class="`is-${i}`"
-        />
-        <span class="mar-fav-badge"><Star :size="16" fill="currentColor" /></span>
-      </div>
-      <div class="flex flex-col gap-1.5">
-        <h2 class="m-0 text-lg/tight font-semibold text-base-foreground">
-          Star things to keep them here
-        </h2>
-        <p class="m-0 max-w-sm text-ui text-muted-foreground">
-          Star a template, an app or an asset and it shows up here and in your sidebar, one click
-          away.
-        </p>
-      </div>
-      <Button @click="go('explore')">Browse Explore</Button>
-    </section>
-  </div>
+    <div v-if="tab === 'templates' && templates.length" class="mar-fav-grid">
+      <TemplateCard v-for="t in templates" :key="t.id" :t />
+    </div>
+    <div v-else-if="tab === 'apps' && apps.length" class="mar-fav-grid">
+      <button
+        v-for="a in apps"
+        :key="a.id"
+        type="button"
+        class="mar-ex-card group"
+        @click="go(`app:${a.id}` as Page)"
+      >
+        <span class="mar-fav-media"
+          ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-fav-corner"
+            ><FavoriteStar :id="a.id" kind="app" /></span
+        ></span>
+        <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
+          <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
+          <span class="truncate text-ui text-subtle-foreground"
+            >{{ a.owner }} · {{ a.runs.toLocaleString('en-US') }} runs</span
+          >
+        </span>
+      </button>
+    </div>
+    <div v-else-if="tab === 'assets' && assets.length" class="mar-fav-grid">
+      <AssetTile v-for="a in assets" :key="a.id" :asset="a" @open="toast(`Open ${a.name}`)" />
+    </div>
+    <MarEmpty
+      v-else
+      compact
+      :icon="Star"
+      :title="`No starred ${tab} yet`"
+      text="Star one and it shows up here."
+    />
+  </MarPage>
 </template>
 
 <style scoped>
-.mar-fav-tabs {
-  display: inline-flex;
-  gap: 2px;
-  margin: 8px 0 20px;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-.mar-fav-count {
-  margin-left: 6px;
-  color: var(--color-subtle-foreground);
-  font-variant-numeric: tabular-nums;
-}
 .mar-fav-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -170,42 +150,5 @@ const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2
   position: absolute;
   top: 8px;
   right: 8px;
-}
-.mar-fav-fan {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  width: 96px;
-  height: 112px;
-  border-radius: 12px;
-  object-fit: cover;
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.08),
-    0 12px 32px rgb(0 0 0 / 0.4);
-}
-.mar-fav-fan.is-0 {
-  transform: translateX(-92%) rotate(-8deg);
-}
-.mar-fav-fan.is-1 {
-  transform: translate(-50%, -6px);
-}
-.mar-fav-fan.is-2 {
-  transform: translateX(-8%) rotate(8deg);
-}
-.mar-fav-badge {
-  position: absolute;
-  bottom: -4px;
-  left: 50%;
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-card-background);
-  box-shadow:
-    0 0 0 1px var(--color-border-default, rgb(255 255 255 / 0.1)),
-    0 8px 20px rgb(0 0 0 / 0.35);
-  color: var(--color-base-foreground);
-  transform: translateX(-50%);
 }
 </style>

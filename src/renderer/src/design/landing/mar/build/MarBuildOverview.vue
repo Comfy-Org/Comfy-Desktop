@@ -2,11 +2,14 @@
 import { computed, ref } from 'vue'
 import { ArrowUpRight, Check, Copy, Plus, Rocket } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
-import EmptyState from '../../ui/EmptyState.vue'
+import SectionHeader from '../../ui/SectionHeader.vue'
 import Sparkline from '../../ui/Sparkline.vue'
 import CloudSignInCta from '../../parts/CloudSignInCta.vue'
 import { deployments, envById, fmt, fmtCompact } from '../../parts/env/env'
 import { deployEnv, go, instances, proto, toast } from '../../useProto'
+import MarPage from '../pages/MarPage.vue'
+import MarSeg from '../pages/MarSeg.vue'
+import MarStatus from '../pages/MarStatus.vue'
 
 /**
  * Build's overview in Mar's proposal. It answers, in order: is my API
@@ -28,8 +31,10 @@ const BUDGET = 80000
 const busiest = computed(() =>
   [...deployments.value].sort((a, b) => b.requests7d - a.requests7d).slice(0, 6)
 )
-const running = computed(() => deployments.value.filter((d) => d.status === 'running').length)
 const firstLocal = computed(() => instances.value.find((i) => i.kind === 'local'))
+const deploy = (): void => {
+  if (firstLocal.value) deployEnv(firstLocal.value.id)
+}
 
 const FAILURES = [
   {
@@ -54,6 +59,7 @@ const FAILURES = [
 
 const LANGS = ['cURL', 'Python', 'JavaScript'] as const
 const lang = ref<(typeof LANGS)[number]>('cURL')
+const LANG_OPTIONS = LANGS.map((l) => ({ value: l, label: l }))
 const endpoint = computed(() => deployments.value[0]?.endpoint ?? 'https://api.comfy.org/run')
 const code = computed(() => {
   if (lang.value === 'Python')
@@ -71,43 +77,31 @@ function copy(): void {
 </script>
 
 <template>
-  <div class="mar-build mx-auto w-full max-w-300 px-10 pb-16">
-    <header class="flex items-end justify-between gap-6 pt-12 pb-8">
-      <div>
-        <h1 class="mar-build-title">Your API</h1>
-        <p class="mt-2 text-ui text-muted-foreground">
-          {{ deployments.length }} deployments · {{ running }} running · last 7 days
-        </p>
-      </div>
-      <div class="flex gap-2">
-        <Button size="lg" @click="toast('Opening docs.comfy.org ↗')"
-          >Docs<ArrowUpRight :size="14"
-        /></Button>
-        <Button
-          v-if="firstLocal && proto.signedIn"
-          variant="primary"
-          size="lg"
-          @click="deployEnv(firstLocal.id)"
-          ><Plus :size="15" />New deployment</Button
-        >
-      </div>
-    </header>
+  <MarPage
+    title="Overview"
+    skeleton="cards"
+    class="mar-build"
+    :state="proto.signedIn && !deployments.length ? 'empty' : undefined"
+    :empty="{
+      icon: Rocket,
+      title: 'No deployments yet',
+      text: 'Pick a build, freeze a version and get an endpoint.',
+      action: firstLocal ? `Deploy ${firstLocal.name}` : 'Deploy a build'
+    }"
+    @action="deploy"
+  >
+    <template #actions>
+      <Button @click="toast('Opening docs.comfy.org ↗')">Docs<ArrowUpRight :size="14" /></Button>
+      <Button v-if="firstLocal && proto.signedIn" variant="primary" @click="deploy"
+        ><Plus :size="15" />Deployment</Button
+      >
+    </template>
 
     <CloudSignInCta
       v-if="!proto.signedIn"
       title="Deploy ComfyUI as an API"
       body="Log in to deploy a build behind an endpoint that scales with traffic."
     />
-    <EmptyState
-      v-else-if="!deployments.length"
-      :icon="Rocket"
-      title="No deployments yet"
-      description="Pick a build, freeze a version and get an endpoint."
-    >
-      <Button v-if="firstLocal" variant="primary" @click="deployEnv(firstLocal.id)"
-        >Deploy {{ firstLocal.name }}</Button
-      >
-    </EmptyState>
     <template v-else>
       <!-- Health: four numbers, big, each on its own surface. -->
       <section class="grid grid-cols-4 gap-3">
@@ -144,12 +138,7 @@ function copy(): void {
 
       <!-- Needs you: only what failed, right under the health numbers. -->
       <section v-if="FAILURES.length" class="mt-8">
-        <div class="mar-build-head">
-          <h2>
-            Needs attention <span class="mar-build-count">{{ FAILURES.length }}</span>
-          </h2>
-          <button type="button" @click="go('logs')">Open logs</button>
-        </div>
+        <SectionHeader title="Needs attention" link="Open logs" @link="go('logs')" />
         <div class="grid grid-cols-3 gap-3">
           <button
             v-for="f in FAILURES"
@@ -159,7 +148,7 @@ function copy(): void {
             @click="go('logs')"
           >
             <span class="flex items-center justify-between">
-              <span class="mar-build-code">{{ f.code }}</span>
+              <MarStatus status="failed" :label="String(f.code)" />
               <span class="text-ui text-subtle-foreground">{{ f.when }}</span>
             </span>
             <span class="line-clamp-2 text-left text-ui text-base-foreground">{{ f.error }}</span>
@@ -172,12 +161,7 @@ function copy(): void {
 
       <!-- What's running: the busiest deployments as cards. -->
       <section class="mt-10">
-        <div class="mar-build-head">
-          <h2>
-            Deployments <span class="mar-build-count">{{ deployments.length }}</span>
-          </h2>
-          <button type="button" @click="go('deployments')">All deployments</button>
-        </div>
+        <SectionHeader title="Deployments" link="See all" @link="go('deployments')" />
         <div class="grid grid-cols-3 gap-3">
           <button
             v-for="d in busiest"
@@ -188,9 +172,10 @@ function copy(): void {
           >
             <span class="flex items-center justify-between gap-3">
               <span class="truncate font-mono text-ui text-base-foreground">{{ d.name }}</span>
-              <span class="mar-build-status" :class="d.status === 'running' && 'is-on'"
-                ><i />{{ d.status === 'running' ? 'Running' : 'Idle' }}</span
-              >
+              <MarStatus
+                :status="d.status === 'running' ? 'running' : 'stopped'"
+                :label="d.status === 'running' ? 'Running' : 'Idle'"
+              />
             </span>
             <span class="truncate text-ui text-subtle-foreground"
               >{{ envById(d.envId)?.name }} · {{ d.version }} · {{ d.stage }}</span
@@ -210,26 +195,10 @@ function copy(): void {
 
       <!-- How to call it, in your language. -->
       <section class="mt-10">
-        <div class="mar-build-head">
-          <h2>Call your API</h2>
-          <button type="button" @click="go('keys')">Get an API key</button>
-        </div>
+        <SectionHeader title="Call your API" link="API keys" @link="go('keys')" />
         <div class="mar-build-code-card mar-surface">
           <div class="flex items-center justify-between">
-            <div class="mar-seg flex gap-1 rounded-control p-0.5" role="tablist">
-              <button
-                v-for="l in LANGS"
-                :key="l"
-                type="button"
-                role="tab"
-                :aria-selected="lang === l"
-                :aria-pressed="lang === l"
-                class="mar-build-tab"
-                @click="lang = l"
-              >
-                {{ l }}
-              </button>
-            </div>
+            <MarSeg v-model="lang" :options="LANG_OPTIONS" label="Language" />
             <Button size="sm" @click="copy"
               ><component :is="copied ? Check : Copy" :size="13" />{{
                 copied ? 'Copied' : 'Copy'
@@ -240,16 +209,10 @@ function copy(): void {
         </div>
       </section>
     </template>
-  </div>
+  </MarPage>
 </template>
 
 <style scoped>
-.mar-build-title {
-  font-size: 40px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
 .mar-build-stat {
   display: flex;
   min-height: 150px;
@@ -313,34 +276,6 @@ function copy(): void {
   border-radius: inherit;
   background: var(--color-base-foreground);
 }
-.mar-build-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.mar-build-head h2 {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.mar-build-head button {
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-.mar-build-head button:hover {
-  color: var(--color-base-foreground);
-}
-.mar-build-count {
-  border-radius: 999px;
-  padding: 1px 8px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
 .mar-build-fail,
 .mar-build-dep {
   display: flex;
@@ -355,34 +290,6 @@ function copy(): void {
   box-shadow: inset 2px 0 0
     color-mix(in oklch, var(--color-status-danger, #f87171) 70%, transparent);
 }
-.mar-build-code {
-  border-radius: 6px;
-  padding: 1px 6px;
-  background: color-mix(in oklch, var(--color-status-danger, #f87171) 16%, transparent);
-  color: var(--color-status-danger, #f87171);
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.mar-build-status {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-.mar-build-status i {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--color-subtle-foreground);
-}
-.mar-build-status.is-on {
-  color: var(--color-base-foreground);
-}
-.mar-build-status.is-on i {
-  background: var(--color-status-running, #4ade80);
-}
 .mar-build-num {
   font-size: 24px;
   font-weight: 600;
@@ -392,17 +299,6 @@ function copy(): void {
 .mar-build-code-card {
   padding: 14px;
   border-radius: 18px;
-}
-.mar-build-tab {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 7px;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-.mar-build-tab[aria-selected='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  color: var(--color-base-foreground);
 }
 .mar-build-pre {
   margin-top: 12px;
@@ -433,16 +329,5 @@ function copy(): void {
 }
 :root .proto-ui.proto-ui.proto-ui .mar-build-dep {
   min-height: 150px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-build-tab {
-  width: auto;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-build-head button {
-  width: auto;
-  padding: 0;
-  font-size: 13px;
 }
 </style>

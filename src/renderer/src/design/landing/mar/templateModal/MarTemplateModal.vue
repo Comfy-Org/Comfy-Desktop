@@ -45,6 +45,7 @@ import {
 } from './templateData'
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import './templateModal.css'
 
 /**
@@ -186,10 +187,10 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
-const VIEWS = [
-  { id: 'result', label: 'Result' },
-  { id: 'graph', label: 'Graph' }
-] as const
+const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
+  { value: 'result', label: 'Result' },
+  { value: 'graph', label: 'Graph' }
+]
 </script>
 
 <template>
@@ -222,19 +223,13 @@ const VIEWS = [
           </header>
 
           <div class="mar-tpl-stage" :data-view="view">
-            <div class="mar-tpl-views" role="tablist" aria-label="Preview">
-              <button
-                v-for="v in VIEWS"
-                :key="v.id"
-                type="button"
-                role="tab"
-                :data-tpl-view="v.id"
-                :aria-selected="view === v.id"
-                @click="view = v.id"
-              >
-                {{ v.label }}
-              </button>
-            </div>
+            <MarSeg
+              v-model="view"
+              :options="VIEWS"
+              label="Preview"
+              on-media
+              class="mar-tpl-views"
+            />
             <template v-if="view === 'result'">
               <img :src="media.hero" alt="" class="mar-tpl-hero" draggable="false" />
               <template v-if="media.quadrants">

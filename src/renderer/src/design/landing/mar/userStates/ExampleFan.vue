@@ -1,214 +1,264 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Play } from 'lucide-vue-next'
-import { hostActions, instances } from '../../useProto'
-import { INSTANCES } from '../../mock'
-import { EXAMPLES, type Example } from './examples'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { ArrowRight } from 'lucide-vue-next'
+import { go } from '../../useProto'
+import { can } from '../../milestones'
+import { EXAMPLES, playLoop, runExample } from './examples'
 
 /**
- * Start from an example, as a hand of cards: Pablo's fan
- * (parts/StarterCards.vue) at Mar's size, so a first-time Home never
- * reads like Recently used. The hand is dealt open on arrival; hovering a
- * card straightens and lifts it, plays its loop and shows Run. Picking
- * one runs it on Comfy Cloud: nothing to set up first.
+ * First-time examples · Fan: Pablo's hand of cards (parts/StarterCards.vue)
+ * as one centred block under the Home's centred greeting. The section's
+ * title moves onto the fan's axis, and the cards carry only their picture,
+ * so nothing clips under a neighbour. The hand never moves: pointing at a
+ * card (or focusing it) lifts and straightens an inner layer in place,
+ * shows its type chip, and the caption above, fixed on the fan's axis,
+ * crossfades to its name, type, run time and "Run on Comfy Cloud"; the
+ * last one stays until you leave the block.
+ * Arrow keys move across the cards, Enter runs one.
  */
+const root = ref<HTMLElement>()
+const cards = ref<HTMLElement[]>([])
 const hovered = ref<number | null>(null)
-const dealt = ref(false)
+const focusIndex = ref(Math.floor(EXAMPLES.length / 2))
+const eyebrow = ref('Run an example on Comfy Cloud')
 const mid = (EXAMPLES.length - 1) / 2
-const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const current = computed(() => (hovered.value === null ? null : EXAMPLES[hovered.value]!))
 
 onMounted(() => {
-  // Start stacked, then open the hand on the next frame.
-  if (reduced) dealt.value = true
-  else requestAnimationFrame(() => requestAnimationFrame(() => (dealt.value = true)))
+  // The section's own header (left-aligned) gives its title to the fan's
+  // centred caption and steps aside (global style below).
+  const title = root.value?.previousElementSibling?.querySelector('h2')?.textContent
+  if (title) eyebrow.value = title
 })
 
-/** Fanned like a hand of cards. Hover lifts an inner layer only (CSS),
- *  so the hit area never slips out from under the cursor. */
+/** Fanned like a hand of cards, symmetric and evenly spaced. The slot
+ *  never changes; the active card only rises above its neighbours and its
+ *  inner layer straightens (`--tilt` undoes the slot's angle), so the hit
+ *  area never slips out from under the cursor. */
 function pose(i: number): Record<string, string> {
   const d = i - mid
-  const open = dealt.value
   return {
-    transform: open
-      ? `translate(${d * 172}px, ${Math.abs(d) * 14}px) rotate(${hovered.value === i ? 0 : d * 5}deg)`
-      : `translate(0, 24px) rotate(${d * 1.5}deg)`,
+    transform: `translate(${d * 112}px, ${Math.abs(d) * 12}px) rotate(${d * 6}deg)`,
     zIndex: String(hovered.value === i ? 20 : 10 - Math.abs(Math.round(d))),
-    transitionDelay: open && hovered.value === null ? `${Math.abs(d) * 40}ms` : '0ms'
+    '--tilt': `${-d * 6}deg`
   }
 }
-const cards = computed(() => EXAMPLES.map((x, i) => ({ x, i })))
 
-function run(x: Example): void {
-  const cloud = instances.value.find((i) => i.kind === 'cloud') ?? INSTANCES[0]!
-  hostActions.launch(cloud, x.label)
+function enter(i: number, e: Event): void {
+  hovered.value = i
+  focusIndex.value = i
+  playLoop(e.currentTarget as Element, true)
 }
-function loop(e: Event, on: boolean): void {
-  const video = (e.currentTarget as HTMLElement).querySelector('video')
-  if (!video || reduced) return
-  if (on) void video.play().catch(() => {})
-  else {
-    video.pause()
-    video.currentTime = 0
-  }
+async function key(e: KeyboardEvent): Promise<void> {
+  const by = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+  if (!by) return
+  e.preventDefault()
+  focusIndex.value = (focusIndex.value + by + EXAMPLES.length) % EXAMPLES.length
+  await nextTick()
+  cards.value[focusIndex.value]?.focus()
 }
 </script>
 
 <template>
-  <div
-    class="mar-fan relative mx-auto h-78 w-full"
-    role="list"
-    aria-label="Examples"
-    @mouseleave="hovered = null"
-  >
-    <button
-      v-for="{ x, i } in cards"
-      :key="x.label"
-      type="button"
-      role="listitem"
-      class="mar-fan-card group absolute top-2 left-1/2 -ml-22 h-62 w-44 rounded-card text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-      :class="dealt && 'is-dealt'"
-      :style="pose(i)"
-      @mouseenter="((hovered = i), loop($event, true))"
-      @mouseleave="loop($event, false)"
-      @focus="((hovered = i), loop($event, true))"
-      @blur="loop($event, false)"
-      @click="run(x)"
-    >
-      <span class="mar-fan-lift relative block size-full overflow-hidden rounded-card">
-        <img :src="x.src" alt="" class="absolute inset-0 size-full object-cover" />
-        <video
-          v-if="x.video"
-          :src="x.video"
-          muted
-          loop
-          playsinline
-          preload="none"
-          class="mar-fan-loop"
-        />
-        <span class="mar-fan-shade" />
-        <span class="mar-fan-shimmer" />
-        <span class="mar-fan-run"><Play :size="11" fill="currentColor" />Run</span>
-        <span class="absolute inset-x-3.5 bottom-3.5 flex flex-col gap-1">
-          <span class="text-ui leading-snug font-medium text-white">{{ x.label }}</span>
-          <span class="flex items-center gap-1.5 text-[12px] text-white/70">
-            <span>{{ x.kind }}</span
-            ><span aria-hidden="true">·</span><span>{{ x.runs }}</span>
-          </span>
+  <div ref="root" class="mar-fan2" @mouseleave="hovered = null">
+    <!-- Caption, behind the fan: the prompt at rest, the card's name on hover. -->
+    <div class="mar-fan2-caption" aria-live="polite">
+      <Transition name="mar-fan2-swap">
+        <div v-if="current" :key="current.label" class="mar-fan2-text">
+          <span class="mar-fan2-eyebrow">{{ current.kind }} · {{ current.runs }}</span>
+          <span class="mar-fan2-title">{{ current.label }}</span>
+        </div>
+        <div v-else key="rest" class="mar-fan2-text">
+          <span class="mar-fan2-eyebrow">{{ eyebrow }}</span>
+          <span class="mar-fan2-title is-rest">Pick an example to try</span>
+        </div>
+      </Transition>
+    </div>
+
+    <div class="mar-fan2-hand" role="list" aria-label="Examples" @keydown="key">
+      <button
+        v-for="(x, i) in EXAMPLES"
+        :key="x.label"
+        ref="cards"
+        type="button"
+        role="listitem"
+        class="starter group absolute top-4 left-1/2 -ml-[78px] h-52 w-39 rounded-card p-0 text-left outline-none"
+        :class="hovered === i && 'is-active'"
+        :style="pose(i)"
+        :tabindex="i === focusIndex ? 0 : -1"
+        :aria-label="`Run ${x.label} on Comfy Cloud, ${x.kind}, ${x.runs}`"
+        @mouseenter="enter(i, $event)"
+        @mouseleave="playLoop($event.currentTarget as Element, false)"
+        @focus="enter(i, $event)"
+        @blur="playLoop($event.currentTarget as Element, false)"
+        @click="runExample(x)"
+      >
+        <span
+          class="lift relative block size-full overflow-hidden rounded-card border border-white/10 bg-card-background shadow-[0_18px_40px_-18px_rgb(0_0_0/0.8)]"
+        >
+          <img :src="x.src" alt="" class="absolute inset-0 size-full object-cover" />
+          <video
+            v-if="x.video"
+            :src="x.video"
+            muted
+            loop
+            playsinline
+            preload="none"
+            class="loop absolute inset-0 size-full object-cover"
+          />
+          <span class="shimmer pointer-events-none absolute inset-0" />
+          <span class="mar-fan2-chip">{{ x.kind }}</span>
         </span>
-      </span>
-    </button>
+      </button>
+    </div>
+    <div class="mar-fan2-action">
+      <button
+        v-if="current"
+        type="button"
+        class="mar-fan2-run"
+        tabindex="-1"
+        @click="runExample(current)"
+      >
+        Run on Comfy Cloud<ArrowRight :size="14" />
+      </button>
+      <button v-else-if="can.explore" type="button" class="mar-fan2-all" @click="go('explore')">
+        See all examples<ArrowRight :size="14" />
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.mar-fan {
-  --mar-fan-ease: cubic-bezier(0.19, 1, 0.22, 1);
+.mar-fan2 {
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.mar-fan-card {
+.mar-fan2-caption {
+  position: relative;
+  width: 100%;
+  height: 92px;
+}
+.mar-fan2-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  text-align: center;
+}
+.mar-fan2-eyebrow {
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-fan2-title {
+  color: var(--color-base-foreground);
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+.mar-fan2-title.is-rest {
+  color: color-mix(in oklch, var(--color-base-foreground) 38%, transparent);
+}
+.mar-fan2-action {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+}
+.mar-fan2-hand {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 248px;
+  /* Clear air between the caption and the lifted card. */
+  margin-top: 24px;
+}
+.mar-fan2-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--color-media-overlay);
+  backdrop-filter: blur(12px);
+  color: rgb(255 255 255 / 0.92);
+  font-size: 11px;
   opacity: 0;
-  transition:
-    transform 700ms var(--mar-fan-ease),
-    opacity 400ms ease;
+  transition: opacity 200ms ease;
 }
-.mar-fan-card.is-dealt {
+.is-active .mar-fan2-chip {
   opacity: 1;
 }
-.mar-fan-lift {
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: var(--color-card-background);
-  box-shadow: 0 22px 44px -20px rgb(0 0 0 / 0.8);
+/* Crossfade: the new caption rises in as the old one settles out. */
+/* Crossfade in place: the text never travels, so the caption stays put. */
+.mar-fan2-swap-enter-active,
+.mar-fan2-swap-leave-active {
   transition:
-    transform 300ms var(--mar-fan-ease),
-    box-shadow 300ms ease;
+    opacity 240ms ease,
+    filter 240ms ease;
 }
-:global(:root[data-ds-theme='light'] .mar-fan-lift) {
-  border-color: rgb(0 0 0 / 0.06);
-  box-shadow: 0 22px 40px -22px rgb(0 0 0 / 0.45);
+.mar-fan2-swap-enter-from,
+.mar-fan2-swap-leave-to {
+  opacity: 0;
+  filter: blur(3px);
 }
-.mar-fan-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 45%, rgb(0 0 0 / 0.78));
+.starter {
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
 }
-.mar-fan-loop {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.loop {
   opacity: 0;
   transition: opacity 300ms ease;
 }
-.mar-fan-run {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 999px;
-  padding: 5px 11px;
-  background: #fff;
-  color: #111;
-  font-size: 12px;
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
-  opacity: 0;
-  transform: translateY(-4px);
+/* Active (pointer or keyboard): the inner layer lifts and straightens in
+   its slot; transitions are interruptible, so sweeping across stays smooth. */
+.lift {
   transition:
-    opacity 200ms ease,
-    transform 300ms var(--mar-fan-ease);
+    transform 450ms var(--ease-out-expo),
+    box-shadow 300ms ease;
 }
-/* Hover (mouse only) or keyboard focus: the card lifts, its loop plays
-   and Run shows. */
-@media (hover: hover) and (pointer: fine) {
-  .mar-fan-card:hover .mar-fan-lift {
-    transform: translateY(-10px) scale(1.03);
-    box-shadow: 0 30px 50px -20px rgb(0 0 0 / 0.85);
-  }
-  .mar-fan-card:hover .mar-fan-loop,
-  .mar-fan-card:hover .mar-fan-run {
-    opacity: 1;
-    transform: none;
-  }
+.is-active .lift {
+  transform: translateY(-10px) rotate(var(--tilt)) scale(1.03);
 }
-.mar-fan-card:focus-visible .mar-fan-lift {
-  transform: translateY(-10px) scale(1.03);
-}
-.mar-fan-card:focus-visible .mar-fan-loop,
-.mar-fan-card:focus-visible .mar-fan-run {
+.is-active .loop {
   opacity: 1;
-  transform: none;
 }
-/* Pablo's shimmer: a faint band passes every few seconds, card by card. */
-.mar-fan-shimmer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+.starter:focus-visible .lift {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+/* Shimmer: a faint band passes every few seconds, staggered per card. */
+.shimmer {
   background: linear-gradient(
     105deg,
     transparent 40%,
-    rgb(255 255 255 / 0.08) 50%,
+    rgb(255 255 255 / 0.07) 50%,
     transparent 60%
   );
   background-size: 250% 100%;
   background-position: 150% 0;
-  animation: mar-fan-sweep 9s cubic-bezier(0.645, 0.045, 0.355, 1) infinite;
-  animation-delay: calc(var(--mar-fan-i, 0) * 0.6s);
+  animation: sweep 9s cubic-bezier(0.645, 0.045, 0.355, 1) infinite;
 }
-.mar-fan-card:nth-child(2) .mar-fan-shimmer {
-  --mar-fan-i: 1;
+.starter:nth-child(2) .shimmer {
+  animation-delay: 0.6s;
 }
-.mar-fan-card:nth-child(3) .mar-fan-shimmer {
-  --mar-fan-i: 2;
+.starter:nth-child(3) .shimmer {
+  animation-delay: 1.2s;
 }
-.mar-fan-card:nth-child(4) .mar-fan-shimmer {
-  --mar-fan-i: 3;
+.starter:nth-child(4) .shimmer {
+  animation-delay: 1.8s;
 }
-.mar-fan-card:nth-child(5) .mar-fan-shimmer {
-  --mar-fan-i: 4;
+.starter:nth-child(5) .shimmer {
+  animation-delay: 2.4s;
 }
-@keyframes mar-fan-sweep {
+@keyframes sweep {
   0% {
     background-position: 150% 0;
   }
@@ -217,15 +267,63 @@ function loop(e: Event, on: boolean): void {
     background-position: -100% 0;
   }
 }
+/* Reduced motion: no sweep, no movement; the caption only crossfades. */
 @media (prefers-reduced-motion: reduce) {
-  .mar-fan-shimmer {
+  .shimmer {
     animation: none;
   }
-  .mar-fan-card,
-  .mar-fan-lift,
-  .mar-fan-loop,
-  .mar-fan-run {
+  .lift,
+  .loop,
+  .mar-fan2-chip {
     transition: none;
   }
+  /* Nothing moves: the active card keeps its slot and pose; only the
+     caption crossfades. */
+  .is-active .lift {
+    transform: none;
+  }
+  .mar-fan2-swap-enter-from,
+  .mar-fan2-swap-leave-to {
+    filter: none;
+  }
+}
+</style>
+
+<style>
+/* The fan carries its section's title on its own axis, so the section's
+   left-aligned header steps aside. */
+:root .proto-ui section:has(> .mar-fan2) > :first-child:not(.mar-fan2) {
+  display: none;
+}
+/* Global: these are buttons, past the prototype's button reset. */
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-run,
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-all {
+  display: inline-flex;
+  width: auto;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-run {
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-run:hover {
+  opacity: 0.88;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-all {
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-fan2-all:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
 }
 </style>

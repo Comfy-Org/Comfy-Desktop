@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { STAGES, type StageId } from '../stages'
+import { frameUrl } from './frameUrl'
 
 /**
  * A component opened (a menu, a tooltip), in its own frame: an open menu
  * closes the others in its document, so each one gets a document of its
- * own. Same theme as the page it is on.
+ * own. Same theme as the page it is on; `seed` starts it on knob values.
  */
-const { id, label } = defineProps<{ id: StageId; label?: string }>()
-const theme = new URLSearchParams(location.search).get('theme') ?? 'dark'
-const src = `?frame=stage&stage=${id}&theme=${theme}&proposal=mariana`
+const { id, label, seed } = defineProps<{
+  id: StageId
+  label?: string
+  seed?: Record<string, unknown>
+}>()
+const src = frameUrl('stage', { stage: id }, seed)
 </script>
 
 <template>

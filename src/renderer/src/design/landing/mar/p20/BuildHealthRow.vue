@@ -75,7 +75,11 @@ const vram = (n: number): string => (Number.isInteger(n) ? `${n}` : n.toFixed(1)
         <span class="text-ui text-subtle-foreground">{{ instances.length }}</span>
       </template>
     </SectionHeader>
-    <div class="grid grid-cols-3 gap-3.5">
+    <!-- One, two or three builds always fill the row. -->
+    <div
+      class="grid gap-3.5"
+      :style="{ gridTemplateColumns: `repeat(${Math.min(cards.length, 3)}, minmax(0, 1fr))` }"
+    >
       <div
         v-for="{ i, h } in cards"
         :key="i.id"

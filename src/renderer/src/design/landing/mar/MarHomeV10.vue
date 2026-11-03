@@ -15,20 +15,13 @@ import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
 import { homeBuilds } from './homeBuilds'
 import { firstTime } from './userStates/userState'
-import ExampleFan from './userStates/ExampleFan.vue'
+import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
-import CommandHome from './p20/CommandHome.vue'
-import BentoHome from './p20/BentoHome.vue'
-import ComposerHome from './p20/ComposerHome.vue'
-import TimelineHome from './p20/TimelineHome.vue'
-import CanvasHome from './p20/CanvasHome.vue'
-import ZenHome from './p20/ZenHome.vue'
 import FilmstripRow from './p20/FilmstripRow.vue'
 import TableRow from './p20/TableRow.vue'
-import PulseStrip from './p20/PulseStrip.vue'
 import SpotlightCarousel from './p20/SpotlightCarousel.vue'
 import GradientSpacesRow from './p20/GradientSpacesRow.vue'
 import BuildHealthRow from './p20/BuildHealthRow.vue'
@@ -85,16 +78,6 @@ const actions = computed(() => [
       ]
     : [])
 ])
-// Proposals · 20: a picked layout replaces the Home's body.
-const LAYOUTS = {
-  command: CommandHome,
-  bento: BentoHome,
-  composer: ComposerHome,
-  timeline: TimelineHome,
-  canvas: CanvasHome,
-  zen: ZenHome
-} as const
-const layout = computed(() => (p20.homeLayout === 'default' ? undefined : LAYOUTS[p20.homeLayout]))
 const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // First run: a first-time user before any local install (UI Playground ›
 // User and Local install). A returning user with no local install (on
@@ -141,8 +124,7 @@ const recent = computed(() =>
       </Button>
     </template>
   </div>
-  <component :is="layout" v-if="layout && !firstTime" />
-  <div v-else class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
+  <div class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
@@ -156,7 +138,6 @@ const recent = computed(() =>
           <PromptBox target class="mar-prompt" />
         </div>
         <template v-if="!firstRun">
-          <PulseStrip v-if="p20.pulse === 'on'" />
           <BuildHealthRow v-if="p20.builds === 'health'" />
           <div v-if="parts.builds === 'mar'" class="mx-auto mt-8 w-full max-w-210">
             <div class="mb-2.5 flex items-center justify-between px-1">
@@ -177,7 +158,8 @@ const recent = computed(() =>
     <MarStart v-if="firstRun" />
     <div v-else>
       <!-- A first-time user with a build: nothing of theirs yet, so the
-           examples take Recently used's place, as a fan, not a row. -->
+           examples take Recently used's place (UI Playground › First-time
+           examples). -->
       <section v-if="firstTime && !recent.length" class="mt-10">
         <SectionHeader
           title="Start from an example"
@@ -191,7 +173,7 @@ const recent = computed(() =>
             >
           </template>
         </SectionHeader>
-        <ExampleFan />
+        <ExampleShowcase />
       </section>
       <section v-if="parts.examples === 'mar'" class="mx-auto mt-8 w-full max-w-180">
         <SectionHeader
@@ -215,17 +197,10 @@ const recent = computed(() =>
       />
 
       <section v-if="parts.recent === 'mar' && recent.length" class="mt-10">
-        <SectionHeader title="Recently used" link="See all" @link="go('workflows')">
-          <template #controls>
-            <span
-              class="inline-flex h-5 items-center rounded-full bg-secondary-background px-2 text-ui text-muted-foreground"
-              >{{ recent.length }}</span
-            >
-          </template>
-        </SectionHeader>
+        <SectionHeader title="Recently used" link="See all" @link="go('workflows')" />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
-        <ScrollRow v-else :columns="5">
+        <ScrollRow v-else :columns="5" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"
             :key="r.w.id"

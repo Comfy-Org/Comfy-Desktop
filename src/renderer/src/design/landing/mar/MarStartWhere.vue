@@ -76,7 +76,7 @@ function openCloud(): void {
   align-items: center;
   gap: 6px;
   height: 32px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 0 14px;
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);

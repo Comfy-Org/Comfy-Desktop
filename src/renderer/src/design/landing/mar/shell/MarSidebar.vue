@@ -39,9 +39,9 @@ import {
 import { agent, resetAgent } from '../../agent'
 import { flow, resetFlow } from '../../appFlow'
 import { can, landingPage } from '../../milestones'
-import { PROJECTS, TEMPLATES, USER, thumb } from '../../mock'
+import { PROJECTS, TEMPLATES, thumb } from '../../mock'
 import { favorites } from '../favorites'
-import { creditsStyle } from '../credits'
+import { creditsShort, creditsStyle, creditsTotal } from '../credits'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
 import MarCreditsFlyout from '../MarCreditsFlyout.vue'
 import RailFlyout from '../p20/RailFlyout.vue'
@@ -54,6 +54,7 @@ import { search } from '../search/search'
 import { PROJECT_ART } from '../assets/mock'
 import { firstRunKeeps, firstRunLabel, ports } from '../pabloPorts'
 import MarSignIn from './MarSignIn.vue'
+import { goModeHome } from '../modes/home'
 
 /**
  * Mar's sidebar (Navigation: Sidebar or Floating): the lens switch and the
@@ -153,10 +154,6 @@ function lens(m: Mode): void {
   goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
 }
 const open = computed(() => !marNav.collapsed)
-const shortCredits = computed(() => {
-  const n = Number(USER.credits.replace(/,/g, ''))
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-})
 
 // Agent lens: a new chat and the recent ones, as in Pablo's AgentNav.
 const currentChat = computed(
@@ -203,8 +200,8 @@ function newChat(): void {
         </button>
       </div>
       <MarCreditsFlyout v-if="open && creditsStyle.id === 'chip'" side="bottom" align="start">
-        <button type="button" class="mar-side-chip" :title="`${USER.credits} credits`">
-          <Coins :size="13" />{{ shortCredits }}
+        <button type="button" class="mar-side-chip" :title="`${creditsTotal} credits`">
+          <Coins :size="13" />{{ creditsShort }}
         </button>
       </MarCreditsFlyout>
       <button
@@ -220,7 +217,9 @@ function newChat(): void {
 
     <RailFlyout v-if="!open && p20.rail === 'flyout'" />
     <nav class="mar-side-scroll">
+      <!-- Search finds media and workflows: a Create thing, not in Build. -->
       <button
+        v-if="proto.mode !== 'build'"
         type="button"
         class="mar-side-row"
         :title="open ? undefined : 'Search · ⌘K'"
@@ -256,6 +255,14 @@ function newChat(): void {
       </template>
 
       <template v-if="proto.mode === 'agent'">
+        <button
+          type="button"
+          class="mar-side-row"
+          :title="open ? undefined : 'Home'"
+          @click="goModeHome()"
+        >
+          <Home :size="16" /><span v-if="open" class="flex-1 truncate">Home</span>
+        </button>
         <button
           type="button"
           class="mar-side-row"
@@ -341,7 +348,11 @@ function newChat(): void {
       <template v-if="proto.mode === 'create' && can.spaces">
         <div class="mar-side-label">
           <template v-if="open"
-            ><span class="flex-1">Spaces</span><Plus :size="14" class="text-subtle-foreground"
+            ><span class="flex-1">Spaces</span
+            ><!-- None yet: the invitation below is the one way to add. --><Plus
+              v-if="SPACES.length"
+              :size="14"
+              class="text-subtle-foreground"
           /></template>
           <span v-else class="mar-side-sep" />
         </div>
@@ -376,7 +387,7 @@ function newChat(): void {
     >
       <button type="button" class="mar-side-credits" :title="open ? undefined : 'Credits'">
         <Coins :size="16" /><template v-if="open"
-          ><span class="flex-1 text-left">Credits</span><span>{{ USER.credits }}</span></template
+          ><span class="flex-1 text-left">Credits</span><span>{{ creditsTotal }}</span></template
         >
       </button>
     </MarCreditsFlyout>
@@ -388,7 +399,7 @@ function newChat(): void {
       <MarCreditsFlyout v-if="open && creditsStyle.id === 'meter'">
         <button type="button" class="mar-side-meter">
           <span class="flex items-center justify-between">
-            <span>{{ USER.credits }} credits</span
+            <span>{{ creditsTotal }} credits</span
             ><span class="text-subtle-foreground">Top up</span>
           </span>
           <span class="mar-side-bar"><span :style="{ width: '62%' }" /></span>
@@ -433,8 +444,7 @@ function newChat(): void {
   backdrop-filter: blur(40px) saturate(1.3);
   box-shadow:
     0 24px 64px -24px rgb(0 0 0 / 0.7),
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
-    inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
   transition: width 320ms cubic-bezier(0.645, 0.045, 0.355, 1);
   -webkit-app-region: no-drag;
 }
@@ -629,7 +639,7 @@ function newChat(): void {
   gap: 5px;
   margin-left: auto;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   color: var(--color-base-foreground);
   font-size: 12px;

@@ -1,0 +1,336 @@
+/* One table (Mar's proposal): every list view shares it.
+ *
+ * - Columns: one grid for the head and every row, set with --mar-grid on
+ *   the table, so a header always sits over its cells.
+ * - Head: 12px, medium, sentence case, lightly tracked, a hairline under
+ *   it; sticky while the list scrolls.
+ * - Rows: 48px at least, 8px padding, separated by hairlines (no
+ *   zebra). Hover and selected fill the row and hide the hairlines next
+ *   to it. Every line spans the table's full width.
+ * - Cells: 13px, muted, one line, ellipsis. Numbers are right-aligned
+ *   (.is-num); every cell uses tabular figures; the last column ends on the right
+ *   (.is-end).
+ * - A two-line name (name over a quiet sub line): every other cell sits
+ *   on the name's baseline, not between the two lines. Pictures and row
+ *   tools stay centred.
+ * - Tags (.mar-tag) share the state chip's shape, without a dot.
+ * - Empty (.mar-table-empty) and loading (.mar-table-sk) rows keep the
+ *   table's shape.
+ */
+.mar-table {
+  --mar-table-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  --mar-table-hover: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  --mar-table-picked: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  font-size: 13px;
+}
+/* Item tables (MarItem rows): picture, name, the page's columns, state
+   and the row tools. The page sets only its own columns in --mar-cols
+   (and --mar-state when its longest state chip needs more room). */
+.mar-table.is-items {
+  --mar-grid: 32px minmax(0, 1fr) var(--mar-cols,) var(--mar-state, 128px) 56px;
+}
+
+.mar-table-head,
+.mar-table-row,
+:root .proto-ui.proto-ui.proto-ui .mar-table > .mar-item.is-list {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: var(--mar-grid);
+  align-items: center;
+  column-gap: 16px;
+  padding-inline: 12px;
+}
+
+.mar-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 36px;
+  container-type: scroll-state;
+  box-shadow: inset 0 -1px 0 var(--mar-table-line);
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+/* Clear over the page at rest; once it sticks, the page's colour fills
+   it so rows slide under cleanly. The fill reaches up over the scroll
+   area's top padding (it sticks below that padding), so no row shows
+   above the head, and sideways over the page gutters as shadow (which
+   never adds a scrollbar); the scroll area clips the rest. It never
+   takes clicks meant for what sits above the table. */
+.mar-table-head::before {
+  position: absolute;
+  z-index: -1;
+  inset: -64px 0 0;
+  background: var(--color-content-background);
+  box-shadow:
+    inset 0 -1px 0 var(--mar-table-line),
+    -48px 0 0 var(--color-content-background),
+    48px 0 0 var(--color-content-background);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+@container scroll-state(stuck: top) {
+  .mar-table-head::before {
+    opacity: 1;
+  }
+}
+.mar-table-head > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mar-table.is-items .mar-table-head > :first-child {
+  grid-column: span 2;
+}
+
+.mar-table-row,
+:root .proto-ui.proto-ui.proto-ui .mar-table > .mar-item.is-list {
+  position: relative;
+  height: auto;
+  min-height: 48px;
+  padding-block: 8px;
+  border-radius: 8px;
+  outline: none;
+  transition: background-color 120ms ease;
+}
+.mar-table-row {
+  cursor: pointer;
+}
+/* Hairlines between rows, full width like the head's, so every line
+   spans the same; a filled row hides its own and the next one's. */
+:is(.mar-table-row, .mar-table > .mar-item.is-list)
+  + :is(.mar-table-row, .mar-item.is-list)::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--mar-table-line);
+  content: '';
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+:is(.mar-table-row, .mar-table > .mar-item.is-list):is(
+    :hover,
+    :focus-visible,
+    .is-selected,
+    .is-menu
+  )::before,
+:is(.mar-table-row, .mar-table > .mar-item.is-list):is(
+    :hover,
+    :focus-visible,
+    .is-selected,
+    .is-menu
+  )
+  + :is(.mar-table-row, .mar-item.is-list)::before {
+  opacity: 0;
+}
+:root
+  .proto-ui.proto-ui.proto-ui
+  :is(.mar-table-row, .mar-table > .mar-item.is-list):is(:hover, .is-menu) {
+  background: var(--mar-table-hover);
+}
+:root .proto-ui.proto-ui.proto-ui :is(.mar-table-row, .mar-table > .mar-item.is-list).is-selected {
+  background: var(--mar-table-picked);
+  box-shadow: none;
+}
+:root
+  .proto-ui.proto-ui.proto-ui
+  :is(.mar-table-row, .mar-table > .mar-item.is-list):focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+
+/* A two-line name: the other cells sit on the name's baseline. */
+.mar-table-row:has(.mar-table-sub),
+:root .proto-ui.proto-ui.proto-ui .mar-table > .mar-item.is-list:has(.mar-item-meta) {
+  align-items: first baseline;
+}
+.mar-table-row > .is-center,
+.mar-table > .mar-item.is-list > :is(.mar-item-media, .mar-item-tools) {
+  align-self: center;
+}
+
+/* Cells */
+.mar-table-cell,
+.mar-table > .mar-item.is-list .mar-item-col {
+  min-width: 0;
+  width: auto;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-table .is-num {
+  text-align: right;
+}
+.mar-table .is-end {
+  text-align: right;
+}
+.mar-table .is-quiet {
+  color: var(--color-subtle-foreground);
+}
+.mar-table-name {
+  display: block;
+  min-width: 0;
+}
+.mar-table-title {
+  display: block;
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-table-sub {
+  display: block;
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The picture column: 32px, the same in every table. */
+.mar-table-glyph {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+}
+
+/* A tag: the state chip's shape, no dot. */
+.mar-tag {
+  display: inline-flex;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.mar-table-cell:has(.mar-tag) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Empty: one quiet row in the table's place. */
+.mar-table-empty {
+  display: flex;
+  min-height: 96px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
+  text-align: center;
+}
+.mar-table-empty strong {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+
+/* Loading: rows of the same height, shimmer bars (MarPage's .mar-sk)
+   where the text goes. */
+.mar-table-sk {
+  pointer-events: none;
+}
+/* Item tables: the MarItem row's own parts, fitted to the grid. */
+:root .proto-ui.proto-ui.proto-ui .mar-table > .mar-item.is-list .mar-item-media {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-table > .mar-item.is-list .mar-item-check {
+  top: 50% !important;
+  left: 18px !important;
+  translate: 0 -50%;
+}
+.mar-table > .mar-item.is-list .mar-item-text {
+  gap: 0;
+}
+.mar-table > .mar-item.is-list .mar-item-name {
+  line-height: 18px;
+}
+.mar-table > .mar-item.is-list .mar-item-meta {
+  display: block;
+  line-height: 16px;
+}
+.mar-table > .mar-item.is-list .mar-item-col.is-status {
+  display: flex;
+  justify-content: flex-end;
+  overflow: visible;
+}
+.mar-table > .mar-item.is-list .mar-item-tools.is-row {
+  justify-content: flex-end;
+  margin-left: 0;
+}
+
+/* Tables drawn by shared parts (Space › Members, Space › Tools): the
+   parts carry inert is-mar-* hooks; in Mar's proposal they take the same
+   head, rows and lines, without the card. Rows that hold controls
+   (selects, switches) centre their cells. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-table {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-table > :is(.is-mar-head, .is-mar-row) {
+  column-gap: 16px;
+  padding-inline: 12px;
+  border-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-table > .is-mar-head {
+  height: 36px;
+  background: transparent;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-table > .is-mar-row {
+  min-height: 48px;
+  padding-block: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-row .text-ui {
+  font-size: 13px;
+  line-height: 18px;
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-row .text-subtle-foreground {
+  font-size: 12px;
+  line-height: 16px;
+}
+/* The picture column: 32px, as everywhere (avatars stay round). */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .is-mar-row > :first-child > img {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}

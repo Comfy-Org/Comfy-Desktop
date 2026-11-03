@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Code, MessageCircle, Palette } from 'lucide-vue-next'
+import { Code, Palette } from 'lucide-vue-next'
+import { AgentChat } from '../../icons/agentChat'
+import MarFavoritesGroup from '../../shell/MarFavoritesGroup.vue'
+import MarSignIn from '../../shell/MarSignIn.vue'
 import MarModeSwitch from '../../modes/MarModeSwitch.vue'
 import MarGroupTitle from '../../shell/MarGroupTitle.vue'
 import ModeNav from '../../../parts/env/ModeNav.vue'
@@ -14,7 +17,7 @@ import Section from '../kit/Section.vue'
 const MODES = [
   { value: 'create', label: 'Create', icon: Palette },
   { value: 'build', label: 'Build', icon: Code },
-  { value: 'agent', label: 'Agent', icon: MessageCircle }
+  { value: 'agent', label: 'Agent', icon: AgentChat }
 ]
 const create = ref('create')
 const build = ref('build')
@@ -22,7 +25,7 @@ const agent = ref('agent')
 </script>
 
 <template>
-  <Section title="Put together" note="Pablo's sidebar with Mar's styles, as Home shows it.">
+  <Section title="Put together" note="The sidebar with the New UI styles, as Home shows it.">
     <Cells :min="260">
       <Cell on="sidebar" class="ds-sidebar">
         <div class="flex w-55 flex-col">
@@ -30,6 +33,7 @@ const agent = ref('agent')
             <MarModeSwitch v-model="create" :options="MODES" />
           </div>
           <ModeNav mode="create" />
+          <MarFavoritesGroup />
           <SidebarGroup />
           <SpacesGroup />
           <div class="mt-3 flex flex-col gap-2"><WorkspaceMenu /></div>
@@ -52,13 +56,23 @@ const agent = ref('agent')
       <Cell label="agent picked" on="sidebar"
         ><MarModeSwitch v-model="agent" :options="MODES"
       /></Cell>
-      <Cell label="segment hover" on="sidebar" force="hover" target=".mms-seg:nth-child(2)">
+      <Cell
+        label="segment hover"
+        on="sidebar"
+        force="hover"
+        target=".mms-seg:not([aria-checked='true'])"
+      >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
       <Cell label="agent hover" on="sidebar" force="hover" target=".mms-agent">
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
-      <Cell label="segment focus" on="sidebar" force="focus" target=".mms-seg:nth-child(2)">
+      <Cell
+        label="segment focus"
+        on="sidebar"
+        force="focus"
+        target=".mms-seg:not([aria-checked='true'])"
+      >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
     </Cells>
@@ -72,7 +86,7 @@ const agent = ref('agent')
         on="sidebar"
         fill
         force="hover"
-        target="button:nth-of-type(2), a:nth-of-type(2)"
+        target="button::text(Explore), a::text(Explore)"
       >
         <ModeNav mode="create" />
       </Cell>
@@ -81,7 +95,7 @@ const agent = ref('agent')
         on="sidebar"
         fill
         force="focus"
-        target="button:nth-of-type(2), a:nth-of-type(2)"
+        target="button::text(Explore), a::text(Explore)"
       >
         <ModeNav mode="create" />
       </Cell>
@@ -101,8 +115,25 @@ const agent = ref('agent')
   </Section>
 
   <Section
+    title="Favorites"
+    note="What you starred, up to four; the title opens the whole page. Hidden while nothing is starred. Hover a row to unstar it."
+  >
+    <Cells :min="240">
+      <Cell label="three starred" on="sidebar" fill><MarFavoritesGroup /></Cell>
+      <Cell
+        label="row hover"
+        on="sidebar"
+        fill
+        force="hover"
+        target=".mar-fav-row:nth-child(2), .mar-fav-row:nth-child(2) > button:first-child"
+        ><MarFavoritesGroup
+      /></Cell>
+    </Cells>
+  </Section>
+
+  <Section
     title="Groups"
-    note="Projects (where each runs on the right) and Spaces (16px logos; a draft says so in plain text)."
+    note="Projects (where each runs on the right) and Spaces (16px logos; a draft says so in plain text). Each group has a single way to add, on its title. Empty groups don't show."
   >
     <Cells :min="240">
       <Cell label="projects" on="sidebar" fill><SidebarGroup /></Cell>
@@ -122,18 +153,34 @@ const agent = ref('agent')
       <Cell label="credits focus" on="sidebar" fill force="focus" target=".mar-credits-row">
         <WorkspaceMenu />
       </Cell>
-      <Cell label="workspace hover" on="sidebar" fill force="hover" target="[aria-haspopup='menu']">
+      <Cell
+        label="workspace hover"
+        on="sidebar"
+        fill
+        force="hover"
+        target="[aria-haspopup='menu']:not(.mar-credits-row)"
+      >
         <WorkspaceMenu />
       </Cell>
       <Cell
         label="workspace open"
         on="sidebar"
         fill
-        target="[aria-haspopup='menu']"
+        target="[aria-haspopup='menu']:not(.mar-credits-row)"
         :attrs="{ 'data-state': 'open' }"
       >
         <WorkspaceMenu />
       </Cell>
+    </Cells>
+  </Section>
+
+  <Section
+    title="Log in card"
+    note="Signed out, at the foot: a strip of three outputs in the Latent grade with the Comfy mark (it drifts on hover), one line, the standard primary Button. On the collapsed Floating panels rail it is one Log in icon."
+  >
+    <Cells :min="240">
+      <Cell label="idle" on="sidebar" fill><MarSignIn /></Cell>
+      <Cell label="hover" on="sidebar" fill force="hover" target=".mar-signin"><MarSignIn /></Cell>
     </Cells>
   </Section>
 </template>
