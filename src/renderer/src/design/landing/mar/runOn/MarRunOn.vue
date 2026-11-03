@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
-import { ArrowRight, Check, ChevronDown, Laptop, LoaderCircle, Plus, Search } from 'lucide-vue-next'
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Laptop,
+  LoaderCircle,
+  Plus,
+  Search,
+  Settings2
+} from 'lucide-vue-next'
+import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
@@ -152,14 +162,7 @@ function toList(e: KeyboardEvent): void {
           :disabled="!!runOnBlocked(i)"
           @select="choose(i)"
         >
-          <span class="mar-ro-tile">
-            <LocationIcon kind="local" :size="18" />
-            <LoaderCircle v-if="i.state === 'launching'" :size="12" class="mar-ro-spin" />
-            <span
-              v-else
-              :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
-            />
-          </span>
+          <span class="mar-ro-tile"><LocationIcon kind="local" :size="18" /></span>
           <span class="mar-ro-text">
             <span class="mar-ro-top">
               <span class="mar-ro-name">{{ i.name }}</span>
@@ -172,7 +175,12 @@ function toList(e: KeyboardEvent): void {
                 >{{ runOnHint(i) }}</span
               >
             </span>
-            <span class="mar-ro-meta">{{ runOnMeta(i) }}</span>
+            <span class="mar-ro-meta"
+              ><LoaderCircle v-if="i.state === 'launching'" :size="11" class="mar-ro-spin" /><span
+                v-else-if="i.kind === 'local' || i.deployment"
+                :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
+              />{{ runOnMeta(i) }}</span
+            >
           </span>
           <Check v-if="i.id === activeInstance.id" :size="14" />
         </DropdownMenuItem>
@@ -187,13 +195,9 @@ function toList(e: KeyboardEvent): void {
           :disabled="!!runOnBlocked(i)"
           @select="choose(i)"
         >
-          <span class="mar-ro-tile" :class="!i.deployment && 'is-comfy'">
-            <LocationIcon kind="cloud" :size="18" />
-            <LoaderCircle v-if="i.state === 'launching'" :size="12" class="mar-ro-spin" />
-            <span
-              v-else-if="i.deployment"
-              :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
-            />
+          <span class="mar-ro-tile">
+            <LocationIcon v-if="i.deployment" kind="cloud" :size="18" />
+            <ComfyCLogo v-else :size="16" />
           </span>
           <span class="mar-ro-text">
             <span class="mar-ro-top">
@@ -207,7 +211,12 @@ function toList(e: KeyboardEvent): void {
                 >{{ runOnHint(i) }}</span
               >
             </span>
-            <span class="mar-ro-meta">{{ runOnMeta(i) }}</span>
+            <span class="mar-ro-meta"
+              ><LoaderCircle v-if="i.state === 'launching'" :size="11" class="mar-ro-spin" /><span
+                v-else-if="i.kind === 'local' || i.deployment"
+                :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
+              />{{ runOnMeta(i) }}</span
+            >
           </span>
           <Check v-if="i.id === activeInstance.id" :size="14" />
         </DropdownMenuItem>
@@ -218,12 +227,12 @@ function toList(e: KeyboardEvent): void {
       </p>
 
       <DropdownMenuSeparator />
-      <DropdownMenuItem class="mar-ro-foot" @select="hostActions.newInstance()"
-        ><Plus :size="15" />Create new build</DropdownMenuItem
+      <DropdownMenuItem @select="hostActions.newInstance()"
+        ><Plus :size="15" class="text-subtle-foreground" />Create new build</DropdownMenuItem
       >
-      <DropdownMenuItem class="mar-ro-foot" @select="go('environments')"
-        >Manage builds<ArrowRight :size="14" class="ml-auto"
-      /></DropdownMenuItem>
+      <DropdownMenuItem @select="go('environments')"
+        ><Settings2 :size="15" class="text-subtle-foreground" />Manage builds</DropdownMenuItem
+      >
     </DropdownMenuContent>
   </DropdownMenuRoot>
 </template>
@@ -281,10 +290,10 @@ function toList(e: KeyboardEvent): void {
   display: inline-flex;
 }
 .mar-ro-glyph .mar-ro-dot {
-  right: -2px;
-  bottom: -1px;
-  width: 7px;
-  height: 7px;
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  margin: 0;
 }
 
 /* Rows. */
@@ -305,38 +314,28 @@ function toList(e: KeyboardEvent): void {
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-muted-foreground);
 }
-.mar-ro-tile.is-comfy {
-  background: linear-gradient(135deg, #f9d7e6, #d9d4fb 50%, #c9f0e1);
-  color: #3b2f55;
-}
-.mar-ro-tile.is-comfy :deep(svg) {
-  color: #3b2f55;
-}
+/* Status sits in the meta line, ahead of the words it qualifies: no
+   ring cut into the tile, so nothing depends on the glass behind it. */
 .mar-ro-dot {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--color-card-background);
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  margin-right: 6px;
   border-radius: 999px;
+  vertical-align: 1px;
 }
 .mar-ro-dot.is-running {
   background: var(--color-status-running, #22c55e);
 }
 .mar-ro-dot.is-stopped {
-  background: color-mix(in oklch, var(--color-base-foreground) 30%, var(--color-card-background));
+  background: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
 }
 .mar-ro-spin {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  box-sizing: content-box;
-  padding: 1.5px;
-  border-radius: 999px;
-  background: var(--color-card-background);
+  display: inline-block;
+  margin-right: 5px;
   color: var(--color-base-foreground);
-  stroke-width: 2.5;
+  vertical-align: -1px;
 }
 @media (prefers-reduced-motion: no-preference) {
   .mar-ro-spin {
@@ -405,14 +404,6 @@ function toList(e: KeyboardEvent): void {
 }
 .mar-ro-row[data-disabled] :is(.mar-ro-tile, .mar-ro-text) {
   opacity: 0.45;
-}
-
-/* Footer: quiet rows. */
-.mar-ro-foot {
-  color: var(--color-muted-foreground);
-}
-.mar-ro-foot[data-highlighted] {
-  color: var(--color-base-foreground);
 }
 
 /* Filter. */
