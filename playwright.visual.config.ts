@@ -32,6 +32,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'pnpm exec vite --config tests/visual/vite.config.ts',
+    cwd: process.env.VISUAL_SOURCE_ROOT,
     url: 'http://127.0.0.1:5184',
     reuseExistingServer: false
   }

@@ -9,13 +9,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: visual-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   visual:
     name: Visual report (base vs PR)
+    # Title and description edits cannot change the result, and must not cancel a running report.
+    if: github.event.action != 'edited' || github.event.changes.base
+    concurrency:
+      group: visual-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     # Both versions use this browser on the same runner. Match the lockfile's
     # Playwright version; there are no committed images to regenerate.

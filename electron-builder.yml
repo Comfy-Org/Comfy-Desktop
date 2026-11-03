@@ -12,6 +12,7 @@ files:
   - '!{.env,.env.*,.npmrc}'
   - '!docs/*'
   - '!tests/**'
+  - '!visual-report/**'
   - '!out/**/*.map'
   - '!reference/*'
   - '!**/*.wsb'

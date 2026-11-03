@@ -27,7 +27,12 @@ async function screenshots(directory) {
   }
 }
 
-export async function compareScreenshots(reportDir) {
+function statusOfUnpairedScene(capturedByBase, runs) {
+  if (capturedByBase) return runs.head === 0 ? 'removed' : 'not compared'
+  return runs.base === 0 ? 'added' : 'not compared'
+}
+
+export async function compareScreenshots(reportDir, runs = { base: 0, head: 0 }) {
   const baseDir = join(reportDir, 'base/screenshots')
   const headDir = join(reportDir, 'head/screenshots')
   const baseNames = new Set(await screenshots(baseDir))
@@ -38,7 +43,7 @@ export async function compareScreenshots(reportDir) {
       name,
       base: baseNames.has(name) ? `base/screenshots/${name}` : null,
       head: headNames.has(name) ? `head/screenshots/${name}` : null,
-      status: baseNames.has(name) ? 'removed' : 'added'
+      status: statusOfUnpairedScene(baseNames.has(name), runs)
     }
     if (entry.base && entry.head) {
       const base = PNG.sync.read(await readFile(join(baseDir, name)))
@@ -71,19 +76,25 @@ export async function compareScreenshots(reportDir) {
 
 export async function writeReport(reportDir, metadata, runs) {
   const complete = !metadata.error && runs.base === 0 && runs.head === 0
-  const entries = complete ? await compareScreenshots(reportDir) : []
-  if (complete && !entries.length)
+  const rendered = !metadata.error && runs.base !== null && runs.head !== null
+  const passed = !metadata.error && runs.head === 0
+  const entries = rendered ? await compareScreenshots(reportDir, runs) : []
+  if (passed && !entries.some((entry) => entry.head))
     throw new Error('No screenshots were captured for the comparison.')
   const counts = Object.fromEntries(
-    ['changed', 'unchanged', 'added', 'removed'].map((status) => [
+    ['changed', 'unchanged', 'added', 'removed', 'not compared'].map((status) => [
       status,
       entries.filter((entry) => entry.status === status).length
     ])
   )
-  const result = { complete, ...metadata, runs, counts, entries }
+  const countSummary = `${counts.changed} changed · ${counts.unchanged} unchanged · ${counts.added} added · ${counts.removed} removed`
+  const failedRenders = [runs.base !== 0 && 'Base', runs.head !== 0 && 'PR'].filter(Boolean)
   const summary = complete
-    ? `${counts.changed} changed · ${counts.unchanged} unchanged · ${counts.added} added · ${counts.removed} removed`
-    : 'Comparison incomplete — see the render logs. No visual conclusion is available.'
+    ? countSummary
+    : rendered
+      ? `${failedRenders.join(' and ')} render failed — see the render logs. ${countSummary} · ${counts['not compared']} not compared`
+      : 'Comparison incomplete — see the render logs. No visual conclusion is available.'
+  const result = { complete, passed, summary, ...metadata, runs, counts, entries }
   const image = (path, label) =>
     path
       ? `<figure><figcaption>${label}</figcaption><a href="${path.split('/').map(encodeURIComponent).join('/')}"><img loading="lazy" src="${path.split('/').map(encodeURIComponent).join('/')}" alt="${label}"></a></figure>`
@@ -117,12 +128,12 @@ export async function writeReport(reportDir, metadata, runs) {
   img { width: 100%; height: auto; border: 1px solid #383b48; } @media (max-width: 600px) { body { padding: 16px; } .images { grid-template-columns: 1fr; } }
 </style>
 <h1>Desktop visual comparison</h1>
-<p>Base <code>${escapeHtml(metadata.baseRef)} · ${escapeHtml(metadata.baseSha)}</code><br>
+<p>Base <code>${escapeHtml(metadata.baseRef)}</code>, branched from <code>${escapeHtml(metadata.baseSha)}</code><br>
 PR <code>${escapeHtml(metadata.headSha)}</code>${metadata.workingTreeChanges ? ' + local tracked changes' : ''}<br>
 Both rendered on ${escapeHtml(metadata.platform)} with Playwright ${escapeHtml(metadata.playwright)}.</p>
 <p class="status">${summary}</p>
 ${metadata.error ? `<p>${escapeHtml(metadata.error)}</p>` : ''}
-<p>Appearance changes are informational. Expand a scene and click an image to inspect it at full size.
+<p>Appearance changes and base render failures are informational. Expand a scene and click an image to inspect it at full size.
 Red pixels highlight differences, including antialiasing. No baseline images are stored in Git.</p>
 <p>Render diagnostics: <a href="base/playwright/index.html">Base (${runs.base === 0 ? 'passed' : 'failed / not run'})</a> · <a href="head/playwright/index.html">PR (${runs.head === 0 ? 'passed' : 'failed / not run'})</a></p>
 ${cards}
@@ -131,7 +142,7 @@ ${cards}
   const changed = entries.filter((entry) => entry.status !== 'unchanged')
   await writeFile(
     join(reportDir, 'summary.md'),
-    `## Desktop visual comparison\n\n${summary}\n\nBase: \`${metadata.baseSha}\`\n\nPR: \`${metadata.headSha}\`${metadata.workingTreeChanges ? ' + local tracked changes' : ''}\n\n${metadata.error ? `Error: ${metadata.error}\n\n` : ''}Appearance changes are informational; render and interaction failures fail the check.\n${changed.length ? '\n' + changed.map((entry) => `- ${entry.name}: ${entry.status}${entry.changedPixels === undefined ? '' : ` (${entry.changedPixels} pixels)`}`).join('\n') + '\n' : ''}`
+    `## Desktop visual comparison\n\n${summary}\n\nBase: \`${metadata.baseSha}\`\n\nPR: \`${metadata.headSha}\`${metadata.workingTreeChanges ? ' + local tracked changes' : ''}\n\n${metadata.error ? `Error: ${metadata.error}\n\n` : ''}Appearance changes and base render failures are informational; PR render and interaction failures fail the check.\n${changed.length ? '\n' + changed.map((entry) => `- ${entry.name}: ${entry.status}${entry.changedPixels === undefined ? '' : ` (${entry.changedPixels} pixels)`}`).join('\n') + '\n' : ''}`
   )
   return result
 }

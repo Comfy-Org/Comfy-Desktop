@@ -83,12 +83,51 @@ test('missing scenes are shown as added or removed instead of unchanged', async 
   )
 })
 
-test('a failed render cannot produce a misleading visual result from partial images', async (t) => {
+test('a failed base render compares what both captured and does not fail the check', async (t) => {
   const { root, save } = await fixture(t)
   await save('base', 'controls.png')
   await save('head', 'controls.png', { change: true })
+  await save('head', 'new-scene.png')
   const report = await writeReport(root, metadata, { base: 1, head: 0 })
   assert.equal(report.complete, false)
+  assert.equal(report.passed, true)
+  assert.deepEqual(
+    report.entries.map(({ name, status }) => [name, status]),
+    [
+      ['controls.png', 'changed'],
+      ['new-scene.png', 'not compared']
+    ]
+  )
+  assert.match(await readFile(join(root, 'summary.md'), 'utf8'), /Base render failed/)
+})
+
+test('a failed PR render fails the check without reporting scenes as removed', async (t) => {
+  const { root, save } = await fixture(t)
+  await save('base', 'controls.png')
+  await save('base', 'menu.png')
+  await save('head', 'controls.png')
+  const report = await writeReport(root, metadata, { base: 0, head: 1 })
+  assert.equal(report.complete, false)
+  assert.equal(report.passed, false)
+  assert.deepEqual(
+    report.entries.map(({ name, status }) => [name, status]),
+    [
+      ['controls.png', 'unchanged'],
+      ['menu.png', 'not compared']
+    ]
+  )
+  assert.match(await readFile(join(root, 'summary.md'), 'utf8'), /PR render failed/)
+})
+
+test('a comparison that never rendered fails and reaches no visual conclusion', async (t) => {
+  const { root, save } = await fixture(t)
+  await save('base', 'controls.png')
+  const report = await writeReport(
+    root,
+    { ...metadata, error: 'Could not install' },
+    { base: null, head: null }
+  )
+  assert.equal(report.passed, false)
   assert.deepEqual(report.entries, [])
   assert.match(await readFile(join(root, 'summary.md'), 'utf8'), /Comparison incomplete/)
 })
