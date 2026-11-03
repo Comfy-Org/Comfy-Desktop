@@ -1,4 +1,8 @@
+import { resolve } from 'node:path'
 import { defineConfig } from '@playwright/test'
+
+const outputDir = process.env.VISUAL_OUTPUT_DIR
+if (!outputDir) throw new Error('Run pnpm test:visual --base <git-ref> to render both versions.')
 
 export default defineConfig({
   testDir: './tests/visual',
@@ -6,9 +10,11 @@ export default defineConfig({
   timeout: 30_000,
   retries: 0,
   workers: 2,
-  reporter: [['list'], ['html', { outputFolder: 'visual-playwright-report', open: 'never' }]],
-  outputDir: 'visual-test-results',
-  snapshotPathTemplate: '{testDir}/__screenshots__/{platform}/{testFilePath}/{arg}{ext}',
+  reporter: [['list'], ['html', { outputFolder: resolve(outputDir, 'playwright'), open: 'never' }]],
+  outputDir: resolve(outputDir, 'test-results'),
+  // Capture stable images afresh for this run; the report compares the two sets.
+  snapshotPathTemplate: `${resolve(outputDir, 'screenshots')}/{testFilePath}/{arg}{ext}`,
+  updateSnapshots: 'all',
   expect: {
     toHaveScreenshot: { animations: 'disabled', caret: 'hide', threshold: 0, maxDiffPixels: 0 }
   },

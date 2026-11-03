@@ -1,7 +1,8 @@
-name: Visual regression
+name: Visual comparison
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   merge_group:
     types: [checks_requested]
 
@@ -14,42 +15,49 @@ concurrency:
 
 jobs:
   visual:
-    name: Visual components (Linux)
+    name: Visual report (base vs PR)
     runs-on: ubuntu-24.04
-    # The browser, fonts and system libraries come from this image, so a runner or apt update
-    # can't move pixels. Its tag must match the Playwright version in pnpm-lock.yaml.
+    # Both versions use this browser on the same runner. Match the lockfile's
+    # Playwright version; there are no committed images to regenerate.
     container: mcr.microsoft.com/playwright:v1.58.2-noble
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      # The renderer fixture doesn't run Electron or native addons.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Compare visual baselines
-        run: pnpm run test:visual
-      - name: Upload report
+      - name: Check report generation
+        run: pnpm test:visual:unit
+      - name: Render base and PR
+        env:
+          VISUAL_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: pnpm test:visual
+      - name: Upload comparison report
+        id: report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: visual-regression-linux
-          path: |
-            visual-playwright-report/
-            visual-test-results/
+          name: visual-comparison
+          path: visual-report/
           retention-days: 14
           if-no-files-found: ignore
-      - name: Regenerate baselines for review
-        if: failure()
-        continue-on-error: true
-        run: pnpm run test:visual:update --reporter=list --output="$RUNNER_TEMP/visual-update-results"
-      - name: Upload regenerated baselines
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: visual-baselines-linux
-          path: tests/visual/__screenshots__/linux/
-          retention-days: 14
-          if-no-files-found: ignore
+      - name: Publish comparison summary
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: |
+          if [ -f visual-report/summary.md ]; then
+            cat visual-report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Visual comparison could not run. See the job logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "$REPORT_URL" ]; then
+            printf '\n[Download the before/after/diff report](%s) and open index.html.\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi

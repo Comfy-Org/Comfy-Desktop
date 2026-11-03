@@ -25,8 +25,7 @@ export default defineConfig([
     ignores: [
       'out/*',
       'dist/*',
-      'visual-playwright-report/**',
-      'visual-test-results/**',
+      'visual-report/**',
       'node_modules/*',
       '.claude/**',
       '.worktrees/**',

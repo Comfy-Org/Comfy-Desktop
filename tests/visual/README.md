@@ -1,47 +1,62 @@
-# Desktop visual regression tests
+# Desktop visual comparison report
 
-Run `pnpm test:visual` after installing the pinned browser with
-`pnpm exec playwright install chromium`. The suite renders production Vue
-components, the real dashboard, and the real Desktop Settings view with an
-in-memory host bridge. It never launches ComfyUI or reads an installed profile.
+Each run renders the PR and its base on the same machine, then writes a report
+with base, PR, and highlighted difference images. Appearance changes are
+informational: they do not fail the check. No baseline images are committed,
+downloaded from a previous run, or regenerated for approval.
 
-CI runs in the `mcr.microsoft.com/playwright` container named in
-`.github/workflows/visual-regression.yml`, so the browser, fonts and system
-libraries are pinned. Bump its tag whenever the Playwright version in
-`pnpm-lock.yaml` changes, and expect to update the baselines with it. The viewport,
-pixel ratio, locale, time zone, dark theme, and reduced-motion preference are
-explicit. Inter is loaded from the repository and fonts settle before capture.
-Screenshot comparison allows zero counted pixel differences at threshold 0, with
-Playwright's standard antialias handling. This is a rendered-image regression
-check, not a byte-for-byte image equality check. The suite has no retries.
+## Run locally
 
-Only the Linux images are committed, and they are the CI gate. Rendering differs
-between operating systems, so other platforms' images are git-ignored. On a Mac,
-run `pnpm test:visual` on the base branch to create local images, then again on
-your change to compare against them.
+```sh
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+git fetch origin
+pnpm test:visual --base origin/bl/desktop-as-a-platform
+```
 
-## Updating images
+Choose the branch your PR targets (for a PR targeting main, use `origin/main`).
+An exact commit SHA also works. Open `visual-report/index.html` in a browser.
+The head render includes local tracked edits, so macOS developers can compare
+work in progress without committing or switching branches. All generated images
+and reports are ignored by Git and replaced on the next run.
 
-When the comparison fails, CI regenerates the images and uploads them as the
-`visual-baselines-linux` artifact, whether a baseline changed or is missing. The
-`visual-regression-linux` artifact holds the report and diffs.
+The runner creates a disposable base worktree and installs its own locked
+dependencies with install scripts disabled. It copies only the current visual
+fixture into that worktree, leaving production code and the dependency lockfile
+unchanged. Both renders use the current PR's scenarios and Playwright/browser
+version. This works even when the base does not yet contain this test harness.
+The temporary worktree is removed when the run finishes.
 
-1. Inspect the report with
-   `pnpm exec playwright show-report visual-playwright-report`, checking overflow,
-   text clipping, focus rings, disabled/destructive states, and nested popups.
-2. Replace the committed images with the regenerated ones:
-   `gh run download <run-id> -n visual-baselines-linux -D tests/visual/__screenshots__/linux`
-3. Commit only images you reviewed. Never regenerate them just to silence a failing
-   check. CI checks that the committed images match, not who reviewed them.
+## CI and review
+
+The **Visual report (base vs PR)** check compares the exact PR head and base SHAs
+from the pull request event. Merge-queue runs compare the queue head with its
+base. The job summary lists changed scenes and links to the `visual-comparison`
+artifact: download it, extract it, and open `index.html`. Expand unchanged scenes
+as needed; changed scenes are open by default. Click an image to inspect it at
+full size. `report.json` contains counts, dimensions, pixel differences and the
+compared revisions. Per-version Playwright reports retain interaction failures
+and traces for diagnosis.
+
+CI uses the Playwright container in `.github/workflows/visual-regression.yml`.
+Keep its tag in sync with Playwright in `pnpm-lock.yaml`. Local runs use the local
+OS for both versions, so there is no macOS-versus-Linux baseline mismatch.
+Viewport, pixel ratio, locale, time zone, theme and reduced-motion settings are
+explicit. Fonts settle and Playwright captures stable images before comparison.
+Pixel differences, including antialiasing, are reported without a pass threshold.
 
 ## Coverage and limits
 
-The suite covers grouped inputs, validation, masked values, booleans,
-disclosures, dropdowns, action menus, tooltips, prompts, confirmations, nested
-dialogs, and dashboard/settings composition. Keyboard and state assertions
-accompany screenshots so a visually identical but broken control still fails.
+The 13 scenarios capture 16 views of production controls, the dashboard, Desktop
+Settings at two widths, and first-use consent. They cover validation, masked
+values, booleans, disclosures, dropdowns, menus, tooltips, prompts, destructive
+confirmations, and nested dialogs. Both versions use the same fixture and
+interaction assertions with no retries. A runtime error, broken interaction or
+incompatible base fixture fails the run and marks the comparison incomplete;
+partial images cannot appear as a successful visual comparison.
 
-The host bridge is a fixture boundary, not coverage of IPC or filesystem
-operations. Run the Electron E2E suite for actual window focus, inter-view
-behavior, and host integration. Electron's test launcher isolates the app and
-browser-session profile on every platform.
+The in-memory host bridge does not exercise IPC, filesystem operations or native
+window focus. Use Electron E2E tests for those. The report only compares the
+captured states; it does not decide whether an appearance change is desirable.
+
+Run `pnpm test:visual:unit` to check report generation without a browser.

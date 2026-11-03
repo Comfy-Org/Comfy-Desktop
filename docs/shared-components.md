@@ -52,14 +52,14 @@ These pull requests form native GitHub stack 1907. The stack targets
 `bl/desktop-as-a-platform`; landing it does not publish a Desktop release or merge
 the platform branch into `main`.
 
-| Order | Change                                                     | Pull request                                                  |
-| ----- | ---------------------------------------------------------- | ------------------------------------------------------------- |
-| 1     | Shared dropdown, menu, and tooltip behavior                | [#1904](https://github.com/Comfy-Org/Comfy-Desktop/pull/1904) |
-| 2     | Grouped inputs, form controls, switches, disclosure        | [#1905](https://github.com/Comfy-Org/Comfy-Desktop/pull/1905) |
-| 3     | Dialogs, takeovers, focus and dismissal                    | [#1906](https://github.com/Comfy-Org/Comfy-Desktop/pull/1906) |
-| 4     | Popup controls, tabs and directory menus                   | [#1908](https://github.com/Comfy-Org/Comfy-Desktop/pull/1908) |
-| 5     | Shared view actions, account/workspace menus, cleanup      | [#1909](https://github.com/Comfy-Org/Comfy-Desktop/pull/1909) |
-| 6     | Visual regression gate, profile isolation and this handoff | [#1910](https://github.com/Comfy-Org/Comfy-Desktop/pull/1910) |
+| Order | Change                                                           | Pull request                                                  |
+| ----- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1     | Shared dropdown, menu, and tooltip behavior                      | [#1904](https://github.com/Comfy-Org/Comfy-Desktop/pull/1904) |
+| 2     | Grouped inputs, form controls, switches, disclosure              | [#1905](https://github.com/Comfy-Org/Comfy-Desktop/pull/1905) |
+| 3     | Dialogs, takeovers, focus and dismissal                          | [#1906](https://github.com/Comfy-Org/Comfy-Desktop/pull/1906) |
+| 4     | Popup controls, tabs and directory menus                         | [#1908](https://github.com/Comfy-Org/Comfy-Desktop/pull/1908) |
+| 5     | Shared view actions, account/workspace menus, cleanup            | [#1909](https://github.com/Comfy-Org/Comfy-Desktop/pull/1909) |
+| 6     | Base-versus-PR visual report, profile isolation and this handoff | [#1910](https://github.com/Comfy-Org/Comfy-Desktop/pull/1910) |
 
 ### Deliberate visual changes
 
@@ -93,8 +93,9 @@ the platform branch into `main`.
   retries. They include the real dashboard, Desktop Settings at two widths,
   first-use consent, typed/invalid/masked fields, selection, menus, tooltips,
   prompts, action sheets and nested dialogs.
-- A deliberate one-pixel input displacement failed the screenshot assertion.
-  Restoring the source returned the same test to green.
+- Before the switch to base comparisons, a deliberate one-pixel input
+  displacement failed the stored-baseline assertion. The current report records
+  visual differences without failing the check.
 - The profile-isolation Electron test passed on macOS. Twelve additional Electron
   checks passed for chooser navigation, popup reuse/dismissal, title tooltips,
   and install-switch settings.
@@ -105,8 +106,9 @@ the platform branch into `main`.
   automatically replays a click or key press. Fill retries reselect and replace
   text; toggle and selection helpers may retry after checking the current state.
 - All 70 integration tests passed.
-- The 16 Linux baselines were generated in CI on the pinned Playwright image and
-  visually reviewed. CI then compares all 13 scenarios without update mode.
+- The original 16 Linux baselines were reviewed and have now been removed.
+  Every run renders both the PR and its base on the same machine; no stored
+  images need updating or approval.
 - Type, lint, format, and production build checks passed during integration.
   Canonical Linux unit, integration, type, lint, and formatting checks also passed
   on the integrated source in
@@ -119,10 +121,10 @@ merge them, publish a design-system package, or release Desktop. Check the lates
 head's CI on each PR before landing the stack; the full Electron jobs cover
 macOS, Windows, and Linux.
 
-The visual baselines record the appearance after this migration, including the
-changes listed under Deliberate visual changes. They do not show that any screen
-is unchanged from before the migration. Review any intended baseline changes as
-part of the corresponding PR.
+The visual report compares the current PR with its exact base using the same
+fixture, including the changes listed under Deliberate visual changes. Pixel
+differences are review information; runtime and interaction failures still fail
+the check. The report covers only the captured states.
 
 The full local unit run exposed four pre-existing macOS fixture failures in
 `agentUvReaper.test.ts` and `ipc/sessionActions/delegate.test.ts`. Those tests
@@ -141,14 +143,14 @@ pnpm test
 pnpm run test:integration
 pnpm run build
 pnpm exec playwright install chromium
-pnpm run test:visual
-pnpm run test:visual --repeat-each=3
+pnpm run test:visual:unit
+pnpm run test:visual --base origin/bl/desktop-as-a-platform
 pnpm exec playwright test --project=macos e2e/profile-isolation.test.ts e2e/chooser.test.ts e2e/dropdowns.test.ts e2e/picker-settings-staleness.test.ts
 ```
 
-See [the visual test guide](../tests/visual/README.md) for baseline review and
-Linux CI artifact instructions. Baselines must be reviewed when the pinned
-Playwright image or the intended design changes.
+See [the visual test guide](../tests/visual/README.md) for before/after/diff report
+review and CI artifact instructions. Both renders are fresh, including after a
+Playwright image or intentional design change.
 
 ### Test profile isolation
 
