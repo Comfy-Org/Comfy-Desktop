@@ -95,3 +95,41 @@ describe('createSessionPath', () => {
     }
   })
 })
+
+describe('buildLaunchEnv agent client context', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('sets the three vars when the launch has a client context', () => {
+    const env = buildLaunchEnv(inst('portable'), undefined, { channel: 'beta', gpuTier: 'mid' })
+    expect(env.AGENT_CLIENT_CONTEXT).toBe('desktop')
+    expect(env.AGENT_CLIENT_CHANNEL).toBe('beta')
+    expect(env.AGENT_CLIENT_GPU_TIER).toBe('mid')
+  })
+
+  it('leaves the tier out when the probe had not answered', () => {
+    const env = buildLaunchEnv(inst('standalone'), undefined, { channel: 'stable' })
+    expect(env.AGENT_CLIENT_CHANNEL).toBe('stable')
+    expect(env).not.toHaveProperty('AGENT_CLIENT_GPU_TIER')
+  })
+
+  it('drops values from process.env and per-install vars without consent', () => {
+    vi.stubEnv('AGENT_CLIENT_CONTEXT', 'desktop')
+    vi.stubEnv('AGENT_CLIENT_CHANNEL', 'beta')
+    vi.stubEnv('AGENT_CLIENT_GPU_TIER', 'high')
+    const env = buildLaunchEnv(
+      inst('standalone', { AGENT_CLIENT_CONTEXT: 'desktop', agent_client_channel: 'canary' })
+    )
+    for (const name of ['AGENT_CLIENT_CONTEXT', 'AGENT_CLIENT_CHANNEL', 'AGENT_CLIENT_GPU_TIER']) {
+      expect(env).not.toHaveProperty(name)
+    }
+    expect(env).not.toHaveProperty('agent_client_channel')
+  })
+
+  it('does not let an inherited tier ride along with a context that has none', () => {
+    vi.stubEnv('AGENT_CLIENT_GPU_TIER', 'high')
+    const env = buildLaunchEnv(inst('standalone'), undefined, { channel: 'stable' })
+    expect(env).not.toHaveProperty('AGENT_CLIENT_GPU_TIER')
+  })
+})

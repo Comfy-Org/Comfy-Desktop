@@ -46,6 +46,7 @@ import {
   resolveLauncherModelDirs,
   createSessionPath,
   buildLaunchEnv,
+  getAppVersion,
   checkRebootMarker,
   makeSendProgress,
   makeSendOutput,
@@ -108,6 +109,7 @@ import {
 } from '../../agentRequirementsLaunch'
 import type { PrefetchRequest } from '../../agentRequirementsLaunch'
 import { startAgentPrefetch } from '../../agentPrefetch'
+import { agentClientContext } from '../../agentClientContext'
 import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
@@ -171,6 +173,12 @@ import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
+/** The agent's client context for this launch: fixed at spawn, like enable_telemetry, so a
+ *  consent change takes effect at the next launch. */
+function launchClientContext(): ReturnType<typeof agentClientContext> {
+  return agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+}
+
 export function desktopFeatureFlags(
   inst: InstallationRecord,
   telemetryEnabled: boolean
@@ -1875,7 +1883,7 @@ async function runLaunch(
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
-    const launchEnv = buildLaunchEnv(inst)
+    const launchEnv = buildLaunchEnv(inst, undefined, await launchClientContext())
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
@@ -2264,7 +2272,7 @@ async function runLaunch(
   // Session path / env / progress plumbing before the port is reserved, so a
   // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
-  const launchEnv = buildLaunchEnv(inst, sessionPath)
+  const launchEnv = buildLaunchEnv(inst, sessionPath, await launchClientContext())
   const sendOutput = makeSendOutput(sender, sessionId)
 
   // Port reservation and launching marker sit INSIDE the guard: even the
