@@ -7,6 +7,7 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import { thumb } from '../../mock'
+import { can } from '../../milestones'
 import { EXPLORE, isAdded, openAppUrl, toggleAdded, usd } from '../../appFlow'
 
 /**
@@ -43,7 +44,8 @@ const sections = computed(() => EXPLORE.filter((s) => cat.value === 'all' || s.t
           @click="openAppUrl(a.id)"
           @keydown.enter="openAppUrl(a.id)"
         >
-          <template #top-right>
+          <!-- No library yet at Explore apps, so nothing to add to. -->
+          <template v-if="can.explore" #top-right>
             <Button
               variant="overlay"
               size="sm"

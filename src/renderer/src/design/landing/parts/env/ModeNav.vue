@@ -49,7 +49,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
       ? [{ page: 'explore' as Page, label: 'Explore', icon: Compass }]
       : []),
     // The library of added apps, before Projects brings the Libraries group.
-    ...(can.value.exploreApps && !can.value.projects && proto.signedIn
+    ...(can.value.explore && !can.value.projects && proto.signedIn
       ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
       : []),
     ...(can.value.explore
