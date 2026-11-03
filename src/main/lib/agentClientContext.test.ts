@@ -36,6 +36,20 @@ describe('agentClientContext', () => {
     expect(await agentClientContext(true, '1.2.3')).toEqual({ channel: 'stable' })
   })
 
+  it('never fails the launch on a probe that throws or returns no usable tier', async () => {
+    for (const probe of [
+      () => {
+        throw new Error('sync')
+      },
+      async () => null,
+      async () => ({ gpu_tier: { not: 'a tier' } }),
+      async () => ({ gpu_tier: '' })
+    ]) {
+      setHardwareProbe(probe as never)
+      expect(await agentClientContext(true, '1.2.3'), String(probe)).toEqual({ channel: 'stable' })
+    }
+  })
+
   it('does not hold the launch past the wait on a slow probe', async () => {
     vi.useFakeTimers()
     setHardwareProbe(() => new Promise(() => {}))

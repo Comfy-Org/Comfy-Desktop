@@ -15,7 +15,7 @@ export interface AgentClientContext {
 
 const MAX_GPU_TIER_WAIT_MS = 2000
 
-type HardwareProbe = () => Promise<{ gpu_tier?: unknown }>
+type HardwareProbe = () => Promise<{ gpu_tier?: unknown } | null | undefined>
 let hardwareProbe: HardwareProbe | null = null
 
 export function setHardwareProbe(probe: HardwareProbe | null): void {
@@ -23,15 +23,19 @@ export function setHardwareProbe(probe: HardwareProbe | null): void {
 }
 
 async function gpuTierWithin(): Promise<GpuTier | undefined> {
-  if (!hardwareProbe) return undefined
-  const probed = hardwareProbe().then(
-    (h) => h.gpu_tier as GpuTier | undefined,
-    () => undefined
-  )
-  const timedOut = new Promise<undefined>((resolve) =>
-    setTimeout(() => resolve(undefined), MAX_GPU_TIER_WAIT_MS)
-  )
-  return Promise.race([probed, timedOut])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), MAX_GPU_TIER_WAIT_MS)
+  })
+  try {
+    if (!hardwareProbe) return undefined
+    const tier = (await Promise.race([hardwareProbe(), timedOut]))?.gpu_tier
+    return typeof tier === 'string' && tier ? (tier as GpuTier) : undefined
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function agentClientContext(
