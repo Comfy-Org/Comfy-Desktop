@@ -157,9 +157,7 @@ pnpm run test:e2e:lifecycle:delete        # real delete (destroys the install)
 On a fresh profile each script builds the real install first, then runs just
 its section. To pay the install cost once across many section runs, set
 `LIFECYCLE_REUSE_DIR`: the setup spine self-skips on the hydrated profile and
-`@sec-meta` plus the selected section execute. (Not supported on macOS, where
-Electron resolves userData outside the isolated profile dir - the harness
-fails fast there.)
+`@sec-meta` plus the selected section execute.
 
 ```powershell
 $env:LIFECYCLE_REUSE_DIR = "$env:TEMP\comfyui-lifecycle-reuse"

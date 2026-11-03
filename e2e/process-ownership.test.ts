@@ -12,8 +12,7 @@
  *   2. an orphan that is still running a prompt is left alone until the user chooses to stop it;
  *   3. a ComfyUI Desktop did not start (a manual launch of the same install) is never stopped.
  *
- * Linux only: the ComfyUI stand-in is `fakeComfyInstall`, which is Linux-only (see its header),
- * and profile reuse is not supported on macOS.
+ * Linux only: the ComfyUI stand-in is `fakeComfyInstall`, which is Linux-only (see its header).
  */
 
 import os from 'node:os'

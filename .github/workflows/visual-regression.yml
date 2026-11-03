@@ -16,6 +16,9 @@ jobs:
   visual:
     name: Visual components (Linux)
     runs-on: ubuntu-24.04
+    # The browser, fonts and system libraries come from this image, so a runner or apt update
+    # can't move pixels. Its tag must match the Playwright version in pnpm-lock.yaml.
+    container: mcr.microsoft.com/playwright:v1.58.2-noble
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -26,17 +29,9 @@ jobs:
       # The renderer fixture doesn't run Electron or native addons.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install pinned browser and system dependencies
-        run: pnpm exec playwright install --with-deps chromium
       - name: Compare visual baselines
-        run: |
-          if [ ! -d tests/visual/__screenshots__/linux ]; then
-            pnpm run test:visual:update
-            echo "::error::Initial Linux baselines generated. Review and commit the uploaded candidates."
-            exit 1
-          fi
-          pnpm run test:visual
-      - name: Upload report and baseline candidates
+        run: pnpm run test:visual
+      - name: Upload report
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -44,6 +39,17 @@ jobs:
           path: |
             visual-playwright-report/
             visual-test-results/
-            tests/visual/__screenshots__/linux/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Regenerate baselines for review
+        if: failure()
+        continue-on-error: true
+        run: pnpm run test:visual:update --reporter=list --output="$RUNNER_TEMP/visual-update-results"
+      - name: Upload regenerated baselines
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-baselines-linux
+          path: tests/visual/__screenshots__/linux/
           retention-days: 14
           if-no-files-found: ignore

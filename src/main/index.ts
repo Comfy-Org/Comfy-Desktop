@@ -1,5 +1,3 @@
-import './lib/e2eProfile'
-
 import {
   app,
   Menu,

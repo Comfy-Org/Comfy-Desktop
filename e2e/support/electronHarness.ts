@@ -84,7 +84,6 @@ function formatSeedTimestamp(date: Date): string {
 
 function buildIsolatedEnv(
   homeDir: string,
-  appDataDir: string,
   settingsSeed?: Record<string, unknown>,
   opsFlagsSeed?: Record<string, unknown>
 ): Record<string, string> {
@@ -103,14 +102,20 @@ function buildIsolatedEnv(
     XDG_DATA_HOME: path.join(homeDir, '.local', 'share'),
     XDG_STATE_HOME: path.join(homeDir, '.local', 'state'),
     // Gates `registerE2EHooks()` in main so `globalThis.__e2e` is wired up.
-    E2E: '1',
-    E2E_USER_DATA_DIR: appDataDir
+    E2E: '1'
   }
 
   // Windows resolves userData via APPDATA; point it into the isolated home
   // so the app doesn't touch the real profile.
   if (process.platform === 'win32') {
     env['APPDATA'] = path.join(homeDir, 'AppData', 'Roaming')
+    env['LOCALAPPDATA'] = path.join(homeDir, 'AppData', 'Local')
+  }
+
+  // macOS resolves home, userData, logs and downloads through Apple's libraries, which ignore
+  // HOME and read this variable instead.
+  if (process.platform === 'darwin') {
+    env['CFFIXED_USER_HOME'] = homeDir
   }
 
   // Settings seed read by main before first load.
@@ -133,7 +138,9 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   // ~2-minute install). A reused dir is preserved on cleanup; a fresh dir is
   // printed so the operator can re-export it.
   const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
-  const homeDir = reuseDir ?? (await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-')))
+  const homeDir = reuseDir
+    ? path.resolve(reuseDir)
+    : await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
   if (reuseDir) {
     console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
   } else {
@@ -143,7 +150,8 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     )
   }
 
-  // Main redirects Electron's userData/sessionData here before loading settings.
+  // Pre-create the platform-specific config dir Electron resolves to inside the
+  // isolated home so `settings.set()` writes succeed.
   const appDataDir =
     process.platform === 'win32'
       ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
@@ -266,7 +274,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   }
   const env = buildIsolatedEnv(
     homeDir,
-    appDataDir,
     { ...persistedSettings, ...(options?.settings ?? {}) },
     options?.opsFlags
   )

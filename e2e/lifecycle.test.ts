@@ -313,19 +313,17 @@ test.beforeAll(async () => {
  *  never registered. */
 const _runCreatedInstallPaths = new Set<string>()
 
-/** The isolated profile's installations.json, or null on macOS where the
- *  harness cannot isolate userData (Application Support ignores HOME) and
- *  the store may list real installs that must never be swept. Mirrors
- *  `dataDir()` in src/main/lib/paths.ts under the harness's env overrides
- *  (APPDATA / XDG_DATA_HOME redirected into homeDir). */
-function isolatedInstallationsStorePath(homeDir: string): string | null {
+/** The isolated profile's installations.json. Mirrors `dataDir()` in
+ *  src/main/lib/paths.ts under the harness's env overrides (APPDATA /
+ *  XDG_DATA_HOME / CFFIXED_USER_HOME redirected into homeDir). */
+function isolatedInstallationsStorePath(homeDir: string): string {
   if (process.platform === 'win32') {
     return path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2', 'installations.json')
   }
   if (process.platform === 'linux') {
     return path.join(homeDir, '.local', 'share', 'comfyui-desktop-2', 'installations.json')
   }
-  return null
+  return path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2', 'installations.json')
 }
 
 test.afterAll(async () => {
@@ -339,17 +337,15 @@ test.afterAll(async () => {
   // run created, so this also catches installs orphaned by an abort
   // before any path-capturing test ran (e.g. mid-download).
   if (!process.env['LIFECYCLE_REUSE_DIR']) {
-    const storePath = isolatedInstallationsStorePath(ctx.homeDir)
-    if (storePath) {
-      try {
-        const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
-        for (const r of records) {
-          if (typeof r.installPath === 'string' && path.isAbsolute(r.installPath)) {
-            _runCreatedInstallPaths.add(r.installPath)
-          }
+    try {
+      const storePath = isolatedInstallationsStorePath(ctx.homeDir)
+      const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
+      for (const r of records) {
+        if (typeof r.installPath === 'string' && path.isAbsolute(r.installPath)) {
+          _runCreatedInstallPaths.add(r.installPath)
         }
-      } catch { /* store never materialized - run aborted before any install */ }
-    }
+      }
+    } catch { /* store never materialized - run aborted before any install */ }
   }
 
   await ctx.cleanup()

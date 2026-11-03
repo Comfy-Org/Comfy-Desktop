@@ -122,10 +122,9 @@ test.beforeAll(async () => {
         },
       },
     ],
-    // Delivered through `E2E_OPS_FLAGS_SEED` so main writes it to the real `configDir()`
-    // before its first read — the harness cannot place that file on macOS, where `userData`
-    // ignores the HOME override. Present from the app's first boot, which is how a returning
-    // user's already-granted flag actually arrives.
+    // Delivered through `E2E_OPS_FLAGS_SEED` so main writes it to `configDir()` before its
+    // first read. Present from the app's first boot, which is how a returning user's
+    // already-granted flag actually arrives.
     opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE }),
   })
   await expectChooserVisible(ctx.panel)

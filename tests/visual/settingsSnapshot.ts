@@ -3,8 +3,7 @@ import type GlobalSettingsView from '../../src/renderer/src/comfyTitlePopup/Glob
 type Snapshot = InstanceType<typeof GlobalSettingsView>['$props']['snapshot']
 
 export const settingsSnapshot: Snapshot = {
-  languageFields: [],
-  generalFields: [
+  languageFields: [
     {
       id: 'language',
       label: 'Language',
@@ -15,6 +14,20 @@ export const settingsSnapshot: Snapshot = {
         { value: 'en', label: 'English' },
         { value: 'zh', label: '中文' }
       ]
+    }
+  ],
+  generalFields: [
+    {
+      id: 'autoLaunchOnStartup',
+      label: 'Auto-launch on startup',
+      value: 'none',
+      editable: true,
+      editType: 'select',
+      options: [
+        { value: 'none', label: 'None (show dashboard)' },
+        { value: 'last', label: 'Last used instance' }
+      ],
+      tooltip: 'Pick an instance to launch automatically when Comfy Desktop opens. Defaults to None.'
     }
   ],
   telemetryFields: [
