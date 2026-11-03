@@ -198,6 +198,9 @@
   color: var(--color-subtle-foreground);
   font-size: 11px;
   font-weight: 500;
+  /* Same voice as the sidebar group titles (MarGroupTitle). */
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* Rows: picture, name, type · where; the shortcut or ↵ on the right. The
@@ -361,11 +364,11 @@
 .mar-search-verb {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   white-space: nowrap;
 }
 .mar-search-verb > kbd:last-of-type {
-  margin-right: 4px;
+  margin-right: 6px;
 }
 .mar-search-foot > .mar-search-verb:first-child {
   color: var(--color-muted-foreground);
