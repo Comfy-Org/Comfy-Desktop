@@ -60,7 +60,7 @@ const agent = ref('agent')
         label="segment hover"
         on="sidebar"
         force="hover"
-        target=".mms-seg:not([aria-checked='true'])"
+        target=".mar-mode-btn:not([aria-checked='true'])"
       >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>
@@ -71,7 +71,7 @@ const agent = ref('agent')
         label="segment focus"
         on="sidebar"
         force="focus"
-        target=".mms-seg:not([aria-checked='true'])"
+        target=".mar-mode-btn:not([aria-checked='true'])"
       >
         <MarModeSwitch v-model="create" :options="MODES" />
       </Cell>

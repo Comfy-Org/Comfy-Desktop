@@ -215,11 +215,6 @@
   height: 44px;
   padding: 0;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-lens-btn {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-flyout-row {
   padding: 6px 8px;
 }
@@ -231,15 +226,6 @@
 }
 :root[data-mar-surface='cloud'] .proto-shell {
   padding-top: 78px;
-}
-
-/* With the title bar's tabs on, the agent opens from the title bar, so the
-   dock's lens switch keeps Create and Build, each with its name. */
-:root .proto-ui.proto-ui.proto-ui .mar-lens-btn.is-named {
-  width: auto;
-  gap: 6px;
-  padding: 0 12px;
-  font-size: var(--text-ui);
 }
 
 /* Pages under a photo: text and controls keep their contrast. The
@@ -480,10 +466,6 @@
   height: 34px;
   padding: 0;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  height: 30px;
-  padding: 0 8px;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-side-credits {
   height: 38px;
   padding: 0 12px;
@@ -518,52 +500,6 @@
   .proto-ui:has(> .glass-titlebar)
   .mar-top-actions {
   top: 58px;
-}
-/* Sidebar lens tabs fit three names on one line. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  padding: 0 4px;
-  gap: 5px;
-  font-size: 12.5px;
-}
-
-/* Rail: the lens switch stacks, each icon in its own 40×32 cell. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens.is-rail .mar-side-lens-btn {
-  flex: none;
-  width: 40px;
-  height: 32px;
-  padding: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens.is-rail {
-  width: auto;
-}
-
-/* Expanded sidebar: the picked lens shows its name and takes the room;
-   the others are icon-only cells. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) .mar-side-lens-btn {
-  flex: none;
-  width: 38px;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  flex: 1;
-  width: auto;
-  gap: 6px;
-  font-size: var(--text-ui);
-}
-
-/* The lens switch hugs its tabs instead of spanning the sidebar. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) {
-  width: auto;
-  align-self: flex-start;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  flex: none;
-  padding: 0 12px 0 10px;
 }
 
 /* Integrated sidebar (like Pablo's, attached to the window): no floating
@@ -634,24 +570,6 @@
   padding: 14px 12px 6px;
   font-size: 13px;
   letter-spacing: 0.05em;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  height: 28px;
-  font-size: 13px;
-  border-radius: 7px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) .mar-side-lens-btn {
-  width: 32px;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  width: auto;
-  padding: 0 10px 0 8px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens {
-  border-radius: 10px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-icon {
   width: 28px;
@@ -817,10 +735,7 @@
 :root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) {
   gap: 4px;
 }
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-head:has(.mar-side-chip)
-  .mar-side-lens-btn:not([aria-pressed='true']) {
+:root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) .mar-mode-btn.is-icon {
   width: 28px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-chip {

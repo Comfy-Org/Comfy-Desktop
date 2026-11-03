@@ -21,7 +21,7 @@ Prototype menu › **Title bar**: **Breadcrumb** (Pablo's) or **Tabs**
 (`shell/titleTabs.ts`). Tabs: Home as a fixed icon tab, one tab per open
 workflow and app, then where things run (it opens the build switcher) and
 the agent on the right. The sidebar's lens switch keeps Create and Build,
-both named (`shell/MarLensSwitch.vue`); the agent leaves it.
+both named (`modes/MarModeSeg.vue`, the one mode switch); the agent leaves it.
 
 ## What it changes
 
@@ -48,7 +48,7 @@ Everything new is in this folder. Pablo's files only gain small hooks:
 - `LandingPrototypes.vue`: mounts the UI tuner.
 - `pages/modes/ModePages.vue`: Home goes through `HomeEntry.vue`.
 - `variants/VariantModes.vue`: the Agent icon comes from `proposal.ts`;
-  with Title bar › Tabs, the lens switch is `MarLensSwitch.vue`.
+  with Title bar › Tabs, the lens switch is `MarModeSeg.vue`.
 - `parts/nav/TitleBarBreadcrumb.vue`: shows `MarTitleTabs.vue` instead
   while Title bar › Tabs is on.
 - `titleBar.ts`, `titleBarBridge.ts`: publish the tabs and take their

@@ -99,20 +99,11 @@
 :root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mb-3:has(.mms-split) {
   height: auto;
 }
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-split,
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-pair {
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-split {
   flex-direction: column;
   width: 100%;
 }
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-seg {
-  flex: none;
-  justify-content: center;
-  width: 100%;
-  height: 32px;
-  padding-inline: 0;
-  font-size: 0;
-  gap: 0;
-}
+/* The pair itself stacks (MarModeSwitch passes `vertical`). */
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-agent {
   width: 100%;
 }

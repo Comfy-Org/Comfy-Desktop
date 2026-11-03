@@ -214,7 +214,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Sidebar',
     source:
-      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarSignIn.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
+      'mar/modes/MarModeSwitch.vue, mar/modes/MarModeSeg.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarSignIn.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
     use: 'Navigation between lenses, pages, projects and spaces; credits and the workspace at the foot.',
     component: lazy(() => import('./pages/SidebarPage.vue'))
   },

@@ -34,6 +34,7 @@ import { SPACES } from '../../spaces'
 import { envKind } from '../../parts/env/env'
 import { onCloud } from './surface'
 import { marTabsOn } from './titleTabs'
+import MarModeSeg from '../modes/MarModeSeg.vue'
 
 /**
  * Mar's Ambient dock (Figma "Exploration 17 · Ambient dock"): the sidebar
@@ -218,22 +219,15 @@ function lens(m: Mode): void {
       </button>
 
       <!-- Lens switch, like Figma's mode switch. -->
-      <div v-if="can.builder" class="mar-seg mar-lens" role="radiogroup" aria-label="Mode">
-        <button
-          v-for="l in LENSES.filter((x) => x.value !== 'agent' || (can.agent && !marTabsOn))"
-          :key="l.value"
-          type="button"
-          role="radio"
-          :aria-checked="proto.mode === l.value"
-          :aria-pressed="proto.mode === l.value"
-          :aria-label="l.label"
-          :title="l.label"
-          :class="['mar-lens-btn', marTabsOn && 'is-named']"
-          @click="lens(l.value)"
-        >
-          <component :is="l.icon" :size="17" /><span v-if="marTabsOn">{{ l.label }}</span>
-        </button>
-      </div>
+      <MarModeSeg
+        v-if="can.builder"
+        :model-value="proto.mode"
+        :options="LENSES.filter((x) => x.value !== 'agent' || (can.agent && !marTabsOn))"
+        :show="marTabsOn ? 'both' : 'icon'"
+        size="lg"
+        class="ml-1"
+        @update:model-value="lens"
+      />
     </nav>
   </div>
 </template>
@@ -352,33 +346,6 @@ function lens(m: Mode): void {
   color: var(--color-base-foreground);
   font-size: 12px;
   font-weight: 600;
-}
-.mar-lens {
-  display: flex;
-  gap: 2px;
-  margin-left: 4px;
-  padding: 3px;
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-.mar-lens-btn {
-  display: inline-flex;
-  flex-shrink: 0;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px;
-  color: var(--color-muted-foreground);
-  outline: none;
-  transition: color 160ms ease;
-}
-.mar-lens-btn[aria-pressed='true'],
-.mar-lens-btn:hover {
-  color: var(--color-base-foreground);
-}
-.mar-lens-btn:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mar-flyout {
   display: grid;
