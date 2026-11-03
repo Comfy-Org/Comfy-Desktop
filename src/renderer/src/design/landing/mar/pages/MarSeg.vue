@@ -1,15 +1,17 @@
 <script setup lang="ts" generic="T extends string">
 /** Segmented tabs (Mar's pages): radius 10 outside, 7 inside, following
- *  the Corners tweak; an optional count after each label. */
-const { options, label } = defineProps<{
+ *  the Corners tweak; an optional count after each label. On a picture
+ *  (onMedia) the row is dark glass, light-on-dark in both themes. */
+const { options, label, onMedia } = defineProps<{
   options: { value: T; label: string; count?: number }[]
   label: string
+  onMedia?: boolean
 }>()
 const model = defineModel<T>({ required: true })
 </script>
 
 <template>
-  <div class="mar-pseg" role="tablist" :aria-label="label">
+  <div class="mar-pseg" :class="onMedia && 'on-media'" role="tablist" :aria-label="label">
     <button
       v-for="o in options"
       :key="o.value"
@@ -55,6 +57,20 @@ const model = defineModel<T>({ required: true })
 :root .proto-ui.proto-ui.proto-ui .mar-pseg-btn[aria-selected='true'] {
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.on-media {
+  background: oklch(0.16 0.004 285 / 0.62);
+  backdrop-filter: blur(16px) saturate(1.3);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.on-media .mar-pseg-btn {
+  color: oklch(1 0 0 / 0.7);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.on-media .mar-pseg-btn:hover {
+  color: oklch(1 0 0 / 0.95);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.on-media .mar-pseg-btn[aria-selected='true'] {
+  background: oklch(1 0 0 / 0.16);
+  color: oklch(1 0 0);
 }
 .mar-pseg-count {
   margin-left: 6px;

@@ -313,14 +313,6 @@
   background: oklch(0.78 0.15 155 / 0.18);
   color: oklch(0.86 0.13 155);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-ghost {
-  background: transparent;
-  color: var(--bs-code-dim);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-ghost:hover {
-  background: oklch(1 0 0 / 0.06);
-  color: oklch(0.92 0 0);
-}
 
 /* Small icon buttons next to the key. */
 :root .proto-ui.proto-ui.proto-ui .mar-bs-icon {

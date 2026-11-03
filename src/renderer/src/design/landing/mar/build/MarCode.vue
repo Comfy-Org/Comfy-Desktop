@@ -2,10 +2,11 @@
 import { computed, ref } from 'vue'
 import { Check, Copy } from 'lucide-vue-next'
 import { tokenize, type Lang } from './highlight'
+import MarSeg from '../pages/MarSeg.vue'
 
 /**
  * A dark code block: a bar with the file or client name (or a choice of
- * them), line numbers, highlighted code and a copy button that confirms.
+ * them, in MarSeg), line numbers, highlighted code and a copy button that confirms.
  * `copy` is what lands on the clipboard; `shown` is what's drawn, so a key
  * can be masked on screen and still copied in full.
  */
@@ -49,20 +50,14 @@ async function onCopy(): Promise<void> {
 <template>
   <div class="mar-bs-code">
     <div class="mar-bs-code-bar">
-      <span v-if="options.length" class="flex items-center gap-1" role="tablist" data-no-pill>
-        <button
-          v-for="o in options"
-          :key="o.value"
-          type="button"
-          role="tab"
-          :aria-selected="picked === o.value"
-          class="mar-bs-codebtn"
-          :class="picked !== o.value && 'is-ghost'"
-          @click="picked = o.value"
-        >
-          {{ o.label }}
-        </button>
-      </span>
+      <MarSeg
+        v-if="options.length"
+        :model-value="picked ?? ''"
+        :options
+        label="Client"
+        on-media
+        @update:model-value="picked = $event"
+      />
       <span v-else class="mar-bs-code-file">{{ label }}</span>
       <button
         type="button"

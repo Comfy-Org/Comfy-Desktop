@@ -167,40 +167,12 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tpl-ink) 8%, transparent);
   pointer-events: none;
 }
+/* The Result / Graph tabs: MarSeg on media, pinned to the stage's corner. */
 .mar-tpl-views {
   position: absolute;
   top: 10px;
   left: 10px;
   z-index: 3;
-  display: flex;
-  gap: 2px;
-  border-radius: 11px;
-  padding: 3px;
-  background: oklch(0.16 0.004 285 / 0.62);
-  backdrop-filter: blur(16px) saturate(1.3);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-views > button {
-  height: 26px;
-  border-radius: 8px;
-  padding: 0 12px;
-  color: oklch(1 0 0 / 0.7);
-  font-size: 12.5px;
-  font-weight: 500;
-  transition:
-    background-color 140ms ease,
-    color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-views > button:hover {
-  color: oklch(1 0 0 / 0.95);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-views > button[aria-selected='true'] {
-  background: oklch(1 0 0 / 0.16);
-  color: oklch(1 0 0);
-}
-.mar-tpl-views > button:focus-visible {
-  outline: 2px solid oklch(1 0 0 / 0.6);
-  outline-offset: 1px;
 }
 .mar-tpl-quad,
 .mar-tpl-caption {
