@@ -190,6 +190,26 @@ describe('GlobalSettingsView', () => {
     expect(wrapper.find('.gs-tab.active').text()).toBe('General')
   })
 
+  it('keeps a requested tab when the popup refocuses the tab that had focus before', async () => {
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Updates')!
+      .element.focus()
+    await flushPromises()
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Updates')
+
+    await wrapper.setProps({ snapshot: makeSnapshot({ initialTab: 'storage' }) as never })
+    await flushPromises()
+    document.activeElement!.dispatchEvent(new FocusEvent('focus'))
+    await flushPromises()
+
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
+    expect(wrapper.findAll('.gs-tab[tabindex="0"]').map((t) => t.text())).not.toContain('Updates')
+  })
+
   it('moves focus with arrow-key tab navigation', async () => {
     installMockBridge()
     const wrapper = mountView()

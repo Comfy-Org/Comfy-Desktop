@@ -91,7 +91,7 @@ function handleDelete(snapshot: SnapshotSummary): void {
                 type="button"
                 variant="secondary"
                 size="md"
-                class="picker-snapshot-action is-primary"
+                class="picker-snapshot-action"
                 @click="handleRestore(snap)"
               >
                 <RotateCcw :size="12" aria-hidden="true" />
@@ -101,7 +101,7 @@ function handleDelete(snapshot: SnapshotSummary): void {
                 type="button"
                 variant="destructive-textonly"
                 size="md"
-                class="picker-snapshot-action is-danger"
+                class="picker-snapshot-action"
                 @click="handleDelete(snap)"
               >
                 <Trash2 :size="12" aria-hidden="true" />

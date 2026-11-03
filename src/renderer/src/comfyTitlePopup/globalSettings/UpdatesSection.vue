@@ -265,7 +265,7 @@ const progressDetail = computed<string | null>(() => {
           type="button"
           variant="inverted"
           size="md"
-          class="updates-action shrink-0 updates-action--accent"
+          class="updates-action shrink-0"
           :disabled="actionsDisabled"
           @click="emit('update-now')"
         >

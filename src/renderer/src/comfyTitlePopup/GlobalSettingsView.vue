@@ -101,6 +101,7 @@ const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
 type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 const activeTab = ref<TabId>('general')
+const requestedTabCount = ref(0)
 
 // Each open pushes a fresh snapshot object, so watching by identity lets a
 // reopen re-apply its requested tab. Rebroadcasts carry initialTab null and
@@ -108,7 +109,10 @@ const activeTab = ref<TabId>('general')
 watch(
   () => props.snapshot,
   (snap) => {
-    if (snap.initialTab) activeTab.value = snap.initialTab
+    if (snap.initialTab) {
+      activeTab.value = snap.initialTab
+      requestedTabCount.value++
+    }
     if (snap.highlightFieldId) void flashField(snap.highlightFieldId)
   },
   { immediate: true }
@@ -354,6 +358,7 @@ onMounted(() => {
       class="gs-body min-h-0 flex-auto flex-row gap-0"
     >
       <TabsList
+        :key="requestedTabCount"
         class="gs-tabs w-40 flex-[0_0_160px] flex-col items-stretch gap-px overflow-y-auto border-r border-solid border-border p-2"
         :aria-label="t('settingsModal.tabGlobal', 'Desktop Settings')"
       >
