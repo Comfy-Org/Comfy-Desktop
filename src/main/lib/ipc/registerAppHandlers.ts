@@ -564,7 +564,6 @@ export function registerAppHandlers(): void {
     })
     return hardwareProbe
   }
-  // The launch path reads the GPU tier for the agent's client context from the same memo.
   setHardwareProbe(probeHardwareCached)
 
   async function getSystemInfo(): Promise<SystemInfo> {

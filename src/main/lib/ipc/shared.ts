@@ -1063,10 +1063,7 @@ export function buildLaunchEnv(
   // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
   // user-managed portable or git install as Desktop-managed.
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
-  // The agent's client context goes out only with telemetry consent (the caller passes
-  // undefined otherwise). Written last so neither process.env nor a per-install var can
-  // supply or override it, and deleted (in any case, as Windows env names are case-insensitive) so an inherited value
-  // cannot leak through.
+  // Consent-only and written last; scrubbed in any case, as Windows env names are case-insensitive.
   for (const key of Object.keys(env)) {
     if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
   }

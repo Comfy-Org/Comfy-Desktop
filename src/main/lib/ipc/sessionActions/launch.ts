@@ -191,8 +191,7 @@ export function desktopFeatureFlags(
   return flags
 }
 
-/** The agent's client context for this launch: fixed at spawn, like enable_telemetry, so a
- *  consent change takes effect at the next launch. */
+/** Consent is read at spawn, like enable_telemetry: a change takes effect at the next launch. */
 function launchClientContext(): ReturnType<typeof agentClientContext> {
   return agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
 }
@@ -1880,8 +1879,7 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
-  // Resolved alongside the port probes, so the wait for the GPU tier never sits between the
-  // final port re-check and the reservation.
+  // Started before the port probes so its wait never sits between the port re-check and reserve.
   const clientContextReady = launchClientContext()
 
   // Skip port logic entirely
