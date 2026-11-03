@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { go, goIn, proto, toast } from './useProto'
+import { go, goIn, proto, requireLogin, toast } from './useProto'
 import { APPS } from './mock'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
@@ -497,6 +497,9 @@ const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
 export const isAdded = (id: string): boolean => appsProto.added.includes(id)
 export function toggleAdded(a: LibApp): void {
+  // The library needs an account.
+  if (!proto.signedIn)
+    return requireLogin('Log in to add apps', 'Your apps live in your Comfy account.')
   const i = appsProto.added.indexOf(a.id)
   if (i >= 0) {
     appsProto.added.splice(i, 1)

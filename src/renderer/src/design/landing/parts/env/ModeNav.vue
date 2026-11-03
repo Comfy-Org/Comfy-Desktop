@@ -49,7 +49,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
       ? [{ page: 'explore' as Page, label: 'Explore', icon: Compass }]
       : []),
     // The library of added apps, before Projects brings the Libraries group.
-    ...(can.value.exploreApps && !can.value.projects
+    ...(can.value.exploreApps && !can.value.projects && proto.signedIn
       ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
       : []),
     ...(can.value.explore
@@ -63,9 +63,12 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             icon: Workflow,
             section: 'Libraries'
           },
-          { page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' },
+          // Apps and Builds need an account: logged out, they are not there.
+          ...(proto.signedIn
+            ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
+            : []),
           { page: 'assets' as Page, label: 'Assets', icon: Images },
-          ...(proto.fresh
+          ...(proto.fresh || !proto.signedIn
             ? []
             : [
                 {
@@ -94,12 +97,16 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             icon: Rocket,
             prefix: 'deployment:'
           },
-          {
-            page: 'environments' as Page,
-            label: 'Builds',
-            icon: Server,
-            prefix: 'environment:'
-          }
+          ...(proto.signedIn
+            ? [
+                {
+                  page: 'environments' as Page,
+                  label: 'Builds',
+                  icon: Server,
+                  prefix: 'environment:'
+                }
+              ]
+            : [])
         ]),
     { page: 'router', label: 'Models', icon: Boxes },
     ...(proto.fresh ? [] : [{ page: 'logs' as Page, label: 'Logs', icon: ScrollText }]),
