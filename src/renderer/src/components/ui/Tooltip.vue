@@ -79,7 +79,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', close))
         "
         :side="side"
         :align="align"
-        :role="interactive ? 'dialog' : 'tooltip'"
+        :role="interactive ? 'dialog' : undefined"
         :aria-label="interactive ? text : undefined"
         :collision-padding="8"
         @keydown.capture="onKeydown"

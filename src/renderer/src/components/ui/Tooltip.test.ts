@@ -35,6 +35,7 @@ describe('Tooltip shared adapter', () => {
     await hover(wrapper)
     const bubble = document.querySelector('.tooltip-bubble')!
     expect(bubble.textContent).toContain('Hello tooltip')
+    expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1)
     expect(wrapper.element.contains(bubble)).toBe(false)
   })
 
