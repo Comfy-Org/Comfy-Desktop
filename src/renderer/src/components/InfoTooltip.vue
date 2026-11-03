@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CircleHelp, Info } from 'lucide-vue-next'
 import Tooltip from './ui/Tooltip.vue'
-import type { TooltipSide } from '../composables/useTooltip'
+import type { TooltipSide } from './ui/Tooltip.vue'
 
 // Inline help-icon trigger composing the shared Tooltip primitive; defers
 // placement, teleport, arrow, and collision handling to it.
@@ -31,6 +31,7 @@ function openLink(): void {
     :side="props.side"
     :delay-ms="props.delayMs"
     :interactive="!!props.linkUrl"
+    keep-open-on-click
   >
     <span
       class="info-tooltip-trigger group/info-tooltip ml-1 inline-flex cursor-help items-center align-middle"

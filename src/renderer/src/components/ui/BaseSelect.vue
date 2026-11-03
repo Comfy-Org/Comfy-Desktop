@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, ChevronDown } from 'lucide-vue-next'
-
-// Custom select primitive: trigger + popover listbox, teleported to <body>
-// so a drawer host's overflow:hidden can't clip it.
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import Select from '@comfyorg/design-system/select/Select'
+import SelectContent from '@comfyorg/design-system/select/SelectContent'
+import SelectItem from '@comfyorg/design-system/select/SelectItem'
+import SelectTrigger from '@comfyorg/design-system/select/SelectTrigger'
+import SelectValue from '@comfyorg/design-system/select/SelectValue'
 
 export interface BaseSelectOption {
   value: string
@@ -31,287 +32,99 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   compact: false
 })
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+defineOptions({ inheritAttrs: false })
 
-const emit = defineEmits<{
-  'update:modelValue': [value: string]
-}>()
-
-const triggerRef = ref<HTMLButtonElement | null>(null)
-const listboxRef = ref<HTMLUListElement | null>(null)
 const open = ref(false)
-const activeIndex = ref(-1)
-const popoverStyle = ref<Record<string, string>>({})
-
-const selectedOption = computed(() => props.options.find((o) => o.value === props.modelValue))
-
+// Reka reserves an empty string for clearing the selection. Desktop uses it for
+// choices such as "All", so map every option through a stable per-control prefix.
+const prefix = useId()
+const choices = computed(() =>
+  props.options.map((option, index) => ({ ...option, key: `${prefix}-${index}` }))
+)
+const selected = computed(() => choices.value.find((option) => option.value === props.modelValue))
 const triggerLabel = computed(() =>
   props.loading && props.loadingLabel
     ? props.loadingLabel
-    : (selectedOption.value?.label ?? props.placeholder)
+    : (selected.value?.label ?? props.placeholder)
 )
 
-const listboxId = `ui-listbox-${Math.random().toString(36).slice(2, 9)}`
-const POPOVER_GAP = 2
-const VIEWPORT_PADDING = 8
-const ESTIMATED_OPTION_HEIGHT = 36
-const ESTIMATED_LISTBOX_CHROME = 16
-const PREFERRED_MAX_HEIGHT = 280
-
-function updatePosition(): void {
-  const trigger = triggerRef.value
-  if (!trigger) return
-  const rect = trigger.getBoundingClientRect()
-  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - POPOVER_GAP - VIEWPORT_PADDING)
-  const spaceAbove = Math.max(0, rect.top - POPOVER_GAP - VIEWPORT_PADDING)
-  const estimatedHeight = props.options.length * ESTIMATED_OPTION_HEIGHT + ESTIMATED_LISTBOX_CHROME
-  const measuredHeight = listboxRef.value
-    ? listboxRef.value.scrollHeight +
-      Math.max(0, listboxRef.value.offsetHeight - listboxRef.value.clientHeight)
-    : 0
-  const desiredHeight = Math.min(measuredHeight || estimatedHeight, PREFERRED_MAX_HEIGHT)
-  const openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow
-  const availableHeight = openUp ? spaceAbove : spaceBelow
-  popoverStyle.value = {
-    position: 'fixed',
-    left: `${rect.left}px`,
-    width: `${rect.width}px`,
-    top: openUp ? 'auto' : `${rect.bottom + POPOVER_GAP}px`,
-    bottom: openUp ? `${window.innerHeight - rect.top + POPOVER_GAP}px` : 'auto',
-    maxHeight: `${availableHeight}px`,
-    zIndex: '9999'
-  }
+function select(value: unknown): void {
+  const option = choices.value.find((option) => option.key === value)
+  if (option && !option.disabled) emit('update:modelValue', option.value)
 }
 
-function openPanel(): void {
-  if (open.value || props.disabled) return
-  open.value = true
-  const idx = props.options.findIndex((o) => o.value === props.modelValue && !o.disabled)
-  activeIndex.value = idx >= 0 ? idx : props.options.findIndex((o) => !o.disabled)
-  updatePosition()
-  void nextTick(() => {
-    // The rendered list may be taller than the per-option estimate.
-    updatePosition()
-    listboxRef.value?.focus()
-    scrollActiveIntoView()
-  })
-}
-
-function closePanel(returnFocus = true): void {
-  if (!open.value) return
-  open.value = false
-  if (returnFocus) {
-    void nextTick(() => triggerRef.value?.focus())
-  }
-}
-
-function toggle(): void {
-  if (open.value) closePanel()
-  else openPanel()
-}
-
-function selectIndex(i: number): void {
-  const opt = props.options[i]
-  if (!opt || opt.disabled) return
-  emit('update:modelValue', opt.value)
-  closePanel()
-}
-
-function moveActive(delta: number): void {
-  const len = props.options.length
-  if (len === 0) return
-  let i = activeIndex.value
-  for (let step = 0; step < len; step++) {
-    i = (i + delta + len) % len
-    if (!props.options[i]?.disabled) {
-      activeIndex.value = i
-      scrollActiveIntoView()
-      return
-    }
-  }
-}
-
-function scrollActiveIntoView(): void {
-  const list = listboxRef.value
-  if (!list) return
-  const el = list.querySelector<HTMLElement>(`[data-index="${activeIndex.value}"]`)
-  el?.scrollIntoView({ block: 'nearest' })
-}
-
-function onTriggerKeydown(event: KeyboardEvent): void {
-  if (
-    event.key === 'ArrowDown' ||
-    event.key === 'ArrowUp' ||
-    event.key === 'Enter' ||
-    event.key === ' '
-  ) {
-    event.preventDefault()
-    openPanel()
-  }
-}
-
-function onListboxKeydown(event: KeyboardEvent): void {
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault()
-      moveActive(1)
-      break
-    case 'ArrowUp':
-      event.preventDefault()
-      moveActive(-1)
-      break
-    case 'Home':
-      event.preventDefault()
-      activeIndex.value = props.options.findIndex((o) => !o.disabled)
-      scrollActiveIntoView()
-      break
-    case 'End':
-      event.preventDefault()
-      for (let i = props.options.length - 1; i >= 0; i--) {
-        if (!props.options[i]?.disabled) {
-          activeIndex.value = i
-          scrollActiveIntoView()
-          break
-        }
-      }
-      break
-    case 'Enter':
-    case ' ':
-      event.preventDefault()
-      if (activeIndex.value >= 0) selectIndex(activeIndex.value)
-      break
-    case 'Escape':
-      event.preventDefault()
-      closePanel()
-      break
-    case 'Tab':
-      closePanel(false)
-      break
-  }
-}
-
-function onDocPointer(event: PointerEvent): void {
-  if (!open.value) return
-  const t = event.target as Node | null
-  if (t && !triggerRef.value?.contains(t) && !listboxRef.value?.contains(t)) {
-    closePanel(false)
-  }
-}
-
-function onWindowChange(): void {
-  if (open.value) updatePosition()
-}
-
+let suppressFocusReturn = false
 function onWindowBlur(): void {
-  // Close on focus loss to another window (e.g. clicking out of the IPP).
-  // The document `pointerdown` listener doesn't catch that because the
-  // click lands in a different WebContents — the dropdown would otherwise
-  // stay open and resurface when the user returns.
-  if (open.value) closePanel(false)
+  // Clicking another Electron view is outside this document; the shared
+  // dismissable layer cannot observe that pointer event.
+  if (!open.value) return
+  suppressFocusReturn = true
+  open.value = false
 }
-
-watch(open, (isOpen) => {
-  if (isOpen) {
-    document.addEventListener('pointerdown', onDocPointer, true)
-    window.addEventListener('resize', onWindowChange)
-    window.addEventListener('scroll', onWindowChange, true)
-    window.addEventListener('blur', onWindowBlur)
-  } else {
-    document.removeEventListener('pointerdown', onDocPointer, true)
-    window.removeEventListener('resize', onWindowChange)
-    window.removeEventListener('scroll', onWindowChange, true)
-    window.removeEventListener('blur', onWindowBlur)
-  }
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onDocPointer, true)
-  window.removeEventListener('resize', onWindowChange)
-  window.removeEventListener('scroll', onWindowChange, true)
-})
+function onCloseAutoFocus(event: Event): void {
+  if (suppressFocusReturn) event.preventDefault()
+  suppressFocusReturn = false
+}
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.stopPropagation()
+  open.value = false
+}
+onMounted(() => window.addEventListener('blur', onWindowBlur))
+onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
 </script>
 
 <template>
-  <button
-    ref="triggerRef"
-    type="button"
-    class="ui-select-trigger [.brand-background_&]:text-[14px] box-border inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-solid border-border bg-secondary px-2.5 py-2 text-left text-[length:var(--text-ui)] text-text transition-[border-color,background-color] duration-[150ms] ease-[ease] enabled:hover:border-[var(--color-border-strong)] enabled:hover:bg-[oklch(1_0_0/0.09)] focus-visible:border-ring focus-visible:outline-none aria-expanded:border-ring disabled:cursor-not-allowed disabled:opacity-60"
-    :class="{ 'ui-select-trigger--compact': compact }"
-    role="combobox"
-    :aria-expanded="open"
-    :aria-controls="listboxId"
-    aria-haspopup="listbox"
-    :aria-label="ariaLabel"
-    :aria-busy="loading || undefined"
-    :data-placeholder="!selectedOption && !loading ? '' : undefined"
+  <Select
+    v-model:open="open"
+    :model-value="selected?.key"
     :disabled="disabled"
-    @click="toggle"
-    @keydown="onTriggerKeydown"
+    @update:model-value="select"
   >
-    <span
-      class="ui-select-label min-w-0 flex-1 truncate"
-      :class="{ 'text-text-muted': !selectedOption && !loading }"
-      >{{ triggerLabel }}</span
+    <SelectTrigger
+      v-bind="$attrs"
+      class="ui-select-trigger data-[state=open]:hover:bg-secondary"
+      :class="{ 'ui-select-trigger--compact': compact }"
+      :size="compact ? 'md' : 'lg'"
+      :aria-label="ariaLabel"
+      :aria-busy="loading || undefined"
     >
-    <ChevronDown
-      :size="14"
-      class="ui-select-chevron shrink-0 text-text-muted transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] data-[open]:rotate-180 motion-reduce:duration-0"
-      :data-open="open ? '' : undefined"
-    />
-  </button>
-
-  <Teleport to="body">
-    <Transition
-      name="ui-select-pop"
-      enter-active-class="transition-[opacity,transform] duration-[150ms] ease-out motion-reduce:duration-0"
-      leave-active-class="transition-[opacity,transform] duration-[150ms] ease-out motion-reduce:duration-0"
-      enter-from-class="opacity-0 [transform:translateY(-4px)]"
-      leave-to-class="opacity-0 [transform:translateY(-4px)]"
+      <SelectValue class="ui-select-label" :placeholder="placeholder">{{
+        triggerLabel
+      }}</SelectValue>
+    </SelectTrigger>
+    <SelectContent
+      class="ui-select-listbox z-[9999] mt-0 max-h-[min(280px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] bg-popover [overflow-wrap:anywhere]"
+      :class="{ 'ui-select-listbox--compact': compact }"
+      :side-offset="2"
+      :collision-padding="8"
+      :aria-label="ariaLabel"
+      :body-lock="false"
+      :disable-outside-pointer-events="false"
+      @keydown.capture="onKeydown"
+      @close-auto-focus="onCloseAutoFocus"
     >
-      <ul
-        v-if="open"
-        :id="listboxId"
-        ref="listboxRef"
-        class="ui-select-listbox box-border m-0 list-none overflow-y-auto rounded-card border border-solid border-border bg-popover p-1 shadow-popover outline-none"
-        :class="{ 'ui-select-listbox--compact': compact }"
-        role="listbox"
-        tabindex="-1"
-        :style="popoverStyle"
-        :aria-label="ariaLabel"
-        @keydown="onListboxKeydown"
+      <SelectItem
+        v-for="option in choices"
+        :key="option.key"
+        :value="option.key"
+        :disabled="option.disabled"
+        :text-value="option.label"
+        class="ui-select-option"
+        :class="compact ? 'py-1.5 text-xs' : 'py-2'"
+        text-class="min-w-0 whitespace-normal"
       >
-        <li
-          v-for="(opt, i) in options"
-          :key="opt.value"
-          class="ui-select-option flex cursor-pointer items-center gap-2 rounded-control text-text select-none data-[active]:bg-[oklch(1_0_0/0.07)] data-[selected]:bg-[oklch(1_0_0/0.07)] aria-disabled:cursor-not-allowed aria-disabled:text-text-muted"
-          :class="
-            compact
-              ? 'px-2 py-1.5 text-[length:var(--takeover-fs-caption)]'
-              : 'px-2.5 py-2 text-[14px]'
-          "
-          role="option"
-          :data-index="i"
-          :data-active="i === activeIndex ? '' : undefined"
-          :data-selected="opt.value === modelValue ? '' : undefined"
-          :aria-selected="opt.value === modelValue"
-          :aria-disabled="opt.disabled || undefined"
-          @mousemove="activeIndex = i"
-          @click="selectIndex(i)"
-        >
-          <span class="ui-select-option-body flex min-w-0 flex-1 flex-col gap-0.5">
-            <span class="ui-select-option-label truncate">{{ opt.label }}</span>
-            <span
-              v-if="opt.description"
-              class="ui-select-option-desc text-[length:var(--takeover-fs-caption)] whitespace-normal text-text-muted [overflow-wrap:break-word]"
-              >{{ opt.description }}</span
-            >
+        <span class="ui-select-option-body flex min-w-0 flex-col gap-0.5">
+          <span class="ui-select-option-label">{{ option.label }}</span>
+          <span
+            v-if="option.description"
+            class="ui-select-option-desc text-xs text-muted-foreground"
+          >
+            {{ option.description }}
           </span>
-          <Check
-            v-if="opt.value === modelValue"
-            :size="14"
-            class="ui-select-option-check shrink-0 text-[var(--accent-primary)]"
-          />
-        </li>
-      </ul>
-    </Transition>
-  </Teleport>
+        </span>
+      </SelectItem>
+    </SelectContent>
+  </Select>
 </template>

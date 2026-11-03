@@ -828,7 +828,9 @@ describe('PanelApp', () => {
       wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
     ).toBe('Personal')
 
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
       Array.from(document.querySelectorAll('.ui-select-option-label')).map(
@@ -1005,7 +1007,7 @@ describe('PanelApp', () => {
       'aria-expanded': 'false'
     })
     expect(instanceSelect.text()).toBe('Select an instance')
-    await instanceSelect.trigger('click')
+    await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
       Array.from(document.querySelectorAll('.ui-select-option-label')).map(
@@ -1022,7 +1024,9 @@ describe('PanelApp', () => {
       'Run performance tests against your ComfyUI instances.'
     )
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
-    ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).click()
+    ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
     expect(instanceSelect.text()).toBe('Workspace Install')
 
@@ -1308,14 +1312,16 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(instanceSelect.text()).toBe('Select an instance')
-    await instanceSelect.trigger('click')
+    await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
       Array.from(document.querySelectorAll('.ui-select-option-label')).map(
         (option) => option.textContent
       )
     ).toEqual(['Unmanaged Install'])
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
   })
 
@@ -1520,9 +1526,13 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
     return { wrapper, api }
   }
@@ -1701,11 +1711,13 @@ describe('PanelApp', () => {
         })
     )
     await chooseExampleWorkflow(wrapper)
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
       .find((option) => option.textContent?.includes('Other Install'))!
-      .click()
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
     resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
@@ -1747,11 +1759,13 @@ describe('PanelApp', () => {
 
     // The launch holds the workflow: switching instance can't remove it yet,
     // but the example must not run on the other instance.
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
       .find((option) => option.textContent?.includes('Other Install'))!
-      .click()
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
     expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
 
@@ -1783,11 +1797,13 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
     api.deletePerformanceTestWorkflow.mockResolvedValueOnce({ ok: false, message: 'File in use' })
 
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
       .find((option) => option.textContent?.includes('Other Install'))!
-      .click()
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
@@ -1954,9 +1970,13 @@ describe('PanelApp', () => {
     await flushPromises()
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
@@ -2056,9 +2076,13 @@ describe('PanelApp', () => {
     await flushPromises()
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
 
     const runButton = wrapper.get('.performance-test__run')
@@ -2115,9 +2139,13 @@ describe('PanelApp', () => {
     await flushPromises()
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
     await flushPromises()
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')

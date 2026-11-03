@@ -212,7 +212,7 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
 
   // Save an unrelated field through the settings UI, and wait until main has stored it.
   const PORT_CONFLICT = '[data-field-id="portConflict"] .ui-select-trigger'
-  const OTHER_OPTION = '.ui-select-listbox [role="option"]:not([data-selected])'
+  const OTHER_OPTION = '.ui-select-listbox [role="option"]:not([data-state="checked"])'
   await popup.clickUntilVisible(PORT_CONFLICT, OTHER_OPTION, { timeout: 10_000 })
   expect(await popup.click(OTHER_OPTION)).toBe(true)
   const stored = (): Promise<unknown> =>

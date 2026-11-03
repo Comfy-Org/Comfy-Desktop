@@ -90,7 +90,7 @@ async function openSelect(wrapper: VueWrapper, index = 0): Promise<void> {
   const triggers = wrapper.findAll('[role="combobox"]')
   const trigger = triggers[index]
   if (!trigger) throw new Error(`No combobox at index ${index}`)
-  await trigger.trigger('click')
+  await trigger.trigger('keydown', { key: 'ArrowDown' })
   await flushPromises()
 }
 
@@ -99,7 +99,7 @@ async function pickOption(wrapper: VueWrapper, labelText: string, index = 0): Pr
   const opts = wrapper.findAll('[role="option"]')
   const target = opts.find((o) => o.text().includes(labelText))
   if (!target) throw new Error(`Option not found: ${labelText}`)
-  await target.trigger('click')
+  await target.trigger('keydown', { key: 'Enter' })
   await flushPromises()
 }
 

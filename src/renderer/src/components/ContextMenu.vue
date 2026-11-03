@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuAction from '@comfyorg/design-system/menu/MenuAction'
+import type { MenuItemAction } from '@comfyorg/design-system/lib/menu/types'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
 import type { ContextMenuItem } from '../types/context-menu'
@@ -10,115 +14,103 @@ const props = defineProps<{
   y: number
   items: ContextMenuItem[]
 }>()
-
-const emit = defineEmits<{
-  close: []
-  select: [id: string]
-}>()
-
-const menuRef = ref<HTMLDivElement | null>(null)
-const adjustedX = ref(0)
-const adjustedY = ref(0)
-
-watch(
-  () => props.open,
-  async (isOpen) => {
-    if (isOpen) {
-      adjustedX.value = props.x
-      adjustedY.value = props.y
-      await nextTick()
-      clampToViewport()
-      document.addEventListener('mousedown', onOutsideClick, true)
-      document.addEventListener('keydown', onEscape, true)
-    } else {
-      document.removeEventListener('mousedown', onOutsideClick, true)
-      document.removeEventListener('keydown', onEscape, true)
-    }
+const emit = defineEmits<{ close: []; select: [id: string] }>()
+const visible = computed({
+  get: () => props.open && props.items.length > 0,
+  set: (open: boolean) => {
+    if (!open) emit('close')
   }
-)
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onOutsideClick, true)
-  document.removeEventListener('keydown', onEscape, true)
 })
-
-function clampToViewport(): void {
-  if (!menuRef.value) return
-  const rect = menuRef.value.getBoundingClientRect()
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  if (adjustedX.value + rect.width > vw) adjustedX.value = vw - rect.width - 4
-  if (adjustedY.value + rect.height > vh) adjustedY.value = vh - rect.height - 4
-  if (adjustedX.value < 0) adjustedX.value = 4
-  if (adjustedY.value < 0) adjustedY.value = 4
-}
-
-function onOutsideClick(e: MouseEvent): void {
-  const target = e.target as Element
-  if (menuRef.value?.contains(target) || target.closest('.tooltip-bubble--interactive')) return
+const reference = computed(() => ({
+  getBoundingClientRect: () => new DOMRect(props.x, props.y, 1, 1)
+}))
+const entries = computed(() =>
+  props.items.map((item) => ({
+    ...item,
+    action: {
+      label: item.label,
+      command: () => emit('select', item.id),
+      disabled: item.disabled,
+      focusableWhenDisabled: !!item.hint,
+      class: `context-menu-item ${item.disabled ? 'disabled' : ''} ${item.style === 'danger' ? 'is-danger' : ''}`,
+      variant: item.style === 'danger' ? 'destructive' : undefined
+    } satisfies MenuItemAction
+  }))
+)
+// The menu takes focus when it opens, and its hidden trigger can't take it back.
+let focusToRestore: HTMLElement | null = null
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.stopPropagation()
   emit('close')
 }
-
-function onEscape(e: KeyboardEvent): void {
-  if (e.key === 'Escape') emit('close')
+function onInteractOutside(event: Event): void {
+  const target = (event as CustomEvent<{ originalEvent: Event }>).detail?.originalEvent.target
+  if (target instanceof Element && target.closest('.tooltip-bubble--interactive')) {
+    event.preventDefault()
+    return
+  }
+  focusToRestore = null
 }
-
-function handleClick(item: ContextMenuItem): void {
-  if (item.disabled) return
-  emit('select', item.id)
+function onWindowBlur(): void {
+  if (!props.open) return
+  focusToRestore = null
   emit('close')
 }
+watch(visible, (isVisible) => {
+  if (isVisible) {
+    focusToRestore = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }
+})
+function onCloseAutoFocus(event: Event): void {
+  event.preventDefault()
+  const element = focusToRestore
+  focusToRestore = null
+  setTimeout(() => {
+    if (document.activeElement === document.body) element?.focus({ preventScroll: true })
+  })
+}
+onMounted(() => window.addEventListener('blur', onWindowBlur))
+onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open && items.length > 0"
-      ref="menuRef"
-      class="context-menu fixed z-10000 min-w-[200px] rounded-card border border-solid border-border bg-popover p-1 shadow-popover"
-      :style="{ left: adjustedX + 'px', top: adjustedY + 'px' }"
-    >
-      <template v-for="(item, i) in items" :key="item.id">
-        <div
-          v-if="item.separator && i > 0"
-          class="context-menu-separator -mx-1 my-1 h-px bg-border"
-        />
-        <div
-          class="context-menu-item flex min-h-8 w-full items-center rounded-lg bg-transparent text-[length:var(--text-ui)] transition-[background-color,opacity] duration-100 ease-[ease]"
-          :class="[
-            item.disabled ? 'disabled opacity-50' : 'hover:bg-secondary focus-within:bg-secondary',
-            item.style === 'danger'
-              ? [
-                  'is-danger text-danger',
-                  item.disabled ? '' : 'hover:text-danger-hover focus-within:text-danger-hover'
-                ]
-              : item.disabled
-                ? 'text-text-muted'
-                : 'text-neutral-100 hover:text-text focus-within:text-text'
-          ]"
+  <Menu
+    v-model:open="visible"
+    :modal="false"
+    :reference="reference"
+    :collision-padding="4"
+    :side-offset="0"
+    class="context-menu z-[10000] min-w-[200px]"
+    @keydown.capture="onKeydown"
+    @interact-outside="onInteractOutside"
+    @close-auto-focus="onCloseAutoFocus"
+  >
+    <template #trigger><span hidden aria-hidden="true" /></template>
+    <template v-for="(item, index) in entries" :key="item.id">
+      <MenuSeparator v-if="item.separator && index > 0" class="context-menu-separator" />
+      <MenuAction :item="item.action">
+        <span
+          class="context-menu-item-action flex-1"
+          :title="item.disabled ? item.title : undefined"
+          :data-testid="TID.contextMenuItem(item.id)"
+          >{{ item.label }}</span
         >
-          <button
-            class="context-menu-item-action flex-1 border-none bg-transparent py-1.5 pr-0 pl-2.5 text-left [font:inherit] whitespace-nowrap text-inherit hover:bg-transparent focus-visible:outline-none"
-            :class="item.disabled ? 'disabled cursor-default' : 'cursor-pointer'"
-            :aria-disabled="item.disabled || undefined"
-            :title="item.disabled ? item.title : undefined"
-            :data-testid="TID.contextMenuItem(item.id)"
-            @click="handleClick(item)"
-          >
-            {{ item.label }}
-          </button>
-          <InfoTooltip
-            v-if="item.hint"
-            class="context-menu-item-info ml-auto py-2 pr-3.5 pl-3"
-            :text="item.hint"
-            :link-url="item.hintUrl"
-            :link-label="item.hintLinkLabel"
-            icon="info"
-            side="right"
-            @click.stop
-          />
-        </div>
-      </template>
-    </div>
-  </Teleport>
+        <InfoTooltip
+          v-if="item.hint"
+          class="context-menu-item-info ml-auto"
+          :text="item.hint"
+          :link-url="item.hintUrl"
+          :link-label="item.hintLinkLabel"
+          icon="info"
+          side="right"
+          @pointerdown.stop
+          @pointerup.stop
+          @click.stop
+          @keydown.enter.stop
+          @keydown.space.stop
+        />
+      </MenuAction>
+    </template>
+  </Menu>
 </template>

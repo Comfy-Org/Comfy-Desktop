@@ -108,26 +108,76 @@ export class WebContentsPage {
     })()`)
   }
 
-  /** Click the first matching element. Returns false if not found. */
+  /** Send one real mouse click to an element, including pointer/down/up events,
+   *  and wait for the page to handle it. `blocked` means no input was sent. */
+  private async sendClick(elementExpression: string): Promise<'clicked' | 'missing' | 'blocked'> {
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    // Do not retry this evaluation: a lost response must not repeat an action.
+    return this.app.evaluate(async ({ BrowserWindow, WebContentsView, webContents }, payload) => {
+      const wc = webContents.fromId(payload.id)
+      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+      const win = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents === wc || candidate.contentView.children.some((child) =>
+          child instanceof WebContentsView && child.webContents === wc
+        )
+      )
+      win?.focus()
+      wc.focus()
+      // Wait for actionability before sending input, never by re-sending it.
+      // Popover transitions and scrolling may briefly cover a mounted target.
+      const point = await wc.executeJavaScript(`(async () => {
+        const deadline = performance.now() + 5000
+        for (;;) {
+          const el = ${payload.elementExpression}
+          if (!el) return 'missing'
+          el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+          const rect = el.getBoundingClientRect()
+          const left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right)
+          const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom)
+          const x = Math.floor((left + right) / 2), y = Math.floor((top + bottom) / 2)
+          const hit = document.elementFromPoint(x, y)
+          if (right > left && bottom > top && hit && el.contains(hit)) {
+            window.__e2eInputHandled = new Promise(resolve => {
+              window.addEventListener('mouseup', () => setTimeout(resolve), { capture: true, once: true })
+            })
+            return { x, y }
+          }
+          if (performance.now() >= deadline) return 'blocked'
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }
+      })()`) as { x: number; y: number } | 'missing' | 'blocked'
+      if (typeof point === 'string') return point
+      wc.sendInputEvent({ type: 'mouseMove', ...point })
+      wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+      wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+      // Bounded because the click may hide or destroy this page.
+      await Promise.race([
+        wc.executeJavaScript('window.__e2eInputHandled').catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ])
+      return 'clicked'
+    }, { id, elementExpression })
+  }
+
+  private async clickElement(elementExpression: string): Promise<boolean> {
+    const outcome = await this.sendClick(elementExpression)
+    if (outcome === 'blocked') {
+      throw new Error(`click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`)
+    }
+    return outcome === 'clicked'
+  }
+
+  /** Click the first matching element. Returns false if not found, and throws
+   *  if it stays covered. */
   click(selector: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)})
-      if (!el) return false
-      el.click()
-      return true
-    })()`)
+    return this.clickElement(`document.querySelector(${JSON.stringify(selector)})`)
   }
 
   /** Click the nth (0-based) element matching `selector`. Returns false
    *  if fewer than `index + 1` elements match. */
   clickNth(selector: string, index: number): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
-      const els = document.querySelectorAll(${JSON.stringify(selector)})
-      const el = els[${index}]
-      if (!el) return false
-      el.click()
-      return true
-    })()`)
+    return this.clickElement(`document.querySelectorAll(${JSON.stringify(selector)})[${index}]`)
   }
 
   /**
@@ -172,22 +222,37 @@ export class WebContentsPage {
    * `textSubstring` (case-insensitive). Returns false if no match.
    */
   clickByText(selector: string, textSubstring: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.clickElement(`(() => {
       const needle = ${JSON.stringify(textSubstring.toLowerCase())}
       const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
-      const match = els.find(el => (el.textContent || '').toLowerCase().includes(needle))
-      if (!match) return false
-      match.click()
-      return true
+      return els.find(el => (el.textContent || '').toLowerCase().includes(needle))
     })()`)
   }
 
-  /** Press a key by dispatching a KeyboardEvent (limited; for Escape/Enter and similar). */
-  pressKey(key: string): Promise<void> {
-    return this.wcEval<void>(`(() => {
-      const ev = new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true })
-      document.dispatchEvent(ev)
-    })()`)
+  /** Press a key on the focused element through Electron's keyboard pipeline. */
+  async pressKey(key: string): Promise<void> {
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    const aliases: Record<string, string> = {
+      ArrowDown: 'Down', ArrowUp: 'Up', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space'
+    }
+    const keyCode = aliases[key] ?? key
+    // Like clicks, key presses are actions and must not be retried on a lost response.
+    await this.app.evaluate(async ({ webContents }, payload) => {
+      const wc = webContents.fromId(payload.id)
+      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+      wc.focus()
+      await wc.executeJavaScript(`void (window.__e2eInputHandled = new Promise(resolve => {
+        window.addEventListener('keydown', () => setTimeout(resolve), { capture: true, once: true })
+      }))`)
+      wc.sendInputEvent({ type: 'keyDown', keyCode: payload.keyCode })
+      wc.sendInputEvent({ type: 'keyUp', keyCode: payload.keyCode })
+      // Bounded because the key press may hide or destroy this page.
+      await Promise.race([
+        wc.executeJavaScript('window.__e2eInputHandled').catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ])
+    }, { id, keyCode })
   }
 
   /** Wait until `pred` returns true, polling the webContents. */
@@ -218,8 +283,8 @@ export class WebContentsPage {
     })
   }
 
-  /** Click a toggle `trigger` until `result` becomes visible. A DOM
-   *  `.click()` can dispatch before the component's handler is attached
+  /** Click a toggle `trigger` until `result` becomes visible. A click
+   *  can arrive before the component's handler is attached
    *  (or while the trigger is still disabled) on slow hosted CI runners,
    *  silently swallowing the click on overflow menus and expandable rows.
    *  The re-click decision reads the trigger's `aria-expanded` state
@@ -244,7 +309,7 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
       }
-      if (state === 'closed') await this.click(trigger)
+      if (state === 'closed') await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
         throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
@@ -256,13 +321,10 @@ export class WebContentsPage {
     }
   }
 
-  /** Drive a BaseSelect until the selection actually lands: open the
-   *  trigger's listbox (via `aria-expanded`), click the option whose text
-   *  contains `optionLabel`, and confirm the trigger text reflects it. The
-   *  option click is a raw DOM `.click()`; a store-driven re-render can swap
-   *  the option node between query and dispatch and silently swallow the
-   *  selection, so the whole open-then-pick cycle retries until the trigger
-   *  proves the selection landed. */
+  /** Drive a BaseSelect until the selection lands: open its listbox, click
+   *  the exact option label, and confirm the trigger reflects it. A
+   *  store-driven re-render can replace the option during interaction, so
+   *  re-check the selected value before deciding whether to try again. */
   async selectOption(
     trigger: string,
     optionLabel: string,
@@ -282,9 +344,14 @@ export class WebContentsPage {
         throw new Error(`selectOption: trigger ${trigger} not found`)
       }
       if (state === 'closed') {
-        await this.click(trigger)
+        await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       } else {
-        await this.clickByText('.ui-select-option', optionLabel)
+        await this.sendClick(`(() => {
+          const trigger = document.querySelector(${JSON.stringify(trigger)})
+          const listbox = document.getElementById(trigger?.getAttribute('aria-controls') || '')
+          return Array.from(listbox?.querySelectorAll('[role="option"]') || []).find(option =>
+            option.querySelector('.ui-select-option-label')?.textContent.trim() === ${JSON.stringify(optionLabel)})
+        })()`)
       }
       if (Date.now() > deadline) {
         throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)
