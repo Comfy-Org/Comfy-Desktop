@@ -3580,6 +3580,8 @@ describe('agent requirements at launch', () => {
   }
 
   const agentReqPath = (): string => path.join(installDir, 'ComfyUI', 'agent_requirements.txt')
+  const frontendRestores = (): unknown[] =>
+    pipHarness.calls.filter((args) => String(args[4]).startsWith('.launch-frontend-restore-'))
 
   const harnessInstall = (): InstallationRecord =>
     ({
@@ -4585,8 +4587,6 @@ describe('agent requirements at launch', () => {
     })
 
     describe("with a frontend the last override put in, and core's placeholder agent", () => {
-      const restores = (): unknown[] =>
-        pipHarness.calls.filter((args) => String(args[4]).startsWith('.launch-frontend-restore-'))
       const recordedFrontend = (): unknown =>
         (launchHarness.records!.get(ID) as { frontendVersionOverride?: unknown })
           .frontendVersionOverride
@@ -4616,7 +4616,14 @@ describe('agent requirements at launch', () => {
                 ? { code: 1, output: 'error: failed to remove file `x.pyd`: Access is denied.\n' }
                 : { code: 0, output: '' })
         ],
-        ['is refused', { 'not-an-agent-package': '1.0.0' }, 'unknown_package', () => {}]
+        ['is refused', { 'not-an-agent-package': '1.0.0' }, 'unknown_package', () => {}],
+        [
+          'is not downloaded yet',
+          { 'comfy-agent': '0.2.3' },
+          'not_cached',
+          () =>
+            (pipHarness.respond = (args) => ({ code: missesOverride(args) ? 2 : 0, output: '' }))
+        ]
       ])(
         'keeps the installed frontend with the kept agent when the override %s',
         async (_label, override, reason, arrange) => {
@@ -4629,24 +4636,28 @@ describe('agent requirements at launch', () => {
           expect(overrideEvents()).toEqual([
             expect.objectContaining({ reason, kept_agent: 'comfy-agent==0.1.0rc5' })
           ])
-          expect(restores(), "core's 1.57.4 is not put back").toEqual([])
+          expect(frontendRestores(), "core's 1.57.4 is not put back").toEqual([])
           expect(
             recordedFrontend(),
             'so a later launch without the agent still restores it'
           ).toEqual({ version: '1.60.2' })
           expect(sent.join('')).toContain(
-            'Keeping the installed comfyui-frontend-package 1.60.2 with the agent'
+            'Keeping the installed comfyui-frontend-package with the agent'
           )
         }
       )
 
       it("keeps it even when it is older than core's own pin", async () => {
         launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.0' } })
+        pipHarness.installed = JSON.stringify([
+          { name: 'comfy-agent', version: '0.1.0rc5' },
+          { name: 'comfyui-frontend-package', version: '1.55.0' }
+        ])
         serveCampaign({ 'not-an-agent-package': '1.0.0' })
 
         await launchAndPrint()
 
-        expect(restores(), 'it is the frontend the kept agent was shipped with').toEqual([])
+        expect(frontendRestores(), 'it is the frontend the kept agent was shipped with').toEqual([])
         expect(recordedFrontend()).toEqual({ version: '1.55.0' })
       })
 
@@ -4660,7 +4671,7 @@ describe('agent requirements at launch', () => {
         await launchAndPrint()
 
         expect(overrideEvents()).toEqual([expect.objectContaining({ kept_agent: null })])
-        expect(restores()).toHaveLength(1)
+        expect(frontendRestores()).toHaveLength(1)
         expect(recordedFrontend()).toBeUndefined()
       })
 
@@ -4673,7 +4684,7 @@ describe('agent requirements at launch', () => {
         expect(overrideEvents()).toEqual([
           expect.objectContaining({ kept_agent: 'comfy-agent==0.1.0rc5' })
         ])
-        expect(restores()).toEqual([])
+        expect(frontendRestores()).toEqual([])
         expect(sent.join('')).not.toContain('Keeping the installed comfyui-frontend-package')
       })
     })
@@ -4808,8 +4819,6 @@ describe('agent requirements at launch', () => {
     })
 
     describe('with a frontend a previous override put in', () => {
-      const restores = (): unknown[] =>
-        pipHarness.calls.filter((args) => String(args[4]).startsWith('.launch-frontend-restore-'))
       const withFrontend = (id: string): ActionContext => {
         const ctx = ctxFor(id)
         ctx.inst = { ...ctx.inst, frontendVersionOverride: { version: '1.60.2' } } as never
@@ -4827,9 +4836,9 @@ describe('agent requirements at launch', () => {
         await handleLaunch(withFrontend('agent-no-answer-kept-frontend'))
 
         expect(spawnArgs).toContain('--enable-agent')
-        expect(restores()).toEqual([])
+        expect(frontendRestores()).toEqual([])
         expect(sent.join('')).toContain(
-          'Keeping the installed comfyui-frontend-package 1.60.2 with the agent'
+          'Keeping the installed comfyui-frontend-package with the agent'
         )
       })
 
@@ -4844,7 +4853,7 @@ describe('agent requirements at launch', () => {
         await handleLaunch(withFrontend('agent-no-answer-opted-out-frontend'))
 
         expect(spawnArgs).not.toContain('--enable-agent')
-        expect(restores()).toHaveLength(1)
+        expect(frontendRestores()).toHaveLength(1)
       })
     })
   })

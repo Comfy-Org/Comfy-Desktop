@@ -1693,7 +1693,7 @@ async function runLaunch(
     makeSendOutput(
       sender,
       installationId
-    )(`Keeping the installed ${FRONTEND_PACKAGE} ${recordedFrontend} with the agent\n`)
+    )(`Keeping the installed ${FRONTEND_PACKAGE} with the agent\n`)
   } else if (frontendPin !== undefined) {
     const pinned = typeof frontendPin === 'string' ? frontendPin : pinSpecifier(frontendPin)
     if (recordedFrontend !== pinned) {
