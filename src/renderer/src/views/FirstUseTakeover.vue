@@ -62,16 +62,12 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import type { GpuTier } from '../../../shared/gpuTier'
 import type { CloudUserTier, SystemInfo } from '../../../types/ipc'
 
-// These native-control adapters retain the existing onboarding dimensions,
-// wrapping and focus outlines while using the shared button component.
-const buttonClass =
-  'touch-auto appearance-auto [&]:[appearance:button] whitespace-normal focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto'
-const legalLinkClass = `${buttonClass} static inline border-0 rounded-[2px] bg-transparent p-0 [font:inherit] text-neutral-100 underline transition-none hover:bg-transparent hover:text-comfy-yellow`
+const legalLinkClass = 'inline h-auto whitespace-normal p-0 text-inherit underline [font:inherit]'
 const modifierClass =
   'inline-flex cursor-pointer items-start gap-2 text-[13px] text-neutral-300 transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none'
 const consentClass =
   'flex cursor-pointer items-center gap-2.5 text-[13px] leading-[1.5] text-neutral-200'
-const branchCardClass = `${buttonClass} static flex w-full items-center justify-normal gap-3 rounded-md border border-solid border-transparent bg-[rgba(138,134,136,0.05)] p-4 [font:inherit] text-left text-neutral-200 backdrop-blur-[75px] transition-[background,border-color,color] duration-120 ease-[ease] hover:border-[rgba(194,191,185,0.09)] hover:bg-[rgba(138,134,136,0.1)] hover:text-neutral-100`
+const branchCardClass = 'h-auto w-full justify-start gap-3 whitespace-normal p-4 text-left'
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -907,7 +903,11 @@ defineExpose({ open, resetContinue })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isBrandStep" :vignette="step === 'start'">
+  <BrandTakeoverLayout
+    v-if="isBrandStep"
+    :vignette="step === 'start'"
+    :aria-label="$t(step === 'localBranch' ? 'firstUse.localBranchTitle' : 'firstUse.pickTitle')"
+  >
     <!-- Step 1: Merged start screen. Wordmark on top, Cloud-vs-Local
          radio cards in the middle, Express-Install opt-out modifier,
          then the legal/telemetry checkboxes and the Continue / Cancel
@@ -959,11 +959,10 @@ defineExpose({ open, resetContinue })
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
                 <Button
-                  size="unset"
-                  variant="textonly"
+                  size="icon-sm"
+                  variant="muted-textonly"
                   type="button"
-                  class="start-cloud-info static inline-flex size-[22px] items-center justify-center rounded-[999px] border-0 bg-transparent p-0 text-[color-mix(in_oklab,var(--neutral-100)_65%,transparent)] transition-[color,background] duration-120 ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100"
-                  :class="buttonClass"
+                  class="start-cloud-info"
                   :aria-label="$t('firstUse.whyTryCloud')"
                   data-testid="first-use-why-cloud"
                   @click.stop="openWhyCloud"
@@ -1138,7 +1137,7 @@ defineExpose({ open, resetContinue })
               <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTosHintPrefix') }}
                 <Button
-                  size="unset"
+                  size="lg"
                   variant="textonly"
                   type="button"
                   :class="legalLinkClass"
@@ -1149,7 +1148,7 @@ defineExpose({ open, resetContinue })
                 </Button>
                 {{ $t('firstUse.consentTosHintSep') }}
                 <Button
-                  size="unset"
+                  size="lg"
                   variant="textonly"
                   type="button"
                   :class="legalLinkClass"
@@ -1173,7 +1172,7 @@ defineExpose({ open, resetContinue })
               <span class="start-consent-row__text whitespace-normal">
                 {{ $t('firstUse.consentTelemetryHint') }}
                 <Button
-                  size="unset"
+                  size="lg"
                   variant="textonly"
                   type="button"
                   :class="legalLinkClass"
@@ -1206,15 +1205,10 @@ defineExpose({ open, resetContinue })
             </label>
           </div>
           <Button
-            size="unset"
-            variant="textonly"
-            class="start-continue static inline-flex min-w-40 shrink-0 items-center justify-center gap-2 rounded-lg border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium text-neutral-900 transition-[background,border-color,color] duration-120 ease-[ease] [&:focus-visible]:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-comfy-yellow disabled:hover:bg-comfy-yellow"
-            :class="[
-              buttonClass,
-              acceptedTos
-                ? 'enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)]'
-                : 'start-continue--locked cursor-not-allowed opacity-45 hover:border-comfy-yellow hover:bg-comfy-yellow'
-            ]"
+            size="lg"
+            variant="inverted"
+            class="start-continue min-w-40 shrink-0"
+            :class="{ 'start-continue--locked cursor-not-allowed opacity-45': !acceptedTos }"
             type="button"
             data-testid="first-use-continue"
             :disabled="isContinuing || pickedChoice === null"
@@ -1261,10 +1255,10 @@ defineExpose({ open, resetContinue })
         :aria-label="$t('firstUse.localBranchTitle')"
       >
         <Button
-          size="unset"
-          variant="textonly"
+          size="lg"
+          variant="secondary"
           type="button"
-          class="lb-card lb-card--recommended [&]:border-[rgba(194,191,185,0.09)] [&]:bg-[rgba(138,134,136,0.1)] [&]:text-neutral-100 [box-shadow:0_1px_0_0_rgba(255,255,255,0.1)_inset]"
+          class="lb-card lb-card--recommended ring-1 ring-ring"
           :class="branchCardClass"
           data-testid="first-use-local-migrate"
           @click="chooseMigrate"
@@ -1291,8 +1285,8 @@ defineExpose({ open, resetContinue })
           />
         </Button>
         <Button
-          size="unset"
-          variant="textonly"
+          size="lg"
+          variant="secondary"
           type="button"
           class="lb-card"
           :class="branchCardClass"
@@ -1322,10 +1316,9 @@ defineExpose({ open, resetContinue })
     <template #footer-left>
       <Button
         v-if="step === 'localBranch'"
-        size="unset"
+        size="lg"
         variant="textonly"
-        class="pick-why-cloud absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2 inline-flex items-center justify-normal gap-1.5 rounded-lg border-0 bg-transparent px-1 py-1.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-normal text-[color-mix(in_oklab,var(--neutral-100)_70%,transparent)] transition-none hover:bg-transparent hover:text-neutral-100 hover:transition-colors hover:duration-120 hover:ease-[ease] focus-visible:rounded"
-        :class="buttonClass"
+        class="pick-why-cloud absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2"
         data-testid="first-use-local-branch-back"
         type="button"
         @click="step = 'start'"
@@ -1373,18 +1366,20 @@ defineExpose({ open, resetContinue })
       <template v-if="step === 'mirrors'">
         <div class="first-use-mirror-buttons flex gap-2">
           <Button
-            size="unset"
-            variant="textonly"
-            class="static touch-auto block appearance-auto [&]:[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--border)]"
+            type="button"
+            size="lg"
+            variant="secondary"
+            class="first-use-mirrors-skip"
             data-testid="first-use-mirrors-skip"
             @click="chooseMirrors(false)"
           >
             {{ $t('firstUse.notNow') }}
           </Button>
           <Button
-            size="unset"
-            variant="textonly"
-            class="static touch-auto block appearance-auto [&]:[appearance:button] rounded-lg border border-solid px-4 py-2 font-sans text-sm leading-[1.5] font-normal whitespace-normal transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-background hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-120 hover:ease-[ease]"
+            type="button"
+            size="lg"
+            variant="inverted"
+            class="first-use-mirrors-accept"
             data-testid="first-use-mirrors-accept"
             @click="chooseMirrors(true)"
           >

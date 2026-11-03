@@ -135,7 +135,7 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
@@ -633,6 +633,7 @@ function installMockApi(initial?: {
 
 function mountPanel() {
   return mount(PanelApp, {
+    attachTo: document.body,
     global: { plugins: [createTestI18n(), createPinia()] }
   })
 }
@@ -1308,7 +1309,9 @@ describe('PanelApp', () => {
 
     await wrapper.get('.performance-test__workspace-select button').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+    await new DOMWrapper(document.body)
+      .get('[data-testid="devplatform-workspace-personal"]')
+      .trigger('click')
     await flushPromises()
 
     expect(instanceSelect.text()).toBe('Select an instance')

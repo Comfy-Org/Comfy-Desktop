@@ -150,9 +150,8 @@ async function isSystemModalVisible(app: ElectronApplication): Promise<boolean> 
  *  prompt doesn't haunt the next assertion. The popup's renderer
  *  treats Escape as a `cancel` ack, so dispatching the keydown is
  *  enough — main runs the cancel path and hides the view. Dispatched
- *  on `document` because BaseAlert's overlay binds the ESC listener
- *  there (via `useModalOverlay`), and `window.dispatchEvent` does not
- *  propagate to document. */
+ *  on `document` so it bubbles to the dialog library's `window` ESC
+ *  listener. */
 async function closeSystemModalIfOpen(app: ElectronApplication): Promise<void> {
   const id = await findWebContentsId(app, 'comfySystemModal.html')
   if (id === null) return

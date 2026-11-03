@@ -634,7 +634,10 @@ defineExpose({ startOperation, showOperation })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="installationId && currentOp">
+  <BrandTakeoverLayout
+    v-if="installationId && currentOp"
+    :aria-label="currentOp.title || $t('progress.working')"
+  >
     <template #logo-right>
       <InstallShowcase
         v-if="showShowcase"

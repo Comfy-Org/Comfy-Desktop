@@ -60,7 +60,7 @@ function getLogText(): string {
 </script>
 
 <template>
-  <BrandTakeoverLayout :aria-label="ariaLabel">
+  <BrandTakeoverLayout :aria-label="ariaLabel || title">
     <div
       class="brand-progress relative flex w-full flex-auto items-center justify-center self-stretch"
     >

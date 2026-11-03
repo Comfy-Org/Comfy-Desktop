@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
+import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -170,42 +173,38 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
       >
         {{ t('downloadsTab.title') }}
       </h2>
-      <button
+      <Button
         type="button"
-        class="dlm-close inline-flex size-8 flex-none items-center justify-center rounded-lg border border-solid border-transparent bg-[color-mix(in_oklab,var(--text)_4%,transparent)] p-0 text-neutral-100 opacity-70 cursor-pointer transition-[background,border-color,opacity] duration-[120ms] ease-[ease] hover:border-[color-mix(in_oklab,var(--neutral-100)_44%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-950)_85%,transparent)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid]"
+        variant="textonly"
+        size="icon"
+        class="dlm-close shrink-0"
         :aria-label="t('common.close')"
         @click="bridge?.close()"
       >
         <X :size="18" />
-      </button>
+      </Button>
     </header>
 
     <div class="dlm-modal-body flex min-h-0 flex-auto flex-col overflow-y-auto px-6 py-4">
       <div class="dlm-body flex min-h-full flex-auto flex-col">
-        <div
+        <ToggleGroup
           v-if="visibleFilters.length > 0"
-          class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 flex gap-1.5 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] bg-[var(--modal-surface-bg,#27202d)] px-6 pt-3 pb-2.5"
-          role="tablist"
+          v-model="filter"
+          type="single"
+          :allow-empty="false"
+          roving-focus
+          class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
           :aria-label="t('downloadsTab.filterAriaLabel')"
         >
-          <button
+          <ToggleGroupItem
             v-for="f in visibleFilters"
             :key="f.key"
-            type="button"
-            class="dlm-filter-chip inline-flex flex-1 items-center justify-center rounded-md border border-solid px-2 py-[5px] text-[12px] text-inherit cursor-pointer transition-[opacity,background,border-color] duration-150 ease-[ease] hover:opacity-100"
-            :class="
-              filter === f.key
-                ? 'active bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] border-[color-mix(in_oklab,var(--neutral-100)_22%,transparent)] opacity-100'
-                : 'bg-transparent border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] opacity-65'
-            "
-            role="tab"
-            :aria-selected="filter === f.key"
-            @click="filter = f.key"
+            :value="f.key"
+            class="dlm-filter-chip flex-1 text-xs"
+            :class="{ active: filter === f.key }"
+            >{{ f.label }}</ToggleGroupItem
           >
-            {{ f.label }}
-          </button>
-        </div>
-
+        </ToggleGroup>
         <div
           v-if="filtered.length === 0"
           class="dlm-empty flex flex-auto flex-col items-center justify-center gap-2 p-6 text-center"
@@ -329,68 +328,80 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
               >
                 {{ progressPercent(d) }}%
               </span>
-              <button
+              <Button
                 v-if="d.status === 'downloading'"
                 type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
+                variant="secondary"
+                size="md"
+                class="dlm-btn"
                 :title="t('downloadsPopup.pause')"
                 :aria-label="t('downloadsPopup.pause')"
                 @click="pause(d)"
               >
                 <PauseCircle :size="14" />
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="d.status === 'paused'"
                 type="button"
-                class="dlm-btn dlm-btn-primary border-transparent bg-[var(--accent,#3b82f6)] text-background hover:border-transparent hover:bg-[var(--accent-hover,#2563eb)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
+                variant="inverted"
+                size="md"
+                class="dlm-btn"
                 :title="t('downloadsPopup.resume')"
                 :aria-label="t('downloadsPopup.resume')"
                 @click="resume(d)"
               >
                 <PlayCircle :size="14" />
                 {{ t('downloadsPopup.resume') }}
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="d.status === 'error' || d.status === 'cancelled'"
                 type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
+                variant="secondary"
+                size="md"
+                class="dlm-btn"
                 :title="t('downloadsTab.retry')"
                 :aria-label="t('downloadsTab.retry')"
                 @click="retry(d)"
               >
                 <RotateCcw :size="14" />
                 {{ t('downloadsTab.retry') }}
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="d.status === 'completed' && d.savePath"
                 type="button"
-                class="dlm-btn border-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] text-inherit hover:border-[color-mix(in_oklab,var(--neutral-100)_20%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] inline-flex items-center gap-1 rounded-md border border-solid px-2.5 py-1 text-[12px] whitespace-nowrap cursor-pointer transition-[background,border-color] duration-[120ms] ease-[ease]"
+                variant="secondary"
+                size="md"
+                class="dlm-btn"
                 @click="showInFolder(d)"
               >
                 <FolderOpen :size="14" />
                 {{ revealLabel }}
-              </button>
+              </Button>
 
-              <button
+              <Button
                 v-if="!isTerminal(d.status)"
                 type="button"
-                class="dlm-x inline-flex size-6 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-[var(--download-close-opacity,0.5)] cursor-pointer transition-[opacity,background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100 hover:opacity-100"
+                variant="muted-textonly"
+                size="icon"
+                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
                 :title="t('downloadsPopup.cancel')"
                 :aria-label="t('downloadsPopup.cancel')"
                 @click="cancel(d)"
               >
                 <XCircle :size="14" />
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="isTerminal(d.status)"
                 type="button"
-                class="dlm-x inline-flex size-6 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-[var(--download-close-opacity,0.5)] cursor-pointer transition-[opacity,background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] hover:text-neutral-100 hover:opacity-100"
+                variant="muted-textonly"
+                size="icon"
+                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
                 :title="t('downloadsPopup.remove')"
                 :aria-label="t('downloadsPopup.remove')"
                 @click="dismissOne(d)"
               >
                 <X :size="14" />
-              </button>
+              </Button>
             </div>
           </li>
         </ul>
@@ -413,15 +424,17 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             {{ t('downloadsTab.footerCompleted', { n: completedCount }) }}
           </span>
         </span>
-        <button
+        <Button
           v-if="finishedCount > 0"
           type="button"
-          class="dlm-clear-btn inline-flex items-center gap-1 rounded-md border border-solid border-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)] bg-transparent px-2.5 py-[5px] text-[12px] text-text-muted cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)] hover:text-neutral-100"
+          variant="muted-textonly"
+          size="md"
+          class="dlm-clear-btn"
           @click="clearFinished"
         >
           <Trash2 :size="13" />
           {{ t('downloadsTab.clearFinished') }}
-        </button>
+        </Button>
       </div>
     </footer>
   </div>
