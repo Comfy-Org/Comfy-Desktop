@@ -2281,6 +2281,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // bindings). Last writer wins; only called once at `whenReady`.
   activeBindings = bindings
 
+  ipcMain.handle('comfy-window:build-storage-snapshot', () => buildPickerStorageSlice())
+
   ipcMain.handle('desktop2-open-terminal', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false

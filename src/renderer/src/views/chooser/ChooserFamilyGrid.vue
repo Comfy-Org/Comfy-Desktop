@@ -20,6 +20,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   pick: [installation: Installation]
+  'open-details': [installation: Installation]
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
@@ -77,6 +78,7 @@ function unlockTileSize(el: Element): void {
       :is-promoting-to-workspace="props.isPromotingToWorkspace(installation)"
       @why-cloud="emit('why-cloud')"
       @pick="emit('pick', $event)"
+      @open-details="emit('open-details', $event)"
       @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"
       @open-kebab-menu="(event, inst) => emit('open-kebab-menu', event, inst)"
       @trigger-action="(action, inst) => emit('trigger-action', action, inst)"

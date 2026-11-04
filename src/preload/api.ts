@@ -114,6 +114,7 @@ export function buildElectronApi(): ElectronApi {
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>

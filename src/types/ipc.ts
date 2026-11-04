@@ -169,6 +169,12 @@ export interface Installation {
 /** Full-page screens of a dashboard window, reachable from its sidebar. */
 export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
 
+export interface BuildStorageSnapshot {
+  sharedDirectoriesFields: Record<string, unknown>[]
+  modelsDirs: { path: string; isPrimary: boolean }[]
+  modelsSystemDefault: string
+}
+
 export interface RunningInstance {
   installationId: string
   installationName: string
@@ -1455,6 +1461,8 @@ export interface ElectronApi {
   signalOverlayReady(): void
   /** Switch this dashboard window to one of its full-page screens. */
   navigatePanel(page: DashboardPage): void
+  /** Shared storage settings shown on a build's Storage tab. */
+  getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)

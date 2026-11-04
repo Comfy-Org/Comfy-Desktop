@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import {
   CheckCircle,
   XCircle,
+  ChevronDown,
   ChevronUp,
   HardDrive,
   SlidersHorizontal,
@@ -100,6 +101,8 @@ interface Props {
   currentView?: ViewKind
   /** Raw active-install category of the host (`null` on a dashboard host). */
   currentCategory?: Category | null
+  /** Hosted as a full page: segmented tabs, with the actions teleported here. */
+  pageActionsTarget?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -111,6 +114,7 @@ const props = withDefaults(defineProps<Props>(), {
   activeInstallationId: null,
   currentView: 'dashboard',
   currentCategory: null,
+  pageActionsTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
@@ -138,6 +142,9 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const isPage = computed(() => props.pageActionsTarget !== undefined)
+const menuChevron = computed(() => (isPage.value ? ChevronDown : ChevronUp))
 
 const activeTab = ref<ComfyUISettingsTab>(props.initialTab)
 
@@ -394,6 +401,7 @@ const statusSections = computed(() => sectionsForTab('status').value)
 const storageSections = computed(() => sectionsForTab('storage').value)
 
 const rootRef = useTemplateRef<HTMLElement>('root')
+const footerRef = useTemplateRef<HTMLElement>('footer')
 const tabsRef = useTemplateRef<HTMLElement>('tabs')
 
 // Tooltips that echo the visible label add nothing, so only keep them
@@ -860,8 +868,13 @@ defineExpose({
       <TabsList as-child>
         <nav
           ref="tabs"
-          class="settings-v2-tabs @container/settings-tabs flex min-w-0 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden border-b border-solid border-[var(--chooser-surface-border)] p-3"
-          :class="{ 'is-subpage-active opacity-60': subPage !== null }"
+          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
+          :class="[
+            isPage
+              ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
+              : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
+            { 'is-subpage-active opacity-60': subPage !== null }
+          ]"
           :aria-label="t('comfyUISettings.title', 'Settings')"
         >
           <Tooltip
@@ -876,28 +889,34 @@ defineExpose({
               variant="panel"
               :disabled="opInflight && activeTab !== tab.key"
               class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
-              :class="{
-                'is-active': activeTab === tab.key,
-                'is-locked': opInflight && activeTab !== tab.key
-              }"
+              :class="[
+                {
+                  'is-active': activeTab === tab.key,
+                  'is-locked': opInflight && activeTab !== tab.key
+                },
+                isPage &&
+                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+              ]"
               :data-testid="TID.settingsTab(tab.key)"
               @click="selectTab(tab.key)"
             >
               <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
                 <component
                   :is="tab.icon"
+                  v-if="!isPage"
                   :size="14"
                   aria-hidden="true"
                   class="settings-v2-tab-icon shrink-0 opacity-85"
                 />
                 <span
                   v-if="tab.key === 'update' && showUpdateBadge"
-                  :class="
+                  :class="[
                     activeTab === tab.key
                       ? 'border-neutral-700'
-                      : 'border-[var(--modal-surface-bg)]'
-                  "
-                  class="settings-v2-tab-badge absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                      : 'border-[var(--modal-surface-bg)]',
+                    !isPage && 'absolute -right-px -bottom-px'
+                  ]"
+                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
                   aria-hidden="true"
                 ></span>
               </span>
@@ -909,7 +928,8 @@ defineExpose({
 
       <TabsContent :value="activeTab" as-child force-mount>
         <section
-          class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-4"
+          class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
+          :class="isPage ? 'pt-5 pb-8' : 'p-4'"
         >
           <p
             v-if="!installation"
@@ -1206,108 +1226,116 @@ defineExpose({
         </section>
       </TabsContent>
 
-      <footer
-        class="settings-v2-footer flex shrink-0 items-center justify-end gap-2 border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
-      >
-        <Transition
-          name="settings-v2-notice-fade"
-          enter-active-class="settings-v2-notice-fade-enter-active transition-opacity duration-300 ease-[ease]"
-          leave-active-class="settings-v2-notice-fade-leave-active transition-opacity duration-300 ease-[ease]"
-          enter-from-class="settings-v2-notice-fade-enter-from opacity-0"
-          leave-to-class="settings-v2-notice-fade-leave-to opacity-0"
+      <Teleport defer :to="pageActionsTarget" :disabled="!pageActionsTarget">
+        <footer
+          ref="footer"
+          class="settings-v2-footer flex shrink-0 items-center justify-end gap-2"
+          :class="
+            !isPage &&
+            'border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3'
+          "
         >
-          <span
-            v-if="notice"
-            class="settings-v2-notice mr-auto text-[13px] leading-[1.3] text-text-muted"
-            role="status"
-            aria-live="polite"
+          <Transition
+            name="settings-v2-notice-fade"
+            enter-active-class="settings-v2-notice-fade-enter-active transition-opacity duration-300 ease-[ease]"
+            leave-active-class="settings-v2-notice-fade-leave-active transition-opacity duration-300 ease-[ease]"
+            enter-from-class="settings-v2-notice-fade-enter-from opacity-0"
+            leave-to-class="settings-v2-notice-fade-leave-to opacity-0"
           >
-            {{ notice }}
-          </span>
-        </Transition>
+            <span
+              v-if="notice"
+              class="settings-v2-notice mr-auto text-[13px] leading-[1.3] text-text-muted"
+              role="status"
+              aria-live="polite"
+            >
+              {{ notice }}
+            </span>
+          </Transition>
 
-        <div
-          class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
-          :class="{ 'has-caret': caretActions.length > 0 }"
-        >
-          <Button
-            variant="inverted"
-            size="md"
-            type="button"
-            class="settings-v2-relaunch min-w-[200px] flex-[0_1_auto] [&.is-split]:rounded-r-none"
-            :class="[
-              { 'is-pending-restart': hasPendingRestart },
-              { 'is-split': caretActions.length > 0 }
-            ]"
-            :disabled="!installation || opBlocksFooter"
-            :data-testid="TID.pickerPrimaryCta"
-            @click="handlePrimaryAction"
+          <div
+            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
+            :class="{ 'has-caret': caretActions.length > 0 }"
           >
-            <component
-              :is="primaryActionIcon"
-              :size="15"
-              class="settings-v2-relaunch-icon shrink-0 opacity-85"
-              aria-hidden="true"
-            />
-            <span>{{ primaryActionLabel }}</span>
-          </Button>
-          <template v-if="caretActions.length > 0">
             <Button
               variant="inverted"
-              size="icon"
+              size="md"
               type="button"
-              class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
-              data-more-trigger
-              :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
-              aria-haspopup="menu"
-              :aria-expanded="caretMenuOpen"
-              :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
+              class="settings-v2-relaunch flex-[0_1_auto] [&.is-split]:rounded-r-none"
+              :class="[
+                isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
+                { 'is-pending-restart': hasPendingRestart },
+                { 'is-split': caretActions.length > 0 }
+              ]"
               :disabled="!installation || opBlocksFooter"
-              :data-testid="TID.pickerNewWindow"
-              @click="toggleCaretMenu"
+              :data-testid="TID.pickerPrimaryCta"
+              @click="handlePrimaryAction"
             >
-              <ChevronUp :size="14" />
+              <component
+                :is="primaryActionIcon"
+                :size="15"
+                class="settings-v2-relaunch-icon shrink-0 opacity-85"
+                aria-hidden="true"
+              />
+              <span>{{ primaryActionLabel }}</span>
+            </Button>
+            <template v-if="caretActions.length > 0">
+              <Button
+                variant="inverted"
+                size="icon"
+                type="button"
+                class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
+                data-more-trigger
+                :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
+                aria-haspopup="menu"
+                :aria-expanded="caretMenuOpen"
+                :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
+                :disabled="!installation || opBlocksFooter"
+                :data-testid="TID.pickerNewWindow"
+                @click="toggleCaretMenu"
+              >
+                <component :is="menuChevron" :size="14" />
+              </Button>
+              <MoreMenu
+                :open="caretMenuOpen"
+                :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
+                :actions="caretActions"
+                :heading="t('instancePicker.windowOptions', 'Window options')"
+                @close="closeCaretMenu"
+                @pick="handleCaretPick"
+              />
+            </template>
+          </div>
+
+          <div class="settings-v2-more-wrap relative inline-flex">
+            <Button
+              variant="secondary"
+              size="md"
+              type="button"
+              class="settings-v2-more"
+              data-more-trigger
+              :class="{ 'is-active': moreMenuOpen }"
+              aria-haspopup="menu"
+              :aria-expanded="moreMenuOpen"
+              :aria-label="t('comfyUISettings.more', 'More')"
+              :disabled="
+                !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
+              "
+              :data-testid="TID.pickerMoreTrigger"
+              @click="toggleMoreMenu"
+            >
+              {{ t('comfyUISettings.more', 'More') }}
+              <component :is="menuChevron" :size="14" />
             </Button>
             <MoreMenu
-              :open="caretMenuOpen"
-              :anchor="rootRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
-              :actions="caretActions"
-              :heading="t('instancePicker.windowOptions', 'Window options')"
-              @close="closeCaretMenu"
-              @pick="handleCaretPick"
+              :open="moreMenuOpen"
+              :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
+              :actions="pinBottomMenuActions"
+              @close="closeMoreMenu"
+              @pick="runAction"
             />
-          </template>
-        </div>
-
-        <div class="settings-v2-more-wrap relative inline-flex">
-          <Button
-            variant="secondary"
-            size="md"
-            type="button"
-            class="settings-v2-more"
-            data-more-trigger
-            :class="{ 'is-active': moreMenuOpen }"
-            aria-haspopup="menu"
-            :aria-expanded="moreMenuOpen"
-            :aria-label="t('comfyUISettings.more', 'More')"
-            :disabled="
-              !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
-            "
-            :data-testid="TID.pickerMoreTrigger"
-            @click="toggleMoreMenu"
-          >
-            {{ t('comfyUISettings.more', 'More') }}
-            <ChevronUp :size="14" />
-          </Button>
-          <MoreMenu
-            :open="moreMenuOpen"
-            :anchor="rootRef?.querySelector<HTMLElement>('.settings-v2-more')"
-            :actions="pinBottomMenuActions"
-            @close="closeMoreMenu"
-            @pick="runAction"
-          />
-        </div>
-      </footer>
+          </div>
+        </footer>
+      </Teleport>
     </div>
   </Tabs>
 </template>

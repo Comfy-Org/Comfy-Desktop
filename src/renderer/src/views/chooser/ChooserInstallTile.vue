@@ -43,6 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   pick: [installation: Installation]
+  'open-details': [installation: Installation]
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
@@ -236,7 +237,12 @@ const launchLabel = computed(() =>
   opensExisting.value ? t('chooser.openInstall') : t('chooser.startInstall')
 )
 
-function handleClick(): void {
+function openDetails(): void {
+  if (isStopping.value || isUpdating.value) return
+  emit('open-details', inst.value)
+}
+
+function launch(): void {
   if (isStopping.value || isUpdating.value) return
   emit('pick', inst.value)
 }
@@ -263,9 +269,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
-    @click="handleClick"
-    @keydown.enter="handleClick"
-    @keydown.space.prevent="handleClick"
+    @click="openDetails"
+    @keydown.enter="openDetails"
+    @keydown.space.prevent="openDetails"
     @contextmenu.prevent="handleContextMenu"
   >
     <span
@@ -393,7 +399,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           :class="actionPill ? 'w-7' : 'px-2.5'"
           :aria-label="launchLabel"
           :title="actionPill ? launchLabel : undefined"
-          @click.stop="handleClick"
+          @click.stop="launch"
           @keydown.enter.stop
           @keydown.space.stop
         >

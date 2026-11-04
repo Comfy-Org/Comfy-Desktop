@@ -304,7 +304,18 @@ describe('ChooserView', () => {
     expect(wrapper.findAll('.chooser-tile-name').map((name) => name.text())).toEqual(['Alpha'])
   })
 
-  it('starts an idle build from its button without picking it twice', async () => {
+  it("opens a build's details from its card without launching it", async () => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    await wrapper.get('.chooser-tile--install').trigger('click')
+
+    expect(wrapper.emitted('open-details')?.[0]?.[0]).toMatchObject({ id: 'a' })
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('starts an idle build from its button without opening its details', async () => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
     const wrapper = mountChooser()
     await flushPromises()
@@ -315,6 +326,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(wrapper.emitted('pick')).toHaveLength(1)
+    expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 
   it('leads with Update and keeps starting as a named icon', async () => {
@@ -348,7 +360,7 @@ describe('ChooserView', () => {
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Comfy Cloud'))
     expect(tile).toBeTruthy()
-    await tile!.trigger('click')
+    await tile!.get('.chooser-tile-launch').trigger('click')
     await flushPromises()
     const events = wrapper.emitted('pick')
     expect(events).toBeDefined()
@@ -441,7 +453,7 @@ describe('ChooserView', () => {
     expect(installTiles[1]!.text()).toContain('OldCloud')
   })
 
-  it('emits pick when an install tile is single-clicked', async () => {
+  it("emits pick from a tile's launch button", async () => {
     // Tile-body click launches via pickInstall; the rest live behind the kebab.
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()
@@ -449,7 +461,7 @@ describe('ChooserView', () => {
     const tiles = wrapper.findAll('.chooser-tile')
     const alphaTile = tiles.find((t) => t.text().includes('Alpha'))
     expect(alphaTile).toBeTruthy()
-    await alphaTile!.trigger('click')
+    await alphaTile!.get('.chooser-tile-launch').trigger('click')
     const events = wrapper.emitted('pick')
     expect(events).toBeDefined()
     expect((events![0]![0] as Installation).id).toBe('a')
@@ -484,7 +496,7 @@ describe('ChooserView', () => {
     expect(tile.text()).toContain('Running')
     expect(tile.text()).toContain('Standalone')
 
-    await tile.trigger('click')
+    await tile.get('.chooser-tile-launch').trigger('click')
     await flushPromises()
     // Running tile focuses the existing window; it must NOT open a second one.
     expect(api.focusComfyWindow).toHaveBeenCalledWith('a')
@@ -521,7 +533,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('focuses the existing window instead of relaunching when a crashed tile body is clicked', async () => {
+  it('focuses the existing window instead of relaunching a crashed build', async () => {
     const api = installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     api.focusComfyWindow = vi.fn().mockResolvedValue(true)
     const wrapper = mountChooser()
@@ -532,7 +544,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
-    await tile.trigger('click')
+    await tile.get('.chooser-tile-launch').trigger('click')
     await flushPromises()
     // The crashed window still exists - bring it forward, never relaunch from
     // the dashboard.
@@ -540,7 +552,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('launches when a crashed tile is clicked but no window exists to focus', async () => {
+  it('launches a crashed build when no window exists to focus', async () => {
     const api = installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     // No window backs the install (crash hydrated from the retained buffer).
     api.focusComfyWindow = vi.fn().mockResolvedValue(false)
@@ -552,7 +564,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
-    await tile.trigger('click')
+    await tile.get('.chooser-tile-launch').trigger('click')
     await flushPromises()
     expect(api.focusComfyWindow).toHaveBeenCalledWith('a')
     expect(wrapper.emitted('pick')).toHaveLength(1)
