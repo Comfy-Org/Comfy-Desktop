@@ -10,7 +10,7 @@ defineProps<{
 
 <template>
   <header
-    class="branded-page-header box-border flex w-full items-center gap-7 pr-[280px] [@media(max-width:800px)]:flex-col [@media(max-width:800px)]:items-start [@media(max-width:800px)]:gap-2 [@media(max-width:800px)]:pr-0"
+    class="branded-page-header box-border flex w-full items-center gap-7 @max-[700px]:flex-col @max-[700px]:items-start @max-[700px]:gap-2"
   >
     <ComfyWordmark
       class="branded-page-header__wordmark block aspect-[173/48] h-auto w-[clamp(120px,8vw,180px)] shrink-0 text-comfy-yellow [anchor-name:--brand-beam-target]"

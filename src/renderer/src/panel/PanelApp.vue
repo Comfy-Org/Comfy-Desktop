@@ -6,6 +6,7 @@ import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
+import AppSidebar from './AppSidebar.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
@@ -42,7 +43,7 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
-import type { Installation } from '../types/ipc'
+import type { DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -202,6 +203,13 @@ if (params.get('e2e') === '1') {
   })
 }
 
+const sidebarPage = computed<DashboardPage | null>(() => {
+  const panel = activePanel.value
+  return panel === 'chooser' || panel === 'benchmarks' || panel === 'performance-test'
+    ? panel
+    : null
+})
+
 const firstUseTakeoverActive = computed(
   () => currentOverlay.value?.kind === 'takeover' && currentOverlay.value.component === 'first-use'
 )
@@ -215,9 +223,14 @@ const showPanelBody = computed(() => {
   return launcherPrefsLoaded.value && firstUseCompleted.value
 })
 
+const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
+
+const performanceTestRunActive = ref(false)
+
 chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
-  switchPanel
+  switchPanel,
+  hostOwnsPerformanceTestRun: () => performanceTestRunActive.value
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
@@ -543,51 +556,53 @@ onUnmounted(() => {
   <div
     class="panel-shell flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg)] text-text [body.panel-overlay-mode_&]:bg-transparent"
   >
-    <main
-      class="panel-content flex min-h-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
+    <div
+      class="panel-frame flex min-h-0 flex-1"
+      :class="showSidebar && 'gap-2 bg-window-background p-2'"
     >
-      <!-- `showPanelBody` — chooser when main/IPC says first-use is done;
-           hidden while the first-use takeover is mounted (no chooser
-           bleed-through during BrandTakeoverLayout's fade-in). Flow
-           takeovers keep the chooser mounted underneath by design. -->
-      <div v-if="showPanelBody" class="panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div
-          v-if="activePanel === 'comfy-lifecycle'"
-          class="panel-comfy-lifecycle flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          <ComfyLifecycleView
-            :installation="installation"
-            :installation-id="installationId"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+      <AppSidebar v-if="showSidebar && sidebarPage" :active-page="sidebarPage" />
+      <main
+        class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
+        :class="showSidebar && 'rounded-shell bg-[var(--bg)]'"
+      >
+        <!-- `showPanelBody` — chooser when main/IPC says first-use is done;
+             hidden while the first-use takeover is mounted (no chooser
+             bleed-through during BrandTakeoverLayout's fade-in). Flow
+             takeovers keep the chooser mounted underneath by design. -->
+        <div v-if="showPanelBody" class="panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            v-if="activePanel === 'comfy-lifecycle'"
+            class="panel-comfy-lifecycle flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <ComfyLifecycleView
+              :installation="installation"
+              :installation-id="installationId"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div
-          v-else-if="activePanel === 'chooser'"
-          class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          <ChooserView
-            @pick="handleChooserPick"
-            @show-new-install="handleChooserShowNewInstall"
-            @show-progress="handleShowProgress"
-          />
-        </div>
+          <div
+            v-else-if="activePanel === 'chooser'"
+            class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <ChooserView
+              @pick="handleChooserPick"
+              @show-new-install="handleChooserShowNewInstall"
+              @show-progress="handleShowProgress"
+            />
+          </div>
 
-        <div
-          v-else-if="activePanel === 'benchmarks'"
-          class="panel-benchmarks flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          <BenchmarksView />
+          <KeepAlive>
+            <BenchmarksView v-if="activePanel === 'benchmarks'" class="panel-benchmarks" />
+            <PerformanceTestView
+              v-else-if="activePanel === 'performance-test'"
+              class="panel-performance-test flex min-h-0 flex-col overflow-hidden [&.panel-performance-test]:flex-1"
+              @run-active-change="performanceTestRunActive = $event"
+            />
+          </KeepAlive>
         </div>
-
-        <KeepAlive>
-          <PerformanceTestView
-            v-if="activePanel === 'performance-test'"
-            class="panel-performance-test flex min-h-0 flex-col overflow-hidden [&.panel-performance-test]:flex-1"
-          />
-        </KeepAlive>
-      </div>
-    </main>
+      </main>
+    </div>
 
     <!-- Host-level overlay slot. One DOM node at a
          time, owned by `useOverlay`. Mounts either a Tier 1 popover,

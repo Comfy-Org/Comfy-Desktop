@@ -166,6 +166,9 @@ export interface Installation {
   [key: string]: unknown // allow extra fields from sources
 }
 
+/** Full-page screens of a dashboard window, reachable from its sidebar. */
+export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+
 export interface RunningInstance {
   installationId: string
   installationName: string
@@ -1450,6 +1453,8 @@ export interface ElectronApi {
   /** Tell main an overlay panel (feedback / announcement) has painted, so it can
    *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
+  /** Switch this dashboard window to one of its full-page screens. */
+  navigatePanel(page: DashboardPage): void
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)

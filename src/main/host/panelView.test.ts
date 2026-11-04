@@ -15,6 +15,7 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+import { ipcMain } from 'electron'
 import { _runningSessions } from '../lib/ipc/shared'
 import {
   comfyWindows,
@@ -23,7 +24,12 @@ import {
   nextWindowKey,
   type ComfyWindowEntry
 } from './registry'
-import { prewarmAttachedPanel, refreshComfyTabBody, setActivePanel } from './panelView'
+import {
+  prewarmAttachedPanel,
+  refreshComfyTabBody,
+  registerPanelViewIpc,
+  setActivePanel
+} from './panelView'
 
 interface FakeWindow {
   destroyed: boolean
@@ -186,6 +192,74 @@ describe('setActivePanel', () => {
     expect(fixture.entry.activePanel).toBe('comfy')
     expect(computeBodyMode(fixture.entry), 'panel hidden, ComfyUI visible').toBe('comfy')
     expect(fixture.layoutCalls, 'the prewarm lays the views out').toBeGreaterThan(0)
+  })
+})
+
+describe('comfy-window:navigate-panel', () => {
+  function makeWindowWithPanel(opts: Parameters<typeof makeEntry>[0]) {
+    const fixture = makeEntry(opts)
+    const panelWc = makeWc()
+    fixture.entry.panelView = {
+      webContents: panelWc,
+      setBackgroundColor: () => {}
+    } as unknown as ComfyWindowEntry['panelView']
+    comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+    return { entry: fixture.entry, panelWc, titleBarWc: fixture.titleBarWc }
+  }
+
+  function navigate(sender: unknown, page: unknown): void {
+    registerPanelViewIpc()
+    const registered = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(([channel]) => channel === 'comfy-window:navigate-panel')
+    const listener = registered?.[1] as (event: { sender: unknown }, page: unknown) => void
+    listener({ sender }, page)
+  }
+
+  it.each([
+    ['chooser', 'comfy', 'benchmarks'],
+    ['benchmarks', 'benchmarks', 'comfy'],
+    ['performance-test', 'performance-test', 'comfy']
+  ] as const)('opens %s in a dashboard window', (page, panel, startingPanel) => {
+    const { entry, panelWc } = makeWindowWithPanel({
+      installationId: null,
+      activePanel: startingPanel
+    })
+
+    navigate(panelWc, page)
+
+    expect(entry.activePanel).toBe(panel)
+    expect(panelWc.sent.at(-1)?.channel).toBe('panel-switch')
+  })
+
+  it('leaves an install-backed window on its current panel', () => {
+    const { entry, panelWc } = makeWindowWithPanel({
+      installationId: 'install-1',
+      activePanel: 'comfy'
+    })
+
+    navigate(panelWc, 'benchmarks')
+
+    expect(entry.activePanel).toBe('comfy')
+  })
+
+  it.each(['feedback', 'new-install', undefined])('ignores the unknown page %s', (page) => {
+    const { entry, panelWc } = makeWindowWithPanel({ installationId: null, activePanel: 'comfy' })
+
+    navigate(panelWc, page)
+
+    expect(entry.activePanel).toBe('comfy')
+  })
+
+  it('ignores a sender that is not a panel', () => {
+    const { entry, titleBarWc } = makeWindowWithPanel({
+      installationId: null,
+      activePanel: 'comfy'
+    })
+
+    navigate(titleBarWc, 'benchmarks')
+
+    expect(entry.activePanel).toBe('comfy')
   })
 })
 

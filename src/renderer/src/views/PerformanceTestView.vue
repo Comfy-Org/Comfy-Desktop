@@ -28,7 +28,6 @@ import {
 } from '../lib/performanceTestResultsSvg'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
-import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
 const resultListClass =
@@ -43,6 +42,10 @@ interface PerformanceTestRunTelemetry {
   readonly measuredRuns: number
   readonly startedAtMs: number
 }
+
+const emit = defineEmits<{
+  'run-active-change': [active: boolean]
+}>()
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -192,6 +195,10 @@ const canRun = computed(() => {
 const canStop = computed(() => {
   return Boolean(performanceTestInstallationId.value && !isStopping.value)
 })
+const ownsRun = computed(
+  () => isLaunching.value || isStopping.value || performanceTestInstallationId.value !== null
+)
+watch(ownsRun, (active) => emit('run-active-change', active))
 let activeLaunchPromise: Promise<ActionResult> | null = null
 let activeRunTelemetry: PerformanceTestRunTelemetry | null = null
 let runToken = 0
@@ -651,7 +658,7 @@ watch(performanceTestLogs, async () => {
     data-testid="performance-test"
   >
     <div
-      class="performance-test__layout relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
+      class="performance-test__layout @container relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
     >
       <div
         class="performance-test__intro flex min-h-full w-full flex-col items-start gap-6 text-left"
@@ -663,7 +670,7 @@ watch(performanceTestLogs, async () => {
         />
         <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-6">
           <div
-            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-6 [@media(max-width:900px)]:grid-cols-1"
+            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-6 @max-[800px]:grid-cols-1"
           >
             <section
               class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
@@ -951,7 +958,7 @@ watch(performanceTestLogs, async () => {
               </div>
               <template v-else-if="performanceTestResult?.resultsSummary">
                 <div
-                  class="performance-test__summary grid grid-cols-2 gap-6 [--perf-label-align:right] [--perf-value-align:right] [@media(max-width:900px)]:grid-cols-1"
+                  class="performance-test__summary grid grid-cols-2 gap-6 [--perf-label-align:right] [--perf-value-align:right] @max-[800px]:grid-cols-1"
                 >
                   <div
                     class="performance-test__summary-column [--perf-label-align:left] [--perf-value-align:left]"
@@ -1160,12 +1167,6 @@ watch(performanceTestLogs, async () => {
             </div>
           </section>
         </div>
-      </div>
-
-      <div
-        class="performance-test__account absolute top-0 right-0 z-[2] flex justify-end max-w-[min(340px,45%)]"
-      >
-        <DevPlatformAccountChip />
       </div>
     </div>
 

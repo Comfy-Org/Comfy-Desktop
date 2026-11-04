@@ -1,5 +1,6 @@
 // Re-export IPC types from the canonical shared location for renderer convenience.
 export type {
+  DashboardPage,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

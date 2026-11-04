@@ -256,7 +256,7 @@
   --bg: var(--color-content-background);
   --overlay-bg-opaque: var(--bg);
   /* Mirrored in main as TITLEBAR_BG. */
-  --titlebar-bg: var(--color-background);
+  --titlebar-bg: var(--color-window-background);
   --titlebar-icon: var(--color-muted-foreground);
   --surface: var(--color-card);
   --secondary-background: var(--color-secondary);

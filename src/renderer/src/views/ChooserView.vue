@@ -18,8 +18,6 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
-import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
-import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { openInstallManager } from '../lib/openInstallManager'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
@@ -96,11 +94,6 @@ const { searchQuery, activeFilter, visibleInstalls } = useInstallList({
 defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
-
-const selectedWorkspaceModel = computed({
-  get: () => dashboardScope.selectedWorkspaceId,
-  set: dashboardScope.selectWorkspace
-})
 
 /** Server workspace whose Builds belong to the selected dashboard scope. */
 const selectedManagedWorkspaceId = computed(() => {
@@ -301,13 +294,6 @@ const gridHandlers = {
       class="chooser-view chooser-view--workspace grid min-h-0 w-full max-w-[1280px] flex-auto grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto_auto_auto_minmax(0,auto)_minmax(0,1fr)] justify-items-center gap-y-[var(--chooser-row-gap)] px-6 py-[var(--chooser-pad-y)] [--chooser-pad-y:clamp(12px,2.5vh,24px)] [--chooser-row-gap:clamp(16px,3.5vh,32px)]"
       :style="{ '--rows': clusterRows }"
     >
-      <!-- Signed-in account identity, pinned outside the centered content column. -->
-      <div
-        class="chooser-account absolute top-[var(--chooser-pad-y)] right-6 z-2 flex max-w-[min(340px,45%)] justify-end"
-      >
-        <DevPlatformAccountChip />
-      </div>
-
       <ComfyWordmark
         class="chooser-wordmark row-start-2 block aspect-[173/48] h-auto w-[clamp(120px,8vw,180px)] shrink-0 self-center text-comfy-yellow [anchor-name:--brand-beam-target]"
         aria-hidden="true"
@@ -332,36 +318,26 @@ const gridHandlers = {
         <div
           class="chooser-workspace-bar mx-auto flex w-full max-w-[280px] items-center gap-3 @min-[576px]:max-w-[576px] @min-[872px]:max-w-[872px] @min-[1168px]:max-w-[1168px] [@media(width<=640px)]:flex-wrap"
         >
-          <div
-            class="chooser-workspace-controls grid min-w-0 shrink items-center [--chooser-workspace-refresh-size:30px] [--chooser-workspace-refresh-gap:8px] [&_.workspace-selector]:w-full [&_.workspace-selector]:min-w-0 [&_.workspace-selector\_\_face]:box-border [&_.workspace-selector\_\_face]:w-full [&_.workspace-selector\_\_face]:min-w-0 [&_.workspace-selector\_\_face]:px-2 [&_.workspace-selector\_\_face]:py-0 [&_.workspace-selector\_\_menu]:box-border [&_.workspace-selector\_\_menu]:w-full [&_.workspace-selector\_\_menu]:min-w-0 [&_.workspace-selector\_\_menu]:max-w-none"
-            :class="
-              authStore.isSignedIn
-                ? 'basis-[290px] grid-cols-[minmax(0,1fr)_var(--chooser-workspace-refresh-size)] gap-[var(--chooser-workspace-refresh-gap)] [@media(width<=640px)]:basis-full'
-                : 'chooser-workspace-controls--no-refresh basis-[calc(290px-var(--chooser-workspace-refresh-size)-var(--chooser-workspace-refresh-gap))] grid-cols-[minmax(0,1fr)] gap-0 [@media(width<=640px)]:basis-[calc(100%-var(--chooser-workspace-refresh-size)-var(--chooser-workspace-refresh-gap))]'
-            "
+          <Button
+            v-if="authStore.isSignedIn"
+            variant="muted-textonly"
+            size="icon"
+            type="button"
+            class="chooser-workspace-refresh"
+            :disabled="refreshingWorkspace"
+            :aria-label="t('devPlatform.workspace.refresh')"
+            :title="t('devPlatform.workspace.refresh')"
+            data-testid="chooser-workspace-refresh"
+            @click="refreshWorkspace"
           >
-            <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
-            <Button
-              v-if="authStore.isSignedIn"
-              variant="muted-textonly"
-              size="icon"
-              type="button"
-              class="chooser-workspace-refresh"
-              :disabled="refreshingWorkspace"
-              :aria-label="t('devPlatform.workspace.refresh')"
-              :title="t('devPlatform.workspace.refresh')"
-              data-testid="chooser-workspace-refresh"
-              @click="refreshWorkspace"
-            >
-              <RefreshCw
-                :size="13"
-                :class="{
-                  'chooser-workspace-refresh__icon--busy animate-spin [animation-duration:900ms]':
-                    refreshingWorkspace
-                }"
-              />
-            </Button>
-          </div>
+            <RefreshCw
+              :size="13"
+              :class="{
+                'chooser-workspace-refresh__icon--busy animate-spin [animation-duration:900ms]':
+                  refreshingWorkspace
+              }"
+            />
+          </Button>
           <div
             class="chooser-workspace-divider h-px min-w-4 flex-auto bg-[var(--chooser-surface-border)] [@media(width<=640px)]:hidden"
             aria-hidden="true"

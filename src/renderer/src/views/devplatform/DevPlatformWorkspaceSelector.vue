@@ -14,6 +14,7 @@ import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/w
 
 const props = defineProps<{
   modelValue: string
+  side?: 'top' | 'bottom'
 }>()
 
 const emit = defineEmits<{
@@ -88,34 +89,37 @@ function onSelectWorkspace(workspaceId: string): void {
 </script>
 
 <template>
-  <div class="workspace-selector relative w-fit">
+  <div class="workspace-selector relative" :class="$slots.trigger ? 'w-full' : 'w-fit'">
     <Menu
       v-model:open="menuOpen"
       :modal="false"
+      :side="side"
       class="workspace-selector__menu z-20 min-w-[260px] max-w-[340px]"
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       data-testid="devplatform-workspace-menu"
     >
       <template #trigger>
-        <Button
-          type="button"
-          variant="textonly"
-          size="md"
-          class="workspace-selector__face min-w-0 max-w-80 [--dp-avatar-size:20px]"
-          data-testid="devplatform-workspace-selector"
-          :aria-label="$t('devPlatform.workspace.switchLabel')"
-        >
-          <DevPlatformAvatar :name="currentWorkspaceName" />
-          <span class="workspace-selector__name min-w-0 flex-auto truncate text-left">{{
-            currentWorkspaceName
-          }}</span>
-          <ChevronDown
-            :size="14"
-            class="workspace-selector__caret shrink-0 transition-transform"
-            :class="{ 'workspace-selector__caret--open rotate-180': menuOpen }"
-            aria-hidden="true"
-          />
-        </Button>
+        <slot name="trigger" :workspace-name="currentWorkspaceName">
+          <Button
+            type="button"
+            variant="textonly"
+            size="md"
+            class="workspace-selector__face min-w-0 max-w-80 [--dp-avatar-size:20px]"
+            data-testid="devplatform-workspace-selector"
+            :aria-label="$t('devPlatform.workspace.switchLabel')"
+          >
+            <DevPlatformAvatar :name="currentWorkspaceName" />
+            <span class="workspace-selector__name min-w-0 flex-auto truncate text-left">{{
+              currentWorkspaceName
+            }}</span>
+            <ChevronDown
+              :size="14"
+              class="workspace-selector__caret shrink-0 transition-transform"
+              :class="{ 'workspace-selector__caret--open rotate-180': menuOpen }"
+              aria-hidden="true"
+            />
+          </Button>
+        </slot>
       </template>
       <div
         v-if="store.loadingWorkspaces && store.workspaces.length === 0"
@@ -180,6 +184,7 @@ function onSelectWorkspace(workspaceId: string): void {
           <Check v-if="workspace.id === currentWorkspaceId" :size="15" aria-hidden="true" />
         </MenuRadioItem>
       </DropdownMenuRadioGroup>
+      <slot name="footer" />
     </Menu>
   </div>
 </template>

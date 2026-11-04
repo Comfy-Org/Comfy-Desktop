@@ -164,8 +164,12 @@ const messages = {
       logs: 'Logs'
     },
     devPlatform: {
+      account: {
+        signedInAs: 'Signed in as {email}'
+      },
       workspace: {
-        personalLabel: 'Personal'
+        personalLabel: 'Personal',
+        switchLabel: 'Switch workspace'
       }
     },
     performanceTest: {
@@ -913,7 +917,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
-    expect(wrapper.find('.performance-test__account').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
     expect(
       wrapper.findAll('.performance-test__selection-label').map((label) => label.text())
@@ -1548,6 +1552,50 @@ describe('PanelApp', () => {
     ).click()
     await flushPromises()
   }
+
+  it('opens a picked instance in its own window while this window runs a test', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    const hostApi = window.api as unknown as {
+      claimAttachHost: ReturnType<typeof vi.fn>
+      getListActions: ReturnType<typeof vi.fn>
+      runAction: ReturnType<typeof vi.fn>
+    }
+    let finishLaunch: (result: { ok: boolean; cancelled: boolean }) => void = () => {}
+    hostApi.runAction.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLaunch = resolve
+      })
+    )
+    const launchAction = { id: 'launch', label: 'Launch', style: 'primary', showProgress: false }
+    hostApi.getListActions.mockResolvedValue([launchAction])
+    const pick = async (): Promise<void> => {
+      mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+        cb({ kind: 'picker-pick-install', installationId: 'workspace-install' })
+      )
+      await flushPromises()
+    }
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'chooser' }))
+    await flushPromises()
+    await pick()
+
+    expect(hostApi.runAction).toHaveBeenCalledWith('workspace-install', 'launch')
+    expect(hostApi.claimAttachHost).not.toHaveBeenCalled()
+
+    finishLaunch({ ok: false, cancelled: true })
+    await flushPromises()
+    await pick()
+
+    expect(hostApi.claimAttachHost).toHaveBeenCalledWith('workspace-install')
+  })
 
   it('prepares an example workflow and blocks the run until its models are downloaded', async () => {
     const { wrapper, api } = await mountWithInstance()

@@ -15,6 +15,15 @@
       "confirmLabel": "返回仪表板"
     }
   },
+  "sidebar": {
+    "navigation": "导航",
+    "home": "主页",
+    "tools": "工具",
+    "collapse": "收起侧边栏",
+    "expand": "展开侧边栏",
+    "signInTitle": "登录 Comfy",
+    "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
+  },
   "installType": {
     "standalone": "独立版",
     "cloud": "云端",

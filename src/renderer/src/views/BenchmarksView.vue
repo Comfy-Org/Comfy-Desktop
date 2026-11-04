@@ -5,7 +5,7 @@ import Switch from '@comfyorg/design-system/switch/Switch'
 import Button from '@comfyorg/design-system/button/Button'
 import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
   FolderOpen,
@@ -37,7 +37,6 @@ import {
   type RelativeSpeedKind
 } from '../lib/relativeSpeed'
 import { useDialogs } from '../composables/useDialogs'
-import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 
 type DurationKey =
   | 'fastestJobDurationSeconds'
@@ -678,6 +677,26 @@ async function loadBenchmarks(folderPath?: string): Promise<void> {
   }
 }
 
+/** Pick up runs finished while this page was off screen, leaving the current
+ *  folder, selection and list in place. */
+async function syncBenchmarksOnReturn(): Promise<void> {
+  if (loading.value) return
+  const folderPath = benchmarksFolderPath.value
+  if (loadError.value || !folderPath) {
+    await loadBenchmarks(folderPath || undefined)
+    return
+  }
+  try {
+    const result = await window.api.listPerformanceTestBenchmarks(folderPath)
+    if (benchmarksFolderPath.value !== folderPath) return
+    benchmarks.value = result.benchmarks
+    const remainingIds = new Set(result.benchmarks.map(({ id }) => id))
+    selectedOrderIds.value = selectedOrderIds.value.filter((id) => remainingIds.has(id))
+  } catch {
+    // The list on screen is still the last good read.
+  }
+}
+
 async function selectBenchmarksFolder(): Promise<void> {
   const folderPath = await window.api.browseFolder(benchmarksFolderPath.value || undefined)
   if (folderPath) await loadBenchmarks(folderPath)
@@ -806,6 +825,9 @@ async function confirmDeleteBenchmark(benchmark: PerformanceTestBenchmark): Prom
 onMounted(() => {
   void loadBenchmarks()
 })
+onActivated(() => {
+  void syncBenchmarksOnReturn()
+})
 </script>
 
 <template>
@@ -814,7 +836,7 @@ onMounted(() => {
     data-testid="benchmarks"
   >
     <div
-      class="benchmarks__layout relative flex h-full min-h-0 w-full flex-col gap-4 overflow-x-hidden overflow-y-auto text-neutral-100"
+      class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col gap-4 overflow-x-hidden overflow-y-auto text-neutral-100"
     >
       <BrandedPageHeader
         :title="t('benchmarks.title')"
@@ -822,18 +844,12 @@ onMounted(() => {
         logo-test-id="benchmarks-logo"
       />
 
-      <div
-        class="benchmarks__account absolute top-0 right-0 z-2 flex [@media(max-width:800px)]:hidden"
-      >
-        <DevPlatformAccountChip />
-      </div>
-
       <section
         class="benchmarks__card min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg)_90%,transparent)] p-4 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__library"
         :aria-label="t('benchmarks.runsLibrary')"
       >
         <div
-          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 [@media(max-width:1100px)]:grid-cols-[auto_repeat(4,minmax(0,1fr))] [@media(max-width:800px)]:grid-cols-[auto_minmax(0,1fr)]"
+          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 @max-[1000px]:grid-cols-[auto_repeat(4,minmax(0,1fr))] @max-[700px]:grid-cols-[auto_minmax(0,1fr)]"
         >
           <div class="benchmarks__folder-controls flex items-center gap-1">
             <Button
@@ -870,7 +886,7 @@ onMounted(() => {
           </div>
           <BaseInput
             v-model="searchQuery"
-            class="benchmarks__search [@media(max-width:1100px)]:col-[2/-1] [@media(max-width:800px)]:col-2"
+            class="benchmarks__search @max-[1000px]:col-[2/-1] @max-[700px]:col-2"
             :placeholder="t('benchmarks.searchPlaceholder')"
             :aria-label="t('benchmarks.searchPlaceholder')"
             :spellcheck="false"

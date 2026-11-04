@@ -15,13 +15,13 @@ import {
   openTitleMenu,
   expectChooserVisible,
   expectTakeoverOpen,
-  dismissOverlay,
+  dismissOverlay
 } from './support/chooserHelpers'
 import {
   findWebContentsId,
   isPopupVisible,
   TITLE_REOPEN_SUPPRESSION_MS,
-  waitForWebContents,
+  waitForWebContents
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 
@@ -43,13 +43,8 @@ test.afterAll(async () => {
 test('chooser body renders on cold start @windows @macos @linux', async () => {
   await expectChooserVisible(ctx.panel)
   expect(await ctx.panel.exists('.chooser-tile-new')).toBe(true)
-  expect(
-    (
-      await ctx.panel.textOf(
-        '[data-testid="devplatform-workspace-selector"] .workspace-selector__name',
-      )
-    )?.trim(),
-  ).toBe('Personal')
+  expect(await ctx.panel.exists('[data-testid="app-sidebar"]')).toBe(true)
+  expect(await ctx.panel.exists('[data-testid="devplatform-account-signin"]')).toBe(true)
 })
 
 test('title bar shows install-less pill on chooser host @windows @macos @linux', async () => {
@@ -75,23 +70,29 @@ test('clicking New Install tile opens the new-install takeover @windows @macos @
 
 test('activate hook focuses the existing chooser host instead of spawning a duplicate @windows @macos @linux', async () => {
   // Baseline: exactly one host BrowserWindow is open from `beforeAll`.
-  const before = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-  ))
+  const before = await evalWithRetry(() =>
+    ctx.app.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
+    )
+  )
   expect(before).toBe(1)
 
   // Trigger the platform re-launch hook the registry guards against.
   // `app.on('activate', () => openOrFocusAnyHostWindow())` is registered
   // unconditionally in `whenReady` so emitting it is portable across OSes.
   // Deliberately not retried: a retry could emit 'activate' twice.
-  await ctx.app.evaluate(({ app }) => { app.emit('activate') })
+  await ctx.app.evaluate(({ app }) => {
+    app.emit('activate')
+  })
   // Window construction is synchronous in the dedup miss path; the dedup
   // hit path is even faster. A short settle covers both.
   await new Promise((r) => setTimeout(r, 200))
 
-  const after = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-  ))
+  const after = await evalWithRetry(() =>
+    ctx.app.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
+    )
+  )
   expect(after).toBe(1)
 })
 
@@ -116,10 +117,12 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
   // non-empty when shown).
   await openTitleMenu(ctx.titleBar)
 
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
 
   // Renderer mounts an unordered menu list with at least one actionable item.
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
@@ -127,17 +130,23 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
 
   // Close via the popup's own bridge — Escape on the title-bar webContents
   // doesn't reach the popup (separate WebContentsView with its own DOM).
-  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
-    // The cached popup can be torn down between the visibility poll and this
-    // call; an absent webContents means it is already closed.
-    if (!wc) return
-    return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-  }))
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(false)
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().includes('comfyTitlePopup.html'))
+      // The cached popup can be torn down between the visibility poll and this
+      // call; an absent webContents means it is already closed.
+      if (!wc) return
+      return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
+    })
+  )
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
 })
 
 test('title popup reopens after a blur dismiss (menu-closed IPC clears the reopen guard) @windows @macos @linux', async () => {
@@ -149,10 +158,12 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
 
   // Open the popup once normally.
   await openTitleMenu(ctx.titleBar)
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
 
   // Dismiss via a blur on the popup webContents — the same path the
   // OS exercises when the user clicks anywhere outside the popup. The
@@ -164,14 +175,18 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
   // Deliberately not retried: a retry could emit 'blur' twice, and one blur
   // must map to exactly one hide for the reopen-guard assertion below.
   await ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
+    const wc = webContents
+      .getAllWebContents()
+      .find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) throw new Error('title popup webContents missing')
     ;(wc as unknown as { emit: (event: string) => void }).emit('blur')
   })
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(false)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
 
   // Step past the title-bar's 100ms reopen-guard so the second click
   // isn't suppressed by the time-based debounce — the bug under test
@@ -181,10 +196,12 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
   // Reopen — must succeed, otherwise the title bar still thinks the
   // menu is open and the click goes to the dismiss path.
   await openTitleMenu(ctx.titleBar)
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
 })
 
 test('title-bar tooltip popup is created on demand and hides cleanly @windows @macos @linux', async () => {
@@ -195,40 +212,53 @@ test('title-bar tooltip popup is created on demand and hides cleanly @windows @m
   // Drive the bridge directly from the title-bar webContents so the test
   // works on Windows too (the Vue `pointermove` handler short-circuits
   // off-mac, so a hover-based test would only cover macOS).
-  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitleBar.html'))
-    if (!wc) throw new Error('title-bar webContents missing')
-    return wc.executeJavaScript(
-      `(window).__comfyTitleBar.showTooltip({ text: 'e2e tooltip', leftX: 50, rightX: 200, bottomY: 30 })`,
-    )
-  }))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().includes('comfyTitleBar.html'))
+      if (!wc) throw new Error('title-bar webContents missing')
+      return wc.executeJavaScript(
+        `(window).__comfyTitleBar.showTooltip({ text: 'e2e tooltip', leftX: 50, rightX: 200, bottomY: 30 })`
+      )
+    })
+  )
 
   // Tooltip popup webContents now exists.
   await waitForWebContents(ctx.app, 'comfyTitleTooltip.html', 5_000)
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
 
   // Hide via the same bridge.
-  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitleBar.html'))
-    if (!wc) throw new Error('title-bar webContents missing')
-    return wc.executeJavaScript(`(window).__comfyTitleBar.hideTooltip()`)
-  }))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().includes('comfyTitleBar.html'))
+      if (!wc) throw new Error('title-bar webContents missing')
+      return wc.executeJavaScript(`(window).__comfyTitleBar.hideTooltip()`)
+    })
+  )
 
-  await expect.poll(
-    () => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'),
-    { timeout: 5_000, intervals: [100, 200] },
-  ).toBe(false)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
 })
 
 /** Read the popup's currently-rendered menu item labels. */
 async function readPopupMenuItems(app: ElectronApplication, marker: string): Promise<string[]> {
-  return evalWithRetry(() => app.evaluate(({ webContents }, m) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(m))
-    if (!wc) throw new Error(`${m} webContents missing`)
-    return wc.executeJavaScript(`(() => {
+  return evalWithRetry(() =>
+    app.evaluate(({ webContents }, m) => {
+      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(m))
+      if (!wc) throw new Error(`${m} webContents missing`)
+      return wc.executeJavaScript(`(() => {
       const candidates = [
         'button.menu-item',
         '[role="menuitem"]',
@@ -242,5 +272,6 @@ async function readPopupMenuItems(app: ElectronApplication, marker: string): Pro
       }
       return []
     })()`) as Promise<string[]>
-  }, marker))
+    }, marker)
+  )
 }

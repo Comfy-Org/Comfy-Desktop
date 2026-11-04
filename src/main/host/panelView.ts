@@ -20,6 +20,13 @@ import {
 } from './registry'
 import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
 
+/** The panel each sidebar page maps to; a dashboard's Comfy pill shows the chooser. */
+const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
+  ['chooser', 'comfy'],
+  ['benchmarks', 'benchmarks'],
+  ['performance-test', 'performance-test']
+])
+
 /** Opaque panel background matching the title-bar chrome, used while the panel
  *  bundle loads for full-screen bodies so the user never sees a black flash. */
 function opaquePanelBg(): string {
@@ -299,6 +306,18 @@ export function registerPanelViewIpc(): void {
         setActivePanel(id, 'comfy')
         return
       }
+    }
+  })
+
+  // Sidebar navigation inside a dashboard window. An install-backed window has
+  // no dashboard pages, so its panel can't switch to them.
+  ipcMain.on('comfy-window:navigate-panel', (event, page: unknown) => {
+    const panel = DASHBOARD_PAGE_PANELS.get(page)
+    if (!panel) return
+    for (const [id, entry] of comfyWindows) {
+      if (entry.panelView?.webContents !== event.sender) continue
+      if (entry.installationId === null) setActivePanel(id, panel)
+      return
     }
   })
 

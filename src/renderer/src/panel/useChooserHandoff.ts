@@ -10,6 +10,9 @@ export interface ChooserHandoffOpts {
   showProgress: (opts: ShowProgressOpts) => Promise<void>
   /** Surfaces the new-install flow as a takeover above the chooser body. */
   switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
+  /** True while this window's panel owns a performance test. Attaching an
+   *  install in place destroys the panel, so the install gets its own window. */
+  hostOwnsPerformanceTestRun: () => boolean
 }
 
 /** Outcome of `performChooserLaunch()`. `'launched'` auto-swaps a takeover
@@ -71,6 +74,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     // an unrelated `instance-started`.
     pendingPickUnsub?.()
     pendingPickUnsub = null
+    if (opts.hostOwnsPerformanceTestRun()) return
     const claimed = await window.api.claimAttachHost(installationId)
     if (claimed) return
     // Visual continuity — open the new window at the chooser's position.

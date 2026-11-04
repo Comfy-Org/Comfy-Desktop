@@ -113,6 +113,7 @@ export function buildElectronApi(): ElectronApi {
     /** Signal that an overlay panel (feedback / announcement) has painted, so main
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
+    navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
