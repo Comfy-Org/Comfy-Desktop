@@ -278,10 +278,18 @@ const emit = defineEmits<{
   top: 4px;
   right: 8px;
 }
+/* Sized to the icon it replaces, so it keeps the label's gap. */
 :root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check {
-  top: 8px;
+  top: 10px;
   right: auto;
-  left: 13px;
+  left: 15px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check > svg {
+  width: 11px;
+  height: 11px;
 }
 .mar-bc-strip > svg {
   transition: opacity 120ms ease;
