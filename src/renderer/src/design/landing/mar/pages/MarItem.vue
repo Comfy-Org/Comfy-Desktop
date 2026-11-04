@@ -202,7 +202,7 @@ function click(e: MouseEvent): void {
       <span class="mar-item-col is-status"
         ><MarStatus v-if="status" :status :label="statusLabel"
       /></span>
-      <span class="mar-item-tools is-row">
+      <span class="mar-item-tools is-row" :class="$slots.actions && 'has-actions'">
         <!-- The row's own buttons, always shown (Builds: Start, Stop, Update). -->
         <slot name="actions" />
         <FavoriteStar v-if="favId && favKind" :id="favId" :kind="favKind" />
@@ -347,6 +347,11 @@ function click(e: MouseEvent): void {
   opacity: 0;
 }
 .mar-item:is(:hover, :focus-within, .is-menu) .mar-item-tools :is(.mar-kebab, .mar-star) {
+  opacity: 1;
+}
+/* A row with its own buttons ends on its ⋯, always shown, so the buttons
+   reach the row's edge instead of stopping short of an invisible menu. */
+.mar-item-tools.is-row.has-actions .mar-kebab {
   opacity: 1;
 }
 .mar-item-tools.is-row .mar-star {
