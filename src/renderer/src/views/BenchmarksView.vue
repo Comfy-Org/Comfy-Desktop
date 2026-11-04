@@ -841,7 +841,6 @@ onActivated(() => {
       <BrandedPageHeader
         :title="t('benchmarks.title')"
         :description="t('benchmarks.description')"
-        logo-test-id="benchmarks-logo"
       />
 
       <section

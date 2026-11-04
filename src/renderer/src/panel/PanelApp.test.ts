@@ -768,7 +768,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="benchmarks-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
     expect(wrapper.get('.branded-page-header__description').text()).toBe(
       'Browse and compare results from your performance tests.'
@@ -915,7 +914,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)

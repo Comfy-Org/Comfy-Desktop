@@ -666,7 +666,6 @@ watch(performanceTestLogs, async () => {
         <BrandedPageHeader
           :title="t('performanceTest.title')"
           :description="t('performanceTest.description')"
-          logo-test-id="performance-test-logo"
         />
         <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-6">
           <div

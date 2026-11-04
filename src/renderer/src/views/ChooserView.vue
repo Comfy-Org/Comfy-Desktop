@@ -11,14 +11,15 @@ import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { RefreshCw, Search } from 'lucide-vue-next'
+import { Plus, RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
-import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import BaseSelect from '../components/ui/BaseSelect.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import { openInstallManager } from '../lib/openInstallManager'
+import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
@@ -83,7 +84,7 @@ onMounted(() => {
 // flow through `visibleInstalls` like every other source - there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const { searchQuery, activeFilter, visibleInstalls } = useInstallList({
+const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useInstallList({
   installations: installationsRef
 })
 
@@ -139,17 +140,50 @@ function installationIsInSelectedScope(inst: Installation): boolean {
     : inst.workspaceId === dashboardScope.selectedWorkspaceId
 }
 
-const scopedVisibleInstalls = computed(() =>
-  visibleInstalls.value.filter(installationIsInSelectedScope)
+const sortOrder = ref<'used' | 'name'>('used')
+const sortOptions = computed(() => [
+  { value: 'used', label: t('chooser.sortLastUsed') },
+  { value: 'name', label: t('chooser.sortName') }
+])
+
+const scopedVisibleInstalls = computed(() => {
+  const inScope = visibleInstalls.value.filter(installationIsInSelectedScope)
+  return sortOrder.value === 'name'
+    ? [...inScope].sort((a, b) => a.name.localeCompare(b.name))
+    : inScope
+})
+const scopedInstalls = computed(() => effectiveInstalls.value.filter(installationIsInSelectedScope))
+
+/** Cloud and Remote only get a tab when the scope has one. */
+const whereOptions = computed(() => {
+  const count = (category: string): number =>
+    scopedInstalls.value.filter((inst) => inst.sourceCategory === category).length
+  const options: { value: FilterKey; label: string; count: number }[] = [
+    { value: 'all', label: t('chooser.filterAll'), count: scopedInstalls.value.length },
+    { value: 'local', label: t('chooser.filterThisComputer'), count: count('local') }
+  ]
+  if (count('cloud') > 0) {
+    options.push({ value: 'cloud', label: t('chooser.filterCloud'), count: count('cloud') })
+  }
+  if (count('remote') > 0) {
+    options.push({ value: 'remote', label: t('chooser.filterRemote'), count: count('remote') })
+  }
+  return options
+})
+watch(whereOptions, (options) => {
+  if (!options.some((option) => option.value === activeFilter.value)) activeFilter.value = 'all'
+})
+
+const hasFilters = computed(
+  () => searchQuery.value.trim().length > 0 || activeFilter.value !== 'all'
 )
-const scopedInstallCount = computed(
-  () => installationStore.installations.filter(installationIsInSelectedScope).length
-)
-const showNoMatches = computed(
-  () =>
-    scopedVisibleInstalls.value.length === 0 &&
-    (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
-)
+const showNoMatches = computed(() => scopedVisibleInstalls.value.length === 0 && hasFilters.value)
+const showNoBuilds = computed(() => scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+
+function clearFilters(): void {
+  searchQuery.value = ''
+  activeFilter.value = 'all'
+}
 
 const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
 
@@ -157,13 +191,6 @@ async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
-
-// --- Cluster top offset ---
-
-const TILES_PER_ROW = 4
-
-/** Search-independent height reservation for New Instance plus scoped installs. */
-const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TILES_PER_ROW))
 
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
@@ -273,7 +300,6 @@ function handleNewInstallClick(): void {
 }
 
 const gridHandlers = {
-  'new-install': handleNewInstallClick,
   pick: pickInstall,
   'open-card-menu': openCardMenu,
   'open-kebab-menu': openKebabMenu,
@@ -286,38 +312,35 @@ const gridHandlers = {
 </script>
 
 <template>
-  <BrandBackground
+  <div
     v-show="props.visible"
-    class="chooser-bg [&_.brand-inner-frame]:p-0 [&_.brand-outer-frame]:bg-transparent [&_.brand-outer-frame]:p-0 [&_.brand-beam--2]:[left:anchor(center,clamp(39%,calc(52.5vw_-_135px),44%))]"
+    class="chooser-view chooser-view--workspace flex min-h-0 w-full flex-auto flex-col overflow-y-auto bg-[radial-gradient(62%_100%_at_50%_0%,oklch(1_0_0/0.06),oklch(1_0_0/0.025)_50%,transparent_100%)]"
   >
-    <div
-      class="chooser-view chooser-view--workspace grid min-h-0 w-full max-w-[1280px] flex-auto grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto_auto_auto_minmax(0,auto)_minmax(0,1fr)] justify-items-center gap-y-[var(--chooser-row-gap)] px-6 py-[var(--chooser-pad-y)] [--chooser-pad-y:clamp(12px,2.5vh,24px)] [--chooser-row-gap:clamp(16px,3.5vh,32px)]"
-      :style="{ '--rows': clusterRows }"
-    >
-      <ComfyWordmark
-        class="chooser-wordmark row-start-2 block aspect-[173/48] h-auto w-[clamp(120px,8vw,180px)] shrink-0 self-center text-comfy-yellow [anchor-name:--brand-beam-target]"
-        aria-hidden="true"
-      />
-      <div
-        class="chooser-toolbar row-start-3 flex w-full max-w-[900px] shrink-0 items-center justify-center gap-2.5"
-      >
-        <div class="chooser-search flex min-w-[180px] flex-[1_1_600px]">
-          <BaseInput
-            v-model="searchQuery"
-            :placeholder="t('chooser.searchPlaceholder')"
-            :aria-label="t('chooser.searchPlaceholder')"
-          >
-            <template #leading><Search :size="16" /></template>
-          </BaseInput>
-        </div>
-      </div>
-
-      <div
-        class="chooser-workspace-viewport @container row-start-4 box-border w-full max-w-[1168px] justify-self-center"
-      >
-        <div
-          class="chooser-workspace-bar mx-auto flex w-full max-w-[280px] items-center gap-3 @min-[576px]:max-w-[576px] @min-[872px]:max-w-[872px] @min-[1168px]:max-w-[1168px] [@media(width<=640px)]:flex-wrap"
+    <div class="mx-auto w-full max-w-300 px-10 pb-24">
+      <header class="chooser-header flex items-end justify-between gap-6 pt-9 pb-6">
+        <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
+          {{ t('chooser.buildsTitle') }}
+        </h1>
+        <Button
+          type="button"
+          variant="inverted"
+          size="md"
+          class="chooser-tile-new shrink-0 gap-1.5 px-3 text-[13px]/5"
+          :aria-label="t('chooser.newBuildLabel')"
+          @click="handleNewInstallClick"
         >
+          <Plus :size="15" aria-hidden="true" />
+          {{ t('chooser.newBuild') }}
+        </Button>
+      </header>
+
+      <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
+        <SegmentedControl
+          v-model="activeFilter"
+          :options="whereOptions"
+          :label="t('chooser.whereLabel')"
+        />
+        <div class="ml-auto flex items-center gap-2">
           <Button
             v-if="authStore.isSignedIn"
             variant="muted-textonly"
@@ -338,15 +361,23 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div
-            class="chooser-workspace-divider h-px min-w-4 flex-auto bg-[var(--chooser-surface-border)] [@media(width<=640px)]:hidden"
-            aria-hidden="true"
-          />
-          <div
-            class="chooser-workspace-count ml-auto flex flex-none items-baseline gap-1 text-[12px] text-text-muted [@media(width<=640px)]:w-full [@media(width<=640px)]:justify-end"
-          >
-            <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
-            <strong class="font-semibold text-neutral-100">{{ scopedInstallCount }}</strong>
+          <div class="w-38">
+            <BaseSelect
+              v-model="sortOrder"
+              :options="sortOptions"
+              :aria-label="t('chooser.sortLabel')"
+              compact
+            />
+          </div>
+          <div class="chooser-search w-[220px]">
+            <BaseInput
+              v-model="searchQuery"
+              class="h-8 [&_input]:text-[13px]"
+              :placeholder="t('chooser.searchBuilds')"
+              :aria-label="t('chooser.searchBuilds')"
+            >
+              <template #leading><Search :size="14" /></template>
+            </BaseInput>
           </div>
         </div>
       </div>
@@ -356,61 +387,82 @@ const gridHandlers = {
           !dashboardScope.initialized ||
           (installationStore.loading && installationStore.installations.length === 0)
         "
-        class="chooser-loading row-start-5 flex items-center justify-center p-6 opacity-60"
+        class="chooser-loading flex items-center justify-center p-6 opacity-60"
       >
         {{ t('common.loading') }}
       </div>
 
-      <div
+      <section
         v-else-if="showNoMatches"
-        class="chooser-empty row-start-5 flex items-center justify-center p-6 opacity-60"
+        class="chooser-empty flex flex-col items-center gap-3 px-6 py-16 text-center"
       >
-        {{ t('chooser.noMatches') }}
-      </div>
-
-      <div
-        v-else
-        class="chooser-shelves @container row-start-5 flex max-h-full min-h-[min(100%,calc(var(--rows)*var(--tile-h)+max(0,var(--rows)-1)*16px+2*var(--chooser-fade)))] w-full max-w-[1168px] flex-col gap-7 justify-self-center overflow-y-auto py-[var(--chooser-fade)] [--tile-h:178px] [--chooser-fade:clamp(12px,2.5vh,24px)] supports-[mask-image:linear-gradient(black,black)]:[mask-image:linear-gradient(to_bottom,transparent_0,black_var(--chooser-fade),black_calc(100%-var(--chooser-fade)),transparent_100%)]"
-      >
-        <section
-          class="chooser-shelf m-0 flex w-full max-w-[280px] flex-col gap-4 self-center @min-[576px]:max-w-[576px] @min-[872px]:max-w-[872px] @min-[1168px]:max-w-[1168px]"
+        <div class="flex flex-col gap-1.5">
+          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
+            {{ t('chooser.nothingMatches') }}
+          </h2>
+          <p class="m-0 text-[13px]/5 text-muted-foreground">
+            {{ t('chooser.nothingMatchesHint') }}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          class="px-3 text-[13px]/5"
+          @click="clearFilters"
         >
-          <ChooserFamilyGrid
-            show-new
-            :installations="scopedVisibleInstalls"
-            :show-free-runs-pill="showCloudFreeRunsPill"
-            :show-why-cloud="showWhyCloud"
-            :is-stopped-action-gated="isStoppedActionGated"
-            :is-promoting-to-workspace="isPromotingToWorkspace"
-            v-on="gridHandlers"
-          />
-        </section>
-      </div>
+          {{ t('chooser.clearFilters') }}
+        </Button>
+      </section>
 
-      <ContextMenu
-        :open="ctxMenu.open"
-        :x="ctxMenu.x"
-        :y="ctxMenu.y"
-        :items="ctxMenuItems"
-        @close="closeMenu"
-        @select="handleCtxMenuSelect"
-      />
+      <section
+        v-else-if="showNoBuilds"
+        class="chooser-no-builds flex flex-col items-center gap-3 px-6 py-16 text-center"
+      >
+        <div class="flex max-w-[420px] flex-col gap-1.5">
+          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
+            {{ t('chooser.noBuildsTitle') }}
+          </h2>
+          <p class="m-0 text-[13px]/5 text-muted-foreground">
+            {{ t('chooser.noBuildsBody') }}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="inverted"
+          size="md"
+          class="gap-1.5 px-3 text-[13px]/5"
+          @click="handleNewInstallClick"
+        >
+          <Plus :size="15" aria-hidden="true" />
+          {{ t('chooser.newBuild') }}
+        </Button>
+      </section>
 
-      <WhyTryCloudModal
-        v-if="whyCloudOpen"
-        @close="dismissWhyCloud"
-        @try-cloud="onWhyCloudTryCloud"
+      <ChooserFamilyGrid
+        v-else
+        :installations="scopedVisibleInstalls"
+        :show-free-runs-pill="showCloudFreeRunsPill"
+        :show-why-cloud="showWhyCloud"
+        :is-stopped-action-gated="isStoppedActionGated"
+        :is-promoting-to-workspace="isPromotingToWorkspace"
+        v-on="gridHandlers"
       />
     </div>
-  </BrandBackground>
-</template>
 
-<style>
-/* Register the measured row count so the scroll viewport can reserve its
- * unfiltered height while search changes the visible tiles. */
-@property --rows {
-  syntax: '<integer>';
-  inherits: true;
-  initial-value: 1;
-}
-</style>
+    <ContextMenu
+      :open="ctxMenu.open"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="ctxMenuItems"
+      @close="closeMenu"
+      @select="handleCtxMenuSelect"
+    />
+
+    <WhyTryCloudModal
+      v-if="whyCloudOpen"
+      @close="dismissWhyCloud"
+      @try-cloud="onWhyCloudTryCloud"
+    />
+  </div>
+</template>

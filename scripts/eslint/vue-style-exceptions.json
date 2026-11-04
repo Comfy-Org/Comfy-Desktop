@@ -27,14 +27,6 @@
     "reason": "Preserve the existing template-preview-pulse animation.",
     "sha256": "f6939b02602758e17f40529cd24db181f95854f153bce6be496bf324b90d31f8"
   },
-  "src/renderer/src/views/chooser/ChooserInstallTile.vue": {
-    "reason": "Preserve the existing chooser-tile-status-pulse animation.",
-    "sha256": "d3a61fc0d707f9c1e5411b5f5b62c70186381111d34d8d10742b542b0d588103"
-  },
-  "src/renderer/src/views/ChooserView.vue": {
-    "reason": "Register the integer --rows property used to reserve scroll height.",
-    "sha256": "24bda0dd767ac8a390648a2916635d54dba8ba9761851a15b77d8b203e70fba3"
-  },
   "src/renderer/src/views/comfyUISettings/ConsoleTerminalPane.vue": {
     "reason": "Unlayered xterm vendor integration overrides for generated terminal DOM.",
     "sha256": "ac35f9448c82e5cb0eeba067da1566bd988d52f2b11e133325eccafa216010a0"
