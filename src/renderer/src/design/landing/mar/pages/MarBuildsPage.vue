@@ -478,9 +478,11 @@ const newLabel = computed(() =>
 }
 .mar-bc-row-state {
   width: 150px;
+  overflow: visible;
+  padding-left: 3px;
 }
 .mar-bc-row .mar-item-tools.is-row {
-  min-width: 220px;
+  width: 268px;
   justify-content: flex-end;
 }
 @container (max-width: 720px) {
@@ -506,15 +508,21 @@ const newLabel = computed(() =>
 .mar-bc-badge.is-bad {
   color: var(--color-status-danger);
 }
+.mar-bc-badge {
+  gap: 9px;
+}
+/* The dot in the state's colour, on a soft halo of the same. */
 .mar-bc-badge > i {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   flex-shrink: 0;
   border-radius: 999px;
   background: var(--color-subtle-foreground);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-subtle-foreground) 18%, transparent);
 }
 .mar-bc-badge:not(.is-idle) > i {
   background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 20%, transparent);
 }
 /* Runs on: where reads first, the hardware after it, quieter. */
 .mar-build-where {
