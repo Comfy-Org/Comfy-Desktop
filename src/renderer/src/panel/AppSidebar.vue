@@ -15,6 +15,10 @@ const { activePage } = defineProps<{
   activePage: DashboardPage
 }>()
 
+const emit = defineEmits<{
+  navigate: [page: DashboardPage]
+}>()
+
 interface SidebarRow {
   page: DashboardPage
   label: string
@@ -39,6 +43,7 @@ const groups = computed(() => [
 ])
 
 function navigate(page: DashboardPage): void {
+  emit('navigate', page)
   window.api.navigatePanel(page)
 }
 </script>

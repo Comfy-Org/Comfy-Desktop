@@ -113,3 +113,28 @@ describe('installPickerSettingsApiShim — Global Settings deep link', () => {
     })
   })
 })
+
+describe('installPickerSettingsApiShim — folder actions', () => {
+  it('gives the Storage tab the same folder actions the panel has', () => {
+    const bridge = installBridge({ platform: 'win32' })
+    installPickerSettingsApiShim()
+
+    const api = (
+      window as unknown as {
+        api: {
+          platform: string
+          openPath: (path: string) => void
+          revealPath: (path: string) => void
+        }
+      }
+    ).api
+    api.openPath('/models')
+    api.revealPath('/models/extra_model_paths.yaml')
+
+    expect(api.platform).toBe('win32')
+    expect(bridge.globalSettingsOpenPath).toHaveBeenCalledExactlyOnceWith('/models')
+    expect(bridge.globalSettingsRevealPath).toHaveBeenCalledExactlyOnceWith(
+      '/models/extra_model_paths.yaml'
+    )
+  })
+})

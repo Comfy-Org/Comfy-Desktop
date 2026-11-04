@@ -42,7 +42,7 @@ test.beforeAll(async () => {
   // `.is-install-less` is the user-visible signal that the identity
   // handshake completed; it doubles as a sanity check before the
   // hover-gate assertions below.
-  await ctx.panel.click('.chooser-tile[data-source-category="cloud"]')
+  await ctx.panel.click('.chooser-tile[data-source-category="cloud"] .chooser-tile-launch')
   await expect.poll(() => titleBar.exists('.title-install-pill:not(.is-install-less)'), {
     timeout: 30_000,
     intervals: [100, 200, 500],

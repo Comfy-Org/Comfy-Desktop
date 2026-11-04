@@ -169,6 +169,12 @@ export interface Installation {
 /** Full-page screens of a dashboard window, reachable from its sidebar. */
 export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
 
+export interface BuildStorageSnapshot {
+  sharedDirectoriesFields: Record<string, unknown>[]
+  modelsDirs: { path: string; isPrimary: boolean }[]
+  modelsSystemDefault: string
+}
+
 export interface RunningInstance {
   installationId: string
   installationName: string
@@ -1342,6 +1348,8 @@ export interface ElectronApi {
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
+  /** Show a file in the OS file manager instead of opening it. */
+  revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
   /** Read-only snapshot of an install's durable log buffer (joined string). */
@@ -1422,6 +1430,9 @@ export interface ElectronApi {
    *  release-update so the newly-created destination install gets
    *  focus without swapping the source host. */
   openInstallWindow(installationId: string): Promise<boolean>
+  /** Land an install in its own window, leaving this one alone. Focuses the
+   *  window it already has, if any. */
+  openInstallInNewWindow(installationId: string): void
   /** Close the BrowserWindow that hosts the given installation's ComfyUI
    *  view (and its title-bar / panel WebContentsViews). Returns true if a
    *  window was found and closed. Used by the embedded install-settings
@@ -1455,6 +1466,8 @@ export interface ElectronApi {
   signalOverlayReady(): void
   /** Switch this dashboard window to one of its full-page screens. */
   navigatePanel(page: DashboardPage): void
+  /** Shared storage settings shown on a build's Storage tab. */
+  getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)

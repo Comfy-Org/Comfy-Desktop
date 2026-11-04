@@ -3,7 +3,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
-import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -18,6 +17,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
+import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { openInstallManager } from '../lib/openInstallManager'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
@@ -49,6 +49,8 @@ const emit = defineEmits<{
   /** User picked an install - caller decides whether to swap-in-place,
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
+  /** User asked to see or manage a build. */
+  'open-details': [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
   'show-new-install': []
   /** A long-running action was kicked off from the inline Manage...
@@ -59,7 +61,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
-const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
 const dashboardScope = useDashboardScopeStore()
@@ -193,9 +194,6 @@ async function refreshWorkspace(): Promise<void> {
 }
 
 // --- Manage / context menu ---
-// All Manage routes go through `window.api.openInstancePicker` (the
-// picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
-// route is retired.
 
 function canPromoteToWorkspace(inst: Installation): boolean {
   return (
@@ -220,7 +218,8 @@ const {
   isStoppedActionGated,
   isPromotingToWorkspace
 } = useInstallContextMenu({
-  onManage: openInstallManager,
+  onManage: (inst, options) =>
+    options ? openInstallManager(inst, options) : emit('open-details', inst),
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
   // pipeline used by every other long op fires here too, without the
   // brief ManageInstallModal flash that the autoAction route produced.
@@ -229,22 +228,9 @@ const {
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
-  // The instance window owns lifecycle. If a host window already exists for
-  // this install - running, launching, OR crashed (the window stays open on
-  // its lifecycle/error surface) - bring it forward instead of kicking off a
-  // second launch with a dashboard takeover. Restart, stop, and crash details
-  // all live inside that window.
-  if (
-    sessionStore.isRunning(inst.id) ||
-    sessionStore.isLaunching(inst.id) ||
-    sessionStore.errorInstances.has(inst.id)
-  ) {
-    const focused = await window.api.focusComfyWindow(inst.id)
-    // `errorInstances` can be hydrated from the retained crash buffer after
-    // the window was closed, so a focus may find nothing - fall through and
-    // launch normally in that case.
-    if (focused) return
-  }
+  // The instance window owns lifecycle, so an install with a window is brought
+  // forward instead of starting a second launch with a dashboard takeover.
+  if (await focusRunningBuild(inst)) return
   emit('pick', inst)
 }
 
@@ -301,6 +287,7 @@ function handleNewInstallClick(): void {
 
 const gridHandlers = {
   pick: pickInstall,
+  'open-details': (inst: Installation) => emit('open-details', inst),
   'open-card-menu': openCardMenu,
   'open-kebab-menu': openKebabMenu,
   'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>

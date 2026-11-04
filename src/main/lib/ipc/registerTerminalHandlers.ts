@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { findEntryByComfySender } from '../../host/registry'
+import { findEntryByComfySender, isPanelSender } from '../../host/registry'
 import { isTitlePopupSender } from '../../popups/titlePopup'
 import {
   subscribeTerminal,
@@ -34,7 +34,7 @@ function resolveInstallationId(
   explicit: string | null | undefined
 ): string | null {
   const requestedId = typeof explicit === 'string' && explicit.length > 0 ? explicit : null
-  if (isTitlePopupSender(event.sender)) return requestedId
+  if (isTitlePopupSender(event.sender) || isPanelSender(event.sender)) return requestedId
   const popoutId = findTerminalPopoutInstallationIdBySender(event.sender)
   if (!popoutId || (requestedId && requestedId !== popoutId)) return null
   return popoutId

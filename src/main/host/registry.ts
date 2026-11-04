@@ -315,6 +315,14 @@ export function findEntryByTitleBarSender(
   return null
 }
 
+/** True when `wc` is a host window's panel: the app's own renderer, never the hosted ComfyUI. */
+export function isPanelSender(wc: WebContents): boolean {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return true
+  }
+  return false
+}
+
 export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {
   for (const entry of comfyWindows.values()) {
     if (entry.comfyView.webContents === wc) return entry

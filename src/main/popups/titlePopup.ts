@@ -45,7 +45,8 @@ import {
   findEntryByTitleBarSender,
   getEntryByInstallationId,
   hostInstallEvents,
-  isChooserHost
+  isChooserHost,
+  isPanelSender
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
@@ -2281,6 +2282,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // bindings). Last writer wins; only called once at `whenReady`.
   activeBindings = bindings
 
+  ipcMain.handle('comfy-window:build-storage-snapshot', () => buildPickerStorageSlice())
+
   ipcMain.handle('desktop2-open-terminal', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
@@ -2799,6 +2802,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       ).catch((err) => console.error('openInstallInNewWindow failed:', err))
     }
   )
+
+  // Build page → "Open in new window". The panel's route to the same primitive.
+  ipcMain.on('comfy-window:open-install-new-window', (event, installationId: unknown) => {
+    if (!isPanelSender(event.sender)) return
+    if (typeof installationId !== 'string' || installationId.length === 0) return
+    Promise.resolve(bindings.openInstallInNewWindow(installationId)).catch((err) =>
+      console.error('openInstallInNewWindow failed:', err)
+    )
+  })
 
   // Picker → restart a running install. Same contract as
   // `pick-install` but routed through `restartInstallFromPicker`, which

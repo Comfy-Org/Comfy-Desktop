@@ -30,8 +30,17 @@ export async function clickInstallTile(panel: WebContentsPage, nameSubstring: st
     },
     { timeout: 15_000, message: `Install tile matching "${nameSubstring}" never appeared in chooser` },
   )
-  const ok = await panel.clickByText(selector, nameSubstring)
-  expect(ok, `Install tile matching "${nameSubstring}" clicked`).toBe(true)
+  const launched = await panel.evaluate<boolean>(`(() => {
+    const needle = ${JSON.stringify(needle)}
+    const tile = [...document.querySelectorAll('.chooser-tile')].find((candidate) =>
+      candidate.querySelector('.chooser-tile-name')?.textContent?.toLowerCase().includes(needle),
+    )
+    const launch = tile?.querySelector('.chooser-tile-launch')
+    if (!launch) return false
+    launch.click()
+    return true
+  })()`)
+  expect(launched, `Install tile matching "${nameSubstring}" launched`).toBe(true)
 }
 
 /** Click the title-bar waffle/menu button that opens the file menu popup. */
@@ -49,13 +58,9 @@ export async function openDownloadsTray(titleBar: WebContentsPage): Promise<void
 }
 
 /**
- * Open the instance picker for a dashboard install through the real UI:
- * tile kebab -> context-menu "Manage" -> (optionally) a picker settings
- * tab click. Returns the popup facade once the picker is visible.
- *
- * This is the lifecycle-grade replacement for calling
- * `window.api.openInstancePicker()` directly, which bypasses the dashboard
- * entry control - a broken kebab or Manage item must fail the test.
+ * Open the instance picker for a dashboard install, optionally on a settings
+ * tab. Returns the popup facade once the picker is visible. The dashboard's own
+ * Manage item opens the build details page, so this asks for the picker directly.
  */
 export async function openManageViaDashboard(
   app: ElectronApplication,
@@ -63,10 +68,10 @@ export async function openManageViaDashboard(
   installationId: string,
   tabKey?: string,
 ): Promise<WebContentsPage> {
-  await panel.waitForVisible(byTestId(TID.dashboardTileKebab(installationId)), { timeout: 15_000 })
-  expect(await panel.click(byTestId(TID.dashboardTileKebab(installationId))), 'dashboard tile kebab clicked').toBe(true)
-  await panel.waitForVisible(byTestId(TID.contextMenuItem('manage')), { timeout: 5_000 })
-  expect(await panel.click(byTestId(TID.contextMenuItem('manage'))), 'Manage context-menu item clicked').toBe(true)
+  await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
+  await panel.evaluate<void>(
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`,
+  )
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), { timeout: 15_000, intervals: [100, 250] })

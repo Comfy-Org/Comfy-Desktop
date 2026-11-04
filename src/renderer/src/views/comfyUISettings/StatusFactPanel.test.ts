@@ -203,11 +203,9 @@ describe('StatusFactPanel — location', () => {
     } as unknown as DetailSection
   }
 
-  it('opens the location folder via the popup bridge when clicked', async () => {
-    const opened: string[] = []
-    ;(window as unknown as { __comfyTitlePopup: unknown }).__comfyTitlePopup = {
-      globalSettingsOpenPath: (p: string) => opened.push(p)
-    }
+  it('opens the location folder when clicked', async () => {
+    const openPath = vi.fn()
+    ;(window as unknown as { api: unknown }).api = { openPath }
     const wrapper = mountPanel({
       installation: makeInstall('Maanil'),
       sections: [locationSection('/tmp/inst-1')]
@@ -217,8 +215,8 @@ describe('StatusFactPanel — location', () => {
     const openBtn = wrapper.find('.status-fact-value-open')
     expect(openBtn.exists()).toBe(true)
     await openBtn.trigger('click')
-    expect(opened).toEqual(['/tmp/inst-1'])
+    expect(openPath).toHaveBeenCalledExactlyOnceWith('/tmp/inst-1')
 
-    delete (window as unknown as { __comfyTitlePopup?: unknown }).__comfyTitlePopup
+    delete (window as unknown as { api?: unknown }).api
   })
 })
