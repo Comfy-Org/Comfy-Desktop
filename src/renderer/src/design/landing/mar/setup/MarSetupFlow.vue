@@ -207,7 +207,7 @@ const failed = computed(() => flow.step === 'error')
 // Like today's stepper: no overall percent, since the whole install can't be
 // timed. Only the download knows its size, so only it gets a detail line.
 const nowIndex = computed(() => (phaseIndex.value < 0 ? phases.length - 1 : phaseIndex.value))
-const DOWNLOAD_MB = 740
+const DOWNLOAD_MB = Math.round(DETECTED.downloadGb * 1000)
 const DOWNLOAD_SPEED = 18
 const stepDetail = computed(() => {
   if (failed.value || nowIndex.value !== 0) return ''
