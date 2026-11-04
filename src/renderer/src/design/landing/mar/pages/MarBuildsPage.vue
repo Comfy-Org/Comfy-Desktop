@@ -288,13 +288,17 @@ function card(b: Build) {
     name: b.name,
     kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
     where: whereLabel(b),
-    // Grouped leaves the hardware to its heading, unless it's the cloud's own.
-    meta: [
-      ...release,
-      ...(buildCard.id === 'where' || (buildCard.id === 'grouped' && b.kind === 'cloud')
-        ? [gpuName(b)]
-        : [])
-    ].join(' · '),
+    // Strip leads the specs with the hardware. Grouped leaves the hardware to
+    // its heading, unless it's the cloud's own.
+    meta: (buildCard.id === 'strip'
+      ? [gpuName(b), ...release]
+      : [
+          ...release,
+          ...(buildCard.id === 'where' || (buildCard.id === 'grouped' && b.kind === 'cloud')
+            ? [gpuName(b)]
+            : [])
+        ]
+    ).join(' · '),
     error: b.state === 'error' ? b.error : undefined,
     status: STATUS[b.state],
     statusLabel: statusLabel(b),
@@ -541,6 +545,7 @@ const newLabel = computed(() =>
             v-if="second(b)"
             variant="ghost"
             size="sm"
+            class="mar-bc-second"
             :title="second(b)!.hint"
             @click.stop="second(b)!.run()"
             ><component :is="second(b)!.icon" :size="13" />{{ second(b)!.label }}</Button
@@ -560,7 +565,11 @@ const newLabel = computed(() =>
           <span class="mar-item-col">{{ deploymentsOf(b.id).length || '—' }}</span>
         </template>
         <template v-else #cols>
-          <span class="mar-item-col">{{ b.gpu }}</span>
+          <!-- Where first, then the hardware it runs on. -->
+          <span class="mar-item-col"
+            ><span class="mar-build-where">{{ whereLabel(b) }}</span
+            ><template v-if="b.gpu"> · {{ gpuName(b) }}</template></span
+          >
           <span class="mar-item-col">{{ b.state === 'running' ? 'Now' : b.lastUsed }}</span>
         </template>
       </MarItem>
@@ -707,6 +716,10 @@ const newLabel = computed(() =>
   inset: 0 auto 0 0;
   border-radius: inherit;
   background: var(--color-base-foreground);
+}
+/* Runs on: where reads first, the hardware after it, quieter. */
+.mar-build-where {
+  color: var(--color-base-foreground);
 }
 .mar-build-glyph {
   display: flex;

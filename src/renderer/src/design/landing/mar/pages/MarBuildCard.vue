@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import { Cloud, Laptop } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import MarItem from './MarItem.vue'
@@ -10,9 +11,9 @@ import type { MenuLine } from './menu'
 /**
  * One build with no picture (UI Playground › Build card). Text on the card's
  * surface and a quiet button, so the page reads as a list of places to run,
- * not a gallery. Where it runs: a labelled line on top (where), a mark beside
- * the name (mark), or the group's heading (grouped). MarItem keeps selection,
- * the ⋯ menu and rename.
+ * not a gallery. Where it runs: a strip across the top (strip, the pick), a
+ * labelled line on top (where), a mark beside the name (mark), or the group's
+ * heading (grouped). MarItem keeps selection, the ⋯ menu and rename.
  */
 const {
   look,
@@ -93,7 +94,10 @@ const emit = defineEmits<{
     @star="emit('star')"
   >
     <template #media>
-      <span v-if="look === 'where'" class="mar-bc-where">
+      <span v-if="look === 'strip'" class="mar-bc-strip">
+        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="14" />{{ where }}
+      </span>
+      <span v-else-if="look === 'where'" class="mar-bc-where">
         <LocationIcon :kind :size="15" />{{ where }}
       </span>
       <span v-else-if="look === 'mark'" class="mar-row-icon">
@@ -125,6 +129,7 @@ const emit = defineEmits<{
             v-if="second"
             variant="ghost"
             size="sm"
+            class="mar-bc-second"
             :title="second.hint"
             @click.stop="second.run()"
             ><component :is="second.icon as Component" :size="13" />{{ second.label }}</Button
@@ -225,6 +230,48 @@ const emit = defineEmits<{
   gap: 8px;
   color: var(--color-subtle-foreground);
   font-size: 12px;
+}
+/* Strip: where it runs, across the card's top under a hairline. Both places
+   share the grey; the icon and the label tell them apart. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-strip {
+  padding-top: 0;
+}
+.mar-bc.is-strip > .mar-item-media {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  margin: 0 -16px;
+  padding: 0 16px;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-bc-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mar-bc-strip > svg {
+  color: var(--color-muted-foreground);
+}
+/* ⋯ and the check sit inside the strip. */
+.mar-bc.is-strip .mar-item-tools {
+  top: 4px;
+  right: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check {
+  top: 9px;
+  right: 40px;
+}
+/* The state's other action (Stop, Start without updating) is outlined, so
+   the main button stays the one with a fill. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-second {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  color: var(--color-base-foreground);
 }
 /* Mark: the mark beside the name, the specs under a hairline. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-mark {
