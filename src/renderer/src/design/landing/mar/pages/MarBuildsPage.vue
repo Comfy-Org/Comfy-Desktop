@@ -265,7 +265,7 @@ function lines(b: Build): MenuLine[] {
       : [
           'sep' as const,
           {
-            label: b.kind === 'local' ? 'Remove from this computer' : 'Delete build',
+            label: b.kind === 'local' ? 'Remove build' : 'Delete build',
             icon: Trash2,
             danger: true,
             disabled: b.state === 'running',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, OctagonAlert, Plus } from 'lucide-vue-next'
+import { Folder, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
@@ -92,16 +92,17 @@ const itemClass = (page: Page): string =>
       @click="go(r.page)"
     >
       <Folder v-if="proto.projects" :size="15" />
-      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" />
-      <span class="sidebar-label text-left">{{ r.label }}</span>
-      <!-- Running dot and attention icon share one 14px slot, centred. -->
-      <span v-if="r.live" class="flex size-3.5 shrink-0 items-center justify-center"
-        ><span class="size-1.5 rounded-full bg-status-running"
-      /></span>
-      <!-- Didn't start: the attention icon, its reason on hover. -->
-      <Tooltip v-else-if="'failed' in r && r.failed" :content="`Failed to start · ${r.failed}`">
-        <OctagonAlert :size="14" class="shrink-0 text-status-danger" aria-label="Failed to start" />
+      <!-- Running or didn't start: a dot on the build's mark; the reason on hover. -->
+      <Tooltip
+        v-else-if="envById(r.envId!) && 'failed' in r && r.failed"
+        :content="`Failed to start · ${r.failed}`"
+      >
+        <span class="inline-flex" aria-label="Failed to start"
+          ><InstanceGlyph :inst="envById(r.envId!)!" size="xs" dot failed
+        /></span>
       </Tooltip>
+      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" dot />
+      <span class="sidebar-label text-left">{{ r.label }}</span>
       <!-- Projects: the environment the project runs on -->
       <Tooltip
         v-if="proto.projects && envById(r.envId!)"
