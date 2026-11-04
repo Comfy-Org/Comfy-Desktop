@@ -28,9 +28,10 @@
 }
 /* Item tables (MarItem rows): picture, name, the page's columns, state
    and the row tools. The page sets only its own columns in --mar-cols
-   (and --mar-state when its longest state chip needs more room). */
+   (and --mar-state when its longest state chip needs more room, and
+   --mar-tools when its rows show their own buttons). */
 .mar-table.is-items {
-  --mar-grid: 32px minmax(0, 1fr) var(--mar-cols,) var(--mar-state, 128px) 56px;
+  --mar-grid: 32px minmax(0, 1fr) var(--mar-cols,) var(--mar-state, 128px) var(--mar-tools, 56px);
 }
 
 .mar-table-head,

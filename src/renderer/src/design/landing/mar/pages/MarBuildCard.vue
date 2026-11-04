@@ -29,6 +29,7 @@ const {
   usageLabel,
   counts,
   cta,
+  second,
   busy = false,
   lines,
   selected = false,
@@ -52,6 +53,9 @@ const {
   usageLabel?: string
   counts?: string
   cta: { label: string; icon: unknown; run: () => void }
+  /** The state's other frequent action (Stop while it runs), as an icon
+   *  beside the button, so it never needs the ⋯ menu. */
+  second?: { label: string; hint?: string; icon: unknown; run: () => void }
   busy?: boolean
   lines: MenuLine[]
   selected?: boolean
@@ -116,9 +120,19 @@ const emit = defineEmits<{
           <MarStatus v-if="status" :status :label="statusLabel" />
           <span v-if="note" class="truncate">{{ note }}</span>
         </span>
-        <Button variant="secondary" size="sm" :disabled="busy" @click.stop="cta.run()">
-          <component :is="cta.icon as Component" :size="13" />{{ busy ? 'Starting…' : cta.label }}
-        </Button>
+        <span class="mar-bc-acts">
+          <Button
+            v-if="second"
+            variant="ghost"
+            size="sm"
+            :title="second.hint"
+            @click.stop="second.run()"
+            ><component :is="second.icon as Component" :size="13" />{{ second.label }}</Button
+          >
+          <Button variant="secondary" size="sm" :disabled="busy" @click.stop="cta.run()">
+            <component :is="cta.icon as Component" :size="13" />{{ busy ? 'Starting…' : cta.label }}
+          </Button>
+        </span>
       </span>
     </template>
   </MarItem>
@@ -194,6 +208,12 @@ const emit = defineEmits<{
   justify-content: space-between;
   gap: 12px;
   margin-top: 6px;
+}
+.mar-bc-acts {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
 }
 .mar-bc-state {
   display: flex;

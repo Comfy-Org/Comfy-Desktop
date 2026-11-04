@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   ArrowUpCircle,
   CircleAlert,
+  Camera,
   Copy,
   ExternalLink,
   FolderOpen,
@@ -18,12 +19,13 @@ import {
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
-import { hostActions, instances, proto, toast, type Page } from '../../useProto'
+import { hostActions, instances, proto, toast } from '../../useProto'
 import { can } from '../../milestones'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
+import { openBuild } from '../build/buildTab'
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
@@ -47,7 +49,10 @@ import type { ItemStatus } from './MarStatus.vue'
  * glance: the last things made on it, its name and one meta line, then a
  * few spec lines (GPU and uptime or how it wakes, memory and credits an
  * hour or disk, models and node packs). Its button does the one thing
- * the state needs (Open, Start, Update, Try again), bottom-right.
+ * the state needs (Open, Start, Update, Try again), bottom-right, with the
+ * state's other frequent action beside it as an icon (Stop while it runs,
+ * Start without updating). A click anywhere else opens the build's page;
+ * the ⋯ menu keeps the rare and destructive actions. List rows do the same.
  */
 type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 
@@ -212,22 +217,34 @@ function primary(b: Build): { label: string; icon: unknown; run: () => void } {
   if (b.state === 'error') return { label: 'Try again', icon: RotateCw, run: () => retry(b) }
   return { label: 'Start', icon: Play, run: () => start(b) }
 }
+// The state's other frequent action, beside the button.
+function second(
+  b: Build
+): { label: string; hint?: string; icon: unknown; run: () => void } | undefined {
+  if (b.state === 'running') return { label: 'Stop', icon: Square, run: () => stop(b) }
+  if (b.state === 'update')
+    return { label: 'Start', hint: 'Start without updating', icon: Play, run: () => start(b) }
+  return undefined
+}
+// A click opens the build's page; Open and Start are the button's.
 function open(b: Build): void {
-  if (b.state === 'running') hostActions.launch(original(b))
-  else go(`environment:${b.id}` as Page)
+  openBuild(b.id)
 }
 
+// The menu keeps what's rare or destructive; the frequent actions sit on
+// the card and the row, and the page's tabs are one click away.
 function lines(b: Build): MenuLine[] {
+  const own = b.id !== 'cloud'
   return [
-    b.state === 'running'
-      ? { label: 'Open', icon: ExternalLink, run: () => hostActions.launch(original(b)) }
-      : { label: 'Start', icon: Play, disabled: b.state === 'launching', run: () => start(b) },
-    ...(b.state === 'running' ? [{ label: 'Stop', icon: Square, run: () => stop(b) }] : []),
-    ...(b.state === 'update'
-      ? [{ label: 'Update', icon: ArrowUpCircle, run: () => update(b) }]
+    ...(own
+      ? [
+          { label: 'Snapshots', icon: Camera, run: () => openBuild(b.id, 'snapshots') },
+          ...(b.kind === 'local'
+            ? [{ label: 'Settings', icon: Settings2, run: () => openBuild(b.id, 'settings') }]
+            : []),
+          'sep' as const
+        ]
       : []),
-    { label: 'Details', icon: Settings2, run: () => go(`environment:${b.id}` as Page) },
-    'sep',
     { label: 'Rename', icon: Pencil, run: () => (lib.renaming.value = b.id) },
     ...(b.kind === 'local'
       ? [
@@ -286,6 +303,7 @@ function card(b: Build) {
     usageLabel: mem ? `${mem[0]} / ${mem[1]} GB` : memTotal(b),
     counts: `${b.models ?? 'All'} models · ${b.nodes ?? 'Core'} node packs`,
     cta: primary(b),
+    second: second(b),
     busy: b.state === 'launching',
     lines: lines(b),
     selected: lib.sel.has(b.id),
@@ -454,6 +472,15 @@ const newLabel = computed(() =>
                 packs</span
               >
               <Button
+                v-if="second(b)"
+                variant="ghost"
+                size="sm"
+                class="ml-auto"
+                :title="second(b)!.hint"
+                @click.stop="second(b)!.run()"
+                ><component :is="second(b)!.icon" :size="13" />{{ second(b)!.label }}</Button
+              >
+              <Button
                 variant="primary"
                 size="sm"
                 class="mar-build-go"
@@ -469,10 +496,14 @@ const newLabel = computed(() =>
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 220px) 120px">
+    <div
+      v-else
+      class="mar-table is-items"
+      style="--mar-cols: minmax(0, 220px) 120px; --mar-tools: 200px"
+    >
       <div class="mar-table-head">
         <span>Build</span
-        ><template v-if="building"><span>Latest version</span><span>Deployments</span></template
+        ><template v-if="building"><span>Latest snapshot</span><span>Deployments</span></template
         ><template v-else><span>Runs on</span><span>Last used</span></template
         ><span class="is-end">State</span><span />
       </div>
@@ -503,6 +534,25 @@ const newLabel = computed(() =>
           <span class="mar-build-glyph"
             ><LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="20"
           /></span>
+        </template>
+        <template #actions>
+          <Button
+            v-if="second(b)"
+            variant="ghost"
+            size="sm"
+            :title="second(b)!.hint"
+            @click.stop="second(b)!.run()"
+            ><component :is="second(b)!.icon" :size="13" />{{ second(b)!.label }}</Button
+          >
+          <Button
+            variant="secondary"
+            size="sm"
+            :disabled="b.state === 'launching'"
+            @click.stop="primary(b).run()"
+            ><component :is="primary(b).icon" :size="13" />{{
+              b.state === 'launching' ? 'Starting…' : primary(b).label
+            }}</Button
+          >
         </template>
         <template v-if="building" #cols>
           <span class="mar-item-col">{{ versionsOf(b)[0]?.label ?? 'Latest' }}</span>

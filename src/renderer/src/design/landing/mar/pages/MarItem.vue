@@ -203,6 +203,8 @@ function click(e: MouseEvent): void {
         ><MarStatus v-if="status" :status :label="statusLabel"
       /></span>
       <span class="mar-item-tools is-row">
+        <!-- The row's own buttons, always shown (Builds: Start, Stop, Update). -->
+        <slot name="actions" />
         <FavoriteStar v-if="favId && favKind" :id="favId" :kind="favKind" />
         <button
           v-else-if="fav !== undefined"
