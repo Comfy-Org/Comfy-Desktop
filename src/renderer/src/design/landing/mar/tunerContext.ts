@@ -65,8 +65,11 @@ export const when = {
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
   // Template cards: Explore and Favorites.
   templates: computed(() => inShell.value && ['explore', 'favorites'].includes(proto.page)),
-  // The Builds page is one build to a line now, so its card looks are retired.
-  buildCard: computed(() => false),
+  // The cards on the Builds page (milestone 1 shows only rows).
+  buildCard: computed(
+    () =>
+      inShell.value && proto.milestone >= 3 && ['environments', 'instances'].includes(proto.page)
+  ),
   // A build's page, in the Builds milestone (later ones keep their tabs).
   buildPage: computed(
     () => inShell.value && proto.page.startsWith('environment:') && !can.value.breadcrumb
