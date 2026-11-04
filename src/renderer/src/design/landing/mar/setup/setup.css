@@ -159,23 +159,70 @@
     position: absolute;
     inset: 0;
   }
-  /* Install wait: today's scene of Comfy outputs, at its own proportions
-   * (1056 × 784) with nothing over it, as on today's progress screen. The
-   * column narrows on short windows so the scene, the progress and the
-   * steps always fit without scrolling. */
+  /* Install wait: today's showcase clips float on the modal, no box behind
+   * them, staggered with the tall one in front. The column narrows on short
+   * windows so the clips, the progress and the steps fit without scrolling. */
   .mss-prog.is-wait {
-    width: min(100%, calc((100vh - 400px) * 1056 / 784));
+    width: min(100%, calc((100vh - 360px) * 736 / 356));
     margin-inline: auto;
     grid-template-columns: minmax(0, 1fr);
   }
-  .mss-scene-frame {
+  .mss-scene {
     position: relative;
-    min-width: 0;
-    width: 100%;
-    aspect-ratio: 1056 / 784;
-    overflow: hidden;
-    border-radius: 16px;
-    background-color: oklch(0.17 0.006 300);
+    aspect-ratio: 736 / 356;
+    margin-block: 8px;
+  }
+  .mss-clip {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: var(--w);
+    height: var(--h);
+    border-radius: 14px;
+    object-fit: cover;
+    background-color: oklch(0.2 0.006 285);
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.08),
+      0 18px 40px -8px oklch(0 0 0 / 0.45);
+    transform: rotate(var(--r));
+    animation: mss-clip-float 7s ease-in-out infinite alternate;
+  }
+  .mss-clip.is-eye {
+    --x: 3.3%;
+    --y: 10.1%;
+    --w: 28.3%;
+    --h: 42.7%;
+    --r: -3deg;
+  }
+  .mss-clip.is-clouds {
+    --x: 12.5%;
+    --y: 60.1%;
+    --w: 31.5%;
+    --h: 34.8%;
+    --r: 2deg;
+    animation-delay: -2s;
+  }
+  .mss-clip.is-mountains {
+    --x: 67.9%;
+    --y: 25.8%;
+    --w: 28.8%;
+    --h: 47.2%;
+    --r: 3deg;
+    animation-delay: -4s;
+  }
+  .mss-clip.is-flower {
+    --x: 36.4%;
+    --y: 2.2%;
+    --w: 26.6%;
+    --h: 95.5%;
+    --r: 0deg;
+    z-index: 1;
+    animation-delay: -5.5s;
+  }
+  @keyframes mss-clip-float {
+    to {
+      transform: translateY(-6px) rotate(var(--r));
+    }
   }
   /* The Cloud pitch rotates above the scene, the CTA at the row's end. */
   .mss-pitch {
@@ -892,7 +939,8 @@
     .mss-body,
     .mss-card-check,
     .mss-spin,
-    .mss-phase-pulse {
+    .mss-phase-pulse,
+    .mss-clip {
       animation: none;
     }
     .mss-opt-arrow,

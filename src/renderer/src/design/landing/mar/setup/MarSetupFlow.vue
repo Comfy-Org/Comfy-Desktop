@@ -15,7 +15,6 @@ import {
   TriangleAlert
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
-import BrandSceneAnimation from '../../../../components/BrandSceneAnimation.vue'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Badge from '../../ui/Badge.vue'
@@ -119,6 +118,26 @@ function installWith(s: Starter | null): void {
   startInstall()
 }
 const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
+// The install wait's outputs: today's showcase clips, floating on their own
+// instead of inside today's scene box.
+const CLIPS = [
+  { id: 'eye', src: './install-showcase-scene/Assets/eye.webm', poster: 'mock/clip-eye.jpg' },
+  {
+    id: 'clouds',
+    src: './install-showcase-scene/Assets/clouds.webm',
+    poster: 'mock/clip-clouds.jpg'
+  },
+  {
+    id: 'mountains',
+    src: './install-showcase-scene/Assets/dusk_mountains.webm',
+    poster: 'mock/clip-dusk-mountains.jpg'
+  },
+  {
+    id: 'flower',
+    src: './install-showcase-scene/Assets/flower.webm',
+    poster: 'mock/clip-flower.jpg'
+  }
+]
 
 // Change setup: the fields start on what fits this computer.
 const name = ref('ComfyUI')
@@ -604,8 +623,19 @@ const failed = computed(() => flow.step === 'error')
                 >{{ say('installShowcase.cloudCta') }}<ArrowRight :size="12"
               /></Button>
             </div>
-            <div v-if="!failed" class="mss-scene-frame">
-              <BrandSceneAnimation />
+            <div v-if="!failed" class="mss-scene" aria-hidden="true">
+              <video
+                v-for="c in CLIPS"
+                :key="c.id"
+                class="mss-clip"
+                :class="`is-${c.id}`"
+                :src="c.src"
+                :poster="imgUrl(c.poster)"
+                autoplay
+                muted
+                loop
+                playsinline
+              ></video>
             </div>
             <div class="mss-prog-head">
               <span class="mss-stage-title is-big">{{
