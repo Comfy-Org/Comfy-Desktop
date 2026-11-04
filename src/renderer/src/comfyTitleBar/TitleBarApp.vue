@@ -208,23 +208,17 @@ interface Bridge {
 const bridge = (window as unknown as { __comfyTitleBar?: Bridge }).__comfyTitleBar
 
 const titleMenuButtonClass =
-  '[-webkit-app-region:no-drag] inline-flex items-center gap-0 rounded-[4px] border border-solid border-transparent bg-transparent px-1.5 py-1 [font:inherit] text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity,border-color] duration-[120ms] ease-[ease] [.title-bar:not(.is-light)_&]:rounded-control [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent'
+  '[-webkit-app-region:no-drag] box-border inline-flex size-7 shrink-0 items-center justify-center rounded-control border border-solid border-transparent bg-transparent p-0 [font:inherit] text-muted-foreground cursor-pointer transition-[background-color,color] duration-[120ms] ease-[ease] [.title-bar.is-light_&]:text-[var(--titlebar-icon)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:text-foreground [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)]'
 
 const titleInstallPillClass = [
-  '[-webkit-app-region:no-drag] inline-flex h-7 items-center gap-2 [inline-size:fit-content] [min-inline-size:200px] [max-inline-size:clamp(200px,22cqi,360px)] rounded-[999px] border border-solid border-transparent bg-[var(--chooser-surface-bg)] py-[5px] pr-2.5 pl-3 [font-family:inherit] text-[12px] leading-[inherit] font-normal text-neutral-100 cursor-default transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
+  '[-webkit-app-region:no-drag] box-border inline-flex h-7 w-full min-w-0 items-center gap-2 rounded-control border border-solid border-border bg-white/3 px-3 text-ui text-foreground cursor-default transition-[background-color,border-color] duration-[120ms] ease-[ease]',
   '[&.is-interactive]:cursor-pointer',
-  '[&.is-interactive:focus-visible]:outline-none [&.is-interactive:focus-visible]:outline-current',
-  '[&.is-install-less]:opacity-85',
-  '[.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive:focus-visible:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [&.is-interactive:focus-visible:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive.is-open]:border-neutral-50 [&.is-interactive.is-open]:text-neutral-50',
-  '[.title-bar.is-light_&]:bg-[rgba(0,0,0,0.04)] [.title-bar.is-light_&]:text-neutral-700',
-  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted',
-  '[.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:border-[oklch(1_0_0/0.12)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:bg-[oklch(1_0_0/0.07)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:text-text',
-  '[.title-bar:not(.is-light)_&.is-interactive.is-open]:border-[oklch(1_0_0/0.3)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:bg-[oklch(1_0_0/0.07)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:text-text',
-  '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
+  '[&.is-interactive:focus-visible]:outline-2 [&.is-interactive:focus-visible]:[outline-style:solid] [&.is-interactive:focus-visible]:outline-offset-1 [&.is-interactive:focus-visible]:outline-[var(--focus-ring)]',
+  '[.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:border-border-strong [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:bg-white/7',
+  '[.title-bar:not(.is-light)_&.is-interactive.is-open]:border-[oklch(1_0_0/0.3)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:bg-white/7',
+  '[.title-bar.is-light_&]:border-transparent [.title-bar.is-light_&]:bg-[rgba(0,0,0,0.04)] [.title-bar.is-light_&]:text-neutral-700',
+  '[.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[rgba(0,0,0,0.07)]',
+  '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)]'
 ].join(' ')
 
 const titleDownloadsBadgeClass =
@@ -362,20 +356,6 @@ const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const installPillRef = useTemplateRef<HTMLElement>('installPill')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
-/** Mirrors the trailing cluster's measured width onto the title bar as
- *  `--title-trailing-width`, which the left cluster reads as a
- *  `min-width` reservation. This keeps the install pill anchored to
- *  true window center even when only the right side has variable
- *  content (update pills, feedback collapsing to icon, etc.) — the
- *  left cluster grows to match so both 1fr-flanking tracks stay equal.
- *
- *  Pure-CSS can't do this because the left and right clusters have
- *  asymmetric content (waffle menu vs. 5 pills), so neither side can
- *  be a `1fr` mirror of the other. ResizeObserver is the standard
- *  pattern apps like Figma use for the same problem. */
-const trailingWidthPx = ref(0)
-let trailingObserver: ResizeObserver | undefined
-
 /** Responsive collapse mode for the trailing cluster.
  *
  *  Three tiers, decided from real measured geometry (not bar-width
@@ -387,10 +367,9 @@ let trailingObserver: ResizeObserver | undefined
  *    - 'icons-only'  — Both Feedback and Desktop Update collapsed.
  *
  *  Each resize frame measures the gap between the install pill's
- *  right edge and the trailing cluster's left edge. With the trailing
- *  mirror live the left-side gap is equal by construction, so the
- *  right gap alone is sufficient. When the gap drops below
- *  `MIN_GAP_PX` the controller advances one tier; it only walks back
+ *  right edge and the trailing cluster's left edge. The outer grid
+ *  tracks are equal, so the right gap alone is sufficient. When the
+ *  gap drops below `MIN_GAP_PX` the controller advances one tier; it only walks back
  *  when the gap comfortably exceeds the *learned* width cost of
  *  restoring the hidden label plus `RESTORE_BUFFER_PX`. Hysteresis is
  *  essential — collapsing the trailing cluster immediately frees
@@ -669,22 +648,6 @@ let unsubCoachmarkSettled: (() => void) | undefined
 let unsubCoachmarkDisplaced: (() => void) | undefined
 
 onMounted(() => {
-  // Observe the trailing cluster so the left cluster can mirror its
-  // width (keeps the centered install pill at true window centre).
-  // Pills appearing/disappearing (update pills, feedback collapse)
-  // change the trailing width — ResizeObserver fires on each.
-  if (titleTrailingRef.value && typeof ResizeObserver !== 'undefined') {
-    trailingObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      const width = Math.ceil(entry.contentRect.width)
-      if (width !== trailingWidthPx.value) {
-        trailingWidthPx.value = width
-      }
-    })
-    trailingObserver.observe(titleTrailingRef.value)
-  }
-
   // Observe the title bar itself for resize so the fit controller can
   // re-evaluate whether the trailing labels still fit alongside the
   // centre pill. Bar-only is sufficient — install-pill width and
@@ -830,8 +793,6 @@ onUnmounted(() => {
   unsubCoachmarkDisplaced?.()
   bridge?.hideCoachmark()
   hideTip()
-  trailingObserver?.disconnect()
-  trailingObserver = undefined
   fitObserver?.disconnect()
   fitObserver = undefined
   if (fitRaf !== null) {
@@ -850,14 +811,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- Equal outer tracks keep the identity pill centered. Platform padding reserves
-       the native window controls; the trailing ResizeObserver supplies the left track width. -->
   <header
     ref="titleBar"
-    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[minmax(max-content,1fr)_minmax(0,288px)_minmax(max-content,1fr)] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] p-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&:not(.is-light)]:border-b-border [&.is-install-less:not(.is-light)]:border-b-transparent"
     :class="{
       'is-mac': isMac,
       'is-light': isLight,
+      'is-install-less': isInstallLess,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
       'is-consent-lockdown': isConsentLockdown,
@@ -868,15 +828,14 @@ onUnmounted(() => {
     :style="{
       color: themeText ?? undefined,
       '--titlebar-bg-active': themeBg ?? undefined,
-      '--titlebar-icon': themeText ?? undefined,
-      '--title-trailing-width': `${trailingWidthPx}px`
+      '--titlebar-icon': themeText ?? undefined
     }"
   >
     <!-- The native app menu avoids clipping at the title-bar view's bounds.
          Hidden only during consent; post-consent exposes Skip Onboarding
          and loading-lockdown leaves the menu available. -->
     <div
-      class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
+      class="title-cluster flex items-center gap-px pl-3 [.title-bar.is-mac_&]:pl-[78px] [.title-bar.is-mac.is-fullscreen_&]:pl-3"
     >
       <button
         v-if="!isConsentLockdown"
@@ -888,7 +847,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.menu'))"
         @click="handleFileMenu"
       >
-        <MenuIcon :size="18" />
+        <MenuIcon :size="16" />
       </button>
       <!-- Browser-style refresh for install-backed instances (local +
            remote/cloud), right of the hamburger. Re-navigates the
@@ -901,14 +860,12 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
         @click="handleRefreshInstance"
       >
-        <RotateCw :size="16" />
+        <RotateCw :size="15" />
       </button>
     </div>
 
     <!-- Install identity and install-update controls. -->
-    <div
-      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
-    >
+    <div class="title-center flex w-full min-w-0 items-center justify-center">
       <!-- Center identity pill. Install-backed hosts render as a
            button that opens the instance-picker popover (matching the
            rest of the title-bar dropdown buttons — waffle menu +
@@ -947,18 +904,18 @@ onUnmounted(() => {
              actual instance the pill leads with that install's source/type
              icon so the brand logo isn't repeated on every window. -->
         <div
-          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
+          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_14px] items-center justify-center"
         >
           <ComfyCLogo
             v-if="showBrandMark"
             class="title-install-brand-mark shrink-0 text-current"
-            :size="16"
+            :size="14"
           />
           <component
             :is="installTypeMeta.icon"
             v-else-if="showInstallTypeIcon"
-            :size="16"
-            class="title-install-type-icon shrink-0 opacity-85"
+            :size="14"
+            class="title-install-type-icon shrink-0"
             v-bind="tooltipAttrs(installTypeLabel)"
           />
         </div>
@@ -984,29 +941,29 @@ onUnmounted(() => {
         <!-- Trailing slot: dropdown caret. Marks the pill as an
              interactive opener so the user reads it as actionable. -->
         <div
-          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
+          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_14px] items-center justify-center"
         >
           <ChevronDown
             :size="12"
-            class="title-install-caret shrink-0 text-current opacity-70"
+            class="title-install-caret shrink-0 text-subtle-foreground [.title-bar.is-light_&]:text-current [.title-bar.is-light_&]:opacity-70"
             aria-hidden="true"
           />
         </div>
       </div>
       <div v-else ref="installPill" class="title-install-pill" :class="titleInstallPillClass">
         <div
-          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
+          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_14px] items-center justify-center"
         >
           <ComfyCLogo
             v-if="showBrandMark"
             class="title-install-brand-mark shrink-0 text-current"
-            :size="16"
+            :size="14"
           />
           <component
             :is="installTypeMeta.icon"
             v-else-if="showInstallTypeIcon"
-            :size="16"
-            class="title-install-type-icon shrink-0 opacity-85"
+            :size="14"
+            class="title-install-type-icon shrink-0"
             v-bind="tooltipAttrs(installTypeLabel)"
           />
         </div>
@@ -1016,12 +973,15 @@ onUnmounted(() => {
           <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
         </div>
         <div
-          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
+          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_14px] items-center justify-center"
         ></div>
       </div>
     </div>
 
-    <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
+    <div
+      ref="titleTrailing"
+      class="title-trailing flex items-center gap-px pr-3 [justify-self:end] [.title-bar:not(.is-mac)_&]:pr-[140px]"
+    >
       <!-- Desktop updates stay separate from the install-update chip in the identity pill. -->
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
@@ -1069,7 +1029,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
         @click="handleAnnouncement"
       >
-        <Bell :size="16" />
+        <Bell :size="15" />
         <span
           v-if="announcementUnread"
           class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))]"
@@ -1084,7 +1044,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
         @click="handleFeedback"
       >
-        <MessageSquarePlus :size="16" />
+        <MessageSquarePlus :size="15" />
       </button>
       <!-- Downloads tray. Click opens the title-bar dropdown popup in
            `'downloads'` mode anchored under the button. Distinct
@@ -1097,7 +1057,7 @@ onUnmounted(() => {
         v-if="!isFirstUseLockdown"
         ref="downloadsBtn"
         type="button"
-        class="title-downloads-tray [-webkit-app-region:no-drag] relative cursor-pointer rounded-lg border border-solid border-transparent bg-transparent px-1.5 py-1 text-[var(--titlebar-icon)] transition-[color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-comfy-yellow [.title-bar.is-light.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-neutral-700 [&.has-active]:border-[rgba(96,165,250,0.55)] [&.has-active]:bg-[rgba(96,165,250,0.16)] [.title-bar.is-light_&.has-active]:border-[rgba(37,99,235,0.55)] [.title-bar.is-light_&.has-active]:bg-[rgba(37,99,235,0.12)] [&.is-open]:text-neutral-50 [.title-bar.is-light_&.is-open]:text-neutral-700 [&.is-flashing]:animate-[title-downloads-tray-flash_0.9s_ease-out_1] [&.has-unseen]:border-[rgba(34,197,94,0.55)] [&.has-unseen]:bg-[rgba(34,197,94,0.16)] [.title-bar.is-light_&.has-unseen]:border-[rgba(22,163,74,0.55)] [.title-bar.is-light_&.has-unseen]:bg-[rgba(22,163,74,0.12)] [&.has-error]:border-[color-mix(in_srgb,var(--danger)_55%,transparent)] [&.has-error]:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:border-transparent"
+        class="title-downloads-tray [-webkit-app-region:no-drag] relative box-border inline-flex size-7 shrink-0 items-center justify-center cursor-pointer rounded-control border border-solid border-transparent bg-transparent p-0 text-muted-foreground [.title-bar.is-light_&]:text-[var(--titlebar-icon)] transition-[color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-comfy-yellow [.title-bar.is-light.is-hover-active_&:hover:not(:disabled):not(.is-open)]:text-neutral-700 [&.has-active]:border-[rgba(96,165,250,0.55)] [&.has-active]:bg-[rgba(96,165,250,0.16)] [.title-bar.is-light_&.has-active]:border-[rgba(37,99,235,0.55)] [.title-bar.is-light_&.has-active]:bg-[rgba(37,99,235,0.12)] [&.is-open]:text-neutral-50 [.title-bar.is-light_&.is-open]:text-neutral-700 [&.is-flashing]:animate-[title-downloads-tray-flash_0.9s_ease-out_1] [&.has-unseen]:border-[rgba(34,197,94,0.55)] [&.has-unseen]:bg-[rgba(34,197,94,0.16)] [.title-bar.is-light_&.has-unseen]:border-[rgba(22,163,74,0.55)] [.title-bar.is-light_&.has-unseen]:bg-[rgba(22,163,74,0.12)] [&.has-error]:border-[color-mix(in_srgb,var(--danger)_55%,transparent)] [&.has-error]:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&:not(.has-active,.has-unseen,.has-error):hover]:border-transparent"
         :class="{
           'has-active': downloadsActiveCount > 0,
           'has-error': unseenErrorCount > 0,
@@ -1109,7 +1069,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(downloadsTrayLabel)"
         @click="handleDownloadsTray"
       >
-        <ArrowDownToLine :size="16" />
+        <ArrowDownToLine :size="15" />
         <span
           v-if="downloadsActiveCount > 0"
           class="title-downloads-badge"

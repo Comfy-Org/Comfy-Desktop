@@ -52,6 +52,14 @@ test('title bar shows install-less pill on chooser host @windows @macos @linux',
   expect(await ctx.titleBar.textOf('.title-install-name')).toMatch(/Comfy Desktop/i)
 })
 
+test('title bar keeps the install pill at the window centre @windows @macos @linux', async () => {
+  const offCentre = await ctx.titleBar.evaluate<number>(`(() => {
+    const pill = document.querySelector('.title-install-pill').getBoundingClientRect()
+    return Math.abs(pill.left + pill.width / 2 - window.innerWidth / 2)
+  })()`)
+  expect(offCentre).toBeLessThanOrEqual(1)
+})
+
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
   await expectTakeoverOpen(ctx.panel)
