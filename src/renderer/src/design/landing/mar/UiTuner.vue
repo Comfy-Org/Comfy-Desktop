@@ -20,7 +20,15 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { P20, p20 } from './p20/p20'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
-import { LOCAL_SETUPS, MACHINES, localSetup, openSetup } from './setup/setupFlow'
+import {
+  LOCAL_SETUPS,
+  MACHINES,
+  SETUP_SCREENS,
+  localSetup,
+  openSetup,
+  showScreen,
+  type Screen
+} from './setup/setupFlow'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
@@ -40,6 +48,9 @@ import GroupHead from './tuner/TunerGroupHead.vue'
  *  and More, folded (rare and exploratory). States and
  *  This page list only what changes the screen now (tunerContext.ts says
  *  when); a hidden tweak keeps its value. */
+/** Local setup › Jump to: the last screen picked. */
+const setupScreen = ref<Screen | null>(null)
+
 const NAVS: { value: MarNav; label: string }[] = [
   { value: 'classic', label: 'Original' },
   { value: 'floating', label: 'Floating sidebar' },
@@ -165,7 +176,7 @@ function onScroll(e: Event): void {
     <aside
       v-if="tuner.open"
       aria-label="UI tuner"
-      class="proto-ui fixed top-14 right-4 bottom-4 z-50 flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
+      class="proto-ui fixed top-14 right-4 bottom-4 z-[80] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
     >
       <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-2">
         <h2 class="text-ui font-semibold">
@@ -318,6 +329,20 @@ function onScroll(e: Event): void {
             <Seg v-model="localSetup.mode" label="Flow" :options="LOCAL_SETUPS" />
           </Row>
           <template v-if="localSetup.mode === 'on'">
+            <Row label="Jump to">
+              <div class="grid grid-cols-2 gap-1" role="group" aria-label="Jump to">
+                <button
+                  v-for="o in SETUP_SCREENS"
+                  :key="o.value"
+                  type="button"
+                  class="mar-jump"
+                  :aria-pressed="setupScreen === o.value"
+                  @click="showScreen((setupScreen = o.value))"
+                >
+                  {{ o.label }}
+                </button>
+              </div>
+            </Row>
             <Row label="This computer">
               <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
             </Row>

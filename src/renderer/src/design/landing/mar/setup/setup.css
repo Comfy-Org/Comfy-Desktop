@@ -481,6 +481,15 @@
     display: grid;
     gap: 8px;
   }
+  .mss-field .mar-pseg {
+    justify-self: start;
+  }
+  /* Switching method swaps fields; the block keeps Public Builds' height
+   * so the screen doesn't jump. */
+  .mss-fields.is-change {
+    min-height: 408px;
+    align-content: start;
+  }
   .mss-radio {
     display: flex;
     flex-direction: column;
@@ -518,111 +527,66 @@
     justify-content: space-between;
     gap: 12px;
   }
-  /* On the stage: a glass track and a white fill. The stage is dark in
-   * both themes, so the fill stays white. */
+  /* The bar: one segment per install step, a hairline gap between them.
+   * Done segments are full, the current one fills, a failed one turns red. */
   .mss-bar {
+    display: flex;
+    gap: 3px;
     height: 6px;
+  }
+  .mss-seg {
+    position: relative;
+    flex-basis: 0;
     overflow: hidden;
     border-radius: 999px;
-    background-color: oklch(1 0 0 / 0.14);
-    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06);
+    background-color: oklch(1 0 0 / 0.12);
   }
-  .mss-bar i {
+  .mss-seg i {
     display: block;
     height: 100%;
     border-radius: inherit;
     background: oklch(1 0 0);
     transition: width 180ms linear;
   }
-  .mss-prog.is-err .mss-bar i {
+  .mss-seg.is-fail i {
     background: oklch(0.7 0.17 25);
-    box-shadow: none;
   }
 
-  /* Phases: a stepper, nodes joined by a line that fills as each ends. */
+  /* Under the bar: the current step named, the count after it, logs on the right. */
   .mss-steps-row {
     display: flex;
     align-items: center;
     gap: 16px;
+    margin-top: -2px;
   }
-  .mss-phases {
+  .mss-step-now {
     display: flex;
     min-width: 0;
     flex: 1;
     align-items: center;
-    color: var(--color-subtle-foreground);
+    gap: 10px;
+    color: var(--color-base-foreground);
     font-size: var(--text-ui);
     line-height: var(--text-ui--line-height);
   }
-  .mss-phases li {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-  }
-  /* Today's five install steps don't fit as labels in one row: every step
-   * keeps its node, the current one spells out its name. */
-  .mss-phases li:not([data-phase='now'], [data-phase='fail']) > .truncate {
-    display: none;
-  }
-  .mss-phases li:is([data-phase='now'], [data-phase='fail']) {
-    flex-shrink: 0;
-  }
-  .mss-phases li + li::before {
-    content: '';
-    width: 24px;
-    height: 1.5px;
-    flex-shrink: 1;
-    margin: 0 4px;
-    border-radius: 1px;
-    background-color: var(--mss-line-strong);
-  }
-  .mss-phases li:is([data-phase='done'], [data-phase='now'], [data-phase='fail'])::before {
-    background-color: var(--color-base-foreground);
-  }
-  .mss-phase-node {
-    display: inline-flex;
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    box-shadow: inset 0 0 0 1.5px var(--mss-line-strong);
-  }
-  .mss-phases [data-phase='done'] {
-    color: var(--color-muted-foreground);
-  }
-  .mss-phases [data-phase='done'] .mss-phase-node {
-    background-color: var(--color-base-foreground);
-    box-shadow: none;
-    color: var(--color-content-background);
-  }
-  .mss-phases [data-phase='now'] {
-    color: var(--color-base-foreground);
-    font-weight: 500;
-  }
-  .mss-phases [data-phase='now'] .mss-phase-node {
-    box-shadow: inset 0 0 0 1.5px var(--mss-progress);
-  }
-  .mss-phases [data-phase='fail'] {
+  .mss-step-now.is-fail {
     color: var(--color-status-danger);
-    font-weight: 500;
   }
-  .mss-phases [data-phase='fail'] .mss-phase-node {
-    background-color: var(--mss-danger-soft);
-    box-shadow: inset 0 0 0 1.5px var(--mss-danger-line);
+  .mss-step-count {
+    flex-shrink: 0;
+    color: var(--color-subtle-foreground);
   }
   .mss-phase-pulse {
     width: 8px;
     height: 8px;
     border-radius: 999px;
-    background-color: var(--mss-progress);
+    flex-shrink: 0;
+    background-color: var(--color-base-foreground);
     animation: mss-pulse 1.4s ease-in-out infinite;
   }
   @keyframes mss-pulse {
     50% {
-      box-shadow: 0 0 0 4px color-mix(in oklch, var(--mss-progress) 25%, transparent);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
     }
   }
   .mss-fade-enter-active,
@@ -874,6 +838,7 @@
   }
   .mss-first-mods {
     display: grid;
+    align-self: stretch;
     gap: 10px;
     margin-top: 24px;
     text-align: left;
@@ -885,6 +850,9 @@
     display: block;
     margin-top: 2px;
     color: var(--color-subtle-foreground);
+  }
+  .mss-first-hint.is-off {
+    visibility: hidden;
   }
   .mss-first-mods.is-off {
     visibility: hidden;
@@ -989,14 +957,14 @@
   font-weight: 700;
   line-height: var(--text-display--line-height);
   letter-spacing: -0.02em;
-  text-align: center;
+  text-align: left;
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 + :is(p, [id]) {
   margin-top: 8px;
   margin-bottom: 24px;
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
-  text-align: center;
+  text-align: left;
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
   padding: 12px 32px 8px;

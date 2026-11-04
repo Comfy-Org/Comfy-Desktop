@@ -310,3 +310,72 @@ if (linkFirst) {
   setUser('first')
   openSetup()
 }
+
+/** Every screen of the flow, as the Figma comparison lists them, so a
+ *  review can land on one without walking the flow. */
+export type Screen =
+  | 'first'
+  | 'setup'
+  | 'change'
+  | 'template'
+  | 'installing'
+  | 'cancel'
+  | 'error'
+  | 'lowdisk'
+  | 'intel'
+  | 'builds'
+export const SETUP_SCREENS: { value: Screen; label: string }[] = [
+  { value: 'first', label: 'First launch' },
+  { value: 'setup', label: 'Set up' },
+  { value: 'change', label: 'Change setup' },
+  { value: 'template', label: 'Starter workflow' },
+  { value: 'installing', label: 'Installing' },
+  { value: 'cancel', label: 'Return to Dashboard' },
+  { value: 'error', label: 'Operation failed' },
+  { value: 'lowdisk', label: 'Low Disk Space' },
+  { value: 'intel', label: 'Unsupported Hardware' },
+  { value: 'builds', label: 'Has builds' }
+]
+
+export function showScreen(s: Screen): void {
+  stop()
+  // The machine each state needs; the rest run on a ready computer.
+  const machine: Partial<Record<Screen, Machine>> = {
+    lowdisk: 'lowdisk',
+    intel: 'intel',
+    error: 'fails'
+  }
+  localSetup.mode = 'on'
+  localSetup.machine = machine[s] ?? (localSetup.machine === 'legacy' ? 'legacy' : 'ready')
+  marUser.local = s === 'builds' ? 'one' : 'none'
+  Object.assign(flow, {
+    open: true,
+    takeover: s !== 'builds',
+    percent: 0,
+    picked: null,
+    movedDisk: false,
+    confirmCancel: s === 'cancel',
+    confirmLowDisk: s === 'lowdisk',
+    logs: false,
+    retried: false
+  })
+  const step: Record<Screen, SetupStep> = {
+    first: 'first',
+    setup: 'setup',
+    change: 'change',
+    template: 'template',
+    installing: 'installing',
+    cancel: 'installing',
+    error: 'error',
+    lowdisk: 'setup',
+    intel: 'setup',
+    builds: 'setup'
+  }
+  flow.step = step[s]
+  if (s === 'error') flow.percent = 46
+  if (s === 'installing' || s === 'cancel') {
+    flow.percent = 58
+    flow.running = true
+    timer = setInterval(tick, 180)
+  }
+}

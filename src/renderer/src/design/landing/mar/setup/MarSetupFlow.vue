@@ -200,6 +200,14 @@ const say = (key: string): string =>
   key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], en) as string
 
 const failed = computed(() => flow.step === 'error')
+
+const phaseStart = (i: number): number => phases[i - 1]?.until ?? 0
+/** How much of step i's segment is filled, 0 to 100. */
+function segFill(i: number): number {
+  const from = phaseStart(i)
+  const span = (phases[i]?.until ?? 100) - from
+  return Math.max(0, Math.min(100, ((flow.percent - from) / span) * 100))
+}
 </script>
 
 <template>
@@ -268,7 +276,7 @@ const failed = computed(() => flow.step === 'error')
                   ><span class="text-base-foreground"
                     >Express Install with recommended settings</span
                   >
-                  <span v-if="express" class="mss-first-hint"
+                  <span class="mss-first-hint" :class="!express && 'is-off'"
                     >Detected: {{ DETECTED.build }} - if that's not your hardware, uncheck
                     Express</span
                   ></span
@@ -457,7 +465,7 @@ const failed = computed(() => flow.step === 'error')
           <DialogDescription
             >Everything here is already set to what fits this computer.</DialogDescription
           >
-          <div class="mss-fields">
+          <div class="mss-fields is-change">
             <div class="mss-field">
               <span class="text-ui font-medium text-base-foreground">Install method</span>
               <MarSeg v-model="method" label="Install method" :options="METHODS" />
@@ -643,6 +651,8 @@ const failed = computed(() => flow.step === 'error')
               }}</span>
               <span v-if="!failed" class="mss-stage-sub tabular-nums">{{ flow.percent }}%</span>
             </div>
+            <!-- Today's five install steps as one bar: a segment per step,
+                 sized by its share of the install, the current one named. -->
             <div
               class="mss-bar"
               role="progressbar"
@@ -651,25 +661,24 @@ const failed = computed(() => flow.step === 'error')
               aria-valuemax="100"
               aria-label="Install progress"
             >
-              <i :style="{ width: flow.percent + '%' }"></i>
+              <span
+                v-for="(p, i) in phases"
+                :key="p.label"
+                class="mss-seg"
+                :class="i === phaseIndex && failed && 'is-fail'"
+                :style="{ flexGrow: p.until - phaseStart(i) }"
+                ><i :style="{ width: segFill(i) + '%' }"></i
+              ></span>
             </div>
             <div class="mss-steps-row">
-              <ol class="mss-phases">
-                <li
-                  v-for="(p, i) in phases"
-                  :key="p.label"
-                  :data-phase="
-                    i < phaseIndex ? 'done' : i === phaseIndex ? (failed ? 'fail' : 'now') : 'todo'
-                  "
+              <p class="mss-step-now" :class="failed && 'is-fail'">
+                <TriangleAlert v-if="failed" :size="14" />
+                <span v-else class="mss-phase-pulse"></span>
+                <span class="truncate">{{ phases[phaseIndex]?.label }}</span>
+                <span class="mss-step-count tabular-nums"
+                  >Step {{ phaseIndex + 1 }} of {{ phases.length }}</span
                 >
-                  <span class="mss-phase-node">
-                    <Check v-if="i < phaseIndex" :size="11" :stroke-width="3" />
-                    <TriangleAlert v-else-if="i === phaseIndex && failed" :size="11" />
-                    <span v-else-if="i === phaseIndex" class="mss-phase-pulse"></span>
-                  </span>
-                  <span class="truncate">{{ p.label }}</span>
-                </li>
-              </ol>
+              </p>
               <button
                 type="button"
                 class="mss-logs-toggle"
@@ -684,7 +693,7 @@ const failed = computed(() => flow.step === 'error')
 [setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)<template v-if="failed">
 <span class="e">ERROR: ConnectionResetError(54, 'Connection reset by peer')</span>
 <span class="e">pip exited with code 2</span></template></pre>
-            <Button v-if="failed" size="sm" class="self-start" @click="toast('Copied')"
+            <Button v-if="failed" size="sm" class="justify-self-start" @click="toast('Copied')"
               ><Copy :size="14" />Copy</Button
             >
           </section>
