@@ -192,8 +192,12 @@ export function desktopFeatureFlags(
 }
 
 /** Consent is read at spawn, like enable_telemetry: a change takes effect at the next launch. */
-function launchClientContext(): ReturnType<typeof agentClientContext> {
-  return agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+async function launchClientContext(): ReturnType<typeof agentClientContext> {
+  try {
+    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+  } catch {
+    return undefined
+  }
 }
 
 /** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */

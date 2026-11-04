@@ -1532,6 +1532,16 @@ describe('core beta report placement', () => {
       expect(spawnEnv!.AGENT_CLIENT_GPU_TIER).toBe('mid')
     })
 
+    it('still launches, without the context, when reading consent throws', async () => {
+      vi.spyOn(settingsModule, 'get').mockImplementation(() => {
+        throw new Error('EPERM: settings.json write failed')
+      })
+      const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
+      expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
     it.each([false, undefined])('sends none with telemetry consent %s', async (consent) => {
       settingsModule.set('telemetryEnabled', consent)
       setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
