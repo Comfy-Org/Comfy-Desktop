@@ -3,10 +3,10 @@ import { Check, Cloud, Laptop } from 'lucide-vue-next'
 import type { RunOnCards } from './setupFlow'
 
 /**
- * First screen's Cloud / Local pick in the Home's card language: each way
- * carries its own light (cool for Cloud, warm for Local) that wakes up on
- * hover and fills the card when picked. Copy is today's, word for word.
- * Two takes (UI Playground › Local setup › First screen cards): glow, row.
+ * First screen's Cloud / Local pick as the Home's start cards: neutral
+ * surface, icon tile, the pick ringed and checked. Copy is today's, word
+ * for word. Two takes (UI Playground › Local setup › First screen cards):
+ * cards side by side, or stacked rows.
  */
 const { variant } = defineProps<{ variant: Exclude<RunOnCards, 'today'> }>()
 const model = defineModel<'cloud' | 'local'>({ required: true })
@@ -48,8 +48,7 @@ const WAYS = [
       :aria-checked="model === w.id"
       @click="model = w.id"
     >
-      <span class="mss-way-light" aria-hidden="true"></span>
-      <span class="mss-way-icon"><component :is="w.icon" :size="20" :stroke-width="1.75" /></span>
+      <span class="mss-way-icon"><component :is="w.icon" :size="17" /></span>
       <span class="mss-way-text">
         <span class="mss-way-title">{{ w.label }}</span>
         <span class="mss-way-tag">{{ w.tagline }}</span>
@@ -69,96 +68,47 @@ const WAYS = [
   gap: 12px;
   margin-top: 32px;
 }
+/* The Home's start cards (MarStartOriginal.vue): the card surface over
+ * the spotlight, a quiet icon tile, the pick ringed as the flow's radios. */
 .mss-way {
-  --hue: oklch(0.68 0.15 265);
-  --hue-2: oklch(0.72 0.12 210);
   position: relative;
-  isolation: isolate;
   display: flex;
-  overflow: hidden;
   flex-direction: column;
   align-items: flex-start;
-  gap: 18px;
-  padding: 20px;
-  border-radius: 16px;
-  background: oklch(0.6 0 0 / 0.06);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+  gap: 16px;
   color: var(--color-base-foreground);
   text-align: left;
   cursor: pointer;
   outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   transition:
-    box-shadow 260ms ease,
-    background-color 260ms ease,
-    transform 400ms cubic-bezier(0.19, 1, 0.22, 1);
-}
-.mss-way.is-local {
-  --hue: oklch(0.74 0.14 50);
-  --hue-2: oklch(0.7 0.14 15);
-}
-.mss-way:hover {
-  background: oklch(0.6 0 0 / 0.09);
-  transform: translateY(-2px);
-}
-.mss-way:active {
-  transform: translateY(0) scale(0.99);
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
 .mss-way:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mss-way[aria-checked='true'] {
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--hue) 70%, white),
-    0 18px 50px -24px var(--hue);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
 }
-
-/* The way's light: two soft blobs in its hues, drifting in the corner.
- * Faint at rest, brighter on hover, full when picked. */
 .mss-way-light {
-  position: absolute;
-  inset: -40% -20% 30% -30%;
-  z-index: -1;
-  background:
-    radial-gradient(closest-side at 30% 40%, var(--hue), transparent),
-    radial-gradient(closest-side at 70% 30%, var(--hue-2), transparent 80%);
-  filter: blur(24px);
-  opacity: 0.12;
-  pointer-events: none;
-  transition: opacity 500ms ease;
-  animation: mss-way-drift 9s ease-in-out infinite alternate;
+  display: none;
 }
-.mss-way:hover .mss-way-light {
-  opacity: 0.22;
-}
-.mss-way[aria-checked='true'] .mss-way-light {
-  opacity: 0.42;
-}
-@keyframes mss-way-drift {
-  to {
-    transform: translate(8%, 6%) rotate(8deg) scale(1.08);
-  }
-}
-
 .mss-way-icon {
   display: inline-flex;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 13px;
-  background: linear-gradient(
-    150deg,
-    color-mix(in oklch, var(--hue) 34%, transparent),
-    color-mix(in oklch, var(--hue-2) 14%, transparent)
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--hue) 40%, transparent);
-  color: color-mix(in oklch, var(--hue) 35%, white);
-  transition: transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  transition: color 160ms ease;
 }
 .mss-way:hover .mss-way-icon,
 .mss-way[aria-checked='true'] .mss-way-icon {
-  transform: translateY(-2px) rotate(-4deg);
+  color: var(--color-base-foreground);
 }
 .mss-way-text {
   display: flex;
@@ -166,14 +116,13 @@ const WAYS = [
   gap: 2px;
 }
 .mss-way-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .mss-way-tag {
-  color: color-mix(in oklch, var(--hue) 45%, var(--color-muted-foreground));
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
 }
 .mss-way-desc {
   margin-top: 8px;
@@ -186,33 +135,31 @@ const WAYS = [
   color: var(--color-muted-foreground);
   font-weight: 500;
 }
-/* Picked: a white disc with a check, top right; it pops in. */
+/* Picked: a check in a white disc, top right. */
 .mss-way-mark {
   position: absolute;
   top: 16px;
   right: 16px;
   display: inline-flex;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.5);
-  color: #111;
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
   opacity: 0;
-  transform: scale(0.5);
+  transform: scale(0.6);
   transition:
     opacity 160ms ease,
-    transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .mss-way[aria-checked='true'] .mss-way-mark {
   opacity: 1;
   transform: scale(1);
 }
 
-/* Row: one line per way, the Home's "For ComfyUI users" rows grown to
- * carry the description; the mark sits as a radio on the right. */
+/* Rows: the same cards stacked; the mark is a radio on the right. */
 .mss-ways.is-row {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
@@ -220,38 +167,37 @@ const WAYS = [
 .mss-ways.is-row .mss-way {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
-  padding: 16px 56px 16px 16px;
 }
 .mss-ways.is-row .mss-way-desc {
   margin-top: 4px;
 }
 .mss-ways.is-row .mss-way-mark {
   top: 50%;
-  margin-top: -11px;
+  margin-top: -10px;
 }
 .mss-ways.is-row .mss-way:not([aria-checked='true']) .mss-way-mark {
   opacity: 1;
   transform: scale(1);
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.25);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 25%, transparent);
   color: transparent;
 }
 
-/* The prototype's control reset (ui/tokens.css) reverts a button's box;
- * restated here at its own specificity, as MarSeg does. */
-:root .proto-ui .mss-ways .mss-way {
+/* Box properties past the prototype's button reset, as the Home does. */
+:root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way {
   width: auto;
   height: auto;
-  padding: 20px;
-  border-radius: 16px;
-  background: oklch(0.6 0 0 / 0.06);
+  padding: 18px;
+  border-radius: 18px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  backdrop-filter: blur(20px);
 }
-:root .proto-ui .mss-ways .mss-way:hover {
-  background: oklch(0.6 0 0 / 0.09);
+:root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way:hover,
+:root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way[aria-checked='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
-:root .proto-ui .mss-ways.is-row .mss-way {
-  padding: 16px 56px 16px 16px;
+:root .proto-ui.proto-ui.proto-ui .mss-ways.is-row .mss-way {
+  padding: 16px 52px 16px 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -259,9 +205,6 @@ const WAYS = [
   .mss-way-icon,
   .mss-way-mark {
     transition: none;
-  }
-  .mss-way-light {
-    animation: none;
   }
 }
 </style>

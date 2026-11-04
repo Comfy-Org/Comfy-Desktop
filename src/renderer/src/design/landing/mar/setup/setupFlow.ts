@@ -26,8 +26,8 @@ export type LocalSetup = 'off' | 'on'
 export type Machine = 'ready' | 'legacy' | 'lowdisk' | 'intel' | 'fails'
 export type RunOnCards = 'glow' | 'row' | 'today'
 export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
-  { value: 'glow', label: 'Glow' },
-  { value: 'row', label: 'Row' },
+  { value: 'glow', label: 'Cards' },
+  { value: 'row', label: 'Rows' },
   { value: 'today', label: 'Today' }
 ]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'

@@ -203,13 +203,6 @@ const say = (key: string): string =>
 
 const failed = computed(() => flow.step === 'error')
 
-/** The light behind the takeover: cool for Cloud, warm for Local (and the
- *  rest of the local setup); none once something failed. */
-const ambient = computed(() => {
-  if (failed.value) return ''
-  return flow.step === 'first' && runOn.value === 'cloud' ? 'cloud' : 'local'
-})
-
 const phaseStart = (i: number): number => phases[i - 1]?.until ?? 0
 /** How much of step i's segment is filled, 0 to 100. */
 function segFill(i: number): number {
@@ -232,7 +225,7 @@ function segFill(i: number): number {
         aria-labelledby="mss-first-title"
       >
         <div class="mss-first-frame">
-          <div v-if="ambient" class="mss-ambient" :class="`is-${ambient}`"></div>
+          <div v-if="!failed" class="mss-ambient"></div>
           <ComfyCLogo class="mss-first-mark" />
           <div class="mss-first-hero">
             <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
@@ -339,7 +332,7 @@ function segFill(i: number): number {
   <Teleport :to="PORTAL_TO">
     <div v-if="open && flow.takeover" class="proto-ui mss-first is-backdrop" aria-hidden="true">
       <div class="mss-first-frame">
-        <div v-if="ambient" class="mss-ambient" :class="`is-${ambient}`"></div>
+        <div v-if="!failed" class="mss-ambient"></div>
         <ComfyCLogo class="mss-first-mark" />
       </div>
     </div>

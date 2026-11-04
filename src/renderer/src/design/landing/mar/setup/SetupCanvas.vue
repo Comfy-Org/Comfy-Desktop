@@ -12,8 +12,8 @@ import Button from '../../ui/Button.vue'
  * motion and the picks can be compared without switching tweaks.
  */
 const FRAMES: { id: Variant; label: string; note: string }[] = [
-  { id: 'glow', label: 'Glow', note: 'Icon and light per way; the pick fills with its hue.' },
-  { id: 'row', label: 'Row', note: "The Home's start rows, with a radio on the right." },
+  { id: 'glow', label: 'Cards', note: "The Home's start cards, side by side." },
+  { id: 'row', label: 'Rows', note: 'The same cards stacked, a radio on the right.' },
   { id: 'today', label: 'Today', note: "Desktop's ChoiceCard, as shipped." }
 ]
 const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
@@ -28,7 +28,7 @@ const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
     <header class="mss-canvas-head">
       <div>
         <h1>First screen · card options</h1>
-        <p>Live. Click the cards: the light follows the pick.</p>
+        <p>Live. Click the cards to pick.</p>
       </div>
       <Button variant="secondary" size="sm" @click="canvas = false">Close</Button>
     </header>
@@ -39,7 +39,7 @@ const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
         </figcaption>
         <div class="mss-first is-canvas">
           <div class="mss-first-frame">
-            <div class="mss-ambient" :class="`is-${pick[f.id]}`"></div>
+            <div class="mss-ambient"></div>
             <ComfyCLogo class="mss-first-mark" />
             <div class="mss-first-hero">
               <h2 class="mss-first-title">How do you want to run Comfy?</h2>
