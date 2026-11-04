@@ -9,7 +9,7 @@ import portraitSun from '../assets/portrait-sun.jpg'
 import GradedImage from '../brand/GradedImage.vue'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
- *  SignInCard (From Pablo › Account), restyled. A strip of outputs in the
+ *  SignInCard (Nav options › Account), restyled. A strip of outputs in the
  *  Latent grade (DS › Brand imagery) shows what logging in is for; on hover
  *  it drifts. On the rail it's one icon. */
 const { open = true } = defineProps<{ open?: boolean }>()

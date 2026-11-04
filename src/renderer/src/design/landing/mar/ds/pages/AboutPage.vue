@@ -27,8 +27,8 @@ const url = `${location.origin}${location.pathname}`
       <li><strong>Playground</strong>: any component with any props; copy its usage.</li>
     </ul>
     <p>
-      The default view: Proposal › New UI, every UI Playground knob at its default. Dark by default;
-      Light or Both from the header.
+      The default view: every UI Playground knob at its default. Dark by default; Light or Both from
+      the header.
     </p>
 
     <details class="ds-fold">
@@ -102,8 +102,8 @@ const url = `${location.origin}${location.pathname}`
         <li>
           <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
           <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from
-          UI Playground › Corners (Default 10 / 7, the default; Soft 14 / 11). No fully rounded controls
-          in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
+          UI Playground › Corners (Default 10 / 7, the default; Soft 14 / 11). No fully rounded
+          controls in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
           icon-only circular buttons are round.
         </li>
         <li>
@@ -116,8 +116,8 @@ const url = `${location.origin}${location.pathname}`
           sits over the thumbnail. With no picture yet, a card shows the canvas's dot grid.
         </li>
         <li>
-          <strong>The New tile is shaped like a card</strong>: same picture ratio, a dashed slot with
-          + and the label.
+          <strong>The New tile is shaped like a card</strong>: same picture ratio, a dashed slot
+          with + and the label.
         </li>
         <li>Progress for an item in flight is the bottom edge of its cover.</li>
       </ul>
@@ -134,8 +134,8 @@ const url = `${location.origin}${location.pathname}`
           search and view on the right.
         </li>
         <li>
-          <strong>One table for every list view</strong> (<code>mar/table/table.css</code>):
-          Builds, Workflows, Apps, Assets, Projects, Spaces, Models, Deployments, Logs, API keys.
+          <strong>One table for every list view</strong> (<code>mar/table/table.css</code>): Builds,
+          Workflows, Apps, Assets, Projects, Spaces, Models, Deployments, Logs, API keys.
         </li>
         <li>
           <strong>Build reuses Create's pages</strong>: the same page frame, headers, section heads,
@@ -167,8 +167,8 @@ const url = `${location.origin}${location.pathname}`
         </li>
         <li>
           <strong>Global search</strong> is one command palette surface. It opens with
-          <code>⌘K</code> anywhere and from the sidebar's first row in Create; Build's sidebar has no
-          Search.
+          <code>⌘K</code> anywhere and from the sidebar's first row in Create; Build's sidebar has
+          no Search.
         </li>
         <li>The graph editor goes back Home from the Comfy logo heading its rail.</li>
         <li>On Comfy Cloud the title bar has no build switcher.</li>

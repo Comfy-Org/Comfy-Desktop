@@ -6,8 +6,7 @@ export function frameUrl(
 ): string {
   const q = new URLSearchParams({
     frame,
-    theme: new URLSearchParams(location.search).get('theme') ?? 'dark',
-    proposal: 'mariana'
+    theme: new URLSearchParams(location.search).get('theme') ?? 'dark'
   })
   for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
   if (seed) q.set('seed', JSON.stringify(seed))

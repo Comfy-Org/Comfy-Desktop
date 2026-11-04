@@ -19,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import { ComfyAssets, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
 import { APPS, CLOUD_ASSETS, TEMPLATES, WORKFLOWS, thumb, type Template } from '../../mock'
+import { openApp } from '../../appFlow'
 import { SPACES } from '../../spaces'
 import {
   activeInstance,
@@ -209,7 +210,7 @@ const apps = computed<Item[]>(() =>
     meta: dot(a.you ? 'Yours' : a.owner, `${compact(a.runs)} runs`),
     image: thumb(a.thumbId),
     icon: PanelsTopLeft,
-    open: () => go(`app:${a.id}` as Page)
+    open: () => openApp(a.id)
   }))
 )
 

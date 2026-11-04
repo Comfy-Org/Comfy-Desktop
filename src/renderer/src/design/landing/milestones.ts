@@ -31,6 +31,9 @@ import { appsProto } from './appFlow'
  *  10  Agent      - future: a third lens beside Create and Build, where an
  *                   agent makes workflows and apps from a prompt; Home
  *                   gains the prompt box.
+ *
+ * Every milestone from 1 on is drawn in the New UI (mar/). A milestone only
+ * decides what is there, never how it looks.
  */
 export const MILESTONES = [
   { value: '0', label: '0 · Today (main)' },

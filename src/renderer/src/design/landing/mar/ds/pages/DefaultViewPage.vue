@@ -7,7 +7,7 @@ import Window from '../kit/Window.vue'
 <template>
   <Section
     title="Home"
-    note="The whole prototype at 1280 × 800, as it opens: Proposal › New UI, every UI Playground knob at its default. Live."
+    note="The whole prototype at 1280 × 800, as it opens: every UI Playground knob at its default. Live."
   >
     <Window><LandingPrototypes standalone /></Window>
   </Section>

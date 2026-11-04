@@ -9,7 +9,6 @@ import DeployedTo from './space/DeployedTo.vue'
 import { openDeploy } from '../spaces'
 import type { ProjectWorkflow } from '../gallery'
 import { INSTANCES, thumb } from '../mock'
-import { isMariana } from '../mar/proposal'
 import { cover } from '../mar/cover'
 import { AppWindow, EllipsisVertical, Play, Rocket } from 'lucide-vue-next'
 import { startFromName } from '../appFlow'
@@ -87,9 +86,9 @@ function open(): void {
       </DropdownMenuRoot>
     </template>
     <template #media>
-      <!-- Mar's proposal can show what the workflow makes instead. -->
+      <!-- Can show what the workflow makes instead. -->
       <img
-        v-if="isMariana && cover.id === 'output'"
+        v-if="cover.id === 'output'"
         :src="thumb(wf.thumbId)"
         alt=""
         loading="lazy"

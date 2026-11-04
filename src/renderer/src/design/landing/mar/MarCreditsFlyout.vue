@@ -49,7 +49,8 @@ const topUpNote = computed(
       processing: 'Payment processing…',
       stopped: 'Buying credits isn’t available right now',
       noPlan: 'Buying credits doesn’t start a Cloud plan. Subscribe to run workflows on Cloud.',
-      ended: 'Buying credits doesn’t restart your Cloud plan. Resubscribe to run workflows on Cloud.'
+      ended:
+        'Buying credits doesn’t restart your Cloud plan. Resubscribe to run workflows on Cloud.'
     })[state.value as string] ?? ''
 )
 const showAddCredits = computed(() => isOwner.value && !awaitingPayment.value && !unknown.value)

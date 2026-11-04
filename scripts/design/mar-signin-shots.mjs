@@ -33,7 +33,7 @@ const shoot = async (theme, collapsed) => {
     collapsed
   )
   const page = await context.newPage()
-  await page.goto(`${base}/design-landing.html?proposal=mariana&signedOut=1&theme=${theme}`, {
+  await page.goto(`${base}/design-landing.html?signedOut=1&theme=${theme}`, {
     waitUntil: 'networkidle'
   })
   await page.evaluate(() => document.fonts.ready)

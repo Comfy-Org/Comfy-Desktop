@@ -23,10 +23,15 @@ import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import { GraphIcon } from '../icons/kindIcons'
 import { APPS, thumb } from '../../mock'
 import { goIn, toast } from '../../useProto'
+import { can } from '../../milestones'
 import {
   accessLabel,
   LIB,
+  addedApps,
+  isAdded,
   openApp,
+  openAppUrl,
+  toggleAdded,
   resetFlow,
   SOURCES,
   startFrom,
@@ -62,10 +67,18 @@ const query = ref('')
 const view = ref<'grid' | 'list'>('grid')
 
 const mine = (a: LibApp): boolean => a.group === 'yours'
+// Apps added from Explore sit in My apps, but you stay their user.
+const inMine = (a: LibApp): boolean => mine(a) || isAdded(a.id)
+const all = computed<LibApp[]>(() => [...LIB, ...addedApps.value])
 const TABS = computed(() => [
-  { value: 'mine' as const, label: 'My apps', count: LIB.filter(mine).length },
-  { value: 'shared' as const, label: 'Shared with me', count: LIB.filter((a) => !mine(a)).length }
+  { value: 'mine' as const, label: 'My apps', count: all.value.filter(inMine).length },
+  {
+    value: 'shared' as const,
+    label: 'Shared with me',
+    count: all.value.filter((a) => !inMine(a)).length
+  }
 ])
+const openIt = (a: LibApp): void => (isAdded(a.id) ? openAppUrl(a.id) : openApp(a.id))
 const STATES = [
   { value: 'all', label: 'Any state' },
   { value: 'live', label: 'Live' },
@@ -80,9 +93,9 @@ const SORTS = [
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
-  const list = LIB.filter(
+  const list = all.value.filter(
     (a) =>
-      (tab.value === 'mine' ? mine(a) : !mine(a)) &&
+      (tab.value === 'mine' ? inMine(a) : !inMine(a)) &&
       (state.value === 'all' ||
         (state.value === 'changes'
           ? a.unpublished && a.state === 'live'
@@ -103,6 +116,7 @@ function clear(): void {
 const lib = useLibrary(apps, shown)
 
 function status(a: LibApp): ItemStatus {
+  if (isAdded(a.id)) return 'live'
   if (!mine(a)) return 'shared'
   if (a.state === 'draft') return 'draft'
   return a.unpublished ? 'changes' : 'live'
@@ -129,6 +143,12 @@ function unpublish(a: LibApp): void {
 }
 
 function lines(a: LibApp): MenuLine[] {
+  if (isAdded(a.id))
+    return [
+      { label: 'Open', icon: ExternalLink, run: () => openAppUrl(a.id) },
+      'sep',
+      { label: 'Remove from my apps', icon: LogOut, danger: true, run: () => toggleAdded(a) }
+    ]
   if (!mine(a))
     return [
       { label: 'Open', icon: ExternalLink, run: () => openApp(a.id) },
@@ -164,14 +184,14 @@ function lines(a: LibApp): MenuLine[] {
     title="Apps"
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
-    :state="shownState === 'live' && LIB.length === 0 ? 'empty' : undefined"
+    :state="shownState === 'live' && all.length === 0 ? 'empty' : undefined"
     :empty="{
       icon: Sparkles,
       title: 'Turn a workflow into an app',
       text: 'Pick the few inputs that matter, name it, share a link. People run it without seeing a node.',
       pics: EMPTY_PICS.apps,
       action: 'Make your first app',
-      second: 'Describe it to Comfy Agent'
+      second: can.agent ? 'Describe it to Comfy Agent' : undefined
     }"
     error-text="Apps run on Comfy Cloud, which is out of reach right now. Your workflows on this computer still work."
     @action="startFrom(SOURCES[0]!)"
@@ -179,7 +199,8 @@ function lines(a: LibApp): MenuLine[] {
     @clear="clear"
   >
     <template #actions="{ state: s }">
-      <DropdownMenuRoot v-if="s === 'live' || s === 'loading'" :modal="false">
+      <!-- Making apps is the Agent's (Milestone 10). -->
+      <DropdownMenuRoot v-if="can.agent && (s === 'live' || s === 'loading')" :modal="false">
         <DropdownMenuTrigger as-child>
           <Button variant="primary"><Plus :size="15" />App</Button>
         </DropdownMenuTrigger>
@@ -210,7 +231,9 @@ function lines(a: LibApp): MenuLine[] {
     <p v-if="tabEmpty" class="mar-apps-none">
       {{
         tab === 'mine'
-          ? 'You haven’t made an app yet. Start one from a workflow with + App.'
+          ? can.agent
+            ? 'You haven’t made an app yet. Start one from a workflow with + App.'
+            : 'Nothing here yet. Add apps from Explore and they show up here.'
           : 'Nobody has shared an app with you yet. When they do, it shows up here.'
       }}
     </p>
@@ -228,7 +251,7 @@ function lines(a: LibApp): MenuLine[] {
         :selected="lib.sel.has(a.id)"
         :selecting="lib.sel.ids.value.size > 0"
         :renaming="lib.renaming.value === a.id"
-        @open="openApp(a.id)"
+        @open="openIt(a)"
         @select="lib.pick(a.id, $event)"
         @start-rename="mine(a) && (lib.renaming.value = a.id)"
         @rename="lib.rename(a.id, $event)"
@@ -258,7 +281,7 @@ function lines(a: LibApp): MenuLine[] {
         :selected="lib.sel.has(a.id)"
         :selecting="lib.sel.ids.value.size > 0"
         :renaming="lib.renaming.value === a.id"
-        @open="openApp(a.id)"
+        @open="openIt(a)"
         @select="lib.pick(a.id, $event)"
         @start-rename="mine(a) && (lib.renaming.value = a.id)"
         @rename="lib.rename(a.id, $event)"

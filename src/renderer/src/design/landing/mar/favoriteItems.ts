@@ -1,7 +1,8 @@
 import { computed } from 'vue'
 import { APPS, TEMPLATES, thumb } from '../mock'
 import { allAssets } from '../gallery'
-import { go, openDetail, toast, type Page } from '../useProto'
+import { openApp } from '../appFlow'
+import { openDetail, toast } from '../useProto'
 import { favorites, type FavoriteKind } from './favorites'
 
 /** What a starred key points at, for the sidebar and the Favorites page. */
@@ -39,7 +40,7 @@ function resolve(key: string): FavoriteItem | undefined {
         id,
         title: a.name,
         src: thumb(a.thumbId),
-        open: () => go(`app:${a.id}` as Page)
+        open: () => openApp(a.id)
       }
     )
   }

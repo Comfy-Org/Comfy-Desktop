@@ -4,15 +4,13 @@ import { Moon, Sun, X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
-import { isMariana, proposal, PROPOSALS } from './proposal'
 import { onCloud, SURFACES, surface } from './shell/surface'
 import { homeBackground, marNav, type HomeBackground, type MarNav } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
-import { MODE_STYLES, modeStyle } from './modes/modeStyle'
 import { COVERS, cover } from './cover'
-import { BUILD_NAVS, buildNav } from './build/buildNav'
+import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -27,20 +25,20 @@ import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
 import { proto } from '../useProto'
+import { can } from '../milestones'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
-import PabloPortsTuner from './PabloPortsTuner.vue'
+import NavOptionsTuner from './NavOptionsTuner.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
 
 /** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Global
- *  (proposal, where, navigation, colour), States (the situation being
+ *  (where, navigation, colour), States (the situation being
  *  simulated), This page (design options for the screen you're on),
  *  and More, folded (rare and exploratory). States and
  *  This page list only what changes the screen now (tunerContext.ts says
  *  when); a hidden tweak keeps its value. */
 const NAVS: { value: MarNav; label: string }[] = [
-  { value: 'classic', label: 'Original' },
   { value: 'floating', label: 'Floating sidebar' },
   { value: 'tabs', label: '08 · Tabs · a bar on top' },
   { value: 'panels', label: 'Floating panels' }
@@ -113,7 +111,8 @@ const GLOBAL: TweakId[] = ['surface', 'nav', 'pageTransition', 'palette', 'theme
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
-  { id: 'user', show: () => true },
+  // First run lives on Home.
+  { id: 'user', show: () => can.value.home },
   { id: 'homeBuilds', show: () => when.homeBuilds.value },
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
@@ -126,17 +125,14 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
+  { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'cover', show: () => when.cover.value },
-  { id: 'modeSwitch', show: () => when.modeSwitch.value },
   { id: 'graph', show: () => when.graph.value },
-  { id: 'buildNav', show: () => when.buildNav.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs', 'p20']
 const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
 const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
-const globalIds = computed<TweakId[]>(() => (isMariana.value ? GLOBAL : ['theme']))
-const moreIds = computed<TweakId[]>(() => (isMariana.value ? MORE : ['screen', 'knobs']))
 const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
 const dirty = (ids: TweakId[]): boolean => ids.some((id) => !TWEAKS[id].isDefault())
 const resetGroup = (ids: TweakId[]): void => ids.forEach((id) => TWEAKS[id].reset())
@@ -186,35 +182,22 @@ function onScroll(e: Event): void {
       >
         <!-- Global: who is looking, where, and the colour. Applies everywhere. -->
         <section aria-label="Global" class="flex flex-col">
-          <GroupHead title="Global" :changed="dirty(globalIds)" @reset="resetGroup(globalIds)" />
-          <Row label="Proposal">
-            <Seg v-model="proposal.id" label="Proposal" :options="PROPOSALS" />
-          </Row>
-          <Row v-if="isMariana" label="Surface">
+          <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
+          <!-- Cloud's first screen is Home: before it, only the desktop app. -->
+          <Row v-if="can.home" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
-          <Row v-if="isMariana" label="Navigation">
+          <Row v-if="can.builds" label="Navigation">
             <Select v-model="marNav.id" :options="NAVS" class="w-full" />
           </Row>
           <!-- How a page comes in on a sidebar click, ⌘K or a back link. -->
-          <Row v-if="isMariana" label="Page transition">
+          <Row label="Page transition">
             <Select v-model="pageTransition.id" :options="PAGE_TRANSITIONS" class="w-full" />
           </Row>
-          <Row :label="isMariana ? 'Palette and theme' : 'Theme'">
+          <Row label="Palette and theme">
             <div class="flex items-center gap-1.5">
-              <Select
-                v-if="isMariana"
-                v-model="palette.id"
-                :options="paletteOptions"
-                class="min-w-0 flex-1"
-              />
-              <Seg
-                v-model="look.theme"
-                compact
-                label="Theme"
-                :class="!isMariana && 'mr-auto'"
-                :options="THEMES"
-              />
+              <Select v-model="palette.id" :options="paletteOptions" class="min-w-0 flex-1" />
+              <Seg v-model="look.theme" compact label="Theme" :options="THEMES" />
             </div>
           </Row>
         </section>
@@ -222,7 +205,7 @@ function onScroll(e: Event): void {
         <!-- States: the situation on screen (who, what's installed, signed
              in, how the page and the credits are doing). Each one shows
              only where it applies. -->
-        <section v-if="isMariana" aria-label="States" class="mt-6 flex flex-col">
+        <section aria-label="States" class="mt-6 flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('deployState')" label="Deploy state">
@@ -264,7 +247,7 @@ function onScroll(e: Event): void {
         </section>
 
         <!-- This page: only what changes the screen on view now. -->
-        <section v-if="isMariana" aria-label="This page" class="mt-6 flex flex-col">
+        <section aria-label="This page" class="mt-6 flex flex-col">
           <GroupHead
             title="This page"
             :note="pageName"
@@ -289,19 +272,16 @@ function onScroll(e: Event): void {
           <Row :show="shows('templates')" label="Template cards">
             <Select v-model="templateStyle.id" :options="TEMPLATE_STYLES" class="w-full" />
           </Row>
+          <Row :show="shows('buildCard')" label="Build card">
+            <Select v-model="buildCard.id" :options="BUILD_CARDS" class="w-full" />
+          </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
-          </Row>
-          <Row :show="shows('modeSwitch')" label="Mode switch">
-            <Select v-model="modeStyle.id" :options="MODE_STYLES" class="w-full" />
           </Row>
           <Row :show="shows('graph')" label="Graph look">
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
-          <Row :show="shows('buildNav')" label="Build navigation">
-            <Seg v-model="buildNav.id" label="Build navigation" :options="BUILD_NAVS" />
-          </Row>
-          <Row :show="shows('ports')"><PabloPortsTuner /></Row>
+          <Row :show="shows('ports')"><NavOptionsTuner /></Row>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma
@@ -317,17 +297,17 @@ function onScroll(e: Event): void {
             <span>More</span>
             <span class="font-normal text-subtle-foreground">· screen, surfaces, Figma</span>
             <span
-              v-if="dirty(moreIds)"
+              v-if="dirty(MORE)"
               class="size-1.5 shrink-0 rounded-full bg-muted-foreground"
               title="Changed from default"
               aria-label="Changed from default"
               role="img"
             />
             <button
-              v-if="dirty(moreIds)"
+              v-if="dirty(MORE)"
               type="button"
               class="ml-auto shrink-0 rounded-[5px] px-1 text-ui font-normal text-subtle-foreground outline-none hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus"
-              @click.prevent.stop="resetGroup(moreIds)"
+              @click.prevent.stop="resetGroup(MORE)"
             >
               Reset
             </button>
@@ -342,7 +322,7 @@ function onScroll(e: Event): void {
             <Row label="Colour">
               <Select v-model="screen.display" :options="displayOptions" class="w-full" />
             </Row>
-            <Row v-if="isMariana && LOOKS.length > 1" label="Look">
+            <Row v-if="LOOKS.length > 1" label="Look">
               <Select v-model="marLook.id" :options="LOOKS" class="w-full" />
             </Row>
             <Row v-if="DIRECTIONS.length > 1" label="UI">
@@ -356,7 +336,7 @@ function onScroll(e: Event): void {
                 @update:model-value="(v) => set(k.key, v)"
               />
             </Row>
-            <Row v-if="isMariana" label="Figma explorations">
+            <Row label="Figma explorations">
               <div class="flex flex-col gap-2">
                 <label v-for="r in P20_ROWS" :key="r.key" class="flex items-center gap-2">
                   <span class="w-24 shrink-0 truncate text-ui text-subtle-foreground">{{

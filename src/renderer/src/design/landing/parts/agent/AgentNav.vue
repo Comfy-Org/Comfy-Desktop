@@ -5,7 +5,6 @@ import Button from '../../ui/Button.vue'
 import { agent, resetAgent } from '../../agent'
 import { flow, resetFlow } from '../../appFlow'
 import { go, toast } from '../../useProto'
-import { isMariana } from '../../mar/proposal'
 import { goModeHome } from '../../mar/modes/home'
 
 /** Sidebar in Agent mode: a new chat, and recent chats. */
@@ -26,9 +25,8 @@ function newChat(): void {
 
 <template>
   <nav class="flex flex-col gap-px" aria-label="Agent">
-    <!-- Mar's proposal: the way back to Home, in the mode you came from. -->
+    <!-- The way back to Home, in the mode you came from. -->
     <Button
-      v-if="isMariana"
       variant="ghost"
       class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
       title="Home"

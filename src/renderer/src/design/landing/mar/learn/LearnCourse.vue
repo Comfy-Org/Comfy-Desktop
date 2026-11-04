@@ -20,7 +20,11 @@ const left = computed(() =>
   Math.max(1, Math.round(next.value.minutes * (1 - (next.value.progress ?? 0))))
 )
 const cta = computed(() =>
-  allDone.value ? 'Watch again' : (next.value.progress ?? 0) > 0 ? 'Continue lesson' : 'Start lesson'
+  allDone.value
+    ? 'Watch again'
+    : (next.value.progress ?? 0) > 0
+      ? 'Continue lesson'
+      : 'Start lesson'
 )
 </script>
 

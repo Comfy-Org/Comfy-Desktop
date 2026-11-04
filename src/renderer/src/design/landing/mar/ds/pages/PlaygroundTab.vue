@@ -77,7 +77,6 @@ const src = computed(() => {
   return `?${new URLSearchParams({
     frame: 'play',
     theme: s.theme,
-    proposal: 'mariana',
     seed: JSON.stringify(seed),
     c: spec,
     p: JSON.stringify(s.p),

@@ -15,14 +15,8 @@ import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './a
  * Agents prepare. People publish: access and money always need a click.
  */
 
-/** How the creator customizes the app's look (the Prototype menu's
- *  "Customize" switch): an inspector panel, curated themes, brand kits
- *  first, or describing it to the agent. */
-export type LookVariant = 'panel' | 'themes' | 'brand' | 'describe'
-
 const KEY = 'comfy.design.apps'
 const saved = ((): {
-  look?: LookVariant
   tabs?: string[]
   front?: string
   added?: string[]
@@ -36,7 +30,6 @@ const saved = ((): {
 })()
 
 export const appsProto = reactive({
-  look: (saved.look ?? 'panel') as LookVariant,
   /** Apps open in tabs in the title bar (app ids), and the one in front
    *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
@@ -1071,6 +1064,8 @@ export function suggestions(): string[] {
 
 /** The live app's page, in Create. */
 export function openApp(id: string): void {
+  // An app's own page comes with the Agent; before that it opens as the app.
+  if (proto.milestone < 10) return openAppUrl(id)
   goIn('create', `app:${id}`)
 }
 

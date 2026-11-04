@@ -1,8 +1,8 @@
 /*
  * Mar's UI and shell (see marShell.ts). `data-mar-ui` scopes the look
- * (transparencies, page photos) to all of Mar's proposal, Pablo's v10
- * included; `data-mar-shell` adds the floating sidebar on Mar draft only.
- * Pablo's proposal has neither.
+ * (transparencies, page photos) to every milestone from 1 on;
+ * `data-mar-shell` adds the earlier floating sidebar. Milestone 0, Desktop
+ * as it ships, has neither.
  */
 
 /* One flat, dark page: no glass mesh behind the content. The title bar

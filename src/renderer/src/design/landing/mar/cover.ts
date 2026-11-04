@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
 
 /** Workflow cards' cover (UI Playground › Workflow cover): the graph, as
- *  Pablo has it, or the output it makes. Mar's proposal only. */
+ *  Pablo has it, or the output it makes. */
 export type Cover = 'graph' | 'output'
 
 export const COVERS: { value: Cover; label: string }[] = [

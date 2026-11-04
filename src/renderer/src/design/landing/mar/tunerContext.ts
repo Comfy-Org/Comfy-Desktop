@@ -1,17 +1,15 @@
 import { computed } from 'vue'
 import { look } from '../look'
-import { can } from '../milestones'
 import { building, appsProto } from '../appFlow'
 import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
 import { surface, onCloud } from './shell/surface'
 import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
-import { marTabsOn } from './shell/titleTabs'
 import { screen } from './screen'
 import { palette } from './palette'
-import { modeStyle } from './modes/modeStyle'
 import { cover } from './cover'
+import { buildCard } from './pages/buildCard'
 import { homeBuilds } from './homeBuilds'
 import { templateStyle } from './brand/templateStyle'
 import { creditsState } from './credits'
@@ -24,10 +22,8 @@ import { firstTime, marUser, setUser } from './userStates/userState'
 import { pageState } from './pages/pageState'
 import { marOwns } from './pages/owns'
 import { marLook } from './looks/looks'
-import { PORTS, ports, type Port } from './pabloPorts'
-import { active as parts } from './marParts'
+import { PORTS, ports, type Port } from './navOptions'
 import { dep, scenarioPick } from './deploy/deployData'
-import { buildNav } from './build/buildNav'
 import { pageTransition } from './motion/pageTransition'
 
 /**
@@ -52,7 +48,7 @@ export const onFirstRun = computed(() => onHome.value && firstTime.value && noLo
 
 const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces', 'favorites']
 
-/** The predicates, one per tweak of Mar's proposal that depends on the screen. */
+/** The predicates, one per tweak that depends on the screen. */
 export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
@@ -64,41 +60,19 @@ export const when = {
   ),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
-  // Template cards: Explore, Favorites, and Home when it shows Pablo's row.
-  templates: computed(
-    () =>
-      inShell.value &&
-      (['explore', 'favorites'].includes(proto.page) ||
-        (onHome.value && parts.value.examples === 'pablo'))
-  ),
-  // Workflow cards with a cover (parts/WorkflowCard.vue): a build's page in
-  // Build mode, and Pablo's library pages Mar's proposal doesn't draw.
-  cover: computed(
-    () =>
-      inShell.value &&
-      (proto.page.startsWith('environment:') ||
-        (['workflows'].includes(proto.page) && !marOwns(proto.page)) ||
-        (proto.page.startsWith('project:') && !marOwns(proto.page)))
-  ),
+  // Template cards: Explore and Favorites.
+  templates: computed(() => inShell.value && ['explore', 'favorites'].includes(proto.page)),
+  // The cards on the Builds page.
+  buildCard: computed(() => inShell.value && ['environments', 'instances'].includes(proto.page)),
+  // Workflow cards with a cover (parts/WorkflowCard.vue): a build's page.
+  cover: computed(() => inShell.value && proto.page.startsWith('environment:')),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
-  // Credits: Pablo's sidebar foot (Classic, Panels) or Mar's sidebar
-  // (Floating); Tabs has no sidebar.
+  // Credits: the sidebar foot; Tabs has no sidebar.
   credits: computed(() => sidebarShown.value && !!shownCredits.value && marNav.id !== 'tabs'),
-  // The Create / Build switch in Pablo's sidebar; Tabs and the title-bar
-  // lens draw their own, Floating has none.
-  modeSwitch: computed(
-    () =>
-      sidebarShown.value &&
-      can.value.builder &&
-      !marTabsOn.value &&
-      (marNav.id === 'classic' || marNav.id === 'panels')
-  ),
   graph: inGraph,
   // The Deploy as API modal (deploy/MarDeployModal.vue), while it's open.
   deployState: computed(() => Boolean(proto.deploying)),
-  // A build's page (mar/build/buildNav.ts).
-  buildNav: computed(() => inShell.value && proto.page.startsWith('environment:')),
-  // From Pablo (PabloPortsTuner.vue): each switch acts on the Floating
+  // Nav options (NavOptionsTuner.vue): each switch acts on the Floating
   // sidebar and the Tabs bar, each in its own situation.
   ports: computed(() => inShell.value && (marSideOn.value || marNav.id === 'tabs'))
 }
@@ -200,9 +174,9 @@ export const TWEAKS = {
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   cover: one(cover, 'graph'),
+  buildCard: one(buildCard, 'where'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
-  modeSwitch: one(modeStyle, 'split'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),
@@ -211,7 +185,6 @@ export const TWEAKS = {
     }
   },
   graph: one(graphStyle, 'glass'),
-  buildNav: one(buildNav, 'proposed'),
   ports: {
     isDefault: () => PORTS.every((p) => !ports[p.key]),
     reset: () => PORTS.forEach((p) => (ports[p.key] = false))

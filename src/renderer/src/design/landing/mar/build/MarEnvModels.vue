@@ -5,6 +5,7 @@ import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
 import { ENV_NODES, type ProtoInstance } from '../../mock'
 import { go, toast } from '../../useProto'
+import { can } from '../../milestones'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import ModelStatus from './ModelStatus.vue'
@@ -62,7 +63,7 @@ function downloadAll(ids: string[]): void {
           v-model="q"
           :placeholder="tab === 'models' ? 'Search models' : 'Search node packs'"
         />
-        <Button v-if="tab === 'models'" variant="ghost" @click="go('router')"
+        <Button v-if="tab === 'models' && can.builder" variant="ghost" @click="go('router')"
           >All models<ArrowRight :size="13"
         /></Button>
       </div>

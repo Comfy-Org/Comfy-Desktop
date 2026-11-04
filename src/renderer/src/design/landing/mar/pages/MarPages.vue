@@ -18,8 +18,7 @@ import MarLogsPage from '../deploy/MarLogsPage.vue'
 /**
  * Mar's library pages (Workflows, Apps, Assets, Builds, Projects, Spaces,
  * Settings, and Build's Deployments, Logs and API keys), each with its
- * states. ModePages hands these pages here in Mar's proposal; Pablo's
- * stay as they are in his.
+ * states. ModePages hands these pages here.
  */
 const page = computed<string>(() => proto.page)
 </script>

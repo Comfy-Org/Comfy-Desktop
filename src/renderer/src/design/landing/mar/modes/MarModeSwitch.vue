@@ -9,7 +9,7 @@ import { modeStyle } from './modeStyle'
 import { marNav, marPanelsOn } from '../shell/marShell'
 
 /** The Create / Build / Agent switch in the style picked in the UI
- *  Playground (everything but Pablo's pill, which stays his ModeSwitch). */
+ *  Playground (Split is the one on offer). */
 const { options } = defineProps<{
   options: { value: string; label: string; icon: Component }[]
 }>()

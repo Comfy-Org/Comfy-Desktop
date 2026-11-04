@@ -167,7 +167,7 @@ export const PAGES: DsPage[] = [
     label: 'Home',
     group: 'Patterns',
     title: 'Default view',
-    source: 'LandingPrototypes.vue with Proposal › New UI',
+    source: 'LandingPrototypes.vue',
     use: 'To check a component in place, next to everything around it.',
     component: lazy(() => import('./pages/DefaultViewPage.vue'))
   },

@@ -1,9 +1,9 @@
 import { computed, reactive, watch } from 'vue'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 import { instances, proto } from '../../useProto'
 
 /**
- * Where Mar's proposal is shown: the desktop app, or Comfy Cloud in a
+ * Where the prototype is shown: the desktop app, or Comfy Cloud in a
  * browser (UI Playground › Surface). Cloud swaps the app's title bar for
  * the browser's tab and address bar with the app's own bar one level
  * below, and drops what a browser can't do (local builds).
@@ -28,8 +28,9 @@ function load(): Surface {
 
 export const surface = reactive<{ id: Surface }>({ id: load() })
 
-/** Mar's proposal shown as Comfy Cloud in a browser. */
-export const onCloud = computed(() => isMariana.value && surface.id === 'cloud')
+/** Shown as Comfy Cloud in a browser. Cloud's first screen is Home, so
+ *  before Milestone 4 there is only the desktop app. */
+export const onCloud = computed(() => can.value.home && surface.id === 'cloud')
 
 watch(
   () => surface.id,

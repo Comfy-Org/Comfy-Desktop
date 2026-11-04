@@ -1,7 +1,6 @@
 import { nextTick, reactive, watch } from 'vue'
 import { proto } from '../../useProto'
 import { appsProto } from '../../appFlow'
-import { isMariana } from '../proposal'
 import { playPageIn, type PageTransition } from './pageIn'
 
 /**
@@ -11,7 +10,7 @@ import { playPageIn, type PageTransition } from './pageIn'
  * the new page's content moves. The sidebar, the title bar, the floating
  * panels and the backdrop stay still. Played with the Web Animations API so
  * a new click cancels the running one instead of stacking. Every switch
- * also starts the new page at the top. Mar's proposal only.
+ * also starts the new page at the top.
  *
  *   Off      the page swaps in place (the old behaviour)
  *   Fade     opacity only
@@ -81,7 +80,7 @@ let turn = 0
 watch(
   onView,
   async (page, before) => {
-    if (!isMariana.value || !page || page === before) return
+    if (!page || page === before) return
     // A click while the last page is still coming in: stop it where it is.
     running.forEach((a) => a.cancel())
     running = []

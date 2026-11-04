@@ -2,7 +2,7 @@
 
 Open questions from the design-system kickoff with Pablo (2026-10-26) and
 where each one stands. "In Mar" says whether it is already in the prototype
-("Tweak": in the Prototype menu, to compare with Pablo's).
+("Tweak": in the Prototype menu, to compare).
 
 | #   | Question                                                        | Decision                                                                                                                                                                                    | Status   | In Mar  |
 | --- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
@@ -19,6 +19,23 @@ where each one stands. "In Mar" says whether it is already in the prototype
 
 ## How decisions land
 
-Decided items go straight into Mar's proposal; Proposed ones are there to
-try. Scope follows Pablo's latest milestone and gets aligned with his
-milestones later.
+Decided items go straight into the New UI; Proposed ones are there to
+try. Scope follows the milestones (see below).
+
+## One design for every milestone
+
+The New UI is no longer a proposal next to Pablo's: there is no Proposal switch,
+and picking a milestone no longer changes the look. Milestones decide what is
+there; `mar/` decides how it looks.
+
+- Milestone 0 stays Desktop as it ships, so nothing here touches it (`can.design`).
+- Milestone 1 keeps today's dashboard layout, drawn with Home's spotlight, the
+  row cards and the toolbars' search field.
+- Features follow the same milestones Pablo's pages used: stars and ⌘K from
+  Explore, Deployments and Logs from Builder, making apps from Agent. Before
+  Agent an app opens as the app, in its tab.
+- Explore leads with apps (use cases to run, with an Add button from Explore &
+  Learn), and added apps sit in My apps.
+- Off the UI Playground, since only Pablo's designs used them: Proposal, Navigation
+  › Original, Mode switch › Pill, Build navigation › Current. Off the Prototype
+  menu: Customize, only his Agent read it. From Pablo became Nav options.

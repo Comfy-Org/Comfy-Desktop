@@ -2,10 +2,9 @@ import { reactive, watch } from 'vue'
 import { isNewUser, proto } from '../useProto'
 
 /**
- * Pablo's features brought into Mar's proposal, restyled (UI Playground ›
- * From Pablo). Each adds structure Mar's draft didn't have, so each has
- * its own switch and starts Off: the proposal looks as it did until one is
- * turned on. Audit: design-shots/pablo-gaps.md.
+ * Variations of the navigation (UI Playground › Nav options). Each adds
+ * structure the default doesn't have, so each has its own switch and starts
+ * Off: nothing changes until one is turned on.
  */
 export type Port = 'navAccount' | 'navDocs' | 'firstRunNav'
 
@@ -41,7 +40,7 @@ watch(
   }
 )
 
-/** From Pablo › First-time nav (his ModeNav): a new user sees only what
+/** Nav options › First-time nav: a new user sees only what
  *  helps a first call. No Builds in Create before any install; in Build
  *  no Deployments, Builds or Logs, and Overview is Get started. */
 const FIRST_RUN_HIDES = ['deployments', 'environments', 'logs']

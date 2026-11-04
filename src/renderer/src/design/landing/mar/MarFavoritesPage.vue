@@ -5,7 +5,8 @@ import AssetTile from '../parts/AssetTile.vue'
 import TemplateCard from '../parts/TemplateCard.vue'
 import { APPS, TEMPLATES, thumb } from '../mock'
 import { allAssets } from '../gallery'
-import { go, toast, type Page } from '../useProto'
+import { openApp } from '../appFlow'
+import { go, toast } from '../useProto'
 import FavoriteStar from './FavoriteStar.vue'
 import { favoriteIds } from './favorites'
 import MarEmpty from './pages/MarEmpty.vue'
@@ -101,7 +102,7 @@ const FAN = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2
         :key="a.id"
         type="button"
         class="mar-ex-card group"
-        @click="go(`app:${a.id}` as Page)"
+        @click="openApp(a.id)"
       >
         <span class="mar-fav-media"
           ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-fav-corner"

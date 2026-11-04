@@ -19,6 +19,7 @@ import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast, type Page } from '../../useProto'
+import { can } from '../../milestones'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
@@ -27,6 +28,8 @@ import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
+import MarBuildCard from './MarBuildCard.vue'
+import { buildCard } from './buildCard'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
 import MarViewToggle from './MarViewToggle.vue'
@@ -232,7 +235,8 @@ function lines(b: Build): MenuLine[] {
           { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${b.name}`) }
         ]
       : []),
-    { label: 'Logs', icon: ScrollText, run: () => go('logs') },
+    // Logs come with the Builder.
+    ...(can.value.builder ? [{ label: 'Logs', icon: ScrollText, run: () => go('logs') }] : []),
     ...(b.id === 'cloud'
       ? []
       : [
@@ -247,6 +251,74 @@ function lines(b: Build): MenuLine[] {
         ])
   ]
 }
+
+/* ---- The cards with no picture (UI Playground › Build card) ---- */
+// The page's own words for where: the filter's.
+const whereLabel = (b: Build): string => (b.kind === 'local' ? 'This computer' : 'Cloud')
+// Quiet words for the state: beside the chip while running, on their own
+// when there is no chip (stopped, asleep).
+function note(b: Build): string | undefined {
+  if (b.state === 'running') return stateLine(b)
+  if (STATUS[b.state]) return undefined
+  return b.kind === 'cloud' ? stateLine(b) : `Stopped · ${b.lastUsed}`
+}
+function card(b: Build) {
+  // Where is said elsewhere on the card, so no "Cloud build" here.
+  const release = [b.deployment ? undefined : b.channel, b.version].filter(Boolean)
+  const mem = b.state === 'running' ? live(b).mem : undefined
+  return {
+    name: b.name,
+    kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
+    where: whereLabel(b),
+    // Grouped leaves the hardware to its heading, unless it's the cloud's own.
+    meta: [
+      ...release,
+      ...(buildCard.id === 'where' || (buildCard.id === 'grouped' && b.kind === 'cloud')
+        ? [gpuName(b)]
+        : [])
+    ].join(' · '),
+    error: b.state === 'error' ? b.error : undefined,
+    status: STATUS[b.state],
+    statusLabel: statusLabel(b),
+    note: note(b),
+    gear: gpuName(b),
+    usage: mem && (mem[0] / mem[1]) * 100,
+    usageLabel: mem ? `${mem[0]} / ${mem[1]} GB` : memTotal(b),
+    counts: `${b.models ?? 'All'} models · ${b.nodes ?? 'Core'} node packs`,
+    cta: primary(b),
+    busy: b.state === 'launching',
+    lines: lines(b),
+    selected: lib.sel.has(b.id),
+    selecting: lib.sel.ids.value.size > 0,
+    renaming: lib.renaming.value === b.id,
+    fav: b.fav
+  }
+}
+const cardOn = (b: Build) => ({
+  open: () => open(b),
+  select: (range: boolean) => lib.pick(b.id, range),
+  'start-rename': () => (lib.renaming.value = b.id),
+  rename: (name: string) => lib.rename(b.id, name),
+  'cancel-rename': () => (lib.renaming.value = ''),
+  star: () => builds.star(b.id)
+})
+const groups = computed(() => {
+  const local = shown.value.filter((b) => b.kind === 'local')
+  return [
+    {
+      kind: 'local' as const,
+      label: 'This computer',
+      hint: local[0] && `${gpuName(local[0])} · ${DISK_FREE} free`,
+      items: local
+    },
+    {
+      kind: 'cloud' as const,
+      label: 'Cloud',
+      hint: 'Credits by the hour, only while it runs',
+      items: shown.value.filter((b) => b.kind !== 'local')
+    }
+  ].filter((g) => g.items.length)
+})
 
 const newLabel = computed(() =>
   surface.id === 'desktop' ? 'Install on this computer' : 'Set up a cloud build'
@@ -290,7 +362,34 @@ const newLabel = computed(() =>
       </div>
     </template>
 
-    <div v-if="view === 'grid'" class="mar-grid is-wide">
+    <!-- Grouped: the group says where, with the hardware its builds share. -->
+    <template v-if="view === 'grid' && buildCard.id === 'grouped'">
+      <section v-for="g in groups" :key="g.kind" class="mar-bc-group">
+        <h2 class="mar-bc-group-head">
+          <LocationIcon :kind="g.kind" :size="15" />{{ g.label }}
+          <span class="mar-bc-group-hint">{{ g.hint }}</span>
+        </h2>
+        <div class="mar-grid is-wide">
+          <MarBuildCard
+            v-for="b in g.items"
+            :key="b.id"
+            look="grouped"
+            v-bind="card(b)"
+            v-on="cardOn(b)"
+          />
+        </div>
+      </section>
+    </template>
+    <div v-else-if="view === 'grid' && buildCard.id !== 'photos'" class="mar-grid is-wide">
+      <MarBuildCard
+        v-for="b in shown"
+        :key="b.id"
+        :look="buildCard.id"
+        v-bind="card(b)"
+        v-on="cardOn(b)"
+      />
+    </div>
+    <div v-else-if="view === 'grid'" class="mar-grid is-wide">
       <MarItem
         v-for="b in shown"
         :key="b.id"

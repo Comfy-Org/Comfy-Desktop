@@ -3,7 +3,6 @@
 // default when it loads; storage is in memory here (main.ts), so the
 // defaults are what they read.
 import '../../look'
-import '../proposal'
 import '../uiTuner'
 import '../palette'
 import '../screen'
@@ -21,7 +20,7 @@ import '../p20/p20'
 import '../motion/tabSlide'
 import '../looks/looks'
 import '../pages/pageState'
-import '../pabloPorts'
+import '../navOptions'
 // Mar's look: the prototype loads it with MarBackdrop, always mounted in
 // her proposal.
 import '../shell/marShell.css'

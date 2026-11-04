@@ -7,7 +7,7 @@ import PageHeader from '../ui/PageHeader.vue'
 import SearchInput from '../ui/SearchInput.vue'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import ToolCard from '../parts/space/ToolCard.vue'
-import { currentSpace, STUDIO, type Flavor } from '../spaces'
+import { currentSpace, type Flavor } from '../spaces'
 import { proto } from '../useProto'
 
 /** Everything the studio published into this space. */
@@ -23,7 +23,7 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader title="Tools" :description="`Built for ${currentSpace.name} by ${STUDIO.name}.`" />
+    <PageHeader title="Tools" />
     <div class="mb-4 flex items-center justify-between gap-3">
       <SegmentedControl
         v-model="kind"
