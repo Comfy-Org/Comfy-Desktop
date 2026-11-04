@@ -1095,3 +1095,70 @@
   width: 16px;
   height: 16px;
 }
+
+/* Set up's machine: a compact card with a drawn laptop (Set up option 4 in
+ * the canvas), in place of the bloom stage. */
+.mss-machine {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 20px;
+  padding: 16px 16px 16px 18px;
+  border-radius: 14px;
+  background: oklch(0.6 0 0 / 0.06);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-machine-title {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-laptop {
+  position: relative;
+  width: 72px;
+  height: 48px;
+  flex-shrink: 0;
+}
+.mss-laptop::before {
+  position: absolute;
+  inset: 0 7px 5px;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklch, var(--color-base-foreground) 16%, transparent),
+    color-mix(in oklch, var(--color-base-foreground) 5%, transparent)
+  );
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
+  content: '';
+}
+.mss-laptop::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 5px;
+  border-radius: 1px 1px 5px 5px;
+  background: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
+  content: '';
+}
+.mss-machine.is-bad .mss-laptop::before {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-status-danger) 70%, transparent);
+}
+/* Rows with their own Change: value over meta, the button at the end. */
+.mss-row.is-change {
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  padding-block: 10px;
+}
+.mss-row.is-change dd {
+  display: grid;
+  gap: 0;
+}
+.mss-row.is-change .mss-row-meta {
+  font-size: 12px;
+}

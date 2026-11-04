@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import AuditScreen, { type AuditScreenId } from './AuditScreen.vue'
 import FirstOption from './FirstOption.vue'
 import SetupOption from './SetupOption.vue'
+import StarterOption from './StarterOption.vue'
 import { canvas } from './setupFlow'
 import Button from '../../ui/Button.vue'
 import './canvas.css'
@@ -42,6 +43,11 @@ const FIRST_OPTIONS = [
   ['Dim the other', 'The pick at full strength, the other recedes.'],
   ['Tiles', 'Square tiles, a large icon and a corner radio.']
 ]
+const STARTER_OPTIONS = [
+  ['Row', "Four tall pictures side by side, as the Home's examples."],
+  ['Bento', 'The recommended one big, the other three beside it.'],
+  ['Feature', 'Small pictures to pick from, the pick large with what it downloads.']
+]
 const SETUP_OPTIONS = [
   ['Spec line', 'The machine as one line with its own Change; two rows below.'],
   ['One list', 'Machine, Location and Version in one list, each with its own Change.'],
@@ -69,6 +75,13 @@ const PAGES: Page[] = [
     label: 'Set up',
     title: 'Set up · 10 options',
     lead: 'In place of the gradient machine card and the two rows below it.'
+  },
+  {
+    id: 'starter-options',
+    group: 'Options',
+    label: 'Starter workflow',
+    title: 'Starter workflow · in the Home’s style',
+    lead: 'The Home’s example cards: the picture is the card, the name on it. Click to pick.'
   },
   {
     id: 'frame',
@@ -347,6 +360,14 @@ const approved = (p: Page): number => (p.notes ?? []).filter((n) => verdicts[n.i
           <b>{{ i + 1 }} · {{ o[0] }}</b> <span>{{ o[1] }}</span>
         </figcaption>
         <div class="mss-canvas-frame"><SetupOption :option="i + 1" /></div>
+      </figure>
+    </div>
+    <div v-else-if="page.id === 'starter-options'" class="mss-canvas-grid">
+      <figure v-for="(o, i) in STARTER_OPTIONS" :key="o[0]" class="mss-canvas-item">
+        <figcaption>
+          <b>{{ i + 1 }} · {{ o[0] }}</b> <span>{{ o[1] }}</span>
+        </figcaption>
+        <div class="mss-canvas-frame"><StarterOption :option="i + 1" /></div>
       </figure>
     </div>
 

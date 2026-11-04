@@ -8,10 +8,8 @@ import {
   ChevronDown,
   Copy,
   HardDrive,
-  Laptop,
   LoaderCircle,
   Package,
-  SlidersHorizontal,
   TriangleAlert
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
@@ -51,7 +49,6 @@ import {
   unsupported,
   type Starter
 } from './setupFlow'
-import SetupBloom from './SetupBloom.vue'
 import './setup.css'
 
 /**
@@ -371,37 +368,20 @@ function rowState(i: number): string {
               install.</DialogDescription
             >
 
-            <!-- The machine it checked, on the bloom stage. -->
-            <div class="mss-stage">
-              <SetupBloom />
-              <div class="mss-stage-ui">
-                <div class="mss-stage-top">
-                  <span v-if="lowSpace" class="mss-chip is-bad"
-                    ><TriangleAlert :size="12" />Low Disk Space</span
-                  >
-                  <span v-else></span>
-                  <button type="button" class="mss-chip is-btn" @click="changeSetup">
-                    <SlidersHorizontal :size="12" />Change
-                  </button>
-                </div>
-                <div class="mss-stage-subject">
-                  <span class="mss-stage-glyph"><Laptop :size="20" /></span>
-                  <span class="grid">
-                    <span class="mss-stage-title"
-                      >{{ DETECTED.chip }} · {{ DETECTED.memGb }} GB</span
-                    >
-                    <span class="mss-stage-sub"
-                      >Detected. Uses the {{ DETECTED.build }} build.</span
-                    >
-                  </span>
-                </div>
-              </div>
+            <!-- The machine it checked: a drawn laptop, no picture of it. -->
+            <div class="mss-machine">
+              <span class="mss-laptop" aria-hidden="true"></span>
+              <span class="grid min-w-0 flex-1">
+                <span class="mss-machine-title">{{ DETECTED.chip }} · {{ DETECTED.memGb }} GB</span>
+                <span class="mss-row-meta">Detected. Uses the {{ DETECTED.build }} build.</span>
+              </span>
+              <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
             </div>
 
-            <!-- What gets installed: one grouped list, as the Home's settings.
-                 Only a problem gets a mark. -->
+            <!-- What gets installed: one grouped list, as the Home's settings,
+                 each row with its own Change. Only a problem gets a mark. -->
             <dl class="mss-summary" aria-label="Install summary">
-              <div class="mss-row" :class="lowSpace && 'is-bad'">
+              <div class="mss-row is-change" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
                 <dd>
                   <span class="truncate text-base-foreground">{{ where }}</span>
@@ -412,21 +392,27 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
+                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
               </div>
-              <div class="mss-row">
+              <div class="mss-row is-change">
                 <dt><Package :size="15" />Version</dt>
                 <dd>
                   <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
                   <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
                 </dd>
+                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
-              <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
+              <div
+                v-if="localSetup.machine === 'legacy' && flow.bringOver"
+                class="mss-row is-change"
+              >
                 <dt><ArrowLeftRight :size="15" />Migrate</dt>
                 <dd>
                   <span class="text-base-foreground">Workflows, models, and settings</span>
                   <span class="mss-row-meta">From your existing ComfyUI instance</span>
                 </dd>
+                <span></span>
               </div>
             </dl>
           </template>
@@ -440,14 +426,9 @@ function rowState(i: number): string {
               >ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not
               supported.</DialogDescription
             >
-            <div class="mss-stage is-short">
-              <SetupBloom tone="err" />
-              <div class="mss-stage-ui">
-                <div class="mss-stage-subject">
-                  <span class="mss-stage-glyph"><Laptop :size="20" /></span>
-                  <span class="mss-stage-title">Intel processor</span>
-                </div>
-              </div>
+            <div class="mss-machine is-bad">
+              <span class="mss-laptop" aria-hidden="true"></span>
+              <span class="mss-machine-title">Intel processor</span>
             </div>
           </template>
         </div>
