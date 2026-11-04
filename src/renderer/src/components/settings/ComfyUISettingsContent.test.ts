@@ -192,6 +192,21 @@ describe('ComfyUISettingsContent', () => {
   })
 
   describe('overlay title — isDowngrade branch', () => {
+    it('moves its actions into the page header when hosted as a page', async () => {
+      const target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+
+      const wrapper = await mountContent({ pageActionsTarget: '#page-actions' })
+      await flushPromises()
+
+      expect(target.querySelector('.settings-v2-footer')).not.toBeNull()
+      expect(wrapper.find('.settings-v2-footer').exists()).toBe(false)
+
+      wrapper.unmount()
+      target.remove()
+    })
+
     it('renders "Updating…" when actionData.isDowngrade is false', async () => {
       const w = await mountContent({
         activeOperation: {

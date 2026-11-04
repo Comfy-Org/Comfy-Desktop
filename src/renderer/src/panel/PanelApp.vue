@@ -7,6 +7,7 @@ import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
+import BuildDetailsView from './BuildDetailsView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
@@ -43,6 +44,7 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -209,6 +211,26 @@ const sidebarPage = computed<DashboardPage | null>(() => {
     ? panel
     : null
 })
+
+const buildDetailsId = ref<string | null>(null)
+const buildDetailsInstall = computed(() =>
+  buildDetailsId.value ? (installationStore.getById(buildDetailsId.value) ?? null) : null
+)
+
+function openBuildDetails(inst: Installation): void {
+  buildDetailsId.value = inst.id
+}
+
+function closeBuildDetails(): void {
+  buildDetailsId.value = null
+}
+
+watch(activePanel, closeBuildDetails)
+
+async function launchFromBuildDetails(inst: Installation): Promise<void> {
+  if (await focusRunningBuild(inst)) return
+  await handleChooserPick(inst)
+}
 
 const firstUseTakeoverActive = computed(
   () => currentOverlay.value?.kind === 'takeover' && currentOverlay.value.component === 'first-use'
@@ -559,7 +581,11 @@ onUnmounted(() => {
       class="panel-frame flex min-h-0 flex-1"
       :class="showSidebar && 'gap-2 bg-window-background p-2'"
     >
-      <AppSidebar v-if="showSidebar && sidebarPage" :active-page="sidebarPage" />
+      <AppSidebar
+        v-if="showSidebar && sidebarPage"
+        :active-page="sidebarPage"
+        @navigate="closeBuildDetails"
+      />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
         :class="showSidebar && 'rounded-shell bg-[var(--bg)]'"
@@ -584,8 +610,17 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
+            <BuildDetailsView
+              v-if="buildDetailsInstall"
+              :installation="buildDetailsInstall"
+              @back="closeBuildDetails"
+              @launch="launchFromBuildDetails"
+              @show-progress="handleShowProgress"
+            />
             <ChooserView
+              :visible="!buildDetailsInstall"
               @pick="handleChooserPick"
+              @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-progress="handleShowProgress"
             />

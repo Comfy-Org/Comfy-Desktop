@@ -3,27 +3,24 @@ import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  AlertCircle,
-  ArrowDownToLine,
   ArrowRightLeft,
+  ArrowUpCircle,
+  Ellipsis,
+  ExternalLink,
   Info,
   LoaderCircle,
-  MoreVertical
+  OctagonAlert,
+  Play
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
+import StatusChip from '../../components/ui/StatusChip.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
 import type { Installation } from '../../types/ipc'
-import {
-  chooserTileClass,
-  chooserTileIconClass,
-  chooserTileNameClass,
-  chooserTilePillClass
-} from './chooserTileClasses'
 
 interface Props {
   installation: Installation
@@ -46,6 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   pick: [installation: Installation]
+  'open-details': [installation: Installation]
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
@@ -100,40 +98,50 @@ const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping opacity-70': isStopping.value,
   'chooser-tile-updating cursor-wait': isUpdating.value,
-  'chooser-tile-errored [--tile-border:var(--accent-danger,#d92d20)] shadow-[inset_0_0_0_1px_var(--accent-danger,#d92d20)]':
-    hasError.value || dangerTag.value != null,
-  '[--tile-border:var(--chooser-surface-border-hover)]':
-    isRunning.value && !isStopping.value && !hasError.value && dangerTag.value == null
+  'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
-/* Lifecycle → top-right status pill (dot + label). Stopping wins over
- * launching wins over running; an idle tile gets no pill. An errored
- * tile shows the clickable error badge instead (see template). */
-const statusPill = computed<{ label: string; dotClass: string; spinning?: boolean } | null>(() => {
+/* Lifecycle -> status chip. Stopping wins over launching wins over running; an
+ * idle tile gets no chip. An errored tile shows the clickable error chip instead. */
+const statusPill = computed<{
+  label: string
+  markerClass: string
+  tone: 'go' | 'quiet'
+  spinning?: boolean
+} | null>(() => {
   if (props.isPromotingToWorkspace)
     return {
       label: 'devPlatform.workspace.promoting',
-      dotClass: 'chooser-tile-status--promoting text-text-muted',
+      markerClass: 'chooser-tile-status--promoting',
+      tone: 'quiet',
       spinning: true
     }
   if (isUpdating.value)
     return {
       label: 'instancePicker.progressUpdating',
-      dotClass: 'chooser-tile-status--updating text-text-muted',
+      markerClass: 'chooser-tile-status--updating',
+      tone: 'quiet',
       spinning: true
     }
   if (isStopping.value)
     return {
       label: 'chooser.statusStopping',
-      dotClass: 'chooser-tile-status--stopping text-[var(--accent-warning,#d97706)]'
+      markerClass: 'chooser-tile-status--stopping',
+      tone: 'quiet'
     }
   if (isLaunching.value)
     return {
       label: 'chooser.statusLaunching',
-      dotClass: 'chooser-tile-status--launching text-[var(--accent-warning,#d97706)]'
+      markerClass: 'chooser-tile-status--launching',
+      tone: 'quiet',
+      spinning: true
     }
   if (isRunning.value)
-    return { label: 'chooser.statusRunning', dotClass: 'chooser-tile-status--running text-success' }
+    return {
+      label: 'chooser.statusRunning',
+      markerClass: 'chooser-tile-status--running',
+      tone: 'go'
+    }
   return null
 })
 
@@ -193,7 +201,7 @@ const actionPill = computed(() => {
   if (hasUpdate.value)
     return {
       action: 'update' as const,
-      icon: ArrowDownToLine,
+      icon: ArrowUpCircle,
       label: t('chooser.updatePill'),
       tooltip: inst.value.statusTag?.label || t('chooser.updatePill')
     }
@@ -207,7 +215,34 @@ const actionPill = computed(() => {
   return null
 })
 
-function handleClick(): void {
+const whereLabel = computed(() => {
+  if (inst.value.sourceCategory === 'cloud') return t('chooser.filterCloud')
+  if (inst.value.sourceCategory === 'remote') return t('chooser.filterRemote')
+  return t('chooser.filterThisComputer')
+})
+
+const showLaunch = computed(
+  () => !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
+)
+const opensExisting = computed(
+  () =>
+    isRunning.value ||
+    isLaunching.value ||
+    hasError.value ||
+    inst.value.sourceCategory === 'cloud' ||
+    inst.value.sourceCategory === 'remote'
+)
+
+const launchLabel = computed(() =>
+  opensExisting.value ? t('chooser.openInstall') : t('chooser.startInstall')
+)
+
+function openDetails(): void {
+  if (isStopping.value || isUpdating.value) return
+  emit('open-details', inst.value)
+}
+
+function launch(): void {
   if (isStopping.value || isUpdating.value) return
   emit('pick', inst.value)
 }
@@ -230,87 +265,36 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install"
-    :class="[chooserTileClass, statusClasses]"
+    class="chooser-tile chooser-tile--install group/tile relative grid min-w-0 cursor-pointer grid-rows-[auto_auto_1fr] gap-2.5 rounded-card bg-card/72 p-4 outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-card-hover/80 focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+    :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
-    @click="handleClick"
-    @keydown.enter="handleClick"
-    @keydown.space.prevent="handleClick"
+    @click="openDetails"
+    @keydown.enter="openDetails"
+    @keydown.space.prevent="openDetails"
     @contextmenu.prevent="handleContextMenu"
   >
-    <!-- Type icon only; source/channel lives in the meta line below. A
-         build install wears the build glyph instead. -->
-    <span class="chooser-tile-icon" :class="chooserTileIconClass" :title="t(typeMeta.labelKey)">
-      <!-- `typeMeta` resolves the build glyph itself, so the tile, the
-           picker row and the title bar can't drift apart. -->
-      <component :is="typeMeta.icon" :size="22" />
+    <span
+      class="chooser-tile-icon flex h-5 min-w-0 items-center gap-1.5 pr-8 text-xs text-muted-foreground"
+      :title="t(typeMeta.labelKey)"
+    >
+      <component :is="typeMeta.icon" :size="15" class="shrink-0" aria-hidden="true" />
+      <span class="truncate">{{ whereLabel }}</span>
     </span>
 
-    <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
-    <div class="chooser-tile-actions absolute top-2 right-2 z-1 flex items-center gap-1">
+    <div class="chooser-tile-actions absolute top-3 right-3 z-1 flex items-center gap-1">
       <span
         v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
-        class="chooser-cloud-runs-pill inline-flex shrink-0 items-center rounded-[999px] bg-comfy-yellow px-2 py-[3px] text-[10px] [line-height:normal] font-bold tracking-[0.02em] whitespace-nowrap text-neutral-900 uppercase"
+        class="chooser-cloud-runs-pill inline-flex shrink-0 items-center rounded-full bg-foreground px-2 py-[3px] text-[10px] [line-height:normal] font-bold tracking-[0.02em] whitespace-nowrap text-background uppercase"
         data-testid="chooser-cloud-runs-pill"
         >{{ $t('firstUse.cloudFreeRunsPill') }}</span
       >
       <Button
-        v-if="hasError"
-        variant="destructive-textonly"
-        size="sm"
-        type="button"
-        class="chooser-tile-error-badge rounded-full"
-        :title="t('chooser.viewErrorTooltip')"
-        @click.stop="emit('view-error', inst)"
-        @keydown.enter.stop
-        @keydown.space.stop
-      >
-        <AlertCircle :size="14" />
-        {{ t('chooser.statusError') }}
-      </Button>
-      <span
-        v-else-if="statusPill"
-        class="chooser-tile-pill chooser-tile-status border-[var(--border-subtle,rgba(127,127,127,0.18))] bg-[var(--bg-elev-2,rgba(127,127,127,0.14))] pointer-events-none shrink-0 gap-1.5 opacity-100"
-        :class="[chooserTilePillClass, statusPill.dotClass]"
-      >
-        <LoaderCircle
-          v-if="statusPill.spinning"
-          :size="12"
-          class="chooser-tile-status-spinner shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-        <span
-          v-else
-          class="chooser-tile-status-dot size-2 shrink-0 rounded-[999px] bg-current"
-          :class="{
-            'animate-[chooser-tile-status-pulse_1.2s_ease-in-out_infinite] motion-reduce:animate-none':
-              isLaunching
-          }"
-          aria-hidden="true"
-        />
-        {{ t(statusPill.label) }}
-      </span>
-      <Button
-        v-else-if="dangerTag"
-        variant="destructive-textonly"
-        size="sm"
-        type="button"
-        class="chooser-tile-danger-tag rounded-full"
-        :title="t('chooser.viewErrorTooltip')"
-        @click.stop="emit('view-danger', inst)"
-        @keydown.enter.stop
-        @keydown.space.stop
-      >
-        <AlertCircle :size="13" />
-        {{ dangerTag.label }}
-      </Button>
-      <Button
         v-if="props.showMenu && !isUpdating"
         variant="muted-textonly"
-        size="icon-sm"
+        size="unset"
         type="button"
-        class="chooser-tile-kebab"
+        class="chooser-tile-kebab size-6 rounded-md opacity-0 group-focus-within/tile:opacity-100 group-hover/tile:opacity-100 hover:bg-secondary hover:text-foreground"
         :title="t('chooser.moreActions')"
         :aria-label="t('chooser.moreActions')"
         :data-testid="TID.dashboardTileKebab(inst.id)"
@@ -319,19 +303,16 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         @keydown.enter.stop
         @keydown.space.stop
       >
-        <MoreVertical :size="16" />
+        <Ellipsis :size="15" />
       </Button>
     </div>
 
-    <!-- Two lines: name, then one row with the meta facts left and the
-         action pill (update / migrate) pinned right. -->
-    <div class="chooser-tile-body mt-auto flex w-full min-w-0 flex-col gap-1">
+    <div class="chooser-tile-body flex min-w-0 flex-col gap-1">
       <div
         class="chooser-tile-name-row flex min-w-0 items-center gap-1.5 [&_.tooltip-wrap]:flex-none"
       >
         <TruncatedText
-          class="chooser-tile-name mt-0 [&.tooltip-wrap]:block"
-          :class="chooserTileNameClass"
+          class="chooser-tile-name mt-0 block max-w-full min-w-0 text-[14px] font-semibold text-foreground [&.tooltip-wrap]:block"
           :text="inst.name"
         />
         <Tooltip v-if="showWhyCloudTrigger" class="flex-none" :text="t('firstUse.whyTryCloud')">
@@ -350,42 +331,87 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           </Button>
         </Tooltip>
       </div>
-      <div
-        v-if="metaLine || actionPill"
-        class="chooser-tile-footer flex w-full min-w-0 items-center gap-2"
-      >
-        <TruncatedText
-          v-if="metaLine"
-          class="chooser-tile-meta-line [&.tooltip-wrap]:block min-w-0 max-w-full text-[12px] text-[var(--text-faint)] group-hover/tile:text-text-muted group-focus-visible/tile:text-text-muted"
-          :text="metaLine"
+      <TruncatedText
+        v-if="metaLine"
+        class="chooser-tile-meta-line max-w-full min-w-0 text-xs text-subtle-foreground [&.tooltip-wrap]:block"
+        :text="metaLine"
+      />
+    </div>
+
+    <div class="chooser-tile-footer mt-1.5 flex min-w-0 items-end justify-between gap-3 self-end">
+      <div class="flex h-7 min-w-0 items-center gap-2">
+        <Button
+          v-if="hasError"
+          variant="destructive-textonly"
+          size="unset"
+          type="button"
+          class="chooser-tile-error-badge h-5 gap-[5px] rounded-full bg-destructive/16 px-2 text-[11px] leading-none font-medium hover:bg-destructive/25"
+          :title="t('chooser.viewErrorTooltip')"
+          @click.stop="emit('view-error', inst)"
+          @keydown.enter.stop
+          @keydown.space.stop
         >
-          <span
-            v-if="leadingFact"
-            class="chooser-tile-meta-source text-[var(--text-faint)] group-hover/tile:text-text-muted group-focus-visible/tile:text-text-muted"
-            >{{ leadingFact }}</span
-          >
-          <span
-            v-if="leadingFact && trailingFact"
-            class="chooser-tile-meta-sep mx-[5px] text-[var(--text-faint)] group-hover/tile:text-text-muted group-focus-visible/tile:text-text-muted"
-            >·</span
-          >
-          <span
-            v-if="trailingFact"
-            class="chooser-tile-meta-version font-medium text-text-muted group-hover/tile:text-text group-focus-visible/tile:text-text"
-            >{{ trailingFact }}</span
-          >
-        </TruncatedText>
-        <!-- Action pill; pinned right by its own margin, never truncates. -->
-        <Tooltip
-          v-if="actionPill"
-          :text="actionPill.tooltip"
-          class="chooser-tile-pill-action ml-auto shrink-0"
+          <OctagonAlert :size="11" />
+          {{ t('chooser.statusError') }}
+        </Button>
+        <StatusChip
+          v-else-if="statusPill"
+          class="chooser-tile-status pointer-events-none"
+          :class="statusPill.markerClass"
+          :tone="statusPill.tone"
         >
+          <template v-if="statusPill.spinning" #icon>
+            <LoaderCircle
+              :size="11"
+              class="chooser-tile-status-spinner shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          </template>
+          {{ t(statusPill.label) }}
+        </StatusChip>
+        <Button
+          v-else-if="dangerTag"
+          variant="destructive-textonly"
+          size="unset"
+          type="button"
+          class="chooser-tile-danger-tag h-5 min-w-0 gap-[5px] rounded-full bg-destructive/16 px-2 text-[11px] leading-none font-medium hover:bg-destructive/25"
+          :title="t('chooser.viewErrorTooltip')"
+          @click.stop="emit('view-danger', inst)"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          <OctagonAlert :size="11" />
+          <span class="truncate">{{ dangerTag.label }}</span>
+        </Button>
+        <StatusChip v-else-if="hasUpdate" tone="warn">
+          <template #icon><ArrowUpCircle :size="11" aria-hidden="true" /></template>
+          {{ t('chooser.updateAvailable') }}
+        </StatusChip>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-1">
+        <Button
+          v-if="showLaunch"
+          type="button"
+          :variant="actionPill ? 'muted-textonly' : 'secondary'"
+          size="unset"
+          class="chooser-tile-launch h-7 gap-1.5 rounded-lg text-[13px]/5"
+          :class="actionPill ? 'w-7' : 'px-2.5'"
+          :aria-label="launchLabel"
+          :title="actionPill ? launchLabel : undefined"
+          @click.stop="launch"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          <component :is="opensExisting ? ExternalLink : Play" :size="13" aria-hidden="true" />
+          <template v-if="!actionPill">{{ launchLabel }}</template>
+        </Button>
+        <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            class="chooser-tile-pill shrink-0 rounded-full"
+            variant="secondary"
+            size="unset"
+            class="chooser-tile-pill h-7 shrink-0 gap-1.5 rounded-lg px-2.5 text-[13px]/5"
             :class="{
               'chooser-tile-pill-update': actionPill.action === 'update',
               'chooser-tile-pill-migrate': actionPill.action === 'migrate',
@@ -396,7 +422,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             @keydown.enter.stop
             @keydown.space.stop
           >
-            <component :is="actionPill.icon" :size="11" />
+            <component :is="actionPill.icon" :size="13" />
             {{ actionPill.label }}
           </Button>
         </Tooltip>
@@ -404,16 +430,3 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     </div>
   </div>
 </template>
-
-<style>
-/* The launching dot pulses independently of the tile's FLIP transform. */
-@keyframes chooser-tile-status-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-</style>

@@ -278,6 +278,100 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
   })
 })
 
+describe('useComfyUISettings — refreshing after an operation', () => {
+  beforeEach(() => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+  })
+
+  async function flush(): Promise<void> {
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  async function mountForInstall(apiOverrides: Partial<MockApi> = {}) {
+    const api = installMockApi(apiOverrides)
+    const installation = ref<Installation | null>(makeInstall('a', 'A'))
+    const scope = effectScope()
+    let composable!: ReturnType<typeof useComfyUISettings>
+    scope.run(() => {
+      composable = useComfyUISettings({ installation, onShowProgress: vi.fn() })
+    })
+    await flush()
+    vi.mocked(api.getDetailSections).mockClear()
+    return { composable, api, scope }
+  }
+
+  it('re-reads sections when an operation on this install ends', async () => {
+    const { api, scope } = await mountForInstall()
+    const store = useSessionStore()
+
+    store.operationInstances.set('a', { actionId: 'update-comfyui' })
+    await flush()
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+
+    store.operationInstances.delete('a')
+    await flush()
+    expect(api.getDetailSections).toHaveBeenCalledExactlyOnceWith('a')
+    scope.stop()
+  })
+
+  it('ignores an operation on another install', async () => {
+    const { api, scope } = await mountForInstall()
+    const store = useSessionStore()
+
+    store.operationInstances.set('b', { actionId: 'update-comfyui' })
+    await flush()
+    store.operationInstances.delete('b')
+    await flush()
+
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+    scope.stop()
+  })
+
+  it('leaves the refresh to an inline action that is still finishing', async () => {
+    let finishAction: (result: ActionResult) => void = () => {}
+    const { composable, api, scope } = await mountForInstall({
+      runAction: vi.fn(() => new Promise<ActionResult>((resolve) => (finishAction = resolve)))
+    })
+    const store = useSessionStore()
+
+    const running = composable.runAction({ id: 'check-update', label: 'Check' } as ActionDef)
+    await flush()
+    store.operationInstances.set('a', { actionId: 'check-update' })
+    await flush()
+    store.operationInstances.delete('a')
+    await flush()
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+
+    finishAction({ ok: true })
+    await running
+    expect(api.getDetailSections).toHaveBeenCalledOnce()
+    scope.stop()
+  })
+
+  it('stops loading when a section refresh supersedes a full reload', async () => {
+    let finishReload: (sections: DetailSection[]) => void = () => {}
+    const { composable, api, scope } = await mountForInstall({
+      getDetailSections: vi.fn().mockResolvedValue([makeSection('A')])
+    })
+    vi.mocked(api.getDetailSections).mockImplementationOnce(
+      () => new Promise<DetailSection[]>((resolve) => (finishReload = resolve))
+    )
+
+    const reloading = composable.reload()
+    await flush()
+    expect(composable.loading.value).toBe(true)
+
+    await composable.refreshSection('Sections for A')
+    finishReload([makeSection('A')])
+    await reloading
+
+    expect(composable.loading.value).toBe(false)
+    scope.stop()
+  })
+})
+
 describe('useComfyUISettings.runAction — stop-warning augment + self-stopping apiCall (FLOW 1 + FLOW 3)', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))

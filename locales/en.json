@@ -16,6 +16,7 @@
     }
   },
   "sidebar": {
+    "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
     "tools": "Tools",
@@ -65,7 +66,23 @@
     "viewErrorTooltip": "View error details",
     "errorTitle": "Error",
     "searchPlaceholder": "Search instances",
-    "noMatches": "No instances match"
+    "noMatches": "No instances match",
+    "buildsTitle": "Builds",
+    "newBuild": "Build",
+    "newBuildLabel": "New build",
+    "filterThisComputer": "This computer",
+    "whereLabel": "Where it runs",
+    "sortLabel": "Sort",
+    "sortLastUsed": "Last used",
+    "sortName": "Name",
+    "searchBuilds": "Search builds",
+    "startInstall": "Start",
+    "updateAvailable": "Update available",
+    "nothingMatches": "Nothing matches",
+    "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
+    "clearFilters": "Clear filters",
+    "noBuildsTitle": "Set up where your work runs",
+    "noBuildsBody": "A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install."
   },
   "titleBar": {
     "panelComfy": "ComfyUI",

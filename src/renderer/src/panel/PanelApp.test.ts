@@ -64,9 +64,18 @@ vi.mock('./ComfyLifecycleView.vue', () => ({
 vi.mock('../views/ChooserView.vue', () => ({
   default: {
     name: 'ChooserView',
-    emits: ['pick', 'show-new-install'],
+    props: ['visible'],
+    emits: ['pick', 'open-details', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
+      '<div data-testid="chooser-view" :data-visible="visible"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
+  }
+}))
+vi.mock('./BuildDetailsView.vue', () => ({
+  default: {
+    name: 'BuildDetailsView',
+    props: ['installation'],
+    emits: ['back', 'launch', 'show-progress'],
+    template: '<div data-testid="build-details">{{ installation.name }}</div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -521,6 +530,7 @@ function installMockApi(initial?: {
     transferHostBoundsToInstall: vi.fn(async () => {}),
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
+    navigatePanel: vi.fn(),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     // Picker thumbnail warm-up fetches the bundled-template options on the
@@ -759,7 +769,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="benchmarks-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
     expect(wrapper.get('.branded-page-header__description').text()).toBe(
       'Browse and compare results from your performance tests.'
@@ -906,7 +915,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
@@ -1365,6 +1373,40 @@ describe('PanelApp', () => {
       entrypoint: 'titlebar',
       workspaceId: 'workspace-saved'
     })
+  })
+
+  it("opens a build's details over the dashboard and returns from the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const chooser = wrapper.findComponent({ name: 'ChooserView' })
+
+    chooser.vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
+  it("leaves a build's details when the window switches screens", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'benchmarks' }))
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'chooser' }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
   })
 
   it('uses the live dashboard selection for both entry points even when persistence fails', async () => {

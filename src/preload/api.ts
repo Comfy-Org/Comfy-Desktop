@@ -57,6 +57,7 @@ export function buildElectronApi(): ElectronApi {
     exportResultsImage: (png, imageType, defaultPath?) =>
       ipcRenderer.invoke('export-results-image', png, imageType, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
+    revealPath: (targetPath) => ipcRenderer.send('reveal-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
     /** Read-only snapshot of an install's durable log buffer, as one joined
@@ -103,6 +104,8 @@ export function buildElectronApi(): ElectronApi {
     terminalResize: (installationId, cols, rows) =>
       ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
+    openInstallInNewWindow: (installationId) =>
+      ipcRenderer.send('comfy-window:open-install-new-window', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>
@@ -114,6 +117,7 @@ export function buildElectronApi(): ElectronApi {
      *  can reveal the until-now-hidden panel view without an opaque flash. */
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>

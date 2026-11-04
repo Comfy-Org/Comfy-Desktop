@@ -254,6 +254,9 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     } catch (e) {
       if (seq !== requestSeq) return
       error.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      // This request may have superseded a full load, which then won't clear it.
+      if (seq === requestSeq) loading.value = false
     }
   }
 
@@ -716,6 +719,18 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     offReleaseEnriched?.()
     if (noticeTimer) clearTimeout(noticeTimer)
   })
+
+  // Main reports every action's end to every window, so this also catches an
+  // update started elsewhere. Inline actions reload themselves when they finish.
+  watch(
+    () => {
+      const inst = toValue(opts.installation)
+      return !!inst && sessionStore.operationInstances.has(inst.id)
+    },
+    (active, wasActive) => {
+      if (wasActive && !active && runningActionIds.value.size === 0) void reload()
+    }
+  )
 
   // Drop the per-install dirty + error entries once a (re)launch has consumed
   // the new values, so the "Restart to apply" state clears after the restart.

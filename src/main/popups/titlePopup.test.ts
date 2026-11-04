@@ -936,3 +936,43 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
   })
 })
+
+describe('build page open-in-new-window IPC', () => {
+  type IpcListener = (event: Electron.IpcMainEvent, installationId: unknown) => void
+  const panelContents = {}
+  const openInstallInNewWindow = vi.fn(async () => {})
+  let open: IpcListener
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    vi.mocked(ipcMain.on).mockClear()
+    registerTitlePopupIpc({ openInstallInNewWindow } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(([channel]) => channel === 'comfy-window:open-install-new-window')
+    if (!call) throw new Error('IPC listener not registered')
+    open = call[1] as IpcListener
+  })
+
+  beforeEach(() => {
+    openInstallInNewWindow.mockClear()
+    comfyWindows.set(nextWindowKey(), {
+      panelView: { webContents: panelContents }
+    } as unknown as ComfyWindowEntry)
+  })
+
+  it('opens the build for a window panel', () => {
+    open({ sender: panelContents } as Electron.IpcMainEvent, 'inst-a')
+
+    expect(openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('inst-a')
+  })
+
+  it.each([
+    ['a sender that is not a panel', {}, 'inst-a'],
+    ['a missing installation id', panelContents, undefined]
+  ])('ignores %s', (_label, sender, installationId) => {
+    open({ sender } as Electron.IpcMainEvent, installationId)
+
+    expect(openInstallInNewWindow).not.toHaveBeenCalled()
+  })
+})

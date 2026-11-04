@@ -27,6 +27,8 @@ export interface UseInstallListOpts {
 export interface UseInstallListApi {
   searchQuery: Ref<string>
   activeFilter: Ref<FilterKey>
+  /** Every install this surface can show, before the filter and search apply. */
+  effectiveInstalls: ComputedRef<Installation[]>
   visibleInstalls: ComputedRef<Installation[]>
   showEmptyHint: ComputedRef<boolean>
   matchesQuery: (name: string) => boolean
@@ -152,6 +154,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   return {
     searchQuery,
     activeFilter,
+    effectiveInstalls,
     visibleInstalls,
     showEmptyHint,
     matchesQuery,

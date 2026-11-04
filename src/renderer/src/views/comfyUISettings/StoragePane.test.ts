@@ -7,46 +7,34 @@ import { en } from '../../lib/i18nMessages.ts'
 import { useModal } from '../../composables/useModal'
 import StoragePane, { type StorageSnapshot } from './StoragePane.vue'
 
-interface BridgeState {
-  updateFieldCalls: Array<{ id: string; value: unknown }>
-  setModelsDirsCalls: string[][]
+interface ApiState {
   openPathCalls: string[]
   revealPathCalls: string[]
-  openSettingsTabCalls: string[]
+  openGlobalSettingsCalls: Array<string | undefined>
   browseFolderReturn: string | null
 }
 
-function installMockBridge(opts: { platform?: string } = {}): BridgeState {
-  const state: BridgeState = {
-    updateFieldCalls: [],
-    setModelsDirsCalls: [],
+function installMockApi(opts: { platform?: string } = {}): ApiState {
+  const state: ApiState = {
     openPathCalls: [],
     revealPathCalls: [],
-    openSettingsTabCalls: [],
+    openGlobalSettingsCalls: [],
     browseFolderReturn: null
   }
-  const bridge = {
+  const api = {
     platform: opts.platform,
-    globalSettingsUpdateField: async (id: string, value: unknown) => {
-      state.updateFieldCalls.push({ id, value })
-      return { ok: true }
-    },
-    globalSettingsBrowseFolder: async () => state.browseFolderReturn,
-    globalSettingsOpenPath: (path: string) => {
+    browseFolder: async () => state.browseFolderReturn,
+    openPath: async (path: string) => {
       state.openPathCalls.push(path)
     },
-    globalSettingsRevealPath: (path: string) => {
+    revealPath: (path: string) => {
       state.revealPathCalls.push(path)
     },
-    globalSettingsSetModelsDirs: async (dirs: string[]) => {
-      state.setModelsDirsCalls.push([...dirs])
-      return { ok: true }
-    },
-    openSettingsTab: (tab: string) => {
-      state.openSettingsTabCalls.push(tab)
+    openGlobalSettings: (tab?: string) => {
+      state.openGlobalSettingsCalls.push(tab)
     }
   }
-  ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
+  ;(window as unknown as { api: typeof api }).api = api
   return state
 }
 
@@ -208,7 +196,7 @@ describe('StoragePane', () => {
   })
 
   it('renders the shared dirs from the snapshot prop as read-only rows', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mountPane()
     await nextTick()
     const rows = wrapper.findAll('.models-dir-row')
@@ -225,7 +213,7 @@ describe('StoragePane', () => {
   // The global default install location is intentionally NOT shown in the
   // per-instance Storage tab — it only belongs in Global Desktop Settings.
   it('does not render the global Install Location section', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mountPane()
     await nextTick()
     expect(wrapper.text()).not.toContain('Install Location')
@@ -234,7 +222,7 @@ describe('StoragePane', () => {
   // Promoting a shared dir is a per-install choice now: it persists the
   // install's `modelDirsPrimary` and must never rewrite the global list.
   it('promotes a shared dir by persisting modelDirsPrimary, not by reordering the global list', async () => {
-    const bridge = installMockBridge()
+    const api = installMockApi()
     const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
     await nextTick()
     // Menus: the non-primary shared dir and the install-own row (promotable
@@ -252,11 +240,10 @@ describe('StoragePane', () => {
     const [field, value] = emitted![0] as [{ id: string }, unknown]
     expect(field.id).toBe('modelDirsPrimary')
     expect(value).toBe('/mnt/extra/models')
-    expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
   it('closes the dir menu on Escape and restores focus to the toggle', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mountPane()
     await nextTick()
     const toggle = wrapper.find<HTMLButtonElement>('.models-dir-menu-wrap > button')
@@ -275,17 +262,17 @@ describe('StoragePane', () => {
   // Shared dirs are edited in Global Desktop Settings; the instance pane only
   // links there instead of offering browse/remove on shared rows.
   it('routes to global settings via the manage-shared link', async () => {
-    const bridge = installMockBridge()
+    const api = installMockApi()
     const wrapper = mountPane()
     await nextTick()
     const link = wrapper.find('.storage-manage-link')
     expect(link.exists()).toBe(true)
     await link.trigger('click')
-    expect(bridge.openSettingsTabCalls).toEqual(['global-storage'])
+    expect(api.openGlobalSettingsCalls).toEqual(['storage'])
   })
 
   it('hides the manage-shared link while shared models is off', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mountPaneWithSections(makeStorageSections([]))
     await nextTick()
     expect(wrapper.find('.storage-manage-link').exists()).toBe(false)
@@ -294,7 +281,7 @@ describe('StoragePane', () => {
   // Sharing scope is conveyed inline (shared badges, header toggles, manage
   // actions); the note area is reserved for the restart warning.
   it('renders no storage note when nothing is pending', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mountPane()
     await nextTick()
     expect(wrapper.find('.storage-note').exists()).toBe(false)
@@ -303,7 +290,7 @@ describe('StoragePane', () => {
   // Per-install storage edits show the restart warning via the parent-supplied
   // pending set (the parent records them on update-field).
   it('flips the storage note to the warning state for pending per-install storage fields', async () => {
-    installMockBridge()
+    installMockApi()
     const wrapper = mount(StoragePane, {
       props: {
         snapshot: makeSnapshot(),
@@ -319,7 +306,7 @@ describe('StoragePane', () => {
 
   describe('per-instance model directories (shared models off)', () => {
     it('renders the locked install-own row first (primary) plus extras', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       // install-own row + 2 extras = 3 rows. Row 0 is the install-own primary.
@@ -336,7 +323,7 @@ describe('StoragePane', () => {
     })
 
     it('promotes an external dir by persisting modelDirsPrimary (no reordering)', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       // First menu belongs to the first extra (/a/models), since row 0 is locked.
@@ -353,7 +340,7 @@ describe('StoragePane', () => {
     })
 
     it('matches a promoted primary despite trailing or duplicated separators', async () => {
-      installMockBridge()
+      installMockApi()
       // Stored primary differs from the dir entry only in separator noise; the
       // backend's path.resolve treats them as equal, so the renderer must too.
       const wrapper = mountPaneWithSections(
@@ -366,7 +353,7 @@ describe('StoragePane', () => {
     })
 
     it('recognizes an install-own primary stored with a trailing separator', async () => {
-      installMockBridge()
+      installMockApi()
       // sharedOn makes this discriminating: without canonicalization the raw
       // '/own/models/' matches nothing and the first shared dir becomes
       // primary instead of the own row.
@@ -382,7 +369,7 @@ describe('StoragePane', () => {
     })
 
     it('matches a promoted primary containing . and .. segments', async () => {
-      installMockBridge()
+      installMockApi()
       // The backend's path.resolve collapses dot segments; the renderer's
       // lexical canonicalization must agree so the same dir shows as primary.
       const wrapper = mountPaneWithSections(
@@ -395,7 +382,7 @@ describe('StoragePane', () => {
     })
 
     it('matches Windows path forms differing in case, separators, and dot segments', async () => {
-      installMockBridge({ platform: 'win32' })
+      installMockApi({ platform: 'win32' })
       const wrapper = mountPaneWithSections(
         makeStorageSections(['C:\\Data\\Models'], {
           primary: 'c:/data/x/..//MODELS/',
@@ -409,7 +396,7 @@ describe('StoragePane', () => {
     })
 
     it('matches UNC path forms differing in separator noise', async () => {
-      installMockBridge({ platform: 'win32' })
+      installMockApi({ platform: 'win32' })
       const wrapper = mountPaneWithSections(
         makeStorageSections(['\\\\server\\share\\models'], {
           primary: '\\\\server\\share\\Models\\',
@@ -423,7 +410,7 @@ describe('StoragePane', () => {
     })
 
     it('clamps .. at the UNC share root, matching path.win32.resolve', async () => {
-      installMockBridge({ platform: 'win32' })
+      installMockApi({ platform: 'win32' })
       // resolve('\\\\server\\share\\models\\..') clamps to the share root, so
       // it must match a row for '\\\\server\\share' - and never climb above it.
       const wrapper = mountPaneWithSections(
@@ -439,7 +426,7 @@ describe('StoragePane', () => {
     })
 
     it('does not equate a drive-relative path with a drive-absolute one', async () => {
-      installMockBridge({ platform: 'win32' })
+      installMockApi({ platform: 'win32' })
       // 'c:data\\models' resolves against the C: drive's cwd (unknown to the
       // renderer), so it must NOT be treated as 'C:\\Data\\Models'.
       const wrapper = mountPaneWithSections(
@@ -455,7 +442,7 @@ describe('StoragePane', () => {
     })
 
     it('renders the install-own dir once when it also appears in modelDirs', async () => {
-      installMockBridge()
+      installMockApi()
       // A stale record can persist the own dir as an extra; it must collapse
       // into the single locked own row (the backend excludes it the same way).
       const wrapper = mountPaneWithSections(makeStorageSections(['/own/models', '/a/models']))
@@ -470,7 +457,7 @@ describe('StoragePane', () => {
     })
 
     it('renders the install-own dir once when a shared dir points at it', async () => {
-      installMockBridge()
+      installMockApi()
       // Default snapshot shares '/home/u/ComfyUI/models'; make that the
       // install's own dir with sharing on: it must render only as the locked
       // own row, not additionally as a read-only shared row.
@@ -485,7 +472,7 @@ describe('StoragePane', () => {
     })
 
     it('puts the promoted external dir (primary) on top and sinks install-own to the bottom', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models', '/b/models'], { primary: '/a/models' })
       )
@@ -499,7 +486,7 @@ describe('StoragePane', () => {
     })
 
     it('demotes back to install-own by persisting the install-own path', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models'], { primary: '/a/models' })
       )
@@ -517,7 +504,7 @@ describe('StoragePane', () => {
     })
 
     it('locked install-own row offers no Remove action even when not primary', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models'], { primary: '/a/models' })
       )
@@ -536,15 +523,15 @@ describe('StoragePane', () => {
     })
 
     it('labels the add button "Add Directory", not the shared-directory wording', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
       expect(wrapper.find('.models-dir-add').text()).toBe('Add Directory')
     })
 
     it('emits update-field with the appended dir when adding', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/c/models'
+      const api = installMockApi()
+      api.browseFolderReturn = '/c/models'
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       await wrapper.find('.models-dir-add').trigger('click')
@@ -557,16 +544,16 @@ describe('StoragePane', () => {
     })
 
     it('opens the folder when a model path is clicked', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
       await rows[1]!.find('.models-dir-name').trigger('click')
-      expect(bridge.openPathCalls).toEqual(['/a/models'])
+      expect(api.openPathCalls).toEqual(['/a/models'])
     })
 
     it('shows one unified list when shared models is on: shared dirs, instance extras, install-own last', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models'], { sharedOn: true }))
       await nextTick()
       // 2 shared dirs from the snapshot + the per-instance extra + install-own.
@@ -594,7 +581,7 @@ describe('StoragePane', () => {
     })
 
     it('collapses a per-instance duplicate of an included shared dir into one row', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/home/u/ComfyUI/models', '/c/models'], { sharedOn: true })
       )
@@ -608,8 +595,8 @@ describe('StoragePane', () => {
     })
 
     it('ignores adding a dir that is already in the effective set', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/own/models'
+      const api = installMockApi()
+      api.browseFolderReturn = '/own/models'
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
       await wrapper.find('.models-dir-add').trigger('click')
@@ -618,7 +605,7 @@ describe('StoragePane', () => {
     })
 
     it('removes a per-instance extra after confirmation', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       // Rows: own (primary), /a/models, /b/models. Open /a/models' menu.
@@ -641,7 +628,7 @@ describe('StoragePane', () => {
     })
 
     it('collapses repeated stored paths into one row and removes all matches at once', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models', '/a/models', '/b/models'])
       )
@@ -668,7 +655,7 @@ describe('StoragePane', () => {
     })
 
     it('keeps the dirs when the remove confirmation is declined', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
@@ -685,7 +672,7 @@ describe('StoragePane', () => {
     })
 
     it('shows no shared badge on per-instance dirs when shared models is off', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
@@ -693,7 +680,7 @@ describe('StoragePane', () => {
     })
 
     it('promoting an instance extra while shared models is on persists modelDirsPrimary', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/x'], { sharedOn: true }))
       await nextTick()
       // Rows: shared primary (no menu), shared /mnt/extra/models, extra /x, own.
@@ -709,12 +696,10 @@ describe('StoragePane', () => {
       const [field, value] = emitted[0] as [{ id: string }, unknown]
       expect(field.id).toBe('modelDirsPrimary')
       expect(value).toBe('/x')
-      // The global list is never rewritten from the instance pane.
-      expect(bridge.setModelsDirsCalls).toEqual([])
     })
 
     it('promotes the locked install-own row to download target while shared models is on', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
       await nextTick()
       // Rows: shared primary (no menu), shared /mnt/extra/models, own (last).
@@ -730,11 +715,10 @@ describe('StoragePane', () => {
       const [field, value] = emitted[0] as [{ id: string }, unknown]
       expect(field.id).toBe('modelDirsPrimary')
       expect(value).toBe('/own/models')
-      expect(bridge.setModelsDirsCalls).toEqual([])
     })
 
     it('shows the Downloads tag on the install-own row when its path is the persisted primary', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeStorageSections([], { sharedOn: true, primary: '/own/models' })
       )
@@ -749,7 +733,7 @@ describe('StoragePane', () => {
 
   describe('per-instance input/output (shared I/O off)', () => {
     it('shows the computed defaults with a "default" tag when unset', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeIoSections())
       await nextTick()
       const rows = wrapper.findAll('.storage-dir-row')
@@ -762,7 +746,7 @@ describe('StoragePane', () => {
     })
 
     it('shows the stored override (no default tag) when set', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(makeIoSections({ inputDir: '/ext/in' }))
       await nextTick()
       const rows = wrapper.findAll('.storage-dir-row')
@@ -771,8 +755,8 @@ describe('StoragePane', () => {
     })
 
     it('persists empty when the browsed dir equals the computed default (clone-safe)', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/own/input'
+      const api = installMockApi()
+      api.browseFolderReturn = '/own/input'
       const wrapper = mountPaneWithSections(makeIoSections())
       await nextTick()
       await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action').trigger('click')
@@ -783,8 +767,8 @@ describe('StoragePane', () => {
     })
 
     it('persists the override when the browsed dir differs from the default', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/ext/in'
+      const api = installMockApi()
+      api.browseFolderReturn = '/ext/in'
       const wrapper = mountPaneWithSections(makeIoSections())
       await nextTick()
       await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action').trigger('click')
@@ -795,11 +779,11 @@ describe('StoragePane', () => {
     })
 
     it('opens the effective input folder when its path is clicked', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(makeIoSections({ inputDir: '/ext/in' }))
       await nextTick()
       await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
-      expect(bridge.openPathCalls).toEqual(['/ext/in'])
+      expect(api.openPathCalls).toEqual(['/ext/in'])
     })
   })
 
@@ -815,7 +799,7 @@ describe('StoragePane', () => {
     }
 
     it('renders both shared dirs as readonly path rows when both toggles are on', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
@@ -833,7 +817,7 @@ describe('StoragePane', () => {
     })
 
     it('mixes shared input with a per-instance output independently', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: false }),
         makeSharedIoSnapshot()
@@ -850,7 +834,7 @@ describe('StoragePane', () => {
     })
 
     it('mixes a per-instance input with shared output independently', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: false, sharedOutput: true, inputDir: '/ext/in' }),
         makeSharedIoSnapshot()
@@ -865,7 +849,7 @@ describe('StoragePane', () => {
     })
 
     it('toggling input emits exactly useSharedInput; output emits exactly useSharedOutput', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
@@ -884,19 +868,19 @@ describe('StoragePane', () => {
     })
 
     it('opens a shared dir when its path is clicked', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
       )
       await nextTick()
       await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
-      expect(bridge.openPathCalls).toEqual(['/shared/in'])
+      expect(api.openPathCalls).toEqual(['/shared/in'])
     })
 
     it('shared rows are read-only: no Browse, manage routes to Desktop Settings', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/picked/in'
+      const api = installMockApi()
+      api.browseFolderReturn = '/picked/in'
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
@@ -909,14 +893,13 @@ describe('StoragePane', () => {
         .find('.storage-dir-action[aria-label^="Manage Shared Directories"]')
         .trigger('click')
       await flushPromises()
-      expect(bridge.openSettingsTabCalls).toEqual(['global-storage'])
-      expect(bridge.updateFieldCalls).toEqual([])
+      expect(api.openGlobalSettingsCalls).toEqual(['storage'])
       expect(wrapper.emitted('update-field')).toBeUndefined()
     })
 
     it('browsing a per-instance output updates only the install outputDir field', async () => {
-      const bridge = installMockBridge()
-      bridge.browseFolderReturn = '/ext/out'
+      const api = installMockApi()
+      api.browseFolderReturn = '/ext/out'
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: false }),
         makeSharedIoSnapshot()
@@ -928,13 +911,12 @@ describe('StoragePane', () => {
       const [field, value] = wrapper.emitted('update-field')![0] as [{ id: string }, unknown]
       expect(field.id).toBe('outputDir')
       expect(value).toBe('/ext/out')
-      expect(bridge.updateFieldCalls).toEqual([])
     })
 
     // Older installs without the split fields (and git installs without the
     // section at all) default to shared.
     it('defaults to the shared folders when the toggles are absent', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections([{ fields: [] }] as never, makeSharedIoSnapshot())
       await nextTick()
       const rows = wrapper.findAll('.storage-dir-row')
@@ -1030,7 +1012,7 @@ describe('StoragePane', () => {
     }
 
     it('renders the yaml file as a single read-only row with the YAML pill', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       const extraRow = findExtraRow(wrapper)
@@ -1047,7 +1029,7 @@ describe('StoragePane', () => {
     })
 
     it('opens the detail modal listing per-type dirs when the row is clicked', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
@@ -1057,7 +1039,7 @@ describe('StoragePane', () => {
     })
 
     it('collapses a multi-section yaml into one row, all sections in the modal', async () => {
-      installMockBridge()
+      installMockApi()
       const view = {
         yamlPath: '/own/extra_model_paths.yaml',
         exists: true,
@@ -1090,7 +1072,7 @@ describe('StoragePane', () => {
     })
 
     it('reveals the yaml file in its folder from the modal footer', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
@@ -1099,23 +1081,23 @@ describe('StoragePane', () => {
       const yamlBtn = actions.find((b) => b.textContent?.includes('.yaml'))!
       yamlBtn.click()
       // Reveal-in-folder, not open-in-default-app.
-      expect(bridge.revealPathCalls).toContain('/own/extra_model_paths.yaml')
-      expect(bridge.openPathCalls).not.toContain('/own/extra_model_paths.yaml')
+      expect(api.revealPathCalls).toContain('/own/extra_model_paths.yaml')
+      expect(api.openPathCalls).not.toContain('/own/extra_model_paths.yaml')
     })
 
     it('opens a per-type dir from the modal when its path is clicked', async () => {
-      const bridge = installMockBridge()
+      const api = installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
       await nextTick()
       const dirBtns = Array.from(document.querySelectorAll('.empm-dir-path')) as HTMLButtonElement[]
       dirBtns.find((b) => b.textContent === '/ext/base/checkpoints')!.click()
-      expect(bridge.openPathCalls).toContain('/ext/base/checkpoints')
+      expect(api.openPathCalls).toContain('/ext/base/checkpoints')
     })
 
     it('marks a missing per-type dir red (is-missing) instead of a badge', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
@@ -1128,7 +1110,7 @@ describe('StoragePane', () => {
     })
 
     it('emits refresh when the modal refresh button is clicked', async () => {
-      installMockBridge()
+      installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
