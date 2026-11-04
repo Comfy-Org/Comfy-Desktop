@@ -237,8 +237,9 @@ const emit = defineEmits<{
   color: var(--color-subtle-foreground);
   font-size: 12px;
 }
-/* Strip: where it runs, across the card's top under a hairline. Both places
-   share the grey; the icon and the label tell them apart. */
+/* Strip: where it runs, as a grey band across the card's top; the fill sets
+   it apart, no lines. Both places share the grey; the icon and the label
+   tell them apart. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-strip {
   padding-top: 0;
 }
@@ -248,17 +249,13 @@ const emit = defineEmits<{
   align-items: center;
   margin: 0 -16px;
   padding: 0 16px;
-  border-bottom: 1px solid color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   border-radius: 0;
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
-/* Contrast: a hairline so the card reads on the page, and the specs and the
-   state's words between secondary and tertiary text (over 6:1 in dark). */
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-strip:not(.is-selected) {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
-}
+/* Contrast: the specs and the state's words between secondary and tertiary
+   text (over 6:1 in dark). The card reads by its fill, like the rest. */
 .mar-bc.is-strip .mar-item-meta,
 .mar-bc.is-strip .mar-bc-error,
 .mar-bc.is-strip .mar-bc-state {
