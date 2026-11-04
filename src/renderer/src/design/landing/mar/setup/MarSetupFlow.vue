@@ -15,6 +15,8 @@ import {
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
+import RunOnCards from './RunOnCards.vue'
+import SetupCanvas from './SetupCanvas.vue'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
@@ -32,6 +34,7 @@ import {
   DETECTED,
   STARTERS,
   backFromError,
+  canvas,
   cancelInstall,
   chooseCloud,
   chooseLocal,
@@ -200,6 +203,13 @@ const say = (key: string): string =>
 
 const failed = computed(() => flow.step === 'error')
 
+/** The light behind the takeover: cool for Cloud, warm for Local (and the
+ *  rest of the local setup); none once something failed. */
+const ambient = computed(() => {
+  if (failed.value) return ''
+  return flow.step === 'first' && runOn.value === 'cloud' ? 'cloud' : 'local'
+})
+
 const phaseStart = (i: number): number => phases[i - 1]?.until ?? 0
 /** How much of step i's segment is filled, 0 to 100. */
 function segFill(i: number): number {
@@ -210,6 +220,7 @@ function segFill(i: number): number {
 </script>
 
 <template>
+  <Teleport v-if="canvas" :to="PORTAL_TO"><SetupCanvas /></Teleport>
   <!-- First launch: today's takeover, unchanged. Local goes on to Set up. -->
   <Teleport :to="PORTAL_TO">
     <Transition name="mss-first">
@@ -221,14 +232,22 @@ function segFill(i: number): number {
         aria-labelledby="mss-first-title"
       >
         <div class="mss-first-frame">
+          <div v-if="ambient" class="mss-ambient" :class="`is-${ambient}`"></div>
           <ComfyCLogo class="mss-first-mark" />
           <div class="mss-first-hero">
             <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
             <p class="mss-first-lead">
               Choose the setup that fits how you work. You can switch later.
             </p>
-            <!-- Desktop's own ChoiceCard, as on today's first screen. -->
+            <!-- The Home's media cards (RunOnCards), or Desktop's own
+                 ChoiceCard as on today's first screen. -->
+            <RunOnCards
+              v-if="localSetup.cards !== 'today'"
+              v-model="runOn"
+              :variant="localSetup.cards"
+            />
             <div
+              v-else
               class="mss-first-cards"
               role="radiogroup"
               data-no-pill
@@ -319,7 +338,10 @@ function segFill(i: number): number {
        frame, above the scrim, so the Home never shows behind them. -->
   <Teleport :to="PORTAL_TO">
     <div v-if="open && flow.takeover" class="proto-ui mss-first is-backdrop" aria-hidden="true">
-      <div class="mss-first-frame"><ComfyCLogo class="mss-first-mark" /></div>
+      <div class="mss-first-frame">
+        <div v-if="ambient" class="mss-ambient" :class="`is-${ambient}`"></div>
+        <ComfyCLogo class="mss-first-mark" />
+      </div>
     </div>
   </Teleport>
 
@@ -656,7 +678,7 @@ function segFill(i: number): number {
                 v-for="(p, i) in phases"
                 :key="p.label"
                 class="mss-seg"
-                :class="i === phaseIndex && failed && 'is-fail'"
+                :class="i === phaseIndex && (failed ? 'is-fail' : 'is-now')"
                 :style="{ flexGrow: p.until - phaseStart(i) }"
                 ><i :style="{ width: segFill(i) + '%' }"></i
               ></span>

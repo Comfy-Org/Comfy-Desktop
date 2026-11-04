@@ -1,3 +1,8 @@
+@property --amb {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
 /* Mar's proposed local setup (MarSetupFlow.vue), inside her step-modal
  * surface (`.mar-wizard` in shell/marShell.css): soft panels and hairlines
  * drawn from the theme's ink, so light and dark both hold. Progress is
@@ -920,6 +925,107 @@
     display: flex;
     gap: 8px;
   }
+  /* Ambient light: a wide soft glow behind the takeover in the picked
+   * way's hue, drifting slowly; it eases to the new hue on a change. */
+  .mss-ambient {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .mss-ambient::before,
+  .mss-ambient::after {
+    position: absolute;
+    width: 70%;
+    height: 75%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--amb), transparent);
+    content: '';
+    filter: blur(50px);
+    transition: --amb 900ms ease;
+  }
+  .mss-ambient::before {
+    top: -35%;
+    left: 5%;
+    opacity: 0.3;
+    animation: mss-drift 14s ease-in-out infinite alternate;
+  }
+  .mss-ambient::after {
+    top: -25%;
+    right: 0;
+    opacity: 0.2;
+    animation: mss-drift 19s ease-in-out -6s infinite alternate-reverse;
+  }
+  .mss-ambient.is-cloud::before {
+    --amb: oklch(0.6 0.16 268);
+  }
+  .mss-ambient.is-cloud::after {
+    --amb: oklch(0.68 0.12 210);
+  }
+  .mss-ambient.is-local::before {
+    --amb: oklch(0.7 0.14 50);
+  }
+  .mss-ambient.is-local::after {
+    --amb: oklch(0.62 0.15 10);
+  }
+  @keyframes mss-drift {
+    to {
+      transform: translate(10%, 8%) scale(1.15);
+    }
+  }
+
+  /* Every screen comes in: its blocks rise and fade in, one after another. */
+  .mss-first-hero > *,
+  .mss-first-bottom,
+  .mss-body > * {
+    animation: mss-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  }
+  .mss-first-hero > :nth-child(2),
+  .mss-body > :nth-child(2) {
+    animation-delay: 50ms;
+  }
+  .mss-first-hero > :nth-child(3),
+  .mss-body > :nth-child(3) {
+    animation-delay: 110ms;
+  }
+  .mss-first-hero > :nth-child(4),
+  .mss-body > :nth-child(4) {
+    animation-delay: 170ms;
+  }
+  .mss-first-hero > :nth-child(n + 5),
+  .mss-body > :nth-child(n + 5),
+  .mss-first-bottom {
+    animation-delay: 230ms;
+  }
+  @keyframes mss-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+
+  /* The step running now: a sheen travels along its fill. */
+  .mss-seg.is-now i {
+    position: relative;
+    overflow: hidden;
+  }
+  .mss-seg.is-now i::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, oklch(0.75 0.06 300 / 0.9), transparent);
+    content: '';
+    animation: mss-sheen 1.6s ease-in-out infinite;
+  }
+  @keyframes mss-sheen {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
   .mss-first-enter-active,
   .mss-first-leave-active {
     transition:
@@ -949,6 +1055,12 @@
     .mss-card-check,
     .mss-spin,
     .mss-phase-pulse,
+    .mss-ambient::before,
+    .mss-ambient::after,
+    .mss-first-hero > *,
+    .mss-first-bottom,
+    .mss-body > *,
+    .mss-seg.is-now i::after,
     .mss-clip {
       animation: none;
     }

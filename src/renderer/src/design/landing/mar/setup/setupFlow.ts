@@ -1,4 +1,4 @@
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { isMariana } from '../proposal'
 import { marUser, setUser } from '../userStates/userState'
 import { newInstanceHooks, toast } from '../../useProto'
@@ -24,6 +24,12 @@ import { newInstanceHooks, toast } from '../../useProto'
  */
 export type LocalSetup = 'off' | 'on'
 export type Machine = 'ready' | 'legacy' | 'lowdisk' | 'intel' | 'fails'
+export type RunOnCards = 'glow' | 'row' | 'today'
+export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
+  { value: 'glow', label: 'Glow' },
+  { value: 'row', label: 'Row' },
+  { value: 'today', label: 'Today' }
+]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
@@ -40,19 +46,24 @@ export const MACHINES: { value: Machine; label: string }[] = [
 
 const KEY = 'comfy.design.mar.localSetup'
 
-function load(): { mode: LocalSetup; machine: Machine } {
+function load(): { mode: LocalSetup; machine: Machine; cards: RunOnCards } {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
     return {
       mode: v.mode === 'on' ? 'on' : 'off',
-      machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready'
+      machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
+      cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow'
     }
   } catch {
-    return { mode: 'off', machine: 'ready' }
+    return { mode: 'off', machine: 'ready', cards: 'glow' }
   }
 }
 
 export const localSetup = reactive(load())
+
+/** The first screen's card options side by side (SetupCanvas.vue), from
+ *  UI Playground › Local setup or `?canvas=first`. */
+export const canvas = ref(new URLSearchParams(location.search).get('canvas') === 'first')
 
 // `?setup=first` links straight to the proposed flow, on first launch.
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'

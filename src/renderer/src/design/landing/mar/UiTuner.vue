@@ -24,6 +24,8 @@ import {
   LOCAL_SETUPS,
   MACHINES,
   SETUP_SCREENS,
+  canvas,
+  RUN_ON_CARDS,
   localSetup,
   openSetup,
   showScreen,
@@ -342,6 +344,12 @@ function onScroll(e: Event): void {
                   {{ o.label }}
                 </button>
               </div>
+            </Row>
+            <Row label="First screen cards">
+              <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />
+              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
+                >Compare cards</Button
+              >
             </Row>
             <Row label="This computer">
               <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
