@@ -32,7 +32,7 @@ const emit = defineEmits<{ run: [] }>()
   <span class="mar-split" :class="`is-${tone}`" @click.stop>
     <button type="button" class="mar-split-main" :disabled @click="emit('run')">
       <component :is="icon" v-if="icon" :size="15" />{{ label
-      }}<span v-if="suffix" class="mar-split-suffix">&nbsp;{{ suffix }}</span>
+      }}<span v-if="suffix" class="mar-split-suffix">{{ suffix }}</span>
     </button>
     <MarItemMenu v-if="lines.length" :lines :label="menuLabel">
       <template #trigger>
@@ -66,6 +66,7 @@ const emit = defineEmits<{ run: [] }>()
   background: var(--color-inverted-background-hover);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-split-main {
+  gap: 4px;
   padding: 0 12px;
   border-radius: var(--radius-control) 0 0 var(--radius-control);
 }

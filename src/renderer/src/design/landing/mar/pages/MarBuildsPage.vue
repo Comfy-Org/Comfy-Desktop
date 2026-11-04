@@ -430,7 +430,11 @@ const newLabel = computed(() =>
         </div>
       </section>
     </template>
-    <div v-else-if="view === 'grid' && buildCard.id !== 'photos'" class="mar-grid is-wide">
+    <div
+      v-else-if="view === 'grid' && buildCard.id !== 'photos'"
+      class="mar-grid is-wide"
+      :class="buildCard.id === 'split' && 'is-two'"
+    >
       <MarBuildCard
         v-for="b in shown"
         :key="b.id"
@@ -825,5 +829,9 @@ const newLabel = computed(() =>
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-build-go:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 5%, var(--color-card-background));
+}
+/* One-action cards: two to a row, so the button has room to say where. */
+.mar-grid.is-wide.is-two {
+  grid-template-columns: repeat(auto-fill, minmax(max(300px, calc(50% - 7px)), 1fr));
 }
 </style>
