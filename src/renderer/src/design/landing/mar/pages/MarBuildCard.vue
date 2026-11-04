@@ -121,7 +121,12 @@ const emit = defineEmits<{
           <span v-if="counts" class="truncate">{{ counts }}</span>
         </span>
         <span class="mar-bc-state">
-          <MarStatus v-if="status" :status :label="statusLabel" />
+          <MarStatus
+            v-if="status"
+            :status
+            :label="statusLabel"
+            :class="status === 'update' && 'mar-bc-says-update'"
+          />
           <span v-if="note" class="truncate">{{ note }}</span>
         </span>
         <span class="mar-bc-acts">
@@ -150,6 +155,13 @@ const emit = defineEmits<{
 </template>
 
 <style>
+/* A narrow card drops the Update available chip: its Update button
+   already says it. */
+@container (max-width: 300px) {
+  .mar-bc-says-update {
+    display: none !important;
+  }
+}
 /* Text on the surface: no ring, no strip, more air. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc {
   display: grid;
@@ -215,6 +227,7 @@ const emit = defineEmits<{
   text-overflow: ellipsis;
 }
 .mar-bc-foot {
+  container-type: inline-size;
   display: flex;
   min-width: 0;
   align-items: flex-end;
