@@ -164,8 +164,12 @@ const messages = {
       logs: 'Logs'
     },
     devPlatform: {
+      account: {
+        signedInAs: 'Signed in as {email}'
+      },
       workspace: {
-        personalLabel: 'Personal'
+        personalLabel: 'Personal',
+        switchLabel: 'Switch workspace'
       }
     },
     performanceTest: {
@@ -913,7 +917,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
-    expect(wrapper.find('.performance-test__account').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
     expect(
       wrapper.findAll('.performance-test__selection-label').map((label) => label.text())

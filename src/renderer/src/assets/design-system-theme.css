@@ -25,6 +25,8 @@
   --font-display: 'PP Formula', 'Inter', system-ui, sans-serif;
 
   --color-success: oklch(0.78 0.15 155);
+  --color-window-background: oklch(0.119 0.003 285);
+  --color-sidebar-background: oklch(0.196 0.003 285);
   --color-content-background: oklch(0.14 0.005 285);
   --color-card-hover: oklch(0.265 0.009 285);
   --color-subtle-foreground: oklch(0.6 0.008 285);
@@ -42,6 +44,7 @@
   --text-display: 34px;
   --text-display--line-height: 40px;
 
+  --radius-shell: 14px;
   --radius-panel: 16px;
   --radius-card: 12px;
   --radius-control: 8px;

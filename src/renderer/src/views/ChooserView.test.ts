@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -178,6 +178,12 @@ function installMockApiSignedIn(
     ])
   }
   return api
+}
+
+/** The sidebar owns the workspace control; the dashboard follows the shared scope. */
+async function selectWorkspace(workspaceId: string): Promise<void> {
+  useDashboardScopeStore().selectWorkspace(workspaceId)
+  await flushPromises()
 }
 
 function mountChooser() {
@@ -663,12 +669,6 @@ describe('ChooserView', () => {
     expect(names).toContain('Unassigned Studio')
     expect(names).toContain('Personal Studio')
     expect(names).not.toContain('Workspace Studio')
-    expect(
-      new DOMWrapper(document.body).get('[data-testid="devplatform-workspace-selector"]').text()
-    ).toContain('Personal')
-    expect(wrapper.get('.chooser-workspace-controls').classes()).toContain(
-      'chooser-workspace-controls--no-refresh'
-    )
     expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(false)
   })
 
@@ -680,7 +680,7 @@ describe('ChooserView', () => {
     expect(grids.length).toBe(1)
   })
 
-  it('keeps search centered above the signed-in workspace controls', async () => {
+  it('keeps search centered above the signed-in workspace bar', async () => {
     installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
@@ -689,17 +689,8 @@ describe('ChooserView', () => {
     expect(toolbarChildren).toHaveLength(1)
     expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
     const workspaceBar = wrapper.get('.chooser-workspace-bar')
-    const controls = wrapper.get('.chooser-workspace-controls')
-    const selector = new DOMWrapper(document.body).get(
-      '[data-testid="devplatform-workspace-selector"]'
-    )
     const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
-    expect(controls.classes()).not.toContain('chooser-workspace-controls--no-refresh')
-    expect(controls.element.parentElement).toBe(workspaceBar.element)
-    expect(selector.element.closest('.chooser-workspace-controls')).toBe(controls.element)
-    expect(
-      selector.element.compareDocumentPosition(refresh.element) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).not.toBe(0)
+    expect(refresh.element.parentElement).toBe(workspaceBar.element)
     expect(workspaceBar.get('.chooser-workspace-count').text()).toBe('INSTANCES0')
     expect(workspaceBar.element.lastElementChild).toBe(
       workspaceBar.get('.chooser-workspace-count').element
@@ -768,14 +759,7 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-personal"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('personal')
 
     const tile = wrapper.find(`[data-testid="${TID.dashboardTile('local')}"]`)
     await tile.trigger('contextmenu')
@@ -823,14 +807,7 @@ describe('ChooserView', () => {
       const wrapper = mountChooser()
       await flushPromises()
       if (useUnmanaged) {
-        await new DOMWrapper(document.body)
-          .get('[data-testid="devplatform-workspace-selector"]')
-          .trigger('click')
-        await flushPromises()
-        await new DOMWrapper(document.body)
-          .get('[data-testid="devplatform-workspace-personal"]')
-          .trigger('click')
-        await flushPromises()
+        await selectWorkspace('personal')
       }
 
       await wrapper
@@ -869,14 +846,7 @@ describe('ChooserView', () => {
     await flushPromises()
     api.comfybuilder.listBuilds.mockClear()
 
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-w2"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('w2')
 
     expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
@@ -925,7 +895,7 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('AvailableThing')
   })
 
-  it('restores the saved scope and reconciles its grid and label after membership changes', async () => {
+  it('restores the saved scope and reconciles its grid after membership changes', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({ id: 'a', name: 'A instance', workspaceId: 'w1' }),
@@ -943,7 +913,7 @@ describe('ChooserView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('B instance')
     expect(wrapper.text()).not.toContain('A instance')
-    expect(wrapper.get('.workspace-selector__name').text()).toBe('Workspace B')
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w2')
     expect(api.setSetting).not.toHaveBeenCalled()
 
     api.comfybuilder.listWorkspaces.mockResolvedValue([
@@ -953,7 +923,7 @@ describe('ChooserView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('A instance')
     expect(wrapper.text()).not.toContain('B instance')
-    expect(wrapper.get('.workspace-selector__name').text()).toBe('Workspace A')
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
     expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'w1')
     wrapper.unmount()
   })
@@ -996,44 +966,23 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Workspace B Build')
     expect(wrapper.text()).not.toContain('LocalThing')
 
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-personal"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('personal')
     expect(wrapper.text()).toContain('LocalThing')
     expect(wrapper.text()).not.toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('Workspace B Build')
     expect(api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
 
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-workspace-b"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('workspace-b')
     expect(wrapper.text()).toContain('Workspace B Build')
     expect(wrapper.text()).not.toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('LocalThing')
 
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-workspace-a"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('workspace-a')
     expect(wrapper.text()).toContain('Workspace A Build')
     expect(wrapper.text()).not.toContain('Workspace B Build')
   })
 
-  it('keeps the shared New Instance scope in sync with the workspace selector', async () => {
+  it('keeps the shared New Instance scope in sync with the selected workspace', async () => {
     installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
@@ -1042,14 +991,7 @@ describe('ChooserView', () => {
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
     expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual([])
 
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-selector"]')
-      .trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-personal"]')
-      .trigger('click')
-    await flushPromises()
+    await selectWorkspace('personal')
     await wrapper.get('.chooser-tile-new').trigger('click')
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
     expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual([])

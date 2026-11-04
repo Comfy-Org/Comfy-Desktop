@@ -15,6 +15,15 @@
       "confirmLabel": "Return to Dashboard"
     }
   },
+  "sidebar": {
+    "navigation": "Navigation",
+    "home": "Home",
+    "tools": "Tools",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "signInTitle": "Log in to Comfy",
+    "signInBody": "Sync your work and run it on Comfy Cloud."
+  },
   "installType": {
     "standalone": "Standalone",
     "cloud": "Cloud",
