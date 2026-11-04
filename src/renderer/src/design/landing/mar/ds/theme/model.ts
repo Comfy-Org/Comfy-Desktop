@@ -716,6 +716,24 @@ const SURFACE: [string, Record<string, string>][] = [
   ['.sg-inner', { outline: '1px solid var(--pg-node-border)', 'outline-offset': '-1px' }]
 ]
 
+/**
+ * What ComfyUI (main) applies live (scripts/design/comfy-theme): the
+ * theme.css names as the palette writes them on <html>, the @theme
+ * constants, and litegraph's canvas fill. The same values as the export.
+ */
+export function liveTheme(
+  s: State,
+  mode: Mode
+): { vars: Record<string, string>; litegraph: Record<string, string> } {
+  const tok = resolve(s, mode)
+  const vars: Record<string, string> = {}
+  for (const t of TOKENS) {
+    if (t.rule || t.local || t.litegraph) continue
+    vars[t.shared ? `--color-${t.id}` : `--${t.id}`] = cssOf(tok[t.id]!)
+  }
+  return { vars, litegraph: { CLEAR_BACKGROUND_COLOR: cssOf(tok.canvas!) } }
+}
+
 // ── Export ─────────────────────────────────────────────────────────────
 
 const pctCss = (base: string, pct: number, white?: 'white' | 'black'): string =>

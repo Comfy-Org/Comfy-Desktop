@@ -5,8 +5,10 @@ import Button from '../../../ui/Button.vue'
 import Select from '../../../ui/Select.vue'
 import Switch from '../../../ui/Switch.vue'
 import MarSeg from '../../pages/MarSeg.vue'
+import { useCloud } from '../theme/cloudBridge'
 import { ALEX, HOME, MAIN, type Mode } from '../theme/model'
 import { changes, compare, editing, reset } from '../theme/usePlayground'
+import CloudPanel from './CloudPanel.vue'
 import StudioContrast from './StudioContrast.vue'
 import StudioExport from './StudioExport.vue'
 import StudioIntegrate from './StudioIntegrate.vue'
@@ -16,29 +18,25 @@ import StudioTokens from './StudioTokens.vue'
 import SurfaceFrame from './SurfaceFrame.vue'
 
 /**
- * The Theme playground, full screen: the prototype's own surfaces (New
- * Home, or ComfyUI's graph) fill the page, and the editor docks beside
- * them. Every edit is written as CSS the surfaces apply (theme/apply.ts),
- * so what changes is the real product, not a copy of it.
+ * The Theme playground, full screen: a live surface fills the page and
+ * the editor docks beside it. New Home is the prototype's own (the CSS
+ * theme/apply.ts writes); ComfyUI is production, on Comfy Cloud in its own
+ * tab, fed the tokens by message (theme/cloudBridge.ts). What changes is
+ * the real product, not a copy of it.
  */
-type Surface = 'home' | 'graph'
+type Surface = 'home' | 'comfy'
 type View = 'dark' | 'light' | 'split'
-type GraphStyle = 'current' | 'glass'
 type Screen = 'none' | 'mac' | 'windows' | 'glare'
 type Tab = 'tokens' | 'primitives' | 'contrast' | 'legacy' | 'integrate' | 'export'
 
 const SURFACES: { value: Surface; label: string }[] = [
   { value: 'home', label: 'New Home' },
-  { value: 'graph', label: 'ComfyUI' }
+  { value: 'comfy', label: 'ComfyUI (Cloud)' }
 ]
 const VIEWS: { value: View; label: string }[] = [
   { value: 'dark', label: 'Dark' },
   { value: 'light', label: 'Light' },
   { value: 'split', label: 'Split' }
-]
-const GRAPH_STYLES: { value: GraphStyle; label: string }[] = [
-  { value: 'current', label: 'Current' },
-  { value: 'glass', label: 'Glass' }
 ]
 const SCREENS: { value: Screen; label: string; hint: string }[] = [
   { value: 'none', label: 'Screen as is', hint: 'As the values are' },
@@ -68,19 +66,17 @@ const pick = <T extends string>(list: { value: T }[], v: string | undefined): T 
   list.find((o) => o.value === v)?.value ?? list[0]!.value
 const surface = ref(pick(SURFACES, saved.surface))
 const view = ref(pick(VIEWS, saved.view))
-const graphStyle = ref(pick(GRAPH_STYLES, saved.graphStyle))
 const screen = ref(pick(SCREENS, saved.screen))
 const tab = ref(pick(TABS, saved.tab))
 const dock = ref(saved.dock !== 'closed')
 watch(
-  [surface, view, graphStyle, screen, tab, dock],
+  [surface, view, screen, tab, dock],
   () =>
     localStorage.setItem(
       VIEW_KEY,
       JSON.stringify({
         surface: surface.value,
         view: view.value,
-        graphStyle: graphStyle.value,
         screen: screen.value,
         tab: tab.value,
         dock: dock.value ? 'open' : 'closed'
@@ -100,6 +96,7 @@ watch(
   { immediate: true }
 )
 
+const cloud = useCloud(editing)
 const src = (m: Mode): string => {
   const q = new URLSearchParams({
     frame: 'app',
@@ -108,10 +105,6 @@ const src = (m: Mode): string => {
     page: 'overview',
     pg: '1'
   })
-  if (surface.value === 'graph') {
-    q.set('run', 'graph')
-    q.set('seed', JSON.stringify({ 'comfy.design.mar.graphStyle': graphStyle.value }))
-  }
   return `?${q}`
 }
 // /playground is this page on the shared site; the DS is its root.
@@ -153,12 +146,6 @@ const dsHref = location.pathname.replace(/playground\/?$/, '')
       >
       <MarSeg v-model="surface" :options="SURFACES" label="Surface" />
       <MarSeg v-model="view" :options="VIEWS" label="Theme" />
-      <MarSeg
-        v-if="surface === 'graph'"
-        v-model="graphStyle"
-        :options="GRAPH_STYLES"
-        label="Graph style"
-      />
       <Select v-model="screen" :options="SCREENS" size="sm" class="st-screen" />
       <span class="st-spacer" />
       <span class="st-count">{{ changes }} changes from main</span>
@@ -170,13 +157,23 @@ const dsHref = location.pathname.replace(/playground\/?$/, '')
 
     <div class="st-body">
       <main :class="['st-stage', `is-${screen}`]">
-        <SurfaceFrame
-          v-for="m in modes"
-          :key="m"
-          :src="src(m)"
-          :title="`${surface === 'home' ? 'New Home' : 'ComfyUI'}, ${m}`"
-          :style="{ filter: screen === 'none' ? undefined : `url(#pg-screen-${screen})` }"
+        <CloudPanel
+          v-if="surface === 'comfy'"
+          :status="cloud.status.value"
+          :split="view === 'split'"
+          @open="cloud.open"
+          @stop="cloud.stop"
+          @resume="cloud.resume"
         />
+        <template v-else>
+          <SurfaceFrame
+            v-for="m in modes"
+            :key="m"
+            :src="src(m)"
+            :title="`New Home, ${m}`"
+            :style="{ filter: screen === 'none' ? undefined : `url(#pg-screen-${screen})` }"
+          />
+        </template>
       </main>
 
       <aside v-if="dock" class="st-dock" aria-label="Token editor">
