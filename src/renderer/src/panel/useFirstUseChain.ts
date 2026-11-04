@@ -106,7 +106,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   const launcherPrefs = useLauncherPrefs()
   // First-use is the sole takeover-surface caller; pinning the surface
   // at the composable scope keeps the per-call API uniform across
-  // MigrationBanner / DetailModal / useComfyUISettings.
+  // useComfyUISettings.
   const { confirmMigration } = useMigrateAction({ surface: 'takeover' })
   // Module singleton — same slot the overlay composable owns.
   const { current: currentOverlay } = useOverlay()

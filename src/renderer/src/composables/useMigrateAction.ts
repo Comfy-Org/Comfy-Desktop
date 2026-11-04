@@ -68,12 +68,11 @@ export function getRegisteredMigrateTakeover(): MigrateTakeoverSurface | null {
  * Composable that encapsulates the full migration confirmation flow:
  * action guard → preview → confirm with variant/device selection → return data.
  *
- * Used by MigrationBanner (Dashboard), DetailModal (Installs → Manage),
- * useComfyUISettings (Settings drawer), and useFirstUseChain (first-use
+ * Used by useComfyUISettings (instance settings) and useFirstUseChain (first-use
  * takeover) to ensure a single code path for all migration entry points.
  * The render surface (`modal` vs the brand `takeover`) is fixed when the
  * composable is set up — passing it per-call risked drift across the
- * three modal callsites if the takeover variant ever grew extra fields.
+ * modal callsites if the takeover variant ever grew extra fields.
  */
 export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
   const { t } = useI18n()

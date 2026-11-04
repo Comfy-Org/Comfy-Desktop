@@ -53,9 +53,8 @@ const emit = defineEmits<{
   'open-details': [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
   'show-new-install': []
-  /** A long-running action was kicked off from the inline Manage...
-   *  DetailModal. Forwarded to PanelApp so it can wire the operation
-   *  through `progressStore`. */
+  /** Forward a long-running dashboard action to PanelApp so it can wire
+   *  the operation through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
 }>()
 
@@ -221,8 +220,7 @@ const {
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
-  // pipeline used by every other long op fires here too, without the
-  // brief ManageInstallModal flash that the autoAction route produced.
+  // pipeline used by every other long op fires here too.
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
   canPromoteToWorkspace
 })

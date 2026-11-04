@@ -45,7 +45,7 @@ import {
 
 // Backing state + IPC plumbing for the Settings drawer. All tabs source
 // from `getDetailSections()` and write through `update-installation` /
-// `runAction`; the action chain mirrors `DetailModal.runAction`.
+// `runAction`.
 
 export interface UseComfyUISettingsOpts {
   installation: MaybeRefOrGetter<Installation | null>

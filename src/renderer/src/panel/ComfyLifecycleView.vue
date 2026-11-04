@@ -34,8 +34,7 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  *     host's ComfyUI view covers the panel.
  *
  * Restart surfaces the standard ProgressModal flow via the parent
- * PanelApp's `show-progress` emit, mirroring how DashboardCard /
- * DetailModal kick off the same action.
+ * PanelApp's `show-progress` emit, mirroring dashboard actions.
  */
 
 interface Props {

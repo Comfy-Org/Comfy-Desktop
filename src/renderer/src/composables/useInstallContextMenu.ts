@@ -38,12 +38,12 @@ export interface ManageOpenOptions {
 
 export function useInstallContextMenu(
   opts: {
-    /** Open the per-install Manage... overlay. Items funnel through this with
+    /** Open the per-install settings surface. Items funnel through this with
      *  the right `initialTab` / `autoAction` so the source-side action
      *  machinery is reused. */
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
     /** Fast-path for actions that own their own confirm + showProgress
-     *  (Delete). Avoids the ManageInstallModal spinner flash. Falls back
+     *  (Delete). Avoids opening the settings surface first. Falls back
      *  to `onManage(inst, { autoAction })` when omitted. */
     onShowProgress?: (showOpts: ShowProgressOpts) => void
     /** Dashboard-only gate for the workspace promotion action. Main revalidates

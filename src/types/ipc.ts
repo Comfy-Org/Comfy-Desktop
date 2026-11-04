@@ -458,7 +458,7 @@ export interface ShowProgressOpts {
    *  restart). The chooser host listens for the resulting
    *  `instance-started` broadcast and closes itself so the new comfy
    *  window replaces the chooser visually. Without this flag,
-   *  launches initiated from a Tier-1 surface like DetailModal would
+   *  launches initiated from the dashboard would
    *  leave the chooser host alongside the new comfy window. */
   triggersInstanceStart?: boolean
   /** Set on install ops that should auto-launch the resulting install
@@ -1944,7 +1944,7 @@ export interface ElectronApi {
    *   - `'app-update-download-prompt'` → `useModal.confirm` "Desktop
    *     Update Available" dialog. Confirm → `downloadUpdate()`.
    *     Carries the target `version`.
-   *   - `'install-update'` → Manage overlay (DetailModal) on the
+   *   - `'install-update'` → instance picker on the
    *     update tab, scoped to the carried `installationId`.
    *   - `'open-settings'` → Tier 1 unified Settings modal at the
    *     given `settingsTab` (defaults to the host's default tab).

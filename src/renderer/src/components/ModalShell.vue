@@ -23,7 +23,7 @@ withDefaults(
     title?: string
     /** Hide the corner close button (binding takeovers without an in-header dismiss). */
     hideClose?: boolean
-    /** Glyph for the corner close (defaults to ✕; ProgressModal/ConsoleModal swap to − while running). */
+    /** Glyph for the corner close (defaults to ✕; ProgressModal swaps to − while running). */
     closeGlyph?: string
   }>(),
   {
