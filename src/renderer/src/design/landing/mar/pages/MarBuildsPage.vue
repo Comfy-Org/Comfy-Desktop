@@ -475,7 +475,7 @@ const newLabel = computed(() =>
           <MarSplitButton
             tone="secondary"
             :label="b.state === 'launching' && !updating.has(b.id) ? 'Starting…' : primary(b).label"
-            :suffix="b.state === 'launching' ? undefined : runsOn(b)"
+            :suffix="b.state === 'launching' && !updating.has(b.id) ? undefined : runsOn(b)"
             :disabled="b.state === 'launching'"
             :lines="
               second(b)
