@@ -361,14 +361,14 @@ defineExpose({ open })
             class="load-snapshot-dropzone flex min-h-[220px] flex-auto flex-col items-center justify-center gap-2.5 rounded-lg border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
             :class="[
               dragging
-                ? 'load-snapshot-dropzone--active border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]'
+                ? 'load-snapshot-dropzone--active border-[var(--action)] bg-[color-mix(in_srgb,var(--action)_8%,transparent)]'
                 : 'border-[var(--brand-surface-border)]',
               { 'load-snapshot-dropzone--loading opacity-60 pointer-events-none': loading }
             ]"
           >
             <div
               v-if="loading"
-              class="load-snapshot-dropzone__loading text-[length:var(--takeover-fs-body)] text-neutral-300 load-snapshot-with-spinner flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+              class="load-snapshot-dropzone__loading text-[length:var(--takeover-fs-body)] text-neutral-300 load-snapshot-with-spinner flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
             >
               {{ $t('newInstall.loading') }}
             </div>
@@ -457,7 +457,7 @@ defineExpose({ open })
               }}</label>
               <div
                 v-if="variantLoading"
-                class="load-snapshot-loading py-2 text-[length:var(--takeover-fs-body)] text-neutral-300 load-snapshot-with-spinner flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+                class="load-snapshot-loading py-2 text-[length:var(--takeover-fs-body)] text-neutral-300 load-snapshot-with-spinner flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
               >
                 {{ $t('newInstall.loading') }}
               </div>
@@ -668,7 +668,7 @@ defineExpose({ open })
                       </span>
                       <span
                         v-if="i === 0"
-                        class="load-snapshot-current-tag shrink-0 text-[11px] font-semibold text-[var(--accent)]"
+                        class="load-snapshot-current-tag shrink-0 text-[11px] font-semibold text-[var(--action)]"
                         >{{ $t('snapshots.current') }}</span
                       >
                       <span class="load-snapshot-meta min-w-0 flex-1 truncate text-text-muted">

@@ -1239,7 +1239,7 @@ onMounted(() => {
                       :class="{
                         'benchmarks__matrix-column--dragging opacity-55':
                           draggedBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--accent)]':
+                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--action)]':
                           dropTargetBenchmarkId === benchmark.id,
                         'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
                       }"
@@ -1252,7 +1252,7 @@ onMounted(() => {
                       <span
                         class="benchmarks__matrix-title flex items-start gap-2 text-left select-none [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted focus-visible:rounded focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px]"
                         :class="{
-                          'benchmarks__matrix-title--selectable cursor-pointer [&:hover_strong]:text-[var(--accent)]':
+                          'benchmarks__matrix-title--selectable cursor-pointer [&:hover_strong]:text-[var(--action)]':
                             isRelativeView
                         }"
                         tabindex="0"

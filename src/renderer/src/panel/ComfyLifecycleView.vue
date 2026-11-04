@@ -379,7 +379,7 @@ const placeholderTitle = computed<string>(() => {
       data-state="placeholder"
     >
       <div
-        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-[var(--border)] bg-surface text-[var(--accent,#4d8eff)]"
+        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-[var(--border)] bg-surface text-[var(--action,#4d8eff)]"
       >
         <Loader2 :size="32" class="animate-spin" />
       </div>

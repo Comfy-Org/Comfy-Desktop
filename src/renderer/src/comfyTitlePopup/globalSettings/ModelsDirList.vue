@@ -173,7 +173,7 @@ const rows = computed(() =>
       </div>
       <span
         v-if="row.isPrimary"
-        class="models-dir-tag tag-primary inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)]"
+        class="models-dir-tag tag-primary inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[color-mix(in_srgb,var(--action)_35%,transparent)] bg-[color-mix(in_srgb,var(--action)_10%,transparent)] text-[var(--action)]"
       >
         {{ t('models.primary', 'Downloads') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />

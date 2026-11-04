@@ -18,7 +18,7 @@ const props = withDefaults(
 )
 
 const iconClass =
-  'info-tooltip-icon shrink-0 text-text-muted opacity-85 transition-[opacity,color] duration-150 ease-[ease] group-hover/info-tooltip:text-[var(--accent)] group-hover/info-tooltip:opacity-100 group-focus-visible/info-tooltip:text-[var(--accent)] group-focus-visible/info-tooltip:opacity-100'
+  'info-tooltip-icon shrink-0 text-text-muted opacity-85 transition-[opacity,color] duration-150 ease-[ease] group-hover/info-tooltip:text-[var(--action)] group-hover/info-tooltip:opacity-100 group-focus-visible/info-tooltip:text-[var(--action)] group-focus-visible/info-tooltip:opacity-100'
 
 function openLink(): void {
   if (props.linkUrl) void window.api.openExternal(props.linkUrl)
@@ -47,7 +47,7 @@ function openLink(): void {
       <span class="info-tooltip-content flex flex-col gap-1.5">
         <span>{{ props.text }}</span>
         <a
-          class="info-tooltip-link w-fit font-semibold text-[var(--accent)] no-underline hover:text-accent-hover hover:underline focus-visible:text-accent-hover focus-visible:underline"
+          class="info-tooltip-link w-fit font-semibold text-[var(--action)] no-underline hover:text-accent-hover hover:underline focus-visible:text-accent-hover focus-visible:underline"
           :href="props.linkUrl"
           @click.prevent.stop="openLink"
         >

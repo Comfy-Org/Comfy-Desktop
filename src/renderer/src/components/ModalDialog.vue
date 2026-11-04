@@ -222,7 +222,7 @@ watch(
           class="dialog-loading flex items-center justify-center gap-2.5 py-6 text-[14px] text-text-muted"
         >
           <div
-            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-[var(--accent)] [animation-duration:0.6s]"
+            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-[var(--action)] [animation-duration:0.6s]"
           />
           <span>{{ $t('common.loading') }}</span>
         </div>
@@ -369,7 +369,7 @@ watch(
                 <div
                   v-for="(item, ii) in group.items"
                   :key="ii"
-                  class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--accent)] [&_a]:underline"
+                  class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--action)] [&_a]:underline"
                   v-html="linkify(item)"
                 ></div>
               </div>
@@ -503,7 +503,7 @@ watch(
               <div
                 v-for="(item, ii) in group.items"
                 :key="ii"
-                class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--accent)] [&_a]:underline"
+                class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--action)] [&_a]:underline"
                 v-html="linkify(item)"
               ></div>
             </div>

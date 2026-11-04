@@ -87,7 +87,7 @@ async function startMigration(): Promise<void> {
       <Button
         size="unset"
         variant="textonly"
-        class="migration-telemetry-link static ml-1.5 inline-block appearance-auto rounded-lg border-0 bg-transparent p-0 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal text-[var(--accent)] underline touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-[var(--accent-hover)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
+        class="migration-telemetry-link static ml-1.5 inline-block appearance-auto rounded-lg border-0 bg-transparent p-0 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal text-[var(--action)] underline touch-auto transition-none [&]:[appearance:button] hover:bg-transparent hover:text-[var(--accent-hover)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
         @click="emit('show-settings')"
       >
         {{ $t('dashboard.telemetrySettings') }}

@@ -38,7 +38,7 @@ const { t } = useI18n()
 
     <div
       v-if="loading"
-      class="restore-modal-loading justify-center py-4 text-[13px] text-text-muted flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+      class="restore-modal-loading justify-center py-4 text-[13px] text-text-muted flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
     >
       {{ t('common.loading') }}
     </div>

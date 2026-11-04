@@ -375,7 +375,7 @@ onMounted(() => {
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-[gs-field-flash_2.2s_ease-out] motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--accent)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
@@ -484,18 +484,3 @@ onMounted(() => {
     </Tabs>
   </div>
 </template>
-
-<style>
-/* Deep-linked controls keep their timed highlight without affecting layout. */
-@keyframes gs-field-flash {
-  0%,
-  55% {
-    box-shadow: 0 0 0 2px var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 2px transparent;
-    background: transparent;
-  }
-}
-</style>

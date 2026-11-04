@@ -29,9 +29,9 @@ defineProps<{
         class="progress-step-indicator flex size-[22px] shrink-0 items-center justify-center rounded-[50%] border-2 border-solid text-[12px] font-semibold"
         :class="
           status === 'done'
-            ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]'
+            ? 'border-[var(--action)] bg-[var(--action)] text-[var(--bg)]'
             : status === 'active'
-              ? 'border-[var(--accent)] text-[var(--accent)]'
+              ? 'border-[var(--action)] text-[var(--action)]'
               : 'border-[var(--border)] text-text-muted'
         "
       >
@@ -54,7 +54,7 @@ defineProps<{
         class="progress-bar-track mb-4 h-2 w-full overflow-hidden rounded-[4px] bg-[var(--border)]"
       >
         <div
-          class="progress-bar-fill h-full rounded-[4px] bg-[var(--accent)] transition-[width] duration-300 ease-[ease]"
+          class="progress-bar-fill h-full rounded-[4px] bg-[var(--action)] transition-[width] duration-300 ease-[ease]"
           :class="{ indeterminate: (percent ?? -1) < 0 }"
           :style="{ width: (percent ?? -1) >= 0 ? `${percent}%` : '100%' }"
         ></div>

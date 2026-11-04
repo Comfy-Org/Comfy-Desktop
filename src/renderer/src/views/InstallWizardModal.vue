@@ -52,7 +52,7 @@ const emit = defineEmits<{
 }>()
 
 const spinnerClass =
-  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[""] before:[animation-duration:600ms]'
+  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
 
 const props = withDefaults(
   defineProps<{

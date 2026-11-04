@@ -19,10 +19,6 @@
     "reason": "Preserve the existing progress-indeterminate animation.",
     "sha256": "e91753e5d6e18052239d26f3b792cc6d6b5c2d7b821f23dd9a7db268f45069fe"
   },
-  "src/renderer/src/comfyTitlePopup/GlobalSettingsView.vue": {
-    "reason": "Preserve the existing gs-field-flash animation.",
-    "sha256": "2392a694212241a269657df9855b32b7f47d953589073fc88650a2fa2661a702"
-  },
   "src/renderer/src/components/settings/ComfyUISettingsContent.vue": {
     "reason": "Preserve the existing op-bar-slide animation.",
     "sha256": "bf5b6da0902a0e0c96c922e7b8a545307b3de39bfb8c0bdec401311ae42b2cd0"
