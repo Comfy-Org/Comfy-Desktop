@@ -9,7 +9,8 @@ import DeployedTo from './space/DeployedTo.vue'
 import { openDeploy } from '../spaces'
 import type { ProjectWorkflow } from '../gallery'
 import { INSTANCES, thumb } from '../mock'
-import { cover } from '../mar/cover'
+import { cover, isBranded } from '../mar/cover'
+import WorkflowCover from '../mar/brand/WorkflowCover.vue'
 import { AppWindow, EllipsisVertical, Play, Rocket } from 'lucide-vue-next'
 import { startFromName } from '../appFlow'
 import { can } from '../milestones'
@@ -87,8 +88,14 @@ function open(): void {
     </template>
     <template #media>
       <!-- Can show what the workflow makes instead. -->
+      <WorkflowCover
+        v-if="isBranded(cover.id)"
+        :kind="cover.id"
+        :category="wf.category"
+        :name="wf.name"
+      />
       <img
-        v-if="cover.id === 'output'"
+        v-else-if="cover.id === 'output'"
         :src="thumb(wf.thumbId)"
         alt=""
         loading="lazy"

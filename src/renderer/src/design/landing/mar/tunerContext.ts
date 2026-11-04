@@ -65,8 +65,12 @@ export const when = {
   templates: computed(() => inShell.value && ['explore', 'favorites'].includes(proto.page)),
   // The cards on the Builds page.
   buildCard: computed(() => inShell.value && ['environments', 'instances'].includes(proto.page)),
-  // Workflow cards with a cover (parts/WorkflowCard.vue): a build's page.
-  cover: computed(() => inShell.value && proto.page.startsWith('environment:')),
+  // Workflow cards with a cover: a build's page, Workflows and Home's recents.
+  cover: computed(
+    () =>
+      inShell.value &&
+      (proto.page.startsWith('environment:') || ['workflows', 'overview'].includes(proto.page))
+  ),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Credits: the sidebar foot; Tabs has no sidebar.
   credits: computed(() => sidebarShown.value && !!shownCredits.value && marNav.id !== 'tabs'),
