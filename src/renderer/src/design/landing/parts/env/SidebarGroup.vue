@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, LayoutGrid, Plus } from 'lucide-vue-next'
+import { Folder, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
@@ -9,7 +9,6 @@ import { envById } from './env'
 import { allWorkflows } from '../../gallery'
 import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
 import { PROJECTS } from '../../mock'
-import { isMariana } from '../../mar/proposal'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 
 /**
@@ -57,15 +56,7 @@ const itemClass = (page: Page): string =>
 <template>
   <div v-if="show" class="mt-5.5 flex shrink-0 flex-col">
     <div class="flex h-6.5 items-center justify-between pr-1 pl-3">
-      <MarGroupTitle
-        v-if="isMariana"
-        :title="title"
-        :active="overviewActive"
-        @click="go(overviewPage)"
-      />
-      <span v-else class="text-ui font-medium tracking-wider text-subtle-foreground uppercase">{{
-        title
-      }}</span>
+      <MarGroupTitle :title="title" :active="overviewActive" @click="go(overviewPage)" />
       <Tooltip :content="proto.projects ? 'New project' : 'New build'">
         <Button
           variant="ghost"
@@ -79,26 +70,9 @@ const itemClass = (page: Page): string =>
         </Button>
       </Tooltip>
     </div>
-    <!-- Overview of the whole group -->
-    <Button
-      v-if="!isMariana"
-      variant="ghost"
-      :aria-current="overviewActive ? 'page' : undefined"
-      :class="
-        cn(itemClass(overviewPage), !overviewActive && 'bg-transparent text-muted-foreground')
-      "
-      @click="go(overviewPage)"
-    >
-      <LayoutGrid :size="15" />
-      <span class="sidebar-label text-left">{{
-        proto.projects ? 'All projects' : 'All builds'
-      }}</span>
-      <span class="text-ui text-subtle-foreground tabular-nums">{{ rows.length }}</span>
-    </Button>
-
-    <!-- Mar's proposal: none yet (a first-time user), say what goes here. -->
+    <!-- None yet (a first-time user): say what goes here. -->
     <p
-      v-if="isMariana && !rows.length"
+      v-if="!rows.length"
       class="flex h-8 items-center gap-2.5 px-3 text-ui text-subtle-foreground"
     >
       <Folder :size="15" />{{ proto.projects ? 'Group work by client' : 'No builds yet' }}

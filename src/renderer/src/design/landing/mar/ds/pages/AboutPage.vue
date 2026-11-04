@@ -49,8 +49,8 @@ const count = (g: string): number => PAGES.filter((p) => p.group === g).length
       </a>
     </div>
     <p>
-      The default view: Proposal › New UI, every UI Playground knob at its default. Dark by default;
-      Light or Both from the header.
+      The default view: every UI Playground knob at its default. Dark by default; Light or Both from
+      the header.
     </p>
 
     <details class="ds-fold">

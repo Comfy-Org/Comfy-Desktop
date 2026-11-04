@@ -11,7 +11,6 @@ import { cn } from '../ui/cn'
 import { fieldVariants } from '../ui/field.variants'
 import AddFolderDialog from './AddFolderDialog.vue'
 import { instanceById } from '../useProto'
-import { isMariana } from '../mar/proposal'
 import { shortPath } from '../mar/menus'
 import type { LocalFolder } from '../mock'
 
@@ -64,7 +63,7 @@ const folderName = (f: LocalFolder): string =>
         <span class="flex min-w-0 flex-col">
           <span>{{ folderName(f) }}</span>
           <span class="truncate font-mono text-ui text-subtle-foreground" :title="f.path">{{
-            isMariana ? shortPath(f.path) : f.path
+            shortPath(f.path)
           }}</span>
         </span>
       </DropdownMenuCheckboxItem>

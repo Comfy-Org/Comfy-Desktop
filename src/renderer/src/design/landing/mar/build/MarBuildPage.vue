@@ -50,7 +50,7 @@ import EnvModels from './EnvModelsEntry.vue'
 import '../table/table.css'
 
 /**
- * A build's page, Proposed navigation (mar/build/buildNav.ts). One place
+ * A build's page (mar/build/buildNav.ts). One place
  * says where you are: the title bar's breadcrumb (Home › Builds › this
  * build), so there is no back link here - only when Mar's tabs title bar
  * has no breadcrumb. The header is one row: the build's mark, name and
@@ -68,7 +68,8 @@ const k = computed(() => envKind(env))
 const st = computed(() => envStatus(env))
 const s = computed(() => statsOf(env))
 const versions = computed(() => versionsOf(env))
-const deps = computed(() => deploymentsOf(env.id))
+// Deployments come with the Builder (Milestone 6).
+const deps = computed(() => (can.value.builder ? deploymentsOf(env.id) : []))
 const wfs = computed(() => allWorkflows.value.filter((w) => w.envId === env.id))
 const recent = computed(() => [...wfs.value].sort((a, b) => a.age - b.age).slice(0, 4))
 const usedBy = computed(() => (proto.projects ? PROJECTS.filter((p) => p.envId === env.id) : []))
@@ -195,7 +196,10 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
     </div>
 
     <template v-if="tab === 'overview'">
-      <Card class="grid grid-cols-4 divide-x divide-border-default">
+      <Card
+        class="grid divide-x divide-border-default"
+        :class="can.builder ? 'grid-cols-4' : 'grid-cols-3'"
+      >
         <StatTile label="Runs · 7 days" :value="fmt(s.runs7d)"
           ><Sparkline :values="s.trend"
         /></StatTile>
@@ -213,6 +217,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
           hint="Sessions on Comfy Cloud"
         />
         <StatTile
+          v-if="can.builder"
           label="API requests · 7 days"
           :value="deps.length ? fmtCompact(deps.reduce((n, d) => n + d.requests7d, 0)) : '—'"
           :hint="
@@ -278,7 +283,11 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
             v.published ? 'In the cloud' : 'This computer only'
           }}</span>
           <span class="mar-table-cell is-end is-center" role="cell">
-            <Button v-if="proto.signedIn" variant="ghost" size="sm" @click="deployEnv(env.id)"
+            <Button
+              v-if="can.builder && proto.signedIn"
+              variant="ghost"
+              size="sm"
+              @click="deployEnv(env.id)"
               ><Rocket :size="13" />Deploy</Button
             >
           </span>
@@ -292,7 +301,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         :text="
           k === 'local'
             ? 'A version is a snapshot of this computer’s setup. Publish one to run it in the cloud.'
-            : 'Each version is a frozen copy you can deploy.'
+            : 'Each version is a frozen copy of this build.'
         "
         action="Save a version"
         @action="saveVersion"

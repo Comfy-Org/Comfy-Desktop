@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { can } from '../../milestones'
 import MarCloudBar from './MarCloudBar.vue'
 import MarDock from './MarDock.vue'
 import MarSidebar from './MarSidebar.vue'
@@ -12,7 +13,6 @@ import InspectorPanel from '../p20/InspectorPanel.vue'
 import ShortcutBar from '../p20/ShortcutBar.vue'
 import TabsNav from '../p20/TabsNav.vue'
 import { p20 } from '../p20/p20'
-import { isMariana } from '../proposal'
 import {
   altBackground,
   bloomOn,
@@ -67,11 +67,13 @@ import '../motion/pageTransition'
     :style="{ '--cover-bg': spaceCover.bg, '--cover-accent': spaceCover.accent }"
     aria-hidden="true"
   />
-  <MarDock v-if="marDockOn" />
-  <MarSidebar v-if="marSideOn" />
-  <MarCloudBar v-if="onCloud" />
-  <MarSearch />
-  <template v-if="isMariana">
+  <!-- Milestone 1 is today's dashboard: the light only, no new navigation. -->
+  <template v-if="can.builds">
+    <MarDock v-if="marDockOn" />
+    <MarSidebar v-if="marSideOn" />
+    <MarCloudBar v-if="onCloud" />
+    <!-- Search finds what Explore brings. -->
+    <MarSearch v-if="can.exploreApps" />
     <QueuePanel v-if="p20.panel === 'queue'" />
     <InspectorPanel v-else-if="p20.panel === 'inspector'" />
     <ShortcutBar v-if="p20.density === 'dense'" />

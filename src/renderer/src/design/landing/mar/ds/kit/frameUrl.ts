@@ -6,8 +6,7 @@ export function frameUrl(
 ): string {
   const q = new URLSearchParams({
     frame,
-    theme: new URLSearchParams(location.search).get('theme') ?? 'dark',
-    proposal: 'mariana'
+    theme: new URLSearchParams(location.search).get('theme') ?? 'dark'
   })
   // Inside the Theme playground, frames take its tokens too.
   if (new URLSearchParams(location.search).has('pg')) q.set('pg', '1')

@@ -7,7 +7,7 @@ const p = await startPreview()
 for (const theme of ['dark', 'light']) {
   let page
   for (let i = 0; i < 4; i++) { try { page = await p.open({ direction: 'original', theme, milestone: 10 }); break } catch { console.log('retry') } }
-  await page.goto(page.url() + '&proposal=mariana'); await page.waitForTimeout(2500)
+  await page.goto(page.url()); await page.waitForTimeout(2500)
   await page.setViewportSize({ width: 1440, height: 900 })
   for (const st of states) {
     const base = all.includes(st) ? st : st === 'flow-progress' ? 'needs-publish' : 'ready'

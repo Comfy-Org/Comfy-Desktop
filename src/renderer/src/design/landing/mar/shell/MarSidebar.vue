@@ -53,7 +53,7 @@ import { marNav } from './marShell'
 import { marTabsOn } from './titleTabs'
 import { search } from '../search/search'
 import { PROJECT_ART } from '../assets/mock'
-import { firstRunKeeps, firstRunLabel, ports } from '../pabloPorts'
+import { firstRunKeeps, firstRunLabel, ports } from '../navOptions'
 import MarSignIn from './MarSignIn.vue'
 import { goModeHome } from '../modes/home'
 
@@ -113,7 +113,7 @@ const BUILD: { title?: string; items: Item[] }[] = [
     ]
   }
 ]
-// From Pablo › Docs: his Build nav ends with Docs (docs.comfy.org).
+// Nav options › Docs: his Build nav ends with Docs (docs.comfy.org).
 const DOCS: Item = { page: 'docs' as Page, label: 'Docs', icon: BookOpen, href: 'docs' }
 const withDocs = (gs: typeof BUILD): typeof BUILD =>
   ports.navDocs
@@ -363,7 +363,7 @@ function newChat(): void {
       </template>
     </nav>
 
-    <!-- Signed out with From Pablo › Account: no balance to show. -->
+    <!-- Signed out with Nav options › Account: no balance to show. -->
     <MarCreditsFlyout
       v-if="
         (proto.signedIn || !ports.navAccount) &&
@@ -377,7 +377,7 @@ function newChat(): void {
       </button>
     </MarCreditsFlyout>
 
-    <!-- Signed out (From Pablo › Account): his Log in card instead. -->
+    <!-- Signed out (Nav options › Account): his Log in card instead. -->
     <MarSignIn v-if="ports.navAccount && !proto.signedIn" :open />
     <!-- Workspace, always last at the foot like Pablo's; credits above it. -->
     <div v-else class="mar-side-foot" :class="open && creditsStyle.id === 'meter' && 'is-meter'">

@@ -25,8 +25,7 @@ function onMessage(e: MessageEvent): void {
 }
 onMounted(() => window.addEventListener('message', onMessage))
 onBeforeUnmount(() => window.removeEventListener('message', onMessage))
-const src = (theme: string): string =>
-  `?frame=page&page=${page}&mode=${mode}&theme=${theme}&proposal=mariana`
+const src = (theme: string): string => `?frame=page&page=${page}&mode=${mode}&theme=${theme}`
 </script>
 
 <template>

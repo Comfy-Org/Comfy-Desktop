@@ -1,27 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  ArrowUp,
-  ChevronDown,
-  ImageUp,
-  Images,
-  Mic,
-  Paperclip,
-  Plus,
-  Upload,
-  X
-} from 'lucide-vue-next'
+import { ArrowUp, Mic, Plus, Upload, X } from 'lucide-vue-next'
 import { ComfyAssets } from '../mar/icons/comfyIcons'
-import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../ui/Button.vue'
-import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
 import { cn } from '../ui/cn'
-import InstanceGlyph from './InstanceGlyph.vue'
-import InstanceMenuItems from './InstanceMenuItems.vue'
 import { runTask, startAgent } from '../agent'
 import { thumb } from '../mock'
 import { activeInstance, proto, requireLogin, toast } from '../useProto'
-import { isMariana } from '../mar/proposal'
 import MarRunOn from '../mar/runOn/MarRunOn.vue'
 
 /** `chat`: inside the agent view - sends to the current chat instead of
@@ -163,16 +148,14 @@ function accept(e: KeyboardEvent): void {
         class="flex h-16 w-28 flex-col items-center justify-center gap-1 rounded-control border border-dashed border-border-strong text-ui text-muted-foreground outline-none hover:bg-secondary-background hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus"
         @click="fileInput?.click()"
       >
-        <component :is="isMariana ? Upload : ImageUp" :size="15" />{{
-          uploads.length ? 'Add more' : 'Upload yours'
-        }}
+        <Upload :size="15" />{{ uploads.length ? 'Add more' : 'Upload yours' }}
       </button>
       <button
         type="button"
         class="flex h-16 w-28 flex-col items-center justify-center gap-1 rounded-control border border-border-default bg-secondary-background/40 text-ui text-muted-foreground outline-none hover:bg-secondary-background hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus"
         @click="toast('Pick from Assets')"
       >
-        <component :is="isMariana ? ComfyAssets : Images" :size="15" />From Assets
+        <ComfyAssets :size="15" />From Assets
       </button>
       <input
         ref="fileInput"
@@ -206,36 +189,8 @@ function accept(e: KeyboardEvent): void {
       </div>
     </div>
     <div class="mt-1.5 flex items-center justify-between">
-      <MarRunOn v-if="target && isMariana" />
-      <DropdownMenuRoot v-else-if="target" :modal="false">
-        <DropdownMenuTrigger as-child>
-          <Button
-            variant="ghost"
-            size="sm"
-            class="border border-border-default pl-1.5 text-base-foreground"
-          >
-            <InstanceGlyph :inst="activeInstance" size="sm" />
-            <span class="text-subtle-foreground">Run on</span
-            >{{ isMariana && activeInstance.kind === 'cloud' ? 'Cloud' : activeInstance.name }}
-            <span
-              v-if="activeInstance.kind === 'cloud' && !proto.signedIn"
-              class="text-ui text-subtle-foreground"
-              >Log in</span
-            >
-            <ChevronDown :size="13" class="text-subtle-foreground" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" class="w-80">
-          <InstanceMenuItems
-            mode="select"
-            label="Run on"
-            @choose="(i) => (proto.activeInstanceId = i.id)"
-          />
-        </DropdownMenuContent>
-      </DropdownMenuRoot>
-      <Button v-else variant="ghost" size="icon-sm" aria-label="Attach"
-        ><component :is="isMariana ? Plus : Paperclip" :size="14"
-      /></Button>
+      <MarRunOn v-if="target" />
+      <Button v-else variant="ghost" size="icon-sm" aria-label="Attach"><Plus :size="14" /></Button>
       <div class="flex items-center gap-1.5">
         <Button variant="ghost" size="icon-sm" aria-label="Dictate"><Mic :size="14" /></Button>
         <span class="h-4 w-px bg-border-strong" />

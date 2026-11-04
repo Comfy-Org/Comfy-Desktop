@@ -88,10 +88,9 @@ export const proto = reactive({
   signedIn: urlSignedOut ? false : saved.signedIn,
   /** "Fresh install" scenario - no local instances yet. */
   fresh: saved.fresh,
-  /** First-time user: nothing made, run or shared yet. Pablo's proposal
-   *  ties it to a fresh install (null: follow `fresh`); Mar's sets it on
-   *  its own (mar/userStates/userState.ts), since a returning Cloud user
-   *  may have no local install. */
+  /** First-time user: nothing made, run or shared yet. Set on its own
+   *  (mar/userStates/userState.ts), since a returning Cloud user may have no
+   *  local install. Null: follow `fresh`. */
   newUser: null as boolean | null,
   /** Mar's proposal: a single local build, the one just set up. */
   oneLocal: false,
@@ -179,6 +178,13 @@ watch(
   () => proto.signedIn,
   (signedIn) => {
     if (!signedIn) proto.workspaceId = 'personal'
+    // The Apps and Builds libraries need an account.
+    const p = proto.page
+    const libraries =
+      p === 'apps' ||
+      p.startsWith('app:') ||
+      (proto.projects && (p === 'environments' || p.startsWith('environment:')))
+    if (!signedIn && libraries) proto.page = 'overview'
   }
 )
 
@@ -186,7 +192,7 @@ export const workspace = computed(
   () => WORKSPACES.find((w) => w.id === proto.workspaceId) ?? WORKSPACES[0]!
 )
 
-/** New user: nothing made yet (Pablo's proposal: a fresh install). */
+/** New user: nothing made yet. */
 export const isNewUser = computed(() => proto.newUser ?? proto.fresh)
 
 /** All instances visible in the current scenario + workspace, cloud first. */

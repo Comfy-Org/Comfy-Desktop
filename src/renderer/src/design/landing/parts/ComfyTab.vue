@@ -5,7 +5,6 @@ import Button from '../ui/Button.vue'
 import InstanceGlyph from './InstanceGlyph.vue'
 import { closeTab, instanceById, proto } from '../useProto'
 import { buildState } from '../buildTabs'
-import { isMariana } from '../mar/proposal'
 import MarGraph from '../mar/graph/MarGraph.vue'
 import MarCloudBar from '../mar/shell/MarCloudBar.vue'
 import { onCloud } from '../mar/shell/surface'
@@ -23,12 +22,12 @@ const real = computed(() => proto.live && !!inst.value?.source)
 </script>
 
 <template>
-  <!-- Mar's proposal on Comfy Cloud: the browser bar stays, with its way
-       back to Home (mar/shell). -->
-  <MarCloudBar v-if="isMariana && onCloud" />
-  <!-- Mar's proposal: a mock of ComfyUI's graph editor (mar/graph). -->
+  <!-- On Comfy Cloud the browser bar stays, with its way back to Home
+       (mar/shell). -->
+  <MarCloudBar v-if="onCloud" />
+  <!-- A mock of ComfyUI's graph editor (mar/graph). -->
   <MarGraph
-    v-if="isMariana && tab && inst && !real && state?.kind !== 'error'"
+    v-if="tab && inst && !real && state?.kind !== 'error'"
     :workflow="tab.workflow === 'Untitled workflow' ? undefined : tab.workflow"
   />
   <div

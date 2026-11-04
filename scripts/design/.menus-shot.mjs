@@ -8,7 +8,7 @@ for (const theme of themes) {
   let page
   for (let i = 0; i < 4; i++) { try { page = await p.open({ direction: 'original', theme, milestone: 10 }); break } catch (e) { console.log('retry') } }
   await page.setViewportSize({ width: 1440, height: 1000 })
-  const url = page.url() + '&proposal=mariana'
+  const url = page.url()
   for (const [name, clicks] of steps) {
     try {
       await page.goto(url); await page.waitForTimeout(6000)

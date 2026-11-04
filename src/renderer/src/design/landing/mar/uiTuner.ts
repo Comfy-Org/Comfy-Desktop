@@ -1,4 +1,5 @@
 import { reactive, watch } from 'vue'
+import { can } from '../milestones'
 
 /**
  * UI tuner: live knobs on top of the picked UI (Void, A, B, C) to compare
@@ -157,12 +158,24 @@ function darkSheet(): HTMLStyleElement {
   }
   return el
 }
+// Written on <html>, so Milestone 0 (Desktop as it ships) must not get them.
 watch(
-  () => ({ ...tuning }),
-  (t) => {
+  [() => ({ ...tuning }), () => can.value.design] as const,
+  ([t, design]) => {
     const style = document.documentElement.style
     for (const name of applied) style.removeProperty(name)
     applied.clear()
+    try {
+      localStorage.setItem(KEY, JSON.stringify(t))
+    } catch {
+      // Storage blocked: the tuning lasts for this window only.
+    }
+    if (!design) {
+      darkSheet().textContent = ''
+      delete document.documentElement.dataset.marBorders
+      delete document.documentElement.dataset.marShadows
+      return
+    }
     // Surfaces (contrast) are dark-theme colours: they go in a sheet that
     // only applies outside light mode, so light keeps its own surfaces.
     let dark = ''
@@ -179,11 +192,6 @@ watch(
     darkSheet().textContent = dark ? `:root:not([data-ds-theme='light']) { ${dark} }` : ''
     document.documentElement.dataset.marBorders = t.borders
     document.documentElement.dataset.marShadows = t.shadows
-    try {
-      localStorage.setItem(KEY, JSON.stringify(t))
-    } catch {
-      // Storage blocked: the tuning lasts for this window only.
-    }
   },
   { immediate: true }
 )
