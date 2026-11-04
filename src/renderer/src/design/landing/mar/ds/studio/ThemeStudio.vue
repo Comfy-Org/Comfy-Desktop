@@ -112,7 +112,8 @@ const src = (m: Mode): string => {
   }
   return `?${q}`
 }
-const dsHref = location.pathname
+// /playground is this page on the shared site; the DS is its root.
+const dsHref = location.pathname.replace(/playground\/?$/, '')
 </script>
 
 <template>
