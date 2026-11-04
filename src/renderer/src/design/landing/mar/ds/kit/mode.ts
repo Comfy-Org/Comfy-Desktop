@@ -42,6 +42,14 @@ export function takeSection(): number {
 }
 export const useSection = (): number => inject(SECTION, -1)
 
+/** A titled section of a frame, for the page's “On this page” links:
+ *  `top` is its offset inside `frame`. */
+export interface FrameSection {
+  title: string
+  top: number
+  frame: HTMLElement
+}
+
 /** How many cells a collapsed row shows, and sections States shows. */
 export const KEY_STATES = 6
 export const KEY_SECTIONS = 2
