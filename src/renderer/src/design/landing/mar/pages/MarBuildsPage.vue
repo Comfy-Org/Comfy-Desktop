@@ -2,7 +2,6 @@
 import { computed, reactive, ref, type Component } from 'vue'
 import {
   ArrowUpCircle,
-  CircleAlert,
   Camera,
   Copy,
   ExternalLink,
@@ -159,7 +158,6 @@ const LIVE: Record<string, Live> = {
 }
 const DISK_FREE = '412 GB'
 const live = (b: Build): Live => LIVE[b.id] ?? {}
-const memory = (b: Build): string => (b.gpu?.includes(' GB') ? 'VRAM' : 'Memory')
 const gpuName = (b: Build): string =>
   b.gpu?.split(' · ')[0] ?? (b.kind === 'cloud' ? 'Cloud GPU' : 'This computer')
 // Total memory: the GPU's, or this computer's unified memory.
@@ -182,14 +180,6 @@ const STATUS: Record<ProtoInstance['state'], ItemStatus | undefined> = {
 }
 const statusLabel = (b: Build): string | undefined =>
   b.state === 'update' ? 'Update available' : b.state === 'error' ? 'Failed to start' : undefined
-const sub = (b: Build): string =>
-  [
-    b.deployment ? 'Cloud build' : b.channel,
-    b.version,
-    b.state === 'running' ? 'Running now' : b.lastUsed
-  ]
-    .filter(Boolean)
-    .join(' · ')
 
 function original(b: Build): ProtoInstance {
   return instances.value.find((i) => i.id === b.id) ?? b
@@ -535,14 +525,13 @@ const newLabel = computed(() =>
         v-on="cardOn(b)"
       />
     </div>
+    <!-- Photos: the last things made on it, then what milestone 1 says and
+         no more: name, specs, the state, one action that says where. -->
     <div v-else-if="view === 'grid'" class="mar-grid is-wide">
       <MarItem
         v-for="b in shown"
         :key="b.id"
         :name="b.name"
-        :meta="sub(b)"
-        :status="STATUS[b.state]"
-        :status-label="statusLabel(b)"
         :fav="b.fav"
         :lines="lines(b)"
         :selected="lib.sel.has(b.id)"
@@ -562,64 +551,47 @@ const newLabel = computed(() =>
             <img v-for="id in outputs.get(b.id)" :key="id" :src="thumb(id)" alt="" loading="lazy" />
           </span>
         </template>
+        <template #meta
+          ><span class="mar-bc-specs-text">{{ b.state === 'error' ? b.error : specs(b) }}</span
+          ><button
+            v-if="b.state === 'update' || updating.has(b.id)"
+            type="button"
+            class="mar-bc-update"
+            :disabled="updating.has(b.id)"
+            :title="updating.has(b.id) ? undefined : 'Update this build'"
+            @click.stop="update(b)"
+          >
+            <ArrowUpCircle :size="12" aria-hidden="true" />{{
+              updating.has(b.id) ? 'Updating…' : 'Update available'
+            }}
+          </button></template
+        >
         <template #footer>
-          <span class="mar-build-spec">
-            <span class="mar-build-row">
-              <span class="mar-build-gpu">{{ gpuName(b) }}</span>
-              <span :class="b.state === 'error' && 'is-error'">{{ stateLine(b) }}</span>
-            </span>
-            <span v-if="b.state === 'error'" class="mar-build-row is-error"
-              ><CircleAlert :size="14" class="mar-build-alert" />{{ b.error }}</span
+          <span class="mar-build-foot">
+            <span class="mar-bc-badge" :class="`is-${rowTone(b)}`"
+              ><i aria-hidden="true" />{{ rowState(b) }}</span
             >
-            <span v-else class="mar-build-row">
-              <span
-                v-if="b.state === 'running' && live(b).mem"
-                class="mar-build-mem"
-                :aria-label="`${memory(b)} ${live(b).mem![0]} of ${live(b).mem![1]} GB in use`"
-              >
-                <span class="mar-build-bar"
-                  ><i :style="{ width: `${(live(b).mem![0] / live(b).mem![1]) * 100}%` }"
-                /></span>
-                <span
-                  ><b>{{ live(b).mem![0] }} / {{ live(b).mem![1] }} GB</b> {{ memory(b) }}</span
-                >
-              </span>
-              <span v-else
-                ><b>{{ memTotal(b) }}</b> {{ memory(b) }}</span
-              >
-              <span v-if="b.kind === 'cloud'"
-                ><b>{{ live(b).rate ?? 40 }}</b> credits/h</span
-              >
-              <span v-else
-                >Disk <b>{{ DISK_FREE }}</b> free</span
-              >
-            </span>
-            <span class="mar-build-row is-last">
-              <span
-                ><b>{{ b.models ?? 'All' }}</b> models · <b>{{ b.nodes ?? 'Core' }}</b> node
-                packs</span
-              >
-              <Button
-                v-if="second(b)"
-                variant="ghost"
-                size="sm"
-                class="ml-auto"
-                :title="second(b)!.hint"
-                @click.stop="second(b)!.run()"
-                ><component :is="second(b)!.icon" :size="13" />{{ second(b)!.label }}</Button
-              >
-              <Button
-                variant="primary"
-                size="sm"
-                class="mar-build-go"
-                :disabled="b.state === 'launching'"
-                @click.stop="primary(b).run()"
-              >
-                <component :is="primary(b).icon" :size="13" />{{
-                  b.state === 'launching' ? 'Starting…' : primary(b).label
-                }}
-              </Button>
-            </span>
+            <MarSplitButton
+              tone="secondary"
+              :label="
+                b.state === 'launching' && !updating.has(b.id) ? 'Starting…' : primary(b).label
+              "
+              :suffix="b.state === 'launching' ? undefined : runsOn(b)"
+              :disabled="b.state === 'launching'"
+              :lines="
+                second(b)
+                  ? [
+                      {
+                        label: second(b)!.label,
+                        icon: second(b)!.icon as Component,
+                        run: second(b)!.run
+                      }
+                    ]
+                  : []
+              "
+              menu-label="More ways to run"
+              @run="primary(b).run()"
+            />
           </span>
         </template>
       </MarItem>
@@ -1029,7 +1001,7 @@ const newLabel = computed(() =>
     display: none;
   }
 }
-.mar-bc-row .mar-bc-badge {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1038,20 +1010,20 @@ const newLabel = computed(() =>
   font-size: 13px;
   font-weight: 500;
 }
-.mar-bc-row .mar-bc-badge.is-ok {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge.is-ok {
   color: var(--color-status-running);
 }
-.mar-bc-row .mar-bc-badge.is-warn {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge.is-warn {
   color: var(--color-status-warning, #f5b14c);
 }
-.mar-bc-row .mar-bc-badge.is-bad {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge.is-bad {
   color: var(--color-status-danger);
 }
-.mar-bc-row .mar-bc-badge {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge {
   gap: 9px;
 }
 /* The dot in the state's colour, on a soft halo of the same. */
-.mar-bc-row .mar-bc-badge > i {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge > i {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
@@ -1059,8 +1031,23 @@ const newLabel = computed(() =>
   background: var(--color-subtle-foreground);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-subtle-foreground) 18%, transparent);
 }
-.mar-bc-row .mar-bc-badge:not(.is-idle) > i {
+:is(.mar-bc-row, .mar-build) .mar-bc-badge:not(.is-idle) > i {
   background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 20%, transparent);
+}
+/* Photos: specs and the update badge on one line, then the state across
+   from the one action. */
+.mar-build .mar-item-meta {
+  height: 20px;
+  gap: 8px;
+}
+.mar-build-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 8px 4px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
 }
 </style>
