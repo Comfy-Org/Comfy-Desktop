@@ -134,7 +134,13 @@ const emit = defineEmits<{
             @click.stop="second.run()"
             ><component :is="second.icon as Component" :size="13" />{{ second.label }}</Button
           >
-          <Button variant="secondary" size="sm" :disabled="busy" @click.stop="cta.run()">
+          <Button
+            variant="secondary"
+            size="sm"
+            class="mar-bc-main"
+            :disabled="busy"
+            @click.stop="cta.run()"
+          >
             <component :is="cta.icon as Component" :size="13" />{{ busy ? 'Starting…' : cta.label }}
           </Button>
         </span>
@@ -242,10 +248,20 @@ const emit = defineEmits<{
   align-items: center;
   margin: 0 -16px;
   padding: 0 16px;
-  border-bottom: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
-  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+/* Contrast: a hairline so the card reads on the page, and the specs and the
+   state's words between secondary and tertiary text (over 6:1 in dark). */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-strip:not(.is-selected) {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+.mar-bc.is-strip .mar-item-meta,
+.mar-bc.is-strip .mar-bc-error,
+.mar-bc.is-strip .mar-bc-state {
+  color: color-mix(in oklch, var(--color-muted-foreground) 55%, var(--color-subtle-foreground));
 }
 .mar-bc-strip {
   display: flex;
@@ -267,11 +283,19 @@ const emit = defineEmits<{
   top: 9px;
   right: 40px;
 }
-/* The state's other action (Stop, Start without updating) is outlined, so
-   the main button stays the one with a fill. */
+/* The state's other action (Stop, Update) is outlined, so the main button
+   stays the one with a fill, and a fill that reads on the card. */
 :root .proto-ui.proto-ui.proto-ui .mar-bc-second {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-main:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--color-base-foreground) 15%, transparent);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-main:not(:disabled):hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 20%, transparent);
 }
 /* Mark: the mark beside the name, the specs under a hairline. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-mark {

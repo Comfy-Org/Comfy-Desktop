@@ -213,7 +213,6 @@ function retry(b: Build): void {
 function primary(b: Build): { label: string; icon: unknown; run: () => void } {
   if (b.state === 'running')
     return { label: 'Open', icon: ExternalLink, run: () => hostActions.launch(original(b)) }
-  if (b.state === 'update') return { label: 'Update', icon: ArrowUpCircle, run: () => update(b) }
   if (b.state === 'error') return { label: 'Try again', icon: RotateCw, run: () => retry(b) }
   return { label: 'Start', icon: Play, run: () => start(b) }
 }
@@ -222,8 +221,14 @@ function second(
   b: Build
 ): { label: string; hint?: string; icon: unknown; run: () => void } | undefined {
   if (b.state === 'running') return { label: 'Stop', icon: Square, run: () => stop(b) }
+  // Many keep a build as it is, so Update waits beside Start, never in its place.
   if (b.state === 'update')
-    return { label: 'Start', hint: 'Start without updating', icon: Play, run: () => start(b) }
+    return {
+      label: 'Update',
+      hint: 'Update, then start',
+      icon: ArrowUpCircle,
+      run: () => update(b)
+    }
   return undefined
 }
 // A click opens the build's page; Open and Start are the button's.
@@ -553,6 +558,7 @@ const newLabel = computed(() =>
           <Button
             variant="secondary"
             size="sm"
+            class="mar-bc-main"
             :disabled="b.state === 'launching'"
             @click.stop="primary(b).run()"
             ><component :is="primary(b).icon" :size="13" />{{
