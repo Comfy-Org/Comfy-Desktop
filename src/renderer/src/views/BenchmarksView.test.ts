@@ -1,3 +1,4 @@
+import { defineComponent, h, KeepAlive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
@@ -161,6 +162,20 @@ function mountView() {
   })
 }
 
+function mountKeptAlive() {
+  const Page = defineComponent({
+    props: { visible: { type: Boolean, required: true } },
+    setup: (props) => () =>
+      h(KeepAlive, null, { default: () => (props.visible ? h(BenchmarksView) : h('div')) })
+  })
+  return mount(Page, {
+    props: { visible: true },
+    global: {
+      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: messages } })]
+    }
+  })
+}
+
 describe('BenchmarksView', () => {
   beforeEach(() => {
     useDialogs().cancel()
@@ -179,6 +194,82 @@ describe('BenchmarksView', () => {
         benchmarks: sampleBenchmarks
       }))
     }
+  })
+
+  describe('returning to the page', () => {
+    const list = (): ReturnType<typeof vi.fn> =>
+      window.api.listPerformanceTestBenchmarks as unknown as ReturnType<typeof vi.fn>
+    const browseFolder = (): ReturnType<typeof vi.fn> =>
+      window.api.browseFolder as unknown as ReturnType<typeof vi.fn>
+
+    async function leaveAndReturn(wrapper: ReturnType<typeof mountKeptAlive>): Promise<void> {
+      await wrapper.setProps({ visible: false })
+      await wrapper.setProps({ visible: true })
+      await flushPromises()
+    }
+
+    it('loads once on first open', async () => {
+      mountKeptAlive()
+      await flushPromises()
+
+      expect(list()).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the folder, search and picked runs', async () => {
+      browseFolder().mockResolvedValue('D:\\other')
+      list().mockImplementation(async (folderPath?: string) => ({
+        folderPath: folderPath ?? 'C:\\results\\performance-tests',
+        benchmarks: sampleBenchmarks
+      }))
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      const selectFolder = wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Select folder')
+      await selectFolder?.trigger('click')
+      await flushPromises()
+      await setChecked(wrapper.get('[data-testid="benchmark-row-13"] [role="checkbox"]'), false)
+      await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
+      await wrapper.get<HTMLInputElement>('input[type="text"]').setValue('json')
+
+      await leaveAndReturn(wrapper)
+
+      expect(list()).toHaveBeenLastCalledWith('D:\\other')
+      expect(wrapper.get<HTMLInputElement>('input[type="text"]').element.value).toBe('json')
+      const checked = (id: string): string | undefined =>
+        wrapper
+          .get(`[data-testid="benchmark-row-${id}"] [role="checkbox"]`)
+          .attributes('aria-checked')
+      expect(checked('13')).toBe('false')
+      expect(checked('10')).toBe('true')
+    })
+
+    it('shows runs that finished meanwhile and drops picks that are gone', async () => {
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      list().mockResolvedValue({
+        folderPath: 'C:\\results\\performance-tests',
+        benchmarks: [benchmark('14', 'new.json', 1), ...sampleBenchmarks.slice(1)]
+      })
+
+      await leaveAndReturn(wrapper)
+
+      expect(wrapper.find('[data-testid="benchmark-row-14"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
+      expect(
+        wrapper.get('[data-testid="benchmark-row-14"] [role="checkbox"]').attributes('aria-checked')
+      ).toBe('false')
+    })
+
+    it('keeps the list on screen when the refresh fails', async () => {
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      list().mockRejectedValue(new Error('offline'))
+
+      await leaveAndReturn(wrapper)
+
+      expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(4)
+    })
   })
 
   it('selects the three newest runs and highlights only the best duration in each metric', async () => {

@@ -5,7 +5,7 @@ import Switch from '@comfyorg/design-system/switch/Switch'
 import Button from '@comfyorg/design-system/button/Button'
 import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
   FolderOpen,
@@ -677,6 +677,26 @@ async function loadBenchmarks(folderPath?: string): Promise<void> {
   }
 }
 
+/** Pick up runs finished while this page was off screen, leaving the current
+ *  folder, selection and list in place. */
+async function syncBenchmarksOnReturn(): Promise<void> {
+  if (loading.value) return
+  const folderPath = benchmarksFolderPath.value
+  if (loadError.value || !folderPath) {
+    await loadBenchmarks(folderPath || undefined)
+    return
+  }
+  try {
+    const result = await window.api.listPerformanceTestBenchmarks(folderPath)
+    if (benchmarksFolderPath.value !== folderPath) return
+    benchmarks.value = result.benchmarks
+    const remainingIds = new Set(result.benchmarks.map(({ id }) => id))
+    selectedOrderIds.value = selectedOrderIds.value.filter((id) => remainingIds.has(id))
+  } catch {
+    // The list on screen is still the last good read.
+  }
+}
+
 async function selectBenchmarksFolder(): Promise<void> {
   const folderPath = await window.api.browseFolder(benchmarksFolderPath.value || undefined)
   if (folderPath) await loadBenchmarks(folderPath)
@@ -804,6 +824,9 @@ async function confirmDeleteBenchmark(benchmark: PerformanceTestBenchmark): Prom
 
 onMounted(() => {
   void loadBenchmarks()
+})
+onActivated(() => {
+  void syncBenchmarksOnReturn()
 })
 </script>
 

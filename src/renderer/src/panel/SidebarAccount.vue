@@ -124,7 +124,7 @@ async function onSignOut(): Promise<void> {
           <img
             :src="image"
             alt=""
-            class="size-full object-cover contrast-[1.12] grayscale mix-blend-multiply transition-transform duration-600 ease-out group-hover/signin:scale-108 motion-reduce:transition-none"
+            class="size-full object-cover mix-blend-multiply transition-transform duration-600 ease-out group-hover/signin:scale-108 motion-reduce:transition-none"
           />
           <span class="absolute inset-0 bg-[oklch(0.26_0.1_282)] mix-blend-lighten" />
         </span>

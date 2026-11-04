@@ -43,6 +43,10 @@ interface PerformanceTestRunTelemetry {
   readonly startedAtMs: number
 }
 
+const emit = defineEmits<{
+  'run-active-change': [active: boolean]
+}>()
+
 const { t } = useI18n()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
@@ -191,6 +195,10 @@ const canRun = computed(() => {
 const canStop = computed(() => {
   return Boolean(performanceTestInstallationId.value && !isStopping.value)
 })
+const ownsRun = computed(
+  () => isLaunching.value || isStopping.value || performanceTestInstallationId.value !== null
+)
+watch(ownsRun, (active) => emit('run-active-change', active))
 let activeLaunchPromise: Promise<ActionResult> | null = null
 let activeRunTelemetry: PerformanceTestRunTelemetry | null = null
 let runToken = 0

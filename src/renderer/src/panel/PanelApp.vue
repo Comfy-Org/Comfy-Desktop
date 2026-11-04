@@ -225,9 +225,12 @@ const showPanelBody = computed(() => {
 
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
 
+const performanceTestRunActive = ref(false)
+
 chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
-  switchPanel
+  switchPanel,
+  hostOwnsPerformanceTestRun: () => performanceTestRunActive.value
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
@@ -589,17 +592,12 @@ onUnmounted(() => {
             />
           </div>
 
-          <div
-            v-else-if="activePanel === 'benchmarks'"
-            class="panel-benchmarks flex min-h-0 flex-1 flex-col overflow-hidden"
-          >
-            <BenchmarksView />
-          </div>
-
           <KeepAlive>
+            <BenchmarksView v-if="activePanel === 'benchmarks'" class="panel-benchmarks" />
             <PerformanceTestView
-              v-if="activePanel === 'performance-test'"
+              v-else-if="activePanel === 'performance-test'"
               class="panel-performance-test flex min-h-0 flex-col overflow-hidden [&.panel-performance-test]:flex-1"
+              @run-active-change="performanceTestRunActive = $event"
             />
           </KeepAlive>
         </div>
