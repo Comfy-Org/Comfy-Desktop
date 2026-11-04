@@ -293,9 +293,9 @@ function card(b: Build) {
     name: b.name,
     kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
     where: whereLabel(b),
-    // Strip leads the specs with the hardware. Grouped leaves the hardware to
+    // Tile and strip lead the specs with the hardware. Grouped leaves the hardware to
     // its heading, unless it's the cloud's own.
-    meta: (buildCard.id === 'strip'
+    meta: (buildCard.id === 'tile' || buildCard.id === 'strip'
       ? [gpuName(b), ...release]
       : [
           ...release,

@@ -186,7 +186,7 @@ export const TWEAKS = {
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   cover: one(cover, 'graph'),
-  buildCard: one(buildCard, 'strip'),
+  buildCard: one(buildCard, 'tile'),
   buildPage: one(buildPage, 'production'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),

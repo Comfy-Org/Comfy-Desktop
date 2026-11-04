@@ -11,7 +11,8 @@ import type { MenuLine } from './menu'
 /**
  * One build with no picture (UI Playground › Build card). Text on the card's
  * surface and a quiet button, so the page reads as a list of places to run,
- * not a gallery. Where it runs: a strip across the top (strip, the pick), a
+ * not a gallery. Where it runs: a tile beside the name, labelled above it
+ * (tile, the pick), a strip across the top (strip), a
  * labelled line on top (where), a mark beside the name (mark), or the group's
  * heading (grouped). MarItem keeps selection, the ⋯ menu and rename.
  */
@@ -94,7 +95,10 @@ const emit = defineEmits<{
     @star="emit('star')"
   >
     <template #media>
-      <span v-if="look === 'strip'" class="mar-bc-strip">
+      <span v-if="look === 'tile'" class="mar-bc-tile">
+        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="24" />
+      </span>
+      <span v-else-if="look === 'strip'" class="mar-bc-strip">
         <component :is="kind === 'cloud' ? Cloud : Laptop" :size="14" />{{ where }}
       </span>
       <span v-else-if="look === 'where'" class="mar-bc-where">
@@ -103,6 +107,9 @@ const emit = defineEmits<{
       <span v-else-if="look === 'mark'" class="mar-row-icon">
         <LocationIcon :kind :size="18" />
       </span>
+    </template>
+    <template v-if="look === 'tile'" #eyebrow>
+      <span class="mar-bc-eyebrow">{{ where }}</span>
     </template>
     <template v-if="error" #meta>
       <span class="mar-bc-error">{{ error }}</span>
@@ -325,6 +332,50 @@ const emit = defineEmits<{
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc-main:not(:disabled):hover {
   background: color-mix(in oklch, var(--color-base-foreground) 20%, transparent);
+}
+/* Tile: where it runs as a tile as tall as the three lines beside it
+   (where, name, specs); the state and its actions under a hairline. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-tile {
+  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  column-gap: 14px;
+}
+.mar-bc-tile {
+  display: flex;
+  width: 60px;
+  height: 60px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-bc.is-tile > .mar-item-text {
+  height: 60px;
+  justify-content: center;
+  gap: 4px;
+  padding-right: 28px;
+}
+.mar-bc-eyebrow {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc.is-tile .mar-item-name {
+  font-size: 15px;
+  line-height: 20px;
+}
+.mar-bc.is-tile .mar-item-meta {
+  line-height: 16px;
+}
+.mar-bc.is-tile .mar-bc-foot {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 /* Mark: the mark beside the name, the specs under a hairline. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-mark {

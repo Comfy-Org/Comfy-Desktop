@@ -170,6 +170,7 @@ function click(e: MouseEvent): void {
     </button>
 
     <span class="mar-item-text">
+      <slot name="eyebrow" />
       <input
         v-if="renaming"
         ref="input"
