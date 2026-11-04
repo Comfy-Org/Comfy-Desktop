@@ -74,7 +74,7 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
     </PageHeader>
     <ProjectWorkflows />
   </div>
-  <AppsLibrary v-else-if="proto.page === 'apps' && can.agent" />
+  <AppsLibrary v-else-if="proto.page === 'apps' && (can.agent || !can.projects)" />
   <AppsPage v-else-if="proto.page === 'apps'" />
   <AppDetail v-else-if="app && can.agent" :id="app.id" :key="app.id" />
   <ProjectsOverview v-else-if="proto.page === 'projects' && proto.projects" />

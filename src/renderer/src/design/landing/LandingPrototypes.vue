@@ -156,7 +156,7 @@ watch(
       <ClassicDashboard v-else-if="!can.builds" />
       <!-- An app opened with Open app: its own tab, full screen. -->
       <AppTab
-        v-else-if="can.agent && appsProto.front"
+        v-else-if="can.exploreApps && appsProto.front"
         :id="appsProto.front"
         :key="appsProto.front"
       />

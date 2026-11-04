@@ -179,6 +179,13 @@ watch(
   () => proto.signedIn,
   (signedIn) => {
     if (!signedIn) proto.workspaceId = 'personal'
+    // The Apps and Builds libraries need an account.
+    const p = proto.page
+    const libraries =
+      p === 'apps' ||
+      p.startsWith('app:') ||
+      (proto.projects && (p === 'environments' || p.startsWith('environment:')))
+    if (!signedIn && libraries) proto.page = 'overview'
   }
 )
 

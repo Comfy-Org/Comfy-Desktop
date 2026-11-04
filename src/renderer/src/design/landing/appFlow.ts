@@ -1,5 +1,6 @@
 import { computed, reactive, watch } from 'vue'
-import { go, goIn, proto, toast } from './useProto'
+import { go, goIn, proto, requireLogin, toast } from './useProto'
+import { APPS } from './mock'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
 /**
@@ -24,6 +25,7 @@ const saved = ((): {
   look?: LookVariant
   tabs?: string[]
   front?: string
+  added?: string[]
   preview?: Record<string, PreviewAs>
 } => {
   try {
@@ -39,6 +41,8 @@ export const appsProto = reactive({
    *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
   front: saved.front ?? '',
+  /** Explore apps added to the library (ids). */
+  added: (saved.added ?? []) as string[],
   /** Tabs the creator is previewing as someone else (app id -> who). */
   preview: (saved.preview ?? {}) as Record<string, PreviewAs>
 })
@@ -371,7 +375,162 @@ export const LIB = reactive<LibApp[]>([
   })
 ])
 
-export const libApp = (id: string): LibApp | undefined => LIB.find((a) => a.id === id)
+/** Apps on Explore: use cases from creators and from Comfy, run by
+ *  anyone signed in. Not in your library: you open them as a user. */
+export const EXPLORE: { title: string; hint: string; apps: LibApp[] }[] = [
+  {
+    title: 'Product photos',
+    hint: 'Studio shots without a studio',
+    apps: [
+      hub(
+        'x-relight',
+        'Product relight',
+        'Any product photo, three studio lights.',
+        'template_product_placement',
+        'Comfy',
+        0.04
+      ),
+      hub(
+        'x-reshoot',
+        'Reshoot anywhere',
+        'Put your product in a new scene.',
+        'api_google_nano_banana2_image_edit',
+        'Mara Lind',
+        0.06
+      ),
+      hub(
+        'x-poster',
+        'Poster resizer',
+        'One design, every format.',
+        'templates_graphic_design_recomposer',
+        'Studio Atlas',
+        0.03
+      )
+    ]
+  },
+  {
+    title: 'Video',
+    hint: 'Bring a still to life',
+    apps: [
+      hub(
+        'x-i2v',
+        'Photo to video',
+        'A still becomes a 5 s clip.',
+        'video_ltx2_5_i2v',
+        'Comfy',
+        0.31
+      ),
+      hub(
+        'x-h3',
+        'Character in motion',
+        'A walk, a turn, a wave.',
+        'video_minimax_h3_i2v',
+        'Tiger Chen',
+        0.44
+      ),
+      hub(
+        'x-wan',
+        'Cinemagraph',
+        'A loop that moves, a little.',
+        'video_wan2_2_14B_i2v',
+        'Lumen Lab',
+        0.22
+      )
+    ]
+  },
+  {
+    title: 'Characters and 3D',
+    hint: 'From one image to many',
+    apps: [
+      hub(
+        'x-angles',
+        'Character angles',
+        'One character, eight angles.',
+        'image_qwen_image_edit_2511',
+        'Jun Park',
+        0.05
+      ),
+      hub(
+        'x-3d',
+        'Image to 3D prop',
+        'A photo of a prop, as a 3D model.',
+        '3d_pixal3d_trellis2_image_to_model',
+        'Alex Carmoid',
+        0.12
+      ),
+      hub(
+        'x-upscale',
+        '4K upscaler',
+        'Any render to clean 4K.',
+        'utility_seedvr2_image_upscale',
+        'Comfy',
+        0.02
+      )
+    ]
+  }
+]
+function hub(
+  id: string,
+  name: string,
+  blurb: string,
+  thumbId: string,
+  owner: string,
+  cost: number
+): LibApp {
+  return base({
+    id,
+    name,
+    blurb,
+    thumbId,
+    owner,
+    group: 'shared',
+    link: true,
+    cost,
+    runs: 1000 + ((id.length * 7919) % 40000),
+    fields: id === 'x-relight' ? relightFields() : simpleFields('Image')
+  })
+}
+const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
+
+/** Add an Explore app to your library, or take it out. You stay its user:
+ *  it opens as the app, never the admin page. */
+export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
+export const isAdded = (id: string): boolean => appsProto.added.includes(id)
+export function toggleAdded(a: LibApp): void {
+  // The library needs an account.
+  if (!proto.signedIn)
+    return requireLogin('Log in to add apps', 'Your apps live in your Comfy account.')
+  const i = appsProto.added.indexOf(a.id)
+  if (i >= 0) {
+    appsProto.added.splice(i, 1)
+    const j = APPS.findIndex((x) => x.id === a.id)
+    if (j >= 0) APPS.splice(j, 1)
+    toast(`Removed ${a.name} from your apps`)
+    return
+  }
+  appsProto.added.push(a.id)
+  syncAdded(a)
+  toast(`Added ${a.name} to your apps`)
+}
+// Milestones 9-10 still show the earlier Apps page, which reads APPS.
+function syncAdded(a: LibApp): void {
+  if (APPS.some((x) => x.id === a.id)) return
+  APPS.push({
+    id: a.id,
+    name: a.name,
+    thumbId: a.thumbId,
+    owner: a.owner,
+    you: false,
+    shared: 'everyone',
+    updated: 'Just now',
+    runs: a.runs,
+    envId: 'cloud'
+  })
+}
+EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
+
+export const libApp = (id: string): LibApp | undefined =>
+  LIB.find((a) => a.id === id) ?? EXPLORE_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {
