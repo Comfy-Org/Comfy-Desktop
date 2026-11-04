@@ -106,6 +106,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 12px 0 var(--s-edge);
+  border-bottom: 1px solid var(--s-line);
 }
 .mar-search-glass {
   flex-shrink: 0;
@@ -143,13 +144,13 @@
 }
 
 /* Scopes: the New UI tab group, its track on the rows' 8px inset. The
-   one separator in the palette is this full-bleed hairline under it. */
+   one separator in the palette is the full-bleed hairline above it,
+   under the field. */
 .mar-search-scopes {
   display: flex;
   flex-shrink: 0;
   overflow-x: auto;
-  padding: 0 var(--s-pad) var(--s-pad);
-  border-bottom: 1px solid var(--s-line);
+  padding: var(--s-pad);
   scrollbar-width: none;
 }
 
