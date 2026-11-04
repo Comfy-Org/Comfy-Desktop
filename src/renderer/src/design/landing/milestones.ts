@@ -38,7 +38,7 @@ import { appsProto } from './appFlow'
 export const MILESTONES = [
   { value: '0', label: '0 · Today (main)' },
   { value: '1', label: '1 · Design system' },
-  { value: '2', label: '2 · Builds' },
+  { value: '2', label: '2 · Builds · MVP (Milestone 1)' },
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
   { value: '4.5', label: '5 · Explore apps' },
