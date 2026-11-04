@@ -5,8 +5,9 @@
  *
  * Only a short-lived access token and the identity read from it cross to the
  * renderer; the refresh token stays in main. Only the main frame of a
- * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
- * is served. Remote and LAN servers never receive the token.
+ * registered comfyView for a local install, still on the loopback ComfyUI
+ * Desktop loaded into it, is served. Remote and LAN servers never receive the
+ * token, including a Remote Connection whose URL is loopback.
  */
 import type { WebContents, WebFrameMain } from 'electron'
 
@@ -52,7 +53,8 @@ export function isLoopbackComfyUrl(url: string): boolean {
 }
 
 function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
-  if (!entry.installationId || !isLoopbackComfyUrl(entry.comfyUrl)) return false
+  if (!entry.installationId || entry.sourceCategory !== 'local') return false
+  if (!isLoopbackComfyUrl(entry.comfyUrl)) return false
   const expected = originOf(entry.comfyUrl)
   return expected !== null && originOf(currentUrl) === expected
 }
