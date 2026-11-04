@@ -1,24 +1,17 @@
 <script setup lang="ts">
-import Button from '@comfyorg/design-system/button/Button'
 /** One grid of installed instances for the selected dashboard scope. */
-import { useI18n } from 'vue-i18n'
-import { Plus } from 'lucide-vue-next'
 import ChooserInstallTile from './ChooserInstallTile.vue'
-import { chooserTileClass, chooserTileIconClass, chooserTileNameClass } from './chooserTileClasses'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
   defineProps<{
     installations: Installation[]
-    /** Lead with the New Install tile. */
-    showNew?: boolean
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
     isPromotingToWorkspace?: (inst: Installation) => boolean
   }>(),
   {
-    showNew: false,
     showFreeRunsPill: false,
     showWhyCloud: false,
     isPromotingToWorkspace: () => false
@@ -26,7 +19,6 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'new-install': []
   pick: [installation: Installation]
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
@@ -35,8 +27,6 @@ const emit = defineEmits<{
   'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
-
-const { t } = useI18n()
 
 /** Freeze a leaving tile's box so it doesn't collapse under `position:
  *  absolute`, letting survivors FLIP into the gap immediately. */
@@ -73,31 +63,10 @@ function unlockTileSize(el: Element): void {
     leave-active-class="tile-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
     leave-to-class="tile-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
     move-class="tile-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-    class="chooser-family-grid relative grid w-full grid-cols-[repeat(auto-fit,280px)] content-start justify-start gap-4"
+    class="chooser-family-grid relative grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5"
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >
-    <Button
-      v-if="props.showNew"
-      key="__new"
-      variant="textonly"
-      size="unset"
-      type="button"
-      class="chooser-tile chooser-tile-new"
-      :class="chooserTileClass"
-      @click="emit('new-install')"
-    >
-      <div class="chooser-tile-icon" :class="chooserTileIconClass"><Plus :size="32" /></div>
-      <div class="chooser-tile-name mt-auto" :class="chooserTileNameClass">
-        {{ t('chooser.newInstall') }}
-      </div>
-      <div
-        class="chooser-tile-meta w-full min-w-0 truncate text-[12px] text-neutral-100 group-hover/tile:text-text group-focus-visible/tile:text-text"
-      >
-        {{ t('chooser.newInstallDesc') }}
-      </div>
-    </Button>
-
     <ChooserInstallTile
       v-for="installation in props.installations"
       :key="`install:${installation.id}`"

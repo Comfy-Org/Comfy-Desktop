@@ -62,6 +62,7 @@
   --animate-pop-in: pop-in 160ms var(--ease-out-expo);
   --animate-fade-in: fade-in 160ms ease-out;
   --animate-status-pulse: status-pulse 2s ease-out infinite;
+  --animate-status-breathe: status-breathe 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-gs-field-flash: gs-field-flash 2.2s ease-out;
@@ -84,6 +85,11 @@
     70%,
     100% {
       box-shadow: 0 0 0 5px transparent;
+    }
+  }
+  @keyframes status-breathe {
+    50% {
+      opacity: 0.35;
     }
   }
   @keyframes shimmer {

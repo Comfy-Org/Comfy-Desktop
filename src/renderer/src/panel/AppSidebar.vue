@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ChartColumn, Gauge, Home } from 'lucide-vue-next'
+import { ChartColumn, Gauge, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -27,7 +27,7 @@ const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
 const mainRows = computed<SidebarRow[]>(() => [
-  { page: 'chooser', label: t('sidebar.home'), icon: Home }
+  { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const toolRows = computed<SidebarRow[]>(() => [
   { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn },

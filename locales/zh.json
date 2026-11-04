@@ -16,6 +16,7 @@
     }
   },
   "sidebar": {
+    "builds": "构建",
     "navigation": "导航",
     "home": "主页",
     "tools": "工具",
@@ -65,7 +66,23 @@
     "viewErrorTooltip": "查看错误详情",
     "errorTitle": "错误",
     "searchPlaceholder": "搜索实例",
-    "noMatches": "没有匹配的实例"
+    "noMatches": "没有匹配的实例",
+    "buildsTitle": "构建",
+    "newBuild": "构建",
+    "newBuildLabel": "新建构建",
+    "filterThisComputer": "此电脑",
+    "whereLabel": "运行位置",
+    "sortLabel": "排序",
+    "sortLastUsed": "最近使用",
+    "sortName": "名称",
+    "searchBuilds": "搜索构建",
+    "startInstall": "启动",
+    "updateAvailable": "有可用更新",
+    "nothingMatches": "没有匹配项",
+    "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
+    "clearFilters": "清除筛选",
+    "noBuildsTitle": "设置工作的运行位置",
+    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",

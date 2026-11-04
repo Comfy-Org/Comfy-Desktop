@@ -35,6 +35,12 @@ async function mountSidebar(activePage: DashboardPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
+  it('names the dashboard row after the page it opens', async () => {
+    const wrapper = await mountSidebar()
+
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').text()).toBe('Builds')
+  })
+
   it('marks only the current page', async () => {
     const wrapper = await mountSidebar('benchmarks')
 

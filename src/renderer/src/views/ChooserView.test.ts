@@ -4,6 +4,8 @@ import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ChooserView from './ChooserView.vue'
+import BaseSelect from '../components/ui/BaseSelect.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -59,6 +61,23 @@ const messages = {
       manageInstall: 'Manage',
       searchPlaceholder: 'Search instances',
       noMatches: 'No instances match',
+      buildsTitle: 'Builds',
+      newBuild: 'Build',
+      newBuildLabel: 'New build',
+      filterThisComputer: 'This computer',
+      whereLabel: 'Where it runs',
+      sortLabel: 'Sort',
+      sortLastUsed: 'Last used',
+      sortName: 'Name',
+      searchBuilds: 'Search builds',
+      openInstall: 'Open',
+      startInstall: 'Start',
+      updateAvailable: 'Update available',
+      nothingMatches: 'Nothing matches',
+      nothingMatchesHint: 'Try another word, or clear the filters to see everything.',
+      clearFilters: 'Clear filters',
+      noBuildsTitle: 'Set up where your work runs',
+      noBuildsBody: 'A build is ComfyUI with its own version, custom nodes and models.',
       statusRunning: 'Running',
       statusLaunching: 'Starting...',
       statusStopping: 'Stopping...',
@@ -186,6 +205,10 @@ async function selectWorkspace(workspaceId: string): Promise<void> {
   await flushPromises()
 }
 
+function tabButtons(wrapper: ReturnType<typeof mountChooser>) {
+  return wrapper.findComponent(SegmentedControl).findAll('button')
+}
+
 function mountChooser() {
   return mount(ChooserView, {
     attachTo: document.body,
@@ -199,29 +222,117 @@ describe('ChooserView', () => {
     mockModal.alert.mockClear()
   })
 
-  it('uses the concise instance search prompt', async () => {
+  it('names the search after builds', async () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
 
     const input = wrapper.get('.chooser-search input')
-    expect(input.attributes('placeholder')).toBe('Search instances')
-    expect(input.attributes('aria-label')).toBe('Search instances')
+    expect(input.attributes('placeholder')).toBe('Search builds')
+    expect(input.attributes('aria-label')).toBe('Search builds')
   })
 
-  it('renders the New Instance tile when the user has zero installs', async () => {
+  it('invites a first build when the user has zero installs', async () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.text()).toContain('New Instance')
-  })
 
-  it('emits show-new-install when the New Install tile is clicked', async () => {
-    installMockApi([])
-    const wrapper = mountChooser()
-    await flushPromises()
-    await wrapper.find('.chooser-tile-new').trigger('click')
+    const invitation = wrapper.get('.chooser-no-builds')
+    expect(invitation.text()).toContain('Set up where your work runs')
+
+    await invitation.get('button').trigger('click')
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
+  })
+
+  it('emits show-new-install from the page header', async () => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('.chooser-header .chooser-tile-new').trigger('click')
+    expect(wrapper.emitted('show-new-install')).toEqual([[]])
+  })
+
+  it('filters by where a build runs, counting each tab and hiding empty ones', async () => {
+    installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha' }),
+      makeInstall({ id: 'b', name: 'Beta' }),
+      makeInstall({ id: 'c', name: 'Comfy Cloud', sourceCategory: 'cloud' })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tabs = (): string[] => tabButtons(wrapper).map((tab) => tab.text())
+    expect(tabs()).toEqual(['All3', 'This computer2', 'Cloud1'])
+
+    await tabButtons(wrapper)[2]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.chooser-tile-name').map((name) => name.text())).toEqual([
+      'Comfy Cloud'
+    ])
+  })
+
+  it('sorts by name on request', async () => {
+    const newest = { lastLaunchedAt: 2000 }
+    const oldest = { lastLaunchedAt: 1000 }
+    installMockApi([
+      makeInstall({ id: 'z', name: 'Zeta', ...newest }),
+      makeInstall({ id: 'a', name: 'Alpha', ...oldest })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const names = (): string[] => wrapper.findAll('.chooser-tile-name').map((name) => name.text())
+    expect(names()).toEqual(['Zeta', 'Alpha'])
+
+    wrapper.findComponent(BaseSelect).vm.$emit('update:modelValue', 'name')
+    await flushPromises()
+
+    expect(names()).toEqual(['Alpha', 'Zeta'])
+  })
+
+  it('offers to clear filters when nothing matches', async () => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('.chooser-search input').setValue('zzzz')
+    await flushPromises()
+
+    const empty = wrapper.get('.chooser-empty')
+    expect(empty.text()).toContain('Nothing matches')
+    await empty.get('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.chooser-tile-name').map((name) => name.text())).toEqual(['Alpha'])
+  })
+
+  it('starts an idle build from its button without picking it twice', async () => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const start = wrapper.get('.chooser-tile-launch')
+    expect(start.text()).toBe('Start')
+    await start.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toHaveLength(1)
+  })
+
+  it('leads with Update and keeps starting as a named icon', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'a',
+        name: 'Alpha',
+        statusTag: { style: 'update', label: 'Update to v2' }
+      })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.get('.chooser-tile-pill-update').text()).toBe('Update')
+    const start = wrapper.get('.chooser-tile-launch')
+    expect(start.text()).toBe('')
+    expect(start.attributes('aria-label')).toBe('Start')
+    expect(wrapper.get('.chooser-tile-footer').text()).toContain('Update available')
   })
 
   it('renders a cloud install through the same tile component as local installs', async () => {
@@ -369,7 +480,7 @@ describe('ChooserView', () => {
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
     // Status pill sits in the top-right cluster next to the kebab, not in
     // the meta row - the source pill stays.
-    expect(tile.find('.chooser-tile-actions .chooser-tile-status--running').exists()).toBe(true)
+    expect(tile.find('.chooser-tile-status--running').exists()).toBe(true)
     expect(tile.text()).toContain('Running')
     expect(tile.text()).toContain('Standalone')
 
@@ -396,7 +507,7 @@ describe('ChooserView', () => {
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
     expect(tile.classes()).toContain('chooser-tile-errored')
     // Error badge sits in the top-right cluster next to the kebab.
-    const badge = tile.find('.chooser-tile-actions .chooser-tile-error-badge')
+    const badge = tile.find('.chooser-tile-error-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('Error')
 
@@ -496,7 +607,7 @@ describe('ChooserView', () => {
     expect(tile.find('.chooser-tile-pill-migrate').exists()).toBe(true)
   })
 
-  it('shows a clickable red danger pill (and red tile outline) that opens its detail without launching', async () => {
+  it('shows a clickable red danger pill that opens its detail without launching', async () => {
     installMockApi([
       makeInstall({
         id: 'nf',
@@ -512,7 +623,7 @@ describe('ChooserView', () => {
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Gone'))!
     expect(tile.classes()).toContain('chooser-tile-errored')
-    const tag = tile.find('.chooser-tile-actions .chooser-tile-danger-tag')
+    const tag = tile.find('.chooser-tile-danger-tag')
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('Folder Not Found')
     // It's its own pill, not the crash error badge.
@@ -680,21 +791,14 @@ describe('ChooserView', () => {
     expect(grids.length).toBe(1)
   })
 
-  it('keeps search centered above the signed-in workspace bar', async () => {
+  it('offers a workspace refresh in the toolbar only when signed in', async () => {
     installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
 
-    const toolbarChildren = wrapper.get('.chooser-toolbar').element.children
-    expect(toolbarChildren).toHaveLength(1)
-    expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
-    const workspaceBar = wrapper.get('.chooser-workspace-bar')
-    const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
-    expect(refresh.element.parentElement).toBe(workspaceBar.element)
-    expect(workspaceBar.get('.chooser-workspace-count').text()).toBe('INSTANCES0')
-    expect(workspaceBar.element.lastElementChild).toBe(
-      workspaceBar.get('.chooser-workspace-count').element
-    )
+    const toolbar = wrapper.get('.chooser-toolbar')
+    expect(toolbar.find('.chooser-search').exists()).toBe(true)
+    expect(toolbar.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
   })
 
   it('offers Create Build for an instance owned by the selected workspace', async () => {
