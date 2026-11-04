@@ -105,6 +105,17 @@ describe('registerTerminalHandlers', () => {
     expect(mocks.openTerminalPopout).toHaveBeenCalledWith('inst-a')
   })
 
+  it('opens no popout for a Remote Connection', async () => {
+    mocks.findEntryByComfySender.mockReturnValue({
+      installationId: 'inst-a',
+      sourceCategory: 'remote'
+    })
+
+    await getHandler('desktop2-open-terminal-popout')({ sender: {} }, 'inst-a')
+
+    expect(mocks.openTerminalPopout).not.toHaveBeenCalled()
+  })
+
   it('allows the trusted title popup to operate on its selected installation', async () => {
     const event = { sender: {} }
     mocks.isTitlePopupSender.mockReturnValue(true)
