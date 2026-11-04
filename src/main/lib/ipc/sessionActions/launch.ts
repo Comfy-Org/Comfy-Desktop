@@ -1671,13 +1671,11 @@ async function runLaunch(
       return { ok: false, cancelled: true }
     }
     if (overrideDecision) {
-      // A hand-typed keep is no campaign's decision: the override event reports campaign devices.
-      if (!('reason' in overrideDecision && overrideDecision.reason === 'hand_typed'))
-        reportOverrideDecision(
-          installationId,
-          overrideDecision,
-          indexKind(settings.getMirrorConfig())
-        )
+      reportOverrideDecision(
+        installationId,
+        overrideDecision,
+        indexKind(settings.getMirrorConfig())
+      )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
       if ('kept' in overrideDecision && overrideDecision.kept) kept = overrideDecision.kept
       // Counted like a failed start, so a version that cannot install stops costing launch time.
