@@ -9,6 +9,7 @@ import {
   Copy,
   HardDrive,
   Laptop,
+  LoaderCircle,
   Package,
   SlidersHorizontal,
   TriangleAlert
@@ -203,12 +204,25 @@ const say = (key: string): string =>
 
 const failed = computed(() => flow.step === 'error')
 
-const phaseStart = (i: number): number => phases[i - 1]?.until ?? 0
-/** How much of step i's segment is filled, 0 to 100. */
-function segFill(i: number): number {
-  const from = phaseStart(i)
-  const span = (phases[i]?.until ?? 100) - from
-  return Math.max(0, Math.min(100, ((flow.percent - from) / span) * 100))
+// Like today's stepper: no overall percent, since the whole install can't be
+// timed. Only the download knows its size, so only it gets a detail line.
+const nowIndex = computed(() => (phaseIndex.value < 0 ? phases.length - 1 : phaseIndex.value))
+const DOWNLOAD_MB = 740
+const DOWNLOAD_SPEED = 18
+const stepDetail = computed(() => {
+  if (failed.value || nowIndex.value !== 0) return ''
+  const mb = Math.round((flow.percent / phases[0].until) * DOWNLOAD_MB)
+  const left = Math.max(1, Math.round((DOWNLOAD_MB - mb) / DOWNLOAD_SPEED))
+  return `${mb} of ${DOWNLOAD_MB} MB · ${DOWNLOAD_SPEED} MB/s · about ${left}s left`
+})
+const REEL_ROW = 40
+const reelStyle = computed(() => ({
+  transform: `translateY(${(1 - nowIndex.value) * REEL_ROW}px)`
+}))
+function rowState(i: number): string {
+  if (i < nowIndex.value) return 'is-done'
+  if (i > nowIndex.value) return 'is-next'
+  return failed.value ? 'is-fail' : 'is-now'
 }
 </script>
 
@@ -655,36 +669,6 @@ function segFill(i: number): number {
               <span class="mss-stage-title is-big">{{
                 failed ? 'Operation failed' : 'Installing ComfyUI'
               }}</span>
-              <span v-if="!failed" class="mss-stage-sub tabular-nums">{{ flow.percent }}%</span>
-            </div>
-            <!-- Today's five install steps as one bar: a segment per step,
-                 sized by its share of the install, the current one named. -->
-            <div
-              class="mss-bar"
-              role="progressbar"
-              :aria-valuenow="flow.percent"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-label="Install progress"
-            >
-              <span
-                v-for="(p, i) in phases"
-                :key="p.label"
-                class="mss-seg"
-                :class="i === phaseIndex && (failed ? 'is-fail' : 'is-now')"
-                :style="{ flexGrow: p.until - phaseStart(i) }"
-                ><i :style="{ width: segFill(i) + '%' }"></i
-              ></span>
-            </div>
-            <div class="mss-steps-row">
-              <p class="mss-step-now" :class="failed && 'is-fail'">
-                <TriangleAlert v-if="failed" :size="14" />
-                <span v-else class="mss-phase-pulse"></span>
-                <span class="truncate">{{ phases[phaseIndex]?.label }}</span>
-                <span class="mss-step-count tabular-nums"
-                  >Step {{ phaseIndex + 1 }} of {{ phases.length }}</span
-                >
-              </p>
               <button
                 type="button"
                 class="mss-logs-toggle"
@@ -693,6 +677,30 @@ function segFill(i: number): number {
               >
                 <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />View logs
               </button>
+            </div>
+            <!-- Today's five install steps as a reel: the running one on the
+                 middle line, done ones above, the next one below. -->
+            <div class="mss-reel" aria-live="polite">
+              <ul class="mss-reel-track" :style="reelStyle">
+                <li
+                  v-for="(p, i) in phases"
+                  :key="p.label"
+                  class="mss-reel-row"
+                  :class="rowState(i)"
+                  :aria-current="i === nowIndex ? 'step' : undefined"
+                >
+                  <span class="mss-reel-icon" aria-hidden="true">
+                    <Check v-if="i < nowIndex" :size="13" stroke-width="2.5" />
+                    <TriangleAlert v-else-if="i === nowIndex && failed" :size="14" />
+                    <LoaderCircle v-else-if="i === nowIndex" :size="15" class="mss-spin" />
+                    <span v-else class="mss-reel-dot"></span>
+                  </span>
+                  <span class="mss-reel-label">{{ p.label }}</span>
+                  <span v-if="i === nowIndex && stepDetail" class="mss-reel-detail tabular-nums">{{
+                    stepDetail
+                  }}</span>
+                </li>
+              </ul>
             </div>
             <pre v-if="flow.logs || failed" class="mss-logs">
 [setup] Installing torch==2.7.1 …
