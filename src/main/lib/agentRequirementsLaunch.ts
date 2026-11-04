@@ -625,7 +625,9 @@ export async function installAgentRequirements(
     sendOutput(
       `Keeping the installed agent ${kept} instead: ComfyUI's agent requirements pin only a placeholder\n`
     )
-    return decision && { ...decision, kept }
+    return decision
+      ? { ...decision, kept }
+      : { decision: 'kept_installed', reason: 'hand_typed', kept }
   }
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
@@ -672,8 +674,9 @@ export async function installedWorkingAgent(
 /**
  * The frontend an update keeps under an agent the user forces on by hand, as `name==version` for
  * uv's `--override`: their own launch args carry `--enable-agent` and the installed frontend is
- * newer than the one `requirementsText` pins, which may have no Agent button. Null otherwise, or
- * when anything can't be read. Never throws.
+ * newer than the one `requirementsText` pins, which may have no Agent button. It doesn't check that
+ * a real agent is installed: the flag is the user's word for it. Null otherwise, or when anything
+ * can't be read. Never throws.
  */
 export async function handForcedFrontend(
   installation: InstallationRecord,
@@ -687,12 +690,13 @@ export async function handForcedFrontend(
   if (pinned === null || typeof launchArgs !== 'string' || typeof installPath !== 'string')
     return null
   if (!parseArgs(launchArgs).includes(ENABLE_AGENT_ARG)) return null
-  const listed = await listInstalled({ reqPath: '', uvPath, pythonPath, installPath }, signal)
+  const listed = await listInstalled({ uvPath, pythonPath, installPath }, signal)
   const installed = parseInstalled(listed ?? '')?.find(
     (p) => normalizePackageName(p.name) === FRONTEND_PACKAGE
   )?.version
   try {
-    return installed !== undefined && compareVersions(installed, pinned) > 0
+    // A local label (`+cu`) has no order against a public pin: compare its public part.
+    return installed !== undefined && compareVersions(installed.split('+')[0]!, pinned) > 0
       ? `${FRONTEND_PACKAGE}==${installed}`
       : null
   } catch {
@@ -791,7 +795,7 @@ const LIST_TIMEOUT_MS = 30_000
 /** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive,
  *  bounded as an install's stop is: the grace, then a hard stop. */
 async function listInstalled(
-  plan: AgentRequirementsInstall,
+  plan: Pick<AgentRequirementsInstall, 'uvPath' | 'pythonPath' | 'installPath'>,
   signal: AbortSignal | undefined,
   untilExit = false
 ): Promise<string | null> {

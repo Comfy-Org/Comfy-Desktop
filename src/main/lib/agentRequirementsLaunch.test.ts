@@ -2607,7 +2607,7 @@ describe('installAgentRequirements with a version override', () => {
         true
       )
 
-      expect(decision, 'no override, so no override decision to report').toBeUndefined()
+      expect(decision).toEqual({ decision: 'kept_installed', reason: 'hand_typed', kept: KEPT })
       expect(calls).toEqual([])
       expect(sendOutput.mock.calls.join('')).toContain(`Keeping the installed agent ${KEPT}`)
     })

@@ -391,7 +391,13 @@ export type OverrideDecision =
       staysInstalled?: OverridePins
     } & Kept)
   /** A member's campaign flag gave no answer in time, so the launch has no override to try. */
-  | { decision: 'kept_installed'; reason: 'no_answer'; pins?: undefined; kept: string }
+  | {
+      decision: 'kept_installed'
+      /** `hand_typed`: the user's own --enable-agent with no override; no campaign's, so not reported. */
+      reason: 'no_answer' | 'hand_typed'
+      pins?: undefined
+      kept: string
+    }
 
 const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
 /** A `name==version` line, extras allowed: core's agent line can carry them. */

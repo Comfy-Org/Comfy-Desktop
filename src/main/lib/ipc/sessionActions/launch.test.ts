@@ -4694,6 +4694,18 @@ describe('agent requirements at launch', () => {
         }
       )
 
+      it('keeps the installed frontend with an agent kept for a hand-typed flag', async () => {
+        await launchAndPrint({ handTyped: true })
+
+        expect(spawnArgs).toContain('--enable-agent')
+        expect(frontendRestores(), "core's 1.57.4 is not put back").toEqual([])
+        expect(recordedFrontend()).toEqual({ version: '1.60.2' })
+        expect(overrideEvents(), 'no campaign decision to report').toEqual([])
+        expect(sent.join('')).toContain(
+          'Keeping the installed comfyui-frontend-package with the agent'
+        )
+      })
+
       it("keeps it even when it is older than core's own pin", async () => {
         launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.0' } })
         pipHarness.installed = JSON.stringify([

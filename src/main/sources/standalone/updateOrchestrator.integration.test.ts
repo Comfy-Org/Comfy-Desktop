@@ -443,8 +443,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
-  describe('an agent the user forces on by hand', () => {
+  // Both update paths: the Update action checks for conflicts first (dryRunConflictCheck), the
+  // update after a fresh install doesn't.
+  describe.each([false, true])('an agent the user forces on by hand (dry run %s)', (dryRun) => {
     const NEWER = 'comfyui-frontend-package==1.59.0.dev2'
+    /** The `--override` file each real install (not the dry run) was given, read when uv ran. */
     let overrides: string[] = []
 
     /** Move v0.2.0 to a commit whose requirements pin core's older frontend. */
@@ -475,10 +478,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           })
         }
         const at = args.indexOf('--override')
-        if (at >= 0) overrides.push(fs.readFileSync(path.join(installPath, args[at + 1]!), 'utf-8'))
+        if (at >= 0 && !args.includes('--dry-run'))
+          overrides.push(fs.readFileSync(path.join(installPath, args[at + 1]!), 'utf-8'))
         return fakeProc({ exitCode: 0 })
       }
-      const opts = makeBaseOpts(installPath)
+      const opts = makeBaseOpts(installPath, { dryRunConflictCheck: dryRun })
       opts.installation = { ...opts.installation, launchArgs }
       expect((await runComfyUIUpdate(opts)).ok).toBe(true)
     }
@@ -488,6 +492,12 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       expect(overrides).toEqual([`${NEWER}\n`])
       expect(fs.existsSync(path.join(installPath, '.update-frontend-override.txt'))).toBe(false)
+    })
+
+    it('keeps a newer frontend with a local build label, whole', async () => {
+      await run('--enable-agent', '1.59.0.dev2+local')
+
+      expect(overrides).toEqual(['comfyui-frontend-package==1.59.0.dev2+local\n'])
     })
 
     it('leaves the frontend to core without a hand-typed --enable-agent', async () => {
