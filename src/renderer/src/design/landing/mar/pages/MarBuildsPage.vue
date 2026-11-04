@@ -482,8 +482,12 @@ const newLabel = computed(() =>
   padding-left: 3px;
 }
 .mar-bc-row .mar-item-tools.is-row {
-  width: 268px;
+  width: 240px;
   justify-content: flex-end;
+}
+/* No star on a build: the ⋯ sits right beside the button. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-row .mar-item-tools .mar-star {
+  display: none;
 }
 @container (max-width: 720px) {
   .mar-bc-row .mar-split-suffix {
