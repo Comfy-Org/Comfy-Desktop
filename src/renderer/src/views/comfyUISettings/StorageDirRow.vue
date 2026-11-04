@@ -57,7 +57,7 @@ const actionClass =
           type="button"
           variant="textonly"
           size="unset"
-          class="storage-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left font-normal text-[13px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+          class="storage-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left font-normal text-[13px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
           :title="t('models.openDir', 'Open folder')"
           @click="emit('open')"
         >

@@ -57,7 +57,7 @@ function isRunning(id: string): boolean {
         }}</span>
         <span
           class="channel-picker-headline-version"
-          :class="{ 'is-update-available text-[var(--accent)]': headlineHighlight }"
+          :class="{ 'is-update-available text-[var(--action)]': headlineHighlight }"
           >{{ headline }}</span
         >
       </p>
@@ -66,7 +66,7 @@ function isRunning(id: string): boolean {
         class="version-stat-badge shrink-0 rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium channel-picker-badge"
         :class="
           badgeTone === 'update'
-            ? 'update text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]'
+            ? 'update text-[var(--action)] bg-[color-mix(in_srgb,var(--action)_12%,transparent)]'
             : 'current text-[var(--success,#4ade80)] bg-[color-mix(in_srgb,var(--success,#4ade80)_12%,transparent)]'
         "
         >{{ badge }}</span
@@ -86,7 +86,7 @@ function isRunning(id: string): boolean {
         <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
         <dd
           class="m-0 text-right text-[13px] leading-[19px]"
-          :class="row.highlight ? 'font-medium text-[var(--accent)]' : 'text-neutral-100'"
+          :class="row.highlight ? 'font-medium text-[var(--action)]' : 'text-neutral-100'"
           :title="row.title"
         >
           {{ row.value }}
@@ -105,7 +105,7 @@ function isRunning(id: string): boolean {
           :button-class="actionButtonClass(action)"
           :variant-class="
             action.style === 'primary'
-              ? 'border-[var(--accent)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
+              ? 'border-[var(--action)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
               : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium'
           "
           tooltip-class="version-stat-action-tooltip flex-none"

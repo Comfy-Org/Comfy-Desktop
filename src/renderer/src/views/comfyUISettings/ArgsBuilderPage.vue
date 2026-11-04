@@ -29,7 +29,7 @@ interface Props {
 
 // Preserve the clear button’s own sizing inside BaseInput’s trailing slot.
 const searchClearClass =
-  '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-[22px] [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-[120ms] [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:[outline-style:solid] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-[var(--accent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
+  '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-[22px] [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-[120ms] [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:[outline-style:solid] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-[var(--action)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
 
 const props = withDefaults(defineProps<Props>(), {
   pendingRestart: false
@@ -382,7 +382,7 @@ function onRawChange(value: string): void {
         variant="textonly"
         size="unset"
         type="button"
-        class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-[1.5] font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:[transform:scale(0.97)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 focus-visible:ring-0"
+        class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-[1.5] font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:[transform:scale(0.97)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
         :aria-label="t('common.back', 'Back')"
         @click="emit('back')"
       >
@@ -546,7 +546,7 @@ function onRawChange(value: string): void {
                 size="unset"
                 type="button"
                 role="switch"
-                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
                 :class="
                   isActive(item.arg.name)
                     ? 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary)]'

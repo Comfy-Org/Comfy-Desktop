@@ -190,7 +190,7 @@ function handleOpenPath(value: unknown): void {
             {{ item.label }}{{ item.active ? ' (active)' : ''
             }}<span
               v-if="item.tag"
-              class="detail-item-tag shrink-0 rounded-[3px] px-2 py-0.5 text-[11px] font-semibold text-[var(--accent)]"
+              class="detail-item-tag shrink-0 rounded-[3px] px-2 py-0.5 text-[11px] font-semibold text-[var(--action)]"
               >{{ item.tag }}</span
             >
           </div>

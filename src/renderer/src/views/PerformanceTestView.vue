@@ -780,7 +780,7 @@ watch(performanceTestLogs, async () => {
                     <template v-else-if="exampleDownload">
                       <code>{{ exampleDownload.message }}</code>
                       <span
-                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-[var(--accent)] [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
+                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-[var(--action)] [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
                         role="progressbar"
                         :aria-valuenow="
                           exampleDownload.percent >= 0 ? exampleDownload.percent : undefined

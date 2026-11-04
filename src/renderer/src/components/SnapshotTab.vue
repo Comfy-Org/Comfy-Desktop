@@ -417,7 +417,7 @@ async function confirmImportPreview(): Promise<void> {
       <Button
         variant="textonly"
         size="unset"
-        class="snapshot-save-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text"
+        class="snapshot-save-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--action)] hover:text-[var(--action)] text-text"
         @click="saveSnapshot"
       >
         {{ t('snapshots.createSnapshot') }}
@@ -425,7 +425,7 @@ async function confirmImportPreview(): Promise<void> {
       <Button
         variant="textonly"
         size="unset"
-        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-muted"
+        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--action)] hover:text-[var(--action)] text-text-muted"
         @click="handleImport"
       >
         {{ t('snapshots.importSnapshots') }}
@@ -434,7 +434,7 @@ async function confirmImportPreview(): Promise<void> {
         v-if="snapshots.length > 0"
         variant="textonly"
         size="unset"
-        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-muted"
+        class="snapshot-header-btn static inline-block rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-[13px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-[var(--surface)] hover:border-[var(--action)] hover:text-[var(--action)] text-text-muted"
         @click="handleExportAll"
       >
         {{ t('snapshots.exportAllSnapshots') }}
@@ -443,7 +443,7 @@ async function confirmImportPreview(): Promise<void> {
 
     <div
       v-if="loading"
-      class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+      class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
     >
       {{ t('common.loading') }}
     </div>
@@ -484,7 +484,7 @@ async function confirmImportPreview(): Promise<void> {
                 v-if="item.event.exists"
                 variant="textonly"
                 size="unset"
-                class="timeline-copy-name clickable static inline-block min-w-0 truncate rounded-lg border-none bg-transparent p-0 [font:inherit] text-[var(--accent)] appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] hover:bg-transparent hover:underline"
+                class="timeline-copy-name clickable static inline-block min-w-0 truncate rounded-lg border-none bg-transparent p-0 [font:inherit] text-[var(--action)] appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] hover:bg-transparent hover:underline"
                 @click="emit('navigate-installation', item.event.installationId)"
               >
                 {{ item.event.installationName }}
@@ -542,7 +542,7 @@ async function confirmImportPreview(): Promise<void> {
                 >
                 <span
                   v-if="item.snapshotIndex === 0"
-                  class="timeline-current-tag rounded-[3px] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold text-[var(--accent)]"
+                  class="timeline-current-tag rounded-[3px] bg-[color-mix(in_srgb,var(--action)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold text-[var(--action)]"
                   >{{ t('snapshots.current') }}</span
                 >
                 <span
@@ -573,7 +573,7 @@ async function confirmImportPreview(): Promise<void> {
                   v-if="item.snapshotIndex > 0"
                   variant="textonly"
                   size="unset"
-                  class="timeline-action-btn timeline-restore-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--accent)]"
+                  class="timeline-action-btn timeline-restore-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--action)]"
                   :class="selectedFilename === item.snapshot.filename ? 'opacity-100' : 'opacity-0'"
                   @click.stop="handleRestore(item.snapshot.filename)"
                 >
@@ -582,7 +582,7 @@ async function confirmImportPreview(): Promise<void> {
                 <Button
                   variant="textonly"
                   size="unset"
-                  class="timeline-action-btn timeline-export-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--accent)]"
+                  class="timeline-action-btn timeline-export-btn static inline-block shrink-0 rounded-[4px] border border-solid bg-transparent px-2.5 py-[3px] text-[11px] font-normal leading-[1.5] whitespace-normal text-text-muted appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] hover:bg-transparent group-hover/card:opacity-100 focus-visible:opacity-100 border-[var(--border)] hover:text-text hover:border-[var(--action)]"
                   :class="selectedFilename === item.snapshot.filename ? 'opacity-100' : 'opacity-0'"
                   @click.stop="handleExport(item.snapshot.filename)"
                 >

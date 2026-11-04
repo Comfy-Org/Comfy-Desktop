@@ -453,7 +453,7 @@ function actionClass(
       ? 'h-7 min-h-7 px-3 py-0 text-[12px] leading-none'
       : 'h-8 min-h-8 px-4 py-0 text-[13px] leading-none',
     variant === 'accent'
-      ? 'border-[var(--accent)] text-[var(--accent)] font-semibold disabled:hover:bg-[var(--accent)] enabled:hover:bg-[var(--accent)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--accent)] enabled:focus-visible:text-[var(--bg)]'
+      ? 'border-[var(--action)] text-[var(--action)] font-semibold disabled:hover:bg-[var(--action)] enabled:hover:bg-[var(--action)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--action)] enabled:focus-visible:text-[var(--bg)]'
       : variant === 'danger'
         ? 'border-[var(--chooser-surface-border)] text-danger font-medium disabled:hover:bg-[var(--danger)]'
         : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium',

@@ -1,18 +1,107 @@
 /*
- * Desktop's look is the Void theme from @comfyorg/design-system, with a white
- * primary accent matching Desktop's monochrome controls and actions.
+ * Desktop's look is Void: the @comfyorg/design-system baseline, the values that
+ * differ from it, and Desktop's own type, radius, shadow and motion tokens.
  */
 
-@import '@comfyorg/design-system/css/themes/void.css';
+@import '@comfyorg/design-system/css/baseline.css';
+
+:root {
+  --background: oklch(0.19 0.003 285);
+  --foreground: oklch(0.955 0.002 285);
+  --card: oklch(0.23 0.008 285);
+  --popover: oklch(0.23 0.008 285);
+  --primary: var(--foreground);
+  --secondary: oklch(1 0 0 / 0.06);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.76 0.006 285);
+  --accent: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.06);
+  --ring: oklch(1 0 0 / 0.45);
+  --destructive: oklch(0.62 0.19 25);
+}
 
 @theme static {
-  --color-primary: var(--color-foreground);
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'PP Formula', 'Inter', system-ui, sans-serif;
 
+  --color-success: oklch(0.78 0.15 155);
+  --color-content-background: oklch(0.14 0.005 285);
+  --color-card-hover: oklch(0.265 0.009 285);
+  --color-subtle-foreground: oklch(0.6 0.008 285);
+  --color-border-strong: oklch(1 0 0 / 0.14);
+  --color-media-overlay: oklch(0 0 0 / 0.55);
   --color-snapshot-chip: #202020;
   --color-snapshot-ring: #262729;
 
-  --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-heading: 16px;
+  --text-heading--line-height: 24px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-display: 34px;
+  --text-display--line-height: 40px;
 
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-min: 4px;
+
+  --shadow-elev:
+    inset 0 1px 0 oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.35), 0 6px 18px oklch(0 0 0 / 0.28);
+  --shadow-elev-hover:
+    inset 0 1px 0 oklch(1 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.35),
+    0 10px 26px oklch(0 0 0 / 0.34);
+  --shadow-popover: inset 0 1px 0 oklch(1 0 0 / 0.07), 0 12px 32px oklch(0 0 0 / 0.45);
+  --shadow-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 160ms var(--ease-out-expo);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-status-pulse: status-pulse 2s ease-out infinite;
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-gs-field-flash: gs-field-flash 2.2s ease-out;
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes status-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+  @keyframes gs-field-flash {
+    0%,
+    55% {
+      box-shadow: 0 0 0 2px var(--action);
+      background: color-mix(in srgb, var(--action) 12%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 2px transparent;
+      background: transparent;
+    }
+  }
   @keyframes brand-takeover-in {
     from {
       opacity: 0;

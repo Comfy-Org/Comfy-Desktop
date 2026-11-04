@@ -483,7 +483,7 @@ function handleRevealPath(path: string): void {
         type="button"
         variant="textonly"
         size="unset"
-        class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--accent)] focus-visible:bg-transparent focus-visible:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-0"
+        class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--action)] focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:outline-none focus-visible:ring-0"
         @click="handleManageSharedDirs"
       >
         {{ t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings') }}

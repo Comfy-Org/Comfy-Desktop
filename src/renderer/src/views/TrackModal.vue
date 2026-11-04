@@ -22,7 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const brandInputClass =
-  'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
+  'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--action)_35%,transparent)]'
 const browseClass =
   'static flex h-10 items-center justify-center rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-[inherit] font-medium whitespace-normal text-neutral-100 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
 

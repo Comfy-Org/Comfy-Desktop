@@ -312,7 +312,7 @@ onBeforeUnmount(teardown)
           size="unset"
           variant="textonly"
           type="button"
-          class="console-ended-restart static block h-[30px] shrink-0 appearance-auto rounded-lg border border-solid border-[var(--accent)] bg-surface px-3.5 py-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-normal text-[var(--accent)] touch-auto transition-none [&]:[appearance:button] hover:bg-[var(--accent)] hover:text-[var(--bg)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
+          class="console-ended-restart static block h-[30px] shrink-0 appearance-auto rounded-lg border border-solid border-[var(--action)] bg-surface px-3.5 py-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-normal text-[var(--action)] touch-auto transition-none [&]:[appearance:button] hover:bg-[var(--action)] hover:text-[var(--bg)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
           :data-testid="TID.consoleRestart"
           @click="restart"
         >

@@ -48,7 +48,7 @@
   --text: #ffffff;
   --text-muted: #8a8a8a;
   --text-faint: #55565e;
-  --accent: #60a5fa;
+  --action: #60a5fa;
   --accent-hover: #93c5fd;
   --selected: rgba(255, 255, 255, 0.85);
   --surface: #29252c;
@@ -149,7 +149,7 @@
   --text: #202121;
   --text-muted: #a0a0a0;
   --text-faint: #b4b4b4;
-  --accent: #3b82f6;
+  --action: #3b82f6;
   --accent-hover: #2563eb;
   --selected: rgba(0, 0, 0, 0.7);
   --surface: #e9e9e9;
@@ -268,7 +268,7 @@
   --accent-label: var(--color-subtle-foreground);
 
   /* White accent: primary actions, selection, progress. */
-  --accent: var(--color-foreground);
+  --action: var(--color-foreground);
   --accent-hover: oklch(0.995 0 0);
   --accent-primary: var(--color-foreground);
   --brand-accent: var(--color-foreground);
@@ -276,11 +276,12 @@
   --selected: oklch(1 0 0 / 0.85);
   --focus-ring: var(--color-ring);
 
-  --border: var(--color-border);
+  --border: oklch(1 0 0 / 0.08);
   --border-hover: var(--color-border-strong);
 
   --danger: var(--color-destructive);
   --danger-hover: oklch(0.68 0.19 25);
+  --warning: oklch(0.82 0.14 85);
   --success: var(--color-success);
   --semantic-danger: var(--color-destructive);
   --semantic-warning: var(--color-warning);

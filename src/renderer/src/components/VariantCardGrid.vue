@@ -50,7 +50,7 @@ defineEmits<{
       <div class="variant-card-label text-base font-semibold text-text">{{ opt.label }}</div>
       <div
         v-if="opt.recommended"
-        class="variant-card-badge mt-1.5 inline-block rounded-[3px] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold tracking-[0.5px] text-[var(--accent)] uppercase"
+        class="variant-card-badge mt-1.5 inline-block rounded-[3px] bg-[color-mix(in_srgb,var(--action)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold tracking-[0.5px] text-[var(--action)] uppercase"
       >
         {{ $t('newInstall.recommended') }}
       </div>

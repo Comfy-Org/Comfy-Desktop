@@ -78,13 +78,13 @@ function handleHeaderClose(): void {
 const tabButtonClass =
   'static inline-block rounded-md border border-solid border-transparent px-3 py-1.5 font-sans text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal touch-auto [&]:[appearance:button] text-text-muted transition-[color,background-color] duration-120 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)] hover:text-text focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-primary)]'
 const actionButtonClass =
-  "static inline-block rounded-lg border border-solid px-4 py-2 font-sans text-[14px] leading-[inherit] font-normal whitespace-normal touch-auto [&]:[appearance:button] transition-none disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] [&.loading]:pointer-events-none [&.loading]:opacity-70 [&.loading]:after:ml-1.5 [&.loading]:after:inline-block [&.loading]:after:size-3 [&.loading]:after:rounded-[50%] [&.loading]:after:border-2 [&.loading]:after:border-solid [&.loading]:after:border-[var(--text-faint)] [&.loading]:after:border-t-[var(--accent)] [&.loading]:after:align-middle [&.loading]:after:content-[''] [&.loading]:after:animate-spin [&.loading]:after:[animation-duration:0.6s]"
+  "static inline-block rounded-lg border border-solid px-4 py-2 font-sans text-[14px] leading-[inherit] font-normal whitespace-normal touch-auto [&]:[appearance:button] transition-none disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] [&.loading]:pointer-events-none [&.loading]:opacity-70 [&.loading]:after:ml-1.5 [&.loading]:after:inline-block [&.loading]:after:size-3 [&.loading]:after:rounded-[50%] [&.loading]:after:border-2 [&.loading]:after:border-solid [&.loading]:after:border-[var(--text-faint)] [&.loading]:after:border-t-[var(--action)] [&.loading]:after:align-middle [&.loading]:after:content-[''] [&.loading]:after:animate-spin [&.loading]:after:[animation-duration:0.6s]"
 const actionClasses = {
   default: 'border-[var(--border)] bg-surface text-text hover:bg-[var(--border)]',
   primary:
     'border-[var(--accent-primary)] bg-[var(--accent-primary)] font-medium text-background hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:border-[var(--accent-hover)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-120 hover:ease-[ease]',
   accent:
-    'border-[var(--accent)] bg-surface font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-bg',
+    'border-[var(--action)] bg-surface font-semibold text-[var(--action)] hover:bg-[var(--action)] hover:text-bg',
   danger: 'border-danger bg-surface text-danger hover:bg-danger hover:text-bg'
 } as const
 
@@ -547,7 +547,7 @@ function navigateToInstallation(installationId: string): void {
     <div ref="scrollRef" class="view-scroll min-h-0 flex-1 overflow-y-auto pr-2">
       <div
         v-if="sectionsLoading"
-        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
+        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
       >
         {{ $t('common.loading') }}
       </div>
@@ -674,7 +674,7 @@ function navigateToInstallation(installationId: string): void {
     <div ref="scrollRef" class="view-scroll min-h-0 flex-1 overflow-y-auto pr-2">
       <div
         v-if="sectionsLoading"
-        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
+        class="modal-loading with-spinner flex items-center justify-center gap-2.5 px-0 py-6 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[''] before:animate-spin before:[animation-duration:0.6s]"
       >
         {{ $t('common.loading') }}
       </div>

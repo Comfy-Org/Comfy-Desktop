@@ -487,7 +487,7 @@ const groups = computed<FactGroup[]>(() => {
               variant="textonly"
               size="unset"
               type="button"
-              class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+              class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
               :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
               :title="t('models.openDir', 'Open folder')"
               @click="openPath(row.value)"

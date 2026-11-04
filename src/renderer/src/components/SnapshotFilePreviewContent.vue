@@ -66,7 +66,7 @@ function triggerLabel(trigger: string): string {
         >
         <span
           v-if="i === 0"
-          class="snapshot-preview-current-tag shrink-0 text-[11px] font-semibold text-[var(--accent)]"
+          class="snapshot-preview-current-tag shrink-0 text-[11px] font-semibold text-[var(--action)]"
           >{{ t('snapshots.current') }}</span
         >
         <span class="snapshot-preview-meta min-w-0 flex-1 truncate text-text-muted"

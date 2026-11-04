@@ -220,7 +220,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       return 'bg-[var(--accent-primary)] text-background font-medium hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
     case 'accent':
       return directStyle
-        ? 'bg-[var(--surface)] text-[var(--accent)] font-semibold hover:bg-[var(--accent)] hover:text-[var(--bg)]'
+        ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'
         : 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
     case 'danger':
       return 'bg-[var(--surface)] text-danger hover:bg-[var(--danger)] hover:text-[var(--bg)]'
@@ -457,7 +457,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 variant="textonly"
                 size="unset"
                 type="button"
-                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--accent)] hover:underline focus-visible:text-[var(--accent)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
                 :title="t('models.openDir', 'Open folder')"
                 :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
                 @click="emit('open-path', readonlyDisplayValue(field))"

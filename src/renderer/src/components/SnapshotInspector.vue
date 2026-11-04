@@ -67,7 +67,7 @@ const filteredPipPackages = computed(() => {
   >
     <div
       v-if="detailLoading"
-      class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+      class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
     >
       {{ t('common.loading') }}
     </div>
@@ -79,7 +79,7 @@ const filteredPipPackages = computed(() => {
           class="static inline-block flex-1 rounded-[5px] border border-solid px-2.5 py-[5px] text-[12px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
           :class="
             diffMode === 'previous'
-              ? 'active bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border-[var(--accent)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)]'
+              ? 'active bg-[color-mix(in_srgb,var(--action)_15%,transparent)] border-[var(--action)] text-[var(--action)] hover:bg-[color-mix(in_srgb,var(--action)_15%,transparent)]'
               : 'bg-[var(--bg)] border-[var(--border)] text-text-muted hover:bg-[var(--bg)] enabled:hover:text-text enabled:hover:border-[var(--border-hover)]'
           "
           :disabled="snapshotIndex === totalSnapshots - 1"
@@ -93,7 +93,7 @@ const filteredPipPackages = computed(() => {
           class="static inline-block flex-1 rounded-[5px] border border-solid px-2.5 py-[5px] text-[12px] font-normal leading-[1.5] whitespace-normal appearance-auto focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] transition-all duration-150 ease-[ease] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
           :class="
             diffMode === 'current'
-              ? 'active bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border-[var(--accent)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)]'
+              ? 'active bg-[color-mix(in_srgb,var(--action)_15%,transparent)] border-[var(--action)] text-[var(--action)] hover:bg-[color-mix(in_srgb,var(--action)_15%,transparent)]'
               : 'bg-[var(--bg)] border-[var(--border)] text-text-muted hover:bg-[var(--bg)] enabled:hover:text-text enabled:hover:border-[var(--border-hover)]'
           "
           :disabled="snapshotIndex === 0"
@@ -117,7 +117,7 @@ const filteredPipPackages = computed(() => {
       </div>
       <div
         v-else-if="diffMode && diffLoading"
-        class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--accent)] before:[animation-duration:0.6s] before:content-['']"
+        class="snapshot-loading flex items-center gap-2.5 py-4 text-[13px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-full before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
       >
         {{ t('common.loading') }}
       </div>

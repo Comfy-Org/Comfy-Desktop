@@ -271,7 +271,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   </span>
                   <span
                     v-else
-                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--accent,#60a5fa)_15%,transparent)] text-[var(--accent,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
                   >
                     <LoaderCircle
                       :size="16"
@@ -301,10 +301,10 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
                   :class="
                     d.status === 'pending'
-                      ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--accent,#60a5fa),var(--accent,#60a5fa)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--accent,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
+                      ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
                       : d.status === 'paused'
                         ? 'paused bg-[#f59e0b]'
-                        : 'bg-[var(--accent,#60a5fa)]'
+                        : 'bg-[var(--action,#60a5fa)]'
                   "
                   :style="
                     d.status === 'pending' ? { width: '100%' } : { width: `${progressPercent(d)}%` }
@@ -324,7 +324,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 
               <span
                 v-if="d.status === 'downloading'"
-                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--accent,#60a5fa)] tabular-nums"
+                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--action,#60a5fa)] tabular-nums"
               >
                 {{ progressPercent(d) }}%
               </span>

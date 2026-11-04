@@ -111,7 +111,7 @@ const { t } = useI18n()
         class="empm-base-path static mb-1.5 inline-block max-w-full truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal font-mono appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
         :class="
           section.basePathExists
-            ? 'text-text-muted hover:text-[var(--accent)] focus-visible:text-[var(--accent)]'
+            ? 'text-text-muted hover:text-[var(--action)] focus-visible:text-[var(--action)]'
             : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
         "
         :title="
@@ -142,7 +142,7 @@ const { t } = useI18n()
             class="empm-dir-path static inline-block min-w-0 max-w-full flex-[0_1_auto] truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
             :class="
               d.dirExists
-                ? 'text-neutral-100 hover:text-[var(--accent)] focus-visible:text-[var(--accent)]'
+                ? 'text-neutral-100 hover:text-[var(--action)] focus-visible:text-[var(--action)]'
                 : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
             "
             :title="

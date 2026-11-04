@@ -184,7 +184,7 @@ const progressDetail = computed<string | null>(() => {
             statusTone === 'downloading'
               ? 'text-[var(--accent-primary,#0b8ce9)]'
               : statusTone === 'update'
-                ? 'text-[var(--accent)]'
+                ? 'text-[var(--action)]'
                 : 'text-neutral-100'
           ]"
         >
@@ -197,18 +197,18 @@ const progressDetail = computed<string | null>(() => {
         >
           <span
             v-if="installedDetail"
-            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--accent)]"
+            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
             >{{ installedDetail }}</span
           >
           <span
             v-if="lastCheckedDetail"
-            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--accent)]"
+            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
             :title="lastCheckedDetail.title"
             >{{ lastCheckedDetail.text }}</span
           >
           <span
             v-if="latestDetail"
-            class="updates-detail is-highlight text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--accent)]"
+            class="updates-detail is-highlight text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
             >{{ latestDetail }}</span
           >
         </div>

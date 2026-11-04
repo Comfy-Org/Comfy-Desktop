@@ -91,7 +91,7 @@ const panelWidthClass = computed(() => {
 })
 
 const linkClass =
-  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--accent)] [&_.modal-link]:underline'
+  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--action)] [&_.modal-link]:underline'
 </script>
 
 <template>
