@@ -1,6 +1,6 @@
 import { computed, reactive, watch } from 'vue'
 import { isMariana } from '../proposal'
-import { marUser } from '../userStates/userState'
+import { marUser, setUser } from '../userStates/userState'
 import { newInstanceHooks, toast } from '../../useProto'
 
 /**
@@ -8,8 +8,11 @@ import { newInstanceHooks, toast } from '../../useProto'
  * ComfyUI on this computer, behind its own tweak so the default prototype
  * keeps today's "New build flow" toast.
  *
- * The flow, one screen before anything installs:
- *  1. Set up: what was detected and checked, terms, one Install button.
+ * The flow starts where Desktop starts today, unchanged:
+ *  0. First launch: "How do you want to run Comfy?", Cloud or Local, terms
+ *     and usage data. Local is picked by default. Cloud opens Comfy Cloud.
+ *  1. Set up: what was detected and checked, one Install button. It
+ *     replaces today's Express Install: one click, with the defaults shown.
  *  2. Installing: pick a workflow while it installs (optional). Continue
  *     in background and Cancel install are separate actions.
  *  3. Ready: ComfyUI opens when the server is up; models keep downloading.
@@ -20,7 +23,7 @@ import { newInstanceHooks, toast } from '../../useProto'
  */
 export type LocalSetup = 'off' | 'on'
 export type Machine = 'ready' | 'legacy' | 'lowdisk' | 'intel' | 'fails'
-export type SetupStep = 'chooser' | 'setup' | 'change' | 'installing' | 'error'
+export type SetupStep = 'first' | 'chooser' | 'setup' | 'change' | 'installing' | 'error'
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
   { value: 'off', label: 'Today' },
@@ -49,6 +52,10 @@ function load(): { mode: LocalSetup; machine: Machine } {
 }
 
 export const localSetup = reactive(load())
+
+// `?setup=first` links straight to the proposed flow, on first launch.
+const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
+if (linkFirst) localSetup.mode = 'on'
 
 watch(
   () => ({ ...localSetup }),
@@ -169,6 +176,9 @@ export const flow = reactive({
   step: 'setup' as SetupStep,
   /** Install keeps going while the window shows something else. */
   background: false,
+  /** Finished in the background: the pill waits for Open, it doesn't
+   *  take the window from whatever the user is doing. */
+  ready: false,
   running: false,
   percent: 0,
   tab: 'image' as keyof typeof STARTERS,
@@ -181,7 +191,10 @@ export const flow = reactive({
   /** The failing machine fails once; Retry then goes through. */
   retried: false,
   /** Earlier install: bring its files over (asked once, inline). */
-  bringOver: true
+  bringOver: true,
+  /** First launch: Set up and the install stay full-window, before the
+   *  Home exists, the way Desktop chains its first install today. */
+  takeover: false
 })
 
 export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow.movedDisk)
@@ -194,9 +207,6 @@ const PHASES = [
 ] as const
 export const phaseIndex = computed(() => PHASES.findIndex((p) => flow.percent < p.until))
 export const phases = PHASES
-
-/** About four minutes for a full run, shown, not real time. */
-export const minutesLeft = computed(() => Math.max(1, Math.ceil(((100 - flow.percent) / 100) * 4)))
 
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -220,15 +230,32 @@ function tick(): void {
 
 function finish(): void {
   stop()
+  marUser.local = 'one'
+  if (flow.background) {
+    flow.ready = true
+    return
+  }
+  openReady()
+}
+
+/** Opens ComfyUI on what was picked: right away when the install is on
+ *  screen (as today), from the pill's Open when it ran in the background. */
+export function openReady(): void {
   flow.open = false
   flow.background = false
-  marUser.local = 'one'
+  flow.ready = false
   const what = flow.picked ? flow.picked.title : 'a blank canvas'
   const models = flow.picked && flow.picked.gb > 0 ? `, models keep downloading` : ''
   toast(`ComfyUI is ready. Opening ${what}${models}.`)
 }
 
-/** Entry from "This computer › Set up" and every New Instance button. */
+/** Ready pill dismissed: ComfyUI stays installed, Open ComfyUI is on the Home. */
+export function dismissReady(): void {
+  flow.background = false
+  flow.ready = false
+}
+
+/** Entry: the first launch, then every New Instance button. */
 export function openSetup(): boolean {
   if (!setupOn.value) return false
   if (flow.running) {
@@ -236,7 +263,8 @@ export function openSetup(): boolean {
     flow.background = false
     return true
   }
-  flow.step = marUser.local === 'none' ? 'setup' : 'chooser'
+  flow.step = marUser.local === 'none' ? 'first' : 'chooser'
+  flow.takeover = flow.step === 'first'
   flow.percent = 0
   flow.picked = null
   flow.movedDisk = false
@@ -248,10 +276,22 @@ export function openSetup(): boolean {
 
 newInstanceHooks.push(openSetup)
 
+/** First launch › Local: Set up, the one-click install. */
+export function chooseLocal(): void {
+  flow.step = 'setup'
+}
+
+/** First launch › Cloud: Desktop opens its Comfy Cloud entry. */
+export function chooseCloud(): void {
+  flow.open = false
+  toast('Opening Comfy Cloud')
+}
+
 export function startInstall(): void {
   stop()
   flow.step = 'installing'
   flow.percent = 0
+  flow.ready = false
   flow.retried = false
   flow.confirmCancel = false
   flow.logs = false
@@ -260,12 +300,18 @@ export function startInstall(): void {
 }
 
 export function retryInstall(): void {
-  // Files already downloaded are kept: retry picks up where it stopped.
   stop()
   flow.step = 'installing'
   flow.running = true
   flow.retried = true
   timer = setInterval(tick, 180)
+}
+
+/** The install stopped: Back returns to Set up to change something. */
+export function backFromError(): void {
+  stop()
+  flow.step = 'setup'
+  flow.percent = 0
 }
 
 export function toBackground(): void {
@@ -283,11 +329,13 @@ export function cancelInstall(): void {
   flow.open = false
   flow.background = false
   flow.percent = 0
-  toast('Install cancelled. Nothing was left on disk.')
+  toast('Install cancelled.')
 }
 
 export function closeSetup(): void {
   if (flow.running) toBackground()
+  // Before the first install there is no Home yet: back to the first screen.
+  else if (flow.takeover) flow.step = 'first'
   else flow.open = false
 }
 
@@ -295,4 +343,9 @@ export function closeSetup(): void {
 export function fits(s: Starter): boolean {
   const free = flow.movedDisk ? DETECTED.otherDisk.freeGb : DETECTED.freeGb
   return s.gb <= free - DETECTED.downloadGb
+}
+
+if (linkFirst) {
+  setUser('first')
+  openSetup()
 }

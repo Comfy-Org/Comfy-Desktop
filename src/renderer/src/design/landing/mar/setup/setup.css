@@ -1,20 +1,18 @@
 /* Mar's proposed local setup (MarSetupFlow.vue), inside her step-modal
  * surface (`.mar-wizard` in shell/marShell.css): soft panels and hairlines
- * drawn from the theme's ink, so light and dark both hold. Brand yellow
- * only on install progress, the one "moment" the design system allows it.
+ * drawn from the theme's ink, so light and dark both hold. Progress is
+ * drawn in the same ink, no accent colour.
  *
  * In a layer: the prototype's control reset (ui/tokens.css) reverts to
  * layered styles, so buttons, labels and inputs here keep theirs. */
 @layer components {
   .mss,
+  .mss-first,
   .mss-pill-wrap {
-    --mss-brand: oklch(0.93 0.19 110);
+    --mss-progress: var(--color-base-foreground);
   }
-  /* On white the brand yellow washes out: the same hue, deeper. */
-  :root[data-ds-theme='light'] :is(.mss, .mss-pill-wrap) {
-    --mss-brand: oklch(0.72 0.17 108);
-  }
-  .mss {
+  .mss,
+  .mss-first {
     --wiz-ink: var(--color-base-foreground);
     --mss-soft: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
     --mss-soft-hover: color-mix(in oklch, var(--wiz-ink) 7%, transparent);
@@ -211,15 +209,15 @@
     box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14);
   }
   .mss-stage-title {
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 600;
     line-height: 22px;
     letter-spacing: -0.015em;
     text-shadow: 0 1px 12px oklch(0 0 0 / 0.3);
   }
   .mss-stage-title.is-big {
-    font-size: 20px;
-    line-height: 26px;
+    font-size: 17px;
+    line-height: 22px;
     letter-spacing: -0.02em;
   }
   .mss-stage-sub {
@@ -268,7 +266,9 @@
     box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.2);
   }
   .mss-chip.is-btn:focus-visible {
-    box-shadow: 0 0 0 2px oklch(1 0 0 / 0.7);
+    box-shadow:
+      inset 0 0 0 1px oklch(1 0 0 / 0.2),
+      0 0 0 2px var(--color-border-focus);
   }
 
   /* What the checks found: two tiles, the fix spans both. */
@@ -286,6 +286,9 @@
     border-radius: 14px;
     background-color: var(--mss-soft);
     box-shadow: inset 0 0 0 1px var(--color-border-default);
+  }
+  .mss-tile.is-wide {
+    grid-column: 1 / -1;
   }
   .mss-tile.is-bad ~ .mss-tile {
     grid-column: 1 / -1;
@@ -410,9 +413,10 @@
   .mss-radio:hover {
     background-color: var(--mss-soft-hover);
   }
+  /* Picked: the first screen's quieter ring, not a full-ink stroke. */
   .mss-radio[data-state='checked'] {
-    background-color: var(--mss-soft-hover);
-    box-shadow: inset 0 0 0 1.5px var(--color-base-foreground);
+    background-color: color-mix(in oklch, var(--wiz-ink) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 32%, transparent);
   }
   .mss-radio:focus-visible {
     box-shadow: 0 0 0 2px var(--color-border-focus);
@@ -429,8 +433,8 @@
     justify-content: space-between;
     gap: 12px;
   }
-  /* On the stage: a glass track, the brand yellow with a soft glow. The
-   * stage is dark in both themes, so the bright yellow stays. */
+  /* On the stage: a glass track and a white fill. The stage is dark in
+   * both themes, so the fill stays white. */
   .mss-bar {
     height: 6px;
     overflow: hidden;
@@ -442,8 +446,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, oklch(0.93 0.19 110 / 0.7), oklch(0.93 0.19 110));
-    box-shadow: 0 0 12px oklch(0.93 0.19 110 / 0.6);
+    background: oklch(1 0 0);
     transition: width 180ms linear;
   }
   .mss-prog.is-err .mss-bar i {
@@ -482,7 +485,7 @@
     background-color: var(--mss-line-strong);
   }
   .mss-phases li:is([data-phase='done'], [data-phase='now'], [data-phase='fail'])::before {
-    background-color: var(--color-status-running);
+    background-color: var(--color-base-foreground);
   }
   .mss-phase-node {
     display: inline-flex;
@@ -498,7 +501,7 @@
     color: var(--color-muted-foreground);
   }
   .mss-phases [data-phase='done'] .mss-phase-node {
-    background-color: var(--color-status-running);
+    background-color: var(--color-base-foreground);
     box-shadow: none;
     color: var(--color-content-background);
   }
@@ -507,7 +510,7 @@
     font-weight: 500;
   }
   .mss-phases [data-phase='now'] .mss-phase-node {
-    box-shadow: inset 0 0 0 1.5px var(--mss-brand);
+    box-shadow: inset 0 0 0 1.5px var(--mss-progress);
   }
   .mss-phases [data-phase='fail'] {
     color: var(--color-status-danger);
@@ -521,12 +524,12 @@
     width: 8px;
     height: 8px;
     border-radius: 999px;
-    background-color: var(--mss-brand);
+    background-color: var(--mss-progress);
     animation: mss-pulse 1.4s ease-in-out infinite;
   }
   @keyframes mss-pulse {
     50% {
-      box-shadow: 0 0 0 4px color-mix(in oklch, var(--mss-brand) 25%, transparent);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--mss-progress) 25%, transparent);
     }
   }
   .mss-fade-enter-active,
@@ -591,10 +594,14 @@
     gap: 16px;
   }
   .mss-pick-head {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 2px;
+  }
+  .mss-pick-lead {
+    grid-column: 1 / -1;
   }
   .mss-cards {
     display: grid;
@@ -642,6 +649,187 @@
   }
 
   /* Background pill: the step modal's smoked glass, small. */
+
+  /* First launch: today's "How do you want to run Comfy?" takeover, the
+   * whole window before the app opens, after BrandTakeoverLayout: a dark
+   * frame inset in a darker edge, the C mark top left, two cards whose
+   * selection is a quieter border (no radio, no accent). */
+  /* Tokens ChoiceCard (components/ChoiceCard.vue) reads from the app's
+   * main.css, which the prototype doesn't load; values as in its dark set. */
+  .mss-first {
+    --text: #ffffff;
+    --neutral-100: #c2bfb9;
+    --focus-ring: var(--neutral-100);
+    --brand-surface-bg-hover: rgba(137, 137, 137, 0.09);
+    --brand-surface-border: rgba(255, 255, 255, 0.09);
+    --brand-surface-border-hover: rgba(255, 255, 255, 0.18);
+    --brand-surface-blur: 75px;
+    /* The Home's scale: 13px body, 15px card title (mar-arc-title). */
+    --takeover-fs-body: var(--text-ui);
+    --takeover-fs-lead: 15px;
+    --neutral-300: #8a8688;
+  }
+  /* The prototype's control reset (ui/tokens.css) reverts a button's box
+   * properties to layered styles, so ChoiceCard's scoped values are
+   * restated here, unchanged, for the ones it reverts. */
+  .mss-first .choice-card {
+    width: auto;
+    padding: 0;
+    border: 1px solid var(--brand-surface-border);
+    border-radius: 10px;
+    background: var(--brand-surface-bg-hover);
+    color: var(--neutral-100);
+    cursor: pointer;
+  }
+  .mss-first .choice-card:hover:not(:disabled) {
+    border-color: var(--brand-surface-border-hover);
+    background: rgba(137, 137, 137, 0.13);
+  }
+  .mss-first .choice-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .mss-first .choice-card--selected {
+    border-color: color-mix(in oklab, var(--neutral-100) 60%, transparent);
+    background: color-mix(in oklab, var(--neutral-100) 6%, var(--brand-surface-bg-hover));
+  }
+  .mss-first .choice-card--selected:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
+    background: color-mix(in oklab, var(--neutral-100) 9%, rgba(137, 137, 137, 0.13));
+  }
+  .mss-first .choice-card__tagline {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+  .mss-first .choice-card__body {
+    padding: 14px 16px 16px;
+  }
+  .mss-first .choice-card__label-text {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .mss-first {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    padding: 8px;
+    background: oklch(0.12 0.003 285);
+    color: var(--color-muted-foreground);
+  }
+  .mss-first-frame {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding: 72px 32px 28px;
+    border-radius: 10px;
+    /* The Home's Spotlight (shell/marShell.css): one soft light from above
+     * with a fine film grain, kept fainter here so the page stays dark. */
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+      radial-gradient(
+        ellipse 45% 60% at 50% -15%,
+        color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+        transparent 70%
+      ),
+      oklch(0.16 0.003 285);
+  }
+  .mss-first-mark {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 28px;
+    height: 28px;
+    color: var(--color-base-foreground);
+  }
+  .mss-first-hero {
+    display: flex;
+    width: 100%;
+    max-width: 640px;
+    flex-direction: column;
+    align-items: center;
+    margin-block: auto;
+    text-align: center;
+  }
+  /* The Home's display heading (parts/Greeting.vue): 34px, top-down fade. */
+  .mss-first-title {
+    background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-size: var(--text-display);
+    font-weight: 700;
+    line-height: var(--text-display--line-height);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .mss-first-lead {
+    margin-top: 8px;
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-first-cards {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 12px;
+    margin-top: 32px;
+  }
+  .mss-first-mods {
+    display: grid;
+    gap: 10px;
+    margin-top: 24px;
+    text-align: left;
+  }
+  .mss-first-mods .mss-check {
+    align-items: flex-start;
+  }
+  .mss-first-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-first-mods.is-off {
+    visibility: hidden;
+  }
+  .mss-first-hint b {
+    color: var(--color-muted-foreground);
+    font-weight: 400;
+  }
+  .mss-first-bottom {
+    display: flex;
+    width: 100%;
+    max-width: 760px;
+    margin-top: 48px;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .mss-first-consent {
+    display: grid;
+    gap: 8px;
+  }
+  .mss-first-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .mss-first-enter-active,
+  .mss-first-leave-active {
+    transition:
+      opacity 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mss-first-enter-from,
+  .mss-first-leave-to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
   .mss-pill-wrap {
     position: fixed;
     right: 16px;
@@ -685,11 +873,37 @@
     height: 22px;
     border-radius: 50%;
     background: conic-gradient(
-      var(--mss-brand) calc(var(--p) * 1%),
+      var(--mss-progress) calc(var(--p) * 1%),
       color-mix(in oklch, var(--color-base-foreground) 12%, transparent) 0
     );
     mask: radial-gradient(circle, transparent 7px, black 7.5px);
-    filter: drop-shadow(0 0 6px color-mix(in oklch, var(--mss-brand) 55%, transparent));
+  }
+  .mss-pill.is-ready {
+    padding: 8px 8px 8px 12px;
+  }
+  .mss-pill-done {
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--mss-progress);
+    color: var(--color-card-background);
+  }
+  .mss-pill-x {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-pill-x:hover {
+    background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+    color: var(--color-base-foreground);
   }
   /* A faint bloom behind the pill: the install is still the stage. */
   .mss-pill::before {
@@ -721,8 +935,8 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .mss-pick-head {
-      flex-direction: column;
-      align-items: flex-start;
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: start;
     }
     .mss-tiles {
       grid-template-columns: minmax(0, 1fr);
@@ -738,7 +952,9 @@
     .mss-pill,
     .mss-opt-arrow,
     .mss-pill-enter-active,
-    .mss-pill-leave-active {
+    .mss-pill-leave-active,
+    .mss-first-enter-active,
+    .mss-first-leave-active {
       transition: none;
     }
   }
@@ -749,4 +965,73 @@
 .mss-card .bg-media-overlay {
   background-color: oklch(0 0 0 / 0.5);
   color: oklch(1 0 0 / 0.9);
+}
+
+/* First launch: Set up and the install read as the next screen of the
+ * takeover, not a modal over the app. No box, the takeover's type scale
+ * centred, and tiles in the first screen's card style. Outside the layer
+ * to win over the step-modal surface (shell/marShell.css). */
+.mss-first.is-backdrop {
+  z-index: 70;
+}
+:root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
+  /* The first screen's column, so the takeover keeps one width. */
+  width: min(704px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
+  padding: 8px 32px 24px;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 {
+  padding-right: 0;
+  background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: var(--text-display);
+  font-weight: 700;
+  line-height: var(--text-display--line-height);
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 + :is(p, [id]) {
+  margin-top: 8px;
+  margin-bottom: 24px;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  text-align: center;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
+  padding: 12px 32px 8px;
+  box-shadow: none;
+}
+.mss-in-takeover .mss-stage {
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+}
+.mss-in-takeover .mss-tile:not(.is-bad) {
+  border-radius: 12px;
+  background: oklch(0.6 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+}
+/* Icon and check centred on the three-line text; Back's label lines up
+ * with the tiles' left edge, Install with their right. */
+.mss-in-takeover .mss-tile {
+  align-items: center;
+  padding: 14px 16px 14px 14px;
+}
+.mss-in-takeover .mar-wizard-foot > button:first-child {
+  margin-left: -16px;
+}
+
+/* Picked card: the first screen's quieter ring, not a full-ink stroke. */
+.mss .mss-card.ring-2 {
+  --tw-ring-color: color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
+  --tw-ring-shadow: 0 0 0 1px var(--tw-ring-color);
 }

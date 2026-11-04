@@ -107,18 +107,21 @@ onMounted(() => {
     }
     x.restore()
 
-    // Grain: heavy while it is noise, a light film once it resolves.
-    const amount = 0.11 * (1 - r) + 0.03
+    // Grain: a fine film, a little stronger while it is still noise. Drawn
+    // at device pixels so it stays one pixel fine on retina, not blocky.
+    const amount = 0.05 * (1 - r) + 0.02
     for (let i = 0; i < noise.data.length; i += 4) {
       const v = Math.random() * 255
       noise.data[i] = noise.data[i + 1] = noise.data[i + 2] = v
       noise.data[i + 3] = amount * 255
     }
     gx.putImageData(noise, 0, 0)
+    x.save()
+    x.setTransform(1, 0, 0, 1, 0, 0)
     x.globalCompositeOperation = 'overlay'
     x.fillStyle = x.createPattern(grain, 'repeat')!
-    x.fillRect(0, 0, w, h)
-    x.globalCompositeOperation = 'source-over'
+    x.fillRect(0, 0, c.width, c.height)
+    x.restore()
   }
 
   const frame = (): void => {
