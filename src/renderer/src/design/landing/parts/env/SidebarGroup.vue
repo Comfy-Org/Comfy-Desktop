@@ -94,7 +94,10 @@ const itemClass = (page: Page): string =>
       <Folder v-if="proto.projects" :size="15" />
       <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" />
       <span class="sidebar-label text-left">{{ r.label }}</span>
-      <span v-if="r.live" class="size-1.5 rounded-full bg-status-running" />
+      <!-- Running dot and attention icon share one 14px slot, centred. -->
+      <span v-if="r.live" class="flex size-3.5 shrink-0 items-center justify-center"
+        ><span class="size-1.5 rounded-full bg-status-running"
+      /></span>
       <!-- Didn't start: the attention icon, its reason on hover. -->
       <Tooltip v-else-if="'failed' in r && r.failed" :content="`Failed to start · ${r.failed}`">
         <OctagonAlert :size="14" class="shrink-0 text-status-danger" aria-label="Failed to start" />
