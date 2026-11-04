@@ -1673,6 +1673,7 @@ async function runLaunch(
         indexKind(settings.getMirrorConfig())
       )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
+      if ('kept' in overrideDecision && overrideDecision.kept) kept = overrideDecision.kept
       // Counted like a failed start, so a version that cannot install stops costing launch time.
       // A deferred one cost none: it is downloading in the background.
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
@@ -1684,10 +1685,16 @@ async function runLaunch(
 
   // An override that moved the frontend is recorded, and any launch it doesn't apply on (its pin
   // pulled, refused or reverted, or the agent off) puts ComfyUI's version back: the agent's own
-  // file has no frontend line to do it.
+  // file has no frontend line to do it. A kept agent keeps the frontend that override put in with
+  // it too: ComfyUI's own may have no Agent button.
   const frontendPin = overridePins?.get(FRONTEND_PACKAGE)
   const recordedFrontend = readFrontendPin(inst)
-  if (frontendPin !== undefined) {
+  if (kept && recordedFrontend !== null) {
+    makeSendOutput(
+      sender,
+      installationId
+    )(`Keeping the installed ${FRONTEND_PACKAGE} with the agent\n`)
+  } else if (frontendPin !== undefined) {
     const pinned = typeof frontendPin === 'string' ? frontendPin : pinSpecifier(frontendPin)
     if (recordedFrontend !== pinned) {
       await installations
