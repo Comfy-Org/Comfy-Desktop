@@ -71,11 +71,13 @@ const {
   renaming?: boolean
   fav?: boolean
 }>()
-// Open and Start say where; Try again stays short.
-const splitLabel = computed(() =>
+// Open and Start say where (a narrow card drops it); Try again stays short.
+const splitSuffix = computed(() =>
   ['Open', 'Start'].includes(cta.label)
-    ? `${cta.label} ${kind === 'cloud' ? 'on Cloud' : 'on this computer'}`
-    : cta.label
+    ? kind === 'cloud'
+      ? 'on Cloud'
+      : 'on this computer'
+    : undefined
 )
 const emit = defineEmits<{
   open: []
@@ -124,11 +126,7 @@ const emit = defineEmits<{
       <span class="mar-bc-eyebrow">{{ where }}</span>
     </template>
     <template v-if="look === 'split'" #meta>
-      <span class="mar-bc-line"
-        ><span class="mar-bc-badge" :class="`is-${tone}`"
-          ><i aria-hidden="true" />{{ line?.state }}</span
-        ><span class="truncate">{{ line?.rest }}</span></span
-      >
+      <span class="mar-bc-line truncate">{{ line?.rest }}</span>
     </template>
     <template v-else-if="error" #meta>
       <span class="mar-bc-error">{{ error }}</span>
@@ -136,9 +134,13 @@ const emit = defineEmits<{
     <template #footer>
       <!-- Split: one action, its sibling (Stop, Update) in the chevron. -->
       <span v-if="look === 'split'" class="mar-bc-foot">
+        <span class="mar-bc-badge" :class="`is-${tone}`"
+          ><i aria-hidden="true" />{{ line?.state }}</span
+        >
         <MarSplitButton
           tone="secondary"
-          :label="busy ? 'Starting…' : splitLabel"
+          :label="busy ? 'Starting…' : cta.label"
+          :suffix="busy || !splitSuffix ? undefined : splitSuffix"
           :disabled="busy"
           :lines="
             second ? [{ label: second.label, icon: second.icon as Component, run: second.run }] : []
@@ -196,6 +198,11 @@ const emit = defineEmits<{
 <style>
 /* A narrow card drops the Update available chip: its Update button
    already says it. */
+@container (max-width: 360px) {
+  .mar-bc.is-split .mar-split-suffix {
+    display: none;
+  }
+}
 @container (max-width: 300px) {
   .mar-bc-says-update {
     display: none !important;
@@ -409,8 +416,8 @@ const emit = defineEmits<{
   padding-top: 12px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
-/* Split: where as a tile as tall as the two lines beside it (name, the
-   state and where), then one action. */
+/* Split: where as a tile as tall as the two lines beside it (name, specs),
+   then the state as a badge with no fill and one action across from it. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-split {
   grid-template-columns: 44px minmax(0, 1fr);
   grid-template-rows: auto 1fr;
@@ -447,6 +454,7 @@ const emit = defineEmits<{
   align-items: center;
   gap: 6px;
   color: var(--color-base-foreground);
+  font-size: 13px;
   font-weight: 500;
 }
 .mar-bc-badge.is-ok {
@@ -468,8 +476,15 @@ const emit = defineEmits<{
 .mar-bc-badge:not(.is-idle) > i {
   background: currentColor;
 }
+.mar-bc.is-split .mar-item-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .mar-bc.is-split .mar-bc-foot {
   grid-column: 1 / -1;
+  align-items: center;
   margin-top: 4px;
 }
 /* Mark: the mark beside the name, the specs under a hairline. */

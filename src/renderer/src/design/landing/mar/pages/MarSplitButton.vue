@@ -9,6 +9,7 @@ import type { MenuLine } from './menu'
  *  sits on a card, where the page's primary is elsewhere. */
 const {
   label,
+  suffix,
   icon,
   lines,
   menuLabel,
@@ -16,6 +17,8 @@ const {
   disabled = false
 } = defineProps<{
   label: string
+  /** Words after the label that a narrow card can drop (where it runs). */
+  suffix?: string
   icon?: Component
   lines: MenuLine[]
   menuLabel: string
@@ -28,7 +31,8 @@ const emit = defineEmits<{ run: [] }>()
 <template>
   <span class="mar-split" :class="`is-${tone}`" @click.stop>
     <button type="button" class="mar-split-main" :disabled @click="emit('run')">
-      <component :is="icon" v-if="icon" :size="15" />{{ label }}
+      <component :is="icon" v-if="icon" :size="15" />{{ label
+      }}<span v-if="suffix" class="mar-split-suffix">&nbsp;{{ suffix }}</span>
     </button>
     <MarItemMenu v-if="lines.length" :lines :label="menuLabel">
       <template #trigger>
@@ -54,6 +58,7 @@ const emit = defineEmits<{ run: [] }>()
   color: var(--color-inverted-foreground);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   transition: background-color 150ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui :is(.mar-split-main, .mar-split-more):hover,

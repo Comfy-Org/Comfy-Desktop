@@ -285,16 +285,17 @@ function note(b: Build): string | undefined {
   if (STATUS[b.state]) return undefined
   return b.kind === 'cloud' ? stateLine(b) : `Stopped · ${b.lastUsed}`
 }
-// Split card: the state as a badge with no fill, then where it runs.
-function splitLine(b: Build): { state: string; rest: string } {
-  const on = b.kind === 'local' ? 'This computer' : 'Cloud'
-  if (b.state === 'running') return { state: 'Running', rest: on }
-  if (b.state === 'launching') return { state: 'Starting', rest: on }
-  if (b.state === 'error') return { state: 'Failed to start', rest: on }
-  if (b.state === 'update') return { state: 'Update available', rest: on }
-  if (b.kind === 'cloud') return { state: 'Asleep', rest: `${on} · wakes in ~20 s` }
-  return { state: 'Stopped', rest: `${on} · ${b.lastUsed}` }
+// Split card: the state as a badge with no fill. Where it runs is the tile
+// and the button, so the line keeps the specs (or why it didn't start).
+const SPLIT_STATE: Record<ProtoInstance['state'], string> = {
+  running: 'Running',
+  launching: 'Starting',
+  error: 'Failed to start',
+  update: 'Update available',
+  stopped: 'Stopped'
 }
+const splitState = (b: Build): string =>
+  b.state === 'stopped' && b.kind === 'cloud' ? 'Asleep' : SPLIT_STATE[b.state]
 const TONE: Record<ProtoInstance['state'], 'ok' | 'warn' | 'bad' | 'idle'> = {
   running: 'ok',
   launching: 'ok',
@@ -306,13 +307,10 @@ function card(b: Build) {
   // Where is said elsewhere on the card, so no "Cloud build" here.
   const release = [b.deployment ? undefined : b.channel, b.version].filter(Boolean)
   const mem = b.state === 'running' ? live(b).mem : undefined
-  return {
-    name: b.name,
-    kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
-    where: whereLabel(b),
-    // Tile and strip lead the specs with the hardware. Grouped leaves the hardware to
-    // its heading, unless it's the cloud's own.
-    meta: (buildCard.id === 'tile' || buildCard.id === 'strip'
+  // Tile, strip and split lead the specs with the hardware. Grouped leaves the
+  // hardware to its heading, unless it's the cloud's own.
+  const specs = (
+    ['tile', 'strip', 'split'].includes(buildCard.id)
       ? [gpuName(b), ...release]
       : [
           ...release,
@@ -320,12 +318,17 @@ function card(b: Build) {
             ? [gpuName(b)]
             : [])
         ]
-    ).join(' · '),
+  ).join(' · ')
+  return {
+    name: b.name,
+    kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
+    where: whereLabel(b),
+    meta: specs,
     error: b.state === 'error' ? b.error : undefined,
     status: STATUS[b.state],
     statusLabel: statusLabel(b),
     note: note(b),
-    line: splitLine(b),
+    line: { state: splitState(b), rest: b.state === 'error' ? (b.error ?? '') : specs },
     tone: TONE[b.state],
     gear: gpuName(b),
     usage: mem && (mem[0] / mem[1]) * 100,
