@@ -8,7 +8,6 @@ import { openSystemModalAsync } from '../popups/systemModal'
 import type { SystemModalDetailGroup } from '../popups/systemModal'
 import { recordDashboardSurface } from '../lib/lastSession'
 import * as settings from '../settings'
-import { isLocalInstall } from './localInstall'
 import { comfyWindows, isChooserHost, isInstallHost, shouldConfirmKillForEntry } from './registry'
 import type { ComfyWindowEntry } from './registry'
 import {
@@ -173,7 +172,7 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
  * and already-stopped sessions.
  */
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
-  if (!isLocalInstall(entry)) return true
+  if (!shouldConfirmKillForEntry(entry)) return true
   if (!_runningSessions.has(entry.installationId)) return true
   if (entry.window.isDestroyed()) return true
   return openSystemModalAsync({

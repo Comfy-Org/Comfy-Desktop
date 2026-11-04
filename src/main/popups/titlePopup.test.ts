@@ -936,3 +936,23 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
   })
 })
+
+describe('desktop2-open-terminal', () => {
+  it('opens no instance picker for a Remote Connection', async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-remote',
+      sourceCategory: 'remote',
+      comfyView: { webContents: sender }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(false)
+  })
+})
