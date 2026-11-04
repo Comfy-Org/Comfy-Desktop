@@ -83,11 +83,7 @@ test.beforeAll(async () => {
     ports[id] = await freshPort()
     await writeFakeComfyInstall({ installPath: installPaths[id]!, port: ports[id]! })
   }
-  // A CDP port of its own: the default is shared by every e2e run on the machine, and a
-  // concurrent run holding it hangs this launch. Never one of the fixtures' ports.
-  const cdpPort = await freshPort()
   ctx = await launchApp({
-    cdpPort,
     profileDir,
     settings: {
       firstUseCompleted: true,
