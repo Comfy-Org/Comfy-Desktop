@@ -36,6 +36,7 @@ const WAYS = [
     class="mss-ways"
     :class="`is-${variant}`"
     role="radiogroup"
+    data-no-pill
     aria-label="How do you want to run Comfy?"
   >
     <button
@@ -89,7 +90,7 @@ const WAYS = [
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mss-way[aria-checked='true'] {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 55%, transparent);
 }
 .mss-way-light {
   display: none;
@@ -130,6 +131,9 @@ const WAYS = [
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
   text-wrap: pretty;
+}
+.mss-way:not([aria-checked='true']) .mss-way-title {
+  color: var(--color-muted-foreground);
 }
 .mss-way-desc b {
   color: var(--color-muted-foreground);
@@ -189,12 +193,13 @@ const WAYS = [
   height: auto;
   padding: 18px;
   border-radius: 18px;
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
-  backdrop-filter: blur(20px);
+  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way:hover,
+:root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
 :root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way[aria-checked='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mss-ways.is-row .mss-way {
   padding: 16px 52px 16px 16px;

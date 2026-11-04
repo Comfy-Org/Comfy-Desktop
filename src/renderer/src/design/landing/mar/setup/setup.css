@@ -941,7 +941,7 @@
     z-index: -1;
     background: radial-gradient(
       ellipse 55% 85% at 50% -15%,
-      color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
+      color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
       transparent 70%
     );
     pointer-events: none;
