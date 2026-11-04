@@ -120,8 +120,7 @@ function portAnswers(): Promise<boolean> {
 }
 
 async function start(): Promise<AppContext> {
-  // A fresh CDP port each time: an orphan inherits the previous app's listening socket.
-  ctx = await launchApp({ ...seed(), cdpPort: await reserveFreePort() })
+  ctx = await launchApp(seed())
   await expectChooserVisible(ctx.panel)
   return ctx
 }

@@ -58,7 +58,6 @@ test.beforeAll(async () => {
   const { port } = await writeFakeComfyInstall({ installPath, port: await reserveFreePort() })
   ctx = await launchApp({
     profileDir: path.join(rootDir, 'profile'),
-    cdpPort: await reserveFreePort(),
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
