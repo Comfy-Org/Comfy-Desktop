@@ -28,8 +28,8 @@ import {
  * browser (localStorage), and written as CSS for the surface frames
  * (theme/apply.ts) on every change.
  */
-// v2: starts from the New Home (Mar, Nov 4).
-const KEY = 'mar-ds.theme-playground.v2'
+// v3: starts from the New Home (Mar, Nov 4); primary stays azure.
+const KEY = 'mar-ds.theme-playground.v3'
 function load(): State {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? '')

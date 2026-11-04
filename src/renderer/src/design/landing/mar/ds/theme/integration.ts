@@ -111,9 +111,9 @@ export const GAPS: { need: string; home: string; fallback: string }[] = [
     fallback: 'border = foreground 9% / 5% (the Home’s edge line).'
   },
   {
-    need: 'Executing outline',
-    home: 'Primary is the white button, so executing reads as selected.',
-    fallback: 'None picked: needs a decision (keep azure for executing).'
+    need: 'Primary (executing, Run)',
+    home: 'The Home’s white button is foreground on background, not primary.',
+    fallback: 'primary keeps Alex’s azure, so executing doesn’t read as selected.'
   },
   {
     need: 'Custom node colours',
