@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue'
+import { computed, reactive, ref, type Component } from 'vue'
 import {
   ArrowUpCircle,
   Camera,
@@ -130,10 +130,14 @@ function stop(b: Build): void {
   b.state = 'stopped'
   notify(`Stopped ${b.name}`, () => (b.state = 'running'))
 }
+// Builds updating now: the badge says so while the state stays as it was.
+const updating = reactive(new Set<string>())
 function update(b: Build): void {
-  b.state = 'launching'
+  if (updating.has(b.id)) return
+  updating.add(b.id)
   setTimeout(() => {
-    b.state = 'stopped'
+    updating.delete(b.id)
+    if (b.state === 'update') b.state = 'stopped'
     notify(`${b.name} is up to date`)
   }, 1600)
 }
@@ -221,7 +225,7 @@ const SPLIT_STATE: Record<ProtoInstance['state'], string> = {
   running: 'Running',
   launching: 'Starting',
   error: 'Failed to start',
-  update: 'Update available',
+  update: 'Stopped',
   stopped: 'Stopped'
 }
 const splitState = (b: Build): string =>
@@ -229,7 +233,7 @@ const splitState = (b: Build): string =>
 const TONE: Record<ProtoInstance['state'], 'ok' | 'warn' | 'bad' | 'idle'> = {
   running: 'ok',
   launching: 'ok',
-  update: 'warn',
+  update: 'idle',
   error: 'bad',
   stopped: 'idle'
 }
@@ -296,7 +300,21 @@ const newLabel = computed(() =>
         <template #media>
           <LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
         </template>
-        <template #meta>{{ b.state === 'error' ? b.error : specs(b) }}</template>
+        <template #meta
+          ><span class="mar-bc-specs-text">{{ b.state === 'error' ? b.error : specs(b) }}</span
+          ><button
+            v-if="b.state === 'update' || updating.has(b.id)"
+            type="button"
+            class="mar-bc-update"
+            :disabled="updating.has(b.id)"
+            :title="updating.has(b.id) ? undefined : 'Update this build'"
+            @click.stop="update(b)"
+          >
+            <ArrowUpCircle :size="12" aria-hidden="true" />{{
+              updating.has(b.id) ? 'Updating…' : 'Update available'
+            }}
+          </button></template
+        >
         <template #cols>
           <span class="mar-item-col mar-bc-row-state"
             ><span class="mar-bc-badge" :class="`is-${TONE[b.state]}`"
@@ -468,9 +486,43 @@ const newLabel = computed(() =>
   font-weight: 600;
 }
 .mar-bc-row .mar-item-meta {
-  display: block;
+  gap: 10px;
   color: var(--color-muted-foreground);
   font-size: 13px;
+}
+.mar-bc-specs-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* An update is about the version, not the state: a small badge after it. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-update {
+  display: inline-flex;
+  border: 0;
+  font-family: inherit;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px 0 5px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-status-warning, #f5b14c) 14%, transparent);
+  color: var(--color-status-warning, #f5b14c);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-update:not(:disabled) {
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-update:not(:disabled):hover {
+  background: color-mix(in oklch, var(--color-status-warning, #f5b14c) 24%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-update:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-update:disabled {
+  opacity: 0.8;
 }
 /* The state lines up from row to row; the chip column stays empty. */
 .mar-bc-row .mar-item-col.is-status {
