@@ -131,6 +131,9 @@
       "electron-winstaller",
       "esbuild",
       "node-pty"
-    ]
+    ],
+    "overrides": {
+      "extract-zip>yauzl": "3.4.0"
+    }
   }
 }
