@@ -110,7 +110,7 @@ const emit = defineEmits<{
   >
     <template #media>
       <span v-if="look === 'tile' || look === 'split'" class="mar-bc-tile">
-        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="look === 'split' ? 20 : 24" />
+        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="look === 'split' ? 16 : 24" />
       </span>
       <span v-else-if="look === 'strip'" class="mar-bc-strip">
         <component :is="kind === 'cloud' ? Cloud : Laptop" :size="14" />{{ where }}
@@ -416,21 +416,20 @@ const emit = defineEmits<{
   padding-top: 12px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
-/* Split: where as a tile as tall as the two lines beside it (name, specs),
-   then the state as a badge with no fill and one action across from it. */
+/* Split: a small mark of where it runs beside the name, the specs under
+   it, then the state as a badge with no fill and one action across. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-split {
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   grid-template-rows: auto 1fr;
-  column-gap: 14px;
+  column-gap: 8px;
 }
 .mar-bc.is-split .mar-bc-tile {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 16px;
+  height: 20px;
+  background: none;
+  color: var(--color-muted-foreground);
 }
 .mar-bc.is-split > .mar-item-text {
-  height: 44px;
-  justify-content: center;
   gap: 4px;
   padding-right: 28px;
 }
