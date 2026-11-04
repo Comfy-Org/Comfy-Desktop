@@ -928,6 +928,14 @@ const newLabel = computed(() =>
   background: none;
   color: var(--color-muted-foreground);
 }
+/* The check takes the mark's place, centred on it, clear of the name. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row .mar-item-check {
+  top: 18px !important;
+  left: 14px !important;
+}
+.mar-bc-row:is(:hover, :focus-within, .is-selecting, .is-selected) > .mar-item-media {
+  opacity: 0;
+}
 /* The name and its specs on one line. */
 .mar-bc-row > .mar-item-text {
   min-width: 0;
