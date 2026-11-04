@@ -135,8 +135,8 @@ export const PAGES: DsPage[] = [
     group: 'Foundations',
     title: 'Theme playground',
     source: 'ComfyUI_frontend packages/design-system/src/css/_palette.css, theme.css',
-    use: 'Primitives and semantic tokens for dark and light, every product live, then the patch.',
-    custom: lazy(() => import('./pages/ThemePlayground.vue'))
+    use: 'Its own page, full screen: tokens for dark and light, edited on the real New Home and ComfyUI.',
+    custom: lazy(() => import('./pages/ThemePlaygroundLink.vue'))
   },
   {
     id: 'materials-blur',

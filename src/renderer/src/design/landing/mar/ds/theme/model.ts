@@ -540,8 +540,66 @@ export function frameCss(s: State, mode: Mode): string {
       lines.push(g.id === 'proto' ? `--color-${n.name}: ${val}` : `--${n.name}: ${val}`)
     }
   }
-  return `:root { ${lines.map((l) => `${l} !important`).join('; ')} }`
+  const decl = (vars: Record<string, string>): string =>
+    Object.entries(vars)
+      .map(([k, v]) => `${k}: ${v} !important`)
+      .join('; ')
+  return [
+    `:root { ${lines.map((l) => `${l} !important`).join('; ')} }`,
+    ...SURFACE.map(([sel, vars]) => `${sel} { ${decl(vars)} }`)
+  ].join('\n')
 }
+
+/**
+ * The surfaces that don't read the legacy names: the prototype's graph
+ * editor (mar/graph: MarGraph's --mg-*, CanvasNode's --n-*), in both of
+ * its looks, mapped onto the tokens the way ComfyUI's Vue nodes use them.
+ */
+const SURFACE: [string, Record<string, string>][] = [
+  [
+    '.mg',
+    {
+      '--mg-canvas': 'var(--pg-canvas)',
+      '--mg-dot': 'var(--pg-canvas-grid)',
+      '--mg-node': 'var(--pg-node)',
+      '--mg-node-on': 'var(--pg-node)',
+      '--mg-head-bg': 'var(--pg-node-header)',
+      '--mg-well': 'var(--pg-input)',
+      '--mg-well-line': 'var(--pg-border)',
+      '--mg-float': 'var(--pg-popover)',
+      '--mg-hover': 'var(--pg-hover)',
+      '--mg-text': 'var(--pg-foreground)',
+      '--mg-muted': 'var(--pg-muted-foreground)',
+      '--mg-dim': 'var(--pg-muted-foreground)',
+      '--mg-title': 'var(--pg-node-foreground)',
+      '--mg-ring': 'var(--pg-canvas)',
+      '--mg-chrome': 'var(--pg-background)',
+      '--mg-chrome-2': 'var(--pg-secondary)',
+      '--mg-chrome-line': 'var(--pg-border)',
+      '--mg-run': 'var(--pg-primary)',
+      '--mg-run-text': 'var(--pg-primary-foreground)'
+    }
+  ],
+  [
+    '.sg-node',
+    {
+      '--n-head': 'var(--pg-node-header)',
+      '--n-body': 'var(--pg-node)',
+      '--n-widget': 'var(--pg-node-widget)',
+      '--n-widget-hover': 'var(--pg-accent)',
+      '--n-widget-on': 'var(--pg-accent)',
+      '--n-text': 'var(--pg-foreground)',
+      '--n-slot-text': 'var(--pg-node-foreground)',
+      '--n-icon': 'var(--pg-node-foreground)',
+      '--n-outline': 'var(--pg-foreground)',
+      '--n-exec': 'var(--pg-primary)',
+      '--n-error': 'var(--pg-destructive)',
+      '--n-bypass': 'var(--pg-bypass)'
+    }
+  ],
+  // ComfyUI's nodes carry a 1px node-border; the prototype's have none.
+  ['.sg-inner', { outline: '1px solid var(--pg-node-border)', 'outline-offset': '-1px' }]
+]
 
 // ── Export ─────────────────────────────────────────────────────────────
 
