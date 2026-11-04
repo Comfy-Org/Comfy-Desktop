@@ -14,8 +14,9 @@ import {
 /**
  * The Theme playground's model: primitives (the charcoal curve and single
  * hues) → semantic tokens per mode → the names Desktop and the prototype
- * use today. Two starting points: Alex's stack on ComfyUI_frontend
- * (#22439 charcoal curve, #22752 tokens) and origin/main, read from
+ * use today. Three starting points: the New Home as Mar's proposal paints
+ * it (HOME), Alex's stack on ComfyUI_frontend (#22439 charcoal curve,
+ * #22752 tokens) and origin/main, read from
  * packages/design-system/src/css/{_palette,theme}.css and
  * src/assets/palettes/{dark,light}.json.
  */
@@ -72,7 +73,11 @@ export const HUES: { id: string; use: string }[] = [
   { id: 'credit', use: 'Credits' },
   { id: 'magenta-700', use: 'Bypass' },
   { id: 'smoke-700', use: 'Node text (dark)' },
-  { id: 'smoke-800', use: 'Muted text (dark)' }
+  { id: 'smoke-800', use: 'Muted text (dark)' },
+  { id: 'home-green-dark', use: 'New Home: running (dark)' },
+  { id: 'home-green-light', use: 'New Home: running (light)' },
+  { id: 'home-red-dark', use: 'New Home: danger (dark)' },
+  { id: 'home-red-light', use: 'New Home: danger (light)' }
 ]
 const MAIN_HUES: Record<string, string> = {
   white: '#ffffff',
@@ -472,6 +477,114 @@ export const MAIN: State = {
     }
   },
   aliases: ALIASES
+}
+
+/**
+ * The New Home as Mar's proposal paints it today (Graphite, Oct 30),
+ * read off mar/palette.ts, mar/shell/light.css and the graph (MarGraph,
+ * CanvasNode), put on the same primitive → token model. Nothing in the
+ * prototype reads this: it is the playground's starting point only.
+ * Where the Home has no token (no hairlines, a green per theme) its
+ * legacy name is kept as is; the Integrate tab lists each case.
+ */
+const ok = (l: number, ch: number, h: number): string => rgbToHex(oklchToRgb(l, ch, h))
+export const HOME_CHARCOAL: Charcoal = {
+  // 50 light node · 100 dark text, light canvas · 200 light node title ·
+  // 300 dark muted · 400 dark subtle · 500 light subtle · 600 light muted ·
+  // 700 dark card hover · 800 dark card · 900 dark page, light text ·
+  // 950 dark content and canvas.
+  l: [0.985, 0.955, 0.93, 0.76, 0.6, 0.52, 0.42, 0.265, 0.23, 0.19, 0.14],
+  // Graphite is pure grey: Alex's chroma shape at ×0, so Chroma brings it back.
+  c: [...ALEX_CHARCOAL.c],
+  hue: 285,
+  chroma: 0
+}
+const HOME_HUES: Record<string, string> = {
+  ...ALEX_HUES,
+  'home-green-dark': ok(0.78, 0.15, 155),
+  'home-green-light': ok(0.52, 0.14, 155),
+  'home-red-dark': ok(0.62, 0.19, 25),
+  'home-red-light': ok(0.55, 0.2, 25)
+}
+const HOME_ALIASES: Record<string, Alias> = {
+  ...ALIASES,
+  // The sidebar's page (one step up from the content in dark).
+  'proto:app-background': a('muted'),
+  'proto:subtle-foreground': a('muted-foreground', 80),
+  'proto:card-background-hover': a('secondary'),
+  'proto:secondary-background-hover': a('hover'),
+  'proto:inverted-background': a('primary'),
+  'proto:inverted-background-hover': a('primary', 90),
+  'proto:inverted-foreground': a('primary-foreground'),
+  // The Home draws no hairlines and has a green per theme: no token yet.
+  'proto:border-default': a('keep'),
+  'proto:border-strong': a('keep'),
+  'proto:status-running': a('keep')
+}
+export const HOME: State = {
+  charcoal: HOME_CHARCOAL,
+  hues: HOME_HUES,
+  map: {
+    dark: {
+      background: c(950),
+      foreground: c(100),
+      card: c(800),
+      popover: t('card'),
+      primary: c(100),
+      'primary-foreground': c(950),
+      secondary: r('white', 6),
+      muted: c(900),
+      'muted-foreground': c(300),
+      // Hover 10% and selected 15% white, as the Home's rows.
+      accent: r('white', 25),
+      destructive: r('home-red-dark'),
+      // The Home's edge line (--mar-edge-line): only ComfyUI draws it.
+      border: t('foreground', 9),
+      input: r('white', 5),
+      ring: r('white', 45),
+      hover: t('accent', 40),
+      selected: t('accent', 60),
+      canvas: c(950),
+      'canvas-grid': t('foreground', 11),
+      node: c(900),
+      'node-header': c(800),
+      'node-widget': r('white', 7),
+      'node-border': t('border'),
+      'node-foreground': c(300),
+      warning: r('gold-600'),
+      ...SHARED,
+      success: r('home-green-dark')
+    },
+    light: {
+      background: r('white'),
+      foreground: c(900),
+      card: r('white'),
+      popover: t('card'),
+      primary: c(900),
+      'primary-foreground': c(50),
+      secondary: r('black', 4),
+      muted: c(50),
+      'muted-foreground': c(600),
+      accent: r('black', 16),
+      destructive: r('home-red-light'),
+      border: t('foreground', 5),
+      input: r('black', 4),
+      ring: r('black', 45),
+      hover: t('accent', 40),
+      selected: t('accent', 60),
+      canvas: c(100),
+      'canvas-grid': r('black', 13),
+      node: c(50),
+      'node-header': c(200),
+      'node-widget': r('black', 5),
+      'node-border': t('border'),
+      'node-foreground': c(600),
+      warning: r('gold-700'),
+      ...SHARED,
+      success: r('home-green-dark')
+    }
+  },
+  aliases: HOME_ALIASES
 }
 
 export const clone = (s: State): State => JSON.parse(JSON.stringify(s))

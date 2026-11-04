@@ -65,6 +65,7 @@ export const PAIRS: Pair[] = [
   P('Canvas', 'node-widget', ['node'], 'edge', 'widget on node body'),
   P('Canvas', 'node-foreground', ['node-header'], 'label', 'node title on header'),
   P('Canvas', 'foreground', ['canvas'], 'ui', 'selected outline on canvas'),
+  P('Canvas', 'primary', ['canvas'], 'ui', 'executing outline on canvas'),
   P('Canvas', 'node-foreground', ['node'], 'label', 'widget label on node'),
   P('Canvas', 'node-foreground', ['node-widget'], 'label', 'widget label on widget'),
   P('Canvas', 'foreground', ['node-widget'], 'text', 'widget value on widget')

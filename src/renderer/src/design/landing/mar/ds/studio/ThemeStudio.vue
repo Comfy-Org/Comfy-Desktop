@@ -5,10 +5,11 @@ import Button from '../../../ui/Button.vue'
 import Select from '../../../ui/Select.vue'
 import Switch from '../../../ui/Switch.vue'
 import MarSeg from '../../pages/MarSeg.vue'
-import { ALEX, MAIN, type Mode } from '../theme/model'
+import { ALEX, HOME, MAIN, type Mode } from '../theme/model'
 import { changes, compare, editing, reset } from '../theme/usePlayground'
 import StudioContrast from './StudioContrast.vue'
 import StudioExport from './StudioExport.vue'
+import StudioIntegrate from './StudioIntegrate.vue'
 import StudioLegacy from './StudioLegacy.vue'
 import StudioPrimitives from './StudioPrimitives.vue'
 import StudioTokens from './StudioTokens.vue'
@@ -24,7 +25,7 @@ type Surface = 'home' | 'graph'
 type View = 'dark' | 'light' | 'split'
 type GraphStyle = 'current' | 'glass'
 type Screen = 'none' | 'mac' | 'windows' | 'glare'
-type Tab = 'tokens' | 'primitives' | 'contrast' | 'legacy' | 'export'
+type Tab = 'tokens' | 'primitives' | 'contrast' | 'legacy' | 'integrate' | 'export'
 
 const SURFACES: { value: Surface; label: string }[] = [
   { value: 'home', label: 'New Home' },
@@ -50,6 +51,7 @@ const TABS: { value: Tab; label: string; is: Component }[] = [
   { value: 'primitives', label: 'Primitives', is: StudioPrimitives },
   { value: 'contrast', label: 'Contrast', is: StudioContrast },
   { value: 'legacy', label: 'Legacy', is: StudioLegacy },
+  { value: 'integrate', label: 'Integrate', is: StudioIntegrate },
   { value: 'export', label: 'Export', is: StudioExport }
 ]
 
@@ -182,7 +184,10 @@ const dsHref = location.pathname.replace(/playground\/?$/, '')
           <MarSeg v-model="tab" :options="TABS" label="Editor" />
           <div class="st-dock-row">
             <span>Start from</span>
-            <Button variant="secondary" size="sm" @click="reset(ALEX)"
+            <Button variant="secondary" size="sm" @click="reset(HOME)"
+              ><RotateCcw :size="13" />New Home</Button
+            >
+            <Button variant="ghost" size="sm" @click="reset(ALEX)"
               ><RotateCcw :size="13" />Alex’s stack</Button
             >
             <Button variant="ghost" size="sm" @click="reset(MAIN)"
@@ -423,6 +428,47 @@ html:has(.st) body {
 }
 .stl-fixed {
   flex: 1;
+}
+
+/* Integrate */
+.sti-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.sti-sw {
+  display: flex;
+  gap: 3px;
+}
+.sti-main {
+  min-width: 0;
+  flex: 1;
+}
+.sti-tag {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.sti-tag.is-changes {
+  color: var(--color-base-foreground);
+}
+.sti-tag.is-new {
+  color: var(--color-status-running);
+}
+.sti-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.sti-block .is-fail {
+  color: var(--color-status-danger);
+}
+.sti-block .is-pass {
+  color: var(--color-muted-foreground);
 }
 
 /* Primitives */

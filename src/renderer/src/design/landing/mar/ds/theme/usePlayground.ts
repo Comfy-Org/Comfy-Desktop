@@ -9,6 +9,7 @@ import {
   diff,
   flat,
   frameCss,
+  HOME,
   HUES,
   MAIN,
   MODES,
@@ -27,15 +28,16 @@ import {
  * browser (localStorage), and written as CSS for the surface frames
  * (theme/apply.ts) on every change.
  */
-const KEY = 'mar-ds.theme-playground.v1'
+// v2: starts from the New Home (Mar, Nov 4).
+const KEY = 'mar-ds.theme-playground.v2'
 function load(): State {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? '')
     if (s?.charcoal && s.map?.dark && s.map?.light && s.aliases) return s
   } catch {
-    // A first visit, or an older shape: start from Alex's.
+    // A first visit, or an older shape: start from the New Home.
   }
-  return clone(ALEX)
+  return clone(HOME)
 }
 
 export const state = ref<State>(load())
