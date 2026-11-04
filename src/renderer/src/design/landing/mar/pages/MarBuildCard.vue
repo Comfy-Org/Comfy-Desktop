@@ -249,6 +249,7 @@ const emit = defineEmits<{
   margin: 0 -16px;
   padding: 0 16px;
   border-bottom: 1px solid color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  border-radius: 0;
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
@@ -274,14 +275,24 @@ const emit = defineEmits<{
 .mar-bc-strip > svg {
   color: var(--color-muted-foreground);
 }
-/* ⋯ and the check sit inside the strip. */
+/* ⋯ sits at the strip's end. The check takes the place icon's spot on
+   hover or while selecting, and the icon steps aside for it. */
 .mar-bc.is-strip .mar-item-tools {
   top: 4px;
   right: 8px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check {
-  top: 9px;
-  right: 40px;
+  top: 8px;
+  right: auto;
+  left: 13px;
+}
+.mar-bc-strip > svg {
+  transition: opacity 120ms ease;
+}
+.mar-item.mar-bc.is-strip:is(:hover, :focus-within, .is-selecting, .is-selected)
+  .mar-bc-strip
+  > svg {
+  opacity: 0;
 }
 /* The state's other action (Stop, Update) is outlined, so the main button
    stays the one with a fill, and a fill that reads on the card. */
