@@ -50,10 +50,7 @@ const SHARED = {
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Apps"
-      description="Workflows turned into simple tools anyone can run - a few inputs and a button."
-    >
+    <PageHeader title="Apps">
       <template #actions>
         <SegmentedControl
           v-model="view"

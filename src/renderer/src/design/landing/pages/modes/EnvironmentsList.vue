@@ -37,14 +37,7 @@ const COLS = 'grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1.2fr)_minmax(0,1fr)_110
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Builds"
-      :description="
-        proto.mode === 'build'
-          ? 'A ComfyUI version, custom nodes and models. Save versions, then deploy them.'
-          : 'Where your work runs. Each has its own ComfyUI version, custom nodes and models.'
-      "
-    >
+    <PageHeader title="Builds">
       <template #actions>
         <Button variant="primary" size="lg" @click="hostActions.newInstance()"
           ><Plus :size="15" />New build</Button

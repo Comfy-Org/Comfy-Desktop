@@ -49,7 +49,7 @@ const FAILURES = [
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Overview" description="Your API across every deployment, last 7 days.">
+    <PageHeader title="Overview">
       <template #actions>
         <Button size="lg" @click="toast('Opening docs.comfy.org ↗')">Docs</Button>
         <Button

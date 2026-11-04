@@ -141,15 +141,7 @@ function addFolder(path: string): void {
 
 <template>
   <div :class="embedded ? 'mt-3' : 'mx-auto w-full max-w-300 px-10 pb-16'">
-    <PageHeader
-      v-if="!embedded"
-      title="Assets"
-      :description="
-        scope
-          ? `Inputs and outputs of ${scope.name}.`
-          : 'Everything you\'ve made, on this computer and on Comfy Cloud.'
-      "
-    />
+    <PageHeader v-if="!embedded" title="Assets" />
 
     <!-- One row. Selection swaps the filters for bulk actions in place. -->
     <div class="flex h-12 items-center gap-2">

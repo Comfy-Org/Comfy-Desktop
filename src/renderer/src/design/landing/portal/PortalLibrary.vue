@@ -23,10 +23,7 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader
-      title="Library"
-      :description="`Everything your team made in ${space.name}. Kept for ${space.policies.retention} days.`"
-    />
+    <PageHeader title="Library" />
     <div class="mb-4 flex items-center gap-2">
       <SegmentedControl
         v-model="status"

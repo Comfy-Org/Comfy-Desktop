@@ -8,7 +8,7 @@ const twMerge = extendTailwindMerge({
   extend: {
     theme: {
       text: ['ui', 'heading', 'title', 'display'],
-      radius: ['panel', 'card', 'control', 'min'],
+      radius: ['panel', 'float', 'card', 'track', 'track-item', 'control', 'min'],
       shadow: ['elev', 'elev-hover', 'popover', 'highlight'],
       blur: ['glass']
     }

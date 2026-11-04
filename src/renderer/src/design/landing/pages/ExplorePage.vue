@@ -21,7 +21,7 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Explore" description="Apps you can run right away. No graph to learn." />
+    <PageHeader title="Explore" />
     <ExploreApps v-if="!can.explore" />
     <Tabs
       v-else

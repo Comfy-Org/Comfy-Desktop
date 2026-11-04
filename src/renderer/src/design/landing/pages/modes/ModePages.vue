@@ -59,10 +59,7 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
     <FirstEmpty :kind="libraryKind" />
   </div>
   <div v-else-if="proto.page === 'workflows'" class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Workflows"
-      description="Every workflow, on this computer and in the cloud. Each opens in its build."
-    >
+    <PageHeader title="Workflows">
       <template #actions
         ><Button variant="primary" size="lg" @click="toast('New workflow')"
           ><Plus :size="15" />Workflow</Button

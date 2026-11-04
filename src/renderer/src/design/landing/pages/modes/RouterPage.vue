@@ -16,10 +16,7 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Models"
-      description="Partner models through one API. No build to manage - pay per call."
-    >
+    <PageHeader title="Models">
       <template #actions
         ><SearchInput v-model="q" placeholder="Search models" class="w-56"
       /></template>

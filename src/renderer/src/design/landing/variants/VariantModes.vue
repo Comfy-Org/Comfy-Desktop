@@ -49,10 +49,10 @@ const MODES = computed(() => [
          the sidebar to give the chat and the app the room. -->
     <aside
       :class="[
-        'proto-sidebar sidebar-slide relative z-5 flex shrink-0 flex-col [--glyph-ring:var(--color-app-background)] [scrollbar-width:none]',
+        'proto-sidebar sidebar-slide relative z-5 flex shrink-0 flex-col [--glyph-ring:var(--color-sidebar-background)] [scrollbar-width:none]',
         building
           ? 'pointer-events-none m-0 w-0 overflow-hidden p-0 opacity-0'
-          : 'm-2 mr-0 w-59 overflow-y-auto p-2'
+          : 'm-2 mr-0 w-61 overflow-y-auto px-3 py-2'
       ]"
       :aria-hidden="building || undefined"
       :inert="building || undefined"

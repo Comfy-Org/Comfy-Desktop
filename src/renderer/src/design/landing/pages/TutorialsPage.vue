@@ -19,10 +19,7 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Tutorials"
-      description="Learn ComfyUI with hands-on lessons, from your first node graph to VFX, animation and ads."
-    />
+    <PageHeader title="Tutorials" />
     <div class="mb-4 flex items-center justify-between gap-3">
       <SegmentedControl
         v-model="cat"

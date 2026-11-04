@@ -1,69 +1,19 @@
 /*
- * The shell's surfaces, on the Void palette (ui/tokens.css):
- *
- * - The page, where the sidebar sits, is frosted glass.
- * - The content is a rounded panel inset from it, given depth by light and
- *   a faint organic gradient instead of an outline.
- * - A soft glow falls from the top of the content.
+ * The shell's surfaces, on the Graphite palette (ui/tokens.css): one flat,
+ * darker window (title bar included) with two floating panels on it, the
+ * sidebar and the content, 8px around and between them.
  */
-
-/* ── Glass page ─────────────────────────────────────────────────────
- * Lighter than the content, as if a blurred wallpaper showed through: a
- * faint sheen over three soft, near-neutral washes (a hint of warm at the
- * top left, cool at the bottom), so the glass is continuous behind the
- * content and in the gap around it. Shipping, Electron can do glass for
- * real (macOS `vibrancy: 'sidebar'`, Windows 11 `backgroundMaterial:
- * 'acrylic'`). The shell's `bg-app-background` is the base.
- *
- * The title bar paints the top of the same glass (`.glass-titlebar`), so
- * the sheen and the warm wash run on across the seam. Both are laid out in
- * window coordinates: sizes in vw (the bar and the page are both
- * window-wide) and positions from the window's top, which sits
- * `--glass-top` above the shell (the bar's height). */
-:root {
-  --glass-base: oklch(0.19 0.003 285);
-  --glass-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.035), transparent);
-  --glass-warm: radial-gradient(
-    120vw 34vw at 0 var(--glass-y, 0px),
-    oklch(0.27 0.007 310 / 0.5),
-    transparent 70%
-  );
-}
-.proto-shell {
-  /* The app's title bar: 36px + its 1px border (TITLEBAR_HEIGHT + 1). */
-  --glass-y: -37px;
-  background-image:
-    var(--glass-sheen), var(--glass-warm),
-    radial-gradient(110% 60% at 10% 100%, oklch(0.26 0.007 245 / 0.5), transparent 75%),
-    radial-gradient(90% 50% at 60% 55%, oklch(0.22 0.003 285 / 0.5), transparent 80%);
-  background-size:
-    100% 19vw,
-    100% 100%,
-    100% 100%,
-    100% 100%;
-  background-position:
-    0 var(--glass-y),
-    0 0,
-    0 0,
-    0 0;
-  background-repeat: no-repeat;
-}
-/* Browser preview: the stand-in title bar (DesktopTitleBar) is 44px. */
-.proto-ui:has(> .glass-titlebar) .proto-shell {
-  --glass-y: -44px;
-}
-/* :root + doubled class: beats the bar's own scoped background. */
+.proto-shell,
 :root .glass-titlebar.glass-titlebar {
-  --glass-y: 0px;
+  background: var(--color-window-background);
+}
+:root .glass-titlebar.glass-titlebar {
   border-bottom-color: transparent;
-  background-color: var(--glass-base);
-  background-image: var(--glass-sheen), var(--glass-warm);
-  /* Under the (transparent) bottom border too, or it shows as a line. */
-  background-origin: border-box;
-  background-size:
-    100% 19vw,
-    100% 100%;
-  background-repeat: no-repeat;
+  backdrop-filter: none;
+}
+.proto-sidebar {
+  border-radius: var(--radius-float);
+  background: var(--color-sidebar-background);
 }
 
 /* ── Content panel ──────────────────────────────────────────────────
@@ -78,7 +28,7 @@
 .proto-main.proto-main {
   isolation: isolate;
   margin: 8px;
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-float);
   background:
     linear-gradient(180deg, oklch(1 0 0 / 0.035), oklch(1 0 0 / 0.012) 260px, transparent 520px),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3CradialGradient id='g0' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.16' fy='0.03' gradientTransform='translate(1.2 -5.7) rotate(176) skewX(8) scale(56 26)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.047'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g1' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.12' fy='0.02' gradientTransform='translate(73.0 8.0) rotate(28) skewX(11) scale(56 20)'%3E%3Cstop stop-color='rgb(70,128,136)' stop-opacity='0.044'/%3E%3Cstop offset='1' stop-color='rgb(70,128,136)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g2' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='-0.13' fy='0.03' gradientTransform='translate(29.6 58.5) rotate(45) skewX(15) scale(40 18)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.039'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g3' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='0.07' fy='0.25' gradientTransform='translate(76.2 -4.8) rotate(164) skewX(2) scale(61 34)'%3E%3Cstop stop-color='rgb(70,128,136)' stop-opacity='0.059'/%3E%3Cstop offset='1' stop-color='rgb(70,128,136)' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g4' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='1' fx='0.16' fy='-0.08' gradientTransform='translate(82.8 -7.2) rotate(31) skewX(-6) scale(51 15)'%3E%3Cstop stop-color='rgb(122,92,156)' stop-opacity='0.037'/%3E%3Cstop offset='1' stop-color='rgb(122,92,156)' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23g0)'/%3E%3Crect width='100' height='100' fill='url(%23g1)'/%3E%3Crect width='100' height='100' fill='url(%23g2)'/%3E%3Crect width='100' height='100' fill='url(%23g3)'/%3E%3Crect width='100' height='100' fill='url(%23g4)'/%3E%3C/svg%3E")
@@ -86,16 +36,49 @@
     var(--color-content-background);
 }
 
-/* ── Glow: soft light from the top of the content ─────────────────── */
-.proto-main::before {
+/* Browser preview only (the stand-in title bar, DesktopTitleBar): room at the
+   top of the content. In the app the title bar is its own window. */
+.proto-ui:has(> .glass-titlebar) .proto-main.proto-main {
+  padding-top: 44px;
+}
+.proto-ui:has(> .glass-titlebar) .proto-home ~ *,
+.proto-ui:has(> .glass-titlebar) .proto-main > .absolute.top-3\.5 {
+  top: 14px;
+}
+
+/* ── Spotlight: Home's soft light from above ────────────────────────
+ * Grain and a light at the top, fading into the content, carried on down the
+ * page by a weaker version on the panel itself (scrolling with it, so it has
+ * no edge). `.proto-home` is Home's root (pages/modes/CreateHome.vue). */
+.proto-main.proto-main:has(> .proto-home) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+      color-mix(in oklch, var(--color-base-foreground) 2.5%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
+/* Home's greeting sits a quarter higher, so less of the top is empty. */
+.proto-home > section:first-child {
+  padding-top: 12px;
+}
+.proto-main:has(> .proto-home)::before {
   content: '';
   position: absolute;
   inset: 0 0 auto;
   z-index: -1;
-  height: 900px;
+  height: 560px;
   pointer-events: none;
   background:
-    radial-gradient(900px 560px at 20% -14%, oklch(0.82 0.035 285 / 0.08), transparent 62%),
-    radial-gradient(800px 500px at 90% -10%, oklch(1 0 0 / 0.03), transparent 60%);
-  mask-image: linear-gradient(to bottom, black 55%, transparent);
+    linear-gradient(180deg, transparent 0%, transparent 55%, var(--color-content-background) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(
+      ellipse 55% 85% at 50% -15%,
+      color-mix(in oklch, var(--color-base-foreground) 16%, transparent),
+      transparent 70%
+    );
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
 }

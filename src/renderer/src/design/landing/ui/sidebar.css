@@ -12,3 +12,20 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* The foot (credits, workspace) stays in view; the rows scroll under it. */
+.proto-ui aside.proto-sidebar > div > .mt-auto:last-child {
+  position: sticky;
+  bottom: -8px;
+  z-index: 2;
+  margin-bottom: -8px;
+  padding-bottom: 8px;
+  background: var(--color-sidebar-background);
+}
+.proto-ui aside.proto-sidebar > div > .mt-auto:last-child::before {
+  content: '';
+  position: absolute;
+  inset: -20px 0 100%;
+  background: linear-gradient(to top, var(--color-sidebar-background), transparent);
+  pointer-events: none;
+}

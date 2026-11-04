@@ -27,10 +27,7 @@ const rows = computed(() => [...SPACES].sort((a, b) => b.used - a.used))
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Spaces"
-      description="Branded, isolated places for a team, customer or brand. Each has its own people, tools, data and budget - and can't see the others."
-    >
+    <PageHeader title="Spaces">
       <template #actions
         ><Button variant="primary" size="lg" @click="proto.creatingSpace = true"
           ><Plus :size="15" />New space</Button

@@ -65,7 +65,7 @@ function describe(): void {
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Apps" description="Tools anyone can run from a link. No graph to learn.">
+    <PageHeader title="Apps">
       <template #actions>
         <DropdownMenuRoot :modal="false">
           <DropdownMenuTrigger as-child>

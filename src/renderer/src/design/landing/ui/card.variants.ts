@@ -4,13 +4,13 @@ export const cardVariants = cva({
   base: 'relative border',
   variants: {
     variant: {
-      /** Default raised card: top-edge shine + soft shadow. */
+      /** Default raised card: soft shadow, no edge. */
       elevated: 'edge-shine rounded-card bg-card-background shadow-elev',
       /** Frosted glass, same recipe as the sidebar. */
       glass:
         'rounded-panel border-border-default bg-media-overlay shadow-popover backdrop-blur-glass backdrop-saturate-[1.6]',
       /** Placeholder / create-new tiles. */
-      dashed: 'rounded-card border-dashed border-border-strong bg-transparent',
+      dashed: 'rounded-card border-dashed border-subtle-foreground/30 bg-transparent',
       /** Quiet group inside another surface. */
       inset: 'rounded-control border-border-default bg-secondary-background/60'
     },
@@ -23,7 +23,7 @@ export const cardVariants = cva({
     {
       variant: 'elevated',
       interactive: true,
-      class: 'hover:bg-card-background-hover hover:shadow-elev-hover hover:[--shine:0.22]'
+      class: 'hover:bg-card-background-hover hover:shadow-elev-hover'
     },
     {
       variant: 'dashed',

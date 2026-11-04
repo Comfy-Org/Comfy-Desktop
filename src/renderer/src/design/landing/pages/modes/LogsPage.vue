@@ -37,7 +37,7 @@ const rows = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader title="Logs" description="Requests to your deployments, newest first.">
+    <PageHeader title="Logs">
       <template #actions>
         <Select
           v-model="filter"

@@ -6,7 +6,9 @@ const { text } = defineProps<{ text?: string }>()
 </script>
 
 <template>
-  <h1 class="heading-gradient mb-5.5 pt-14 text-center text-display font-bold tracking-[-0.02em]">
+  <h1
+    class="mb-5.5 pt-14 text-center text-display font-semibold tracking-[-0.02em] text-base-foreground"
+  >
     {{
       text ??
       (proto.signedIn && shownName

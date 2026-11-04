@@ -1,0 +1,456 @@
+/*
+ * What the kit's parts do in context, in one place. Variants (ui/*.variants.ts)
+ * say what a part is; these say how it behaves on the page: a card over the
+ * content is translucent, a field in a filter bar is a pill, a field in a card
+ * is a form field. Hover and picked states are derived from the text colour
+ * (`color-mix` over `base-foreground`), not new tokens.
+ *
+ * `:root:root` matches the weight needed to pass the prototype's button and
+ * field reset (ui/tokens.css).
+ */
+
+/* ── Surfaces over the content: translucent, blurred, no flat grey on hover ─ */
+:root:root .proto-main .bg-card-background {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  backdrop-filter: blur(24px);
+}
+:root:root .proto-main .hover\:bg-card-background-hover:hover {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root:root .proto-main .bg-card-background\/60 {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  backdrop-filter: blur(24px);
+}
+:root:root .proto-main .hover\:bg-card-background:hover {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* No divider inside a card, so no blank band for its padding either. */
+:root:root .edge-shine .border-t.border-border-default {
+  padding-top: 0;
+}
+/* Hover never makes a card or its picture bigger: the surface answers. */
+:root:root .proto-ui :is(.group, [class*='-card'], [role='button']):hover img,
+:root:root
+  .proto-ui
+  .group:hover
+  :is(.group-hover\:scale-\[1\.04\], .group-hover\:scale-\[1\.03\]) {
+  transform: none !important;
+}
+/* Stat strips: a soft rule between tiles, inset from the card's edges. */
+:root:root .proto-main .grid.divide-x > :not(:first-child) {
+  position: relative;
+  border-left-color: transparent;
+}
+:root:root .proto-main .grid.divide-x > :not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: -1px;
+  width: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+/* Avatars: solid, with a ring in the colour behind them. */
+:root:root .proto-main .ring-card-background {
+  --tw-ring-color: var(--color-content-background);
+}
+:root:root .proto-main .rounded-full.opacity-35 {
+  opacity: 1;
+}
+:root:root .proto-main .rounded-full.opacity-35 > * {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-content-background)
+  );
+  color: var(--color-subtle-foreground);
+}
+:root:root .proto-main .-space-x-1:has(> .rounded-full) > * {
+  --tw-ring-color: color-mix(
+    in oklch,
+    var(--color-card-background) 72%,
+    var(--color-content-background)
+  );
+}
+:root:root .proto-main button :is(.-space-x-1, .-space-x-1\.5) > * {
+  --tw-ring-color: color-mix(
+    in oklch,
+    var(--color-secondary-background) 80%,
+    var(--color-content-background)
+  );
+}
+
+/* Over Home's light, controls read as controls: lifted, not a dark hole. */
+:root:root .proto-home :is(.bg-secondary-background, [role='group']) {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background)) 82%,
+    transparent
+  );
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+:root:root .proto-home :is(.text-subtle-foreground, .text-muted-foreground) {
+  text-shadow: 0 1px 12px color-mix(in oklch, var(--color-content-background) 70%, transparent);
+}
+
+/* ── Tab tracks (SegmentedControl) ─────────────────────────────────────── */
+:root:root .proto-main [role='group']:has(> button[data-state]) {
+  gap: 2px;
+  border-color: transparent;
+  border-radius: var(--radius-track);
+  padding: 3px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .proto-main [role='group']:has(> button[data-state]) > button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-track-item);
+}
+:root:root .proto-main [role='group'] > button[data-state='on'] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+}
+/* Tabs show only their names. */
+:root:root .proto-ui [role='group'] > button[data-state] > .tabular-nums {
+  display: none;
+}
+
+/* ── Fields ───────────────────────────────────────────────────────────── */
+/* In a filter bar: a pill. Muted label, white value, no edge. */
+:root:root
+  .proto-main
+  :is(
+    button[role='combobox'],
+    label:has(> input[type='search'], > input:not([type])),
+    .h-8.border-border-default
+  ) {
+  height: 34px;
+  border-color: transparent;
+  border-radius: var(--radius-track);
+  padding-inline: 14px 12px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+:root:root .proto-main button[role='combobox']:hover,
+:root:root .proto-main button[role='combobox'][data-state='open'] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+}
+:root:root .proto-main label:has(> input):focus-within {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+:root:root .proto-main :is(textarea, input):focus-visible {
+  outline: none;
+}
+/* With many filters, the search gives way first. */
+:root:root
+  .proto-main
+  .flex:not(.flex-col)
+  > label:has(> input[type='search'], > input:not([type])) {
+  min-width: 150px;
+  flex: 0 1 220px;
+}
+:root:root .proto-main :is(.ml-auto, .flex):has(> label > input) {
+  min-width: 0;
+}
+:root .proto-ui.proto-ui.proto-ui label:has(> input) > input,
+:root .proto-ui.proto-ui.proto-ui label:has(> input) > input::placeholder {
+  font-size: 13px;
+}
+/* In a card (settings, dialogs): a form field, taller and softer. */
+:root:root
+  .proto-main
+  :is(.rounded-card, [class*='rounded-card'])
+  :is(button[role='combobox'], label:has(> input), .h-8.border-border-default) {
+  height: 40px;
+  border-radius: 12px;
+  padding-inline: 14px 12px;
+}
+:root:root .proto-main :is(.rounded-card, [class*='rounded-card']) textarea {
+  border-color: transparent;
+  border-radius: 12px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+/* Secondary: the fields' lifted surface, no edge, a shade lighter on hover. */
+:root:root .proto-ui button.border-border-strong.bg-card-background-hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+:root:root .proto-ui button.border-border-strong.bg-card-background-hover:hover {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 13%, transparent);
+}
+:root:root
+  .proto-main
+  :is(.rounded-card, [class*='rounded-card'])
+  button.border-border-strong.bg-card-background-hover {
+  height: 40px;
+  border-radius: 12px;
+}
+/* Text links: the focus ring sits around the label with room; the arrow
+   nudges on hover. Negative margins take the padding back, so nothing moves. */
+:root:root .proto-ui button.h-auto.px-0.rounded-control {
+  margin-block: -2px;
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-track-item);
+}
+:root:root .proto-ui button.h-auto.px-0.rounded-control:not(.ml-auto) {
+  margin-left: -6px;
+}
+:root:root .proto-ui button.h-auto.px-0.rounded-control:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+:root:root .proto-ui button.h-auto.px-0.rounded-control > svg {
+  transition: translate 160ms ease;
+}
+:root:root .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+  translate: 2px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:root .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+    translate: none;
+  }
+}
+
+/* ── Menus, popovers, selects: one family ─────────────────────────────── */
+/* Translucent and heavily blurred, so what is behind reads as colour. Radius
+   14 around 6 of padding, so items nest at 8. Grows from its trigger. */
+:root:root .proto-ui:is([role='menu'], [role='listbox']),
+:root:root [data-reka-popper-content-wrapper] > .proto-ui[role='dialog'] {
+  border-color: transparent;
+  border-radius: var(--radius-float);
+  padding: 6px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 74%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.8);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 18px 48px -16px rgb(0 0 0 / 0.65);
+  transform-origin: var(
+    --reka-dropdown-menu-content-transform-origin,
+    var(--reka-popover-content-transform-origin, var(--reka-select-content-transform-origin))
+  );
+}
+:root:root .proto-ui:is([role='menu'], [role='listbox'])[data-state='open'],
+:root:root [data-reka-popper-content-wrapper] > .proto-ui[role='dialog'][data-state='open'] {
+  animation: menu-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:root .proto-ui:is([role='menu'], [role='listbox'])[data-state='open'] {
+    animation-name: fade-in;
+  }
+}
+:root:root .proto-ui[role='listbox'] {
+  min-width: max(var(--reka-select-trigger-width, 0px), 180px);
+}
+:root:root
+  .proto-ui
+  :is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option']) {
+  min-height: 34px;
+  gap: 10px;
+  border-radius: var(--radius-control);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  white-space: nowrap;
+  transition: background-color 120ms ease;
+}
+:root:root
+  .proto-ui
+  :is(
+    [role='menuitem'],
+    [role='menuitemradio'],
+    [role='menuitemcheckbox'],
+    [role='option']
+  )[data-highlighted] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root:root
+  .proto-ui
+  :is(
+    [role='menuitem'],
+    [role='menuitemradio'],
+    [role='menuitemcheckbox'],
+    [role='option']
+  )[data-highlighted]
+  > svg {
+  color: var(--color-base-foreground);
+}
+/* The current pick: a raised row. */
+:root:root
+  .proto-ui:is([role='menu'], [role='listbox'])
+  :is(
+    [role='menuitem']:has(> .lucide-check-icon),
+    [role='menuitemradio'][data-state='checked'],
+    [role='option'][data-state='checked']
+  ) {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+}
+:root:root
+  .proto-ui:is([role='menu'], [role='listbox'])
+  :is(
+    [role='menuitem']:has(> .lucide-check-icon),
+    [role='menuitemradio'][data-state='checked'],
+    [role='option'][data-state='checked']
+  )[data-highlighted] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+/* Two-line items: the second line a step smaller and quieter. */
+:root:root
+  .proto-ui
+  :is([role='menuitem'], [role='menuitemcheckbox'], [role='option'])
+  .flex-col
+  > span
+  + span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+:root:root .proto-ui:is([role='menu'], [role='listbox']) .font-mono {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+:root:root .ds-menu-label {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+:root:root .ds-menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root:root
+  .proto-ui:is([role='menu'], [role='listbox'])
+  :is([role='separator'], .ds-menu-sep):has(+ .ds-menu-label) {
+  display: none;
+}
+
+/* ── Credits row: a soft tile, apart from the workspace under it ──────── */
+:root .proto-ui.proto-ui.proto-ui .ds-credits {
+  margin-bottom: 2px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .ds-credits:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────────── */
+:root:root .ds-tooltip {
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  background: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-card-background)) 94%,
+    transparent
+  );
+  backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 8px 24px -8px rgb(0 0 0 / 0.5);
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* ── Prompt box on Home (PromptBox with `.ds-prompt`): one line, grows on
+      focus, over what is below it. ───────────────────────────────────── */
+:root:root .proto-main .ds-prompt.bg-card-background {
+  background-color: color-mix(in oklch, var(--color-card-background) 78%, transparent);
+  backdrop-filter: blur(28px) saturate(1.2);
+}
+.ds-prompt-slot {
+  position: relative;
+  z-index: 5;
+  height: 54px;
+}
+.ds-prompt-slot > .ds-prompt {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.ds-prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 10px;
+  padding: 8px 8px 8px 20px;
+  border-radius: 24px;
+}
+.ds-prompt > :first-child:not(.relative) {
+  grid-column: 1 / -1;
+}
+.ds-prompt > .relative {
+  align-self: center;
+  padding-top: 0;
+}
+.ds-prompt .relative > div[aria-hidden] {
+  padding-top: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ds-prompt textarea {
+  height: 1lh;
+  min-height: 1lh;
+  field-sizing: content;
+  max-height: 6lh;
+  transition: min-height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ds-prompt textarea:focus {
+  min-height: 3lh;
+}
+.ds-prompt > .mt-1\.5 {
+  margin-top: 0;
+  gap: 6px;
+}
+.ds-prompt .mt-1\.5 button > .text-subtle-foreground:not(:last-child) {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-prompt textarea {
+    transition: none;
+  }
+}
+:root:root .proto-main .ds-prompt.ds-prompt {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 12px 32px -16px rgb(0 0 0 / 0.5);
+}
+:root:root .proto-main .ds-prompt.ds-prompt:focus-within {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
+    0 12px 32px -16px rgb(0 0 0 / 0.5);
+}
+:root:root .proto-main .ds-prompt.ds-prompt {
+  outline: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  outline-offset: -1px;
+}
+:root:root .proto-main .ds-prompt.ds-prompt:focus-within {
+  outline-color: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
+:root:root .proto-main .ds-prompt.ds-prompt {
+  transition:
+    border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    outline-color 200ms ease,
+    background-color 200ms ease;
+}
+:root:root .proto-main .ds-prompt.ds-prompt:has(textarea:focus) {
+  border-radius: 20px;
+}

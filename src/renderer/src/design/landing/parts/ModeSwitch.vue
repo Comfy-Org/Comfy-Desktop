@@ -18,7 +18,7 @@ const model = defineModel<string>({ required: true })
   <div
     role="radiogroup"
     aria-label="Mode"
-    class="inline-flex h-8.5 items-center gap-0.5 rounded-control border border-border-default bg-secondary-background p-0.5"
+    class="inline-flex h-8.5 items-center gap-0.5 rounded-track border border-border-default bg-secondary-background p-0.5"
   >
     <button
       v-for="o in options"
@@ -28,7 +28,7 @@ const model = defineModel<string>({ required: true })
       :aria-checked="model === o.value"
       :aria-label="o.label"
       :class="[
-        'flex h-full items-center rounded-[7px] px-2 text-ui transition-colors duration-200 ease-out outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
+        'flex h-full items-center rounded-track-item px-2 text-ui transition-colors duration-200 ease-out outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
         model === o.value
           ? 'bg-secondary-background-hover text-base-foreground'
           : 'text-muted-foreground hover:text-base-foreground'

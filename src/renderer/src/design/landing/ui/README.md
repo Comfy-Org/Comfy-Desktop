@@ -19,12 +19,14 @@ frontend (`base-foreground`, `muted-foreground`, `secondary-background`,
 | Scale  | Tokens                                                                                                                       |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | Text   | `micro` 11 · `meta` 11.5 · `ui` 12.5 · `body` 13 · `heading` 15 · `title` 22 · `display` 34                                  |
-| Radius | `panel` 16 · `card` 12 · `control` 8 · `inner` 6 · `min` 4 · `dialog` 20                                                     |
+| Radius | `panel` 16 · `float` 14 (shell panels, menus) · `card` 12 · `track` 10 (tab tracks, filter fields) · `control` 8 · `track-item` 7 · `min` 4 |
 | Shadow | `elev`, `elev-hover`, `glass`, `popover`, `dialog`, `highlight`                                                              |
 | Color  | `canvas`, `card-background(-hover)`, `popover-background`, `glass`, `inverted-*`, `media-overlay`, `scrim`, `status-running` |
 
 **Nested radius rule:** inner radius = outer radius − padding between them,
-never below `min` (panel 16 /p8 → 8, card 12 /p4 → media 8, menu 12 /p6 → item 6).
+never below `min` (panel 16 /p8 → 8, card 12 /p4 → media 8, float 14 /p6 → item 8, track 10 /p3 → item 7).
+
+**Context (`controls.css`):** what a part does on the page (a card over the content is translucent, a field in a filter bar is a pill, a field in a card is a form field). Hover and picked states are derived from `base-foreground` with `color-mix`, not new tokens.
 
 ## Components
 

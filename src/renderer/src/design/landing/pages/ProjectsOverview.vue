@@ -58,10 +58,7 @@ const controls = reactive({
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="All projects"
-      :description="`Every project in ${workspace.name}: activity, people and spend.`"
-    >
+    <PageHeader title="All projects">
       <template #actions
         ><Button variant="primary" size="lg" @click="toast('New project - pick its build')"
           ><Plus :size="15" />New project</Button

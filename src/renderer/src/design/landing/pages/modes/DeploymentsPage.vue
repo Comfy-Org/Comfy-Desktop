@@ -43,10 +43,7 @@ const spaceOf = (id?: string) => (id ? SPACES.find((s) => s.id === id) : undefin
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="Deployments"
-      description="A fixed version of a build, on GPUs that scale with traffic, behind an endpoint."
-    >
+    <PageHeader title="Deployments">
       <template #actions>
         <Select
           v-if="proto.projects && proto.signedIn"

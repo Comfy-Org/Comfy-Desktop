@@ -13,10 +13,7 @@ const KEYS = [
 
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
-    <PageHeader
-      title="API keys"
-      description="Workspace keys for calling dedicated builds from your code."
-    >
+    <PageHeader title="API keys">
       <template #actions
         ><Button variant="primary" size="lg" @click="toast('New API key')"
           ><Plus :size="15" />New key</Button

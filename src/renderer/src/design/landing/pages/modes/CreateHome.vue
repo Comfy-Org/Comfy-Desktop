@@ -54,14 +54,19 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
       <component :is="a.icon" :size="14" />{{ a.label }}
     </Button>
   </div>
-  <div :class="['mx-auto w-full max-w-300 px-10', noLocal ? 'h-full overflow-hidden' : 'pb-16']">
+  <div
+    :class="[
+      'proto-home mx-auto w-full max-w-300 px-10',
+      noLocal ? 'h-full overflow-hidden' : 'pb-16'
+    ]"
+  >
     <!-- New users get the setup choice, centred on a full screen. -->
     <section :class="['flex flex-col', noLocal ? 'h-full' : 'pt-12 pb-4']">
       <div class="flex flex-1 flex-col justify-center pt-10">
         <StartPaths v-if="noLocal" />
         <template v-else>
           <Greeting />
-          <PromptBox v-if="can.agent" target />
+          <div v-if="can.agent" class="ds-prompt-slot"><PromptBox target class="ds-prompt" /></div>
           <QuickLaunch />
         </template>
       </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronsUpDown, CreditCard, LogOut, UserCog, Users } from 'lucide-vue-next'
+import { ChevronsUpDown, Coins, CreditCard, LogOut, UserCog, Users } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../ui/Button.vue'
 import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
@@ -40,10 +40,10 @@ function signOut(): void {
     <Button
       v-if="shownCredits"
       variant="ghost"
-      class="h-8 justify-start gap-2.5 px-3 text-base-foreground"
+      class="ds-credits h-9 justify-start gap-2.5 rounded-track px-3 text-base-foreground"
       @click="toast('Manage plan & credits')"
     >
-      <span class="size-3.5 shrink-0 rounded-full border-[1.5px] border-[#cfc9b8]" />
+      <Coins :size="15" class="shrink-0 text-[#ddbd31]" />
       <span class="sidebar-label text-left">Credits</span>
       <span class="tabular-nums">{{ shownCredits }}</span>
     </Button>
