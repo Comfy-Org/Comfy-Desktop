@@ -6,7 +6,6 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
-  CircleCheck,
   Copy,
   HardDrive,
   Laptop,
@@ -370,47 +369,37 @@ function segFill(i: number): number {
               </div>
             </div>
 
-            <section class="mss-tiles" aria-label="Install summary">
-              <div class="mss-tile" :class="lowSpace && 'is-bad'">
-                <span class="mss-tile-icon"><HardDrive :size="16" /></span>
-                <span class="mss-sum-val">
-                  <span class="mss-sum-key">Location</span>
-                  <span class="truncate">{{ where }}</span>
-                  <span :class="lowSpace ? 'text-status-danger' : 'text-subtle-foreground'"
-                    >{{ freeLabel(free) }} free · ~{{ REQUIRED_GB }} GB required</span
+            <!-- What gets installed: one grouped list, as the Home's settings.
+                 Only a problem gets a mark. -->
+            <dl class="mss-summary" aria-label="Install summary">
+              <div class="mss-row" :class="lowSpace && 'is-bad'">
+                <dt><HardDrive :size="15" />Location</dt>
+                <dd>
+                  <span class="truncate text-base-foreground">{{ where }}</span>
+                  <span class="mss-row-meta"
+                    ><TriangleAlert v-if="lowSpace" :size="13" aria-label="Low Disk Space" />{{
+                      freeLabel(free)
+                    }}
+                    free · ~{{ REQUIRED_GB }} GB required</span
                   >
-                </span>
-                <TriangleAlert
-                  v-if="lowSpace"
-                  :size="16"
-                  class="mss-bad"
-                  aria-label="Low Disk Space"
-                />
-                <CircleCheck v-else :size="16" class="mss-ok" aria-label="Checked" />
+                </dd>
               </div>
-              <div class="mss-tile">
-                <span class="mss-tile-icon"><Package :size="16" /></span>
-                <span class="mss-sum-val">
-                  <span class="mss-sum-key">Version</span>
-                  <span>ComfyUI {{ DETECTED.version }} · Stable</span>
-                  <span class="text-subtle-foreground">{{ DETECTED.downloadGb }} GB download</span>
-                </span>
-                <CircleCheck :size="16" class="mss-ok" aria-label="Checked" />
+              <div class="mss-row">
+                <dt><Package :size="15" />Version</dt>
+                <dd>
+                  <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
+                  <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
+                </dd>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
-              <div
-                v-if="localSetup.machine === 'legacy' && flow.bringOver"
-                class="mss-tile is-wide"
-              >
-                <span class="mss-tile-icon"><ArrowLeftRight :size="16" /></span>
-                <span class="mss-sum-val">
-                  <span class="mss-sum-key">Migrate existing instance</span>
-                  <span>Workflows, models, and settings</span>
-                  <span class="text-subtle-foreground">From your existing ComfyUI instance</span>
-                </span>
-                <CircleCheck :size="16" class="mss-ok" aria-label="Checked" />
+              <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
+                <dt><ArrowLeftRight :size="15" />Migrate</dt>
+                <dd>
+                  <span class="text-base-foreground">Workflows, models, and settings</span>
+                  <span class="mss-row-meta">From your existing ComfyUI instance</span>
+                </dd>
               </div>
-            </section>
+            </dl>
           </template>
 
           <!-- Intel Mac: today's Unsupported Hardware alert. A local install
@@ -435,7 +424,7 @@ function segFill(i: number): number {
         </div>
         <footer class="mar-wizard-foot mss-foot">
           <Button v-if="flow.takeover" variant="ghost" size="lg" @click="flow.step = 'first'"
-            >Back</Button
+            ><ArrowLeft :size="14" />Back</Button
           >
           <!-- Today's low-space warning: it asks, it doesn't block. -->
           <template v-if="flow.confirmLowDisk">
@@ -540,7 +529,9 @@ function segFill(i: number): number {
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" @click="discardChanges">Back</Button>
+          <Button variant="ghost" size="lg" @click="discardChanges"
+            ><ArrowLeft :size="14" />Back</Button
+          >
           <span class="mr-auto"></span>
           <Button
             v-if="method === 'remote'"
@@ -598,7 +589,7 @@ function segFill(i: number): number {
         </div>
         <footer class="mar-wizard-foot mss-foot">
           <Button variant="ghost" size="lg" class="mr-auto" @click="flow.step = 'setup'"
-            >Back</Button
+            ><ArrowLeft :size="14" />Back</Button
           >
           <Button size="lg" @click="installWith(null)">Skip &amp; Install</Button>
           <Button variant="primary" size="lg" @click="installWith(flow.picked)">Install</Button>
@@ -701,7 +692,9 @@ function segFill(i: number): number {
 
         <footer class="mar-wizard-foot mss-foot">
           <template v-if="failed">
-            <Button variant="ghost" size="lg" class="mr-auto" @click="backFromError">Back</Button>
+            <Button variant="ghost" size="lg" class="mr-auto" @click="backFromError"
+              ><ArrowLeft :size="14" />Back</Button
+            >
             <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
           </template>
           <template v-else-if="!flow.confirmCancel">

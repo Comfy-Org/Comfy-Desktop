@@ -357,6 +357,51 @@
   }
 
   /* What the checks found: two tiles, the fix spans both. */
+  /* Set up summary: a grouped list, label column then value and its meta. */
+  .mss-summary {
+    display: grid;
+    margin-top: 12px;
+    border-radius: 12px;
+    background: oklch(0.6 0 0 / 0.06);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  }
+  .mss-row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-row + .mss-row {
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06);
+  }
+  .mss-row dt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-row dd {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0;
+  }
+  .mss-row-meta {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-subtle-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .mss-row.is-bad .mss-row-meta {
+    color: var(--color-status-danger);
+  }
   .mss-tiles {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -808,24 +853,20 @@
     width: 100%;
     max-width: 640px;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     margin-block: auto;
-    text-align: center;
+    text-align: left;
   }
-  /* The Home's display heading (parts/Greeting.vue): 34px, top-down fade. */
+  /* The Home pages' title (pages/MarPage.vue): 24px semibold, left. */
   .mss-first-title {
-    background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    font-size: var(--text-display);
-    font-weight: 700;
-    line-height: var(--text-display--line-height);
-    letter-spacing: -0.02em;
+    color: var(--color-base-foreground);
+    font-size: var(--text-title, 24px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
     text-wrap: balance;
   }
   .mss-first-lead {
-    margin-top: 8px;
+    margin-top: 6px;
     font-size: var(--text-ui);
     line-height: var(--text-ui--line-height);
   }
@@ -864,7 +905,7 @@
   .mss-first-bottom {
     display: flex;
     width: 100%;
-    max-width: 760px;
+    max-width: 640px;
     margin-top: 48px;
     align-items: flex-end;
     justify-content: space-between;
@@ -949,18 +990,14 @@
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 {
   padding-right: 0;
-  background: linear-gradient(180deg, oklch(0.995 0.001 285) 30%, oklch(0.7 0.012 285));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  font-size: var(--text-display);
-  font-weight: 700;
-  line-height: var(--text-display--line-height);
-  letter-spacing: -0.02em;
+  color: var(--color-base-foreground);
+  font-size: var(--text-title, 24px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
   text-align: left;
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 + :is(p, [id]) {
-  margin-top: 8px;
+  margin-top: 6px;
   margin-bottom: 24px;
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
