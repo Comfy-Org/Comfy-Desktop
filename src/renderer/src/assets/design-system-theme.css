@@ -1,11 +1,13 @@
 /*
- * Desktop's look is the Void theme from @comfyorg/design-system. The block below
- * holds the few tokens only Desktop's own screens use.
+ * Desktop's look is the Void theme from @comfyorg/design-system, with a white
+ * primary accent matching Desktop's monochrome controls and actions.
  */
 
 @import '@comfyorg/design-system/css/themes/void.css';
 
 @theme static {
+  --color-primary: var(--color-foreground);
+
   --color-snapshot-chip: #202020;
   --color-snapshot-ring: #262729;
 
