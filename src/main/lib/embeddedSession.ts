@@ -59,7 +59,7 @@ function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
   return expected !== null && originOf(currentUrl) === expected
 }
 
-/** The sender is the main frame of a registered comfyView, on its own loopback ComfyUI. */
+/** The sender is the main frame of a local install's comfyView, on its own loopback ComfyUI. */
 export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender): boolean {
   const entry = findEntryByComfySender(sender)
   if (!entry || !senderFrame) return false
