@@ -450,7 +450,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     }
   ]
 
-  // Minimal section so the tab appears; SnapshotTab.vue handles rendering.
+  // Minimal section so the tab appears; SnapshotsView.vue handles rendering.
   if (installed && installation.installPath) {
     sections.push({
       tab: 'snapshots',

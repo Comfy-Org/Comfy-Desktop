@@ -373,8 +373,8 @@ watch(
 
 onMounted(async () => {
   // Register the brand-takeover surface so `useMigrateAction` can route
-  // chain-migrate confirms here instead of the legacy Modal. Other
-  // callsites (MigrationBanner, DetailModal) keep the Modal default.
+  // chain-migrate confirms here instead of the legacy Modal. Instance
+  // settings keep the Modal default.
   // Wired before bootstrap because the surface is read by the
   // FirstUseTakeover chain — if it landed mid-takeover (e.g. due to a
   // slow bootstrap) the chain would silently fall back to the modal.
@@ -482,8 +482,7 @@ onMounted(async () => {
   // duplicate listener here.
 
   try {
-    // Initialize stores / prefs needed by the embedded DetailModal that
-    // backs the unified Settings modal's "ComfyUI Settings" tab.
+    // Initialize stores and preferences needed by the dashboard and settings.
     // installationStore wires its own onInstallationsChanged listener.
     const shouldOpenFirstUse =
       urlFirstUsePending ||

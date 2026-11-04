@@ -50,9 +50,8 @@ const emit = defineEmits<{
   pick: [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
   'show-new-install': []
-  /** A long-running action was kicked off from the inline Manage...
-   *  DetailModal. Forwarded to PanelApp so it can wire the operation
-   *  through `progressStore`. */
+  /** Forward a long-running dashboard action to PanelApp so it can wire
+   *  the operation through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
 }>()
 
@@ -166,9 +165,7 @@ const TILES_PER_ROW = 4
 const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TILES_PER_ROW))
 
 // --- Manage / context menu ---
-// All Manage routes go through `window.api.openInstancePicker` (the
-// picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
-// route is retired.
+// All Manage routes go through `window.api.openInstancePicker` (the picker popup).
 
 function canPromoteToWorkspace(inst: Installation): boolean {
   return (
@@ -195,8 +192,7 @@ const {
 } = useInstallContextMenu({
   onManage: openInstallManager,
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
-  // pipeline used by every other long op fires here too, without the
-  // brief ManageInstallModal flash that the autoAction route produced.
+  // pipeline used by every other long op fires here too.
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
   canPromoteToWorkspace
 })

@@ -581,8 +581,7 @@ function onLaunch({
 
     // A relaunch implicitly means "land me in the live ComfyUI view",
     // so force the host's activePanel back to `'comfy'`. Without this, a
-    // launch kicked off from a non-comfy panel (e.g. the install-settings
-    // DetailModal) would leave the body stranded on the lifecycle /
+    // launch kicked off from a non-comfy panel would leave the body stranded on the lifecycle /
     // settings panel — `refreshComfyTabBody` early-returns on
     // `activePanel !== 'comfy'`. The trailing `refreshComfyTabBody`
     // still handles the comfy-lifecycle → comfy body-mode swap when the
@@ -1806,7 +1805,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           }
 
           // Picker-initiated multi-instance op telemetry. The picker runs
-          // ops inline (PickerInlineProgress) rather than handing off to the
+          // ops inline in the settings content rather than handing off to the
           // panel ProgressModal, so neither `action.invoked` nor `op.result`
           // fires from the renderer for this path. Emit both here, tagged
           // `source: 'picker'`, symmetric with the panel path (which emits

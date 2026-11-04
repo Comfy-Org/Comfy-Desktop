@@ -34,15 +34,6 @@ vi.mock('../composables/useModal', () => ({
 }))
 
 // Stub the heavy children so we can assert which sub-panel is rendered.
-vi.mock('../views/DetailModal.vue', () => ({
-  default: {
-    name: 'DetailModal',
-    // DetailModal has no `inline` prop — it renders one way and the
-    // parent owns the close behaviour.
-    props: ['installation', 'initialTab', 'autoAction'],
-    template: '<div data-testid="detail-modal" :data-installation-id="installation?.id" />'
-  }
-}))
 vi.mock('../views/ProgressModal.vue', () => ({
   default: {
     name: 'ProgressModal',
