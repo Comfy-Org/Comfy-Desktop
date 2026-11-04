@@ -9,6 +9,7 @@ import { envById } from './env'
 import { allWorkflows } from '../../gallery'
 import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
 import { PROJECTS } from '../../mock'
+import { can } from '../../milestones'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 
 /**
@@ -38,7 +39,10 @@ const rows = computed<Row[]>(() =>
         page: `environment:${i.id}` as Page,
         label: i.name,
         envId: i.id,
-        count: allWorkflows.value.filter((w) => w.envId === i.id).length,
+        // Nothing links a workflow to its build before the breadcrumb milestone.
+        count: can.value.breadcrumb
+          ? allWorkflows.value.filter((w) => w.envId === i.id).length
+          : undefined,
         live: i.state === 'running'
       }))
 )

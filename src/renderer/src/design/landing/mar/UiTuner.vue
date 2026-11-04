@@ -11,6 +11,7 @@ import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
 import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
+import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -127,6 +128,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
+  { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -279,6 +281,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('buildCard')" label="Build card">
             <Select v-model="buildCard.id" :options="BUILD_CARDS" class="w-full" />
+          </Row>
+          <Row :show="shows('buildPage')" label="Build page">
+            <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />

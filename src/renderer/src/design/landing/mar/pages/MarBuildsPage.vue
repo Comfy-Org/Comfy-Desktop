@@ -234,7 +234,8 @@ function open(b: Build): void {
 // The menu keeps what's rare or destructive; the frequent actions sit on
 // the card and the row, and the page's tabs are one click away.
 function lines(b: Build): MenuLine[] {
-  const own = b.id !== 'cloud'
+  // A build's own tabs, where its page has them (the Builds milestone).
+  const own = b.id !== 'cloud' && !can.value.breadcrumb
   return [
     ...(own
       ? [

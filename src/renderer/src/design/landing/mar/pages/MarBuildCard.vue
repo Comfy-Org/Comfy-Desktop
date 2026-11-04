@@ -196,9 +196,11 @@ const emit = defineEmits<{
   color: var(--color-muted-foreground);
   font-size: 12px;
 }
+/* Why it didn't start, in plain words: the Failed to start chip is the
+   one red signal. */
 .mar-bc-error {
   overflow: hidden;
-  color: var(--color-status-danger);
+  color: var(--color-muted-foreground);
   text-overflow: ellipsis;
 }
 .mar-bc-foot {
