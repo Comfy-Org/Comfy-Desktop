@@ -443,6 +443,66 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
+  describe('an agent the user forces on by hand', () => {
+    const NEWER = 'comfyui-frontend-package==1.59.0.dev2'
+    let overrides: string[] = []
+
+    /** Move v0.2.0 to a commit whose requirements pin core's older frontend. */
+    const pinCoreFrontend = (): string => {
+      const git = (...args: string[]): string =>
+        execFileSync('git', args, { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' })
+          .toString()
+          .trim()
+      git('checkout', 'v0.2.0', '--detach')
+      fs.writeFileSync(
+        path.join(comfyuiDir, 'requirements.txt'),
+        'torch==2.0\nfoo==2.0\ncomfyui-frontend-package==1.58.5\n'
+      )
+      git('commit', '-am', 'pin frontend')
+      git('tag', '-f', 'v0.2.0')
+      const sha = git('rev-parse', 'HEAD')
+      git('checkout', 'v0.1.0', '--detach')
+      return sha
+    }
+
+    const run = async (launchArgs: string, installed: string): Promise<void> => {
+      spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, pinCoreFrontend())
+      overrides = []
+      spawnState.uvHandler = (args: string[]) => {
+        if (args.includes('list')) {
+          return fakeProc({
+            stdout: [JSON.stringify([{ name: 'comfyui-frontend-package', version: installed }])]
+          })
+        }
+        const at = args.indexOf('--override')
+        if (at >= 0) overrides.push(fs.readFileSync(path.join(installPath, args[at + 1]!), 'utf-8'))
+        return fakeProc({ exitCode: 0 })
+      }
+      const opts = makeBaseOpts(installPath)
+      opts.installation = { ...opts.installation, launchArgs }
+      expect((await runComfyUIUpdate(opts)).ok).toBe(true)
+    }
+
+    it("keeps a newer installed frontend over core's pin", async () => {
+      await run('--listen --enable-agent', '1.59.0.dev2')
+
+      expect(overrides).toEqual([`${NEWER}\n`])
+      expect(fs.existsSync(path.join(installPath, '.update-frontend-override.txt'))).toBe(false)
+    })
+
+    it('leaves the frontend to core without a hand-typed --enable-agent', async () => {
+      await run('--listen', '1.59.0.dev2')
+
+      expect(overrides).toEqual([])
+    })
+
+    it("leaves the frontend to core when the installed one is not newer than core's", async () => {
+      await run('--listen --enable-agent', '1.57.0')
+
+      expect(overrides).toEqual([])
+    })
+  })
+
   describe('git-script-failure rollback', () => {
     it('rolls the source back when the update script exits non-zero after moving HEAD', async () => {
       // Simulate update_comfyui.py advancing the branch ref, then failing the

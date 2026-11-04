@@ -9,9 +9,11 @@ import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import { stripAnsi } from './stderrTail'
+import { parseArgs } from './util'
 import {
   FRONTEND_PACKAGE,
   agentGoBehindAgent,
+  compareVersions,
   coreFrontendVersion,
   effectiveAgentRequirements,
   coreFileInstalled,
@@ -514,7 +516,8 @@ export type Deferral = 'agent' | 'update'
  * core's own file. On a fresh install the override waits for core's file and then goes in on the
  * same launch. What does not download in time is handed to `onDeferred` for a background download;
  * a failure of core's file no download can fix goes to `onCoreFailed` instead. Returns the decision
- * to report, if any.
+ * to report, if any. `handTyped`: the user put `--enable-agent` in their own launch args, so with
+ * no override a working agent they installed is kept over core's placeholder too.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -523,7 +526,8 @@ export async function installAgentRequirements(
   override?: unknown,
   overrideState: AgentOverrideState | null = null,
   onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void,
-  onCoreFailed?: (report: InstallReport) => void
+  onCoreFailed?: (report: InstallReport) => void,
+  handTyped = false
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
@@ -608,17 +612,20 @@ export async function installAgentRequirements(
     prepare
   )
   if (signal?.aborted || decision?.decision === 'applied') return decision
-  // Core's file would put the placeholder over a working agent: keep that agent instead.
-  if (decision && !(decision.decision === 'refused' && decision.reason === 'core_first')) {
+  // Core's file would put the placeholder over a working agent: keep that agent instead. Without an
+  // override only for a hand-typed flag: a campaign answer that dropped its override means core's.
+  if (
+    decision ? !(decision.decision === 'refused' && decision.reason === 'core_first') : handTyped
+  ) {
     kept = await installedWorkingAgent(plan, overrideState, signal)
     if (signal?.aborted) return decision
   }
   if (decision?.decision === 'deferred') await defer(false)
-  if (kept !== null && decision) {
+  if (kept !== null) {
     sendOutput(
       `Keeping the installed agent ${kept} instead: ComfyUI's agent requirements pin only a placeholder\n`
     )
-    return { ...decision, kept }
+    return decision && { ...decision, kept }
   }
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
@@ -658,6 +665,37 @@ export async function installedWorkingAgent(
     return keepableAgent(coreText, listed, state)
   } catch {
     // Keeping is an optimisation: a version shape it can't read must never stop the launch.
+    return null
+  }
+}
+
+/**
+ * The frontend an update keeps under an agent the user forces on by hand, as `name==version` for
+ * uv's `--override`: their own launch args carry `--enable-agent` and the installed frontend is
+ * newer than the one `requirementsText` pins, which may have no Agent button. Null otherwise, or
+ * when anything can't be read. Never throws.
+ */
+export async function handForcedFrontend(
+  installation: InstallationRecord,
+  requirementsText: string,
+  uvPath: string,
+  pythonPath: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const pinned = coreFrontendVersion(requirementsText)
+  const { launchArgs, installPath } = installation
+  if (pinned === null || typeof launchArgs !== 'string' || typeof installPath !== 'string')
+    return null
+  if (!parseArgs(launchArgs).includes(ENABLE_AGENT_ARG)) return null
+  const listed = await listInstalled({ reqPath: '', uvPath, pythonPath, installPath }, signal)
+  const installed = parseInstalled(listed ?? '')?.find(
+    (p) => normalizePackageName(p.name) === FRONTEND_PACKAGE
+  )?.version
+  try {
+    return installed !== undefined && compareVersions(installed, pinned) > 0
+      ? `${FRONTEND_PACKAGE}==${installed}`
+      : null
+  } catch {
     return null
   }
 }

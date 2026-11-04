@@ -1033,6 +1033,8 @@ async function runLaunch(
   let desktopAddedAssets = false
   /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
   let agentUnanswered = false
+  /** The user typed `--enable-agent` in their own launch args. */
+  let agentHandTyped = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
@@ -1464,6 +1466,7 @@ async function runLaunch(
     const split = splitLaunchCommand(launchCmd)
     if (split) {
       const { prefixArgs, userArgs, mainPyAbs, comfyuiDir } = split
+      agentHandTyped = userArgs.includes('--enable-agent')
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
       // Read here rather than reused from `revision` above: that one falls back to the
       // record when HEAD is unreadable, which is the very disagreement being checked for.
@@ -1660,7 +1663,8 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
-      }
+      },
+      agentHandTyped
     )
     if (abort.signal.aborted) {
       startHandedBack()

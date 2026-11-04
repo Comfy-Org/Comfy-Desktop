@@ -3685,6 +3685,42 @@ describe('agent requirements at launch', () => {
     expect(spawnArgs).toContain('--enable-agent')
   })
 
+  describe("with core's placeholder agent and a real agent installed", () => {
+    beforeEach(() => {
+      fs.writeFileSync(agentReqPath(), 'comfy-agent==0.0.0.dev0\n')
+      pipHarness.installed = JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc7' }])
+    })
+
+    afterEach(() => {
+      pipHarness.installed = '[]'
+    })
+
+    it('keeps the agent the user installed when they typed the flag by hand', async () => {
+      const res = await handleLaunch(ctxFor('agent-reqs-hand-typed-kept'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(pipHarness.calls, "core's placeholder is not installed over it").toEqual([])
+      expect(sent.join('')).toContain('Keeping the installed agent comfy-agent==0.1.0rc7')
+    })
+
+    it("follows core's file when a beta grant added the flag", async () => {
+      launchHarness.grants = [AGENT_GRANT]
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+
+      await handleLaunch(ctxFor('agent-reqs-granted-placeholder'))
+
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(pipHarness.calls).toHaveLength(1)
+      expect(pipHarness.calls[0]![0]).toBe(agentReqPath())
+    })
+  })
+
   it('installs the requirements when a beta grant added the flag', async () => {
     // The grant is the only source of the flag here: the install's own args have none.
     launchHarness.grants = [AGENT_GRANT]
@@ -3999,6 +4035,17 @@ describe('agent requirements at launch', () => {
 
       expect(installed).toEqual([CORE_FILE])
       expect(overrideEvents()).toEqual([])
+    })
+
+    it("installs core's placeholder over the agent when the campaign drops its override", async () => {
+      const placeholder = 'comfy-agent==0.0.0.dev0\ncomfy-cli==1.21.0\n'
+      fs.writeFileSync(agentReqPath(), placeholder)
+      serveCampaign(undefined)
+
+      await launchAndPrint()
+
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(installed, 'dropping the override rolls the agent back').toEqual([placeholder])
     })
 
     it('ignores the campaign override when the user typed the flag themselves', async () => {
@@ -4749,7 +4796,7 @@ describe('agent requirements at launch', () => {
       expect(keptEvents()).toEqual([])
     })
 
-    it('installs as before when the user typed --enable-agent themselves', async () => {
+    it('keeps the installed agent when the user typed --enable-agent themselves', async () => {
       launchHarness.launchCommand = {
         cmd: process.execPath,
         args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--enable-agent', '--listen'],
@@ -4761,7 +4808,8 @@ describe('agent requirements at launch', () => {
 
       expect(spawnArgs.filter((arg) => arg === '--enable-agent')).toHaveLength(1)
       expect(keptEvents(), 'the install step decides, not the no-answer path').toEqual([])
-      expect(pipHarness.calls).toHaveLength(1)
+      expect(pipHarness.calls, "it keeps the installed agent over core's placeholder").toEqual([])
+      expect(sent.join('')).toContain('Keeping the installed agent comfy-agent==0.1.0rc5')
     })
 
     it('leaves the agent off when the installed version is one that failed to start', async () => {

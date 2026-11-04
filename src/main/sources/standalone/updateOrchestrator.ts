@@ -21,6 +21,7 @@ import {
   getPipIndexArgs
 } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
+import { handForcedFrontend } from '../../lib/agentRequirementsLaunch'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { t } from '../../lib/i18n'
@@ -367,6 +368,18 @@ export async function runComfyUIUpdate(
     if (!fs.existsSync(uvPath) || !activeEnvPython) {
       depFailure = 'Python environment or uv not found while installing updated dependencies'
     } else if (!signal?.aborted) {
+      // A hand-forced agent keeps its newer frontend: core's pin may have no Agent button.
+      const held = await handForcedFrontend(installation, postReqs, uvPath, activeEnvPython, signal)
+      const overridePath = path.join(installPath, '.update-frontend-override.txt')
+      const kept =
+        held !== null &&
+        (await fs.promises.writeFile(overridePath, `${held}\n`, 'utf-8').then(
+          () => true,
+          () => false
+        ))
+      if (kept) sendOutput?.(`Keeping the installed ${held} for the agent\n`)
+      // Relative to uv's cwd (the install dir): uv splits an absolute path on spaces.
+      const overrideArgs = kept ? ['--override', path.basename(overridePath)] : []
       if (dryRunConflictCheck) {
         const filteredReqs = postReqs
           .split('\n')
@@ -393,7 +406,8 @@ export async function runComfyUIUpdate(
                 filteredReqPath,
                 '--python',
                 activeEnvPython,
-                ...indexArgs
+                ...indexArgs,
+                ...overrideArgs
               ],
               installPath,
               undefined,
@@ -418,7 +432,16 @@ export async function runComfyUIUpdate(
             sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
             const pipResult = await runUvPipDetailed(
               uvPath,
-              ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
+              [
+                'pip',
+                'install',
+                '-r',
+                filteredReqPath,
+                '--python',
+                activeEnvPython,
+                ...indexArgs,
+                ...overrideArgs
+              ],
               installPath,
               sendOutput ?? (() => {}),
               signal
@@ -449,7 +472,8 @@ export async function runComfyUIUpdate(
             '.post-install-reqs.txt',
             logFn,
             signal,
-            settings.getMirrorConfig()
+            settings.getMirrorConfig(),
+            overrideArgs
           )
           if (installResult.code !== 0) {
             depFailure = withOutputTail(
@@ -461,6 +485,7 @@ export async function runComfyUIUpdate(
           depFailure = `requirements install failed: ${(err as Error).message}`
         }
       }
+      if (kept) await fs.promises.rm(overridePath, { force: true }).catch(() => {})
     }
   } else if (dryRunConflictCheck) {
     sendProgress('deps', { percent: -1, status: t('standalone.updateDepsUpToDate') })
