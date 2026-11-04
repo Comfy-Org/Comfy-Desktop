@@ -285,15 +285,15 @@ function note(b: Build): string | undefined {
   if (STATUS[b.state]) return undefined
   return b.kind === 'cloud' ? stateLine(b) : `Stopped · ${b.lastUsed}`
 }
-// Split card: the state and where it runs in one line, and its tone.
-function splitLine(b: Build): string {
-  const on = b.kind === 'local' ? 'on this computer' : 'on Cloud'
-  if (b.state === 'running') return `Running ${on}`
-  if (b.state === 'launching') return `Starting ${on}`
-  if (b.state === 'error') return `Failed to start ${on}`
-  if (b.state === 'update') return `Update available · ${on}`
-  if (b.kind === 'cloud') return `Asleep ${on} · wakes in ~20 s`
-  return `Stopped ${on} · ${b.lastUsed}`
+// Split card: the state as a badge with no fill, then where it runs.
+function splitLine(b: Build): { state: string; rest: string } {
+  const on = b.kind === 'local' ? 'This computer' : 'Cloud'
+  if (b.state === 'running') return { state: 'Running', rest: on }
+  if (b.state === 'launching') return { state: 'Starting', rest: on }
+  if (b.state === 'error') return { state: 'Failed to start', rest: on }
+  if (b.state === 'update') return { state: 'Update available', rest: on }
+  if (b.kind === 'cloud') return { state: 'Asleep', rest: `${on} · wakes in ~20 s` }
+  return { state: 'Stopped', rest: `${on} · ${b.lastUsed}` }
 }
 const TONE: Record<ProtoInstance['state'], 'ok' | 'warn' | 'bad' | 'idle'> = {
   running: 'ok',

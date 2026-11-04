@@ -52,8 +52,8 @@ const {
   statusLabel?: string
   /** The state in a few quiet words, beside the chip or on its own. */
   note?: string
-  /** Split: the state and where it runs, in one line. */
-  line?: string
+  /** Split: the state as a badge with no fill, then where it runs. */
+  line?: { state: string; rest: string }
   tone?: 'ok' | 'warn' | 'bad' | 'idle'
   gear?: string
   /** Share of memory in use while it runs, 0 to 100. */
@@ -107,8 +107,8 @@ const emit = defineEmits<{
     @star="emit('star')"
   >
     <template #media>
-      <span v-if="look === 'tile'" class="mar-bc-tile">
-        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="24" />
+      <span v-if="look === 'tile' || look === 'split'" class="mar-bc-tile">
+        <component :is="kind === 'cloud' ? Cloud : Laptop" :size="look === 'split' ? 20 : 24" />
       </span>
       <span v-else-if="look === 'strip'" class="mar-bc-strip">
         <component :is="kind === 'cloud' ? Cloud : Laptop" :size="14" />{{ where }}
@@ -124,7 +124,11 @@ const emit = defineEmits<{
       <span class="mar-bc-eyebrow">{{ where }}</span>
     </template>
     <template v-if="look === 'split'" #meta>
-      <span class="mar-bc-line" :class="`is-${tone}`"><i aria-hidden="true" />{{ line }}</span>
+      <span class="mar-bc-line"
+        ><span class="mar-bc-badge" :class="`is-${tone}`"
+          ><i aria-hidden="true" />{{ line?.state }}</span
+        ><span class="truncate">{{ line?.rest }}</span></span
+      >
     </template>
     <template v-else-if="error" #meta>
       <span class="mar-bc-error">{{ error }}</span>
@@ -135,7 +139,6 @@ const emit = defineEmits<{
         <MarSplitButton
           tone="secondary"
           :label="busy ? 'Starting…' : splitLabel"
-          :icon="cta.icon as Component"
           :disabled="busy"
           :lines="
             second ? [{ label: second.label, icon: second.icon as Component, run: second.run }] : []
@@ -406,10 +409,27 @@ const emit = defineEmits<{
   padding-top: 12px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
-/* Split: name, the state and where in one line, one action. */
+/* Split: where as a tile as tall as the two lines beside it (name, the
+   state and where), then one action. */
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-split {
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  column-gap: 14px;
+}
+.mar-bc.is-split .mar-bc-tile {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
 .mar-bc.is-split > .mar-item-text {
-  gap: 6px;
+  height: 44px;
+  justify-content: center;
+  gap: 4px;
   padding-right: 28px;
+}
+.mar-bc.is-split .mar-item-name,
+.mar-bc.is-split .mar-bc-line {
+  line-height: 20px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc.is-split .mar-item-name {
   font-size: 15px;
@@ -418,26 +438,38 @@ const emit = defineEmits<{
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--color-muted-foreground);
 }
-.mar-bc-line > i {
+.mar-bc-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mar-bc-badge.is-ok {
+  color: var(--color-status-running);
+}
+.mar-bc-badge.is-warn {
+  color: var(--color-status-warning, #f5b14c);
+}
+.mar-bc-badge.is-bad {
+  color: var(--color-status-danger);
+}
+.mar-bc-badge > i {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
   border-radius: 999px;
   background: var(--color-subtle-foreground);
 }
-.mar-bc-line.is-ok > i {
-  background: var(--color-status-running);
-}
-.mar-bc-line.is-warn > i {
-  background: var(--color-status-warning, #f5b14c);
-}
-.mar-bc-line.is-bad > i {
-  background: var(--color-status-danger);
+.mar-bc-badge:not(.is-idle) > i {
+  background: currentColor;
 }
 .mar-bc.is-split .mar-bc-foot {
+  grid-column: 1 / -1;
   margin-top: 4px;
 }
 /* Mark: the mark beside the name, the specs under a hairline. */
