@@ -11,7 +11,7 @@ import './looks.css'
 export type MarLook = 'current'
 
 export const LOOKS: { value: MarLook; label: string }[] = [
-  { value: 'current', label: 'Current · Void as it is' }
+  { value: 'current', label: 'Current · as it is' }
 ]
 
 const KEY = 'comfy.design.mar.look'

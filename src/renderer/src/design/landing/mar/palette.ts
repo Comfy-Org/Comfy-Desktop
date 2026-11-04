@@ -16,8 +16,8 @@ export interface Palette {
 }
 
 export const PALETTES: Palette[] = [
-  { id: 'void', label: 'Void · cool grey (today)', hue: 285, chroma: 0.004 },
-  { id: 'graphite', label: 'Graphite · pure grey', hue: 0, chroma: 0 },
+  { id: 'void', label: 'Void · cool grey (before)', hue: 285, chroma: 0.004 },
+  { id: 'graphite', label: 'Graphite · pure grey (today)', hue: 0, chroma: 0 },
   { id: 'steel', label: 'Steel · grey with a touch of blue', hue: 235, chroma: 0.006 },
   { id: 'slate', label: 'Slate · a hint of blue', hue: 250, chroma: 0.01 },
   { id: 'ink', label: 'Ink · deep blue-violet', hue: 270, chroma: 0.012 },

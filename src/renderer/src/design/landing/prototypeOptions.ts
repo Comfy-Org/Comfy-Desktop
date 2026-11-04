@@ -49,7 +49,7 @@ const tune = computed({
   set: () => (tuner.open = true)
 })
 const tuneLabel = computed(
-  () => `${DIRECTIONS.find((d) => d.value === designLook.direction)?.label ?? 'Void'} · Tune…`
+  () => `${DIRECTIONS.find((d) => d.value === designLook.direction)?.label ?? 'Graphite'} · Tune…`
 )
 
 // The breadcrumb or tabs (mar/shell/titleTabs.ts).
