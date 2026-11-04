@@ -285,6 +285,23 @@ function note(b: Build): string | undefined {
   if (STATUS[b.state]) return undefined
   return b.kind === 'cloud' ? stateLine(b) : `Stopped · ${b.lastUsed}`
 }
+// Split card: the state and where it runs in one line, and its tone.
+function splitLine(b: Build): string {
+  const on = b.kind === 'local' ? 'on this computer' : 'on Cloud'
+  if (b.state === 'running') return `Running ${on}`
+  if (b.state === 'launching') return `Starting ${on}`
+  if (b.state === 'error') return `Failed to start ${on}`
+  if (b.state === 'update') return `Update available · ${on}`
+  if (b.kind === 'cloud') return `Asleep ${on} · wakes in ~20 s`
+  return `Stopped ${on} · ${b.lastUsed}`
+}
+const TONE: Record<ProtoInstance['state'], 'ok' | 'warn' | 'bad' | 'idle'> = {
+  running: 'ok',
+  launching: 'ok',
+  update: 'warn',
+  error: 'bad',
+  stopped: 'idle'
+}
 function card(b: Build) {
   // Where is said elsewhere on the card, so no "Cloud build" here.
   const release = [b.deployment ? undefined : b.channel, b.version].filter(Boolean)
@@ -308,6 +325,8 @@ function card(b: Build) {
     status: STATUS[b.state],
     statusLabel: statusLabel(b),
     note: note(b),
+    line: splitLine(b),
+    tone: TONE[b.state],
     gear: gpuName(b),
     usage: mem && (mem[0] / mem[1]) * 100,
     usageLabel: mem ? `${mem[0]} / ${mem[1]} GB` : memTotal(b),

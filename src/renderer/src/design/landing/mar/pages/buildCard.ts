@@ -3,10 +3,11 @@ import { reactive, watch } from 'vue'
 /** How a build looks on the Builds grid (UI Playground › Build card), until
  *  one is decided. None but Photos carries a picture; each says where the
  *  build runs in the words of the page's filter: This computer, Cloud. */
-export type BuildCard = 'tile' | 'strip' | 'where' | 'mark' | 'grouped' | 'photos'
+export type BuildCard = 'split' | 'tile' | 'strip' | 'where' | 'mark' | 'grouped' | 'photos'
 
 export const BUILD_CARDS: { value: BuildCard; label: string }[] = [
   { value: 'tile', label: 'Where as a tile · the pick' },
+  { value: 'split', label: 'One action, where in its words' },
   { value: 'strip', label: 'Where as a strip' },
   { value: 'where', label: 'Where on top · the fewest facts' },
   { value: 'mark', label: 'Where as a mark · keeps the specs' },

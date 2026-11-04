@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
+import { computed, type Component } from 'vue'
 import { Cloud, Laptop } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import MarItem from './MarItem.vue'
+import MarSplitButton from './MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
 import type { BuildCard } from './buildCard'
 import type { MenuLine } from './menu'
@@ -26,6 +27,8 @@ const {
   status,
   statusLabel,
   note,
+  line,
+  tone = 'idle',
   gear,
   usage,
   usageLabel,
@@ -49,6 +52,9 @@ const {
   statusLabel?: string
   /** The state in a few quiet words, beside the chip or on its own. */
   note?: string
+  /** Split: the state and where it runs, in one line. */
+  line?: string
+  tone?: 'ok' | 'warn' | 'bad' | 'idle'
   gear?: string
   /** Share of memory in use while it runs, 0 to 100. */
   usage?: number
@@ -65,6 +71,12 @@ const {
   renaming?: boolean
   fav?: boolean
 }>()
+// Open and Start say where; Try again stays short.
+const splitLabel = computed(() =>
+  ['Open', 'Start'].includes(cta.label)
+    ? `${cta.label} ${kind === 'cloud' ? 'on Cloud' : 'on this computer'}`
+    : cta.label
+)
 const emit = defineEmits<{
   open: []
   select: [range: boolean]
@@ -111,11 +123,28 @@ const emit = defineEmits<{
     <template v-if="look === 'tile'" #eyebrow>
       <span class="mar-bc-eyebrow">{{ where }}</span>
     </template>
-    <template v-if="error" #meta>
+    <template v-if="look === 'split'" #meta>
+      <span class="mar-bc-line" :class="`is-${tone}`"><i aria-hidden="true" />{{ line }}</span>
+    </template>
+    <template v-else-if="error" #meta>
       <span class="mar-bc-error">{{ error }}</span>
     </template>
     <template #footer>
-      <span class="mar-bc-foot">
+      <!-- Split: one action, its sibling (Stop, Update) in the chevron. -->
+      <span v-if="look === 'split'" class="mar-bc-foot">
+        <MarSplitButton
+          tone="secondary"
+          :label="busy ? 'Starting…' : splitLabel"
+          :icon="cta.icon as Component"
+          :disabled="busy"
+          :lines="
+            second ? [{ label: second.label, icon: second.icon as Component, run: second.run }] : []
+          "
+          menu-label="More ways to run"
+          @run="cta.run()"
+        />
+      </span>
+      <span v-else class="mar-bc-foot">
         <!-- The specs stay on Mark: hardware, memory, what's installed. -->
         <span v-if="look === 'mark'" class="mar-bc-specs">
           <span class="mar-bc-gear">
@@ -376,6 +405,40 @@ const emit = defineEmits<{
   margin-top: 2px;
   padding-top: 12px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* Split: name, the state and where in one line, one action. */
+.mar-bc.is-split > .mar-item-text {
+  gap: 6px;
+  padding-right: 28px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc.is-split .mar-item-name {
+  font-size: 15px;
+}
+.mar-bc-line {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-muted-foreground);
+}
+.mar-bc-line > i {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-subtle-foreground);
+}
+.mar-bc-line.is-ok > i {
+  background: var(--color-status-running);
+}
+.mar-bc-line.is-warn > i {
+  background: var(--color-status-warning, #f5b14c);
+}
+.mar-bc-line.is-bad > i {
+  background: var(--color-status-danger);
+}
+.mar-bc.is-split .mar-bc-foot {
+  margin-top: 4px;
 }
 /* Mark: the mark beside the name, the specs under a hairline. */
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc.is-mark {
