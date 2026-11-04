@@ -1348,6 +1348,8 @@ export interface ElectronApi {
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
+  /** Show a file in the OS file manager instead of opening it. */
+  revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
   /** Read-only snapshot of an install's durable log buffer (joined string). */
@@ -1428,6 +1430,9 @@ export interface ElectronApi {
    *  release-update so the newly-created destination install gets
    *  focus without swapping the source host. */
   openInstallWindow(installationId: string): Promise<boolean>
+  /** Land an install in its own window, leaving this one alone. Focuses the
+   *  window it already has, if any. */
+  openInstallInNewWindow(installationId: string): void
   /** Close the BrowserWindow that hosts the given installation's ComfyUI
    *  view (and its title-bar / panel WebContentsViews). Returns true if a
    *  window was found and closed. Used by the embedded install-settings

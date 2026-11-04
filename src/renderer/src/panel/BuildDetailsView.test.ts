@@ -12,7 +12,14 @@ vi.mock('../components/settings/ComfyUISettingsContent.vue', () => ({
   default: {
     name: 'ComfyUISettingsContent',
     props: ['installation', 'globalSettingsSnapshot', 'pageActionsTarget'],
-    emits: ['show-progress', 'navigate-list', 'request-close', 'request-dismiss', 'primary-action'],
+    emits: [
+      'show-progress',
+      'navigate-list',
+      'request-close',
+      'request-dismiss',
+      'primary-action',
+      'open-new-window'
+    ],
     template: '<div data-testid="settings-content" />'
   }
 }))
@@ -32,12 +39,14 @@ const INSTALL: Installation = {
 }
 
 const unsubscribeSettings = vi.fn()
+const openInstallInNewWindow = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
   ;(window as unknown as { api: unknown }).api = {
     getBuildStorageSnapshot: vi.fn().mockResolvedValue(SNAPSHOT),
-    onSettingsChanged: vi.fn(() => unsubscribeSettings)
+    onSettingsChanged: vi.fn(() => unsubscribeSettings),
+    openInstallInNewWindow
   }
   setActivePinia(createPinia())
 })
@@ -87,6 +96,15 @@ describe('BuildDetailsView', () => {
     content.vm.$emit('primary-action', { verb: 'switch' })
 
     expect(wrapper.emitted('launch')).toEqual([[INSTALL]])
+  })
+
+  it('opens the build in its own window instead of launching it into this one', async () => {
+    const { wrapper, content } = await mountDetails()
+
+    content.vm.$emit('open-new-window', { verb: 'open-new' })
+
+    expect(openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('a')
+    expect(wrapper.emitted('launch')).toBeUndefined()
   })
 
   it.each(['navigate-list', 'request-close', 'request-dismiss'])(

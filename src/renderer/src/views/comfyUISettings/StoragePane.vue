@@ -13,11 +13,10 @@ import InfoTooltip from '../../components/InfoTooltip.vue'
 import { samePath as samePathOn } from '../../lib/pathCompare'
 import type { DetailField, DetailSection } from '../../types/ipc'
 
-/** Storage tab pane for the instance-picker settings. Composes the global
- *  shared-models UI (via the popup's `__comfyTitlePopup.globalSettings*`
- *  bridge) with the per-install storage section from `props.sections`. The
- *  `Use Shared *` toggles live inside their respective Models / Input-Output
- *  groups. */
+/** Storage tab pane for the per-install settings. Composes the global
+ *  shared-models UI with the per-install storage section from `props.sections`.
+ *  The `Use Shared *` toggles live inside their respective Models /
+ *  Input-Output groups. */
 
 interface ModelsDir {
   path: string
@@ -37,21 +36,6 @@ export interface StorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: ModelsDir[]
   modelsSystemDefault: string
-}
-
-interface GlobalSettingsBridge {
-  globalSettingsUpdateField(
-    fieldId: string,
-    value: unknown
-  ): Promise<{ ok: boolean; message?: string }>
-  globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
-  globalSettingsOpenPath(path: string): void
-  globalSettingsRevealPath(path: string): void
-  globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
-  /** Close this popup and reopen Global Desktop Settings (where the shared
-   *  directories themselves are managed). Optional for older bridges. */
-  openSettingsTab?(tab: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'): void
-  platform?: string
 }
 
 interface Props {
@@ -74,11 +58,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const modal = useModal()
 
-const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
-
 /** Platform-aware path equality on canonicalized forms. */
 function samePath(a: string, b: string): boolean {
-  return samePathOn(a, b, bridge?.platform === 'win32')
+  return samePathOn(a, b, window.api.platform === 'win32')
 }
 
 /** Edits to these per-install fields trigger the restart prompt. */
@@ -299,7 +281,7 @@ function isKnownModelDir(path: string): boolean {
 
 /** Add always targets the per-instance `modelDirs`, never the global list. */
 async function handleAddModelDir(): Promise<void> {
-  const picked = await bridge?.globalSettingsBrowseFolder()
+  const picked = await window.api.browseFolder()
   if (!picked || isKnownModelDir(picked)) return
   persistField('modelDirs', [...currentExtras(), picked])
 }
@@ -335,7 +317,7 @@ async function handleRemoveModelDir(index: number): Promise<void> {
 async function handleChangeModelDir(index: number): Promise<void> {
   const row = modelDirRows.value[index]
   if (!row || row.locked || row.readonly || row.kind === 'extra') return
-  const picked = await bridge?.globalSettingsBrowseFolder(row.path)
+  const picked = await window.api.browseFolder(row.path)
   if (!picked || samePath(picked, row.path) || isKnownModelDir(picked)) return
   const persistedPrimary = findField('modelDirsPrimary')?.value
   if (typeof persistedPrimary === 'string' && samePath(row.path, persistedPrimary)) {
@@ -357,14 +339,12 @@ function handleMakeModelPrimary(index: number): void {
 
 function handleOpenModelDir(index: number): void {
   const dir = modelDirRows.value[index]
-  if (dir) bridge?.globalSettingsOpenPath(dir.path)
+  if (dir) void window.api.openPath(dir.path)
 }
 
-/** The shared dirs themselves are edited in Global Desktop Settings; this
- *  closes the picker popup and opens that surface. */
-const canManageSharedDirs = computed(() => typeof bridge?.openSettingsTab === 'function')
+/** The shared dirs themselves are edited in Global Desktop Settings. */
 function handleManageSharedDirs(): void {
-  bridge?.openSettingsTab?.('global-storage')
+  window.api.openGlobalSettings('storage')
 }
 
 // --- Per-instance input / output dirs (shared I/O off) --------------------
@@ -392,7 +372,7 @@ function defaultOf(defaultId: string): string {
 }
 
 async function browseDir(storedId: string, defaultId: string, current: string): Promise<void> {
-  const picked = await bridge?.globalSettingsBrowseFolder(current || undefined)
+  const picked = await window.api.browseFolder(current || undefined)
   if (!picked) return
   // Selecting the computed default clears the override so a clone derives its
   // own path instead of pointing back at this install.
@@ -412,10 +392,10 @@ function handleResetOutputDir(): void {
   persistField('outputDir', '')
 }
 function handleOpenPath(path: string): void {
-  if (path) bridge?.globalSettingsOpenPath(path)
+  if (path) void window.api.openPath(path)
 }
 function handleRevealPath(path: string): void {
-  if (path) bridge?.globalSettingsRevealPath(path)
+  if (path) window.api.revealPath(path)
 }
 
 // Shared input/output dirs are read-only here; the manage action on their
@@ -479,7 +459,7 @@ function handleRevealPath(path: string): void {
 
       <!-- Shared dirs are read-only here; they're managed globally. -->
       <Button
-        v-if="useSharedModelsEnabled && canManageSharedDirs"
+        v-if="useSharedModelsEnabled"
         type="button"
         variant="textonly"
         size="unset"
@@ -512,7 +492,7 @@ function handleRevealPath(path: string): void {
           :path="sharedFieldPath(sharedInputField)"
           shared
           :browsable="false"
-          :manageable="canManageSharedDirs"
+          manageable
           @open="handleOpenPath(sharedFieldPath(sharedInputField))"
           @manage="handleManageSharedDirs"
         />
@@ -547,7 +527,7 @@ function handleRevealPath(path: string): void {
           :path="sharedFieldPath(sharedOutputField)"
           shared
           :browsable="false"
-          :manageable="canManageSharedDirs"
+          manageable
           @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
           @manage="handleManageSharedDirs"
         />

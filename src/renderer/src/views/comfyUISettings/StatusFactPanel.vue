@@ -28,14 +28,8 @@ const props = defineProps<Props>()
 const { t } = useI18n()
 const sessionStore = useSessionStore()
 
-/** Popup bridge for opening a folder in the OS file manager (same one the
- *  Storage tab uses). */
-const popupBridge = (
-  window as unknown as { __comfyTitlePopup?: { globalSettingsOpenPath(path: string): void } }
-).__comfyTitlePopup
-
 function openPath(path: string): void {
-  if (path && path !== '—') popupBridge?.globalSettingsOpenPath(path)
+  if (path && path !== '—') void window.api.openPath(path)
 }
 
 // The Comfy Cloud entry is not user-renamable: render its name as

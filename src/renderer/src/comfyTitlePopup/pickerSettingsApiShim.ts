@@ -15,6 +15,7 @@ const API_MAP = {
   // Open a folder in the OS file manager (clickable storage path rows). Reuses
   // the popup's existing globalSettings open-path bridge.
   openPath: 'globalSettingsOpenPath',
+  revealPath: 'globalSettingsRevealPath',
   updateInstallation: 'pickerSettingsUpdateInstallation',
   runAction: 'pickerSettingsRunAction',
   getFieldOptions: 'pickerSettingsGetFieldOptions',
@@ -50,6 +51,7 @@ const API_MAP = {
 type ShimApi = {
   [K in keyof typeof API_MAP]: ComfyTitlePopupBridge[(typeof API_MAP)[K]]
 } & {
+  platform: NodeJS.Platform
   browseFolder: (
     defaultPath?: string
   ) => ReturnType<ComfyTitlePopupBridge['pickerSettingsBrowseFolder']>
@@ -75,6 +77,7 @@ export function installPickerSettingsApiShim(): void {
     ) => unknown
     ;(api as Record<string, unknown>)[apiKey] = method.bind(bridge)
   }
+  api.platform = bridge.platform
   // Adapters for the two methods whose shape diverges from a pure pass-through.
   api.browseFolder = (defaultPath?: string) =>
     bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined)

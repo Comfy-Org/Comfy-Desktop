@@ -51,6 +51,10 @@ const status = computed(() => {
 
 const storage = ref<StorageSnapshot | undefined>()
 
+function openInNewWindow(): void {
+  window.api.openInstallInNewWindow(installation.id)
+}
+
 async function loadStorage(): Promise<void> {
   storage.value = await window.api.getBuildStorageSnapshot()
 }
@@ -122,7 +126,7 @@ onUnmounted(() => unsubscribeSettings?.())
         @request-close="emit('back')"
         @request-dismiss="emit('back')"
         @primary-action="emit('launch', installation)"
-        @open-new-window="emit('launch', installation)"
+        @open-new-window="openInNewWindow"
       />
     </div>
   </div>

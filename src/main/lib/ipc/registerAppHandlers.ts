@@ -512,6 +512,9 @@ export function registerAppHandlers(): void {
     if (!fs.existsSync(resolved)) return ''
     return openPath(resolved)
   })
+  ipcMain.on('reveal-path', (_event, targetPath: unknown) => {
+    if (typeof targetPath === 'string' && targetPath) shell.showItemInFolder(targetPath)
+  })
   ipcMain.handle('open-external', (_event, url: string) => {
     if (typeof url !== 'string' || !url) return Promise.resolve()
     if (!/^https?:\/\//i.test(url)) return Promise.resolve()
