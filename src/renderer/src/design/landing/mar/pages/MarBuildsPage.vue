@@ -509,7 +509,7 @@ const newLabel = computed(() =>
     <div
       v-else
       class="mar-table is-items"
-      style="--mar-cols: minmax(0, 220px) 120px; --mar-tools: 200px"
+      style="--mar-cols: minmax(0, 220px) 120px; --mar-tools: 248px"
     >
       <div class="mar-table-head">
         <span>Build</span
