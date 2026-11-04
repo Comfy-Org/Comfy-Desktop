@@ -1,72 +1,46 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
-import ChoiceCard from '../../../../components/ChoiceCard.vue'
-import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
-import RunOnCards from './RunOnCards.vue'
-import { canvas, type RunOnCards as Variant } from './setupFlow'
+import FirstOption from './FirstOption.vue'
+import { canvas } from './setupFlow'
 import Button from '../../ui/Button.vue'
 
 /**
- * The first screen's card options side by side, live (`?canvas=first`):
- * each frame is the real screen at a smaller scale, so the light, the
- * motion and the picks can be compared without switching tweaks.
+ * Ten takes on the first screen side by side, live (`?canvas=first`).
+ * Each frame is the real 1440×900 screen scaled down, so proportions,
+ * rhythm and the pick can be compared as they would ship.
  */
-const FRAMES: { id: Variant; label: string; note: string }[] = [
-  { id: 'glow', label: 'Cards', note: "The Home's start cards, side by side." },
-  { id: 'row', label: 'Rows', note: 'The same cards stacked, a radio on the right.' },
-  { id: 'today', label: 'Today', note: "Desktop's ChoiceCard, as shipped." }
+const OPTIONS: { label: string; note: string }[] = [
+  {
+    label: 'Centred group',
+    note: 'One block in the middle; the pick is a ring and a lifted surface.'
+  },
+  { label: 'Radio in the card', note: 'An inline radio leads each card, no icon.' },
+  { label: 'Footer bar', note: 'Larger choice; consent and Continue in a bar along the bottom.' },
+  { label: 'Split', note: 'Question and consent left, the choice and Continue right.' },
+  { label: 'One list', note: 'Both ways in one grouped list with radios, as Set up.' },
+  { label: 'Segmented', note: 'Cloud | Local as a segmented control, details below.' },
+  { label: 'Edge bar', note: 'Compact rows; the pick marked by a bar on its edge.' },
+  { label: 'Underline', note: 'The pick marked by a line along its foot.' },
+  { label: 'Dim the other', note: 'The pick at full strength, the other recedes.' },
+  { label: 'Tiles', note: 'Square tiles, a large icon and a corner radio.' }
 ]
-const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
-  glow: 'local',
-  row: 'local',
-  today: 'local'
-})
 </script>
 
 <template>
   <div class="proto-ui mss-canvas">
     <header class="mss-canvas-head">
       <div>
-        <h1>First screen · card options</h1>
-        <p>Live. Click the cards to pick.</p>
+        <h1>First screen · 10 options</h1>
+        <p>Live at real proportions (1440×900, scaled). Click to pick, tick the boxes.</p>
       </div>
       <Button variant="secondary" size="sm" @click="canvas = false">Close</Button>
     </header>
     <div class="mss-canvas-grid">
-      <figure v-for="f in FRAMES" :key="f.id" class="mss-canvas-item">
+      <figure v-for="(o, i) in OPTIONS" :key="o.label" class="mss-canvas-item">
         <figcaption>
-          <b>{{ f.label }}</b> <span>{{ f.note }}</span>
+          <b>{{ i + 1 }} · {{ o.label }}</b> <span>{{ o.note }}</span>
         </figcaption>
-        <div class="mss-first is-canvas">
-          <div class="mss-first-frame">
-            <div class="mss-ambient"></div>
-            <ComfyCLogo class="mss-first-mark" />
-            <div class="mss-first-hero">
-              <h2 class="mss-first-title">How do you want to run Comfy?</h2>
-              <p class="mss-first-lead">
-                Choose the setup that fits how you work. You can switch later.
-              </p>
-              <RunOnCards v-if="f.id !== 'today'" v-model="pick[f.id]" :variant="f.id" />
-              <div v-else class="mss-first-cards" role="radiogroup" data-no-pill>
-                <ChoiceCard
-                  selectable
-                  :selected="pick.today === 'cloud'"
-                  label="Cloud"
-                  tagline="Full power. Instant setup."
-                  description="Best for **most users** who want powerful GPUs and popular custom nodes, ready anywhere."
-                  @click="pick.today = 'cloud'"
-                />
-                <ChoiceCard
-                  selectable
-                  :selected="pick.today === 'local'"
-                  label="Local"
-                  tagline="Full control. Your hardware."
-                  description="Best for people who want **full manual control** with versions, custom nodes, and offline workflows."
-                  @click="pick.today = 'local'"
-                />
-              </div>
-            </div>
-          </div>
+        <div class="mss-canvas-frame">
+          <FirstOption :option="i + 1" />
         </div>
       </figure>
     </div>
@@ -101,8 +75,8 @@ const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
 }
 .mss-canvas-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
-  gap: 32px;
+  grid-template-columns: repeat(2, 648px);
+  gap: 40px 32px;
   margin-top: 28px;
 }
 .mss-canvas-item figcaption {
@@ -114,18 +88,17 @@ const pick = reactive<Record<Variant, 'cloud' | 'local'>>({
   color: var(--color-base-foreground);
   font-weight: 600;
 }
-/* The real first screen, framed and scaled into the canvas. */
-.mss-first.is-canvas {
+/* The real screen at 1440×900, scaled to 648×405 (0.45). */
+.mss-canvas-frame {
   position: relative;
-  inset: auto;
-  z-index: auto;
-  height: 560px;
-  border-radius: 14px;
+  width: 648px;
+  height: 405px;
+  overflow: hidden;
+  border-radius: 12px;
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
-  overflow: hidden;
 }
-.mss-first.is-canvas .mss-first-frame {
-  overflow: hidden;
-  padding: 56px 40px 28px;
+.mss-canvas-frame > .fo {
+  transform: scale(0.45);
+  transform-origin: 0 0;
 }
 </style>
