@@ -1,24 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  ArrowDownToLine,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   Check,
   ChevronDown,
-  ChevronRight,
   CircleCheck,
-  Cloud,
   Copy,
-  FolderOpen,
   HardDrive,
-  History,
   Laptop,
   Package,
   SlidersHorizontal,
-  TriangleAlert,
-  X
+  TriangleAlert
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
+import BrandSceneAnimation from '../../../../components/BrandSceneAnimation.vue'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Badge from '../../ui/Badge.vue'
@@ -29,7 +26,8 @@ import Input from '../../ui/Input.vue'
 import MediaCard from '../../ui/MediaCard.vue'
 import Select from '../../ui/Select.vue'
 import MarSeg from '../pages/MarSeg.vue'
-import { cn } from '../../ui/cn'
+import { useShowcaseCarousel } from '../../../../composables/useShowcaseCarousel'
+import en from '@locales/en.json'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, toast } from '../../useProto'
 import {
@@ -40,19 +38,14 @@ import {
   chooseCloud,
   chooseLocal,
   closeSetup,
-  dismissReady,
-  fits,
   flow,
   localSetup,
   lowSpace,
-  openReady,
   phaseIndex,
   phases,
   retryInstall,
   setupOn,
   startInstall,
-  toBackground,
-  toForeground,
   unsupported,
   type Starter
 } from './setupFlow'
@@ -62,9 +55,10 @@ import './setup.css'
 /**
  * Mar's proposed local setup (UI Playground › Local setup › Proposal), in
  * her step-modal family (New space): one smoked-glass modal over the app,
- * the content, then a footer bar with the actions. Set up shows what the
- * checks found and installs in one click; the install shows its progress
- * with the workflow pick in the wait. Copy is the product's, in English.
+ * the content, then a footer bar with the actions. Set up sums up today's
+ * Configure with what the checks found; the template step and the install
+ * wait are today's.
+ * Copy is the product's, in English.
  */
 const open = computed({
   get: () => setupOn.value && flow.open && flow.step !== 'first',
@@ -72,8 +66,6 @@ const open = computed({
     if (!v) closeSetup()
   }
 })
-
-const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
 
 const where = computed(() =>
   flow.movedDisk ? `/Volumes/${DETECTED.otherDisk.name}/ComfyUI` : DETECTED.path
@@ -84,30 +76,49 @@ const free = computed(() =>
 const freeLabel = (gb: number): string => (gb >= 1000 ? `${(gb / 1000).toFixed(1)} TB` : `${gb} GB`)
 
 // First launch, as shipped today: Local picked, terms off until ticked,
-// usage data and beta on. Consent is asked here once, not in Set up. No
-// Express Install: Set up is already the one-click path, with what it will
-// install in view.
+// usage data and beta on, Express off. Consent is asked here once, not in
+// Set up. Express skips Set up and the template step and installs with
+// the recommended settings, as today.
 const firstOpen = computed(() => setupOn.value && flow.open && flow.step === 'first')
 const runOn = ref<'cloud' | 'local'>('local')
 const terms = ref(false)
 const usage = ref(true)
 const beta = ref(true)
+const express = ref(false)
 function continueFirst(): void {
   if (runOn.value === 'cloud') chooseCloud()
+  else if (express.value && !unsupported.value) installWith(null)
   else chooseLocal()
 }
 
 // Today's estimate: the download, unpacked, takes about 2.25 times its size.
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
-const canInstall = computed(() => !lowSpace.value && !unsupported.value)
-
-// Intel Mac: pick the way to run it, then one action follows the pick.
-const intelWay = ref<'cloud' | 'server'>('cloud')
-function continueIntel(): void {
-  if (intelWay.value === 'cloud') hostActions.signIn()
-  else toast('Connect: enter the server address')
+// Set up › Continue: low space asks first, as today, then the template step.
+function continueSetup(): void {
+  if (lowSpace.value) flow.confirmLowDisk = true
+  else toTemplates()
 }
+function toTemplates(): void {
+  flow.confirmLowDisk = false
+  if (dontShowTemplates.value) installWith(null)
+  else flow.step = 'template'
+}
+const dontShowTemplates = ref(false)
+const TABS = [
+  { value: 'image' as const, label: 'Image' },
+  { value: 'video' as const, label: 'Video' },
+  { value: '3d' as const, label: '3D' },
+  { value: 'audio' as const, label: 'Audio' }
+]
+function pick(s: Starter): void {
+  flow.picked = flow.picked?.id === s.id ? null : s
+}
+function installWith(s: Starter | null): void {
+  flow.picked = s
+  startInstall()
+}
+const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
 
 // Change setup: the fields start on what fits this computer.
 const name = ref('ComfyUI')
@@ -159,73 +170,20 @@ const CHANNELS = [
   { value: 'latest' as const, label: 'Latest on GitHub' }
 ]
 const HARDWARE = [
-  { value: 'mps' as const, label: DETECTED.build, hint: `Matches your ${DETECTED.chip}` },
-  { value: 'cpu' as const, label: 'CPU only', hint: 'Slow. For testing.' }
+  { value: 'mps' as const, label: DETECTED.build, hint: '' },
+  { value: 'cpu' as const, label: 'CPU', hint: '' }
 ]
 
-const TABS = [
-  { value: 'image' as const, label: 'Image' },
-  { value: 'video' as const, label: 'Video' },
-  { value: '3d' as const, label: '3D' },
-  { value: 'audio' as const, label: 'Audio' }
-]
-
-function pick(s: Starter): void {
-  if (!fits(s)) return
-  flow.picked = flow.picked?.id === s.id ? null : s
-}
-const sizeOf = (s: Starter): string => (s.credits ? 'No download' : `${s.gb} GB of models`)
-const freeAfter = computed(() =>
-  Math.round(free.value - DETECTED.downloadGb - (flow.picked?.gb ?? 0))
-)
+// Today's install wait: the Cloud pitch rotates over the scene, in the
+// product's own strings.
+const showcase = useShowcaseCarousel()
+const say = (key: string): string =>
+  key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], en) as string
 
 const failed = computed(() => flow.step === 'error')
 </script>
 
 <template>
-  <!-- Background install: a quiet pill, the install keeps going. When it
-       finishes it turns into a ready pill and waits: opening ComfyUI on
-       its own would take the window from whatever the user is doing. -->
-  <Teleport :to="PORTAL_TO">
-    <Transition name="mss-pill" mode="out-in">
-      <div
-        v-if="setupOn && flow.background && flow.ready"
-        key="ready"
-        class="proto-ui mss-pill-wrap"
-        role="status"
-      >
-        <div class="mss-pill is-ready">
-          <span class="mss-pill-done" aria-hidden="true"><Check :size="13" stroke-width="2.5" /></span>
-          <span class="flex flex-col text-left">
-            <span class="text-ui font-medium text-base-foreground">ComfyUI is ready</span>
-            <span class="text-ui text-subtle-foreground">{{
-              flow.picked ? `Opens ${flow.picked.title}` : 'Opens a blank canvas'
-            }}</span>
-          </span>
-          <Button size="sm" variant="primary" class="ml-2" @click="openReady">Open</Button>
-          <button type="button" class="mss-pill-x" aria-label="Dismiss" @click="dismissReady">
-            <X :size="14" />
-          </button>
-        </div>
-      </div>
-      <div
-        v-else-if="setupOn && flow.background && flow.running"
-        key="running"
-        class="proto-ui mss-pill-wrap"
-      >
-        <button type="button" class="mss-pill" aria-label="Show the install" @click="toForeground">
-          <span class="mss-pill-ring" :style="{ '--p': flow.percent }" aria-hidden="true"></span>
-          <span class="flex flex-col text-left">
-            <span class="text-ui font-medium text-base-foreground tabular-nums"
-              >Installing ComfyUI · {{ flow.percent }}%</span
-            >
-            <span class="text-ui text-subtle-foreground">You can keep working</span>
-          </span>
-        </button>
-      </div>
-    </Transition>
-  </Teleport>
-
   <!-- First launch: today's takeover, unchanged. Local goes on to Set up. -->
   <Teleport :to="PORTAL_TO">
     <Transition name="mss-first">
@@ -267,21 +225,33 @@ const failed = computed(() => flow.step === 'error')
                 @click="runOn = 'local'"
               />
             </div>
-            <!-- Migrate is a Local option; it keeps its room while Cloud is
-                 picked, so switching cards doesn't move the screen. -->
+            <!-- Migrate and Express are Local options; they keep their room
+                 while Cloud is picked, so switching cards doesn't move the
+                 screen. -->
             <div
-              v-if="localSetup.machine === 'legacy'"
               class="mss-first-mods"
               :class="runOn !== 'local' && 'is-off'"
               :aria-hidden="runOn !== 'local'"
             >
-              <label class="mss-check">
+              <label v-if="localSetup.machine === 'legacy'" class="mss-check">
                 <Checkbox v-model="flow.bringOver" />
                 <span
                   ><span class="text-base-foreground">Migrate existing instance</span>
                   <span class="mss-first-hint"
                     >Bring over <b>workflows, models, and settings</b> from your existing ComfyUI
                     instance.</span
+                  ></span
+                >
+              </label>
+              <label class="mss-check">
+                <Checkbox v-model="express" />
+                <span
+                  ><span class="text-base-foreground"
+                    >Express Install with recommended settings</span
+                  >
+                  <span v-if="express" class="mss-first-hint"
+                    >Detected: {{ DETECTED.build }} - if that's not your hardware, uncheck
+                    Express</span
                   ></span
                 >
               </label>
@@ -334,70 +304,8 @@ const failed = computed(() => flow.step === 'error')
       :class="flow.takeover && 'mss-in-takeover z-[72]'"
       :closable="!flow.takeover"
     >
-      <!-- New Instance, when ComfyUI already runs here: every way in. -->
-      <template v-if="flow.step === 'chooser'">
-        <div :key="flow.step" class="mar-wizard-body mss-body">
-          <DialogTitle as="h3" class="text-title font-semibold">New Instance</DialogTitle>
-          <DialogDescription>Add another place to run ComfyUI.</DialogDescription>
-          <div class="mss-opts">
-            <button type="button" class="mss-opt" @click="flow.step = 'setup'">
-              <span class="mss-opt-icon is-bloom"><ArrowDownToLine :size="18" /></span>
-              <span class="mss-opt-text">
-                <span class="text-ui font-medium text-base-foreground">Install ComfyUI</span>
-                <span class="text-ui text-subtle-foreground"
-                  >Set up for your {{ DETECTED.chip }}. {{ DETECTED.downloadGb }} GB.</span
-                >
-              </span>
-              <ChevronRight :size="16" class="mss-opt-arrow" />
-            </button>
-            <button
-              type="button"
-              class="mss-opt"
-              @click="toast('Add a folder: pick an existing ComfyUI folder')"
-            >
-              <span class="mss-opt-icon"><FolderOpen :size="18" /></span>
-              <span class="mss-opt-text">
-                <span class="text-ui font-medium text-base-foreground"
-                  >Add a folder you already have</span
-                >
-                <span class="text-ui text-subtle-foreground"
-                  >Use an existing ComfyUI install without reinstalling it.</span
-                >
-              </span>
-              <ChevronRight :size="16" class="mss-opt-arrow" />
-            </button>
-            <button type="button" class="mss-opt" @click="toast('Restore: drop a snapshot .json')">
-              <span class="mss-opt-icon"><History :size="18" /></span>
-              <span class="mss-opt-text">
-                <span class="text-ui font-medium text-base-foreground"
-                  >Restore from a snapshot</span
-                >
-                <span class="text-ui text-subtle-foreground"
-                  >Rebuild an instance from a saved .json snapshot.</span
-                >
-              </span>
-              <ChevronRight :size="16" class="mss-opt-arrow" />
-            </button>
-            <button
-              type="button"
-              class="mss-opt"
-              @click="toast('Connect: enter the server address')"
-            >
-              <span class="mss-opt-icon"><ArrowLeftRight :size="18" /></span>
-              <span class="mss-opt-text">
-                <span class="text-ui font-medium text-base-foreground">Connect to a server</span>
-                <span class="text-ui text-subtle-foreground"
-                  >ComfyUI running on another computer or on your network.</span
-                >
-              </span>
-              <ChevronRight :size="16" class="mss-opt-arrow" />
-            </button>
-          </div>
-        </div>
-      </template>
-
       <!-- Set up: the checks already ran, one Install. -->
-      <template v-else-if="flow.step === 'setup'">
+      <template v-if="flow.step === 'setup'">
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <template v-if="!unsupported">
             <DialogTitle as="h3" class="text-title font-semibold"
@@ -413,12 +321,10 @@ const failed = computed(() => flow.step === 'error')
               <SetupBloom />
               <div class="mss-stage-ui">
                 <div class="mss-stage-top">
-                  <span class="mss-chip" :class="lowSpace ? 'is-bad' : 'is-ok'">
-                    <TriangleAlert v-if="lowSpace" :size="12" />
-                    <Check v-else :size="12" :stroke-width="2.5" />{{
-                      lowSpace ? 'One thing to fix before installing' : 'Ready to install'
-                    }}
-                  </span>
+                  <span v-if="lowSpace" class="mss-chip is-bad"
+                    ><TriangleAlert :size="12" />Low Disk Space</span
+                  >
+                  <span v-else></span>
                   <button type="button" class="mss-chip is-btn" @click="changeSetup">
                     <SlidersHorizontal :size="12" />Change
                   </button>
@@ -437,37 +343,21 @@ const failed = computed(() => flow.step === 'error')
               </div>
             </div>
 
-            <section
-              class="mss-tiles"
-              :aria-label="lowSpace ? 'One thing to fix' : 'Ready to install'"
-            >
+            <section class="mss-tiles" aria-label="Install summary">
               <div class="mss-tile" :class="lowSpace && 'is-bad'">
                 <span class="mss-tile-icon"><HardDrive :size="16" /></span>
                 <span class="mss-sum-val">
                   <span class="mss-sum-key">Location</span>
                   <span class="truncate">{{ where }}</span>
-                  <span v-if="!lowSpace" class="text-subtle-foreground"
-                    >{{ freeLabel(free) }} free{{
-                      flow.movedDisk ? ` on ${DETECTED.otherDisk.name}` : ''
-                    }}</span
+                  <span :class="lowSpace ? 'text-status-danger' : 'text-subtle-foreground'"
+                    >{{ freeLabel(free) }} free · ~{{ REQUIRED_GB }} GB required</span
                   >
-                  <span v-else class="text-status-danger"
-                    >Only {{ DETECTED.lowFreeGb }} GB free. The install needs
-                    {{ DETECTED.downloadGb }} GB, plus room for models.</span
-                  >
-                  <span v-if="lowSpace" class="mss-fix">
-                    <Button size="sm" variant="secondary" @click="flow.movedDisk = true"
-                      ><HardDrive :size="14" />Install on {{ DETECTED.otherDisk.name }} ·
-                      {{ freeLabel(DETECTED.otherDisk.freeGb) }} free</Button
-                    >
-                    <Button size="sm" variant="ghost" @click="changeSetup">Choose a folder…</Button>
-                  </span>
                 </span>
                 <TriangleAlert
                   v-if="lowSpace"
                   :size="16"
                   class="mss-bad"
-                  aria-label="Needs a fix"
+                  aria-label="Low Disk Space"
                 />
                 <CircleCheck v-else :size="16" class="mss-ok" aria-label="Checked" />
               </div>
@@ -496,14 +386,14 @@ const failed = computed(() => flow.step === 'error')
             </section>
           </template>
 
-          <!-- Intel Mac: no local install, so the way forward is here. -->
+          <!-- Intel Mac: today's Unsupported Hardware alert. A local install
+               can't be picked; Cloud is on the first screen, Remote Connection
+               under Change. -->
           <template v-else>
-            <DialogTitle as="h3" class="text-title font-semibold"
-              >ComfyUI can't run on this Mac</DialogTitle
-            >
+            <DialogTitle as="h3" class="text-title font-semibold">Unsupported Hardware</DialogTitle>
             <DialogDescription
-              >It needs a Mac with Apple Silicon (M1 or later). This Mac has an Intel
-              processor.</DialogDescription
+              >ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not
+              supported.</DialogDescription
             >
             <div class="mss-stage is-short">
               <SetupBloom tone="err" />
@@ -511,57 +401,33 @@ const failed = computed(() => flow.step === 'error')
                 <div class="mss-stage-subject">
                   <span class="mss-stage-glyph"><Laptop :size="20" /></span>
                   <span class="mss-stage-title">Intel processor</span>
-                  <span class="mss-chip is-bad ml-auto"
-                    ><TriangleAlert :size="12" />Not supported</span
-                  >
                 </div>
               </div>
             </div>
-            <RadioGroupRoot v-model="intelWay" class="mss-opts" aria-label="Run ComfyUI">
-              <RadioGroupItem value="cloud" class="mss-opt">
-                <span class="mss-opt-icon is-cloud"><Cloud :size="18" /></span>
-                <span class="mss-opt-text">
-                  <span class="flex items-center gap-2">
-                    <span class="text-ui font-medium text-base-foreground">Comfy Cloud</span>
-                    <Badge>For this Mac</Badge>
-                  </span>
-                  <span class="text-ui text-subtle-foreground"
-                    >Nothing to install. Runs on our GPUs.</span
-                  >
-                </span>
-                <span class="mss-opt-radio"></span>
-              </RadioGroupItem>
-              <RadioGroupItem value="server" class="mss-opt">
-                <span class="mss-opt-icon"><ArrowLeftRight :size="18" /></span>
-                <span class="mss-opt-text">
-                  <span class="text-ui font-medium text-base-foreground">Connect to a server</span>
-                  <span class="text-ui text-subtle-foreground"
-                    >Already run ComfyUI on another machine? Use this Mac as the screen.</span
-                  >
-                </span>
-                <span class="mss-opt-radio"></span>
-              </RadioGroupItem>
-            </RadioGroupRoot>
           </template>
         </div>
         <footer class="mar-wizard-foot mss-foot">
           <Button v-if="flow.takeover" variant="ghost" size="lg" @click="flow.step = 'first'"
             >Back</Button
           >
-          <span class="flex-1 text-ui text-subtle-foreground">{{
-            unsupported ? '' : `${freeLabel(free)} free · ~${REQUIRED_GB} GB required`
-          }}</span>
-          <Button
-            v-if="!unsupported"
-            variant="primary"
-            size="lg"
-            :disabled="!canInstall"
-            @click="startInstall"
-            >Install</Button
-          >
-          <Button v-else variant="primary" size="lg" @click="continueIntel">{{
-            intelWay === 'cloud' ? 'Continue with Cloud' : 'Connect to a server…'
-          }}</Button>
+          <!-- Today's low-space warning: it asks, it doesn't block. -->
+          <template v-if="flow.confirmLowDisk">
+            <span class="mr-auto grid text-ui">
+              <span class="font-medium text-base-foreground">Low Disk Space</span>
+              <span class="text-subtle-foreground"
+                >The target drive only has {{ freeLabel(free) }} free. This operation may require
+                approximately {{ REQUIRED_GB }} GB. You may run out of space during the
+                process.</span
+              >
+            </span>
+            <Button variant="ghost" size="lg" @click="flow.confirmLowDisk = false">Cancel</Button>
+            <Button variant="primary" size="lg" @click="toTemplates">Continue Anyway</Button>
+          </template>
+          <template v-else>
+            <span class="flex-1"></span>
+            <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
+            <Button v-else variant="primary" size="lg" @click="continueSetup">Continue</Button>
+          </template>
         </footer>
       </template>
 
@@ -640,7 +506,7 @@ const failed = computed(() => flow.step === 'error')
                     <span class="text-ui font-medium text-base-foreground">{{ h.label }}</span>
                     <Badge v-if="h.value === 'mps'">Detected</Badge>
                   </span>
-                  <span class="text-ui text-subtle-foreground">{{ h.hint }}</span>
+                  <span v-if="h.hint" class="text-ui text-subtle-foreground">{{ h.hint }}</span>
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
@@ -661,49 +527,101 @@ const failed = computed(() => flow.step === 'error')
         </footer>
       </template>
 
-      <!-- Installing, with the workflow pick in the wait; Error, in place. -->
+      <!-- Template: today's starter-workflow step, after Set up. -->
+      <template v-else-if="flow.step === 'template'">
+        <div :key="flow.step" class="mar-wizard-body mss-body">
+          <DialogTitle as="h3" class="text-title font-semibold"
+            >Choose a starter workflow</DialogTitle
+          >
+          <DialogDescription
+            >Opens a ready-to-run workflow. Models download during setup.</DialogDescription
+          >
+          <div class="mss-pick-head">
+            <MarSeg v-model="flow.tab" label="Workflow type" :options="TABS" />
+          </div>
+          <div class="mss-cards">
+            <MediaCard
+              v-for="s in STARTERS[flow.tab]"
+              :key="s.id"
+              ratio="4/3"
+              :selected="flow.picked?.id === s.id"
+              :aria-pressed="flow.picked?.id === s.id"
+              class="mss-card"
+              @click="pick(s)"
+              @keydown.enter.prevent="pick(s)"
+              @keydown.space.prevent="pick(s)"
+            >
+              <template #media>
+                <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
+              </template>
+              <template v-if="flow.picked?.id === s.id" #top-left>
+                <span class="mss-card-check"><Check :size="12" :stroke-width="3" /></span>
+              </template>
+              <span class="line-clamp-2 text-ui font-medium text-base-foreground">{{
+                s.title
+              }}</span>
+              <span class="text-ui tabular-nums text-subtle-foreground">{{
+                s.credits ? 'No download' : `${s.gb} GB`
+              }}</span>
+            </MediaCard>
+          </div>
+          <Checkbox v-if="!flow.takeover" v-model="dontShowTemplates"
+            >Don't show this template step again</Checkbox
+          >
+        </div>
+        <footer class="mar-wizard-foot mss-foot">
+          <Button variant="ghost" size="lg" class="mr-auto" @click="flow.step = 'setup'"
+            >Back</Button
+          >
+          <Button size="lg" @click="installWith(null)">Skip &amp; Install</Button>
+          <Button variant="primary" size="lg" @click="installWith(flow.picked)">Install</Button>
+        </footer>
+      </template>
+
+      <!-- Installing: today's install wait. The scene of Comfy outputs at its
+           own proportions with nothing over it, the Cloud pitch above it,
+           progress below. Error: today's Operation failed, in place. -->
       <template v-else>
         <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="sr-only">{{
-            failed ? 'The install stopped' : 'Installing ComfyUI'
+            failed ? 'Operation failed' : 'Installing ComfyUI'
           }}</DialogTitle>
-          <section class="mss-prog" :class="failed && 'is-err'">
-            <!-- The bloom resolves with the install, toward what opens first. -->
-            <div class="mss-stage is-tall">
-              <SetupBloom
-                :resolve="flow.percent / 100"
-                :src="flow.picked ? imgUrl(flow.picked.img) : undefined"
-                :tone="failed ? 'err' : 'idle'"
-              />
-              <div class="mss-stage-ui">
-                <div class="mss-stage-top">
-                  <Transition name="mss-fade" mode="out-in">
-                    <span v-if="!failed" :key="flow.picked?.id ?? 'blank'" class="mss-chip">{{
-                      flow.picked ? `Opens with ${flow.picked.title}` : 'Opens with a blank canvas'
-                    }}</span>
-                  </Transition>
-                </div>
-                <div class="mss-stage-foot">
-                  <div class="mss-prog-head">
-                    <span class="mss-stage-title is-big">{{
-                      failed ? 'The install stopped' : 'Installing ComfyUI'
-                    }}</span>
-                    <span v-if="!failed" class="mss-stage-sub tabular-nums"
-                      >{{ flow.percent }}%</span
-                    >
-                  </div>
-                  <div
-                    class="mss-bar"
-                    role="progressbar"
-                    :aria-valuenow="flow.percent"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    aria-label="Install progress"
-                  >
-                    <i :style="{ width: flow.percent + '%' }"></i>
-                  </div>
-                </div>
-              </div>
+          <section class="mss-prog" :class="failed ? 'is-err' : 'is-wait'">
+            <div
+              v-if="!failed"
+              class="mss-pitch"
+              role="region"
+              :aria-label="say('installShowcase.label')"
+            >
+              <Transition name="mss-fade" mode="out-in">
+                <p :key="showcase.card.value.id" class="mss-pitch-line">
+                  <span class="text-base-foreground">{{ say(showcase.card.value.title) }}</span
+                  ><span class="mss-pitch-sep" aria-hidden="true"></span
+                  >{{ say(showcase.card.value.body) }}
+                </p>
+              </Transition>
+              <Button size="sm" variant="ghost" @click="toast('Opening Comfy Cloud')"
+                >{{ say('installShowcase.cloudCta') }}<ArrowRight :size="12"
+              /></Button>
+            </div>
+            <div v-if="!failed" class="mss-scene-frame">
+              <BrandSceneAnimation />
+            </div>
+            <div class="mss-prog-head">
+              <span class="mss-stage-title is-big">{{
+                failed ? 'Operation failed' : 'Installing ComfyUI'
+              }}</span>
+              <span v-if="!failed" class="mss-stage-sub tabular-nums">{{ flow.percent }}%</span>
+            </div>
+            <div
+              class="mss-bar"
+              role="progressbar"
+              :aria-valuenow="flow.percent"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-label="Install progress"
+            >
+              <i :style="{ width: flow.percent + '%' }"></i>
             </div>
             <div class="mss-steps-row">
               <ol class="mss-phases">
@@ -719,128 +637,50 @@ const failed = computed(() => flow.step === 'error')
                     <TriangleAlert v-else-if="i === phaseIndex && failed" :size="11" />
                     <span v-else-if="i === phaseIndex" class="mss-phase-pulse"></span>
                   </span>
-                  <span class="truncate"
-                    >{{ p.label }}{{ i === 0 ? ` · ${DETECTED.downloadGb} GB` : '' }}</span
-                  >
+                  <span class="truncate">{{ p.label }}</span>
                 </li>
               </ol>
               <button
-                v-if="!failed"
                 type="button"
                 class="mss-logs-toggle"
                 :aria-expanded="flow.logs"
                 @click="flow.logs = !flow.logs"
               >
-                <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />{{
-                  flow.logs ? 'Hide logs' : 'View logs'
-                }}
+                <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />View logs
               </button>
             </div>
-            <pre v-if="flow.logs && !failed" class="mss-logs">
+            <pre v-if="flow.logs || failed" class="mss-logs">
 [setup] Installing torch==2.7.1 …
-[setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)</pre
-            >
-          </section>
-
-          <!-- Error: what happened and what to do next. -->
-          <template v-if="failed">
-            <div class="mss-callout is-err" role="alert">
-              <span class="mss-tile-icon"><TriangleAlert :size="16" /></span>
-              <div class="grid gap-1">
-                <p class="text-ui font-medium text-base-foreground">
-                  The network connection dropped while downloading packages.
-                </p>
-                <p class="text-ui text-muted-foreground">Check that you are online, then retry.</p>
-              </div>
-            </div>
-            <pre class="mss-logs">
-[setup] Installing torch==2.7.1 …
-[setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)
+[setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)<template v-if="failed">
 <span class="e">ERROR: ConnectionResetError(54, 'Connection reset by peer')</span>
-<span class="e">pip exited with code 2</span></pre>
-          </template>
-
-          <!-- The pick: optional, nothing chosen until you choose. -->
-          <section v-else class="mss-pick" aria-labelledby="mss-pick-title">
-            <!-- Title and tabs share one row; the lead runs under both. -->
-            <div class="mss-pick-head">
-              <h4 id="mss-pick-title" class="text-heading font-semibold text-base-foreground">
-                While it installs, pick something to make first
-              </h4>
-              <MarSeg v-model="flow.tab" label="Workflow type" :options="TABS" />
-              <p class="mss-pick-lead text-ui text-muted-foreground">
-                ComfyUI opens as soon as it is ready. Models keep downloading in the background.
-              </p>
-            </div>
-            <div class="mss-cards">
-              <!-- Card corners as on Mar's pages: the check top-left, the
-                   chip bottom-left. -->
-              <MediaCard
-                v-for="s in STARTERS[flow.tab]"
-                :key="s.id"
-                ratio="4/3"
-                :selected="flow.picked?.id === s.id"
-                :aria-pressed="flow.picked?.id === s.id"
-                :aria-disabled="!fits(s) || undefined"
-                :class="cn('mss-card', !fits(s) && 'is-nofit')"
-                @click="pick(s)"
-                @keydown.enter.prevent="pick(s)"
-                @keydown.space.prevent="pick(s)"
-              >
-                <template #media>
-                  <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
-                  <span v-if="s.tag || s.credits" class="mss-card-chip">
-                    <Badge variant="overlay">{{ s.credits ? 'Uses credits' : s.tag }}</Badge>
-                  </span>
-                </template>
-                <template v-if="flow.picked?.id === s.id" #top-left>
-                  <span class="mss-card-check"><Check :size="12" :stroke-width="3" /></span>
-                </template>
-                <span class="line-clamp-2 text-ui font-medium text-base-foreground">{{
-                  s.title
-                }}</span>
-                <span
-                  class="text-ui tabular-nums"
-                  :class="fits(s) ? 'text-subtle-foreground' : 'text-status-danger'"
-                  >{{ fits(s) ? sizeOf(s) : `Needs ${s.gb} GB, not enough space` }}</span
-                >
-              </MediaCard>
-            </div>
-            <p class="text-ui text-subtle-foreground tabular-nums" aria-live="polite">
-              <template v-if="flow.picked && !flow.picked.credits"
-                >{{ freeAfter }} GB free on this disk after its models download.</template
-              >
-              <template v-else-if="!flow.picked"
-                >Optional. Without a pick, it opens a blank canvas.</template
-              >
-            </p>
+<span class="e">pip exited with code 2</span></template></pre>
+            <Button v-if="failed" size="sm" class="self-start" @click="toast('Copied')"
+              ><Copy :size="14" />Copy</Button
+            >
           </section>
         </div>
 
         <footer class="mar-wizard-foot mss-foot">
           <template v-if="failed">
             <Button variant="ghost" size="lg" class="mr-auto" @click="backFromError">Back</Button>
-            <Button size="lg" @click="toast('Error details copied')"
-              ><Copy :size="14" />Copy error details</Button
-            >
-            <Button variant="primary" size="lg" @click="retryInstall">Retry install</Button>
+            <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
           </template>
           <template v-else-if="!flow.confirmCancel">
-            <Button
-              variant="ghost"
-              size="lg"
-              class="mr-auto text-status-danger hover:bg-status-danger/10 hover:text-status-danger"
-              @click="flow.confirmCancel = true"
-              >Cancel install</Button
+            <Button variant="ghost" size="lg" @click="flow.confirmCancel = true"
+              ><ArrowLeft :size="14" />Return to Dashboard</Button
             >
-            <Button size="lg" @click="toBackground">Continue in background</Button>
           </template>
+          <!-- Today's in-flight confirm: returning cancels the install. -->
           <template v-else>
-            <span class="mr-auto text-ui text-base-foreground">Cancel the install?</span>
-            <Button variant="ghost" size="lg" @click="flow.confirmCancel = false"
-              >Keep installing</Button
-            >
-            <Button variant="destructive" size="lg" @click="cancelInstall">Cancel install</Button>
+            <span class="mr-auto grid text-ui">
+              <span class="font-medium text-base-foreground">Cancel current operation?</span>
+              <span class="text-subtle-foreground"
+                >The operation will stop where it is. Anything not yet completed will be rolled back
+                where possible.</span
+              >
+            </span>
+            <Button variant="ghost" size="lg" @click="flow.confirmCancel = false">Cancel</Button>
+            <Button variant="destructive" size="lg" @click="cancelInstall">Cancel operation</Button>
           </template>
         </footer>
       </template>
