@@ -130,6 +130,15 @@ export const PAGES: DsPage[] = [
     component: tokens('radius')
   },
   {
+    id: 'theme-playground',
+    label: 'Theme playground',
+    group: 'Foundations',
+    title: 'Theme playground',
+    source: 'ComfyUI_frontend packages/design-system/src/css/_palette.css, theme.css',
+    use: 'Primitives and semantic tokens for dark and light, every product live, then the patch.',
+    custom: lazy(() => import('./pages/ThemePlayground.vue'))
+  },
+  {
     id: 'materials-blur',
     label: 'Materials · Blur',
     group: 'Foundations',

@@ -9,6 +9,10 @@ import { createApp, type Component } from 'vue'
  *   stage   one component opened (a menu, a tooltip), inside a page
  *   app     the whole prototype on one page, state or knob (kit/AppShot.vue)
  *   play    one component with props from the Playground (kit/PlayFrame.vue)
+ *   tokens  the Theme playground's specimens (kit/TokensFrame.vue)
+ *
+ * `?pg` applies the Theme playground's tokens (theme/apply.ts), in this
+ * frame and the frames it holds.
  *
  * `?seed={"key":"value"}` starts a frame with those prototype settings
  * (the in-memory storage, main.ts), so it can show any knob's value.
@@ -21,7 +25,13 @@ const frame = url.get('frame')
 
 async function boot(): Promise<void> {
   let root: Component
-  if (frame === 'page' || frame === 'stage' || frame === 'app' || frame === 'play') {
+  if (
+    frame === 'page' ||
+    frame === 'stage' ||
+    frame === 'app' ||
+    frame === 'play' ||
+    frame === 'tokens'
+  ) {
     for (const [k, v] of Object.entries(JSON.parse(url.get('seed') ?? '{}')))
       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v))
     const theme = url.get('theme') === 'light' ? 'light' : 'dark'
@@ -38,6 +48,7 @@ async function boot(): Promise<void> {
     installForcedStates()
     const { installPlayback } = await import('./kit/playback')
     installPlayback()
+    if (url.has('pg')) (await import('./theme/apply')).applyPlaygroundCss(theme)
     root =
       frame === 'page'
         ? (await import('./kit/PageFrame.vue')).default
@@ -45,7 +56,9 @@ async function boot(): Promise<void> {
           ? (await import('./kit/StageFrame.vue')).default
           : frame === 'play'
             ? (await import('./kit/PlayFrame.vue')).default
-            : (await import('./kit/AppFrame.vue')).default
+            : frame === 'tokens'
+              ? (await import('./kit/TokensFrame.vue')).default
+              : (await import('./kit/AppFrame.vue')).default
   } else {
     // The site's own tabs and theme switch slide like the app's.
     await import('../motion/tabSlide')

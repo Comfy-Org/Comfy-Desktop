@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
         <span class="ds-brand-sub">Design system</span>
       </a>
       <MarSeg
-        v-if="active !== 'playground'"
+        v-if="active !== 'playground' && !page.custom"
         v-model="theme"
         class="ds-views"
         :options="THEMES"
@@ -253,7 +253,7 @@ onBeforeUnmount(() => {
             <p v-if="page.source" class="ds-page-src">
               <code>{{ page.source.split(',')[0] }}</code>
             </p>
-            <div v-if="!bare" class="ds-page-tabs">
+            <div v-if="!bare && !page.custom" class="ds-page-tabs">
               <MarSeg v-model="active" :options="tabs" label="Page sections" />
             </div>
             <nav v-if="anchors.length > 1" class="ds-anchors" aria-label="On this page">
@@ -266,7 +266,10 @@ onBeforeUnmount(() => {
 
           <!-- Components and patterns: tabs, Overview first (the example and
                the decisions). Foundations: Overview, Details, Code. -->
-          <template v-if="kind === 'foundation'">
+          <!-- A page drawn by itself (the Theme playground): both themes,
+               its own sections. -->
+          <component :is="page.custom" v-if="page.custom" />
+          <template v-else-if="kind === 'foundation'">
             <template v-if="active === 'overview'">
               <component :is="page.bar" v-if="page.bar" />
               <ThemeFrames
