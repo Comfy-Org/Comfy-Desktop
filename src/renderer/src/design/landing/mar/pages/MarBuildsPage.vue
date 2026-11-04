@@ -26,6 +26,7 @@ import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
 import { openBuild } from '../build/buildTab'
+import { clearError, errorOf } from '../build/buildErrors'
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
@@ -58,9 +59,7 @@ type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 
 const builds = collection<Build>(
   instances.value.map((i) =>
-    i.id === 'local-flux'
-      ? { ...i, state: 'error' as const, error: 'A custom node didn’t load. See the logs.' }
-      : { ...i }
+    errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }
   ),
   'build'
 )
@@ -208,6 +207,7 @@ function update(b: Build): void {
 }
 function retry(b: Build): void {
   b.error = undefined
+  clearError(b.id)
   start(b)
 }
 function primary(b: Build): { label: string; icon: unknown; run: () => void } {

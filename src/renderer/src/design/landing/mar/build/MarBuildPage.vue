@@ -8,7 +8,9 @@ import {
   Folder,
   Laptop,
   Rocket,
+  RotateCw,
   Save,
+  ScrollText,
   Settings2,
   Square,
   Upload,
@@ -58,6 +60,7 @@ import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { createSnapshot, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
 import { nextBuildTab } from './buildTab'
+import { clearError, errorOf } from './buildErrors'
 import '../table/table.css'
 
 /**
@@ -165,7 +168,16 @@ watch(TABS, (list) => {
   if (!list.some((t) => t.value === tab.value)) tab.value = list[0]!.value
 })
 
+// Didn't start: the header's chip is the one red signal; the strip under
+// it says why and offers the way out.
+const error = computed(() => errorOf(env.id))
+function retry(): void {
+  clearError(env.id)
+  toast(`Starting ${env.name}…`)
+}
+
 const status = computed<{ id: ItemStatus; label: string }>(() => {
+  if (error.value) return { id: 'failed', label: 'Failed to start' }
   if (k.value === 'managed')
     return st.value.live
       ? { id: 'live', label: st.value.label }
@@ -262,6 +274,17 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         <MarItemMenu v-if="k !== 'managed'" :lines label="Build actions" />
       </template>
     </MarEntityHeader>
+
+    <div v-if="error" class="mar-bp-alert" role="alert">
+      <div class="min-w-0 flex-1">
+        <p class="mar-bp-alert-title">{{ env.name }} didn’t start</p>
+        <p class="mar-bp-alert-text">{{ error }}</p>
+      </div>
+      <Button variant="ghost" size="sm" @click="toast('Opening the logs')"
+        ><ScrollText :size="13" />Show logs</Button
+      >
+      <Button size="sm" @click="retry"><RotateCw :size="13" />Try again</Button>
+    </div>
 
     <!-- One row: the sections left, the open section's action right. -->
     <div class="mar-bp-row">
@@ -476,6 +499,27 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 .mar-bp-glyph > * {
   width: auto !important;
   height: auto !important;
+}
+.mar-bp-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 20px;
+  padding: 12px 12px 12px 16px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mar-bp-alert-title {
+  margin: 0;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.mar-bp-alert-text {
+  margin: 2px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
 }
 .mar-bp-row {
   display: flex;

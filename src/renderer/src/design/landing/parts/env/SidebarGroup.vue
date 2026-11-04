@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, Plus } from 'lucide-vue-next'
+import { Folder, OctagonAlert, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
@@ -10,6 +10,7 @@ import { allWorkflows } from '../../gallery'
 import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
 import { PROJECTS } from '../../mock'
 import { can } from '../../milestones'
+import { errorOf } from '../../mar/build/buildErrors'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 
 /**
@@ -43,7 +44,8 @@ const rows = computed<Row[]>(() =>
         count: can.value.breadcrumb
           ? allWorkflows.value.filter((w) => w.envId === i.id).length
           : undefined,
-        live: i.state === 'running'
+        live: i.state === 'running',
+        failed: errorOf(i.id)
       }))
 )
 const show = computed(() => proto.signedIn || instances.value.some((i) => i.kind === 'local'))
@@ -93,6 +95,10 @@ const itemClass = (page: Page): string =>
       <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" />
       <span class="sidebar-label text-left">{{ r.label }}</span>
       <span v-if="r.live" class="size-1.5 rounded-full bg-status-running" />
+      <!-- Didn't start: the attention icon, its reason on hover. -->
+      <Tooltip v-else-if="'failed' in r && r.failed" :content="`Failed to start · ${r.failed}`">
+        <OctagonAlert :size="14" class="shrink-0 text-status-danger" aria-label="Failed to start" />
+      </Tooltip>
       <!-- Projects: the environment the project runs on -->
       <Tooltip
         v-if="proto.projects && envById(r.envId!)"
