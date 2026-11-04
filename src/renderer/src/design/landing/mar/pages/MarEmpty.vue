@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import Button from '../../ui/Button.vue'
+import { brandMotif } from '../brand/brandMotif'
+import MarTrio from '../brand/MarTrio.vue'
 
 /**
  * Every empty state in Mar's proposal, in the Favorites design: a small
@@ -8,7 +10,8 @@ import Button from '../../ui/Button.vue'
  * place's icon, a title, one line on what goes here, and the one action
  * that fills it (an optional quieter second). `compact` for a section
  * inside a page (a project's tab, a space's tab, a search with nothing);
- * no pictures shows the badge alone.
+ * no pictures shows the badge alone. With the brand motif on, the trio
+ * takes the art's place and its open slab holds the icon.
  */
 const {
   icon,
@@ -35,7 +38,10 @@ const emit = defineEmits<{ action: []; second: [] }>()
 
 <template>
   <section class="mar-empty" :class="[compact && 'is-compact', tone && `is-${tone}`]">
-    <div class="mar-empty-art" :class="!pics.length && 'is-bare'" aria-hidden="true">
+    <div v-if="brandMotif.id === 'trio'" class="mar-empty-trio mar-trio-host">
+      <MarTrio :u="compact ? 20 : 32" :icon :icon-size="compact ? 10 : 14" />
+    </div>
+    <div v-else class="mar-empty-art" :class="!pics.length && 'is-bare'" aria-hidden="true">
       <img
         v-for="(src, i) in pics.slice(0, 3)"
         :key="src"
@@ -73,6 +79,9 @@ const emit = defineEmits<{ action: []; second: [] }>()
 .mar-empty.is-compact {
   gap: 18px;
   padding: 44px 0 36px;
+}
+.mar-empty-trio {
+  padding: 8px;
 }
 .mar-empty-art {
   position: relative;

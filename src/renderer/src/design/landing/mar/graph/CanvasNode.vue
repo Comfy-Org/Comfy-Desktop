@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Upload
 } from 'lucide-vue-next'
+import MarSpin from '../brand/MarSpin.vue'
 import { NODE_ICONS } from './nodeIcons'
 import {
   SOCKETS,
@@ -416,7 +417,8 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
             <!-- Running: the progress sits on the preview it is making. -->
             <span v-if="running" class="sg-run" aria-live="polite">
               <span class="sg-run-label"
-                ><LoaderCircle :size="12" class="sg-spin" />{{ node.verb ?? 'Running'
+                ><MarSpin :icon="LoaderCircle" :size="12" spin="sg-spin" />{{
+                  node.verb ?? 'Running'
                 }}<template v-if="showProgress">
                   · {{ Math.round(progress * 100) }}%</template
                 ></span

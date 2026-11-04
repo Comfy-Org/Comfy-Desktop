@@ -14,6 +14,7 @@ import { modeStyle } from './modes/modeStyle'
 import { cover } from './cover'
 import { homeBuilds } from './homeBuilds'
 import { templateStyle } from './brand/templateStyle'
+import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
 import { p20 } from './p20/p20'
 import { graphStyle } from './graph/graphStyle'
@@ -193,6 +194,7 @@ export const TWEAKS = {
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   pageTransition: one(pageTransition, 'rise'),
+  brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
   firstRun: one(firstRun, 'original'),

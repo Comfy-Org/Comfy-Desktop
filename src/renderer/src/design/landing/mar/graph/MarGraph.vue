@@ -51,6 +51,8 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
+import { brandMotif } from '../brand/brandMotif'
+import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
@@ -726,7 +728,17 @@ function onKey(e: KeyboardEvent): void {
 }
 
 // ── Files and assets dropped on the canvas become Image nodes. ──
+// While one is over the canvas, `dropping` lights the target (brand motif).
+const dropping = ref(false)
+function onDragOver(e: DragEvent): void {
+  const types = e.dataTransfer?.types ?? []
+  dropping.value = types.includes('Files') || types.includes('text/x-mg-asset')
+}
+function onDragLeave(e: DragEvent): void {
+  if (!canvas.value?.contains(e.relatedTarget as Node | null)) dropping.value = false
+}
 function onDrop(e: DragEvent): void {
+  dropping.value = false
   const dt = e.dataTransfer
   if (!dt) return
   const at = toWorld(local(e))
@@ -1241,9 +1253,15 @@ function addFromPanel(kind: NodeKind): void {
       @pointerup="onUp"
       @pointercancel="onUp"
       @dblclick="onDouble"
-      @dragover.prevent
+      @dragover.prevent="onDragOver"
+      @dragleave="onDragLeave"
       @drop="onDrop"
     >
+      <!-- Brand motif on: a file over the canvas lights it like the slot. -->
+      <div v-if="dropping && brandMotif.id === 'trio'" class="mg-drop mar-trio-host">
+        <MarTrio :u="20" :icon="Plus" :icon-size="10" />
+        <span>Drop to add as an Image node</span>
+      </div>
       <div
         class="mg-world"
         :style="{
@@ -1768,6 +1786,26 @@ function addFromPanel(kind: NodeKind): void {
   touch-action: none;
   background: radial-gradient(circle at 1px 1px, var(--mg-dot) 1px, transparent 1.4px) var(--mg-gx)
     var(--mg-gy) / var(--mg-gs) var(--mg-gs);
+}
+.mg-drop {
+  position: absolute;
+  inset: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: var(--radius-panel, 16px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
+    transparent 60%
+  );
+  box-shadow: inset 0 0 0 1.25px var(--color-base-foreground);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  pointer-events: none;
 }
 .mg-canvas.is-hand {
   cursor: grab;

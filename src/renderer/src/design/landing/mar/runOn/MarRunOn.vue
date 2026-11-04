@@ -11,6 +11,7 @@ import {
   Search,
   Settings2
 } from 'lucide-vue-next'
+import MarSpin from '../brand/MarSpin.vue'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
@@ -201,7 +202,12 @@ function toList(e: KeyboardEvent): void {
               >
             </span>
             <span class="mar-ro-meta"
-              ><LoaderCircle v-if="i.state === 'launching'" :size="11" class="mar-ro-spin" /><span
+              ><MarSpin
+                v-if="i.state === 'launching'"
+                :icon="LoaderCircle"
+                :size="11"
+                spin="mar-ro-spin"
+              /><span
                 v-else-if="i.kind === 'local' || i.deployment"
                 :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
               />{{ runOnMeta(i) }}</span
@@ -237,7 +243,12 @@ function toList(e: KeyboardEvent): void {
               >
             </span>
             <span class="mar-ro-meta"
-              ><LoaderCircle v-if="i.state === 'launching'" :size="11" class="mar-ro-spin" /><span
+              ><MarSpin
+                v-if="i.state === 'launching'"
+                :icon="LoaderCircle"
+                :size="11"
+                spin="mar-ro-spin"
+              /><span
                 v-else-if="i.kind === 'local' || i.deployment"
                 :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
               />{{ runOnMeta(i) }}</span

@@ -16,6 +16,7 @@ import { BUILD_NAVS, buildNav } from './build/buildNav'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
+import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
 import { P20, p20 } from './p20/p20'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
@@ -109,7 +110,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'nav', 'pageTransition', 'palette', 'theme']
+const GLOBAL: TweakId[] = ['surface', 'nav', 'pageTransition', 'palette', 'theme', 'brandMotif']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -216,6 +217,10 @@ function onScroll(e: Event): void {
                 :options="THEMES"
               />
             </div>
+          </Row>
+          <!-- The trio in empty states, step progress and loaders. -->
+          <Row v-if="isMariana" label="Brand motif">
+            <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
           </Row>
         </section>
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import { Plus } from 'lucide-vue-next'
+import { brandMotif } from '../brand/brandMotif'
+import MarTrio from '../brand/MarTrio.vue'
 
 /**
  * The "New …" tile that ends a library grid (Mar's pages). Built like a
@@ -8,6 +10,7 @@ import { Plus } from 'lucide-vue-next'
  * and a caption under it, so it sits in the grid as one of them. The
  * picture area is an empty, dashed slot holding + and the label; a
  * second way in (e.g. Import a file) is a quiet action in the caption.
+ * With the brand motif on, the trio holds the + in its open slab.
  */
 const {
   label,
@@ -28,10 +31,12 @@ const emit = defineEmits<{ create: []; alt: [] }>()
     <button
       type="button"
       class="mar-add-main"
+      :class="brandMotif.id === 'trio' && 'mar-trio-host'"
       :style="{ aspectRatio: ratio }"
       @click="emit('create')"
     >
-      <span class="mar-add-plus"><Plus :size="18" /></span>
+      <MarTrio v-if="brandMotif.id === 'trio'" :u="22" :icon="Plus" :icon-size="12" />
+      <span v-else class="mar-add-plus"><Plus :size="18" /></span>
       <span class="mar-add-label">{{ label }}</span>
     </button>
     <span class="mar-add-caption">
