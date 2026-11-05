@@ -7,6 +7,7 @@ import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
+import AppsHost from './AppsHost.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
@@ -205,8 +206,12 @@ if (params.get('e2e') === '1') {
   })
 }
 
+/** The Apps page shares the chooser's panel; this picks which one the slot shows. */
+const appsOpen = ref(false)
+
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
+  if (panel === 'chooser' && appsOpen.value) return 'apps'
   return panel === 'chooser' || panel === 'benchmarks' || panel === 'performance-test'
     ? panel
     : null
@@ -223,6 +228,11 @@ function openBuildDetails(inst: Installation): void {
 
 function closeBuildDetails(): void {
   buildDetailsId.value = null
+}
+
+function handleSidebarNavigate(page: DashboardPage): void {
+  appsOpen.value = page === 'apps'
+  closeBuildDetails()
 }
 
 watch(activePanel, closeBuildDetails)
@@ -584,7 +594,7 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
-        @navigate="closeBuildDetails"
+        @navigate="handleSidebarNavigate"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
@@ -610,15 +620,16 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
+            <AppsHost v-if="appsOpen" />
             <BuildDetailsView
-              v-if="buildDetailsInstall"
+              v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
             />
             <ChooserView
-              :visible="!buildDetailsInstall"
+              :visible="!buildDetailsInstall && !appsOpen"
               @pick="handleChooserPick"
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"

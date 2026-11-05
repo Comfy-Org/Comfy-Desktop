@@ -23,6 +23,7 @@ import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
 /** The panel each sidebar page maps to; a dashboard's Comfy pill shows the chooser. */
 const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
   ['chooser', 'comfy'],
+  ['apps', 'comfy'],
   ['benchmarks', 'benchmarks'],
   ['performance-test', 'performance-test']
 ])

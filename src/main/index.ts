@@ -30,6 +30,7 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerAppsIpc } from './apps/appsView'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -1414,6 +1415,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
+    registerAppsIpc()
 
     migrateXdgPaths()
     persistWinDataRootChoice()

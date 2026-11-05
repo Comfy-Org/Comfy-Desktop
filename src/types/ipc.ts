@@ -167,7 +167,7 @@ export interface Installation {
 }
 
 /** Full-page screens of a dashboard window, reachable from its sidebar. */
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage = 'chooser' | 'apps' | 'benchmarks' | 'performance-test'
 
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
@@ -1466,6 +1466,10 @@ export interface ElectronApi {
   signalOverlayReady(): void
   /** Switch this dashboard window to one of its full-page screens. */
   navigatePanel(page: DashboardPage): void
+  /** Show the hosted Apps page over this rect of the panel (panel CSS pixels). */
+  showApps(rect: { x: number; y: number; width: number; height: number }): void
+  /** Hide the Apps page; it keeps its state for the next show. */
+  hideApps(): void
   /** Shared storage settings shown on a build's Storage tab. */
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   /** Boot-time restore reveal handshake. The restore window is opened

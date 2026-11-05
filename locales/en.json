@@ -17,6 +17,7 @@
   },
   "sidebar": {
     "builds": "Builds",
+    "apps": "Apps",
     "navigation": "Navigation",
     "home": "Home",
     "tools": "Tools",

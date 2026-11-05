@@ -34,7 +34,8 @@ export default defineConfig({
           comfyTitleBarPreload: resolve(__dirname, 'src/preload/comfyTitleBarPreload.ts'),
           comfyTitlePopupPreload: resolve(__dirname, 'src/preload/comfyTitlePopupPreload.ts'),
           comfyTitleTooltipPreload: resolve(__dirname, 'src/preload/comfyTitleTooltipPreload.ts'),
-          comfySystemModalPreload: resolve(__dirname, 'src/preload/comfySystemModalPreload.ts')
+          comfySystemModalPreload: resolve(__dirname, 'src/preload/comfySystemModalPreload.ts'),
+          appsPreload: resolve(__dirname, 'src/preload/appsPreload.ts')
         }
       }
     }
