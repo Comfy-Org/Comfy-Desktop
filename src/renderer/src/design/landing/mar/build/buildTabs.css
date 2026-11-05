@@ -261,20 +261,11 @@
   padding: 16px 20px;
 }
 .mar-args-search {
-  display: flex;
-  height: 40px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
+  padding: 16px 20px 2px;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-args-search input {
-  flex: 1;
-  border: 0;
-  background: none;
-  color: var(--color-base-foreground);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
+/* The field opens the flags: no line between it and the first group. */
+:root .proto-ui.proto-ui.proto-ui .mar-args-search + * {
+  border-top-width: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-args-search button {
   display: inline-flex;

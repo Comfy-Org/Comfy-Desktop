@@ -184,11 +184,14 @@ watch(
         <span class="mar-bt-hint">Edit directly, or toggle individual flags below.</span>
       </div>
       <div class="mar-args-search">
-        <Search :size="14" class="text-subtle-foreground" />
-        <input v-model="query" placeholder="Search arguments…" aria-label="Search arguments" />
-        <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">
-          <X :size="13" />
-        </button>
+        <Input v-model="query" placeholder="Search arguments…" aria-label="Search arguments">
+          <template #leading><Search :size="14" class="text-subtle-foreground" /></template>
+          <template v-if="query" #trailing>
+            <button type="button" aria-label="Clear search" @click.prevent="query = ''">
+              <X :size="13" />
+            </button>
+          </template>
+        </Input>
       </div>
       <p v-if="!groups.length" class="mar-args-none">No arguments match your search.</p>
       <div v-for="g in groups" :key="g.title" class="mar-args-group">
