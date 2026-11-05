@@ -179,8 +179,8 @@ const recent = computed(() =>
           />
         </ScrollRow>
       </section>
-      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
       <MarAppsRow v-if="homeApps.id === 'on' && can.exploreApps" />
+      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader
