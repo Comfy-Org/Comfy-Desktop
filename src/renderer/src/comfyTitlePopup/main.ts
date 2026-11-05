@@ -7,14 +7,8 @@ import TitlePopupApp from './TitlePopupApp.vue'
 import { createAppI18n } from '../lib/i18nFactory'
 import { installPickerSettingsApiShim } from './pickerSettingsApiShim'
 
-// Desktop popups always use the fixed palette; only the title bar follows
-// the embedded ComfyUI theme.
-// Telemetry is captured main-side, not here, to avoid minting a new
-// session on every transient popup open.
 document.documentElement.setAttribute('data-theme', 'dark')
 
-// Must run BEFORE Vue mounts so modules that capture window.api at import
-// time (e.g. useComfyUISettings) see the shim populated.
 installPickerSettingsApiShim()
 
 const pinia = createPinia()

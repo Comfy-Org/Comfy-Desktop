@@ -59,13 +59,6 @@ export function getChannelLabel(channel: string): string {
   return map[channel] || channel
 }
 
-/**
- * The channel to surface for an install. `installation.updateChannel` is a
- * declared preference that can drift from the real checkout (e.g. a `git pull`
- * outside the app leaves a `stable` record many commits past its base tag), so
- * when the tree is ahead of its base stable tag the de-facto channel is
- * `latest`. Never mutates the stored record; the next in-app update reconciles.
- */
 export function getEffectiveChannel(installation: InstallationRecord): string {
   const stored = (installation.updateChannel as string | undefined) || 'stable'
   if (stored !== 'stable') return stored
@@ -87,22 +80,13 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
   return undefined
 }
 
-/** Backend series a torch build belongs to, derived from its PEP 440 local
- *  tag (`cu130` -> CUDA 13.0, `rocm7.2.1` -> ROCm 7.2.1). Untagged builds
- *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
- *  still carry the opaque stackId. */
 function torchSeriesGroup(torch: string | null | undefined): {
   id: string
   label: string
   description?: string
 } {
   const base = torchSeriesBase(torch)
-  // The series description comes from the base tag either way: a nightly
-  // group is the same backend line, so its driver minimum and note apply.
   const description = torchSeriesDescription(base.id)
-  // Nightly (dev) builds form their own series per tag: picking one must be
-  // a deliberate step past a clearly-labeled fork, never something the
-  // cascade lands on while browsing stable builds of the same tag.
   if (torch && isDevVersion(torch)) {
     return {
       id: `nightly-${base.id}`,
@@ -113,10 +97,6 @@ function torchSeriesGroup(torch: string | null | undefined): {
   return { ...base, ...(description ? { description } : {}) }
 }
 
-/** The series dropdown's description: the manifest/in-app series note
- *  (localized when this app version has the key), plus an informational
- *  warning when the detected NVIDIA driver is older than the series'
- *  declared minimum. Undefined when there is nothing to say. */
 function torchSeriesDescription(seriesId: string): string | undefined {
   const info = torchSeriesInfo(seriesId)
   if (!info) return undefined
@@ -130,16 +110,11 @@ function torchSeriesDescription(seriesId: string): string | undefined {
   return parts.length > 0 ? parts.join('  ·  ') : undefined
 }
 
-/** Numeric components of a version-ish string, taken from its first numeric
- *  run: `cu130` -> [130], `rocm7.14.0` -> [7, 14, 0], `2.13.0+cu130` ->
- *  [2, 13, 0]. Empty when there is none (`xpu`, `cpu`, untagged). */
 function versionNumbers(s: string): number[] {
   const run = /\d+(?:\.\d+)*/.exec(s)?.[0] ?? ''
   return run === '' ? [] : run.split('.').map(Number)
 }
 
-/** Newest-first comparison of `versionNumbers` results; missing components
- *  count as 0, so entries without numbers sort last. */
 function compareNumbersDesc(a: number[], b: number[]): number {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const d = (b[i] ?? 0) - (a[i] ?? 0)
@@ -148,12 +123,6 @@ function compareNumbersDesc(a: number[], b: number[]): number {
   return 0
 }
 
-/** Display order for the PyTorch picker: stable series before nightly ones,
- *  series numerically descending (CUDA 13.0 before 12.8, ROCm 7.14 before
- *  7.1), newest torch version first within a series, release date as the
- *  tiebreaker. The series dropdown lists groups in first-appearance order
- *  and group-switching lands on the first match, so this single sort drives
- *  both dropdowns. */
 function compareStackDisplay(a: TorchStackEntry, b: TorchStackEntry): number {
   const nightly = Number(isDevVersion(a.packages.torch)) - Number(isDevVersion(b.packages.torch))
   if (nightly !== 0) return nightly
@@ -184,14 +153,6 @@ function torchSeriesBase(torch: string | null | undefined): { id: string; label:
   return { id: tag, label: tag }
 }
 
-/**
- * The PyTorch stack picker on the Update tab. Uses the synchronously cached
- * catalog (refreshed by check-update); hidden entirely until the cache has
- * compatible stacks. Adopted (pip-managed) installs get the same picker but
- * apply via pip, so the copy skips the bundle download size. Options are
- * presentation only — the change-pytorch handler re-resolves the stackId on
- * the main side.
- */
 function buildPytorchSection(
   installation: InstallationRecord,
   installed: boolean
@@ -201,9 +162,6 @@ function buildPytorchSection(
   if (stacks.length === 0) return null
   const adopted = installation.adopted === true
 
-  // Full-tuple match (local tags stripped): torch version alone can't
-  // distinguish stacks, and dist-info versions may carry a +cuXXX tag the
-  // catalog omits.
   const installedTuple = getInstalledTorchTuple(installation)
   const currentTorch = installedTuple.torch
   const current = currentTorch
@@ -211,23 +169,11 @@ function buildPytorchSection(
     : undefined
   const fieldValue = current ? current.stackId : 'pytorch-current'
 
-  // Split the picker by backend series (CUDA 13.0 vs 12.8, ROCm x.y) only
-  // when the filtered catalog actually spans several series; a single-series
-  // list keeps today's flat dropdown. The synthetic "current" entry never
-  // forces grouping but joins its derived series so the cascade stays
-  // coherent (every option carries a full path or none does).
   const grouped = new Set(stacks.map((s) => torchSeriesGroup(s.packages.torch).id)).size >= 2
 
-  // The cached catalog concatenates bundle stacks before index stacks with
-  // no display order; sort by series/version so cu130 never lands between
-  // cu126 and cu128 and each series lists its newest torch first.
   const ordered = [...stacks].sort(compareStackDisplay)
 
   const options: Record<string, unknown>[] = []
-  // The installed torch doesn't match any catalog stack (manual install or
-  // catalog gap): surface it as a read-only "current" entry. It leads the
-  // flat list, but in grouped mode it goes last so switching back to its
-  // series still lands on the newest real stack first.
   const syntheticCurrent = current
     ? null
     : {
@@ -245,28 +191,16 @@ function buildPytorchSection(
   if (syntheticCurrent && !grouped) options.push(syntheticCurrent)
   for (const s of ordered) {
     const isCurrent = s.stackId === current?.stackId
-    // Pip-applied entries (adopted installs, index-served stacks) download
-    // wheels via pip — the bundle size is not what downloads (index entries
-    // have no bundle at all).
     const viaPip = stackAppliesViaPip(s.source, adopted)
     const parts: string[] = []
     if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
     if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
-    // Localized note when this app version has the key; remote-manifest
-    // entries may carry a newer key, falling back to their plain-text note
-    // (t() returns the key itself when the translation is missing).
     const noteKey = s.noteKey ? `standalone.${s.noteKey}` : null
     const localizedNote = noteKey ? t(noteKey) : null
     if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
     else if (s.note) parts.push(s.note)
-    // Switching to a stack that omits torchaudio uninstalls it, so warn on
-    // every such target regardless of what the manifest notes say.
     if (!s.packages.torchaudio && !isCurrent) parts.push(t('standalone.pytorchNoTorchaudioNote'))
-    // Standing warning on every nightly, independent of manifest notes: the
-    // build is unstable and its wheels expire from PyTorch's index.
     if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
-    // GPU-compat notice is informational only: detection can be wrong or
-    // partial (multi-GPU boxes, eGPUs), so mismatched stacks stay selectable.
     if (s.capWarning)
       parts.push(
         t('standalone.pytorchCapWarning', {
@@ -274,9 +208,6 @@ function buildPytorchSection(
           detected: s.capWarning.detected.join(', ')
         })
       )
-    // Same for the series' minimum NVIDIA driver: warn, never hide. Shown
-    // per option too (not just on the series dropdown) so flat single-series
-    // pickers still surface it.
     const driverMismatch = nvidiaDriverMismatch(
       torchSeriesInfo(torchSeriesBase(s.packages.torch).id)
     )
@@ -294,8 +225,6 @@ function buildPytorchSection(
           to: `**${s.packages.torch}**`,
           size: sizeGB
         })
-    // With no hard compute-cap gate anywhere, the confirm dialog is the last
-    // stop before a build with no kernels for the detected GPU installs.
     const capNotice = s.capWarning
       ? `\n\n${t('standalone.pytorchCapConfirmWarning', {
           required: `${s.capWarning.min}-${s.capWarning.max}`,
@@ -363,12 +292,8 @@ function buildPytorchSection(
         productName: 'PyTorch',
         installedVersion: currentTorch ?? '—',
         latestVersion: s.packages.torch,
-        // The row shows what the user picked, which may be a downgrade -
-        // "Latest" would be wrong there.
         latestLabel: t('standalone.pytorchSelectedVersion'),
         updateAvailable: !isCurrent,
-        // No "Up to date" badge on the current stack: other stacks remain
-        // selectable, and stack switches aren't recommended updates.
         hideUpToDateBadge: true,
         ...(actions ? { actions } : {})
       }
@@ -450,7 +375,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     }
   ]
 
-  // Minimal section so the tab appears; SnapshotsView.vue handles rendering.
   if (installed && installation.installPath) {
     sections.push({
       tab: 'snapshots',
@@ -509,12 +433,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         : ''
       const boldInstalled = `**${installedDisplay}**`
       const boldLatest = `**${latestDisplay}**`
-      // A channel switch reads as "Moving to <channel>"; the up/down direction
-      // is incidental and frames it confusingly. Same-channel updates keep the
-      // version-diff / rollback copy.
-      // Every in-place update path explains that custom-node breakage can be
-      // reversed from the auto-saved pre-update snapshot. Keep this in the
-      // confirm copy itself so the user cannot dismiss past it accidentally.
       const baseConfirmMessage = isSwitching
         ? t('channelCards.movingTo', { channel: `**${card.label}**` })
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
@@ -531,9 +449,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           : isDowngrade
             ? t('standalone.downgradingTitle', { version: latestDisplay })
             : t('standalone.updatingTitle', { version: latestDisplay }),
-        // Carry the explicit target channel: the stored `updateChannel` can be
-        // stale, which would pass `--stable` for a latest checkout and silently
-        // downgrade it.
         data: {
           channel: card.value,
           isDowngrade
@@ -560,9 +475,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
             (isSwitching ? switchPrefix : '') +
             t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
           placeholder: t('standalone.copyAndUpdatePlaceholder'),
-          // Default to the source name (never the target version, which goes
-          // stale the moment the copy is updated again). `uniquifyDefault` shows
-          // the numbered name it will actually get on save (e.g. "ComfyUI (8)").
           defaultValue: installation.name,
           uniquifyDefault: true,
           confirmLabel: t('standalone.copyAndUpdateConfirm'),
@@ -630,10 +542,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         copyAction(installation.name, installed),
         openFolderAction(installation.installPath),
         { id: 'share', label: t('actions.share'), style: 'default', enabled: installed },
-        // Adopted installs are non-forgettable: the `.comfyui-desktop-2`
-        // marker on disk would also stop the legacy auto-tracker from
-        // resurfacing them, stranding the user. Matches the same gate in
-        // the chooser context menu (useInstallContextMenu).
         ...(installation.adopted ? [] : [untrackAction()]),
         deleteAction(installation)
       ]

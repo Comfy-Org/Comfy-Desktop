@@ -26,8 +26,6 @@ import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 const { t, locale } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
-// Mirror the title-bar panel keys in src/preload/comfyTitleBarPreload.ts;
-// these are a subset of ComfyPanelKey in src/main/host/registry.ts.
 type ComfyPanelKey =
   | 'comfy'
   | 'performance-test'
@@ -37,19 +35,13 @@ type ComfyPanelKey =
   | 'load-snapshot'
   | 'quick-install'
 
-/** Card owner; keep in sync with CoachmarkKind in src/preload/comfyTitleBarPreload.ts. */
 type CoachmarkKind = 'pill-hint' | 'beta-notice'
 
-/** Position passed to main so the native menu pops below the anchor button.
- *  Coordinates are in title-bar-local pixels — main translates to window
- *  coordinates (titleBarView is at y=0 so they're already aligned). */
 interface MenuAnchor {
   x: number
   y: number
 }
 
-/** Download fields used by the title-bar tray; a subset of DownloadsTrayEntry
- *  in src/preload/comfyTitleBarPreload.ts. */
 interface DownloadsTrayEntry {
   url: string
   filename: string
@@ -59,8 +51,6 @@ interface DownloadsTrayEntry {
   error?: string
 }
 
-/** Payload pushed by main on `comfy-titlebar:downloads-changed`.
- *  Inline mirror of `DownloadsTrayState` in the preload file. */
 interface DownloadsTrayState {
   active: DownloadsTrayEntry[]
   recent: DownloadsTrayEntry[]
@@ -71,16 +61,10 @@ interface Bridge {
   isMac: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
   openNewWindow: () => void
-  /** Pop the File menu natively (avoids WebContentsView clipping the popup). */
   openFileMenu: (anchor: MenuAnchor) => void
-  /** Ask main to dismiss the File menu popup (toggle-close). */
   dismissFileMenu: () => void
-  /** Cached macOS tooltip; native HTML tooltips are unreliable in sibling
-   *  WebContentsViews. Coordinates are title-bar-local (also window-local).
-   *  Main aligns the bubble at leftX, or at rightX when it would overflow. */
   showTooltip: (payload: { text: string; leftX: number; rightX: number; bottomY: number }) => void
   hideTooltip: () => void
-  /** Shared popup for onboarding and beta notices; kind identifies its owner. */
   showCoachmark: (payload: {
     kind?: CoachmarkKind
     title: string
@@ -93,64 +77,23 @@ interface Bridge {
   }) => void
   hideCoachmark: () => void
   onCoachmarkDismissed: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  /** The card's secondary action, when it has one. Retires the card like dismiss does. */
   onCoachmarkAction: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  /** The popup was hidden without a retirement (host window moved/resized). */
   onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  /** The host window has stopped moving; safe to put a forgotten card back. */
   onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  /** The popup was reconfigured for the other card; `kind` is the owner that lost it. */
   onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
   onTitleChanged: (cb: (title: string) => void) => () => void
-  /** Install source-category pushes from main. The raw category
-   *  string drives the install-type icon next to the install name
-   *  (Standalone / Cloud / Legacy Desktop / …). `null` for
-   *  install-less host windows; the renderer suppresses the icon in
-   *  that case. */
   onSourceCategoryChanged: (cb: (category: string | null) => void) => () => void
   onZoomChanged: (cb: (level: number) => void) => () => void
   onThemeChanged: (cb: (theme: { bg: string; text: string }) => void) => () => void
   onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
   onMenuOpened: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
   onMenuClosed: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
-  /** First-use takeover step pushes from main. Drives the T&C-step
-   *  lockdown that hides the waffle menu (the otherwise-always-live
-   *  escape hatch) so the user has to either accept consent or close
-   *  the window via OS chrome — there's no in-app affordance that
-   *  drops them past the T&C without a recorded answer. The
-   *  post-consent steps stay normal except for the Skip Onboarding
-   *  entry the menu builder adds. */
   onFirstUseModeChanged: (
     cb: (mode: 'none' | 'consent-lockdown' | 'post-consent') => void
   ) => () => void
-  /** Preview-mode flag pushed by main. `true` while an in-progress
-   *  install identity preview is active on a chooser host (an op was
-   *  claimed and the install's title + source icon are showing in the
-   *  title bar but the host is still install-less); `false`
-   *  otherwise. Drives renderer gates that would normally suppress
-   *  install-scoped chrome on install-less hosts so the previewed
-   *  install's identity surfaces cleanly. */
   onPreviewModeChanged: (cb: (preview: boolean) => void) => () => void
-  /** Installation-id pushes from main. The title bar is a long-lived
-   *  view across attach / detach (no URL reload), so the URL query
-   *  param is only a cold-boot seed; this push is the
-   *  runtime-authoritative source of truth that drives `isInstallLess`
-   *  and any install-scoped chrome gated by the install id. `null`
-   *  for install-less hosts. */
   onInstallationIdChanged: (cb: (installationId: string | null) => void) => () => void
-  /** App-update state pushes from main. `kind` is `'available'`
-   *  after `update-available`, `'ready'` after `update-downloaded`,
-   *  and `null` when nothing is pending. Drives the title-bar
-   *  app-update pill that sits to the right of the hamburger menu.
-   *
-   *  `autoUpdate` mirrors the `autoUpdate` setting at the moment the
-   *  state was committed. With auto-updates ON the
-   *  `'available'` state never fires (main triggers the download
-   *  itself); the `'ready'` state then reads "Update will apply on
-   *  restart". With auto-updates OFF the `'available'` pill reads
-   *  "Update v{version} available" and the `'ready'` pill keeps the
-   *  existing "Restart to update" copy. */
   onAppUpdateStateChanged: (
     cb: (state: {
       kind: 'available' | 'downloading' | 'ready' | null
@@ -158,49 +101,17 @@ interface Bridge {
       autoUpdate: boolean
     }) => void
   ) => () => void
-  /** Install-update flag pushes from main. `available` is `true`
-   *  when the install's `statusTag.style === 'update'`; `version`
-   *  carries the target release version when known so the pill can
-   *  read "Update v{version}". Only meaningful on install-backed
-   *  host windows; install-less hosts never receive this signal.
-   *  Drives the title-bar install-update pill. */
   onInstallUpdateAvailable: (
     cb: (state: { available: boolean; version: string | null }) => void
   ) => () => void
-  /** Click handler for the app-update pill. */
   clickAppUpdatePill: () => void
-  /** Click handler for the install-update pill. */
   clickInstallUpdatePill: () => void
-  /** Downloads tray state pushes from main. The payload
-   *  carries both in-flight downloads (`active`) and the most recent
-   *  terminal entries (`recent`, capped server-side at 10). The tray
-   *  is hidden entirely when both arrays are empty so it doesn't
-   *  squat in the steady state. Pushed initially on `ready()` and
-   *  on every state change (broadcast by the download manager). */
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
-  /** Click handler for the downloads tray. Opens the title-bar
-   *  dropdown popup in `'downloads'` mode anchored under the tray
-   *  button. */
   clickDownloadsTray: (anchor: MenuAnchor) => void
-  /** Click handler for the centre install pill. Opens the instance-
-   *  picker popover anchored beneath the pill. Main filters install-
-   *  less hosts (the chooser host pill stays non-interactive — the
-   *  dashboard body already IS the picker, so a smaller copy on top
-   *  would be redundant). */
   clickInstallPill: (anchor: MenuAnchor) => void
-  /** Click handler for the title-bar Send Feedback button. Main
-   *  forwards `comfy-panel:open-feedback` to the panel renderer,
-   *  which fires the `comfy.desktop.feedback.opened` telemetry action and
-   *  opens the support URL via `openExternal`. */
   clickFeedback: () => void
-  /** Click handler for the title-bar news bell. Main forwards
-   *  `comfy-panel:open-announcement` to the panel renderer, which mounts
-   *  the announcement modal over the live canvas. */
   clickAnnouncement: () => void
-  /** Click handler for the cloud-instance refresh button. Re-navigates
-   *  the host's comfyView via the same reload path as F5/Ctrl+R. */
   clickRefreshInstance: () => void
-  /** Reset the host comfyView's zoom to 100%. */
   resetZoom: () => void
   ready: () => void
 }
@@ -231,16 +142,7 @@ const titleDownloadsBadgeClass =
   'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--action,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
 
 const isMac = ref(bridge?.isMac() ?? false)
-/** Active panel reported by main. */
 const activePanel = ref<ComfyPanelKey>('comfy')
-/**
- * Install-less host window flag — `true` when the host has no install
- * backing it. Drives the center pill's static identity label and
- * suppresses the install-type icon. Seeded from the URL `installationId`
- * query param so the first paint reads correctly, then updated reactively
- * via `onInstallationIdChanged` pushes from main as the host transitions
- * across attach / detach without a title-bar URL reload.
- */
 const installationId = ref(bridge?.getInstallationId() ?? '')
 const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
 
@@ -260,13 +162,7 @@ const {
   showBrandMark,
   isLight
 } = useTitleBarIdentity({ bridge, isInstallLess })
-// firstUseMode is consumed by isFirstUseLockdown / isConsentLockdown
-// inside the composable; the template only reads the derived booleans.
 
-/** Browser-style refresh button — shown on any install-backed host (cloud,
- *  user-pointed remote ComfyUI, or local installs), never on install-less
- *  hosts or during first-use lockdown. Clicking re-navigates the comfyView
- *  via the same reload path as F5/Ctrl+R. */
 const showRefreshButton = computed(
   () =>
     (sourceCategory.value === 'cloud' ||
@@ -283,17 +179,6 @@ const showZoomReset = computed(
   () => zoomLevel.value !== 0 && !isInstallLess.value && !isFirstUseLockdown.value
 )
 
-/**
- * Title-bar chrome lockdown. True whenever the bar should collapse to
- * just the static centre pill:
- *   - First-use takeover (consent + post-consent steps).
- *   - ProgressModal takeover (`'loading-lockdown'`) for any long-running
- *     op (install / update / migrate / snapshot / launch).
- * Single derived flag — every gate below reads the same source.
- * `isConsentLockdown` is kept around for the existing CSS class hook
- * on the bar root.
- */
-
 const {
   appUpdateState,
   appUpdatePillLabel,
@@ -305,11 +190,6 @@ const {
   handleInstallUpdatePill
 } = useUpdatePills({ bridge, isInstallLess })
 
-/** Title-bar Send Feedback button. Routes through main, which forwards
- *  `comfy-panel:open-feedback` to the panel renderer — the renderer
- *  fires the `comfy.desktop.feedback.opened` telemetry action and opens the
- *  support URL via `openExternal`. The waffle menu's "Send Feedback"
- *  entry lands on the same panel-side handler. */
 function handleFeedback(): void {
   bridge?.clickFeedback()
 }
@@ -322,10 +202,6 @@ function handleResetZoom(): void {
   bridge?.resetZoom()
 }
 
-// News bell with a subtle unread dot until the announcement is opened. Its state
-// lives in the `comfyApiAnnouncementSeen` setting (shared with the panel view);
-// opening the modal writes it, and the settings-changed broadcast clears the
-// dot here without a dedicated channel.
 const announcementUnread = ref(false)
 let unsubAnnouncementSettings: (() => void) | null = null
 
@@ -353,49 +229,16 @@ onUnmounted(() => {
   unsubAnnouncementSettings?.()
 })
 
-// Icon is ComfyUI-tab only; also visible while the drawer is open so
 const titleBarRef = useTemplateRef<HTMLElement>('titleBar')
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
-/** News bell — also the anchor the beta activation notice's beak points at. */
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const installPillRef = useTemplateRef<HTMLElement>('installPill')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
-/** Mirrors the trailing cluster's measured width onto the title bar as
- *  `--title-trailing-width`, which the left cluster reads as a
- *  `min-width` reservation. This keeps the install pill anchored to
- *  true window center even when only the right side has variable
- *  content (update pills, feedback collapsing to icon, etc.) — the
- *  left cluster grows to match so both 1fr-flanking tracks stay equal.
- *
- *  Pure-CSS can't do this because the left and right clusters have
- *  asymmetric content (waffle menu vs. 5 pills), so neither side can
- *  be a `1fr` mirror of the other. ResizeObserver is the standard
- *  pattern apps like Figma use for the same problem. */
 const trailingWidthPx = ref(0)
 let trailingObserver: ResizeObserver | undefined
 
-/** Responsive collapse mode for the trailing cluster.
- *
- *  Three tiers, decided from real measured geometry (not bar-width
- *  breakpoints) so the decision actually accounts for the centre
- *  install pill's current position and width:
- *
- *    - 'full'        — Feedback + Desktop Update labels visible.
- *    - 'no-feedback' — Feedback collapsed to icon-only.
- *    - 'icons-only'  — Both Feedback and Desktop Update collapsed.
- *
- *  Each resize frame measures the gap between the install pill's
- *  right edge and the trailing cluster's left edge. With the trailing
- *  mirror live the left-side gap is equal by construction, so the
- *  right gap alone is sufficient. When the gap drops below
- *  `MIN_GAP_PX` the controller advances one tier; it only walks back
- *  when the gap comfortably exceeds the *learned* width cost of
- *  restoring the hidden label plus `RESTORE_BUFFER_PX`. Hysteresis is
- *  essential — collapsing the trailing cluster immediately frees
- *  enough gap to consider re-expanding; the restore-cost guard
- *  prevents that flap. */
 type CollapseMode = 'full' | 'no-feedback' | 'icons-only'
 const collapseMode = ref<CollapseMode>('full')
 const collapsedFeedback = computed(
@@ -405,16 +248,6 @@ const collapsedUpdate = computed(() => collapseMode.value === 'icons-only')
 
 const MIN_GAP_PX = 16
 const RESTORE_BUFFER_PX = 24
-/** Learned at runtime via the before/after measurement around each
- *  transition — we don't know analytically how wide each label is
- *  (font, locale, version-string length all vary). The cost is the
- *  drop in `.title-trailing`'s own width, NOT the change in the pill
- *  gap, because the user can be actively dragging a resize during
- *  the rAF settle window and the bar width would otherwise poison
- *  the delta. Trailing width is independent of bar width.
- *
- *  Initialized to 0 so the first transition pair learns the real
- *  cost; until then `RESTORE_BUFFER_PX` is the only guard. */
 let feedbackRestoreCostPx = 0
 let updateRestoreCostPx = 0
 let fitObserver: ResizeObserver | undefined
@@ -427,10 +260,6 @@ interface FitMeasurement {
   trailingWidth: number
 }
 
-/** Measure the gap between the install pill and the trailing cluster,
- *  plus the trailing cluster's own width. Returns sentinels when refs
- *  aren't mounted yet (so the fit controller stays at `'full'` until
- *  layout exists) or when the bar is hidden / detached (rect width 0). */
 function measureFit(): FitMeasurement {
   const bar = titleBarRef.value
   const trailing = titleTrailingRef.value
@@ -471,10 +300,6 @@ function transitionTo(next: CollapseMode): void {
   if (prev === next) return
   const before = measureFit()
   collapseMode.value = next
-  // Wait for Vue to flush the DOM update + the browser to lay out,
-  // then learn how much trailing width restoring the hidden label
-  // would cost. Tracking the rAF lets `onUnmounted` cancel it so
-  // teardown doesn't race against a pending measurement callback.
   void nextTick().then(() => {
     if (unmounted) return
     transitionRaf = requestAnimationFrame(() => {
@@ -482,8 +307,6 @@ function transitionTo(next: CollapseMode): void {
       if (unmounted) return
       const after = measureFit()
       if (Number.isFinite(before.trailingWidth) && Number.isFinite(after.trailingWidth)) {
-        // Trailing shrinks when a label is hidden; the drop is the
-        // width the gap will gain back if we restore the label.
         const delta = before.trailingWidth - after.trailingWidth
         if (prev === 'full' && next === 'no-feedback') {
           feedbackRestoreCostPx = Math.max(feedbackRestoreCostPx, delta)
@@ -491,16 +314,11 @@ function transitionTo(next: CollapseMode): void {
           updateRestoreCostPx = Math.max(updateRestoreCostPx, delta)
         }
       }
-      // Re-evaluate in case one transition didn't free enough room.
       scheduleFit()
     })
   })
 }
 
-/** Discard learned restore costs whenever something that changes the
- *  trailing cluster's content width is mutated (locale switch, update
- *  state, install-update flag, …). The next collapse transition then
- *  re-learns the cost from the new label widths. */
 function invalidateRestoreCosts(): void {
   feedbackRestoreCostPx = 0
   updateRestoreCostPx = 0
@@ -533,14 +351,11 @@ const {
   installPillRef
 })
 
-// First-instance onboarding coachmark pointing at the centre pill. Shares
-// the menus composable's pill ref; opening the drawer acknowledges it.
 const coachmark = useCentralPillCoachmark({
   bridge,
   isInstallLess,
   isFirstUseLockdown,
   isLoadingLockdown,
-  // One popup per window: the hint must not hide a card it did not raise.
   ownsPopup: () => coachmark.isShowing.value,
   installPillRef,
   title: t('titleBar.pillHintTitle'),
@@ -548,13 +363,6 @@ const coachmark = useCentralPillCoachmark({
   dismissLabel: t('titleBar.pillHintDismiss')
 })
 
-/**
- * Core beta activation notice pointing at the news bell — a beta feature turned on for this
- * install, here is how to turn it off. Suppressed while the onboarding hint is up: one popup
- * per window backs both cards, so the later show would replace the earlier one mid-read.
- * The hint is once-ever on first instance entry, so this only defers a brand-new user's
- * notice to their next launch.
- */
 const betaNotice = useBetaActivationNotice({
   bridge,
   installationId: () => installationId.value,
@@ -563,23 +371,7 @@ const betaNotice = useBetaActivationNotice({
   isLoadingLockdown,
   anchorRef: announcementBtnRef,
   isSuppressed: () => coachmark.isShowing.value,
-  // Four wordings, picked by what main could establish: whether the grant turned the feature
-  // on or withdrew it, and whether the PostHog payload named it. The generic pair is the
-  // fallback, so an unnamed feature still gets a card that is true.
   copyFor: ({ direction, description }) => {
-    // Static keys rather than composed ones: `createAppI18n` disables missing-key warnings, so
-    // a rename in en.json would otherwise degrade silently to a card titled with the literal
-    // key. Written out, the four are greppable and fail visibly.
-    //
-    // The `{feature}` slot in the *Named variants is an OPAQUE PROPER NAME, supplied by the
-    // flag payload and not localized. In every template it modifies the constant head noun
-    // ("beta"), so what a gendered or case-marking language agrees with is that head noun and
-    // never the slotted name. A translation that promotes `{feature}` to the grammatical head
-    // — "{feature} est activé", "{feature} включён" — needs a gender Desktop does not have and
-    // cannot get. en and zh are the only shipping locales and zh has neither gender nor case,
-    // so nothing exercises this today; the contract is written down so a third locale cannot
-    // introduce the fragile form silently. Contract for translators:
-    // `locales/drafts/README.md`.
     const keys =
       direction === 'disabled'
         ? description
@@ -598,30 +390,11 @@ const betaNotice = useBetaActivationNotice({
   }
 })
 
-/** Wrap the pill opener so opening the drawer retires the coachmark
- *  (the hint did its job) before delegating to the real handler. */
 function handleInstallPillWithCoachmark(): void {
   void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
   handleInstallPill()
 }
 
-/** Re-raise a card that main hid out from under us. Forgetting alone only unlatches the
- *  composable — no watcher observes window movement, so without this the notice stays absent
- *  until some unrelated relaunch or retarget happens to re-run the gate.
- *
- *  Debounced because `move` fires continuously through a drag: each event hides the popup
- *  again, so re-showing per event would thrash the card on and off for the whole gesture.
- *  One re-show once the window settles. `maybeShow` re-reads the anchor rect, which is the
- *  point — the old rect is exactly what went stale. */
-/** Put a forgotten card back. Fired from main's settled signal rather than a timer here:
- *  the popup hides on the FIRST move and `onHide` only reports that one transition, so a
- *  local timer could not be extended by the rest of a drag and would reopen the card
- *  mid-gesture — flashing it and stealing focus on every subsequent move. Main sees every
- *  event, so it owns the debounce.
- *
- *  Both cards, in the gate watcher's order and for its reason: the hint wins a collision,
- *  and awaiting it keeps the beta notice's suppression check from reading a stale `false`.
- *  Each is gated and idempotent, so the one that was not hidden simply declines. */
 function reshowCoachmarksAfterMove(): void {
   if (unmounted) return
   void coachmark.maybeShow().then(() => {
@@ -629,10 +402,6 @@ function reshowCoachmarksAfterMove(): void {
   })
 }
 
-/** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
- *  changes when the hint goes away — so without this the deferred card waits for the next
- *  launch. Safe to call unconditionally: `maybeShow` re-checks the gate and main still holds
- *  the pending notice (deferring never acknowledges). */
 function retryBetaNoticeAfterHint(): void {
   if (unmounted) return
   void nextTick().then(() => {
@@ -640,13 +409,6 @@ function retryBetaNoticeAfterHint(): void {
   })
 }
 
-/** One-shot "downloads started" attention flash. Driven by
- *  `downloadsStartedAt` from the menus composable, which bumps each
- *  time a brand-new active download appears. The flash is purely
- *  decorative — it overlays the existing pulsing badge / count so the
- *  user immediately notices the tray came alive even if they were
- *  looking elsewhere on screen. The 1600 ms window matches one full
- *  cycle of the underlying CSS keyframes. */
 const downloadsFlash = ref(false)
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 watch(downloadsStartedAt, (next) => {
@@ -669,10 +431,6 @@ let unsubCoachmarkSettled: (() => void) | undefined
 let unsubCoachmarkDisplaced: (() => void) | undefined
 
 onMounted(() => {
-  // Observe the trailing cluster so the left cluster can mirror its
-  // width (keeps the centered install pill at true window centre).
-  // Pills appearing/disappearing (update pills, feedback collapse)
-  // change the trailing width — ResizeObserver fires on each.
   if (titleTrailingRef.value && typeof ResizeObserver !== 'undefined') {
     trailingObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
@@ -685,20 +443,10 @@ onMounted(() => {
     trailingObserver.observe(titleTrailingRef.value)
   }
 
-  // Observe the title bar itself for resize so the fit controller can
-  // re-evaluate whether the trailing labels still fit alongside the
-  // centre pill. Bar-only is sufficient — install-pill width and
-  // trailing width changes propagate through layout and either resize
-  // the bar (no, fixed `100vw`) or change the measured rects we read
-  // inside `evaluateFit`. The locale/state watches below handle
-  // changes that don't trigger a bar resize.
   if (titleBarRef.value && typeof ResizeObserver !== 'undefined') {
     fitObserver = new ResizeObserver(() => scheduleFit())
     fitObserver.observe(titleBarRef.value)
   }
-  // Initial pass synchronously on mount so we start in the right tier
-  // before the first paint instead of flashing 'full' for one frame
-  // on a narrow boot width.
   evaluateFit()
 
   syncLocale().catch((err) => {
@@ -716,52 +464,28 @@ onMounted(() => {
     const previous = installationId.value
     installationId.value = nextInstallationId ?? ''
     isInstallLess.value = nextInstallationId === null
-    // The card names "this instance", so it must not outlive the host retargeting to another.
-    // Forgotten rather than retired: it was never acknowledged, so it replays for its own
-    // install instead of being spent on one the user never saw it for.
     if (previous !== installationId.value) {
       if (betaNotice.isShowing.value) {
         bridge.hideCoachmark()
         betaNotice.forgetWithoutAcknowledging()
       }
-      // The gate watcher keys on install-less/lockdown, none of which move on a retarget
-      // between two real installs — so without this the new install's pending notice is never
-      // queried again for the rest of the session.
       retryBetaNoticeAfterHint()
     }
   })
-  // The popup's own dismiss button (✕ / "Got it") routes through main
-  // back to here — flip the once-ever flag + hide. One popup serves both cards,
-  // so the retirement arrives addressed with the kind that raised it.
   unsubCoachmarkDismissed = bridge.onCoachmarkDismissed(({ kind }) => {
     if (kind === 'beta-notice') void betaNotice.dismiss()
     else void coachmark.dismiss().then(retryBetaNoticeAfterHint)
   })
-  // Secondary action; only the beta notice has one today.
   unsubCoachmarkAction = bridge.onCoachmarkAction(({ kind }) => {
     if (kind === 'beta-notice') void betaNotice.openSettings()
   })
-  // Main hid the popup without anyone retiring it — the host window moved or resized, so the
-  // anchor the beak points at is stale. Forget WITHOUT acknowledging: the user may never have
-  // read the card, and leaving the composable believing it is still up would turn away every
-  // later show for the rest of the session.
   unsubCoachmarkAutoHidden = bridge.onCoachmarkAutoHidden(({ kind }) => {
-    // Whichever card was on the popup, the owner has to be told. The hint matters as much as
-    // the notice: `coachmark.isShowing` is the beta notice's suppression gate, so a hint left
-    // believing it is up silences the beta card for the renderer's whole life — and cannot be
-    // dismissed either, since there is no longer a card to click.
     if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
     else coachmark.forgetWithoutAcknowledging()
-    // Forgetting is immediate — it is a state correction, and leaving the composable latched
-    // is what strands the card. Re-showing waits for `onCoachmarkSettled` below.
   })
   unsubCoachmarkSettled = bridge.onCoachmarkSettled(() => {
     reshowCoachmarksAfterMove()
   })
-  // The other card took the popup. Not a hide, so `onCoachmarkAutoHidden` never fires for it —
-  // and a composable that still believes its card is up refuses every later show, which is how
-  // a beta notice ended up armed but permanently invisible behind the onboarding hint.
-  // Forget WITHOUT acknowledging: the user never acted on it, so main keeps it and it replays.
   unsubCoachmarkDisplaced = bridge.onCoachmarkDisplaced(({ kind }) => {
     if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
     else coachmark.forgetWithoutAcknowledging()
@@ -769,30 +493,16 @@ onMounted(() => {
   bridge.ready()
 })
 
-// Gate inputs settle async via main's pushes after mount, so watch them
-// and re-attempt on each transition (the composable is idempotent) rather
-// than firing once on mount.
 watch(
   [isInstallLess, isFirstUseLockdown, isLoadingLockdown],
   ([installLess, lockdown, loading]) => {
     if (installLess || lockdown || loading) {
-      // The gate has CLOSED on a card that is already up — most often a relaunch of this same
-      // install driving the progress takeover. The gate alone only suppresses new shows, so
-      // without this the stale card floats over the loader and, worse, leaves the composable
-      // latched: main re-arms the install with a fresh grant set and the loading-to-ready
-      // transition below cannot raise it. Hiding retires nothing; main still holds the
-      // pending notice and `onCoachmarkAutoHidden` clears the display state, so the newer
-      // queue is what gets queried when the gate reopens.
       if (betaNotice.isShowing.value) bridge?.hideCoachmark()
       return
     }
-    // Defer past the responsive fit settle so the pill's centre is final
-    // before anchoring: nextTick flushes the DOM, the rAF the layout.
     void nextTick().then(() => {
       requestAnimationFrame(() => {
         if (unmounted) return
-        // Wait for the hint's IPC read to update isShowing before the beta notice
-        // checks whether another card is visible.
         void coachmark.maybeShow().then(() => {
           if (!unmounted) void betaNotice.maybeShow()
         })
@@ -802,9 +512,6 @@ watch(
   { immediate: true }
 )
 
-// Invalidate the learned restore costs when anything that materially
-// changes the trailing cluster's content width flips. The fit
-// controller re-learns the cost on the next transition.
 watch(
   [
     locale,
@@ -812,7 +519,6 @@ watch(
     appUpdatePillLabel,
     showAppUpdatePill,
     showInstallUpdatePill,
-    // Trailing pills hide on first-use lockdown; loading-lockdown keeps them live.
     isFirstUseLockdown
   ],
   () => invalidateRestoreCosts()
@@ -850,8 +556,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- Equal outer tracks keep the identity pill centered. Platform padding reserves
-       the native window controls; the trailing ResizeObserver supplies the left track width. -->
   <header
     ref="titleBar"
     class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border"
@@ -872,9 +576,6 @@ onUnmounted(() => {
       '--title-trailing-width': `${trailingWidthPx}px`
     }"
   >
-    <!-- The native app menu avoids clipping at the title-bar view's bounds.
-         Hidden only during consent; post-consent exposes Skip Onboarding
-         and loading-lockdown leaves the menu available. -->
     <div
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
@@ -890,9 +591,6 @@ onUnmounted(() => {
       >
         <MenuIcon :size="18" />
       </button>
-      <!-- Browser-style refresh for install-backed instances (local +
-           remote/cloud), right of the hamburger. Re-navigates the
-           comfyView via the same reload path as F5/Ctrl+R. -->
       <button
         v-if="showRefreshButton"
         type="button"
@@ -905,24 +603,9 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Install identity and install-update controls. -->
     <div
       class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
     >
-      <!-- Center identity pill. Install-backed hosts render as a
-           button that opens the instance-picker popover (matching the
-           rest of the title-bar dropdown buttons — waffle menu +
-           downloads tray). Install-less hosts (the chooser host) AND
-           first-use-takeover steps render as a static label — the
-           chooser body already IS the picker, and the takeover locks
-           down all chrome to avoid wandering out of bootstrap.
-           `loading-lockdown` keeps the pill interactive so the user
-           can open the picker (switch / open another install) while
-           an op runs in the background. -->
-      <!-- Interactive on every mode except first-use lockdown. The
-           bootstrap UX is the only flow that needs to keep the user
-           inside one window; long-running ops mount the ProgressModal
-           in this window but leave the title bar free to navigate. -->
       <div
         v-if="!isFirstUseLockdown"
         ref="installPill"
@@ -943,9 +626,6 @@ onUnmounted(() => {
         @keydown.enter.prevent="handleInstallPillWithCoachmark"
         @keydown.space.prevent="handleInstallPillWithCoachmark"
       >
-        <!-- Leading mark: the Comfy logo only on the bare dashboard; on an
-             actual instance the pill leads with that install's source/type
-             icon so the brand logo isn't repeated on every window. -->
         <div
           class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
         >
@@ -966,9 +646,6 @@ onUnmounted(() => {
           class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
         >
           <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
-          <!-- Instance update CTA, inline after the name. Its own click
-               target — stops propagation so it updates without also
-               opening the picker; the rest of the pill still opens it. -->
           <button
             v-if="showInstallUpdatePill"
             type="button"
@@ -981,8 +658,6 @@ onUnmounted(() => {
             {{ t('titleBar.installUpdateShort') }}
           </button>
         </div>
-        <!-- Trailing slot: dropdown caret. Marks the pill as an
-             interactive opener so the user reads it as actionable. -->
         <div
           class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
         >
@@ -1022,7 +697,6 @@ onUnmounted(() => {
     </div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
-      <!-- Desktop updates stay separate from the install-update chip in the identity pill. -->
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
         type="button"
@@ -1046,8 +720,6 @@ onUnmounted(() => {
           >{{ appUpdatePillLabel ?? 'Desktop Update' }}</span
         >
       </button>
-      <!-- Zoom-level pill. Contextual — fades in only when the comfyView
-           is zoomed off 100%; click resets to 100% and it fades out. -->
       <Transition name="title-zoom-fade">
         <button
           v-if="showZoomReset"
@@ -1086,13 +758,6 @@ onUnmounted(() => {
       >
         <MessageSquarePlus :size="16" />
       </button>
-      <!-- Downloads tray. Click opens the title-bar dropdown popup in
-           `'downloads'` mode anchored under the button. Distinct
-           `ArrowDownToLine` icon vs. the update pills' `Download` so
-           the user reads "downloads tray" vs "update available" at a
-           glance. Hidden during first-use takeover — no installs yet.
-           Visible during loading-lockdown so model downloads kicked
-           off in parallel with an install/update remain reachable. -->
       <button
         v-if="!isFirstUseLockdown"
         ref="downloadsBtn"
@@ -1131,10 +796,6 @@ onUnmounted(() => {
           aria-hidden="true"
           >{{ unseenFinishedCount }}</span
         >
-        <!-- Mid-batch failure marker: while downloads are still active the
-             badge shows the active count, so layer a small red dot on top
-             to surface a failure the instant it happens rather than waiting
-             for the queue to drain. -->
         <span
           v-if="downloadsActiveCount > 0 && unseenErrorCount > 0"
           class="title-downloads-error-dot pointer-events-none absolute -top-[3px] -left-[3px] size-2 rounded-[999px] bg-[var(--danger)] [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))]"

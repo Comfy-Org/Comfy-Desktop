@@ -126,8 +126,6 @@ describe('no new Vue style blocks', () => {
       cwd: root,
       overrideConfig: {
         files: ['**/*.vue'],
-        // This rule only needs the SFC syntax tree. Keep the real config's
-        // parser and rule wiring without scanning the entire TypeScript project.
         languageOptions: { parserOptions: { projectService: false } }
       }
     })

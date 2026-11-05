@@ -6,10 +6,6 @@ import { TID } from '../../../../shared/testIds'
 import type { TerminalRestore } from '../../types/ipc'
 import ConsoleTerminalPane from './ConsoleTerminalPane.vue'
 
-// The PTY lives in main; this pane is a thin xterm view. We mock xterm so the
-// tests assert the wiring (subscribe on mount, exit banner + restart) rather
-// than terminal rendering, which needs a real canvas.
-
 let selectionText = ''
 
 const fakeTerminal = {
@@ -33,7 +29,6 @@ const fakeTerminal = {
   rows: 30
 }
 
-/** Pull the handler registered via `attachCustomKeyEventHandler`. */
 function keyHandler(): (e: Partial<KeyboardEvent>) => boolean {
   const call = fakeTerminal.attachCustomKeyEventHandler.mock.calls[0]
   return call[0] as (e: Partial<KeyboardEvent>) => boolean
@@ -240,15 +235,11 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
       const result = keyHandler()(keyEvent({ key: 'v', ctrlKey: true }))
       await flushPromises()
 
-      // Returns false so no stray ^V reaches the PTY, but does NOT paste
-      // manually — xterm's native paste event handles it, so writing here too
-      // would double-paste.
       expect(result).toBe(false)
       expect(fakeTerminal.paste).not.toHaveBeenCalled()
       expect(window.api.terminalWrite).not.toHaveBeenCalled()
     })
 
-    // ContextMenu teleports to <body>, so query the document rather than the wrapper.
     it('right-click opens a menu whose Copy item writes the selection', async () => {
       selectionText = 'pick me'
       const w = mountPane()

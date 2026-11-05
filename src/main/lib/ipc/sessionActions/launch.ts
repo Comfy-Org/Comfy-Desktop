@@ -169,27 +169,20 @@ import {
 import { getIdClass } from '../../deviceId'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
-// Feature flags injected on a spawned ComfyUI, gated by the running install's
-// --list-feature-flags registry so we never inject unrecognized keys.
 export function desktopFeatureFlags(
   inst: InstallationRecord,
   telemetryEnabled: boolean
 ): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
-    // Do not advertise inline PTY support. Desktop injects a navigation-only
-    // terminal entry instead.
     supports_terminal: 'false'
   }
-  // Telemetry is opt-in (default off) and only signaled for managed standalone
-  // installs — never for portable or user-managed git clones.
   if (inst.sourceId === 'standalone' && telemetryEnabled) {
     flags.enable_telemetry = 'true'
   }
   return flags
 }
 
-/** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
 function fullSha(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const sha = value.trim().toLowerCase()
@@ -204,32 +197,21 @@ export function launchedCoreCommit(
     case 'head':
       return fullSha(checkout.commit)
     case 'not-git':
-      // Typed as a string, but legacy records predate the field; see `coreRecordCurrent`.
       return fullSha(inst.comfyVersion?.commit)
     case 'unreadable':
       return null
   }
 }
 
-/** The single post-filter view of this launch's Core beta grants: what survived
- *  BOTH the version/toggle selection and the running core's args schema, plus
- *  what selection granted that the schema then refused. Every downstream signal
- *  (final args, tap context, telemetry, log records) reads from this one value. */
 export interface CoreBetaLaunch {
-  /** Slot #0's applied grants, then the campaigns'. */
   readonly applied: readonly CoreBetaGrant[]
   readonly campaign: Pick<CampaignPlan, 'applied' | 'misses'>
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
-  /** The beta toggle as resolved for THIS launch. Carried on the DTO rather than re-read at
-   *  the report site so `opt_state` still tells the truth on the paths that never reach arg
-   *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
   readonly optedIn: boolean
 }
 
-/** No grants resolved: either the install opted out, or the launch never reached arg assembly
- *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
 function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
   return {
     applied: [],
@@ -241,8 +223,6 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
   }
 }
 
-/** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
- *  without it the first child-process line joins the record. */
 function coreBetaLogRecord(
   grant: CoreBetaGrant,
   coreVersion: string | null,
@@ -254,15 +234,6 @@ function coreBetaLogRecord(
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }
 
-/**
- * Assemble the spawn args and resolve this launch's Core beta grants.
- *
- * User args pass through untouched: grants are additive, so the only thing that ever removes a
- * user token is the running core's args schema. Grants are selected against the UNFILTERED user
- * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
- * passed through that same schema filter so a core predating a flag never sees it. Ordering is
- * fixed: prefix, desktop feature flags, Desktop's assets arg, beta grants, user args.
- */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
   userArgs: readonly string[]
@@ -294,7 +265,6 @@ export function buildLaunchArgs(input: {
   })
   for (const line of plan.trace) console.log(line)
   let campaign: CampaignPlan = { applied: [], misses: [], trace: [] }
-  // Its own try: a campaign failure must never cost slot #0's args.
   try {
     if (input.campaign)
       campaign = planCampaignArgs({
@@ -365,7 +335,6 @@ async function loadCampaignInputs(): Promise<
   }
 }
 
-/** `enrolled` fires only once the record is on disk; an unrecorded one stays applied (its arg runs). */
 export function recordCampaignEnrolments(
   campaign: CoreBetaLaunch['campaign']
 ): CoreBetaLaunch['campaign'] {
@@ -387,14 +356,11 @@ export function recordCampaignEnrolments(
         epoch,
         lag_ms: fetchedAt === undefined ? null : now - fetchedAt
       })
-    } catch {
-      // Reporting must not affect launch.
-    }
+    } catch {}
   }
   return { applied: campaign.applied, misses }
 }
 
-/** Put each record in the on-disk log (bug reports) and the user-visible output. */
 export function emitCoreBetaRecords(
   records: readonly string[],
   sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
@@ -402,20 +368,13 @@ export function emitCoreBetaRecords(
   for (const record of records) {
     try {
       sinks.writeLog(record)
-    } catch {
-      // Reporting must not affect launch; still attempt the independent renderer sink.
-    }
+    } catch {}
     try {
       sinks.sendOutput(record)
-    } catch {
-      // Reporting must not affect launch.
-    }
+    } catch {}
   }
 }
 
-/** `opt_state` reports every launch's toggle so opt-in/out is countable; `applied`
- *  reports the grants that reached core and the ones its schema refused. Delivery
- *  is the telemetry module's consent gate to decide, never a branch here. */
 export function emitCoreBetaTelemetry(input: {
   appliedArgs: readonly string[]
   droppedUnsupported: readonly string[]
@@ -439,14 +398,12 @@ export function emitCoreBetaTelemetry(input: {
       core_commit: input.coreCommit,
       core_version_label: input.coreVersionLabel,
       dropped_unsupported: [...input.droppedUnsupported],
-      // The active count; only on launches a campaign applied something, so others report as before.
       ...(active.length > 0 && {
         campaign_args: active.map(({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`)
       })
     })
   }
   if (campaign.misses.length > 0) {
-    // Flat `key:arg:reason` strings: event properties carry no nested objects.
     const misses = (member: boolean): string[] =>
       campaign.misses
         .filter((miss) => miss.member === member)
@@ -461,7 +418,6 @@ export function emitCoreBetaTelemetry(input: {
 
 const overrideRecording = new Map<string, Promise<void>>()
 
-/** Queued per install: two outcomes folding the same count at once would lose one. */
 function recordOverrideOutcome(
   installationId: string,
   pins: OverridePins,
@@ -475,7 +431,6 @@ function recordOverrideOutcome(
   return queued
 }
 
-/** Never throws: it runs from ComfyUI's output stream. */
 async function foldOverrideOutcome(
   installationId: string,
   pins: OverridePins,
@@ -527,13 +482,8 @@ export function applyStorageLaunchArgs(
   launchCmd: LaunchCommand,
   storage: Pick<settings.Settings, 'modelsDirs' | 'inputDir' | 'outputDir'>
 ): StorageLaunchState {
-  // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
   let preLaunchExtras: string[] = []
-  // Model dirs whose extra-folder changes drive auto-relaunch, plus the sync
-  // options (target YAML + which dir is `is_default`). Shared and per-install
-  // dirs are additive: the global settings dirs (unless the install excludes
-  // them via `useSharedModels: false`) plus the install's own `modelDirs`.
   let modelDirsForLaunch: string[] | undefined
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
@@ -543,8 +493,6 @@ export function applyStorageLaunchArgs(
     if (dirs.length > 0) {
       manageModelFolders = true
       modelDirsForLaunch = dirs
-      // Always the per-install YAML: the effective dir set is install-specific
-      // now that shared and per-install dirs combine.
       modelSyncOptions = { yamlPath: instanceModelPathsYaml(installationId), primaryDir }
     }
   }
@@ -563,10 +511,6 @@ export function applyStorageLaunchArgs(
     preLaunchExtras = [...baselineSet].sort()
   }
   if (argsAvailable) {
-    // Input and output are independent per-folder choices: shared (global
-    // settings) or the per-install path. A per-install path is omitted when
-    // unset so ComfyUI falls back to its own <installPath>/{input,output}
-    // defaults (e.g. adopted-from-legacy records pin these fields).
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
     if (useSharedInput) {
@@ -596,22 +540,17 @@ export function applyStorageLaunchArgs(
   return { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions }
 }
 
-// A clean exit is code 0 with no signal; anything else (non-zero code or a
-// signal) is a crash, since the user didn't go through our Stop path.
 export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null): boolean {
   return code !== 0 || signal !== null
 }
 
 const PROCESS_CLOSE_GRACE_MS = 1_000
 
-/** Prefer `close` so output pipes can drain, but do not hang on inherited pipes. */
 export function onProcessTerminated(
   proc: ChildProcess,
   callback: (
     code: number | null,
     signal: NodeJS.Signals | null,
-    /** `pipesHeld`: the process exited but its output pipes were still open at the grace
-     *  deadline — something it started still holds them. */
     info: { pipesHeld: boolean }
   ) => void | Promise<void>
 ): void {
@@ -639,14 +578,6 @@ export function onProcessTerminated(
   })
 }
 
-/**
- * Diagnose a crash exit code into the extra fields the UI needs to show a
- * human-readable message. Returns `{}` for a plain application exit (the
- * generic "exited with code N" copy still applies). For a Windows native
- * fault it adds the decoded hex + kind, and for an access violation it also
- * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
- * actually missing.
- */
 async function diagnoseCrash(
   code: number | null
 ): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
@@ -657,9 +588,6 @@ async function diagnoseCrash(
     crashKind: decoded.kind
   }
   if (decoded.kind === 'access-violation') {
-    // Never let an audit failure reject this helper: it runs inside an async
-    // EventEmitter listener, so a throw would become an unhandledRejection and
-    // skip recordCrash/broadcast. Keep the decoded hex/kind regardless.
     try {
       const missing = await auditVcRuntime()
       if (missing.length > 0) out.vcRuntimeMissing = missing
@@ -670,13 +598,6 @@ async function diagnoseCrash(
   return out
 }
 
-/**
- * Render an exit code for a plain-text launch-failure message. A normal exit
- * stays as its number; a decoded Windows native fault gets `decimal / hex` plus
- * a short access-violation explanation and, when the VC++ runtime DLLs are
- * actually missing, a repair hint. English-only to match the surrounding
- * non-localized launch-failure strings.
- */
 async function describeExitCode(code: number | null): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
@@ -684,8 +605,6 @@ async function describeExitCode(code: number | null): Promise<string> {
   let out = `${decoded.code} / ${decoded.hex}`
   if (decoded.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'
-    // Swallow audit failures: this feeds earlyExitPromise's rejection, so a
-    // throw here would leave the launch race hanging until the boot timeout.
     try {
       if ((await auditVcRuntime()).length > 0) {
         out +=
@@ -704,25 +623,18 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
   try {
     fs.mkdirSync(logDir, { recursive: true })
   } catch (err) {
-    // Same rule as the stream below: the open then fails into its listener and the launch runs on.
     console.warn('[launch] log directory unavailable:', err)
   }
   await rotateLogFiles(logDir, 'comfyui.log')
   const stream = fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
-  // Attached at creation: the file opens asynchronously, and a stream error with no listener is an
-  // uncaught exception in the main process. A log that cannot be opened or written costs the
-  // launch its log file, never the launch itself.
   stream.on('error', (err) => console.warn('[launch] comfyui.log unavailable:', err))
   return stream
 }
 
 export function writeLog(stream: WriteStream, text: string): void {
-  // `destroyed` too: a stream that errored is not `writableEnded`, and each write would warn again.
   if (!stream.writableEnded && !stream.destroyed) stream.write(stripAnsi(text))
 }
 
-/** `prior_process_found`: a ComfyUI from an earlier run of this session met at launch, and
- *  what was done about it. */
 export function emitPriorProcessFound(installationId: string, prior: PriorProcessOutcome): void {
   telemetry.capture('comfy.desktop.comfyui.prior_process_found', {
     installation_id: installationId,
@@ -737,7 +649,6 @@ export function emitPriorProcessFound(installationId: string, prior: PriorProces
   })
 }
 
-/** The lock holder, for the log: what the probe found, or that it found nothing. */
 export function describeLockHolder(holder: DbLockHolder | null): string {
   if (!holder) return 'holder not identified'
   const parts = [
@@ -751,7 +662,6 @@ export function describeLockHolder(holder: DbLockHolder | null): string {
   return parts.join(', ')
 }
 
-/** One log line saying what really happened to an earlier ComfyUI met at launch. */
 export function describePriorOutcome(prior: PriorProcessOutcome): string {
   const what =
     prior.action === 'terminated'
@@ -770,7 +680,6 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
   const covered = prior.stoppedPids?.length ? `; stopped pids ${prior.stoppedPids.join(', ')}` : ''
   if (prior.survivorPids) {
-    // No port here: nothing holds it any more, only these processes.
     const them =
       prior.action === 'terminated'
         ? prior.exitedInTime
@@ -814,11 +723,6 @@ export function _resolvePortConflictPolicy(
   }
 }
 
-/** Builds the assets tap, substituting an inert one if construction throws.
- *  Deliberately stricter than the neighbouring `createHardwareTap`, whose
- *  construction failures propagate and abort the launch: this tap is pure
- *  diagnostics for an off-by-default subsystem and must never cost a user their
- *  launch. Same shape, so downstream lifecycle sites need no null checks. */
 export function createAssetsTapSafe(
   base: Parameters<typeof createAssetsTap>[0]
 ): ReturnType<typeof createAssetsTap> {
@@ -830,7 +734,6 @@ export function createAssetsTapSafe(
   }
 }
 
-/** The agent tap, with the same never-cost-a-launch contract as `createAssetsTapSafe`. */
 export function createAgentTapSafe(
   base: Parameters<typeof createAgentTap>[0]
 ): ReturnType<typeof createAgentTap> {
@@ -842,9 +745,6 @@ export function createAgentTapSafe(
   }
 }
 
-/** Pipe a spawned process's output to the log file, renderer, telemetry taps,
- *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
- *  crash diagnostics. */
 export function attachLaunchStreams(
   proc: ChildProcess,
   logStream: WriteStream,
@@ -870,7 +770,6 @@ export function attachLaunchStreams(
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString('utf-8')
-    // Strip ANSI once for both the tail buffer and the launch tracker.
     const clean = stripAnsi(text)
     stderrBuf += clean
     if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
@@ -886,13 +785,6 @@ export function attachLaunchStreams(
   return { getStderr: () => stderrBuf }
 }
 
-/** Failure cleanup for a throw after launch resources were acquired (launching
- *  marker set, port possibly reserved) but before the normal failure handling
- *  is reachable: close the log stream, release the port, free the operation
- *  slot (ownership-guarded), stop launch-scoped work via abort, and clear the
- *  launching marker. Safe when only some of the resources exist. Without it a
- *  leaked marker/port would wedge every later launch while the handler's
- *  settled promise tells `cancelLaunching` teardown completed. */
 export function _cleanupFailedLaunchSetup(
   installationId: string,
   abort: AbortController,
@@ -903,38 +795,20 @@ export function _cleanupFailedLaunchSetup(
   if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   abort.abort()
   _clearLaunchingFailed(installationId)
-  // Every guarded setup failure lands here, including the spawn itself on the `skipPortWait`
-  // path — and that one rethrows past the `!launchResult.ok` cleanup rather than through it.
-  // Clearing at this chokepoint covers all of them; it is a delete, so paths that fail before
-  // the claim is armed pay nothing.
   clearBetaActivationClaim(installationId)
 }
 
-/** Runs on this machine. An unknown source counts as local, as in the instance-already-running prompt. */
 const isLocalSource = (sourceId: string): boolean =>
   (sourceMap[sourceId]?.category ?? 'local') === 'local'
 
-/**
- * Every other local ComfyUI Desktop knows about, by display name: running, still preparing or
- * starting, or stopping (a session leaves `_runningSessions` before its process is killed). A
- * Performance Test runs alone, so nothing competes with it for the GPU, memory or the
- * installation's database. Remote and cloud sessions run elsewhere and do not count.
- * Synchronous, so the caller can decide and register its launch with nothing in between.
- */
 export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
   const ids = new Set([
     ..._runningSessions.keys(),
-    // Still preparing: a handler that outlives its stopped session (the template-model gate)
-    // has given up its operation slot and blocks nothing.
     ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id))
   ])
   ids.delete(sessionId)
-  // Its own earlier run counts while stopping (another Performance Test window stopped it): that
-  // process is still alive, and nothing else would wait for it.
   for (const id of _getStoppingInstallationIds()) ids.add(id)
   const names: string[] = []
-  // Listed after the installations, so "the Performance Test of “A”, “B” and “C”" can't read as
-  // one Performance Test of all three.
   const perfTests: string[] = []
   for (const id of ids) {
     const perf = sessionKindOf(id) === 'performance_test'
@@ -950,20 +824,15 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
   const sessionId = ctx.sessionId ?? installationId
-  // A Performance Test of a remote or cloud installation runs elsewhere, so nothing here competes.
   if (sessionKindOf(sessionId) === 'performance_test' && isLocalSource(ctx.inst.sourceId)) {
-    // The last await before `_beginLaunch`: from here the check and the registration below run
-    // in one synchronous stretch, so two Performance Tests can never both pass it.
     const records = await installations.list()
     const others = otherLocalComfyUIs(sessionId, records)
     if (others.length > 0) {
       appendLog(sessionId, `[launch] Performance Test refused: also running ${others.join(', ')}\n`)
-      // How often the guardrail stops a run. A count only: installation names never leave the machine.
       telemetry.emit('comfy.desktop.performance_test.refused', {
         installation_id: installationId,
         other_count: others.length
       })
-      // "“A”, “B” and “C”" in the user's language, so a comma in a name stays readable.
       const names = new Intl.ListFormat(i18n.getLocale(), { type: 'conjunction' }).format(others)
       return {
         ok: false,
@@ -977,18 +846,9 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   if (_runningSessions.has(sessionId)) {
     return { ok: false, message: i18n.t('errors.alreadyRunning') }
   }
-  // No `_hasActiveLaunch` here: this guard, `_beginLaunch`, and runLaunch's
-  // `_operationAborts.set` all run in one synchronous stretch, so a second
-  // launch can never slip between them. Checking it would instead reject a
-  // legitimate restart relaunch during the post-registration window (session
-  // up, handler still draining post-launch work like the template gate).
   if (_operationAborts.has(sessionId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }
   }
-  // Track the launch for its ENTIRE handler lifetime so `cancelLaunching` can
-  // abort it at any point - including the pre-spawn prep that runs before the
-  // launching marker exists. The finally is the single teardown-complete
-  // signal: `cancelLaunching` awaits it before letting a restart relaunch.
   const launch = _beginLaunch(sessionId)
   const prefetchHold = { release: (): void => {} }
   try {
@@ -1007,64 +867,29 @@ async function runLaunch(
 ): Promise<ActionResult> {
   let inst = instArg
   const sessionId = runtimeSessionId ?? installationId
-  /** Performance Test runs are split from the user's own sessions in the boot, exit and tap events. */
   const sessionKind = sessionKindOf(sessionId)
-  // Synthetic repair steps that ran during launch prep, prepended to the launch
-  // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
-  // Resolved ONCE here, independent of the schema block below: arg assembly can be skipped
-  // entirely (schema discovery unavailable) and `opt_state` must still report the real toggle.
-  //
-  // Isolated in its own try because resolving WRITES the default back on first read, so a
-  // read-only or full profile throws on what looks like a pure read. Failing to resolve costs
-  // this launch its beta grants (fail closed) and nothing else: the launch continues into arg
-  // assembly, so user args are still filtered against the running core's schema — which is what
-  // keeps flags an older core cannot parse from reaching it.
   let betaEnabled = false
   try {
     betaEnabled = settings.resolveBetaFeaturesEnabled()
   } catch (err) {
     console.warn('[core-beta] beta setting resolution failed:', err)
   }
-  // Resolved during arg assembly below, then read by the taps, the launch log
-  // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
-  // Desktop's own `--enable-assets`, not the user's: only that one may be dropped on a retry.
   let desktopAddedAssets = false
-  /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
   let agentUnanswered = false
   let coreCommit: string | null = null
-  // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
-  // label must describe the same record as the `core_version` sent beside it.
   const coreVersionLabel = (): string | null =>
     typeof (inst.comfyVersion?.commit as unknown) === 'string'
       ? formatComfyVersion(inst.comfyVersion, 'short')
       : null
-  // LAUNCH-SCOPED on purpose. `tryLaunch` recurses on reboot and port retries, re-entering
-  // past the report site, so an unlatched report fires once per attempt; a module-global
-  // latch would instead silence every launch after the first in the process lifetime.
   let coreBetaReported = false
   let coreBetaLogged = false
-  // Claim the operation slot for the whole launch, prep included, so no other
-  // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
-  // A background download's uv contends with the launch's own uv work on the environment (repair,
-  // the agent's install, a frontend restore): held off until the launch is past them.
   if (typeof inst.installPath === 'string') {
     prefetchHold.release = await holdAgentPrefetch(inst.installPath)
   }
-  // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(sessionId)
-  // The startup model-download pass (migrate legacy final-path partials,
-  // hydrate staged `.part` downloads) runs to completion before ComfyUI can
-  // scan the model dirs, so a truncated file cannot masquerade as a loadable
-  // model. Memoized - normally already done long before the first
-  // launch. An UNSAFE result (a known-incomplete file is still visible under
-  // a final model name, or the pass could not certify the roots) NEVER blocks
-  // the launch: at worst ComfyUI sees a file that fails to load, which is
-  // strictly better than refusing to start. The per-file warning rows in
-  // Downloads carry the details, and an unsafe pass is not memoized, so the
-  // next launch retries the quarantine.
   try {
     const modelStartup = await initializeModelDownloads()
     if (!modelStartup.safe) {
@@ -1082,19 +907,7 @@ async function runLaunch(
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {
-    // Async (timeout-guarded) so launching an install on a dead network/
-    // removable path can't block the main process on a sync readdir.
     const dirState = await installDirStateAsync(inst.installPath)
-    // Block on the persistent, accurately-identified failures with a message
-    // that names the actual problem: `missing` (folder gone/renamed) and
-    // `no-permission` (folder exists but access is denied). `inaccessible` is a
-    // transient readdir error (EIO/EBUSY) or a slow-drive probe timeout, which
-    // can be a false positive on a healthy-but-slow network/removable drive —
-    // so let launch proceed: the common case is a drive that woke up by now and
-    // launches fine. If the path is genuinely unusable the downstream env/exe
-    // checks (getLaunchCommand, the executable existsSync, spawn errors) return
-    // a readable modal error. (A truly-wedged mount can still stall those sync
-    // checks; we accept that over blocking healthy slow drives.)
     if (dirState === 'missing') {
       return { ok: false, message: i18n.t('errors.installDirNotFound') }
     }
@@ -1109,10 +922,6 @@ async function runLaunch(
   const sender = event.sender
   const sendProgress = makeSendProgress(sender, sessionId)
 
-  // A build install whose background model staging never finished (crash,
-  // abort, staging failure, or a record written before `modelsStaged` existed)
-  // resumes its downloads now. Fire-and-forget: launch is not gated on models;
-  // already-staged files are skipped by hash.
   if (
     inst.sourceId === 'comfybuilder' &&
     inst.status === 'installed' &&
@@ -1121,7 +930,6 @@ async function runLaunch(
     restageBuildModelsIfNeeded(inst)
   }
 
-  /** Show template model-download phase for first launch if needed. */
   const showTemplatePhase =
     inst.sourceId === 'standalone' &&
     !!inst.bundledTemplateId &&
@@ -1130,9 +938,6 @@ async function runLaunch(
     !!inst.pendingTemplateOpen &&
     getTemplateDownloadState(installationId) !== undefined
 
-  /** Enabled custom-node count for the "X of Y" launch detail. Best-effort
-   *  one-shot scan; 0 (scan failed/none) → the tracker shows a streaming line
-   *  instead. */
   let launchNodeCount = 0
   async function scanLaunchNodeCount(): Promise<void> {
     try {
@@ -1143,10 +948,6 @@ async function runLaunch(
     }
   }
 
-  /** Single launch tracker, armed once and reused. A pre-launch repair arms it
-   *  early (so the repair shows as a live step); otherwise the first spawn arms
-   *  it. `start()` emits the steps payload + enters the first phase exactly
-   *  once — re-arming on a relaunch would reset the stepper. */
   let launchTracker: LaunchProgressTracker | null = null
   async function armLaunchTracker(): Promise<LaunchProgressTracker> {
     if (launchTracker) return launchTracker
@@ -1155,20 +956,12 @@ async function runLaunch(
       phases: buildLaunchPhases(inst, { preLaunchPhases, templateModels: showTemplatePhase }),
       nodeCount: launchNodeCount,
       sendProgress,
-      // Buffer per-phase entry timings in memory. They are emitted as
-      // `boot_phase` events ONLY if the boot later fails/times out (paired
-      // with `boot_failed`); a healthy boot discards them — `boot_started`
-      // is already ~258k/14d and per-phase emits on every boot would be pure
-      // volume. See `bootPhaseBuffer`.
       onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
     })
     launchTracker.start()
     return launchTracker
   }
 
-  // Wraps launch setup that runs AFTER the launching marker (and possibly the
-  // port reservation) exists but BEFORE the normal failure handling is
-  // reachable; an unexpected throw there must tear those down, not leak them.
   async function guardLaunchSetup<T>(
     step: () => Promise<T> | T,
     opts: { port?: number; logStream?: WriteStream } = {}
@@ -1181,10 +974,6 @@ async function runLaunch(
     }
   }
 
-  // Log stream + telemetry taps + progress tracker, grouped so a throw partway
-  // through closes the already-opened log stream. The tracker is armed once -
-  // a pre-launch repair may have armed it already; re-arming would re-emit
-  // steps and reset the stepper.
   async function acquireLaunchResources(): Promise<{
     logStream: WriteStream
     execTap: ReturnType<typeof createExecutionTap>
@@ -1235,8 +1024,6 @@ async function runLaunch(
     }
   }
 
-  // Once per launch, at each path's final pre-spawn gate, so even a launch whose process can't
-  // be created logs what it decided: to the on-disk log and the renderer.
   function logCoreBetaRecords(logStream: WriteStream, sendOutput: (text: string) => void): void {
     if (coreBetaLogged) return
     coreBetaLogged = true
@@ -1246,8 +1033,6 @@ async function runLaunch(
     })
   }
 
-  // Once per launch, when the first child of either spawn path is created: membership, the
-  // notice and the telemetry are only real once a process exists.
   function reportCoreBetaLaunchOnSpawn(proc: ChildProcess): void {
     proc.once('spawn', () => {
       try {
@@ -1261,11 +1046,7 @@ async function runLaunch(
   function reportCoreBetaLaunch(): void {
     if (coreBetaReported) return
     coreBetaReported = true
-    // At spawn, not planning: a launch that stops before its process exists must not make a member.
     coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
-    // Same latch, same reason: a grant is only worth announcing once it is provably on this
-    // launch's command line. Queued rather than shown — the host window may still be mid-attach
-    // or under the progress takeover, so the title bar drains this when its own gate opens.
     armBetaActivationNotice(installationId, coreBeta.applied)
     try {
       emitCoreBetaTelemetry({
@@ -1277,15 +1058,9 @@ async function runLaunch(
         optedIn: coreBeta.optedIn,
         campaign: coreBeta.campaign
       })
-    } catch {
-      // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
-    }
+    } catch {}
   }
 
-  /** Launch-argument cohort, not confirmation that Core's Assets service initialized.
-   *  Manual/source arguments count even when opted out or schema discovery fails;
-   *  managed grants remain separate attribution. Called only after launchCmd exists.
-   *  `app_version` is added centrally by telemetry.ts. */
   function bootCohort(): {
     core_beta_flags: string[]
     assets_enabled: boolean
@@ -1306,15 +1081,7 @@ async function runLaunch(
     }
   }
 
-  // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
   if (inst.sourceId === 'standalone') {
-    // Recover from an update/restore interrupted by a hard process kill (power
-    // loss, taskkill): if a marker survived, roll ComfyUI's source back to the
-    // pre-op commit so we never launch new source against stale packages. Safe
-    // here: the _operationAborts guard above rules out a concurrent operation,
-    // and recovery is a no-op when HEAD already matches the recorded commit.
-    // Capture the recovery narration so it can be surfaced to the user on the
-    // failure path, not just dropped into the main-process log.
     const recoveryLog: string[] = []
     try {
       const recovered = await recoverInterruptedComfyOp(
@@ -1323,18 +1090,12 @@ async function runLaunch(
           recoveryLog.push(text)
           console.log(text.trim())
         },
-        // A real source rollback ran — lead the launch progress with a
-        // "Repairing installation…" step. Fires only for a genuine repair,
-        // never a benign marker cleanup.
         () => {
           preLaunchPhases.push('repair')
         }
       )
       if (recovered) inst = (await installations.get(installationId)) || inst
     } catch (err) {
-      // Recovery threw because the source rollback failed: launching now would run
-      // new source against stale packages (the crash we're preventing). Fail
-      // closed; the marker is left in place so the next launch retries.
       console.warn('Interrupted-operation recovery failed:', err)
       const detail = recoveryLog.join('').trim()
       const base = i18n.t('errors.recoveryFailed', { message: (err as Error).message })
@@ -1348,10 +1109,6 @@ async function runLaunch(
     } catch (err) {
       console.warn('Env layout migration failed:', err)
     }
-    // Recover a PyTorch stack change that died mid-transaction: restore the
-    // backed-up venv so we never launch a half-swapped env. A failed rollback
-    // fails the launch closed — reconciliation/repair/ComfyUI must not run
-    // against a venv in an unknown state (the backup remains for retry).
     try {
       const { recoverTorchStackTransaction } =
         await import('../../../sources/standalone/torchStackTransaction')
@@ -1363,10 +1120,6 @@ async function runLaunch(
         message: i18n.t('errors.recoveryFailed', { message: (err as Error).message })
       }
     }
-    // Recover a torch-family swap (startup repair) that died mid-rename: an
-    // uncommitted swap's backups hold the only good copies of the live venv's
-    // torch packages, so a failed rollback fails the launch closed too - the
-    // marker stays behind for the next attempt.
     try {
       const { recoverTorchFamilyBackups } =
         await import('../../../sources/standalone/torchFamilyFs')
@@ -1381,18 +1134,7 @@ async function runLaunch(
         message: i18n.t('errors.recoveryFailed', { message: (err as Error).message })
       }
     }
-    // Reconcile the persisted stack state with what's actually in the venv
-    // (e.g. a manual terminal install). Never mutates the venv; must run
-    // before repair so repair sees up-to-date verified/observed state. If it
-    // fails, `lastVerifiedTorchStack` may be stale (e.g. persisted by a torch
-    // change that was rolled back) — skip repair for this launch rather than
-    // let it trust that ref as an acquisition source. Repair is optional;
-    // launching the un-repaired venv is safer than repairing on bad metadata.
     let stackStateTrusted = true
-    // Captured BEFORE reconciliation: on a damaged venv reconciliation clears
-    // the verified ref (the installed tuple no longer matches it), but repair
-    // needs that ref to restore the stack the user actually chose instead of
-    // reverting to the install-time bundle.
     let preReconcileVerified: PersistedTorchStack | null = null
     try {
       const { reconcileTorchStack, getLastVerifiedTorchStack } =
@@ -1404,19 +1146,10 @@ async function runLaunch(
       console.warn('PyTorch stack reconciliation failed:', err)
       stackStateTrusted = false
     }
-    // One-time repair for installs damaged by the brief `--upgrade` window that
-    // replaced bundled GPU torch with a CPU build. Non-fatal: CPU torch still
-    // runs, so a failed repair must never block launch (it retries next time).
-    // Runs under the launch's own abort controller (already in
-    // `_operationAborts`, held for the whole handler), so cancelling the
-    // launch cancels the repair too and no second operation can overlap it.
     if (stackStateTrusted) {
       try {
         const { maybeRepairTorch, getTorchVendorMismatch } =
           await import('../../../sources/standalone/torchRepair')
-        // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
-        // live `torchRepair` step rather than flashing a flat status. Detection is
-        // a cheap sync check; arming only when a repair will actually run.
         if (getTorchVendorMismatch(inst)) {
           preLaunchPhases.push('torchRepair')
           await armLaunchTracker()
@@ -1441,8 +1174,6 @@ async function runLaunch(
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }
-  // The standalone prep above (recovery, migration, torch repair) is the
-  // longest pre-spawn stretch; a restart clicked during it must not spawn.
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
   const launchStartedAt = Date.now()
@@ -1451,7 +1182,6 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
-  // Only a launch that passes Desktop's folders needs settings; it must not use stand-in defaults.
   const storageSettings =
     !launchCmd.skipSharedPaths && launchCmd.args
       ? await settings.readSettled(abort.signal)
@@ -1459,20 +1189,13 @@ async function runLaunch(
   if (abort.signal.aborted) return { ok: false, cancelled: true }
   if (!storageSettings) return { ok: false, message: i18n.t('errors.settingsUnreadable') }
 
-  // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
     const split = splitLaunchCommand(launchCmd)
     if (split) {
       const { prefixArgs, userArgs, mainPyAbs, comfyuiDir } = split
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
-      // Read here rather than reused from `revision` above: that one falls back to the
-      // record when HEAD is unreadable, which is the very disagreement being checked for.
       const checkout = resolveCoreCheckout(comfyuiDir)
       coreCommit = launchedCoreCommit(inst, checkout)
-      // Take ownership of the array before anything downstream mutates it in place:
-      // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
-      // no `built.args` to replace it, so those pushes would otherwise reach the array the
-      // source handed us. Same values either way — this is about aliasing, not content.
       launchCmd.args = [...launchCmd.args]
       try {
         const schema = await getComfyArgsSchema(
@@ -1482,7 +1205,6 @@ async function runLaunch(
           installationId,
           revision
         )
-        // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
           const registry = await getComfyFeatureFlagRegistry(
@@ -1502,19 +1224,12 @@ async function runLaunch(
           }
         }
 
-        // Read even when opted out: the assets force-off applies to every install. Campaigns
-        // are opted-in only, so an opted-out launch does not wait on their fetch.
         const [betaFlags, campaigns] = await Promise.all([
           getCoreBetaGrantsAsync(),
           betaEnabled ? loadCampaignInputs() : null
         ])
         const campaignGrants = campaigns?.grants ?? []
-        // The gate's version, not the display label: the `[core-beta]` log line and the
-        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
-        // an install whose label is unverified they name the lower ancestry-proven release.
         const core = coreVersionState(inst, checkout)
-        // The floor gets its own resolve, so the payload's SHAs never use up its cap or budget.
-        // Opted-out launches prove no grant SHA: the checks can reach the network and could grant nothing.
         const [floor, granted] = await Promise.all([
           resolveCoreCommitState(
             comfyuiDir,
@@ -1561,23 +1276,16 @@ async function runLaunch(
           !!campaigns &&
           heldArgUnanswered(built.beta.campaign.misses, campaigns, '--enable-agent') &&
           !built.args.includes('--enable-agent') &&
-          // The user's own args too: an opt-out this core doesn't list is filtered from built.args.
           !built.args.includes('--disable-agent') &&
           !userArgs.includes('--disable-agent') &&
           filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
-      } catch {
-        // Discovery failed; launch the user's own args without injecting managed flags.
-      }
+      } catch {}
     }
   }
-  // Schema/feature-flag discovery spawns Python and can take seconds; another
-  // pre-spawn stretch a restart must be able to cancel out of.
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
-  // Fail closed: launching after a failed config write would run Manager
-  // with stale security settings while the UI claims the chosen values.
   const managerReconcile = await reconcileManagerConfigForLaunch({
     remote: Boolean(launchCmd.remote),
     installPath: inst.installPath,
@@ -1588,22 +1296,6 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
-  // The agent flag is final here (only path args are appended after this), so
-  // this is the first point that knows the agent is actually starting - whether
-  // the user typed the flag or a beta grant added it, and whether the running
-  // core can parse it at all. The package is tens of megabytes, so it gets its
-  // own launch step. Bounded and fail-open: a failure or a timeout is reported
-  // in the launch output and the flag is kept, leaving core to print its install
-  // hint and disable the agent itself.
-  //
-  // The step is added through `addLatePhase` rather than `preLaunchPhases`
-  // because a torch repair may already have armed the tracker, freezing that list.
-  //
-  // An agent version override rides on the same step: when it went in, this launch's output is
-  // watched for how the agent's start went, so a version that keeps failing goes back to core's.
-  //
-  // A member whose campaign flag didn't answer in time keeps the agent a previous launch installed,
-  // with nothing installed: there is no override to try, and core's file may pin only a placeholder.
   let kept: string | null = null
   if (agentUnanswered && launchCmd.args) {
     const plan = planAgentRequirementsInstall(inst, [...launchCmd.args, '--enable-agent'])
@@ -1624,9 +1316,6 @@ async function runLaunch(
   }
   const agentRequirements = kept ? null : planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   let overridePins: OverridePins | undefined
-  // Started once this launch's own uv work (the install below and any frontend restore after it)
-  // is done, and on a cancel before that too, so nothing the launch handed back is dropped. The
-  // hold goes first: while it stands, a download for this install is refused.
   const handedBack: { request?: PrefetchRequest } = {}
   const startHandedBack = (): void => {
     prefetchHold.release()
@@ -1639,11 +1328,9 @@ async function runLaunch(
       agentRequirements,
       makeSendOutput(sender, installationId),
       abort.signal,
-      // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
       readOverrideState(inst),
       (request, deferral) => {
-        // Terminal: the row keeps it, so the launch says what is on its way and when it lands.
         sendProgress('agentRequirements', {
           percent: -1,
           status: i18n.t(
@@ -1673,8 +1360,6 @@ async function runLaunch(
         indexKind(settings.getMirrorConfig())
       )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
-      // Counted like a failed start, so a version that cannot install stops costing launch time.
-      // A deferred one cost none: it is downloading in the background.
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
         void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
@@ -1682,9 +1367,6 @@ async function runLaunch(
     }
   }
 
-  // An override that moved the frontend is recorded, and any launch it doesn't apply on (its pin
-  // pulled, refused or reverted, or the agent off) puts ComfyUI's version back: the agent's own
-  // file has no frontend line to do it.
   const frontendPin = overridePins?.get(FRONTEND_PACKAGE)
   const recordedFrontend = readFrontendPin(inst)
   if (frontendPin !== undefined) {
@@ -1707,7 +1389,6 @@ async function runLaunch(
       startHandedBack()
       return { ok: false, cancelled: true }
     }
-    // Kept on a failed restore, so the next launch tries again.
     if (restored) {
       await installations
         .update(installationId, { frontendVersionOverride: undefined })
@@ -1719,16 +1400,8 @@ async function runLaunch(
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
-  /** Gates the `template-models` row: the bar derives "prior steps done" from
-   *  the active phase index, so the row stays silent through the real phases and
-   *  only shows the download once the server is reachable. Flipped true by
-   *  `waitForTemplateDownloadGate()` at port-ready. */
   let serverUp = false
-  /** Latest download summary, painted as soon as the row is released. */
   let latestTemplateSummary: TemplateDownloadSummary | null = null
-  // A pre-completed phase reports indeterminate (emitting 100 into its slot would
-  // fill it in one frame and leap the bar); a live download reports real percent
-  // so the bar advances with the bytes.
   let firstTemplatePaint = true
   let templatePreCompleted = false
   let templatePaintDone = false
@@ -1747,8 +1420,6 @@ async function runLaunch(
     templatePaintDone = terminal
   }
 
-  // The background task publishes its progress every 500 ms (bytes and logs stay
-  // there); this only paces the display of the `template-models` phase.
   if (showTemplatePhase) {
     const unsubscribe = subscribeTemplateDownload(installationId, (summary) => {
       latestTemplateSummary = summary
@@ -1757,7 +1428,6 @@ async function runLaunch(
     abort.signal.addEventListener('abort', unsubscribe, { once: true })
   }
 
-  /** Abortable sleep used by the failure countdown. Resolves early on abort. */
   function delay(ms: number): Promise<void> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -1772,31 +1442,13 @@ async function runLaunch(
     })
   }
 
-  /**
-   * Hold the ComfyUI reveal until the template-model download settles, so the
-   * (last) download step is genuinely shown and its "Skip & open ComfyUI" footer
-   * button is actionable instead of flashing past on port-ready.
-   *
-   *   - still running → wait (the 500 ms reader keeps the substatus live; Skip
-   *     resolves the wait via `requestSkipTemplateDownload`)
-   *   - done / skipped / cancelled / aborted → proceed immediately
-   *   - error (after the task's 2× retries) → show a clear "failed, retry later"
-   *     line + a 3·2·1 countdown, then proceed
-   *
-   * No-op (returns at once) when there's no template phase or nothing is running.
-   */
   async function waitForTemplateDownloadGate(): Promise<void> {
     if (!showTemplatePhase) return
-    // Release the row (it held silent through the real phases) and paint the latest
-    // summary now, so the pre-done case still shows the final "models ready" row.
     serverUp = true
     if (latestTemplateSummary) paintTemplateProgress(latestTemplateSummary)
 
     const state = getTemplateDownloadState(installationId)
     if (!state) return
-    // Already failed by gate entry (e.g. resolve threw before the server was up,
-    // while the reader was muted): surface it now, then run the countdown — the
-    // reader's first post-`serverUp` tick could be up to 500 ms away.
     const failedAlready = state.status === 'error'
     if (isTemplateDownloadTerminal(state.status) && !failedAlready) return
 
@@ -1805,8 +1457,6 @@ async function runLaunch(
       if (reason !== 'error' || abort.signal.aborted) return
     }
 
-    // Failed for real: count down into ComfyUI so the user notices the failure
-    // before the view swaps.
     for (let secs = 3; secs >= 1; secs--) {
       if (abort.signal.aborted) return
       sendProgress('template-models', {
@@ -1818,10 +1468,7 @@ async function runLaunch(
     }
   }
 
-  // Remote connection
   if (launchCmd.remote) {
-    // Display the host only — the full `launchCmd.url` may carry UTM params
-    // that do not belong in user-facing status. `waitForUrl` gets the real URL.
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
     sendProgress('launch', {
       percent: -1,
@@ -1866,28 +1513,21 @@ async function runLaunch(
     return { ok: true, mode, port: launchCmd.port, url: launchCmd.url }
   }
 
-  // Local process launch
   if (!fs.existsSync(launchCmd.cmd!)) {
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
-  // Skip port logic entirely
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
     const launchEnv = buildLaunchEnv(inst)
 
-    // Marked inside the guard: even the marker's renderer broadcast can
-    // throw, and every throw after the marker exists must clear it before
-    // the handler settles.
     const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
       () => {
         _markLaunching(sessionId, inst.name)
         return acquireLaunchResources()
       }
     )
-    // Last pre-spawn cancellation point on this path: a launch cancelled
-    // during the awaits above must never spawn.
     if (abort.signal.aborted) {
       logStream.end()
       _clearLaunchingFailed(sessionId)
@@ -1903,7 +1543,6 @@ async function runLaunch(
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
-        // The grants are real only once the process exists; a failed spawn reports nothing.
         reportCoreBetaLaunchOnSpawn(p)
         try {
           return {
@@ -1921,8 +1560,6 @@ async function runLaunch(
             )
           }
         } catch (err) {
-          // Stream wiring failed: kill and WAIT for the child so the settled
-          // handler can't outlive a live process.
           await killProcessTree(p)
           throw err
         }
@@ -1955,16 +1592,10 @@ async function runLaunch(
     onProcessTerminated(proc, async (code, signal, { pipesHeld }) => {
       logStream.end()
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
-      // Raw stderr — this payload is shown to the user in the crashed-state
-      // lifecycle UI. PII scrubbing happens on the telemetry path
-      // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
-      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
-      // relaunch can't slip in and clearCrash() during the audit and have this
-      // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(sessionId)
       const exitedPayload = {
@@ -1976,8 +1607,6 @@ async function runLaunch(
         lastStderr,
         ...crashDiagnosis
       }
-      // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
@@ -1988,8 +1617,6 @@ async function runLaunch(
       })
       if (crashed) {
         recordCrash(exitedPayload)
-        // Broadcast to every renderer (not just `sender`) so any already-open
-        // dashboard shows the red error tile live.
         _broadcastToRenderer('instance-crashed', exitedPayload)
       }
       if (!sender.isDestroyed()) {
@@ -2004,10 +1631,6 @@ async function runLaunch(
     return { ok: true, mode }
   }
 
-  // A ComfyUI an earlier run of this session left behind would hold the install's database
-  // lock, so the new one would die at startup (or, in auto port mode, start beside it on the
-  // next port and die there). Runs before any port logic: a terminated orphan frees its port.
-  // Only a PROVEN orphan (see comfyProcessRecord) is ever stopped without asking.
   let prior: PriorProcessOutcome | null = null
   try {
     prior = await resolvePriorProcess(sessionId, {
@@ -2018,22 +1641,18 @@ async function runLaunch(
       onNote: (line) => appendLog(sessionId, `[launch] ${line}\n`)
     })
   } catch (err) {
-    // Bookkeeping never costs a launch: no answer means today's behaviour.
     console.warn('[launch] prior-process check failed:', err)
   }
-  // After a cancel, only a stop that really happened is reported; anything else was cut short.
   if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
     emitPriorProcessFound(installationId, prior)
     appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
   }
-  // A cancel during the busy check wins over whatever it found.
   if (abort.signal.aborted) return { ok: false, cancelled: true }
   if (prior?.blocked) {
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     if (prior.blocked === 'busy') {
       return {
         ok: false,
-        // No counts: the prompt stays on screen while the queue moves on.
         message: prior.survivorPids
           ? i18n.t('errors.priorSurvivorsRunning', { pids: prior.survivorPids.join(', ') })
           : prior.queueUnknown
@@ -2049,11 +1668,8 @@ async function runLaunch(
         }
       }
     }
-    // The recorded pid can be the venv launcher; on Windows the process holding the port (and
-    // the database) is its child. Name whoever listens on the port too.
     const holders = await findPidsByPort(prior.port).catch(() => [] as number[])
     if (prior.scanOwed) {
-      // The recorded child is long gone: name only what holds the port now.
       return {
         ok: false,
         message: prior.scanRecent
@@ -2072,13 +1688,10 @@ async function runLaunch(
         prior.blocked === 'unverified'
           ? 'errors.priorProcessUnverified'
           : 'errors.priorProcessStuck',
-        // Survivors of a long-gone child are named instead of it.
         { pid: [...new Set([...(prior.survivorPids ?? [prior.pid]), ...holders])].join(', ') }
       )
     }
   }
-  // A stopped process can own its listening socket for a few milliseconds more; without this the
-  // port check below sees the port busy and moves to the next one.
   if (prior?.exitedInTime) await waitForPortFree(prior.port)
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
@@ -2093,13 +1706,10 @@ async function runLaunch(
     actionData
   )
 
-  // isPortListening (bind test) is the primary check; findPidsByPort's lsof
-  // only sees same-user processes on Linux.
   const pendingPortOwner = _pendingPorts.get(launchCmd.port!)
   const portBusy = !pendingPortOwner && (await isPortListening(launchCmd.port!))
   const existingPids = pendingPortOwner || !portBusy ? [] : await findPidsByPort(launchCmd.port!)
   const portOccupied = !!pendingPortOwner || portBusy
-  // Version before the pre-launch auto-update, reported in boot_started.
   let portBumpedFrom: number | null = null
 
   if (portOccupied) {
@@ -2114,17 +1724,8 @@ async function runLaunch(
       )
     } catch {}
 
-    // The holder may be ComfyUI for THIS install that the prior-process check could not prove
-    // ours (a manual launch, another Desktop build, one left by an older Desktop). Bumping
-    // would start a second ComfyUI on the same database, which with assets enabled dies on
-    // the database lock, so ask instead — and in "ask" mode or with an explicit --port, do not
-    // offer the next port either, for the same reason. Never grounds for stopping it.
-    // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
-    // Every listener is checked: lsof lists each one, and this install's may not come first.
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
-      // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
-      // empty (lsof sees only this user's processes, and none inside another namespace).
       const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
       for (const pid of new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
         if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
@@ -2134,7 +1735,6 @@ async function runLaunch(
       }
     }
     if (sameInstallPid !== null) {
-      // Already reported when the record check found it and left it.
       if (prior?.action !== 'left')
         emitPriorProcessFound(installationId, {
           action: 'left',
@@ -2160,7 +1760,6 @@ async function runLaunch(
           port: launchCmd.port!,
           process: info ? info.name : `PID ${sameInstallPid}`
         }),
-        // No `nextPort`: offering the next port would offer the failure this avoids.
         portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true }
       }
     }
@@ -2206,7 +1805,6 @@ async function runLaunch(
             ? i18n.t('errors.portConflictComfy', { port: launchCmd.port!, process: processDesc })
             : i18n.t('errors.portConflictOther', { port: launchCmd.port!, process: processDesc })
         } else {
-          // Busy but the owner is unidentifiable (e.g. other-user process on Linux).
           isComfy = false
           message = i18n.t('errors.portConflictOther', {
             port: launchCmd.port!,
@@ -2223,7 +1821,6 @@ async function runLaunch(
     }
   }
 
-  // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
     const reservedPorts = new Set(_pendingPorts.keys())
@@ -2257,20 +1854,12 @@ async function runLaunch(
     }
   }
 
-  // The port probes above are the last pre-marker awaits; don't reserve a
-  // port or set the launching marker for a launch that was already cancelled.
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
-  // Session path / env / progress plumbing before the port is reserved, so a
-  // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
   const sendOutput = makeSendOutput(sender, sessionId)
 
-  // Port reservation and launching marker sit INSIDE the guard: even the
-  // marker's renderer broadcast can throw, and every throw after either
-  // exists must tear them back down before the handler settles. Pre-armed
-  // tracker so the synchronous relaunch loop can reuse the single instance.
   const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
@@ -2280,13 +1869,9 @@ async function runLaunch(
     { port: launchCmd.port! }
   )
 
-  // One id per logical boot, reused across port/reboot retries (tryLaunch
-  // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
   const bootId = randomUUID()
 
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
-    // Reset per-boot accelerator state so each (re)spawn re-emits
-    // accelerator_detected.
     hwTap.beginBoot()
     assetsTap.flushSummary()
     assetsTap.beginBoot()
@@ -2294,9 +1879,7 @@ async function runLaunch(
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
-    // Latched: retries spawn again, and the grants belong to the launch, not to each attempt.
     reportCoreBetaLaunchOnSpawn(p)
-    // Every (re)spawn is recorded, so a later Desktop can prove this child is ours.
     trackSpawn(p, {
       sessionKey: sessionId,
       installationId,
@@ -2316,13 +1899,10 @@ async function runLaunch(
           assetsTap,
           agentTap,
           tracker,
-          // Per spawn: a respawned ComfyUI's agent start is its own outcome.
           overridePins && watchOverriddenAgentStart(installationId, overridePins)
         )
       }
     } catch (err) {
-      // Stream wiring failed: kill and WAIT for the child so cleanup can't
-      // outlive a live process.
       await killProcessTree(p)
       throw err
     }
@@ -2345,14 +1925,7 @@ async function runLaunch(
         signal?: string | null
       }
   > => {
-    // E2E-only: parks the launch here - launching marker set, port reserved,
-    // no process yet - so tests can exercise restart-during-boot without
-    // racing real boot speed. No-op in production and when not armed.
     await waitLaunchSpawnHold(abort.signal)
-    // A cancel that landed during the awaits since the marker was set (log
-    // stream open, tracker arming, the E2E hold) must never spawn. Returning
-    // the cancelled shape routes through the standard failure cleanup below
-    // (port release, marker clear).
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
@@ -2368,12 +1941,6 @@ async function runLaunch(
       sender.send('comfy-output', { installationId: sessionId, text: `> ${cmdLine}\n\n` })
     }
     appendLog(sessionId, `> ${cmdLine}\n\n`)
-    // Explicit boot-attempt event. `installation_started` already fires
-    // on successful boot with `boot_time_ms`, and `comfyui.exited` carries
-    // `crashed=true` on failure — but boot success rate needed inferred
-    // counts from those two events. Emitting `boot_started` makes it a
-    // single division (`installation_started / boot_started`) and surfaces
-    // retries (port_retry / reboot_retry counters) directly.
     telemetry.capture('comfy.desktop.comfyui.boot_started', {
       installation_id: installationId,
       boot_id: bootId,
@@ -2385,20 +1952,11 @@ async function runLaunch(
       port: launchCmd.port ?? null,
       port_bumped_from: portBumpedFrom
     })
-    // Begin (re)buffering per-phase timings for THIS attempt. On a port /
-    // reboot retry this resets so the buffer reflects the attempt that
-    // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
-    // it is flushed only on the terminal failure path below.
     startBootPhases(sessionId, (inst.variant as string | undefined) ?? null)
-    // Re-arm per-attempt phase observation: the UI tracker's index is
-    // monotonic across retries, so without this the respawned boot's re-hit
-    // milestones would never reach the fresh buffer above.
     tracker.resetPhaseObservation()
     const spawned = await spawnComfy()
 
     let earlyExit: string | null = null
-    // Exit code / signal of an early process exit, surfaced on `boot_failed`
-    // so the failure carries WHY the process died, not just that it did.
     let exitCode: number | null = null
     let exitSignal: string | null = null
     const earlyExitPromise = new Promise<void>((_resolve, reject) => {
@@ -2414,10 +1972,6 @@ async function runLaunch(
         exitSignal = signal
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          // A startup crash (e.g. a C-extension segfault during import) is the
-          // most common access-violation case; decode the cryptic NTSTATUS code
-          // and add the VC++ hint inline so the launch-failure modal is useful.
-          // A signal-kill (code null) reports the signal name instead.
           const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
           earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
@@ -2425,9 +1979,6 @@ async function runLaunch(
       })
     })
 
-    // No flat `launch.waiting` progress here: the log-driven stepped phases
-    // own this window. A flat update would race the `startingServer` phase
-    // and flash an indeterminate "(secs)" caption, reflowing the layout.
     try {
       await Promise.race([
         waitForPort(launchCmd.port!, '127.0.0.1', {
@@ -2436,21 +1987,10 @@ async function runLaunch(
         }),
         earlyExitPromise
       ])
-      // The port wait can resolve successfully even after an abort (a probe
-      // already in flight when the signal fired still calls back). Returning
-      // ok would register the cancelled process as a running session, so
-      // route it through the abort teardown in the catch below instead.
       if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
-      // Read before any kill below: only a process that exited by itself during startup counts.
       const exitedDuringStartup = exitCode !== null
-      // A user abort (cancel, or restart-during-boot) is terminal: kill the
-      // spawn and WAIT for it to die before returning, so the launching
-      // marker and operation slot are only cleared after the process has
-      // released its port and a caller like `cancelLaunching` can relaunch
-      // safely. Checked before the retry paths below - an aborted boot must
-      // never respawn via the reboot/port retries.
       if (abort.signal.aborted) {
         await killProcessTree(spawned.proc)
         return {
@@ -2462,10 +2002,6 @@ async function runLaunch(
           signal: exitSignal
         }
       }
-      // WAIT for the failed spawn's whole tree to die before any retry below:
-      // the reboot path reuses the same port, and an overlapping old process
-      // can hold it (or its stream handlers) into the replacement's boot. A tree
-      // that outlived the wait still holds the database, so no retry follows it.
       const stopped = await killProcessTree(spawned.proc)
       if (!stopped.exited) {
         sendOutput(`\nThe failed ComfyUI process did not exit in time; not retrying.\n`)
@@ -2475,9 +2011,6 @@ async function runLaunch(
         sendOutput('\n--- Manager requested restart during startup, respawning… ---\n\n')
         return tryLaunch()
       }
-      // An asset database migrated by a newer ComfyUI (Latest, then back to Stable) stops an older
-      // one from starting with assets on. Without them it starts, and assets come back on a later
-      // launch once its ComfyUI knows that revision. The user's own `--enable-assets` is kept.
       if (
         stopped.exited &&
         exitedDuringStartup &&
@@ -2497,9 +2030,6 @@ async function runLaunch(
       const isPortConflict =
         stderr.includes('address already in use') ||
         (stderr.includes('port') && stderr.includes('in use'))
-      // Auto-switching ports is only allowed under the same policy as the
-      // pre-launch conflict checks: never override an explicitly chosen port,
-      // and never switch when the conflict mode is not 'auto'.
       if (
         stopped.exited &&
         isPortConflict &&
@@ -2523,8 +2053,6 @@ async function runLaunch(
           return tryLaunch()
         } catch {}
       }
-      // Carry the main-process stderr tail and exit information into boot_failed so
-      // a hard child crash still reports the actual error.
       const failureStderr = spawned.getStderr()
       return {
         ok: false,
@@ -2536,9 +2064,6 @@ async function runLaunch(
     }
   }
 
-  // A throw that escapes tryLaunch (sync spawn failure, telemetry, boot-phase
-  // buffering) must still route through the standard failure cleanup below -
-  // port release, marker clear, operation-slot release.
   const launchResult = await tryLaunch().catch(
     (err: unknown): Awaited<ReturnType<typeof tryLaunch>> => ({
       ok: false,
@@ -2549,47 +2074,22 @@ async function runLaunch(
   if (!launchResult.ok) {
     logStream.end()
     _releasePort(launchCmd.port!)
-    // Ownership-guarded: never evict a slot a newer operation already claimed.
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
-    abort.abort() // stop the template-models reader timer on launch failure
+    abort.abort()
     _clearLaunchingFailed(sessionId)
-    // The grants were claimed just before the spawn, which has now failed or been cancelled.
-    // Drop the claim: nothing started, so there is nothing to announce — and leaving it would
-    // also silence the same arg for another install, since claims are global.
     clearBetaActivationClaim(installationId)
-    // Flush the hardware tap on terminal failure/cancel too: the exit handler
-    // covers a process that exits, but a waitForPort timeout can return here
-    // with the proc still alive, leaving a pending accelerator event unemitted.
-    // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
     assetsTap.flushSummary()
     if (launchResult.cancelled) {
-      // User-initiated cancel is not a boot failure — discard the buffer so a
-      // later relaunch starts clean and we don't emit phantom boot_phase rows.
       clearBootPhases(sessionId)
       return { ok: false, cancelled: true }
     }
     execTap.flushSummary()
-    // Terminal boot failure (waitForPort timeout or early process exit, after
-    // any port/reboot retries were exhausted). Flush the buffered phase
-    // timings — they're the breakdown explaining where the boot stalled — then
-    // emit the paired boot_failed. `failed_phase` is the last phase the boot
-    // reached (null if it never entered one). The error is bucketed; the
-    // retry counters surface how many times we re-spawned before giving up.
     const failedPhase = flushBootPhasesOnFailure(sessionId)
-    // Standard error schema derived from the failure message + the stderr
-    // tail (a Python traceback in the tail yields a real `error_class` /
-    // `error_message`; otherwise the launch message drives it). `error_tail`
-    // carries the last ~40 lines of stderr — where the fatal error prints —
-    // scrubbed and capped, so the failure is diagnosable without depending on
-    // the separate, unreliable `boot_log` event.
     const tail = errorTail(launchResult.stderr)
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
-    // Cores with assets on by default name the failure. An older core without --enable-assets
-    // logs the lock line and carries on, so a later, unrelated crash would carry it in its tail:
-    // only a launch that takes the lock can fail on it.
     const assetsFailure = parseAssetsStartupFailure(launchResult.stderr)
     const dbLocked =
       assetsFailure?.kind === 'in_use' ||
@@ -2611,9 +2111,6 @@ async function runLaunch(
       assets_startup_failure: assetsFailure?.kind ?? null
     }
     if (dbLocked) {
-      // Whatever traceback ends the tail (often an unrelated custom-node warning) would
-      // otherwise name the error. The holder lookup can take seconds (Restart Manager / lsof),
-      // so it runs off the failure path and the event follows it.
       void identifyDbLockHolder({
         sessionKey: sessionId,
         installationId,
@@ -2642,14 +2139,11 @@ async function runLaunch(
     } else {
       telemetry.emit('comfy.desktop.comfyui.boot_failed', bootFailed)
     }
-    // "Process exited with code 1" hides the one thing the user can act on.
     if (dbLocked) {
       return { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
     return { ok: false, message: assetsFailure?.message || launchResult.message }
   }
-  // Healthy boot — discard buffered phase timings (no boot_phase on success;
-  // healthy timing is covered by instance_started.boot_time_ms).
   clearBootPhases(sessionId)
   let { proc } = launchResult
 
@@ -2676,9 +2170,6 @@ async function runLaunch(
     { portRetries, rebootRetries },
     installationId
   )
-  // Paired success terminal for boot_started: server up + session registered.
-  // Same boot_id as this launch's boot_started(s), so the boot-success rate is
-  // count(boot_completed.boot_id) / count(distinct boot_started.boot_id).
   telemetry.capture('comfy.desktop.comfyui.boot_completed', {
     installation_id: installationId,
     boot_id: bootId,
@@ -2692,12 +2183,10 @@ async function runLaunch(
   writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
 
   if (!sender.isDestroyed()) {
-    // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
     sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
   }
 
-  // Capture snapshot in background after successful launch
   if (inst.sourceId === 'standalone') {
     captureSnapshotIfChanged(inst.installPath, inst, 'boot')
       .then(async ({ saved, filename }) => {
@@ -2709,7 +2198,6 @@ async function runLaunch(
       .catch((err) => console.warn('Snapshot capture failed:', err))
   }
 
-  // Check if custom nodes created new model folders during startup
   let site1Relaunched = false
   if (manageModelFolders) {
     const { newFolders } = syncCustomModelFolders(
@@ -2723,8 +2211,6 @@ async function runLaunch(
       if (_onModelFolderRelaunch) {
         await Promise.resolve(_onModelFolderRelaunch({ installationId: sessionId })).catch(() => {})
       }
-      // This path returns before the normal exit handler is attached; flush so a pending
-      // accelerator event isn't dropped (flushSummary is idempotent).
       const abandonRelaunch = (): void => {
         logStream.end()
         execTap.flushSummary()
@@ -2736,7 +2222,6 @@ async function runLaunch(
       }
       const stopped = await killProcessTree(proc)
       if (!stopped.exited) {
-        // Respawning now would start a second ComfyUI beside one still holding the database.
         abandonRelaunch()
         return { ok: false, message: i18n.t('errors.priorProcessStuck', { pid: proc.pid ?? 0 }) }
       }
@@ -2753,8 +2238,6 @@ async function runLaunch(
         })
       })
       try {
-        // Re-armed tracker re-emits stepped phases during this relaunch wait;
-        // no flat poll (would race the stepped caption — see above).
         await Promise.race([
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
@@ -2857,7 +2340,6 @@ async function runLaunch(
             })
             .catch(() => {})
         }
-        // Capture snapshot after Manager-triggered restart
         if (inst.sourceId === 'standalone') {
           installations.get(installationId).then((currentInst) => {
             if (!currentInst) return
@@ -2875,14 +2357,10 @@ async function runLaunch(
       }
       logStream.end()
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
-      // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
-      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
-      // relaunch can't slip in and clearCrash() during the audit and have this
-      // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(sessionId)
       const exitedPayload = {
@@ -2894,8 +2372,6 @@ async function runLaunch(
         lastStderr,
         ...crashDiagnosis
       }
-      // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
@@ -2906,8 +2382,6 @@ async function runLaunch(
       })
       if (crashed) {
         recordCrash(exitedPayload)
-        // Broadcast to every renderer (not just `sender`) so any already-open
-        // dashboard shows the red error tile live.
         _broadcastToRenderer('instance-crashed', exitedPayload)
       }
       if (!sender.isDestroyed()) {
@@ -2918,13 +2392,8 @@ async function runLaunch(
   }
   attachExitHandler(proc)
 
-  // Server is up. If a template-model download is still running, hold here (the
-  // download step is the active row + the footer Skip is live) until it settles
-  // or the user skips, instead of flashing past into ComfyUI.
   await waitForTemplateDownloadGate()
 
-  // Stop the `template-models` reader's 500 ms timer: on a skip the download
-  // stays non-terminal, so its loop would otherwise spin for the app's lifetime.
   abort.abort()
 
   if (_onLaunch) {

@@ -9,8 +9,6 @@ function setPlatform(value: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value, configurable: true })
 }
 
-/** Build a fake `fs.promises.access` that rejects (ENOENT) for the named DLLs
- *  and resolves for everything else. */
 function mockAccessMissing(...missing: string[]): void {
   vi.spyOn(fs.promises, 'access').mockImplementation((p: fs.PathLike): Promise<void> => {
     const target = String(p)

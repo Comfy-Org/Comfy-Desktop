@@ -1,11 +1,5 @@
 import type { ActionDef, DetailFieldOption, DetailSection } from '../types/ipc'
 
-/**
- * Locate an action by id across both surfaces it can live in: top-level
- * `section.actions[]` and nested `section.fields[].options[].data.actions[]`
- * (channel-card options). With `currentChannelValue`, a nested match on that
- * channel is preferred. Returns null when nothing matches.
- */
 export function findActionById(
   sections: DetailSection[],
   actionId: string,

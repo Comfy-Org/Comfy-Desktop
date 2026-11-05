@@ -17,11 +17,8 @@ export interface UrlSourceConfig {
   descKey: string
   category: 'remote' | 'cloud'
   defaultUrl: string
-  /** Transform the stored URL before building the launch command (e.g., append UTM params). */
   transformUrl?: (url: string) => string
-  /** Whether the URL field is editable in the detail section. */
   editableUrl?: boolean
-  /** Whether to include the untrack action in the detail section. */
   includeUntrack?: boolean
 }
 
@@ -130,7 +127,6 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
           cancellable: true
         }
       ]
-      // The Comfy Cloud entry is not user-renamable.
       if (category !== 'cloud') {
         actions.push(renameAction(installation.name))
       }

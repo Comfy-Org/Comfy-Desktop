@@ -1,7 +1,3 @@
-/**
- * Shared helpers for the nav-matrix specs (dashboard / instance / cloud) so the
- * picker-open and window-count plumbing stays in one place.
- */
 import { expect } from '@playwright/test'
 import type { ElectronApplication } from 'playwright'
 import type { WebContentsPage } from './cdpPages'
@@ -9,18 +5,12 @@ import { titlePopupPage, waitForWebContents } from './cdpPages'
 import { getIpcInvocations } from './devHooks'
 import { evalWithRetry } from './evalRetry'
 
-/** Count of live (non-destroyed) BrowserWindows. */
 export async function liveWindowCount(app: ElectronApplication): Promise<number> {
   return evalWithRetry(() => app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
   ))
 }
 
-/**
- * Open the instance picker from the chooser host's panel and wait until its
- * bridge is ready. `bridgeFn` is the bridge method each spec drives next
- * (`pickInstall` or `openInstallNewWindow`) — we wait on the one we'll call.
- */
 export async function openPicker(
   app: ElectronApplication,
   panel: WebContentsPage,
@@ -35,13 +25,6 @@ export async function openPicker(
   )
 }
 
-/**
- * Assert a `channel` IPC matching `match` is NEVER observed across a settle
- * window. Negative checks can't use `expect.poll(...).toBe(0)`: poll resolves on
- * the first passing sample, and the count starts at 0, so it passes at t=0 and a
- * late IPC slips through. This samples for the full `windowMs` and fails the
- * instant a matching call appears.
- */
 export async function expectNoIpcInvocation(
   app: ElectronApplication,
   channel: string,

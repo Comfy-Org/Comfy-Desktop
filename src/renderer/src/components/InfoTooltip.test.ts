@@ -5,8 +5,6 @@ import InfoTooltip from './InfoTooltip.vue'
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-// Pins the trigger surface + forwarding; placement/flip/arrow concerns
-// belong in ui/Tooltip.test.ts.
 describe('InfoTooltip', () => {
   it('renders the icon', () => {
     const wrapper = mount(InfoTooltip, { props: { text: 'tip' } })
@@ -83,7 +81,6 @@ describe('InfoTooltip', () => {
     await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     const bubble = document.querySelector('.tooltip-bubble')
-    // jsdom returns zero-sized rects, so the resolver may flip; accept any side.
     expect(bubble?.getAttribute('data-side')).toMatch(/^(top|bottom|left|right)$/)
     wrapper.unmount()
   })

@@ -20,8 +20,6 @@ function mountShowcase(canOfferCloud = true) {
 
 const find = (w: ReturnType<typeof mountShowcase>, id: string) => w.find(`[data-testid="${id}"]`)
 
-/** Resolved from the card list, so reordering the carousel does not require
- *  rewriting every positional assertion. */
 const titleAt = (index: number): string => {
   const card = SHOWCASE_CARDS[index]!
   return card.title.split('.').reduce<unknown>((node, part) => {
@@ -35,8 +33,6 @@ beforeEach(() => {
   mounted.length = 0
 })
 
-// Unmount before the clock is restored, so a component's interval cannot
-// outlive the fake timers that were driving it.
 afterEach(() => {
   mounted.forEach((w) => w.unmount())
   mounted.length = 0
@@ -107,8 +103,6 @@ describe('the cloud action', () => {
   })
 })
 
-/** Shipped installers rotate passively - no dots, no arrows, no transport.
- *  The cloud CTA is the only control on the surface. */
 describe('passive rotation', () => {
   it('ships no carousel transport controls', () => {
     const w = mountShowcase()

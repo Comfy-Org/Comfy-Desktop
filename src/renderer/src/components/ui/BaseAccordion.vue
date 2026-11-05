@@ -2,8 +2,6 @@
 import { usePreferredReducedMotion } from '@vueuse/core'
 import TransitionCollapse from '@comfyorg/design-system/transition/TransitionCollapse'
 
-// Desktop keeps hidden content mounted so in-progress forms survive collapsing.
-// The package owns measuring and animating the content height.
 defineOptions({ inheritAttrs: false })
 
 withDefaults(defineProps<{ open: boolean; duration?: number }>(), { duration: 220 })

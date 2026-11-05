@@ -17,8 +17,6 @@ interface ResolvedOemManifest {
   workflowDirs: string[]
 }
 
-// This ProgramData directory is part of the OEM image contract. Renaming it
-// requires fallback reads from the existing path.
 const OEM_DIR_NAME = 'Comfy Desktop'
 const OEM_WORKFLOW_IMPORT_VERSION = 1
 const sourceMap = Object.fromEntries(sources.map((source) => [source.id, source]))

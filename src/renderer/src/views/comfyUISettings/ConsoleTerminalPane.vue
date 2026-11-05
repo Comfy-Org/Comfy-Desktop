@@ -13,11 +13,6 @@ import { decideTerminalKeyAction } from '../../../../shared/terminalShortcuts'
 import ContextMenu from '../../components/ContextMenu.vue'
 import type { ContextMenuItem } from '../../types/context-menu'
 
-/** Interactive per-install console. The shell lives in main (one PTY per
- *  installation, shared across windows) and survives ComfyUI being stopped,
- *  so this pane is purely a view onto it. Typing `exit` ends the session;
- *  the restart banner respawns a fresh shell. */
-
 interface Props {
   installationId: string | null
 }
@@ -71,10 +66,6 @@ function pushSize(): void {
   void api.terminalResize(currentId, dims.cols, dims.rows)
 }
 
-/** Force the shared PTY to this view's size. Unlike {@link pushSize}, this skips
- *  the "local dims unchanged" guard: another window may have resized the PTY out
- *  from under us, so on focus we must re-assert our size even if our own xterm
- *  hasn't changed, or the shell's cursor stays misaligned. */
 function reclaimPtySize(): void {
   if (!terminal || !currentId) return
   if (!hostRef.value?.offsetParent) return
@@ -83,42 +74,28 @@ function reclaimPtySize(): void {
 
 const debouncedPushSize = useDebounceFn(pushSize, 50)
 
-/** Read a CSS custom property off :root, trimmed, with a fallback. Lets the
- *  xterm theme track the app's light/dark terminal tokens at attach time. */
 function cssVar(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return v || fallback
 }
 
-/** Copy the current xterm selection to the clipboard (no-op when empty). */
 async function copySelection(): Promise<void> {
   const text = terminal?.getSelection()
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-  } catch {
-    // Clipboard can reject (permissions / non-secure context); the selection
-    // stays highlighted for a manual copy, so swallowing is least surprising.
-  }
+  } catch {}
 }
 
-/** Paste the clipboard into the terminal. Used by the right-click menu; the
- *  keyboard paste shortcut is handled natively by xterm (see the key handler).
- *  `terminal.paste()` routes through onData and honors bracketed-paste mode. */
 async function pasteClipboard(): Promise<void> {
   const term = terminal
   if (!term) return
   try {
     const text = await navigator.clipboard.readText()
-    // Ignore if this view was torn down / swapped to another install during
-    // the async clipboard read.
     if (text && term === terminal) term.paste(text)
-  } catch {
-    // See copySelection: clipboard access can fail; nothing else to do.
-  }
+  } catch {}
 }
 
-// --- Right-click menu --------------------------------------------------------
 const menuOpen = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
@@ -191,10 +168,6 @@ async function attach(id: string): Promise<void> {
   terminal.loadAddon(fitAddon)
   terminal.open(hostRef.value)
 
-  // Intercept copy/paste shortcuts before they reach the PTY so e.g. Ctrl+C
-  // can copy a selection instead of always sending SIGINT. Returning false
-  // tells xterm to swallow the key. See decideTerminalKeyAction for the
-  // per-OS matrix.
   terminal.attachCustomKeyEventHandler((e) => {
     const action = decideTerminalKeyAction(e, platform, terminal?.hasSelection() ?? false)
     switch (action) {
@@ -202,9 +175,6 @@ async function attach(id: string): Promise<void> {
         void copySelection()
         return false
       case 'paste':
-        // xterm pastes natively via the browser's paste event; returning false
-        // only swallows the keydown so no stray ^V reaches the PTY. Pasting
-        // manually here too would double-paste.
         return false
       case 'swallow':
         return false
@@ -217,16 +187,10 @@ async function attach(id: string): Promise<void> {
   disposers.push(
     api.onTerminalOutput((payload) => {
       if (payload.installationId !== id) return
-      // Output only flows from a live shell, so a restart triggered from
-      // another window (no exit/start event reaches us) revives the session:
-      // clear the "session ended" banner so input works again.
       if (exited.value) exited.value = false
       terminal?.write(payload.data)
     })
   )
-  // The PTY is shared with the ComfyUI window's terminal and holds one size.
-  // Reclaim it for this view on focus so the shell's cursor matches what we
-  // render here.
   terminal.element?.addEventListener('focusin', reclaimPtySize)
   disposers.push(() => terminal?.element?.removeEventListener('focusin', reclaimPtySize))
   disposers.push(
@@ -268,7 +232,6 @@ onBeforeUnmount(teardown)
 </script>
 
 <template>
-  <!-- min-w-0 prevents xterm's intrinsic column width from expanding the pane. -->
   <div
     ref="paneRef"
     class="console-pane flex min-h-[240px] w-full min-w-0 flex-auto flex-col overflow-hidden rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] [box-shadow:0_0_0_1px_color-mix(in_srgb,var(--neutral-950)_35%,transparent),0_8px_24px_color-mix(in_srgb,var(--neutral-950)_28%,transparent)]"
@@ -290,8 +253,6 @@ onBeforeUnmount(teardown)
     <div
       class="console-viewport relative min-h-0 flex-auto bg-neutral-800 [box-shadow:inset_0_1px_0_color-mix(in_srgb,white_3%,transparent)]"
     >
-      <!-- Absolute content-box sizing keeps FitAddon measurements independent of
-           xterm's intrinsic dimensions and excludes padding from the inner height. -->
       <div
         ref="hostRef"
         class="console-host absolute inset-0 box-content overflow-hidden px-3.5 pt-3 pb-3.5"

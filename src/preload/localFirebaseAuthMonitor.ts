@@ -13,21 +13,12 @@ function isLoopbackPage(): boolean {
   return hostname === 'localhost' || hostname === '[::1]' || hostname.startsWith('127.')
 }
 
-/** A signed-in state derived from however many distinct uids a persistence holds. Shared shape so
- *  both persistences answer by the same predicate: one uid is a user, several is unresolved, none is
- *  a real sign-out. */
 function stateForUserIds(userIds: Set<string>): ComfyDesktop2FirebaseAuthState {
   if (userIds.size === 0) return { status: 'signed_out' }
   if (userIds.size > 1) return { status: 'pending' }
   return { status: 'signed_in', userId: [...userIds][0]! }
 }
 
-/** Bounds what a page can push through the bridge, since the record is entirely page-controlled —
- *  it is NOT the validator and does not reject every uid main will refuse. It is deliberately ONE
- *  OVER main's 256: a 257-character uid passes here and is rejected there, so the decision stays
- *  with `normalizePostHogUserId` rather than a page-side truncation quietly producing a 256-character
- *  match. What this stops is the unbounded case — a megabyte of page-controlled string crossing IPC
- *  into main-process memory and any crash dump taken from it. */
 const MAX_UID_CHARS = 257
 
 function uidFromRecord(value: unknown): string | null {
@@ -37,39 +28,18 @@ function uidFromRecord(value: unknown): string | null {
   return uid
 }
 
-/**
- * LocalStorage read outcomes:
- * - unavailable: the localStorage mechanism is absent; IndexedDB may answer.
- * - unreadable: access threw; do not infer either sign-in or sign-out.
- * - empty: the store is readable but contains no Firebase records.
- * - records: readable Firebase user records are available.
- *
- * A stale IndexedDB copy must not override unreadable localStorage.
- */
 type LocalStorageRead =
   | { kind: 'unavailable' }
   | { kind: 'unreadable' }
   | { kind: 'empty' }
   | { kind: 'records'; userIds: Set<string> }
 
-/**
- * The first read. It reports what localStorage HAS and deliberately does not decide: an empty
- * localStorage is ambiguous (see `shared/firebaseAuthStorage.ts`), because our own sign-in injection
- * writes the record to IndexedDB only, and on the shipped frontend the user also lives there for the
- * first seconds of a page. Only `readLocalFirebaseAuthState` turns this into a state.
- */
 function readFromLocalStorage(): LocalStorageRead {
   let keys: string[]
   try {
     if (typeof localStorage === 'undefined') return { kind: 'unavailable' }
     keys = Object.keys(localStorage)
   } catch {
-    // BLOCKED, NOT ABSENT. The object EXISTS — `typeof` said so one line above — and access threw:
-    // blocked site data, or a partitioned context. That is the same epistemic state as a per-key
-    // throw below, and must answer the same way. Calling it `unavailable` would let IndexedDB answer
-    // alone, and on a localStorage-primary frontend IndexedDB holds at most the copy the SDK's
-    // best-effort cleanup left behind — so a stale record would be reported as a DEFINITE signed_in,
-    // which is then either believed or becomes a uid mismatch that revokes the binding.
     return { kind: 'unreadable' }
   }
   const userIds = new Set<string>()
@@ -79,22 +49,13 @@ function readFromLocalStorage(): LocalStorageRead {
     try {
       raw = localStorage.getItem(key)
     } catch {
-      // Enumeration worked and this key MATCHES the Firebase prefix, but reading its value threw.
-      // Distinct from `unavailable`: localStorage holds Firebase keys we cannot read, so it is
-      // almost certainly the store in use and IndexedDB is drained — a record there would be the
-      // stale copy. Not provably so, because the SDK's clearing of other persistences is
-      // best-effort ("ignore errors"), so a stale localStorage key can survive on a frontend that
-      // keeps the user in IndexedDB. The cost of abstaining in that case is a `pending` instead of
-      // a `signed_in`, on an install needing four conditions at once, which is the safe direction.
       return { kind: 'unreadable' }
     }
     if (!raw) continue
     try {
       const uid = uidFromRecord(JSON.parse(raw))
       if (uid) userIds.add(uid)
-    } catch {
-      // A malformed entry is not a mechanism failure. Skip it; the remaining keys still answer.
-    }
+    } catch {}
   }
   return userIds.size === 0 ? { kind: 'empty' } : { kind: 'records', userIds }
 }
@@ -106,16 +67,6 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-/** The SECOND persistence reader, and a live path rather than a legacy one. `observe()` reaches it
- *  when localStorage is READABLE AND EMPTY, or genuinely absent, and `indexedDB` itself is present —
- *  not merely "when localStorage holds no record": an UNREADABLE localStorage abstains before this,
- *  as does an unreadable or absent `indexedDB`.
- *
- *  The readable-and-empty case arises DURING boot on the released frontend, not at the first read
- *  of one: localStorage still holds the previous session's record, so the first polls take the
- *  localStorage path. The SDK's IndexedDB-first migration then drains localStorage, and this reader
- *  answers until the auth store's later `setPersistence` moves the record back.
- *  See `shared/firebaseAuthStorage.ts`. */
 async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   try {
     const databases = await indexedDB.databases()
@@ -151,22 +102,10 @@ async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
 
 async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
   const local = readFromLocalStorage()
-  // A record in localStorage wins outright: it is the store the session settles in, and any copy
-  // left in IndexedDB is one the SDK discarded — so a signed-out account cannot come back.
   if (local.kind === 'records') return stateForUserIds(local.userIds)
 
-  // localStorage has keys we could not read. IndexedDB must NOT answer here: it is drained because
-  // localStorage is the store in use, so a record there is the stale copy and its absence is not a
-  // sign-out either. Neither direction is evidence, so neither is asserted.
   if (local.kind === 'unreadable') return { status: 'pending' }
 
-  // `typeof` does not protect a throwing accessor — it only suppresses ReferenceError for an
-  // unresolvable binding — and this getter throws SecurityError in a partitioned context. Without
-  // the catch that escapes the whole function, skipping the report for the tick.
-  //
-  // ABSENT and UNREADABLE are then distinguished for the same reason they are on the localStorage
-  // side: a store that cannot be consulted has told us nothing, and "both stores are empty" is only
-  // a sign-out if both were actually asked.
   let secondStore: 'present' | 'absent' | 'unreadable'
   try {
     secondStore = typeof indexedDB === 'undefined' ? 'absent' : 'present'
@@ -175,88 +114,29 @@ async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
   }
   if (secondStore === 'unreadable') return { status: 'pending' }
   if (secondStore === 'absent') {
-    // There is genuinely no second store, so an empty localStorage is the whole truth. An
-    // unreadable one leaves us with nothing to say.
     return local.kind === 'empty' ? { status: 'signed_out' } : { status: 'pending' }
   }
 
   const fromIdb = await readFromIndexedDb()
   if (local.kind === 'unavailable') {
-    // There is no localStorage object at all, so the frontend cannot be using it and IndexedDB is
-    // the only store WE read. A record there is the answer and is reported — this is what keeps a
-    // legacy IndexedDB-primary frontend working.
-    //
-    // Its ABSENCE is still not a sign-out, and the reason is not the drained-store one that applies
-    // elsewhere: the SDK's persistence hierarchy also includes sessionStorage, which this reader
-    // never reads. So "IndexedDB is empty" does not mean "no store holds a user", and asserting a
-    // sign-out from it would be trusted, would revoke the loopback binding and would seal the
-    // install.
     return fromIdb.status === 'signed_out' ? { status: 'pending' } : fromIdb
   }
-  // IndexedDB holds a user, or could not say. Either way the stores do not agree that there is
-  // nobody, so ABSTAIN: `signed_out` here is trusted, revokes the loopback binding and seals the
-  // install, and `signed_in` would honour a record that may genuinely be stale.
   if (fromIdb.status !== 'signed_out') return { status: 'pending' }
 
-  // BOTH READS SAY NOTHING — but they were taken at DIFFERENT INSTANTS. `local` is synchronous and
-  // was read before the IndexedDB round-trip, which takes tens of milliseconds, and the frontend's
-  // `setPersistence` moves the record INTO localStorage. Composing the two would assert "both empty"
-  // from observations that were never simultaneously true: exactly the cold-boot failure, where a
-  // complete 100ms trace of the whole boot contained no both-empty sample at all and the reader
-  // reported one anyway. Re-read localStorage — it is synchronous, so this costs one read and delays
-  // nothing. This is the PRIMARY fix for that failure; the settle below is the backstop for the
-  // genuinely narrow instant inside `setPersistence`, which is a different cause.
   const recheck = readFromLocalStorage()
   if (recheck.kind === 'records') return stateForUserIds(recheck.userIds)
   if (recheck.kind !== 'empty') return { status: 'pending' }
   return { status: 'signed_out' }
 }
 
-/**
- * Continuous empty-store duration required before reporting signed_out.
- * The three-second delay is a conservative policy, not a measured bound on
- * Firebase persistence handoffs. A transient empty state must not revoke
- * an installation's authorization.
- *
- * Use elapsed wall time rather than a count of polls: visible views poll each
- * second, while background throttling can delay a hidden view's polls by a minute.
- */
 const SIGNED_OUT_SETTLE_MS = 3000
 
-/**
- * When the current run of "no record anywhere" was first observed, or null if the last observation
- * found something. Lives HERE, in the observation path, and `poll()` holds no reference to it — so
- * the tempting bug of clearing it from the reporting path is not expressible. That matters because
- * an unsettled sign-out and the stores-disagree row both serialise to `pending`, so a transition
- * between them emits NO report at all: a reset keyed on the reported state would never fire on
- * exactly the transition that must clear it.
- */
 let noRecordSince: number | null = null
 
-/** TEST ONLY. Module state has to be cleared between cases or they become order-dependent — the
- *  same hazard as restoring a global by assignment. Named honestly rather than hidden behind
- *  something clever. */
 export function resetSignedOutSettleForTests(): void {
   noRecordSince = null
 }
 
-/**
- * The one place a `signed_out` verdict can be produced, so the settle cannot be bypassed and
- * "anything else clears the timer" is structural rather than repeated at each return.
- *
- * WHY: `PersistenceUserManager.setPersistence` (@firebase/auth 1.10.8) REMOVES from the old store
- * and only then WRITES to the new one — `await this.removeCurrentUser()`, then
- * `this.setCurrentUser(...)` — so for the duration of that write the user is in NEITHER store.
- *
- * THIS INSTANT HAS NEVER BEEN OBSERVED. The cold boot that prompted this work was a DIFFERENT bug —
- * the reader composing two reads taken at different instants, fixed by the localStorage re-read in
- * `observe()` — and a complete 100ms trace of that entire boot contained no both-empty sample. So
- * this gate rests on reading the SDK, not on measurement, which is exactly why it is the backstop
- * and not the primary fix.
- *
- * The boot migration is the OPPOSITE order (`create()` writes the new store before removing the
- * others), so it never presents this state. One hazard, one gate.
- */
 function settled(state: ComfyDesktop2FirebaseAuthState): ComfyDesktop2FirebaseAuthState {
   if (state.status !== 'signed_out') {
     noRecordSince = null
@@ -267,9 +147,6 @@ function settled(state: ComfyDesktop2FirebaseAuthState): ComfyDesktop2FirebaseAu
     noRecordSince = now
     return { status: 'pending' }
   }
-  // A clock stepped backwards yields a negative elapsed, which never satisfies this — pending, the
-  // safe direction. A suspend/resume yields a huge elapsed, which is correct: no polls ran while
-  // suspended, so the first poll afterwards is looking at a settled state.
   return now - noRecordSince >= SIGNED_OUT_SETTLE_MS
     ? { status: 'signed_out' }
     : { status: 'pending' }
@@ -279,7 +156,6 @@ export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2Firebas
   return settled(await observe())
 }
 
-/** Report local Firebase persistence because the frontend's own sync is Cloud-only. */
 export function startLocalFirebaseAuthMonitor(
   report: (state: ComfyDesktop2FirebaseAuthState) => void
 ): (() => void) | null {
@@ -294,13 +170,8 @@ export function startLocalFirebaseAuthMonitor(
     try {
       state = await readLocalFirebaseAuthState()
     } catch {
-      // A rejection here would escape `void poll()` as an unhandled rejection on every tick. Say
-      // nothing rather than guess: the last reported state stands until a poll can answer.
       return
     } finally {
-      // Without `finally`, one rejection leaves `polling` true for the life of the page and the
-      // monitor goes permanently silent — downstream indistinguishable from a user who never
-      // signed in.
       polling = false
     }
     if (stopped) return

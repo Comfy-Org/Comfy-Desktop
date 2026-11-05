@@ -6,28 +6,11 @@ import Button from '@comfyorg/design-system/button/Button'
 import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
-/**
- * One-off announcement modal (currently the Comfy API launch).
- * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
- * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
- * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
- * settings so previously-dismissed users still get the bell.
- *
- * Strings live in `announcement.comfyApi.*` (locales/en.json).
- */
-
-// Announcement id, carried in telemetry so this component can be reused for a
-// future announcement by swapping the id + copy.
 const ANNOUNCEMENT_ID = 'comfy_api'
 
-// CTA destination. The UTM tags clicks as Desktop-origin so they're
-// attributable in analytics.
 const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_api'
 const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
 
-// Comfy API launch media. The host caches assets for an hour, so use a new
-// filename version when replacing an asset. The poster paints immediately;
-// the muted video autoplays and loops. The gradient handles unavailable media.
 const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
 const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 
@@ -39,7 +22,6 @@ const highlights = computed<string[]>(() => {
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
-// Video autoplays muted (browsers block audible autoplay); users opt into sound.
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isMuted = ref(true)
 function toggleSound(): void {

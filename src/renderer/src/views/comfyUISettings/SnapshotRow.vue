@@ -12,16 +12,10 @@ import {
 } from '../../lib/snapshots'
 import BaseAccordion from '../../components/ui/BaseAccordion.vue'
 
-/**
- * Snapshot timeline row: header (trigger label, badge, timestamp, chevron) plus an always-visible change-summary. Destructive actions live in the parent's detail panel.
- */
-
 interface Props {
   snapshot: SnapshotSummary
   expanded: boolean
-  /** First (newest) snapshot carries a "Latest" badge. */
   isLatest?: boolean
-  /** Previous snapshot's ComfyUI version; when this snapshot changed it, the title pill shows `prev → this`. */
   previousComfyuiVersion?: string
   toggleTestId?: string
 }
@@ -42,7 +36,6 @@ const triggerCopy = computed(() => _triggerLabel(props.snapshot.trigger, t))
 const relativeCopy = computed(() => _formatRelative(props.snapshot.createdAt, t))
 const absoluteCopy = computed(() => formatDate(props.snapshot.createdAt))
 
-// `state` (post-update / post-restore) is highlighted as a real transition; everything else stays neutral.
 const triggerTone = computed<'state' | 'neutral'>(() => {
   switch (props.snapshot.trigger) {
     case 'post-update':
@@ -53,7 +46,6 @@ const triggerTone = computed<'state' | 'neutral'>(() => {
   }
 })
 
-// Node-change deltas vs the previous snapshot, driving the collapsed-header pills.
 const nodeDelta = computed(() => {
   const d = props.snapshot.diffVsPrevious
   return {
@@ -66,7 +58,6 @@ const hasNodeChanges = computed(
   () => nodeDelta.value.added + nodeDelta.value.removed + nodeDelta.value.changed > 0
 )
 
-// Pip-package deltas vs the previous snapshot, driving a second collapsed-header pill.
 const pipDelta = computed(() => {
   const diff = props.snapshot.diffVsPrevious
   return {
@@ -79,11 +70,6 @@ const hasPipChanges = computed(
   () => pipDelta.value.added + pipDelta.value.removed + pipDelta.value.changed > 0
 )
 
-// Title pill: the snapshot's label, else a version transition `prev → this`, else
-// the resulting version. Any displayable label shows, not just a manual one — a
-// post-restore snapshot written after a failed or cancelled restore is labelled
-// so the row cannot read as a completed restore. Older builds also
-// wrote internal sentinels into `label`, which `isDisplayableLabel` filters out.
 const hasCustomLabel = computed(() => isDisplayableLabel(props.snapshot.label))
 const comfyuiChanged = computed(
   () => !!props.snapshot.diffVsPrevious?.comfyuiChanged && !!props.previousComfyuiVersion
@@ -99,7 +85,6 @@ const hasTitlePill = computed(() => !!titlePillText.value)
 
 <template>
   <div class="snapshot-row flex flex-col gap-2" :class="{ 'is-expanded': expanded }">
-    <!-- Whole header is the expand toggle. -->
     <Button
       type="button"
       variant="textonly"
@@ -136,7 +121,6 @@ const hasTitlePill = computed(() => !!titlePillText.value)
           />
         </div>
       </div>
-      <!-- At-a-glance pills: version/name pill + node deltas vs previous. -->
       <div
         v-if="hasTitlePill || hasNodeChanges || hasPipChanges"
         class="snapshot-row-pills flex flex-wrap items-center gap-1.5"
@@ -201,12 +185,10 @@ const hasTitlePill = computed(() => !!titlePillText.value)
       </div>
     </Button>
 
-    <!-- Body card animates open/closed via BaseAccordion. -->
     <BaseAccordion :open="expanded">
       <div
         class="snapshot-row-card flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5"
       >
-        <!-- Composition totals; version omitted (already in the header pill). -->
         <div
           class="snapshot-row-meta flex flex-wrap items-center gap-1.5 px-1.5 py-px text-[11px] text-text-muted [overflow-wrap:anywhere]"
         >

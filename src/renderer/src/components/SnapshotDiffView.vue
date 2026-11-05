@@ -7,8 +7,6 @@ import { formatNodeVersion } from '../lib/snapshots'
 
 const props = defineProps<{
   diff: SnapshotDiffResult
-  /** Collapse the Custom Nodes + Pip Packages sections to count headers, for
-   *  tight surfaces where a large diff would overflow. */
   collapsible?: boolean
 }>()
 

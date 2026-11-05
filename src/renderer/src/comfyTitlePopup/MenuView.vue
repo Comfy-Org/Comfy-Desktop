@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 
 interface MenuItem {
   id?: string
-  /** English fallback when `labelKey` is set. */
   label?: string
   labelKey?: string
   checked?: boolean

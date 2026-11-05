@@ -70,26 +70,14 @@ import {
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
 
-  // App version
   ipcMain.handle('get-app-version', () => getAppVersion())
 
-  // Every stable ComfyUI release tag, newest first. Used by the
-  // install-wizard and the per-install ChannelPicker version dropdown.
-  // Returns `[]` (never throws) when the remote is unreachable.
   ipcMain.handle('get-stable-tags', () => getStableTags())
 
-  // Signed-in user's Comfy Cloud subscription tier ('free' | 'paid' |
-  // 'unknown'). Hydrated from a persisted file at boot and refreshed on
-  // every cloud webContents `dom-ready`; consumed by billing telemetry and
-  // free-tier offer UI. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
 
-  // Whether the free tier is live, for the first-use trial pill. Bypasses
-  // the consent gate so it resolves pre-consent, the only state that
-  // surface renders in; fails CLOSED. See `cloudFreeRuns.ts`.
   ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
 
-  // Sources
   ipcMain.handle('get-sources', () =>
     sources
       .filter((s) => s.category !== 'cloud' && !s.hidden)
@@ -131,8 +119,6 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle('validate-hardware', async () => {
     const result = await validateHardware()
-    // Emit a single event whether hardware passes or fails so we can build
-    // funnels like "% of users who hit hardware-not-supported during install".
     mainTelemetry.emit('comfy.desktop.install.validation', {
       passed: result.supported,
       platform: process.platform,
@@ -156,7 +142,6 @@ export function registerAppHandlers(): void {
     }
   )
 
-  // Paths
   ipcMain.handle('get-default-install-dir', () => defaultInstallDir())
 
   ipcMain.handle('browse-folder', async (_event, defaultPath?: string) => {
@@ -190,7 +175,6 @@ export function registerAppHandlers(): void {
     }
   })
 
-  /** Example workflows download models into a local, installed instance. */
   async function findExampleWorkflowInstallation(
     installationId: string
   ): Promise<InstallationRecord | null> {
@@ -223,7 +207,6 @@ export function registerAppHandlers(): void {
           artifacts.apiWorkflow,
           benchmarksDir
         )
-        // A page that goes away before the models arrive leaves nobody to run the example.
         const download = startExampleModelDownload(
           installation,
           workflowFilePath,
@@ -400,9 +383,7 @@ export function registerAppHandlers(): void {
               (workspace) => workspace.id === workspaceId
             )
             workspaceName = owningWorkspace?.name ?? workspaceName
-          } catch {
-            // The id-keyed cache remains accurate when workspace refresh is unavailable.
-          }
+          } catch {}
         }
         const workspace = { id: workspaceId, name: workspaceName }
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
@@ -552,12 +533,6 @@ export function registerAppHandlers(): void {
     activeSizeInstId = null
   })
 
-  // Hardware probing spawns nvidia-smi plus several WMI/PowerShell queries
-  // (systeminformation), and on Windows every process launch blocks the main
-  // thread in CreateProcess. The hardware cannot change mid-session, so the
-  // probe runs once and the promise is shared - the renderer bootstrap and
-  // the first-use surface both request system info at boot. A failed probe
-  // clears the cache so the next call retries.
   let hardwareProbe: Promise<Record<string, unknown>> | null = null
   const probeHardwareCached = (): Promise<Record<string, unknown>> => {
     hardwareProbe ??= probeHardware().catch((err) => {
@@ -582,8 +557,6 @@ export function registerAppHandlers(): void {
       cpu_model: cpus[0]?.model ?? 'unknown',
       cpu_cores: cpus.length,
       app_version: getAppVersion(),
-      // Report the autoInstallUpdates preference: automatic install or user prompt.
-      // Update checking itself is always enabled.
       auto_update: settings.get('autoInstallUpdates') !== false,
       locale: settings.get('language') || 'en',
       installation_count: allInstalls.length,
@@ -637,9 +610,6 @@ export function registerAppHandlers(): void {
         vram_mb: ctrl.vram ?? null,
         driver_version: ctrl.driverVersion?.trim() || null
       }))
-      // systeminformation only fills `driverVersion` for NVIDIA on Windows
-      // (via nvidia-smi), leaving AMD/Intel blank even though WMI carries it.
-      // Backfill the missing versions from Win32_VideoController by name.
       const wmiDrivers = await getWindowsGpuDriverVersions()
       if (wmiDrivers.size > 0) {
         allGpus = allGpus.map((g) =>
@@ -650,31 +620,17 @@ export function registerAppHandlers(): void {
       }
     }
 
-    // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
-    // Apple Silicon) — its `model` field is hardcoded null. Pick the real
-    // compute GPU from the systeminformation `controllers[]` instead of
-    // blindly trusting `controllers[0]`: virtual display adapters are not
-    // promoted. The full `allGpus` array is still returned unfiltered for
-    // retroactive analysis. Empty strings from the lib normalise to null so
-    // cohort filters on "is set" work consistently.
     const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
     const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
     const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
     const primaryGpuVramGb = primaryGpuVramMb != null ? Math.round(primaryGpuVramMb / 1024) : null
     const gpuTier = deriveGpuTier({ vendor: gpu?.id, vramGb: primaryGpuVramGb })
-    // Only trust the primary controller's driver string when it actually
-    // matches the detected compute vendor; selectPrimaryGpu may fall back to a
-    // non-matching controller, which would otherwise mislabel the driver.
     const primaryGpuMatchesAmd = vendorMatches('amd', primaryGpu?.vendor, primaryGpu?.model)
     const primaryGpuMatchesIntel = vendorMatches('intel', primaryGpu?.vendor, primaryGpu?.model)
-    // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
-    // there is no rocm-smi, so fall back to the controller's WMI driver.
     const amdDriver =
       gpu?.id === 'amd'
         ? (amdDriverVersion ?? (primaryGpuMatchesAmd ? primaryGpu?.driver_version : null) ?? null)
         : null
-    // Intel has no dedicated CLI; the controller driver (WMI on Windows,
-    // si on Linux) is the best available signal.
     const intelDriver =
       gpu?.id === 'intel' && primaryGpuMatchesIntel ? (primaryGpu?.driver_version ?? null) : null
     return {
@@ -698,23 +654,11 @@ export function registerAppHandlers(): void {
     }
   }
 
-  // Per-session boot census of every persisted installation, sorted
-  // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`
-  // so dashboards can see the user's full install footprint without
-  // having to wait for them to launch each one. The inventory ships to PostHog
-  // (only) as a serialized `installs_json` string; capped to 384 KB total to
-  // leave conservative headroom under PostHog's 1 MB per-event hard limit after
-  // re-escaping inside the outer event JSON, super-properties, and any non-ASCII
-  // expansion (the cap counts UTF-16 code units, the limit is UTF-8 bytes).
   ipcMain.handle('get-installs-inventory', async () => {
     const MAX_TOTAL_BYTES = 384 * 1024
     const MAX_PER_INSTALL_BYTES = 64 * 1024
     const all = await installations.list()
-    // `installing` entries are mid-install transient — exclude them
-    // (they'll show up on the next boot once they settle).
     const visible = all.filter((i) => i.status !== 'installing')
-    // Most-recently-launched first; never-launched (`undefined`) sort
-    // to the end with `?? 0`.
     visible.sort(
       (a, b) =>
         ((b.lastLaunchedAt as number | undefined) ?? 0) -
@@ -745,9 +689,6 @@ export function registerAppHandlers(): void {
           ? {
               createdAt: latest.createdAt,
               trigger: latest.trigger,
-              // User-typed snapshot labels can carry PII / paths /
-              // model names, so we collapse the label to a presence
-              // boolean instead of shipping the raw string.
               has_label: !!latest.label,
               comfyui: {
                 ref: latest.comfyui.ref,
@@ -761,9 +702,6 @@ export function registerAppHandlers(): void {
         snapshot_diffs: [] as Array<Record<string, unknown>>
       }
 
-      // Pack as many diffs (newest → oldest) as fit under the
-      // per-install cap; truncation is tolerated silently to leave
-      // room for the next install in the inventory.
       let perInstallSize = JSON.stringify(entry).length
       for (let i = 0; i < entries.length - 1; i++) {
         const newer = entries[i]!.snapshot
@@ -772,7 +710,6 @@ export function registerAppHandlers(): void {
         const diffEntry: Record<string, unknown> = {
           createdAt: newer.createdAt,
           trigger: newer.trigger,
-          // Same PII reasoning as `latest_snapshot.has_label` above.
           has_label: !!newer.label,
           nodesAdded: d.nodesAdded.length,
           nodesRemoved: d.nodesRemoved.length,

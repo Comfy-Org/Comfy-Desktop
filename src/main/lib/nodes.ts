@@ -13,7 +13,6 @@ export interface ScannedNode {
   url?: string
 }
 
-/** Stable unique key for a node — used for snapshot comparisons and diffs. */
 export function nodeKey(node: ScannedNode): string {
   return `${node.type}:${node.dirName}`
 }
@@ -29,8 +28,6 @@ function readTomlProjectField(tomlPath: string, field: string): string | null {
   }
 }
 
-/** True if the directory contains any top-level Python source (ComfyUI loads
- *  a custom-node directory as a module, so a real node always has one). */
 function hasTopLevelPython(nodePath: string): boolean {
   try {
     return fs.readdirSync(nodePath).some((name) => name.endsWith('.py'))
@@ -44,33 +41,24 @@ function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> | null {
   const trackingPath = path.join(nodePath, '.tracking')
   const tomlPath = path.join(nodePath, 'pyproject.toml')
 
-  // CNR node: has .tracking file
   if (fs.existsSync(trackingPath)) {
     const id = readTomlProjectField(tomlPath, 'name') || dirName
     const version = readTomlProjectField(tomlPath, 'version') || undefined
     return { id, type: 'cnr', dirName, version }
   }
 
-  // Git node: has .git/ directory (or .git file for worktrees/submodules)
   if (hasGitDir(nodePath)) {
     const commit = readGitHead(nodePath) || undefined
     const url = readGitRemoteUrl(nodePath) || undefined
     return { id: dirName, type: 'git', dirName, commit, url }
   }
 
-  // Unmanaged directory: only a node if it carries a node marker
-  // (pyproject.toml) or actually contains Python code. Stray directories
-  // (e.g. accidentally created model folders) would otherwise be
-  // captured in snapshots as git nodes that can never be restored.
   if (fs.existsSync(tomlPath) || hasTopLevelPython(nodePath)) {
     return { id: dirName, type: 'git', dirName }
   }
   return null
 }
 
-/** File nodes shipped inside the ComfyUI core checkout itself. They are
- *  restored by the core git checkout, not by node management, and listing
- *  them in snapshots only confuses users. */
 const CORE_FILE_NODES = new Set(['websocket_image_save.py'])
 
 export async function scanCustomNodes(comfyuiDir: string): Promise<ScannedNode[]> {

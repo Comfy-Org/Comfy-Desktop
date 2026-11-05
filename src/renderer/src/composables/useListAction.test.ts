@@ -54,7 +54,6 @@ function makeInstall(overrides: Partial<Installation> = {}): Installation {
     id: 'inst-1',
     name: 'Legacy Desktop',
     sourceLabel: 'Legacy Desktop',
-    // Legacy Desktop reports category `local`; the `desktop` sourceId is the marker.
     sourceCategory: 'local',
     sourceId: 'desktop',
     status: 'installed',
@@ -83,8 +82,8 @@ describe('useListAction — desktop launch interceptor', () => {
   it('on confirm: emits show-progress with an apiCall that chains migrate → launch', async () => {
     mockModalConfirm.mockResolvedValueOnce(true)
     mockRunAction
-      .mockResolvedValueOnce({ ok: true, newInstallationId: 'inst-adopted-1' }) // migrate-to-standalone
-      .mockResolvedValueOnce({ ok: true }) // launch on adopted
+      .mockResolvedValueOnce({ ok: true, newInstallationId: 'inst-adopted-1' })
+      .mockResolvedValueOnce({ ok: true })
 
     const showProgress = vi.fn()
     const { executeAction } = useListAction('chooser', { showProgress })
@@ -194,8 +193,6 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
 
     expect(onGuardsPassed).toHaveBeenCalledOnce()
     expect(showProgress).toHaveBeenCalledOnce()
-    // Hook must fire BEFORE showProgress so the chooser claim is in place
-    // by the time the launch op is dispatched.
     expect(onGuardsPassed.mock.invocationCallOrder[0]).toBeLessThan(
       showProgress.mock.invocationCallOrder[0]
     )

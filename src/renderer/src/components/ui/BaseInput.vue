@@ -11,11 +11,8 @@ interface Props {
   mono?: boolean
   readonly?: boolean
   invalid?: boolean
-  /** Forwarded to the native input; pass false to suppress the red squiggly
-   *  spell-check underline on non-prose fields (e.g. CLI args). */
   spellcheck?: boolean
   type?: string
-  // Only meaningful when `type === 'number'`.
   min?: number
   max?: number
   step?: number

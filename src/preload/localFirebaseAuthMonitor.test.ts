@@ -7,7 +7,6 @@ import {
 const originalIndexedDb = globalThis.indexedDB
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 
-/** localStorage holding the given `firebase:authUser:*` records. */
 function installLocalStorage(records: Record<string, unknown>): void {
   const store: Record<string, string> = {}
   for (const [key, value] of Object.entries(records)) store[key] = JSON.stringify(value)
@@ -20,16 +19,10 @@ function installLocalStorage(records: Record<string, unknown>): void {
   })
 }
 
-/** The only thing that lets a RECORD in IndexedDB be the answer: the mechanism is absent. IndexedDB
- *  is also consulted when localStorage is readable and empty — but a record found there then means
- *  the stores disagree, and the reader abstains rather than answering from it. */
 function removeLocalStorage(): void {
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: undefined })
 }
 
-/** Present but throwing — a blocked or partitioned context. Classified `unreadable`, NOT
- *  `unavailable`: the store exists and cannot be read, so IndexedDB does not get to answer and
- *  these cases expect `pending`. */
 function installThrowingLocalStorage(): void {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
@@ -39,7 +32,6 @@ function installThrowingLocalStorage(): void {
   })
 }
 
-/** Enumeration succeeds, the per-key value read throws — the mechanism failing mid-read. */
 function installThrowingGetItem(): void {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
@@ -74,8 +66,6 @@ function installIndexedDb(entries: unknown[] | null): void {
   } as unknown as IDBFactory
 }
 
-/** Only `Date.now` is faked. Faking timers wholesale would also fake `queueMicrotask`, which the
- *  IndexedDB request doubles rely on to resolve — the settle needs a clock, not a scheduler. */
 let clock = 0
 function at(ms: number): void {
   clock = ms
@@ -86,19 +76,8 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockImplementation(() => clock)
 })
 
-/** The three shapes in which the IndexedDB read reports "nobody", each returning at a DIFFERENT
- *  await, and all three falling through to the localStorage re-read. */
 type IdbShape = 'store-empty' | 'no-database' | 'database-without-store'
 
-/**
- * An IndexedDB double that runs `duringFirstAwait` from `databases()` — the FIRST await on EVERY
- * path, so the record can be modelled as moving stores whichever guard the read returns at.
- *
- * Hooking `getAll` instead only models `store-empty`: `no-database` returns at the `databases()`
- * guard and `database-without-store` at the `objectStoreNames` check, so neither ever opens the
- * store and a `getAll` hook silently never fires. A test built that way passes for the wrong reason
- * and leaves two thirds of the re-read unexercised.
- */
 function installIndexedDbMovingRecord(shape: IdbShape, duringFirstAwait: () => void): void {
   const database = {
     close: () => {},
@@ -122,12 +101,7 @@ function installIndexedDbMovingRecord(shape: IdbShape, duringFirstAwait: () => v
 
 afterEach(() => {
   vi.restoreAllMocks()
-  // Module-level settle state leaks between cases otherwise, and a leftover timestamp makes the
-  // next case order-dependent — the same hazard as restoring a global by assignment.
   resetSignedOutSettleForTests()
-  // defineProperty, not assignment: a test may have installed `indexedDB` as a throwing ACCESSOR,
-  // and assigning to an accessor without a setter does not replace it — it fails silently in sloppy
-  // mode and throws under modules. Either way the throwing getter would leak into every later test.
   Object.defineProperty(globalThis, 'indexedDB', {
     configurable: true,
     writable: true,
@@ -158,11 +132,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('ABSTAINS when localStorage is empty but IndexedDB holds a user', async () => {
-    // The ambiguous row, and the reason the rule has three outcomes. Our own sign-in writes the
-    // record to IndexedDB only and reloads, so on a first loopback sign-in localStorage has never
-    // held a key — this state is normal, not a stale leftover. Reporting signed_out here is trusted,
-    // revokes the loopback binding and seals the install; reporting signed_in would honour a record
-    // that may genuinely be stale. The only answer that cannot be wrong is neither.
     installLocalStorage({})
     installIndexedDb([
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'user-in-idb' } }
@@ -172,9 +141,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('reports signed_out when BOTH stores are empty, once it has SETTLED', async () => {
-    // A sign-out is a real answer, but only once the second store has been asked, agrees, and the
-    // state has persisted — see the setPersistence window in the module. Without this case the rule
-    // could be satisfied by never reporting signed_out at all.
     installLocalStorage({})
     installIndexedDb([])
 
@@ -200,10 +166,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('ABSTAINS on a mid-read throw even when IndexedDB holds a user', async () => {
-    // Unreadable localStorage is distinct from an absent localStorage mechanism.
-    // An unreadable store may contain the live user, so a stale IndexedDB record
-    // must not establish sign-in. With no localStorage mechanism, IndexedDB can
-    // supply the answer for frontends that use it.
     installThrowingGetItem()
     installIndexedDb([
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'possibly-stale' } }
@@ -213,8 +175,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('rejects an over-long page-controlled uid rather than passing it over IPC', async () => {
-    // The record is entirely page-controlled. main's normalizePostHogUserId is the real validator,
-    // but an unbounded uid should not reach the bridge to be rejected there.
     installLocalStorage({ 'firebase:authUser:api-key:[DEFAULT]': { uid: 'x'.repeat(258) } })
     installIndexedDb([])
 
@@ -225,9 +185,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('falls back to IndexedDB when there is NO localStorage object at all', async () => {
-    // The legacy IndexedDB-primary case. With no localStorage object the frontend cannot be using
-    // it, so a record in IndexedDB is the answer. This is the behaviour the fallback exists for and
-    // the one that must survive every tightening around it.
     removeLocalStorage()
     installIndexedDb([
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'legacy-user' } }
@@ -245,14 +202,6 @@ describe('local Firebase auth monitor', () => {
   ])(
     'does NOT report a stale IndexedDB record as signed_in when %s',
     async (_label, breakStorage) => {
-      // Raised independently by two reviewers. A THROWING localStorage is not an ABSENT one: the
-      // object exists, so the frontend may well be using it and we simply cannot see it. On a
-      // localStorage-primary frontend IndexedDB holds at most what the SDK's best-effort cleanup
-      // failed to delete, so answering from it would report a STALE uid as a definite signed_in —
-      // which is then either believed, or becomes a uid mismatch that revokes the loopback binding
-      // and seals the install.
-      //
-      // Both throw sites must answer identically; they are the same epistemic state one line apart.
       breakStorage()
       installIndexedDb([
         { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'possibly-stale' } }
@@ -269,11 +218,6 @@ describe('local Firebase auth monitor', () => {
   ])(
     'ABSTAINS rather than reporting signed_out when %s and IndexedDB is drained',
     async (_label, breakStorage) => {
-      // Raised in review. An empty IndexedDB is not evidence of a sign-out: on a localStorage-primary
-      // frontend it is empty BECAUSE the SDK drained it, and here the store that would hold the user
-      // cannot be read at all. Reporting signed_out would be trusted, would revoke the loopback
-      // binding and would seal the install — on no evidence. A record there is evidence; its absence
-      // is not.
       breakStorage()
       installIndexedDb([])
 
@@ -282,7 +226,6 @@ describe('local Firebase auth monitor', () => {
   )
 
   it('ABSTAINS when localStorage is empty and the IndexedDB getter throws', async () => {
-    // An unreadable IndexedDB is distinct from an empty store and must not establish sign-out.
     installLocalStorage({})
     Object.defineProperty(globalThis, 'indexedDB', {
       configurable: true,
@@ -295,10 +238,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('NEVER reports signed_out across the setPersistence window (the cold-boot failure)', async () => {
-    // The regression test, shaped like the boot that failed: steady state, the migration into
-    // IndexedDB, the ~8ms window where setPersistence has removed from one store and not yet
-    // written the other, then the record back in localStorage. A definite signed_out anywhere in
-    // here is trusted, revokes the loopback binding and seals the install.
     at(0)
     installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'u' } })
     installIndexedDb([])
@@ -323,19 +262,12 @@ describe('local Firebase auth monitor', () => {
       userId: 'u'
     })
 
-    // Long after, the window recurring must be judged from a FRESH sighting, not convicted by the
-    // timestamp the first one left behind.
     at(9000)
     installLocalStorage({})
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
   it('clears the settle timer on an observation that emits NO report', async () => {
-    // The load-bearing case, and the reason the timer lives in the observation path. An unsettled
-    // both-empty and the stores-disagree row BOTH serialise to `pending`, so the transition between
-    // them produces no state change and `poll()` emits nothing. A reset keyed on the reported state
-    // would never fire here — and this is exactly the transition the real cold boot makes, since the
-    // abstain row is the last thing before the window.
     at(0)
     installLocalStorage({})
     installIndexedDb([])
@@ -351,9 +283,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('settles on WALL-CLOCK, so one poll a minute later still reports signed_out', async () => {
-    // A hidden install view is toggled with setVisible(false) and nothing sets
-    // backgroundThrottling, so it polls roughly once a minute. A poll-count rule would need three
-    // minutes; elapsed time needs one poll.
     installLocalStorage({})
     installIndexedDb([])
 
@@ -373,8 +302,6 @@ describe('local Firebase auth monitor', () => {
       at(t)
       await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
     }
-    // Two-sided on purpose: 2999 above kills a widened comparison or a shrunken constant, 3000
-    // here kills a strict `>` or a flipped one. A one-sided boundary lets a flip survive.
     at(3000)
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
@@ -392,16 +319,6 @@ describe('local Firebase auth monitor', () => {
   it.each(['store-empty', 'no-database', 'database-without-store'] as const)(
     're-reads localStorage and rescues signed_in when IndexedDB reports nobody via %s',
     async (shape) => {
-      // The mechanism the cold boot hit, and it is NOT a both-empty state. localStorage is read
-      // synchronously, the IndexedDB read then takes tens of milliseconds, and setPersistence moves
-      // the record INTO localStorage during that window. Composing the two reads asserts "both
-      // empty" from instants that were never simultaneously true.
-      //
-      // All THREE shapes matter because they return at three different awaits — the databases()
-      // guard, the objectStoreNames check, and the store read — and every one of them falls through
-      // to the re-read. Covering only the last would leave two thirds of it unexercised.
-      //
-      // Asserts signed_in rather than pending: the re-read RESOLVES this, it does not defer it.
       installLocalStorage({})
       installIndexedDbMovingRecord(shape, () => {
         installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'moved-mid-read' } })
@@ -440,10 +357,6 @@ describe('local Firebase auth monitor', () => {
   })
 
   it('legacy: abstains when localStorage is absent and no Firebase database exists', async () => {
-    // This asserted `signed_out` until review. With no localStorage at all, the absence of a
-    // Firebase database says nothing about whether anyone is signed in — and a signed_out here is
-    // trusted, revokes the loopback binding and seals the install. The complement of the it.each
-    // above: there the database exists and is drained, here it was never created.
     removeLocalStorage()
     installIndexedDb(null)
 

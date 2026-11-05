@@ -7,12 +7,6 @@ import BaseInput from '../../components/ui/BaseInput.vue'
 import StorageDirRow from './StorageDirRow.vue'
 import type { DetailField } from '../../types/ipc'
 
-/**
- * Path field for the Settings drawer. `field.browseOnly === true` renders a
- * clickable open-in-file-manager path row (the value is only changed via
- * Browse); otherwise the path is an editable text input.
- */
-
 interface Props {
   field: DetailField
 }

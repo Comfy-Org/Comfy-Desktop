@@ -143,13 +143,6 @@ function installMockBridge(): MockBridgeState {
   return state
 }
 
-// `vi.resetModules()` per test means every test re-imports the component, and
-// the first one pays Vite's transform of the whole graph inside its own budget
-// - about 1.2s idle here, ~3s when the machine is saturated (CI gives vitest's
-// 8 workers 4 cores). Against the 5s default that lands close enough to the
-// edge to time out, and a mount interrupted mid-flight then leaks its bridge
-// calls into the next test's counters. A wider budget absorbs the cold
-// transform; a genuinely hung test still fails, just later.
 describe('TitlePopupApp', { timeout: 20_000 }, () => {
   let bridgeState: MockBridgeState
 
@@ -165,8 +158,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     expect(bridgeState.readyCalls).toBe(1)
   })
 
-  // Locale lives at the popup root so every kind tracks main's language live —
-  // not just the instance-picker view once it's clicked open.
   it('pulls main locale on mount and subscribes for live changes', async () => {
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
     mount(TitlePopupApp)
@@ -239,8 +230,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
   })
 
   it('acks via notifyRendered after a config flush so main can show the view', async () => {
-    // The render-ack runs in a rAF; jsdom resolves rAF via a setTimeout
-    // shim, so we wait one macrotask.
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
     mount(TitlePopupApp)
     await flushPromises()
@@ -311,8 +300,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
     const wrapper = mount(TitlePopupApp)
     await flushPromises()
-    // A snapshot pushed while the menu view is mounted must still be
-    // visible once we flip to 'downloads'.
     bridgeState.downloadsCallbacks.forEach((cb) =>
       cb({
         active: [
@@ -335,8 +322,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
   })
 
   it('suppresses stale render-acks on rapid back-to-back configs', async () => {
-    // Only the most recent config's ack should fire so main never marks an
-    // older config as synced after the user has moved past it.
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
     mount(TitlePopupApp)
     await flushPromises()
@@ -369,8 +354,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     expect(bridgeState.closeCalls).toBe(0)
   })
 
-  // The picker's modal layer must not survive a kind-switch hide; main
-  // fires dismiss-modals before hiding so a half-open confirm isn't stranded.
   it('cancels any open useModal entry when main fires dismiss-modals', async () => {
     const { useModal } = await import('../composables/useModal')
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
@@ -385,11 +368,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     expect(modal.state.visible).toBe(false)
   })
 
-  // A reopened picker auto-fires its action confirm right after `set-config`.
-  // Because `will-show` arrives AFTER `set-config`, a `will-show` dismiss would
-  // kill that freshly opened confirm — the exact bug where reopening the SAME
-  // install's pill never re-showed the modal. The picker is dismissed in
-  // `onConfig` instead, so `will-show` must NOT dismiss for the picker.
   it('does NOT dismiss an open modal on will-show for the instance-picker', async () => {
     const { useModal } = await import('../composables/useModal')
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
@@ -405,9 +383,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     await expect(pending).resolves.toBe(false)
   })
 
-  // Non-picker kinds still rely on will-show to clear a confirm left pending
-  // when the user blurred the popup (those kinds may hit the fast path and skip
-  // set-config, so onConfig can't own their cleanup).
   it('still dismisses an open modal on will-show for non-picker kinds', async () => {
     const { useModal } = await import('../composables/useModal')
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
@@ -422,10 +397,6 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
   })
 })
 
-// The global-settings view is the popup's `v-else` branch, so it renders from
-// an App-level ref rather than from props main controls directly. Both the ref
-// initializer and the live push have to carry `telemetryGranted` or todo 16's
-// toggle reads `undefined` — which is not `false` to a strict entry rule.
 describe('TitlePopupApp global-settings telemetry grant', { timeout: 20_000 }, () => {
   let bridgeState: MockBridgeState
 

@@ -19,8 +19,6 @@ function makeBridge() {
   }
 }
 
-/** A stand-in pill element whose `getBoundingClientRect` returns a fixed
- *  rect so anchor math is deterministic. */
 function makePillRef(rect?: Partial<DOMRect>): ShallowRef<HTMLElement | null> {
   const el = {
     getBoundingClientRect: () =>
@@ -72,7 +70,6 @@ describe('useCentralPillCoachmark', () => {
     expect(payload.title).toBe('T')
     expect(payload.body).toBe('Switch & manage instances here.')
     expect(payload.dismissLabel).toBe('Got it')
-    // Anchored below the pill, centered on it.
     expect(payload.leftX).toBe(100)
     expect(payload.rightX).toBe(240)
     expect(payload.bottomY).toBe(36)
@@ -245,7 +242,6 @@ describe('useCentralPillCoachmark', () => {
     })
 
     await cm.maybeShow()
-    // Pill click counts as acknowledgement.
     await cm.acknowledgeViaPillOpen()
 
     expect(setSetting).toHaveBeenCalledWith(CENTRAL_PILL_HINT_SEEN_KEY, true)

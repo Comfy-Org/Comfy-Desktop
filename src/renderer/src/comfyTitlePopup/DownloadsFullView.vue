@@ -88,8 +88,6 @@ const filtered = computed<DownloadEntry[]>(() => {
   }
 })
 
-// Actions address a row by stable job id (`ref`), with the URL riding along
-// as a compatibility fallback.
 function pause(d: DownloadEntry): void {
   bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
 }
@@ -160,7 +158,6 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 </script>
 
 <template>
-  <!-- Preserve runtime color mixing instead of build-time RGBA simplification. -->
   <div
     class="dlm-panel [--download-success:#22c55e] [--download-error:#ef4444] [--download-warning:#f59e0b] flex size-full flex-col text-neutral-100"
     @mousemove="onPointerMove"

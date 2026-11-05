@@ -1,30 +1,9 @@
-/**
- * Pop-out logs window. Standalone BrowserWindow that shows the live
- * stdout/stderr stream of a ComfyUI install. Subscribes to the same
- * per-install broadcast as the inline Logs panel, so it stays in
- * lockstep with the launching window.
- *
- * Unlike the terminal pop-out (full interactive PTY via xterm), this
- * is a read-only auto-scrolling text view. The append-only model lets
- * us avoid xterm entirely — text wraps natively and the browser handles
- * selection/copy.
- *
- * Auto-scroll is sticky: if the user scrolls up to inspect, we stop
- * pinning to the bottom. If they scroll back to within a few pixels of
- * the bottom, sticky-mode re-engages.
- */
-
 import { BrowserWindow } from 'electron'
 import path from 'path'
 import { COMFY_BG } from './theme'
 import { standaloneWindowStyles } from './standaloneStyles'
 import * as installations from '../installations'
 
-/**
- * The standalone bootstrap that the pop-out window executes in its
- * renderer. The launcher inserts `__comfyDesktopLogsPopoutInstallationId`
- * before this script runs.
- */
 const POPOUT_MAIN_JS = `
 (function () {
   'use strict';
@@ -106,8 +85,6 @@ function buildPopoutScript(installationId: string): string {
   )
 }
 
-// One pop-out per install — second click on the inline Logs button
-// focuses the existing window instead of spawning a duplicate.
 const popoutsByInstallation = new Map<string, BrowserWindow>()
 
 export async function openLogsPopout(installationId: string): Promise<void> {
@@ -121,9 +98,7 @@ export async function openLogsPopout(installationId: string): Promise<void> {
   try {
     const inst = await installations.get(installationId)
     if (inst?.name) label = `Comfy Logs — ${inst.name}`
-  } catch {
-    // installations registry not ready; keep the generic label
-  }
+  } catch {}
 
   const win = new BrowserWindow({
     width: 880,
@@ -155,18 +130,12 @@ export async function openLogsPopout(installationId: string): Promise<void> {
   })
 }
 
-/**
- * Close the logs pop-out for a single install, if one is open. Mirrors
- * {@link closeTerminalPopout}: invoked on detach / host-window close so a
- * lingering pop-out can't keep the app alive, and before update/restore.
- */
 export function closeLogsPopout(installationId: string): void {
   const win = popoutsByInstallation.get(installationId)
   popoutsByInstallation.delete(installationId)
   if (win && !win.isDestroyed()) win.destroy()
 }
 
-/** Close every open logs pop-out (e.g. on app quit). */
 export function closeAllLogsPopouts(): void {
   for (const win of popoutsByInstallation.values()) {
     if (!win.isDestroyed()) win.destroy()

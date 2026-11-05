@@ -1,14 +1,10 @@
 <script setup lang="ts">
-// Shared backdrop for the dashboard, onboarding, progress and performance
-// screens. The content wash and overhead light follow the Desktop redesign;
-// the existing frame, beams and content layout are preserved.
 import beamSvg from '../assets/lighting/beam.svg?raw'
 import beam2Svg from '../assets/lighting/beam_2.svg?raw'
 import contentWashUrl from '../assets/lighting/content-wash.svg?url'
 
 const contentWashStyle = { '--content-wash': `url("${contentWashUrl}")` }
 
-// Bound the glow to the frame while keeping its fade at fixed design positions.
 const surfaceLightingClasses = [
   '[--content-lighting:linear-gradient(180deg,oklch(1_0_0/0.035),oklch(1_0_0/0.012)_260px,transparent_520px),var(--content-wash)_center/100%_100%_no-repeat]',
   'before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:max-h-[900px] before:content-[""]',

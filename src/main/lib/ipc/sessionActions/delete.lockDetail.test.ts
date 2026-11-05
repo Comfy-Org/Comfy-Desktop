@@ -1,10 +1,4 @@
 // @vitest-environment node
-// The EBUSY/EPERM branch of handleDelete: after a locked delete it probes for
-// the holding processes and upgrades the generic "in use by another program"
-// message in place. What it must NOT do is treat a probe that never finished
-// as proof that nothing holds the file - the contract change in
-// `file-lock-info` exists so this caller can tell the two apart, and it only
-// pays for itself here.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -88,9 +82,6 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0)
 }))
 
-// A real recursive delete cannot be made to fail with EBUSY on demand across
-// platforms, so stand in for it. `shared` re-exports from here, which is what
-// `delete.ts` imports.
 vi.mock('../../delete', () => ({
   deleteDir: vi.fn(async (dir: string) => {
     h.order.push(`deleting ${dir}`)
@@ -166,11 +157,6 @@ describe('handleDelete lock detail', () => {
       inst
     })
     expect(result.ok).toBe(false)
-    // `handleDelete` fires the probe without awaiting it. Not a race: the
-    // mock resolves synchronously, so its `.then` is queued the moment it is
-    // attached and runs ahead of the awaits that carry `handleDelete` back
-    // out. These ticks are insurance, not timing - there is no timer or I/O
-    // in the chain to lose to.
     await Promise.resolve()
     await Promise.resolve()
     return errorDetails(sent)
@@ -198,7 +184,6 @@ describe('handleDelete lock detail', () => {
     })
     expect(details).toHaveLength(1)
     expect(details[0]).toContain('errors.deleteLockedBy')
-    // Deduplicated by name, not by pid.
     expect(details[0]).toContain('ComfyUI, python')
   })
 
@@ -216,8 +201,6 @@ describe('handleDelete lock detail', () => {
   })
 
   it('stays quiet when the probe determined that nothing holds the file', async () => {
-    // Here the generic `errors.deleteLocked` thrown by handleDelete is the
-    // whole truth, so there is nothing to upgrade it to.
     expect(await runDelete({ ok: true, processes: [] })).toEqual([])
   })
 })

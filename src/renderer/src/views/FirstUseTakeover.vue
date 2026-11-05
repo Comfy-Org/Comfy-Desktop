@@ -1,52 +1,5 @@
 <script setup lang="ts">
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
-/**
- * First-use takeover.
- *
- * Multi-step Tier 3 takeover that runs the first time the launcher
- * starts (or any subsequent launch where `launcherPrefs.firstUseCompleted`
- * is still false because the user dismissed mid-flow). Mounts in
- * PanelApp's overlay slot just like the four flow modals — see
- * `openFirstUseTakeover` for the host-side wiring.
- *
- * Step ordering:
- *   1. `start`   — Merged T&C + Cloud-vs-Local picker on a single page.
- *                  T&C + telemetry checkboxes, an Express-Install
- *                  opt-out modifier, and two radio cards. The
- *                  pre-selected card is variant-dependent: see
- *                  `desktop-first-use-fork-default` below — Local
- *                  (control), Cloud (cloud-default), or neither
- *                  (no-default, requires explicit click). A single
- *                  Continue commit persists telemetry, fires
- *                  fork_chosen, and routes to the next step. Cancel
- *                  closes the host window.
- *   2. `mirrors` — Only inserted when the resolved locale starts with
- *                  'zh'. Reuses the existing `chineseMirrorsSuggest*`
- *                  copy in en/zh + the `useChineseMirrors` setting; we
- *                  flip the global flag through `setSetting`, no new
- *                  per-source override surface yet.
- *                  `chineseMirrorsPrompted` is also set so the
- *                  prompt machinery doesn't re-fire later. After the
- *                  user picks, `routePostStart` resumes the fork
- *                  routing from step 1.
- *   3. (routing) — From step 1 (or post-mirrors): Cloud emits
- *                  `complete-cloud` immediately. Local emits
- *                  `chain-local` so the host swaps this takeover for
- *                  the new-install Tier 3 takeover (Tier 3 → Tier 3
- *                  swap is silent in `useOverlay`); the host marks
- *                  completion when new-install ends successfully.
- *                  Local + Legacy Desktop detected routes to the
- *                  `localBranch` sub-step first.
- *
- * The takeover stays a pure stepper — it does NOT call `setSetting`
- * for `firstUseCompleted` itself; the host owns that flip so the
- * Local-branch chain (which finishes outside this component) can mark
- * complete consistently.
- *
- * `open()` resets all internal state to step 1 and re-fetches the
- * locale; the host calls it post-mount the same way the flow modals
- * are reset.
- */
 import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
 import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -72,102 +25,35 @@ const branchCardClass = 'h-auto w-full justify-start gap-3 whitespace-normal p-4
 type Step = 'start' | 'mirrors' | 'localBranch'
 
 const emit = defineEmits<{
-  /** Cloud branch explicitly picked at the cloud-vs-local fork. Host
-   *  marks `firstUseCompleted`, closes the takeover, and auto-launches
-   *  the seeded Cloud install — the user asked for it. */
   'complete-cloud': []
-  /** Returning user — `skipPick` was true so the cloud-vs-local fork
-   *  was suppressed entirely. Host marks `firstUseCompleted` and
-   *  closes the takeover, dropping the user on the chooser body where
-   *  they can pick whichever existing install they want. NO implicit
-   *  cloud launch — they didn't ask for it. */
   'complete-skip': []
-  /** Local branch picked — host should chain into the new-install
-   *  Tier 3 takeover (Tier 3 → Tier 3 swap is silent) and mark
-   *  `firstUseCompleted` once new-install ends successfully. Naming
-   *  happens inline on the Configure screen. The optional payload
-   *  flags whether the chain was reached via the Local → Start Fresh
-   *  sub-step (vs. the direct no-legacy path) so the Configure screen
-   *  can surface a Back link to return the user to localBranch, and
-   *  whether the user opted into Express Install (skip Configure and
-   *  run Standalone + recommended defaults straight through to the
-   *  install-progress takeover). */
   'chain-local': [payload?: { cameFromLocalBranch?: boolean; express?: boolean }]
-  /** Local-branch follow-up: a Legacy Desktop install was detected
-   *  and the user chose to migrate it instead of installing fresh.
-   *  Host runs the migration flow (`useMigrateAction.confirmMigration`
-   *  → `runAction('migrate-to-standalone', …)` via `show-progress`)
-   *  on the auto-tracked desktop install and marks `firstUseCompleted`
-   *  once the migration finishes successfully. Same shape as
-   *  `chain-local` — host owns completion + auto-launch.
-   *  `express: true` lets the host skip the migrate confirm surface
-   *  (preview + auto-pick + run, no user-confirm step) the same way
-   *  Express skips the Configure screen on chain-local. */
   'chain-migrate': [{ express: boolean }]
 }>()
 
 const step = ref<Step>('start')
 const telemetryEnabled = ref(true)
-/** Beta-programme opt-in. Mirrors the telemetry checkbox until the user takes
- *  it over; `betaTouched` is what separates "never expressed a preference"
- *  from "chose this", and survives the forced-off below so telemetry coming
- *  back on can never re-opt a user who already opted out. */
 const betaFeaturesEnabled = ref(true)
 const betaTouched = ref(false)
-/** A stored membership predates this first-use consent gate and remains valid
- *  without telemetry. Explicit interaction transfers ownership to this UI. */
 const preservePersistedBetaOptIn = ref(false)
 const betaBlocked = computed(() => !telemetryEnabled.value && !betaFeaturesEnabled.value)
 const betaBlockedReasonId = useId()
 const locale = ref('en')
 
-/** A/B/C experiment that varies the pre-selected fork on the merged
- *  start screen. Multivariate PostHog flag — three equal cohorts
- *  (33-33-33). Variant strings come straight from the server:
- *  `'control'` = Local pre-selected (shipped baseline), `'cloud'` =
- *  Cloud pre-selected, `'none'` = neither card pre-selected (user
- *  has to actively click one). Any other value (missing cache entry,
- *  unrecognised string, network failure on first-ever boot) falls
- *  back to `'control'` so the default remains the Download-Local
- *  intent we shipped. */
 const FORK_DEFAULT_EXPERIMENT_KEY = 'desktop-first-use-fork-default'
 type ForkVariant = 'control' | 'cloud-default' | 'no-default'
-/** Variant assigned to this install. `null` until the boot-time fetch
- *  resolves; treat as `'control'` for default-rendering purposes. */
 const forkExperimentVariant = ref<ForkVariant | null>(null)
 
-/** Cloud-vs-Local selection picked on the merged start screen. Local
- *  is the shipped default — the user got here by clicking
- *  "Download Local" upstream, so honor that intent unless the
- *  experiment overrides it: `'cloud-default'` pre-selects Cloud,
- *  `'no-default'` pre-selects neither (user must click a card before
- *  Continue activates). Cloud is rendered as an equal-weight peer
- *  card regardless; users can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
-/** True once the user actively chose a card, rather than being shown a
- *  default. Needed because "still equals the seeded default?" can't tell
- *  the two apart — in the control arm, clicking Local lands on exactly
- *  the seeded value. Reset per `open()`. */
 const userHasPicked = ref(false)
 
-/** What the picker rendered as default before the user could interact —
- *  used to split `fork_chosen` conversion by signal-vs-defaulting: a
- *  user keeping the default pick is different from a user actively
- *  flipping the card. `null` for the `'no-default'` variant, where
- *  Continue is gated on an explicit pick so every commit is signal. */
 const initialDefaultChoice = ref<'cloud' | 'local' | null>('local')
 
-/** Read the experiment variant (boot-time cache, sync once main is
- *  ready) and decide which card should be the pre-selected default.
- *  The Legacy-Desktop branch still forces Local ahead of the experiment —
- *  see `applyForkExperimentDefault` below. */
 function mapFlagToVariant(flagValue: string | boolean | null | undefined): ForkVariant {
   if (flagValue === 'cloud') return 'cloud-default'
   if (flagValue === 'none') return 'no-default'
   return 'control'
 }
-/** Source tag for the deferred exposure event: 'cache' when the on-disk
- *  flag file had a value we recognised, 'fallback' otherwise. */
 let forkExposureSource: 'cache' | 'fallback' | null = null
 async function loadForkExperimentVariant(): Promise<ForkVariant> {
   let flagValue: string | boolean | null | undefined
@@ -180,18 +66,11 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   return mapFlagToVariant(flagValue)
 }
 
-/** Deferred until the tier and kill switch settle, then skipped for the
- *  recommendation cohort: the override replaced their arm's default, so
- *  they never experienced it and counting them would bias the readout.
- *  They're analysed via `reco_shown` / `gpu_tier` instead. Once per
- *  mount; main dedups per session too. */
 let forkExposureRecorded = false
 function maybeRecordForkExposure(): void {
   if (forkExposureRecorded) return
   const variant = forkExperimentVariant.value
   if (!variant || !forkExposureSource) return
-  // The tier must have landed, or we'd record an exposure for a user the
-  // override is about to remove.
   if (!hardwareChecked.value) return
   forkExposureRecorded = true
   if (hardwareRecommendsCloud.value) return
@@ -201,14 +80,9 @@ function maybeRecordForkExposure(): void {
       variant,
       source: forkExposureSource
     })
-  } catch {
-    // best-effort
-  }
+  } catch {}
 }
 
-/** Whether the free tier is live, for the trial pill. Reads cloud's own
- *  flag so it tracks the real rollout. Fails closed; see
- *  `cloudFreeRuns.ts`. */
 async function loadCloudFreeRunsEnabled(): Promise<boolean> {
   try {
     return await window.api.getCloudFreeRunsEnabled()
@@ -225,16 +99,7 @@ async function loadCloudUserTier(): Promise<CloudUserTier> {
   }
 }
 
-/** Apply the resolved variant to the picker state, respecting the
- *  hard precedence rule (legacy-desktop > experiment). Idempotent —
- *  safe to call from `onMounted` and from
- *  `open()` on takeover replay. Always lands on a terminal state for
- *  both refs so the caller doesn't need to seed defaults first. */
 function applyForkExperimentDefault(variant: ForkVariant): void {
-  // Migration flow always wins. Returning Desktop-1 users land on
-  // Local with the migrate-existing checkbox pre-ticked — that's the
-  // whole point of the legacy-detection branch. The experiment never
-  // overrides it.
   if (hasLegacyDesktop.value) {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
@@ -246,18 +111,12 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     pickedChoice.value = 'cloud'
     initialDefaultChoice.value = 'cloud'
   } else if (variant === 'no-default') {
-    // Neither card pre-selected. Continue stays disabled until the
-    // user clicks one, so every commit is an explicit signal pick.
     pickedChoice.value = null
     initialDefaultChoice.value = null
   } else {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
   }
-  // Recommended hardware overrides whatever the experiment just picked to
-  // "nothing selected". Scoped to the target tier so everyone else keeps
-  // today's behavior. Still false this early — system info resolves later
-  // in `open()` — so the watcher below reruns it once the tier lands.
   if (hardwareRecommendsCloud.value) {
     pickedChoice.value = null
     initialDefaultChoice.value = null
@@ -265,8 +124,6 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 }
 
 onMounted(async () => {
-  // All best-effort and independently fail-safe, so the picker still
-  // works if any of them errors.
   const [variant, freeRunsEnabled, userTier] = await Promise.all([
     loadForkExperimentVariant(),
     loadCloudFreeRunsEnabled(),
@@ -277,57 +134,22 @@ onMounted(async () => {
   cloudUserTier.value = userTier
   applyForkExperimentDefault(variant)
 })
-/** Express-install opt-in modifier on the start screen. Defaults OFF
- *  so users land on Configure (install path, GPU, options) before any
- *  files are written — too many people zoomed past the default-on
- *  modifier and ended up with an unwanted C:\ install. Ticking it
- *  restores the express skip-Configure path. */
 const expressInstall = ref(false)
-/** Peer modifier alongside Express Install, only rendered when an
- *  auto-tracked legacy install was detected on the machine. When
- *  checked, Continue routes straight to chain-migrate so the existing
- *  install is brought over instead of installing fresh. Pre-ticked so
- *  returning Desktop users land on the migration path by default. */
 const migrateExisting = ref(true)
 const showMigrateExisting = computed(() => pickedChoice.value === 'local' && hasLegacyDesktop.value)
-/** Detected GPU vendor — `get-system-info`'s `gpu_label`, the same
- *  memoized `detectGPU()` result main serves, so this costs no extra IPC.
- *  Surfaces under the Express checkbox so users on the wrong hardware can
- *  untick it before the install starts. `null` when detection fails or
- *  finds no supported GPU; the hint is then suppressed. */
 const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
-/** Non-blocking hardware warning from `validateHardware()` (e.g. Linux AMD
- *  /dev/kfd inaccessible). Shown for the Local pick regardless of Express:
- *  the install works either way, but GPU acceleration will not until the
- *  user acts. Plain-English text from main. */
 const hardwareWarning = ref('')
 const showHardwareWarning = computed(
   () => pickedChoice.value === 'local' && hardwareWarning.value !== ''
 )
-/** Bumped on every open(); async detection results from a superseded open
- *  are discarded so a replay cannot show stale GPU/warning state. */
 let openGeneration = 0
-/** Shared hardware tier from `get-system-info` (`deriveGpuTier`, the same
- *  classifier telemetry cohorts on). Stays `null` when the IPC fails, so
- *  the recommendation fails closed — the alternative is telling someone
- *  with a 4090 their hardware is inadequate. */
 const gpuTier = ref<GpuTier | null>(null)
-/** Corroborating signals for the tier, read from the same payload. See
- *  `vramUnverified` — the tier alone can't tell "no GPU" from "GPU found,
- *  VRAM unreadable". */
 const gpuVendor = ref<string | null>(null)
 const gpuVramGb = ref<number | null>(null)
-/** True once the system-info query has settled either way — gates
- *  `hardwareRecommendsCloud` so the badge never flashes before we know. */
 const hardwareChecked = ref(false)
-/** One request per instance, reused across `open()` replays: the scan is
- *  expensive and its answer can't change between a cancel and a replay.
- *  `async` wrapper rather than `.catch()` so a synchronous throw (missing
- *  preload method) also fails closed instead of escaping as an unhandled
- *  rejection and aborting the rest of `open()`. */
 let systemInfoPromise: Promise<SystemInfo | null> | null = null
 function loadSystemInfo(): Promise<SystemInfo | null> {
   systemInfoPromise ??= (async () => {
@@ -339,27 +161,13 @@ function loadSystemInfo(): Promise<SystemInfo | null> {
   })()
   return systemInfoPromise
 }
-/** Tiers that get the recommendation: no usable GPU, or one too weak for
- *  the models people actually want (integrated, or discrete under 6 GB).
- *  `apple` and `low`+ run local fine. */
 const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_only'])
 const CLOUD_RECO_REASON_ID = 'first-use-cloud-reco-reason'
-/** Starts `false` to match its fail-closed direction, so the pill never
- *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
 const cloudUserTier = ref<CloudUserTier>('unknown')
-/** `deriveGpuTier` folds two different situations into `cpu_only`: no GPU at
- *  all (`vendor` empty), and a discrete card whose VRAM came back unreadable
- *  (`vendor` set, `vramGb` null → `vram <= 0`). Only the first deserves the
- *  recommendation. The second happens whenever `si.graphics()` fails while
- *  `detectGPU()` succeeds — the badge would then tell someone with a 4090
- *  that their hardware is inadequate, the exact false positive the tier-based
- *  signal exists to avoid. Tolerable for telemetry cohorts, not for a claim
- *  we make to the user's face. */
 const vramUnverified = computed(
   () => (gpuVendor.value === 'nvidia' || gpuVendor.value === 'amd') && gpuVramGb.value === null
 )
-/** Whether this machine's hardware nudges toward Cloud. */
 const hardwareRecommendsCloud = computed(
   () =>
     hardwareChecked.value &&
@@ -367,47 +175,25 @@ const hardwareRecommendsCloud = computed(
     RECO_GPU_TIERS.has(gpuTier.value) &&
     !vramUnverified.value
 )
-// On recommended hardware, pre-select neither card — force an explicit
-// pick instead of defaulting to Local. A watcher rather than part of
-// `applyForkExperimentDefault` because system info resolves after `open()`
-// returns.
 watch(hardwareRecommendsCloud, (recommends) => {
   if (recommends && !userHasPicked.value && !hasLegacyDesktop.value) {
     pickedChoice.value = null
     initialDefaultChoice.value = null
   }
 })
-// One watcher covers every ordering of the two async inputs. See
-// `maybeRecordForkExposure`.
 watch([hardwareChecked, forkExperimentVariant], () => {
   maybeRecordForkExposure()
 })
-/** Funnel-completion bookkeeping for `comfy.desktop.first_use.completed`.
- *  `mountedAt` is reset in `open()` so a takeover replay measures
- *  duration from the replay, not from the original mount.
- *  `stepsSeen` is a Set so re-visiting a step (back-navigation, replay)
- *  doesn't double-count. */
 let mountedAt = Date.now()
 const stepsSeen = new Set<Step>()
 let completedFired = false
-/** True when the exit hands off to a chain flow (chain-local /
- *  chain-migrate). Those chains keep the host locked to `'post-consent'`
- *  across the takeover swap, so the unmount hook must not clobber their
- *  mode push with `'none'`. */
 let chainHandoff = false
 
 function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skipped'): void {
-  // Recompute the handoff flag on every exit — even telemetry-deduped
-  // ones — so a cancelled chain followed by a different exit path can't
-  // leave a stale `chainHandoff` suppressing the unmount's `'none'` push.
   chainHandoff = exitPath === 'local-new' || exitPath === 'local-migrate'
   if (completedFired) return
   completedFired = true
   const durationMs = Date.now() - mountedAt
-  // Cohort the onboarding-completion dashboard into fresh-user,
-  // returning-user, and Desktop-1-migrator splits via had_legacy /
-  // had_existing_install. Without these, the funnel's drop-off
-  // analysis collapses all three audiences into one bucket.
   emitTelemetryAction('comfy.desktop.first_use.completed', {
     exit_path: exitPath,
     steps_seen: stepsSeen.size,
@@ -415,75 +201,25 @@ function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skip
     duration_seconds: Math.round(durationMs / 1000),
     had_legacy: hasLegacyDesktop.value,
     had_existing_install: skipPick.value,
-    // A/B attribution: completion rate IS the experiment's primary
-    // guardrail — if Cloud-default makes users bounce, this drops
-    // even when fork_chosen rate looks better. Carry the same
-    // variant tag through so the funnel can be sliced per arm.
     experiment_key: FORK_DEFAULT_EXPERIMENT_KEY,
     experiment_variant: forkExperimentVariant.value,
-    // Same split as `fork_chosen`, on the funnel's completion side: a
-    // recommendation that lifts cloud picks but tanks completion is a
-    // regression, and without these the two cohorts are pooled.
     reco_shown: hardwareRecommendsCloud.value,
     gpu_tier: gpuTier.value
   })
 }
-/** When the host detects prior usage of the launcher (any
- *  non-cloud, non-legacy-desktop install present), the cloud-vs-local
- *  pick is suppressed and Continue routes straight to `complete-skip`
- *  via `routePostStart`. T&C still resets on every `open()` — explicit
- *  re-consent is required on every takeover replay regardless of
- *  `skipPick`. Detection lives in main (`getFirstUseState()`) and is
- *  plumbed in via `open()`. */
 const skipPick = ref(false)
-/** When a Legacy Desktop install is detected on the machine
- *  (auto-tracked at startup as `sourceId === 'desktop'`),
- *  picking Local opens a follow-up sub-step where the user picks
- *  Migrate vs Install-new instead of immediately chaining into the
- *  new-install takeover. Detection lives in main; the host plumbs the
- *  flag in via `open()`. */
 const hasLegacyDesktop = ref(false)
 const whyCloudOpen = ref(false)
-/** Which legal document to show when the terms modal is open, or null
- *  when the modal is closed. The two consent-row links on the Terms
- *  checkbox set this to 'eula' or 'tos'; the telemetry-row link sets
- *  it to 'privacy'. TermsModal receives the value via its `doc` prop. */
 const termsDoc = ref<'eula' | 'tos' | 'privacy' | 'notices' | null>(null)
-/** Required acceptance of the Terms of Service / Privacy Policy. The
- *  primary "Get Started" CTA stays disabled until this flips true. The
- *  telemetry checkbox is a separate, optional opt-in (see
- *  `telemetryEnabled`). */
 const acceptedTos = ref(false)
-/** True while Continue's downstream work (telemetry persist + Express
- *  prep IPC chain) is in flight. Drives the button's spinner + disabled
- *  state so the user gets feedback instead of staring at an unchanged
- *  screen during the multi-IPC express-install pre-roll. */
 const isContinuing = ref(false)
-/** Briefly true when the user clicks Continue without accepting ToS —
- *  drives a shake animation on the consent row so the required checkbox
- *  is impossible to miss even on tall viewports. */
 const tosNudge = ref(false)
 let nudgeTimer: ReturnType<typeof setTimeout> | undefined
 
 const isChinese = computed(() => locale.value.startsWith('zh'))
 
-/** Steps that render inside the shared `BrandTakeoverLayout`. Sharing
- *  a single chrome instance across these steps means the takeover
- *  entrance animation plays once on overlay open, not on every internal
- *  step swap. Mirrors still ships as `ModalShell` until it gets the
- *  brand treatment too. */
 const isBrandStep = computed(() => step.value === 'start' || step.value === 'localBranch')
 
-/** Single Continue commit for the merged start screen: T&C acceptance,
- *  telemetry pref, fork choice, and the Express-install modifier all
- *  resolve in one click. Telemetry persists immediately so a mid-flow
- *  cancel still respects the user's choice (the `firstUseCompleted`
- *  gate is separate — re-running the takeover surfaces the toggle in
- *  its current persisted state, not as a freshly-defaulted opt-in).
- *  China-mirror sub-step still runs first when the locale calls for
- *  it; the post-mirror branch reuses the same routing logic. */
-/** Entry rule: joining the beta programme requires telemetry. Existing stored
- *  membership is independent and survives replay until the user changes it. */
 function applyBetaEntryRule(): void {
   if (!telemetryEnabled.value) {
     if (!preservePersistedBetaOptIn.value) betaFeaturesEnabled.value = false
@@ -517,20 +253,10 @@ async function onContinue(): Promise<void> {
     nudgeTos()
     return
   }
-  // No-default experiment arm: until the user clicks a card, there's
-  // no pick to commit. The button is already :disabled in this state,
-  // but guard defensively so a programmatic click can't bypass.
   if (pickedChoice.value === null) return
-  // Keep `isContinuing` true past `routePostStart()` because the chain
-  // handlers (express prep, cloud auto-launch, new-install swap) all
-  // either unmount this takeover or swap to a sub-step within ms. The
-  // China-mirrors branch is the only path that lingers on this component
-  // post-Continue, so it explicitly clears the flag on its return.
   isContinuing.value = true
 
   await window.api.setSetting('telemetryEnabled', telemetryEnabled.value)
-  // Written explicitly, always — a wizard install must never fall through to
-  // the one-time seeding resolver in `src/main/settings.ts`.
   await window.api.setSetting('betaFeaturesEnabled', betaFeaturesEnabled.value)
 
   emitTelemetryAction('comfy.desktop.first_use.consent_decision', {
@@ -542,21 +268,10 @@ async function onContinue(): Promise<void> {
     choice: pickedChoice.value,
     has_legacy_desktop: hasLegacyDesktop.value,
     express_install: expressInstall.value,
-    // `was_default` is true when the user kept whatever card was
-    // pre-selected for them, false when they actively flipped.
     was_default: pickedChoice.value === initialDefaultChoice.value,
     user_tier: cloudUserTier.value,
-    // A/B attribution: identify which experiment arm this pick belongs
-    // to so PostHog can compute cloud-pick rate, subscription rate, and
-    // bounce-after-cloud rate per variant. The key is captured too so
-    // future experiments running concurrently can be split apart.
     experiment_key: FORK_DEFAULT_EXPERIMENT_KEY,
     experiment_variant: forkExperimentVariant.value,
-    // GPU-Aware Cloud Upsell readout: `reco_shown` splits cloud-pick rate
-    // by whether the badge was actually seen, `gpu_tier` slices that per
-    // hardware bucket. Also how the recommendation cohort gets analysed,
-    // since it's excluded from the fork-default exposure — see
-    // `maybeRecordForkExposure`.
     reco_shown: hardwareRecommendsCloud.value,
     gpu_tier: gpuTier.value
   })
@@ -570,10 +285,6 @@ async function onContinue(): Promise<void> {
   void routePostStart()
 }
 
-/** Post-start routing — shared by `onContinue` (non-China path) and
- *  `chooseMirrors` (China path, after mirrors prompt). Honours
- *  `skipPick` for returning users by short-circuiting to `complete-skip`
- *  regardless of which card was selected. */
 async function routePostStart(): Promise<void> {
   if (skipPick.value) {
     emitCompleted('skipped')
@@ -584,21 +295,10 @@ async function routePostStart(): Promise<void> {
     emitCompleted('cloud')
     emit('complete-cloud')
   } else if (hasLegacyDesktop.value && migrateExisting.value) {
-    // Local + the "Migrate existing install" peer checkbox: route
-    // straight to chain-migrate. The checkbox is only rendered when a
-    // legacy install was detected, so its `true` value is an explicit
-    // opt-in to bring the existing install over instead of installing
-    // fresh. Express applies the same opt-out-of-confirm semantics it
-    // does on chain-local: with both ticked, the host runs the
-    // migration straight through (preview + auto-pick + run) without
-    // surfacing the confirm step.
     emitTelemetryAction('comfy.desktop.first_use.local_branch_chosen', { choice: 'migrate' })
     emitCompleted('local-migrate')
     emit('chain-migrate', { express: expressInstall.value })
   } else if (hasLegacyDesktop.value && !expressInstall.value) {
-    // Legacy detected but the user opted out of migrate and Express:
-    // surface the localBranch fork so they can still pick migrate-vs-
-    // fresh manually from the more detailed sub-step.
     step.value = 'localBranch'
     isContinuing.value = false
   } else {
@@ -607,10 +307,6 @@ async function routePostStart(): Promise<void> {
   }
 }
 
-/** China-mirror prompt always advances regardless of the user's pick;
- *  only the persisted `useChineseMirrors` flag differs.
- *  `chineseMirrorsPrompted` is set in both branches so the
- *  `suggest-chinese-mirrors` listener won't re-fire later. */
 async function chooseMirrors(useMirrors: boolean): Promise<void> {
   await Promise.all([
     window.api.setSetting('useChineseMirrors', useMirrors),
@@ -633,37 +329,20 @@ function dismissWhyCloud(action: 'maybe_later' | 'dismiss'): void {
 function onWhyCloudTryCloud(): void {
   whyCloudOpen.value = false
   emitTelemetryAction('comfy.desktop.first_use.why_cloud_action', { action: 'try_cloud' })
-  // "Try Cloud" inside the explainer modal flips the start-screen
-  // selection to Cloud but leaves the user on the screen so they can
-  // accept T&C and press Continue. The legal gate is non-negotiable —
-  // we can't auto-commit on the user's behalf. Counts as an explicit
-  // pick: the user clicked a button labelled "Try Cloud".
   pickChoice('cloud')
 }
 
 function chooseMigrate(): void {
   emitTelemetryAction('comfy.desktop.first_use.local_branch_chosen', { choice: 'migrate' })
   emitCompleted('local-migrate')
-  // localBranch sub-step is only reached when Express was unticked on
-  // the start screen, so this path is never the express-bypass path —
-  // pass `express: false` so the host renders the confirm surface.
   emit('chain-migrate', { express: false })
 }
 
-/** Commit a card selection made by the user (as opposed to a default the
- *  picker seeded for them). Flipping `userHasPicked` stops late boot
- *  defaults and hardware results from replacing a deliberate choice. */
 function pickChoice(choice: 'cloud' | 'local'): void {
   userHasPicked.value = true
   pickedChoice.value = choice
 }
 
-/** Radiogroup arrow-key handler for the Cloud / Local cards.
- *  WAI-ARIA APG §3.15: arrow keys cycle the checked radio and move DOM
- *  focus along with it. When `pickedChoice` is `null` (the no-default
- *  experiment arm, or recommended hardware, before the user has touched
- *  the picker), arrow-down enters at Cloud and arrow-up enters at Local
- *  so keyboard users can make a pick without reaching for the mouse. */
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
@@ -682,9 +361,6 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   if (!nextChoice) return
   e.preventDefault()
   pickChoice(nextChoice)
-  // Captured synchronously: `currentTarget` is only set while the event is
-  // being dispatched, so reading it inside the `nextTick` callback is not
-  // guaranteed to still resolve to the group.
   const group = e.currentTarget as HTMLElement | null
   void nextTick(() => {
     const radios = group?.querySelectorAll<HTMLElement>('[role="radio"]')
@@ -694,24 +370,13 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
 
 function chooseInstallNew(): void {
   emitTelemetryAction('comfy.desktop.first_use.local_branch_chosen', { choice: 'install_new' })
-  // Skip the dedicated name screen — naming now happens inline on the
-  // Configure screen (InstallWizardModal brand-config). Flag the origin so
-  // Configure surfaces a Back link returning to localBranch.
   emitCompleted('local-new')
   emit('chain-local', { cameFromLocalBranch: true })
 }
 
 interface OpenOpts {
-  /** Suppress the cloud-vs-local pick — caller has already detected
-   *  that the user has prior launcher usage. Defaults to false. */
   skipPick?: boolean
-  /** Surface the migrate-vs-install-new sub-step on the Local branch
-   *  because a Legacy Desktop install was detected on this machine.
-   *  Defaults to false. */
   hasLegacyDesktop?: boolean
-  /** Skip ahead to a specific brand step on open. Used by the
-   *  Configure → Back chain to land the user back on the localBranch
-   *  sub-step instead of restarting at start. Defaults to 'start'. */
   initialStep?: 'start' | 'localBranch'
 }
 
@@ -722,67 +387,29 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   whyCloudOpen.value = false
   termsDoc.value = null
   acceptedTos.value = false
-  // Safe baseline: Local pre-selected. The variant-aware apply call below
-  // overrides to Cloud (`'cloud-default'` arm), null (`'no-default'` arm,
-  // or the hardware-recommends-cloud override), when the legacy-desktop
-  // branch does not apply. Reset unconditionally
-  // first so the takeover-replay path lands on a clean slate even if the
-  // variant hasn't resolved yet on first mount.
   pickedChoice.value = 'local'
   initialDefaultChoice.value = 'local'
-  // A replay is a fresh decision — whatever the user clicked last time
-  // no longer protects the picker from being re-seeded.
   userHasPicked.value = false
-  // Re-apply the experiment variant on every replay so a user who
-  // cancelled mid-flow lands back on the same default they saw the
-  // first time. `forkExperimentVariant.value` is locked at boot — on
-  // first mount it may still be null if `loadForkExperimentVariant`
-  // hasn't resolved yet, which is fine: onMounted applies it once it
-  // does.
   if (forkExperimentVariant.value) {
     applyForkExperimentDefault(forkExperimentVariant.value)
   }
   expressInstall.value = false
   migrateExisting.value = true
-  // `onContinue` keeps `isContinuing` true past `routePostStart()`
-  // because the chain handlers normally unmount this takeover within
-  // ms — but on the chain-migrate / chain-local cancel-and-return
-  // path, the host re-invokes `open()` on a still-mounted instance
-  // whose Continue spinner is still flagged. Reset here so the
-  // replayed start screen surfaces a fresh, clickable CTA.
   isContinuing.value = false
-  // Reset funnel-completion bookkeeping so a takeover replay measures
-  // duration / steps from the replay, not from the original mount.
   mountedAt = Date.now()
   stepsSeen.clear()
-  // Re-seed with the current step so the funnel count includes the
-  // initial step on both first mount and replay. The immediate watcher
-  // also adds it on first mount, but Set.add is idempotent.
   stepsSeen.add(step.value)
   completedFired = false
   chainHandoff = false
-  // Pre-load existing telemetry preference so the toggle reflects the
-  // user's current persisted choice if the takeover is replaying after
-  // a mid-flow cancel (the consent step is the only one that can flip
-  // a destructive default).
   const [existing, existingBeta] = (await Promise.all([
     window.api.getSetting('telemetryEnabled'),
     window.api.getSetting('betaFeaturesEnabled')
   ])) as [boolean | undefined, boolean | undefined]
   telemetryEnabled.value = existing !== false
-  // A stored boolean is a choice the user already made, so it replays as-is
-  // and counts as touched; its absence means the wizard has yet to ask, so it
-  // mirrors. Either way the entry rule gets the final word.
   betaTouched.value = typeof existingBeta === 'boolean'
   preservePersistedBetaOptIn.value = existingBeta === true
   betaFeaturesEnabled.value = betaTouched.value ? existingBeta === true : telemetryEnabled.value
   applyBetaEntryRule()
-  // Locale + hardware detection run non-blocking so the start hero paints
-  // on the first frame even if main is slow to resolve (e.g. cold IPC, no
-  // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
-  // the reactive updates surface the real values when they arrive.
-  // Generation-guarded so a slow response from an earlier open() cannot
-  // overwrite a replay's fresh (cleared) state.
   const gen = ++openGeneration
   detectedGpuLabel.value = null
   hardwareWarning.value = ''
@@ -796,8 +423,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   void loadSystemInfo()
     .then((info) => {
       detectedGpuLabel.value = info?.gpu_label ?? null
-      // Stays `null` when the IPC failed, which keeps
-      // `hardwareRecommendsCloud` false — fail closed.
       gpuTier.value = info?.gpu_tier ?? null
       gpuVendor.value = info?.gpu_vendor ?? null
       gpuVramGb.value = info?.gpu_vram_gb ?? null
@@ -815,25 +440,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
 }
 
 onMounted(() => {
-  // Initial mount path — host's `openFirstUseTakeover` calls open()
-  // post-mount for the reset, but the auto-mount on PanelApp.onMounted
-  // (when `firstUseCompleted === false`) goes through openOverlay
-  // before nextTick, so we still need a baseline locale fetch here.
   void open()
 })
 
-/**
- * Push the current step to main as the host's `firstUseMode` so:
- *   - `buildTitlePopupMenuItems` can surface the Skip Onboarding entry
- *     once we're past the merged start step (`'post-consent'`).
- *   - The title bar can lock down during `'consent-lockdown'`.
- *
- * `immediate: true` makes the very first mount fire the watcher so the
- * initial step (`'start'`) lands on the host without waiting for a
- * step transition. The merged start screen still gates T&C, so
- * lockdown applies until the user presses Continue and the takeover
- * advances to mirrors / localBranch / completion.
- */
 watch(
   step,
   (current) => {
@@ -851,22 +460,8 @@ watch(
 
 onUnmounted(() => {
   clearTimeout(nudgeTimer)
-  // First-use abandonment: the takeover unmounted without any completion
-  // path having fired. EVERY routing exit (complete-cloud, chain-local,
-  // chain-migrate, complete-skip) calls `emitCompleted(...)` first, so
-  // `completedFired === false` at unmount means the user dropped out —
-  // closed the window, hit dev-tools refresh, or quit mid-flow. This is the
-  // chooser-drop signal: it pairs with `first_use.completed` to give the
-  // onboarding funnel its denominator (started) vs. numerator (finished).
-  // Post-consent so a `'denied'`/`'undecided'` first-ever abandon is still
-  // dropped by the normal consent gate (no pre-consent allow-list entry).
   if (!completedFired) {
     const msOnScreen = Date.now() - mountedAt
-    // `reason` is coarse and enum-only: whether the user had crossed the ToS
-    // gate before dropping. `consent_accepted` = they ticked ToS (and so were
-    // one Continue away); `pre_consent` = they bailed on the very first gate.
-    // We can't observe the OS-level "why" (close vs refresh vs quit) here, so
-    // we report the funnel-meaningful split instead of guessing the mechanism.
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
       reason: acceptedTos.value ? 'consent_accepted' : 'pre_consent',
@@ -874,28 +469,11 @@ onUnmounted(() => {
       had_legacy: hasLegacyDesktop.value
     })
   }
-  // Clear the host's `firstUseMode` whenever the takeover unmounts
-  // (Cloud-branch completion, file-menu Skip Onboarding, OS-chrome
-  // window close, dev-tools refresh). The host's `dismissTakeoverDirect`
-  // ALSO pushes `'none'` for the renderer-internal dismiss path; the
-  // duplicate landing here is harmless. Chain handoffs are the
-  // exception: chain-local / chain-migrate assert `'post-consent'`
-  // before this unmount flushes, and pushing `'none'` here would
-  // clobber that and briefly surface the full file menu mid-onboarding.
   if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
-/** Host-callable: clears the Continue-button spinner without resetting
- *  picker state. Used by chain handlers (most prominently
- *  `handleFirstUseChainMigrate`) when their post-emit confirm modal
- *  returns null — the takeover stays mounted on the start step with
- *  all selections preserved, but the spinner needs to clear so the
- *  user can retry Continue. */
 function resetContinue(): void {
   isContinuing.value = false
-  // The chain was cancelled, so its handoff is off — a later unmount
-  // must clear `firstUseMode` normally instead of honoring a ghost
-  // handoff from the aborted exit.
   chainHandoff = false
 }
 
@@ -908,10 +486,6 @@ defineExpose({ open, resetContinue })
     :vignette="step === 'start'"
     :aria-label="$t(step === 'localBranch' ? 'firstUse.localBranchTitle' : 'firstUse.pickTitle')"
   >
-    <!-- Step 1: Merged start screen. Wordmark on top, Cloud-vs-Local
-         radio cards in the middle, Express-Install opt-out modifier,
-         then the legal/telemetry checkboxes and the Continue / Cancel
-         action row. T&C must be accepted before Continue activates. -->
     <div
       v-if="step === 'start'"
       class="start-screen flex h-full w-full max-w-[760px] flex-col items-center gap-2"
@@ -935,10 +509,6 @@ defineExpose({ open, resetContinue })
           :aria-label="$t('firstUse.pickTitle')"
           @keydown="onStartCardsKeydown"
         >
-          <!-- Cloud holds the radiogroup's tab stop while nothing is
-               selected — without one the group leaves the tab order
-               entirely and, with Continue gated on an explicit pick,
-               keyboard users are stuck. -->
           <ChoiceCard
             class="start-card-cloud [anchor-name:--brand-beam-target]"
             :class="{
@@ -970,14 +540,6 @@ defineExpose({ open, resetContinue })
                   <Info :size="14" />
                 </Button>
               </Tooltip>
-              <!-- 'unknown' tier means this device has never authenticated
-                   with Cloud — the
-                   trial pill is for people who haven't tried it yet, not a
-                   permanent fixture on the card. Gated on cloud's own
-                   free-tier flag, not the recommendation's switch: the
-                   free tier is an independent offer, so the pill follows
-                   the free tier rather than the GPU upsell. Hidden today
-                   because free tier isn't live yet. -->
               <span
                 v-if="cloudFreeRunsEnabled && cloudUserTier === 'unknown'"
                 class="start-cloud-runs-pill inline-flex items-center rounded-[999px] bg-comfy-yellow px-2 py-[3px] text-[10px] leading-[normal] font-bold tracking-[0.02em] whitespace-nowrap text-neutral-900 uppercase"
@@ -986,9 +548,6 @@ defineExpose({ open, resetContinue })
               >
             </template>
             <template v-if="hardwareRecommendsCloud" #desc-trailing>
-              <!-- Deep's thread feedback: the badge on its own doesn't say
-                   *why* Cloud is recommended. Tooltip carries the reason
-                   instead of lengthening the badge text itself. -->
               <Tooltip :text="$t('firstUse.cloudRecommendedForHardwareTooltip')">
                 <span
                   class="start-cloud-reco inline-flex cursor-default items-center gap-1 rounded-[999px] bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] px-[9px] py-[5px] text-xs leading-[normal] font-semibold text-neutral-100"
@@ -1021,12 +580,6 @@ defineExpose({ open, resetContinue })
         >
           {{ $t('firstUse.cloudRecommendedForHardwareTooltip') }}
         </span>
-        <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
-             fit-content container so the two labels share the same
-             left edge and read as left-aligned peers — without the
-             wrapper, each label was an `inline-flex` that centered
-             independently, so a longer description text would push
-             one row off-axis from the other. -->
         <div class="start-modifiers mx-auto mt-1 flex w-fit flex-col gap-2">
           <label
             v-if="hasLegacyDesktop"
@@ -1230,11 +783,6 @@ defineExpose({ open, resetContinue })
       </div>
     </div>
 
-    <!-- Step 4 (conditional): Local + Legacy Desktop detected. The
-         card recipe is intentionally inlined (not ChoiceCard) — it's
-         the only place this dense full-width stacked variant ships,
-         so a new component or variant prop on ChoiceCard would be
-         over-engineering. -->
     <div
       v-else-if="step === 'localBranch'"
       class="local-branch-hero relative z-1 flex w-full max-w-[820px] flex-col items-center text-center"
@@ -1340,8 +888,6 @@ defineExpose({ open, resetContinue })
     />
   </BrandTakeoverLayout>
   <ModalShell v-else binding hide-close content-class="first-use-takeover flex flex-col">
-    <!-- Mirrors step retains the legacy ModalShell chrome until it gets
-         the brand treatment. First-use is binding — no ✕ close. -->
     <template #header>
       <TakeoverHeader :title="$t('firstUse.grandTitle')" :subtitle="$t('firstUse.grandSubtitle')" />
     </template>

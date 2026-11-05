@@ -86,7 +86,6 @@ describe('recoverInterruptedComfyOp', () => {
 
   it('rolls back and clears the marker when HEAD moved (hard-kill case)', async () => {
     await writeOpMarker(installPath, { op: 'update', preHead: 'OLDHEAD', startedAt: 1 })
-    // HEAD reads as moved first (triggers rollback), then as restored afterward.
     mockedReadGitHead.mockReturnValueOnce('NEWHEAD').mockReturnValue('OLDHEAD')
     mockedRollback.mockResolvedValue(true)
 
@@ -103,7 +102,6 @@ describe('recoverInterruptedComfyOp', () => {
   })
 
   it('fires onRollback only when an actual rollback runs, not on a benign cleanup', async () => {
-    // Real rollback (HEAD moved) → onRollback fires.
     await writeOpMarker(installPath, { op: 'update', preHead: 'OLDHEAD', startedAt: 1 })
     mockedReadGitHead.mockReturnValueOnce('NEWHEAD').mockReturnValue('OLDHEAD')
     mockedRollback.mockResolvedValue(true)
@@ -111,7 +109,6 @@ describe('recoverInterruptedComfyOp', () => {
     await recoverInterruptedComfyOp(installPath, undefined, onRollback)
     expect(onRollback).toHaveBeenCalledTimes(1)
 
-    // Benign cleanup (HEAD already matches) → onRollback must NOT fire.
     await writeOpMarker(installPath, { op: 'restore', preHead: 'SAME', startedAt: 1 })
     mockedReadGitHead.mockReturnValue('SAME')
     const onRollback2 = vi.fn()
@@ -131,8 +128,6 @@ describe('recoverInterruptedComfyOp', () => {
   })
 
   it('blocks the launch, keeping the marker, when an update left tracked files changed', async () => {
-    // A failed update whose restore could not finish: HEAD is back at the old
-    // commit, files are a mix. Only another update repairs it.
     await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
     mockedReadGitHead.mockReturnValue('SAME')
     mockedTrackedChanges.mockResolvedValue(true)
@@ -169,7 +164,6 @@ describe('recoverInterruptedComfyOp', () => {
   })
 
   it('never rolls back a completed marker (success whose unlink failed)', async () => {
-    // postHead present => the op reached consistency; HEAD legitimately moved.
     await writeOpMarker(installPath, {
       op: 'update',
       preHead: 'OLD',
@@ -187,7 +181,7 @@ describe('recoverInterruptedComfyOp', () => {
 
   it('throws and records an attempt when the rollback fails (so next launch retries)', async () => {
     await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1 })
-    mockedReadGitHead.mockReturnValue('NEW') // never reaches OLD
+    mockedReadGitHead.mockReturnValue('NEW')
     mockedRollback.mockResolvedValue(false)
 
     await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
@@ -237,13 +231,12 @@ describe('recoverInterruptedComfyOp', () => {
       startedAt: 1,
       backupBranch: 'backup_branch_2026-07-06_19_11_34'
     })
-    mockedReadGitHead.mockReturnValue('NEW') // never reaches OLD
+    mockedReadGitHead.mockReturnValue('NEW')
     mockedRollback.mockResolvedValue(false)
 
     await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
       /backup_branch_2026-07-06_19_11_34/
     )
-    // The recorded branch survives a round-trip so the next launch can name it too.
     expect(readOpMarker(installPath)!.backupBranch).toBe('backup_branch_2026-07-06_19_11_34')
   })
 
@@ -267,17 +260,15 @@ describe('recoverInterruptedComfyOp', () => {
   })
 
   it('gives up on a snapshot restore after MAX_RECOVERY_ATTEMPTS so launch is never bricked', async () => {
-    // Pre-seed the marker as if two prior launches already failed to roll back.
     await writeOpMarker(installPath, {
       op: 'restore',
       preHead: 'OLD',
       startedAt: 1,
       recoveryAttempts: 2
     })
-    mockedReadGitHead.mockReturnValue('NEW') // rollback can never reach OLD
+    mockedReadGitHead.mockReturnValue('NEW')
     mockedRollback.mockResolvedValue(false)
 
-    // The third attempt gives up instead of throwing, and clears the marker.
     const recovered = await recoverInterruptedComfyOp(installPath)
     expect(recovered).toBe(true)
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
@@ -296,7 +287,6 @@ describe('completeOpMarker', () => {
 
     await completeOpMarker(installPath)
 
-    // Marker file removed on success.
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
   })
 

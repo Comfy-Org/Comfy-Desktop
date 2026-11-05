@@ -1,21 +1,3 @@
-/**
- * Lifecycle E2E: Untrack vs Delete divergence (UI-driven).
- *
- * Drives the two real removal surfaces a user reaches manually:
- *
- *   - **Untrack** lives in the Manage drawer's Settings footer More menu
- *     and confirms in-drawer,
- *     then removes the installation from the registry while leaving its
- *     directory on disk.
- *   - **Delete** stays on the dashboard kebab: it confirms through the
- *     panel modal, then routes through the kebab fast-path and removes
- *     both the registry record and directory.
- *
- * The Delete fast-path is also covered by `dashboard-delete-flow.test.ts`
- * from a perf angle (no `get-detail-sections` roundtrip). This file
- * exists to pin the divergent disk outcome between the two destructive
- * surfaces on the same install records.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -35,9 +17,6 @@ const UNTRACK_NAME = 'Untrack Me'
 const DELETE_ID = 'inst-delete-test'
 const DELETE_NAME = 'Delete Me'
 
-/** Mirrors `MARKER_FILE` in `src/main/lib/ipc/shared.ts`. Delete refuses
- *  to wipe a directory whose marker is missing or mismatched; Untrack
- *  doesn't touch disk so it doesn't care, but we add it for parity. */
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
 async function pathExists(p: string): Promise<boolean> {
@@ -48,8 +27,6 @@ async function tileExists(installationId: string): Promise<boolean> {
   return ctx.panel.exists(byTestId(TID.dashboardTile(installationId)))
 }
 
-/** Drive the chooser kebab: open the menu on `installationId`, wait
- *  for the named menu item, and click it. */
 async function openKebabAndClick(installationId: string, menuItemId: string): Promise<void> {
   const kebabClicked = await ctx.panel.click(byTestId(TID.dashboardTileKebab(installationId)))
   expect(kebabClicked, `kebab click on ${installationId}`).toBe(true)
@@ -92,8 +69,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await ctx?.cleanup()
-  // Untrack preserves the dir by design; Delete already removed its dir
-  // on success — force-clean both so a mid-flow test failure doesn't leak.
   if (untrackPath) await rm(untrackPath, { recursive: true, force: true })
   if (deletePath) await rm(deletePath, { recursive: true, force: true })
 })
@@ -104,7 +79,6 @@ test('chooser lists both seeded installs @lifecycle', async () => {
 })
 
 test('Manage drawer Untrack drops the record but preserves the install directory @lifecycle', async () => {
-  // Untrack's UI home is the Manage drawer's pin-bottom More menu.
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -126,8 +100,6 @@ test('Manage drawer Untrack drops the record but preserves the install directory
     async () => !(await tileExists(UNTRACK_ID)),
     { timeout: 15_000, message: 'untracked tile never disappeared from chooser' },
   )
-  // Removing the install closes its drawer; ensure the popup is gone
-  // before the Delete test drives the dashboard kebab.
   await closeTitlePopupIfOpen(ctx.app)
   expect(await pathExists(untrackPath), 'untrack must leave the install directory on disk').toBe(true)
 })

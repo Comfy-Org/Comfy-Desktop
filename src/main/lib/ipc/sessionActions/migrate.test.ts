@@ -125,12 +125,9 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       removeListener: vi.fn()
     }
 
-    // Simulate the adoption backend asking the user a question mid-operation,
-    // and the renderer answering with the primary (retry) button.
     adoptDesktopInstallMock.mockImplementationOnce(
       async ({ tools }: { tools: { promptUser: (k: string, c: unknown) => Promise<unknown> } }) => {
         const choicePromise = tools.promptUser('source-missing', { message: 'git clone failed' })
-        // Let the prompt request flush to the renderer.
         await Promise.resolve()
         const req = sent.find((s) => s.channel === 'adopt-prompt')!.payload
         const event = { sender: { id: 42 } }
@@ -173,12 +170,10 @@ describe('handleMigrateToStandalone — desktop branch', () => {
         const choicePromise = tools.promptUser('source-missing', { message: 'boom' })
         await Promise.resolve()
         const req = sent.find((s) => s.channel === 'adopt-prompt')!.payload
-        // Wrong sender id → must be ignored.
         ipcMainHandlers.get('adopt-prompt-response')!(
           { sender: { id: 999 } },
           { promptId: req.promptId, buttonIndex: 0 }
         )
-        // Right sender id → resolves with cancel.
         ipcMainHandlers.get('adopt-prompt-response')!(
           { sender: { id: 7 } },
           { promptId: req.promptId, buttonIndex: req.cancelId }
@@ -211,7 +206,6 @@ describe('handleMigrateToStandalone — desktop branch', () => {
         const choicePromise = tools.promptUser('source-missing', { message: 'boom' })
         await Promise.resolve()
         const req = sent.find((s) => s.channel === 'adopt-prompt')!.payload
-        // NaN is not a valid index — must map to cancel, never throw.
         ipcMainHandlers.get('adopt-prompt-response')!(
           { sender: { id: 8 } },
           { promptId: req.promptId, buttonIndex: Number.NaN }
@@ -229,9 +223,6 @@ describe('handleMigrateToStandalone — desktop branch', () => {
   it('falls back to cancel without crashing when the sender cannot deliver prompts (no EventEmitter methods)', async () => {
     type SentMessage = { channel: string; payload: { promptId: string } }
     const sent: SentMessage[] = []
-    // Mirrors the picker background-op stub sender: has send/isDestroyed but
-    // no once/removeListener. Must reject cleanly, never arm a timer, and
-    // never throw an uncaught exception in main.
     const sender = {
       id: 5,
       send: vi.fn((channel: string, payload: SentMessage['payload']) =>
@@ -243,7 +234,6 @@ describe('handleMigrateToStandalone — desktop branch', () => {
     adoptDesktopInstallMock.mockImplementationOnce(
       async ({ tools }: { tools: { promptUser: (k: string, c: unknown) => Promise<unknown> } }) => {
         const choice = await tools.promptUser('source-missing', { message: 'boom' })
-        // Incapable sender: no prompt sent, immediate cancel fallback.
         expect(sent.some((s) => s.channel === 'adopt-prompt')).toBe(false)
         expect(choice).toEqual({ kind: 'source-missing', choice: 'cancel' })
         throw new Error('source-missing: cancelled')

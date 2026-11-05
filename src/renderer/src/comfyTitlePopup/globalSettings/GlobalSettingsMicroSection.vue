@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Intentionally NOT a variant of DetailSection.vue, which is slated for
-// deletion; coupling the new global-settings UI to it would block that.
 import InfoTooltip from '../../components/InfoTooltip.vue'
 
 defineProps<{
@@ -16,8 +14,6 @@ defineProps<{
     >
       <span>{{ title }}</span>
       <InfoTooltip v-if="tooltip" :text="tooltip" />
-      <!-- Optional right-aligned header controls (e.g. a shared-source toggle),
-           inlined with the title to save a row. -->
       <div
         v-if="$slots.actions"
         class="gs-micro-actions ml-auto inline-flex items-center gap-2 text-[12px] font-normal tracking-normal text-text-muted normal-case"

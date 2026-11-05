@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Takeover chrome shared across the brand-refreshed first-use screens.
-// Keeps the full-screen brand layout while the shared dialog surface owns
-// focus, scroll locking and nested overlays. Binding flows are nondismissible
-// by default; cancellable takeovers opt in and handle close explicitly.
-// Forces dark; light-mode brand parity is deferred.
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import BrandBackground from './BrandBackground.vue'

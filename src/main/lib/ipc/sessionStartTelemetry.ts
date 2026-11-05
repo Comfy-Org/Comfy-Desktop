@@ -1,18 +1,9 @@
-/**
- * Main-process emitters for the per-instance session-start telemetry
- * (`session.instance_started`, the deprecated `installation_started` shadow,
- * `session.snapshot_history`). Emitted from main rather than the panel renderer
- * because Desktop 2 tears the panel down around server-ready, so the old
- * renderer callbacks frequently never ran. Same event names/shapes as before.
- */
 import * as telemetry from '../telemetry'
 import * as settings from '../../settings'
 import { buildInstallationDdContext, sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
 import type { SessionKind } from '../../../shared/performanceTestSession'
 
-// Mirror the bridge's large-`_json` ceiling: ship intact or omit + flag
-// `*_truncated`, never slice mid-string. Under PostHog's 1 MB event limit.
 const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
 
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
@@ -21,8 +12,6 @@ function serializeForTelemetry(value: unknown): { json: string | null; truncated
   return { json, truncated: false }
 }
 
-// Scrub pip spec values (editable/local installs can embed a home-dir path)
-// while leaving package names untouched.
 function scrubPipSpecs(pipPackages: Record<string, string>): Record<string, string> {
   const scrubbed: Record<string, string> = {}
   for (const [name, spec] of Object.entries(pipPackages)) {
@@ -40,8 +29,6 @@ interface SnapshotNodeFields {
   commit?: string
 }
 
-// Shared custom-node shape for the latest-snapshot and per-diff node arrays so
-// they can't drift. `id`/`dirName` go through `scrubAll` as defense-in-depth.
 function serializeSnapshotNode(n: SnapshotNodeFields): {
   id: string
   type: string
@@ -60,8 +47,6 @@ function serializeSnapshotNode(n: SnapshotNodeFields): {
   }
 }
 
-// Shape of a single `snapshot_diffs` entry from `buildInstallationDdContext`
-// (typed there as `Record<string, unknown>` since it's built dynamically).
 interface RawSnapshotDiff {
   createdAt: string
   trigger: string
@@ -80,20 +65,12 @@ interface RawSnapshotDiff {
 
 export interface InstanceStartedInfo {
   installationId: string
-  /** Wall-clock ms from launch start to server-ready, folded onto the event. */
   bootTimeMs?: number
-  /** Spawn-retry counts for THIS boot (0 on the remote / skip-port paths). */
   portRetries: number
   rebootRetries: number
-  /** A Performance Test boot or the user's own. */
   sessionKind: SessionKind
 }
 
-/**
- * Fire-and-forget. Invoked from `_addSession` (via the `onInstanceStarted`
- * callback) on every ComfyUI instance boot. Builds the installation snapshot
- * context, scrubs PII at the emit site, and captures the session-start events.
- */
 export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): Promise<void> {
   try {
     const ctx = await buildInstallationDdContext(info.installationId)
@@ -101,9 +78,6 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
 
     const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
 
-    // Full latest snapshot (every node + pip package) so exact state is
-    // queryable and earlier states reconstruct via `snapshot_diffs`. Only PII is
-    // the user-typed `label`, kept as a `has_label` bool.
     const latestSnapshotFull = latest_snapshot
       ? {
           createdAt: latest_snapshot.createdAt,
@@ -118,40 +92,22 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       : null
     const latestSnapshotJson = serializeForTelemetry(latestSnapshotFull)
 
-    // Fires on EVERY ComfyUI instance boot, not on new-install completion. The
-    // legacy `installation_started` name below tracks the same thing; kept for
-    // one release cycle so existing dashboards survive migration.
     const sourceCategory = sourceMap[ctx.source_id]?.category
     const instanceStartedProps = {
       ...(metadata as Record<string, string | number | boolean | null | undefined>),
-      // Point-in-time snapshot of the tracked global settings so
-      // current state is queryable on a recurring event without a person-property
-      // join.
       ...settings.getTrackedSettingsTelemetryProperties(),
-      // The cross-surface axis analysts filter on (paired with `client`,
-      // which the telemetry defaults pin to 'desktop'). Narrowed through
-      // asDeployment since a source plugin's category is an open string.
       deployment: telemetry.asDeployment(sourceCategory),
       boot_time_ms: info.bootTimeMs ?? null,
       port_retries: info.portRetries,
       reboot_retries: info.rebootRetries,
       session_kind: info.sessionKind,
-      // Top-level so they stay queryable and survive `latest_snapshot_json`
-      // truncation (heavy installs are the most likely to truncate).
       custom_nodes_count: latest_snapshot?.customNodes.length ?? null,
       pip_packages_count: latest_snapshot ? Object.keys(latest_snapshot.pipPackages).length : null,
       latest_snapshot_json: latestSnapshotJson.json,
       latest_snapshot_json_truncated: latestSnapshotJson.truncated
     }
     telemetry.capture('comfy.desktop.session.instance_started', instanceStartedProps)
-    // Deprecated compatibility event; use session.instance_started.
     telemetry.capture('comfy.desktop.session.installation_started', instanceStartedProps)
-    // Durable per-person activation milestone. `$set_once` keeps the
-    // earliest local-instance boot on the person profile, so the funnel can ask
-    // "did this person EVER reach a running local instance?" independent of the
-    // session in which it happened. LOCAL sources only — this emitter also runs
-    // for cloud/remote connect sessions (via `_addSession`), which must not
-    // stamp the local-instance activation marker.
     if (sourceCategory === 'local') {
       telemetry.registerPersonPropertiesOnce({
         first_local_instance_started_at: new Date().toISOString()
@@ -159,8 +115,6 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
     }
 
     if (snapshot_diffs.length > 0) {
-      // Full per-transition diffs so the history reconstructs by walking back
-      // from `latest_snapshot`. Drop only the user-typed `label` (→ `has_label`).
       const snapshotDiffsFull = (snapshot_diffs as unknown as RawSnapshotDiff[]).map((d) => ({
         createdAt: d.createdAt,
         trigger: d.trigger,
@@ -192,7 +146,5 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
         snapshot_diffs_json_truncated: snapshotDiffsJson.truncated
       })
     }
-  } catch {
-    // Telemetry must never break a launch.
-  }
+  } catch {}
 }

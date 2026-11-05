@@ -65,10 +65,6 @@ function mountPane(snapshot: StorageSnapshot = makeSnapshot()) {
   })
 }
 
-// Per-install storage section with shared-models toggled off and a per-instance
-// model-dirs list, exercising the StoragePane's own ModelsDirList wiring.
-// `installModelsDir` is the locked install-own row; `modelDirsPrimary` selects
-// which external dir (if any) is primary.
 function makeStorageSections(
   modelDirs: string[],
   opts: { sharedOn?: boolean; primary?: string | null; own?: string } = {}
@@ -109,8 +105,6 @@ function makeStorageSections(
   ]
 }
 
-// Per-install section with independent shared input/output toggles (default
-// off here) plus the per-install path fields and their computed defaults.
 function makeIoSections(
   opts: {
     inputDir?: string
@@ -201,17 +195,13 @@ describe('StoragePane', () => {
     await nextTick()
     const rows = wrapper.findAll('.models-dir-row')
     expect(rows).toHaveLength(2)
-    // With no persisted primary, the first shared dir is the effective primary.
     expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
     expect(rows[1]!.find('.tag-primary').exists()).toBe(false)
-    // Shared rows carry the shared badge and expose no browse action here.
     expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
     expect(rows[0]!.find('.models-dir-action').exists()).toBe(false)
     expect(rows[1]!.find('.models-dir-action:not([aria-expanded])').exists()).toBe(false)
   })
 
-  // The global default install location is intentionally NOT shown in the
-  // per-instance Storage tab — it only belongs in Global Desktop Settings.
   it('does not render the global Install Location section', async () => {
     installMockApi()
     const wrapper = mountPane()
@@ -219,14 +209,10 @@ describe('StoragePane', () => {
     expect(wrapper.text()).not.toContain('Install Location')
   })
 
-  // Promoting a shared dir is a per-install choice now: it persists the
-  // install's `modelDirsPrimary` and must never rewrite the global list.
   it('promotes a shared dir by persisting modelDirsPrimary, not by reordering the global list', async () => {
     const api = installMockApi()
     const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
     await nextTick()
-    // Menus: the non-primary shared dir and the install-own row (promotable
-    // even while shared dirs are included).
     const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
     expect(toggles).toHaveLength(2)
     await toggles[0]!.trigger('click')
@@ -259,8 +245,6 @@ describe('StoragePane', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(toggle.element))
   })
 
-  // Shared dirs are edited in Global Desktop Settings; the instance pane only
-  // links there instead of offering browse/remove on shared rows.
   it('routes to global settings via the manage-shared link', async () => {
     const api = installMockApi()
     const wrapper = mountPane()
@@ -278,8 +262,6 @@ describe('StoragePane', () => {
     expect(wrapper.find('.storage-manage-link').exists()).toBe(false)
   })
 
-  // Sharing scope is conveyed inline (shared badges, header toggles, manage
-  // actions); the note area is reserved for the restart warning.
   it('renders no storage note when nothing is pending', async () => {
     installMockApi()
     const wrapper = mountPane()
@@ -287,8 +269,6 @@ describe('StoragePane', () => {
     expect(wrapper.find('.storage-note').exists()).toBe(false)
   })
 
-  // Per-install storage edits show the restart warning via the parent-supplied
-  // pending set (the parent records them on update-field).
   it('flips the storage note to the warning state for pending per-install storage fields', async () => {
     installMockApi()
     const wrapper = mount(StoragePane, {
@@ -309,14 +289,11 @@ describe('StoragePane', () => {
       installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
-      // install-own row + 2 extras = 3 rows. Row 0 is the install-own primary.
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows).toHaveLength(3)
       expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
       expect(rows[1]!.find('.tag-primary').exists()).toBe(false)
-      // The install-own row is locked: no browse button, no menu (undeletable),
-      // and carries the "Instance only" pill.
       expect(rows[0]!.find('.models-dir-action').exists()).toBe(false)
       expect(rows[0]!.find('.models-dir-menu-wrap').exists()).toBe(false)
       expect(rows[0]!.find('.tag-local').exists()).toBe(true)
@@ -326,7 +303,6 @@ describe('StoragePane', () => {
       installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
-      // First menu belongs to the first extra (/a/models), since row 0 is locked.
       await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
       await nextTick()
       await flushPromises()
@@ -341,8 +317,6 @@ describe('StoragePane', () => {
 
     it('matches a promoted primary despite trailing or duplicated separators', async () => {
       installMockApi()
-      // Stored primary differs from the dir entry only in separator noise; the
-      // backend's path.resolve treats them as equal, so the renderer must too.
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models', '/b/models'], { primary: '/a//models/' })
       )
@@ -354,24 +328,17 @@ describe('StoragePane', () => {
 
     it('recognizes an install-own primary stored with a trailing separator', async () => {
       installMockApi()
-      // sharedOn makes this discriminating: without canonicalization the raw
-      // '/own/models/' matches nothing and the first shared dir becomes
-      // primary instead of the own row.
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models'], { sharedOn: true, primary: '/own/models/' })
       )
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
-      // Canonicalization maps '/own/models/' onto the install-own row: it stays
-      // the primary on top instead of falling back to a shared/external dir.
       expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
     })
 
     it('matches a promoted primary containing . and .. segments', async () => {
       installMockApi()
-      // The backend's path.resolve collapses dot segments; the renderer's
-      // lexical canonicalization must agree so the same dir shows as primary.
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models', '/b/models'], { primary: '/a/x/.././/models' })
       )
@@ -411,8 +378,6 @@ describe('StoragePane', () => {
 
     it('clamps .. at the UNC share root, matching path.win32.resolve', async () => {
       installMockApi({ platform: 'win32' })
-      // resolve('\\\\server\\share\\models\\..') clamps to the share root, so
-      // it must match a row for '\\\\server\\share' - and never climb above it.
       const wrapper = mountPaneWithSections(
         makeStorageSections(['\\\\server\\share'], {
           primary: '\\\\server\\share\\models\\..',
@@ -427,8 +392,6 @@ describe('StoragePane', () => {
 
     it('does not equate a drive-relative path with a drive-absolute one', async () => {
       installMockApi({ platform: 'win32' })
-      // 'c:data\\models' resolves against the C: drive's cwd (unknown to the
-      // renderer), so it must NOT be treated as 'C:\\Data\\Models'.
       const wrapper = mountPaneWithSections(
         makeStorageSections(['C:\\Data\\Models'], {
           primary: 'c:data\\models',
@@ -443,24 +406,18 @@ describe('StoragePane', () => {
 
     it('renders the install-own dir once when it also appears in modelDirs', async () => {
       installMockApi()
-      // A stale record can persist the own dir as an extra; it must collapse
-      // into the single locked own row (the backend excludes it the same way).
       const wrapper = mountPaneWithSections(makeStorageSections(['/own/models', '/a/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows).toHaveLength(2)
       const names = rows.map((r) => r.find('.models-dir-name').text())
       expect(names.filter((n) => n === '/own/models')).toHaveLength(1)
-      // Still the locked row, not a removable extra.
       expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
       expect(rows[0]!.find('.tag-local').exists()).toBe(true)
     })
 
     it('renders the install-own dir once when a shared dir points at it', async () => {
       installMockApi()
-      // Default snapshot shares '/home/u/ComfyUI/models'; make that the
-      // install's own dir with sharing on: it must render only as the locked
-      // own row, not additionally as a read-only shared row.
       const wrapper = mountPaneWithSections(
         makeStorageSections([], { sharedOn: true, own: '/home/u/ComfyUI/models' })
       )
@@ -478,7 +435,6 @@ describe('StoragePane', () => {
       )
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
-      // Primary on top: /a/models leads; the locked install-own row is last.
       expect(rows[0]!.find('.models-dir-name').text()).toBe('/a/models')
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
       expect(rows[2]!.find('.models-dir-name').text()).toBe('/own/models')
@@ -491,7 +447,6 @@ describe('StoragePane', () => {
         makeStorageSections(['/a/models'], { primary: '/a/models' })
       )
       await nextTick()
-      // Install-own row (locked, not the download target) exposes only "Use for Model Downloads".
       await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
       await nextTick()
       await flushPromises()
@@ -510,8 +465,6 @@ describe('StoragePane', () => {
       )
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
-      // The locked install-own row sits last (it's not primary); open its menu
-      // and assert it offers only "Use for Model Downloads" (no Remove).
       const ownRow = rows[rows.length - 1]!
       expect(ownRow.find('.models-dir-name').text()).toBe('/own/models')
       await ownRow.find('.models-dir-menu-wrap > button').trigger('click')
@@ -556,25 +509,18 @@ describe('StoragePane', () => {
       installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models'], { sharedOn: true }))
       await nextTick()
-      // 2 shared dirs from the snapshot + the per-instance extra + install-own.
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows).toHaveLength(4)
-      // The effective primary stays on the first shared dir.
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
-      // The per-instance extra keeps its editable affordances even while
-      // shared dirs are included (the two sources are additive).
       const extraRow = rows[2]!
       expect(extraRow.find('.models-dir-name').text()).toBe('/a/models')
       expect(extraRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(true)
-      // The install-own row is last, locked: no primary tag, no browse; it
-      // still has a menu so it can be promoted to the download target.
       const ownRow = rows[3]!
       expect(ownRow.find('.models-dir-name').text()).toBe('/own/models')
       expect(ownRow.find('.tag-primary').exists()).toBe(false)
       expect(ownRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(false)
       expect(ownRow.find('.models-dir-menu-wrap').exists()).toBe(true)
       expect(wrapper.text()).toContain('Include Shared Directories')
-      // Shared dirs carry the shared badge; the per-instance rows don't.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
       expect(ownRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
@@ -586,7 +532,6 @@ describe('StoragePane', () => {
         makeStorageSections(['/home/u/ComfyUI/models', '/c/models'], { sharedOn: true })
       )
       await nextTick()
-      // The duplicate of the first shared dir is hidden: shared 2 + /c/models + own.
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows).toHaveLength(4)
       const paths = rows.map((r) => r.find('.models-dir-name').text())
@@ -608,7 +553,6 @@ describe('StoragePane', () => {
       installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
-      // Rows: own (primary), /a/models, /b/models. Open /a/models' menu.
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
       await nextTick()
       await flushPromises()
@@ -616,7 +560,6 @@ describe('StoragePane', () => {
       const removeItem = items.find((i) => i.text().includes('Remove'))!
       await removeItem.trigger('click')
       await flushPromises()
-      // Confirm the modal (module-level singleton state).
       const modal = useModal()
       expect(modal.state.visible).toBe(true)
       modal.close(true)
@@ -633,11 +576,8 @@ describe('StoragePane', () => {
         makeStorageSections(['/a/models', '/a/models', '/b/models'])
       )
       await nextTick()
-      // The duplicate stored '/a/models' renders a single row: own (primary),
-      // /a/models, /b/models.
       const names = wrapper.findAll('.models-dir-name').map((n) => n.text())
       expect(names).toEqual(['/own/models', '/a/models', '/b/models'])
-      // Removing the deduped row drops every matching stored entry.
       await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
       await nextTick()
       await flushPromises()
@@ -683,7 +623,6 @@ describe('StoragePane', () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/x'], { sharedOn: true }))
       await nextTick()
-      // Rows: shared primary (no menu), shared /mnt/extra/models, extra /x, own.
       const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
       expect(toggles).toHaveLength(3)
       await toggles[1]!.trigger('click')
@@ -702,7 +641,6 @@ describe('StoragePane', () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
       await nextTick()
-      // Rows: shared primary (no menu), shared /mnt/extra/models, own (last).
       const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
       expect(toggles).toHaveLength(2)
       await toggles[1]!.trigger('click')
@@ -723,7 +661,6 @@ describe('StoragePane', () => {
         makeStorageSections([], { sharedOn: true, primary: '/own/models' })
       )
       await nextTick()
-      // Own row leads while it is the explicit target; shared rows lose the tag.
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
@@ -741,7 +678,6 @@ describe('StoragePane', () => {
       expect(rows[0]!.find('.storage-dir-name').text()).toBe('/own/input')
       expect(rows[1]!.find('.storage-dir-name').text()).toBe('/own/output')
       expect(rows[0]!.find('.storage-dir-tag').exists()).toBe(true)
-      // Per-instance dirs are private: no shared badge.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(false)
     })
 
@@ -809,9 +745,7 @@ describe('StoragePane', () => {
       expect(rows).toHaveLength(2)
       expect(rows[0]!.find('.storage-dir-name').text()).toBe('/shared/in')
       expect(rows[1]!.find('.storage-dir-name').text()).toBe('/shared/out')
-      // Shared dirs are global, not per-instance overrides: no "default" tag.
       expect(rows[0]!.find('.storage-dir-tag').exists()).toBe(false)
-      // Shared I/O dirs carry the shared badge for consistency with shared models.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
       expect(rows[1]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
     })
@@ -827,7 +761,6 @@ describe('StoragePane', () => {
       expect(rows).toHaveLength(2)
       expect(rows[0]!.find('.storage-dir-name').text()).toBe('/shared/in')
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
-      // Output stays per-instance: computed default with the "default" tag.
       expect(rows[1]!.find('.storage-dir-name').text()).toBe('/own/output')
       expect(rows[1]!.find('.storage-item-icon.is-shared').exists()).toBe(false)
       expect(rows[1]!.find('.storage-dir-tag').exists()).toBe(true)
@@ -888,7 +821,6 @@ describe('StoragePane', () => {
       await nextTick()
       const row = wrapper.findAll('.storage-dir-row')[0]!
       expect(row.find('.storage-dir-action[aria-label^="Browse"]').exists()).toBe(false)
-      // The manage action opens Global Desktop Settings; nothing is written from here.
       await row
         .find('.storage-dir-action[aria-label^="Manage Shared Directories"]')
         .trigger('click')
@@ -913,8 +845,6 @@ describe('StoragePane', () => {
       expect(value).toBe('/ext/out')
     })
 
-    // Older installs without the split fields (and git installs without the
-    // section at all) default to shared.
     it('defaults to the shared folders when the toggles are absent', async () => {
       installMockApi()
       const wrapper = mountPaneWithSections([{ fields: [] }] as never, makeSharedIoSnapshot())
@@ -926,9 +856,6 @@ describe('StoragePane', () => {
     })
   })
 
-  // The install's extra_model_paths.yaml is one row in the models list (YAML
-  // pill), and clicking it opens a detail modal listing every section's
-  // per-type dirs plus a link to the .yaml file.
   describe('custom model paths (extra_model_paths.yaml)', () => {
     function makeExtraSection() {
       return {
@@ -1020,11 +947,8 @@ describe('StoragePane', () => {
       const pill = extraRow.find('.tag-local')
       expect(pill.exists()).toBe(true)
       expect(pill.text()).toContain('YAML')
-      // The missing-dir count is intentionally not surfaced in the list.
       expect(extraRow.find('.tag-missing').exists()).toBe(false)
-      // Read-only: no browse / make-primary affordance on extra rows.
       expect(extraRow.find('.tag-primary').exists()).toBe(false)
-      // The yaml file is per-instance, not shared: no shared badge.
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
     })
 
@@ -1056,7 +980,6 @@ describe('StoragePane', () => {
       }
       const wrapper = mountPaneWithSections(sectionsWithExtra(view))
       await nextTick()
-      // Two sections, but only one row in the list.
       expect(
         wrapper
           .findAll('.models-dir-row')
@@ -1064,10 +987,8 @@ describe('StoragePane', () => {
       ).toHaveLength(1)
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
       await nextTick()
-      // Both sections' dirs show in the modal.
       expect(document.body.textContent).toContain('/ext/base/checkpoints')
       expect(document.body.textContent).toContain('/nas/models/loras')
-      // The default tag appears for the section that declares it.
       expect(document.querySelector('.empm-tag')).toBeTruthy()
     })
 
@@ -1080,7 +1001,6 @@ describe('StoragePane', () => {
       const actions = Array.from(document.querySelectorAll('.empm-action')) as HTMLButtonElement[]
       const yamlBtn = actions.find((b) => b.textContent?.includes('.yaml'))!
       yamlBtn.click()
-      // Reveal-in-folder, not open-in-default-app.
       expect(api.revealPathCalls).toContain('/own/extra_model_paths.yaml')
       expect(api.openPathCalls).not.toContain('/own/extra_model_paths.yaml')
     })

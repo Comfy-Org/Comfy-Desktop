@@ -1,23 +1,13 @@
 <script setup lang="ts">
-/**
- * Square gradient avatar using the ComfyUI frontend's PRNG, saturation, and
- * lightness calculations with a narrower second-hue offset.
- *
- * The account chip uses the workspace name, falling back to email; switcher rows
- * use each workspace name. Colours are deterministic for the supplied string.
- */
 import { computed } from 'vue'
 
 const { name, neutral } = defineProps<{
-  /** Subject the colour is derived from; only its first character is rendered. */
   name: string
-  /** Render an unlabelled neutral square instead of a workspace identity. */
   neutral?: boolean
 }>()
 
 const letter = computed(() => name?.charAt(0)?.toUpperCase() || '?')
 
-/** mulberry32: the frontend's PRNG, ported verbatim. */
 function mulberry32(a: number): () => number {
   return function () {
     let t = (a += 0x6d2b79f5)
@@ -27,11 +17,6 @@ function mulberry32(a: number): () => number {
   }
 }
 
-/** Two-stop gradient seeded from the letter. The rand() call ORDER and COUNT are
- *  part of the contract: reordering or adding a call changes every colour.
- *
- * The second stop uses an 18-41 degree hue offset so the stops read as shades
- * of one color family. */
 const gradient = computed(() => {
   const rand = mulberry32(letter.value.charCodeAt(0))
   const hue1 = Math.floor(rand() * 360)
@@ -43,7 +28,6 @@ const gradient = computed(() => {
 </script>
 
 <template>
-  <!-- Decorative: the subject's name is always rendered beside this avatar. -->
   <span
     class="dp-avatar inline-flex size-[var(--dp-avatar-size,32px)] flex-none items-center justify-center overflow-hidden rounded-md text-[length:calc(var(--dp-avatar-size,32px)*0.42)] leading-none font-semibold text-white select-none"
     :class="

@@ -53,7 +53,6 @@ const model: ModelDescriptor = {
   downloadUrl: 'https://x/m'
 } as ModelDescriptor
 
-/** The task is fire-and-forget; poll until its observable effect lands. */
 const settle = (check: () => void): Promise<void> => vi.waitFor(check, { timeout: 2000 })
 
 describe('startModelStaging', () => {
@@ -105,7 +104,6 @@ describe('startModelStaging', () => {
 
     startModelStaging(record(), [model])
     await settle(() => expect(acquireModelDownloadRootLock).toHaveBeenCalled())
-    // Give the task a beat to (incorrectly) continue if it were going to.
     await new Promise((r) => setTimeout(r, 10))
 
     expect(stageModels).not.toHaveBeenCalled()

@@ -34,7 +34,6 @@ describe('errorEvent', () => {
         'CUDANoKernelImage'
       )
       expect(extractErrorClass('torch.cuda.OutOfMemoryError: CUDA out of memory. Tried...')).toBe(
-        // The Python class token wins over the phrase dictionary.
         'torch.cuda.OutOfMemoryError'
       )
       expect(extractErrorClass('RuntimeError: CUDA out of memory')).toBe('RuntimeError')
@@ -47,7 +46,6 @@ describe('errorEvent', () => {
     })
 
     it('is locale-independent: a localized message still yields the class', () => {
-      // Localized OSError text (message differs by locale, class does not).
       expect(extractErrorClass('OSError: 找不到指定的模块。')).toBe('OSError')
     })
 

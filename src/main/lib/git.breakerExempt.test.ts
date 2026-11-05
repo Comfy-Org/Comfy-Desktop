@@ -11,14 +11,9 @@ import {
   withoutPygit2Breaker
 } from './git'
 
-// Real child processes, not a mocked execFile: the exemption is carried by async context, and
-// only a real spawn calls back from a different tick than the one that started it.
-
 const SHA = 'a'.repeat(40)
 let dir = ''
-/** Stands in for the pygit2 helper's interpreter and exits 0. */
 let okHelper = ''
-/** Does not exist, so every spawn is a launch failure (ENOENT). */
 let missingHelper = ''
 
 const failures = (): number => {
@@ -61,7 +56,6 @@ describe.skipIf(process.platform === 'win32')('withoutPygit2Breaker', () => {
     await findMergeBaseOrNone(dir, SHA, SHA)
     expect(failures()).toBe(2)
 
-    // Swap the interpreter in place: `configurePygit2` would start a fresh count.
     const healthy = getPygit2Status()
     if (healthy.status !== 'healthy') throw new Error('expected a healthy fallback')
     Object.assign(healthy, { python: okHelper })

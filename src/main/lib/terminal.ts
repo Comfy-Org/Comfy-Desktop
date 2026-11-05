@@ -8,37 +8,15 @@ import type { InstallationRecord } from '../installations'
 import type { TerminalEnv } from '../types/sources'
 import { getActiveVenvDir, getActiveUvPath } from './pythonEnv'
 
-/**
- * Lazily load node-pty. Its index eagerly loads a native binding at import
- * time, which fails outside a built Electron runtime (e.g. vitest under plain
- * node). Loading on first spawn keeps this module importable from the eagerly
- * evaluated `sources`/IPC graph without dragging the native module into every
- * test that transitively imports it; surfaces that actually spawn a shell run
- * inside Electron where the binding loads fine.
- */
 let ptyModulePromise: Promise<typeof NodePty> | undefined
 async function loadPty(): Promise<typeof NodePty> {
   ptyModulePromise ??= import('node-pty')
   const mod = await ptyModulePromise
-  // node-pty is CJS: under esModuleInterop the API lives on the synthesized
-  // `default`; fall back to the namespace for native-ESM / mocked shapes.
   return (mod as { default?: typeof NodePty }).default ?? mod
 }
 
 const requireFromHere = createRequire(__filename)
 
-/**
- * On Unix, node-pty's `pty.fork()` exec's a small `spawn-helper` binary
- * shipped under `node-pty/prebuilds/<plat>-<arch>/`. The npm tarball
- * ships that helper with mode `0644`, and neither electron-builder's
- * `afterPack` hook nor ToDesktop's wrapper actually applies the chmod we
- * set there in production builds (the same issue `extract.ts` works
- * around for `7za` at runtime). Without `+x`, `pty.fork()` returns
- * `EACCES` inside the native layer and the JS surface just shows a dead
- * PTY — the user sees a black canvas with no prompt. Set the bit at
- * module load so every spawn that follows is safe; best-effort, since on
- * Windows there's nothing to do and a missing helper would already fail
- * loudly. */
 function ensureSpawnHelperExecutable(): void {
   if (process.platform === 'win32') return
   try {
@@ -50,40 +28,16 @@ function ensureSpawnHelperExecutable(): void {
     if (fs.existsSync(prebuiltHelper)) {
       fs.chmodSync(prebuiltHelper, 0o755)
     }
-    // Dev / locally-rebuilt copy lives under `build/Release/`. node-pty's
-    // loader prefers that path when present, so chmod it too — otherwise
-    // a rebuilt local install hits the same EACCES.
     const builtHelper = path
       .join(pkgDir, 'build', 'Release', 'spawn-helper')
       .replace('app.asar', 'app.asar.unpacked')
     if (fs.existsSync(builtHelper)) {
       fs.chmodSync(builtHelper, 0o755)
     }
-  } catch {
-    // Resolution failure means we're in a context where node-pty isn't
-    // installed (tests, CI without deps). The spawn itself would have
-    // failed already; leave the no-op.
-  }
+  } catch {}
 }
 
 ensureSpawnHelperExecutable()
-
-/**
- * Interactive per-installation shell sessions.
- *
- * Each installation gets at most one long-lived PTY, shared across every
- * surface that subscribes to it: the desktop Settings "Console" tab and the
- * ComfyUI frontend's bottom-panel terminal (across all of an install's
- * windows). One shell, one scrollback — so the same session is visible
- * everywhere and there's no confusion about which terminal is which.
- *
- * The session is independent of the ComfyUI server: it stays usable whether
- * ComfyUI is running or stopped (e.g. to pip-install something before a
- * reboot). When the user kills the shell (typing `exit`), the session is
- * marked exited and subscribers are notified; it is NOT silently respawned.
- * Callers restart it explicitly via {@link restartTerminal} (the desktop
- * Restart button, or the frontend re-opening the tab).
- */
 
 const MAX_BUFFER_CHUNKS = 1000
 const DEFAULT_SIZE = { cols: 80, rows: 30 }
@@ -103,13 +57,6 @@ function getDefaultShell(): string {
   return process.env.SHELL || '/bin/bash'
 }
 
-/**
- * Resolves the {@link TerminalEnv} for an install. Set by the IPC layer (which
- * owns the source map) so this module stays free of the source-plugin graph —
- * importing `sources/index` here would drag Electron's `app` into the eagerly
- * imported terminal graph and break unit tests. Default returns `null` (every
- * install uses the standalone fallback) until wired at startup.
- */
 type TerminalEnvResolver = (installation: InstallationRecord) => TerminalEnv | null
 let envResolver: TerminalEnvResolver = () => null
 
@@ -117,12 +64,9 @@ export function setTerminalEnvResolver(resolver: TerminalEnvResolver): void {
   envResolver = resolver
 }
 
-/** Standalone/adopted layout: `ComfyUI/.venv` (or the adopted legacy venv) with
- *  `pip` routed through the bundled uv. Used when a source has no special env. */
 function defaultTerminalEnv(inst: InstallationRecord): TerminalEnv {
   const venvDir = getActiveVenvDir(inst)
   return {
-    // Standalone/adopted keep their ComfyUI code under `<installPath>/ComfyUI`.
     cwd: path.join(inst.installPath, 'ComfyUI'),
     venvDir,
     promptName: path.basename(venvDir),
@@ -130,20 +74,11 @@ function defaultTerminalEnv(inst: InstallationRecord): TerminalEnv {
   }
 }
 
-/** Commands written into a fresh shell: activate the install's environment and
- *  (when provided) route `pip` through the right executable. A final clear hides
- *  the activation echo so the session opens on a clean prompt. */
 function initCommands(env: TerminalEnv): string[] {
   const hasActivation = !!env.venvDir || !!env.pathPrepends?.length
   const promptName = env.promptName ?? (env.venvDir ? path.basename(env.venvDir) : '')
 
   if (process.platform === 'win32') {
-    // We can't `& Activate.ps1`: PowerShell's ExecutionPolicy blocks running
-    // script *files*, and on locked-down machines even `Set-ExecutionPolicy`
-    // is unavailable, so relaxing it isn't an option. Inline commands typed
-    // into the shell are never gated by ExecutionPolicy, so replicate what
-    // Activate.ps1 does directly: set VIRTUAL_ENV, prepend the env's bin dir to
-    // PATH, drop any PYTHONHOME, and add the `(name)` prompt prefix.
     const cmds: string[] = []
     const pathPrepends = [
       ...(env.pathPrepends ?? []),
@@ -203,20 +138,14 @@ class InstallTerminal {
     return this.#exited || this.#pty === undefined
   }
 
-  /** Spawn the shell if it isn't alive. Safe to call repeatedly. */
   async ensureAlive(): Promise<void> {
     if (this.#pty && !this.#exited) return
-    // Dedupe concurrent spawns: several surfaces can call subscribeTerminal at
-    // once, and #spawn awaits before assigning #pty — without this each caller
-    // would spawn its own shell and orphan all but the last (a leaked PTY that
-    // keeps holding the install dir / venv locked).
     this.#spawnInFlight ??= this.#spawn().finally(() => {
       this.#spawnInFlight = undefined
     })
     await this.#spawnInFlight
   }
 
-  /** Kill any existing shell and start a fresh one. Clears scrollback. */
   async restart(): Promise<void> {
     this.#killPty()
     await this.#spawn()
@@ -234,9 +163,7 @@ class InstallTerminal {
     if (this.#exited || !this.#pty) return
     try {
       this.#pty.resize(this.size.cols, this.size.rows)
-    } catch {
-      // pty may have died between the exited check and here; ignore.
-    }
+    } catch {}
   }
 
   restore(): TerminalRestore {
@@ -268,12 +195,8 @@ class InstallTerminal {
     if (!inst || !inst.installPath) {
       throw new Error(`Installation not found: ${this.installationId}`)
     }
-    // A fresh shell starts with a fresh scrollback; otherwise a respawn after
-    // the user typed `exit` would leak the dead session's buffer into restore.
     this.sessionBuffer.length = 0
     const env = envResolver(inst) ?? defaultTerminalEnv(inst)
-    // Open the shell on the ComfyUI code folder; fall back to the
-    // install path when the source didn't resolve one or it no longer exists.
     const cwd = env.cwd && fs.existsSync(env.cwd) ? env.cwd : inst.installPath
     const pty = await loadPty()
     const instance = pty.spawn(getDefaultShell(), [], {
@@ -288,7 +211,6 @@ class InstallTerminal {
     this.#exited = false
 
     instance.onData((data) => {
-      // Ignore stray output from a shell we've already replaced (restart race).
       if (this.#pty !== instance) return
       this.sessionBuffer.push(data)
       if (this.sessionBuffer.length > MAX_BUFFER_CHUNKS) this.sessionBuffer.shift()
@@ -296,8 +218,6 @@ class InstallTerminal {
     })
 
     instance.onExit(() => {
-      // A restart kills the old pty and spawns a new one; the old pty's async
-      // exit must not clobber the live session or fire a spurious "exited".
       if (this.#pty !== instance) return
       this.#exited = true
       this.#pty = undefined
@@ -316,9 +236,7 @@ class InstallTerminal {
     if (!instance) return
     try {
       instance.kill()
-    } catch {
-      // Already dead; nothing to do.
-    }
+    } catch {}
   }
 
   #broadcast(channel: string, payload: unknown): void {
@@ -343,8 +261,6 @@ function getOrCreate(installationId: string): InstallTerminal {
   return term
 }
 
-/** Subscribe a renderer to an install's shell, spawning it if needed, and
- *  return the scrollback/size/exited state so the caller can repaint. */
 export async function subscribeTerminal(
   installationId: string,
   wc: WebContents
@@ -377,7 +293,6 @@ export function getTerminalRestore(installationId: string): TerminalRestore | nu
   return terminals.get(installationId)?.restore() ?? null
 }
 
-/** Tear down an install's shell entirely (e.g. when it's deleted). */
 export function disposeTerminal(installationId: string): void {
   const term = terminals.get(installationId)
   if (!term) return
@@ -385,12 +300,10 @@ export function disposeTerminal(installationId: string): void {
   terminals.delete(installationId)
 }
 
-/** Tear down every install's shell (e.g. on app quit) so no PTY child lingers. */
 export function disposeAllTerminals(): void {
   for (const id of [...terminals.keys()]) disposeTerminal(id)
 }
 
-/** Test-only: drop all sessions without spawning anything. */
 export function _resetTerminalsForTest(): void {
   for (const term of terminals.values()) term.dispose()
   terminals.clear()

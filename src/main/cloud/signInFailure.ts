@@ -1,4 +1,3 @@
-/** Why a browser sign-in failed, as a code safe to report: never the IdP's or server's text. */
 export type SignInFailureReason =
   | 'cancelled'
   | 'timeout'
@@ -23,7 +22,6 @@ export class SignInFailure extends Error {
   }
 }
 
-/** OAuth `error` codes (RFC 6749 section 4.1.2.1) that mean the person declined. */
 const DECLINED_OAUTH_ERRORS: ReadonlySet<string> = new Set(['access_denied'])
 
 export function idpCallbackFailure(oauthError: string): SignInFailure {

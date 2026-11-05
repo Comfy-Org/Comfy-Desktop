@@ -171,13 +171,8 @@ describe('setActivePanel', () => {
     expect(fixture.entry.activePanel).toBe('comfy')
   })
 
-  // After a chooser-pick in-place attach the picker leaves the host on
-  // 'progress'; prewarmAttachedPanel must reset it to 'comfy' so the rebuilt
-  // panel stays hidden instead of covering the just-attached canvas.
   it('prewarms the attached panel hidden by resetting a progress host to comfy', () => {
     const fixture = makeEntry({ installationId: 'inst-A', activePanel: 'progress' })
-    // A pre-set panelView makes the real ensurePanelView short-circuit, so the
-    // helper runs without constructing an Electron WebContentsView.
     fixture.entry.panelView = {
       webContents: makeWc()
     } as unknown as ComfyWindowEntry['panelView']
@@ -281,7 +276,6 @@ describe('refreshComfyTabBody', () => {
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
     indexInstallationId('inst-1', fixture.entry.windowKey)
     refreshComfyTabBody('inst-1')
-    // No layout pass since the entry isn't on the comfy pill.
     expect(fixture.layoutCalls).toBe(0)
   })
 })

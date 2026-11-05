@@ -1,50 +1,3 @@
-/**
- * Lifecycle E2E: ProgressModal port-conflict footer.
- *
- * Drives the post-failure UI that fires when `runAction('launch')`
- * returns `{ ok: false, portConflict: {...} }`. The real port-conflict
- * detection in `src/main/lib/ipc/sessionActions/launch.ts` is covered
- * by unit tests; what's NOT pinned today is the user-facing recovery
- * path:
- *   - the port-conflict banner replaces the generic "Operation failed"
- *     banner when `result.portConflict` is set,
- *   - "Use port N instead" → fires `runAction('launch', { portOverride })`,
- *   - "Stop process and retry" → confirms in a BaseAlert, hits
- *     `killPortProcess`, then re-invokes `op.apiCall` (NOT the
- *     fresh-launch fallback).
- *
- * We inject the port-conflict result via `injectPortConflictResult`
- * rather than binding a real socket because:
- *   1. handleUseNextPort fires a fresh `runAction('launch')` whose
- *      subsequent failure (no real Python install) would race the IPC
- *      assertion and inject confusing noise,
- *   2. handleKillProcess invokes the platform's `killByPort` against
- *      whatever PID owns the port — the test must not unleash
- *      taskkill / SIGKILL against an arbitrary process the harness
- *      doesn't own.
- *
- * The IPC assertions (run-action with portOverride; kill-port-process
- * with the conflict port; op.apiCall re-invocation counter) prove the
- * UI buttons drive the production paths end-to-end.
- *
- * FOLLOWUP: add a sibling lifecycle test that drives a REAL port
- * conflict against the live `lifecycle.test.ts` standalone install
- * (which already pays the ~500MB download cost). A real test would:
- *   1. bind the install's launch port via `net.createServer` so the
- *      handler in `launch.ts` actually observes `isPortListening` true,
- *   2. drive `runAction('launch')` from the picker / dashboard and
- *      assert the port-conflict footer mounts from a real backend
- *      result (not an injected one),
- *   3. for "Use Next Port" — pre-stub `findAvailablePort` (or scope
- *      the net.createServer to a fixed busy port + assert the second
- *      launch attempt succeeds on `nextPort`),
- *   4. for "Kill Process" — scope `killByPort` to only kill PIDs the
- *      test owns (the bound server) so taskkill / SIGKILL cannot
- *      escape onto the Playwright runner itself.
- * The synthetic test here pins the UI contract; a real-conflict test
- * pins that the main-side detection path still wires through to the
- * same ProgressModal surface.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -121,9 +74,6 @@ test('port-conflict banner + dual-action footer render when result.portConflict 
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 5_000 })
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 5_000 })
 
-  // The generic error footer (Reboot) must NOT appear alongside the
-  // port-conflict footer — they live in mutually exclusive branches of
-  // ProgressModal's footer template.
   expect(await ctx.panel.exists(byTestId(TID.progressReboot))).toBe(false)
 })
 
@@ -138,12 +88,9 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
 
   expect(await ctx.panel.click(byTestId(TID.progressPortConflictKill))).toBe(true)
 
-  // BaseAlert confirm appears in the panel (modal.confirm({...}) inside
-  // handleKillProcess). Click confirm to proceed.
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
   expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
-  // killPortProcess IPC fires with the conflict port.
   await expect
     .poll(
       async () => (await getIpcInvocations(ctx.app, 'kill-port-process')).length,
@@ -153,11 +100,6 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
   const killCalls = await getIpcInvocations(ctx.app, 'kill-port-process')
   expect(killCalls).toEqual([OCCUPIED_PORT])
 
-  // After kill resolves ok, handleKillProcess calls startOperation
-  // with `op.apiCall || (() => runAction('launch'))`. Our injected
-  // apiCall is present, so it must be re-invoked (counter advances
-  // 1 → 2). The fresh-launch fallback would leave the counter at 1
-  // AND fire a run-action IPC — neither happens here.
   await expect
     .poll(
       () =>
@@ -175,11 +117,6 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
   ).toEqual([])
 })
 
-// Runs LAST: the click fires a REAL `runAction('launch')` whose op stays
-// in flight until main's launch attempt fails. `handleShowProgress` skips
-// `startOperation` while an unfinished op exists for the install, so a
-// subsequent `injectConflict` in a later test would silently no-op on a
-// slow runner where the launch hasn't failed yet.
 test('Use Next Port fires runAction(launch) with portOverride @windows @macos @linux', async () => {
   await injectConflict()
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 10_000 })

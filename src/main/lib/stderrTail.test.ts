@@ -14,8 +14,6 @@ describe('stripAnsi', () => {
     expect(stripAnsi('no codes here')).toBe('no codes here')
   })
 
-  // ComfyUI's ColoredFormatter wraps lines in bold + level color around the
-  // [LEVEL] tag, plus an optional whole-message color.
   it('strips ComfyUI ColoredFormatter output', () => {
     expect(stripAnsi('\u001B[1m\u001B[31m[ERROR]\u001B[0m Failed to validate prompt')).toBe(
       '[ERROR] Failed to validate prompt'

@@ -40,14 +40,9 @@ const probing = ref(false)
 
 const saveDisabled = computed(() => !trackPath.value || !selectedProbe.value)
 
-/** Generation counter — bumped on every probe so stale async responses
- *  from an earlier path are discarded once the field changes again. */
 let probeGeneration = 0
 
 function open(): void {
-  // Bump so any probe still in flight from a previous session is
-  // discarded by `probe()`'s generation check and can't populate the
-  // freshly-reset state.
   probeGeneration++
   trackPath.value = ''
   trackName.value = ''
@@ -87,11 +82,9 @@ async function probe(dirPath: string): Promise<void> {
   try {
     results = await window.api.probeInstallation(dirPath)
   } finally {
-    // Discard if the field moved on while this probe was in flight.
     if (generation === probeGeneration) probing.value = false
   }
 
-  // Stale response from an earlier path — drop it.
   if (generation !== probeGeneration) return
   probeResults.value = results
   if (results.length > 0) {
@@ -176,9 +169,6 @@ async function handleSave(): Promise<void> {
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
-  // A probe may resolve the real install root when the user pointed at a nested
-  // folder (e.g. the `ComfyUI/` dir of a standalone/portable install). Prefer
-  // that over the raw picked path so runtime paths resolve correctly.
   const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
   const data: Record<string, unknown> = {
     name,

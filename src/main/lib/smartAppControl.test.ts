@@ -14,7 +14,6 @@ vi.mock('os', async (importOriginal) => ({
 
 import { parsePolicyKeyListing, readSmartAppControlState } from './smartAppControl'
 
-/** `reg query HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy` as Windows 11 prints it. */
 function listing(stateLine: string | null): string {
   return [
     '',
@@ -68,7 +67,6 @@ describe('readSmartAppControlState', () => {
 
   beforeEach(() => {
     execFileMock.mockReset()
-    // Fail by default, so a test that should not read fails on its assertion, not a timeout.
     execFileMock.mockImplementation((_file, _args, _opts, cb) =>
       cb(new Error('unexpected'), '', '')
     )

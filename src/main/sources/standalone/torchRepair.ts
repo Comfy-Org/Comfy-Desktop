@@ -21,9 +21,6 @@ import * as telemetry from '../../lib/telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import type { InstallationRecord } from '../../installations'
 
-// Vendor variant → the accelerator tag fragment its torch wheel carries. CPU and
-// mac (MPS, no suffix) are intentionally absent: CPU is a deliberate choice, and
-// the macOS wheel has no suffix and always supports MPS, so neither is "broken".
 const EXPECTED_FAMILY: Record<string, string> = {
   nvidia: 'cu',
   amd: 'rocm',
@@ -31,13 +28,9 @@ const EXPECTED_FAMILY: Record<string, string> = {
 }
 
 export interface TorchMismatch {
-  /** Vendor key, e.g. 'nvidia' | 'amd' | 'intel-xpu'. */
   variantBase: string
-  /** Tag fragment the install should have, e.g. 'cu'. */
   expectedFamily: string
-  /** Full installed torch version string, e.g. '2.12.0' or '2.10.0+cu128'. */
   installedVersion: string
-  /** Local-version tag, e.g. 'cu128' | 'cpu' | '' (bare). */
   installedTag: string
 }
 
@@ -48,16 +41,6 @@ interface AcceleratorEvidence {
   xpu: boolean
 }
 
-/**
- * Read accelerator evidence from `torch/version.py` (the authoritative signal
- * baked into the wheel: each backend field is a non-null string for an
- * accelerated build, None for CPU). This distinguishes the bug's CPU torch —
- * which on Windows is a *bare* version like `2.12.0` with `cuda = None` — from a
- * user-installed PyPI default wheel, which is also bare-versioned but CUDA-
- * capable. Without it we would wrongly "repair" a user's deliberately-chosen
- * torch. The fields are written with type annotations
- * (`cuda: Optional[str] = '13.0'`), so the regex tolerates an optional `: type`.
- */
 function readTorchAcceleratorEvidence(sitePackages: string): AcceleratorEvidence {
   const empty: AcceleratorEvidence = { cuda: false, hip: false, rocm: false, xpu: false }
   try {
@@ -75,28 +58,22 @@ function readTorchAcceleratorEvidence(sitePackages: string): AcceleratorEvidence
   }
 }
 
-/** Local-version tag of a torch version string, e.g. '2.10.0+cu128' → 'cu128'. */
 function localTag(version: string | null): string {
   return version && version.includes('+')
     ? version.slice(version.indexOf('+') + 1).toLowerCase()
     : ''
 }
 
-/** Read the installed torch version from a torch dist-info dir in site-packages. */
 function readTorchVersionFromSite(sitePackages: string): string | null {
   try {
     for (const entry of fs.readdirSync(sitePackages)) {
       const m = entry.match(/^torch-(.+?)\.dist-info$/i)
       if (m) return m[1]!
     }
-  } catch {
-    /* ignore */
-  }
+  } catch {}
   return null
 }
 
-/** Whether a torch install carries the accelerator its GPU variant requires,
- *  judged by either the wheel's local tag or the version.py backend fields. */
 function hasExpectedAccelerator(
   variantBase: string,
   tag: string,
@@ -108,12 +85,6 @@ function hasExpectedAccelerator(
   return false
 }
 
-/**
- * Detect a GPU-variant install whose torch lacks its expected accelerator.
- * Use capability evidence from version.py or the wheel's local tag rather than
- * version numbers, so a user's choice of version is not treated as damage.
- * Return null for a healthy, CPU, macOS, adopted, or unreadable torch install.
- */
 export function getTorchVendorMismatch(installation: InstallationRecord): TorchMismatch | null {
   if (installation.adopted === true) return null
   const variant = typeof installation.variant === 'string' ? installation.variant : ''
@@ -123,12 +94,12 @@ export function getTorchVendorMismatch(installation: InstallationRecord): TorchM
   const variantBase = Object.keys(EXPECTED_FAMILY).find(
     (k) => base === k || base.startsWith(`${k}-`)
   )
-  if (!variantBase) return null // cpu, mps, or unknown — nothing to repair
+  if (!variantBase) return null
 
   const sitePackages = findSitePackages(getActiveVenvDir(installation))
   if (!sitePackages) return null
   const installedVersion = getTorchVersion(installation)
-  if (!installedVersion) return null // can't read torch — leave it alone
+  if (!installedVersion) return null
 
   const installedTag = localTag(installedVersion)
   const evidence = readTorchAcceleratorEvidence(sitePackages)
@@ -149,13 +120,6 @@ export interface TorchRepairTools {
   signal?: AbortSignal
 }
 
-/**
- * Re-acquire a verified index-served stack via pip, through the journaled
- * whole-venv transaction: repair runs against the LIVE venv, and an in-place
- * pip install interrupted by a cancelled launch could remove the remaining
- * torch packages with no rollback. The transaction mutates a copy, verifies
- * it, and restores the original on any failure.
- */
 async function repairTorchViaPip(
   installation: InstallationRecord,
   verifiedRef: PersistedTorchStack,
@@ -174,8 +138,6 @@ async function repairTorchViaPip(
   tools.sendProgress('torchRepair', { percent: -1 })
   const prepared = preparePipStack(packages, { ...verifiedRef, date: '', comfyuiVersion: '' })
   const result = await applyTorchStackTransaction(installation, prepared, tools)
-  // Cancellation surfaces as a throw so the caller doesn't count it as a
-  // failed repair attempt (the transaction already rolled the venv back).
   if (!result.ok && tools.signal?.aborted) throw new Error('Cancelled')
   return result
 }
@@ -183,26 +145,9 @@ async function repairTorchViaPip(
 export interface TorchRepairResult {
   ok: boolean
   message: string
-  /** The verified stack ref repair restored, when it targeted one — the
-   *  caller re-persists it (reconciliation cleared it when it saw the
-   *  damaged tuple). Absent when the install-time bundle was used. */
   restoredRef?: PersistedTorchStack
 }
 
-/**
- * Restore the correct accelerated torch. Prefers the last *verified* stack
- * (set by a completed PyTorch change) over the install-time bundle, so
- * repair restores the stack the user actually chose instead of reverting a
- * deliberate switch. `verifiedRef` lets the launch path pass the ref it
- * captured BEFORE reconciliation (which clears a verified ref the moment it
- * sees the damaged tuple); defaults to the ref on the record. An
- * index-served ref is re-acquired via pip from its trusted index; bundle
- * refs and the install-time fallback re-download the bundle (reusing the
- * on-disk download cache — `maxCachedDownloads` defaults to 1, so it is
- * typically still cached) and copy its torch-family packages over the
- * install's venv. Never touches ComfyUI source, .git, models, or non-torch
- * packages.
- */
 export async function repairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
@@ -211,7 +156,6 @@ export async function repairTorch(
   const installPath = installation.installPath
   const tmpDir = path.join(installPath, '.torch-repair-tmp')
 
-  // Index-served stacks have no bundle at all — pip is their only source.
   if (verifiedRef && verifiedRef.source.kind !== 'comfy-bundle') {
     const result = await repairTorchViaPip(installation, verifiedRef, tools)
     return result.ok ? { ...result, restoredRef: verifiedRef } : result
@@ -227,8 +171,6 @@ export async function repairTorch(
     await fs.promises.rm(tmpDir, { recursive: true, force: true })
     await fs.promises.mkdir(tmpDir, { recursive: true })
 
-    // A verified comfy-bundle stack carries its own download info — restore
-    // the stack the user actually chose, not the install-time bundle.
     const verifiedBundle = verifiedRef?.bundle
     const verifiedTag =
       verifiedRef?.source.kind === 'comfy-bundle' ? verifiedRef.source.bundleTag : undefined
@@ -261,26 +203,14 @@ export async function repairTorch(
       return { ok: false, message: 'could not locate the installation venv' }
     }
 
-    // Trust the shipped bundle for *which* torch is correct — it's our own
-    // artifact, the same one every fresh install of this variant uses, so if it
-    // lacked GPU torch every fresh install would be broken too. Only guard the
-    // mechanics: the bundle must actually contain a torch package, and (below)
-    // the venv's torch version must match the bundle's afterward. Both rely on
-    // the dist-info dir name alone — nothing inside torch that breaks when
-    // PyTorch changes how version.py is written.
     const srcVersion = readTorchVersionFromSite(srcSite)
     if (!srcVersion) {
       return { ok: false, message: 'bundle contains no PyTorch package' }
     }
 
-    // Drives the synthetic `torchRepair` launch step (label carries the copy);
-    // the caller emits the steps payload before this runs. See `handleLaunch`.
     tools.sendProgress('torchRepair', { percent: -1 })
     await copyTorchFamily(srcSite, dstSite, tools.signal)
 
-    // Verify only the mechanics: the venv's torch version now matches the
-    // bundle's. Uses the dist-info dir name alone, so it can't be broken by
-    // PyTorch changing how version.py is written.
     const after = readTorchVersionFromSite(dstSite)
     if (after !== srcVersion) {
       return {
@@ -307,36 +237,15 @@ interface TorchRepairState {
   at?: number
 }
 
-/**
- * One-time, autorun-at-launch repair entry point. Detects the CPU-torch-on-
- * GPU-variant damage and, if found, restores the accelerated build from the
- * bundle. Bounded to MAX_REPAIR_ATTEMPTS so a repeatedly-failing download can't
- * nag forever. A failed repair is NON-fatal: CPU torch still runs (slowly), so
- * we let the launch proceed rather than block it. Cancellation propagates to the
- * caller and is not counted as a failed attempt. Returns true when a repair
- * succeeded (caller should refresh the installation record).
- *
- * `opts.preReconcileVerified` is the verified stack ref captured BEFORE
- * launch reconciliation ran: reconciliation clears a verified ref the moment
- * it sees the damaged tuple, so reading the record here would lose the stack
- * the user actually chose and revert to the install-time bundle.
- */
 export async function maybeRepairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
   opts?: { preReconcileVerified?: PersistedTorchStack | null }
 ): Promise<boolean> {
-  // Best-effort sweep of a multi-GB temp extraction orphaned by a hard kill.
   const orphan = path.join(installation.installPath, '.torch-repair-tmp')
   if (fs.existsSync(orphan))
     await fs.promises.rm(orphan, { recursive: true, force: true }).catch(() => {})
 
-  // Recover from a swap that died mid-way: an uncommitted swap's backups hold
-  // the only good copies, and mismatch detection below bails when torch is
-  // unreadable. The launch path already runs this recovery hard-gated (a
-  // failed rollback fails the launch); this retry covers non-launch callers
-  // and is best-effort - the marker survives a failure, so the next gated
-  // recovery attempt retries the rollback.
   const liveSite = findSitePackages(getActiveVenvDir(installation))
   if (liveSite) {
     try {
@@ -349,9 +258,6 @@ export async function maybeRepairTorch(
     }
   }
 
-  // A completed repair must not latch repair off forever: new damage after a
-  // successful repair is a new incident, so the attempt budget resets. Only a
-  // string of *failed* attempts is bounded.
   const state = installation.torchRepair as TorchRepairState | undefined
   const priorAttempts = state?.status === 'done' ? 0 : (state?.attempts ?? 0)
   if (priorAttempts >= MAX_REPAIR_ATTEMPTS) return false
@@ -376,7 +282,7 @@ export async function maybeRepairTorch(
       opts?.preReconcileVerified ?? getLastVerifiedTorchStack(installation)
     )
   } catch (err) {
-    if (tools.signal?.aborted) throw err // cancellation — let launch handle it, don't count
+    if (tools.signal?.aborted) throw err
     result = { ok: false, message: (err as Error).message }
   }
 
@@ -384,9 +290,6 @@ export async function maybeRepairTorch(
   if (result.ok) {
     await tools.update({
       torchRepair: { status: 'done', attempts, at: Date.now() },
-      // Re-persist the ref repair restored: reconciliation cleared it when it
-      // saw the damaged tuple, and the cached catalog may not re-adopt it
-      // (remote-only index entries are absent until a check-update runs).
       ...(result.restoredRef
         ? { lastVerifiedTorchStack: result.restoredRef, observedTorchStack: null }
         : {})

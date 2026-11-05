@@ -35,13 +35,11 @@ function exitCmd(code: number): { command: string; args: string[] } {
 }
 
 function multiLineCmd(lines: string[]): { command: string; args: string[] } {
-  // Use node -e to avoid Windows echo trailing space issues
   const script = lines.map((l) => `console.log(${JSON.stringify(l)})`).join(';')
   return { command: 'node', args: ['-e', script] }
 }
 
 function sleepCmd(): { command: string; args: string[] } {
-  // Use node so the process is killable on all platforms
   return { command: 'node', args: ['-e', 'setTimeout(() => {}, 60000)'] }
 }
 
@@ -53,7 +51,6 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
   })
 
   afterEach(async () => {
-    // Let lingering taskkill processes release file handles; Windows holds dir locks briefly.
     await new Promise((r) => setTimeout(r, 200))
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true })
@@ -116,7 +113,6 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
       controller.signal
     )
 
-    // Killed process exits non-zero. No elapsed-time assertion: Windows taskkill can be slow.
     expect(result.code).not.toBe(0)
   })
 
@@ -132,7 +128,6 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
   })
 
   it('collects both stdout and stderr independently', async () => {
-    // Script that writes to both stdout and stderr
     const script = 'process.stdout.write("out"); process.stderr.write("err")'
     const result = await spawnCommand('node', ['-e', script], tmpDir, undefined, undefined)
     expect(result.stdout).toBe('out')

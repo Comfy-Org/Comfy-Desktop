@@ -6,10 +6,6 @@ import path from 'path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { WriteStream } from 'fs'
 
-// Electron's home for this run: a directory of its own, so concurrent runs on one machine never
-// rename each other's settings.json.tmp out from under a write. The env overrides paths.ts would
-// prefer over it are cleared before any import reads them (settings.ts fixes its path at import);
-// cleared rather than pointed at the directory, which only exists from the first getPath call.
 const electronHome = vi.hoisted(() => {
   const overrides = [
     'XDG_CONFIG_HOME',
@@ -23,8 +19,6 @@ const electronHome = vi.hoisted(() => {
   return { dir: '', saved }
 })
 afterAll(() => {
-  // Env first, so a failed removal can't keep it cleared. Only matters with --no-isolate: by default
-  // each test file runs in a fresh worker. The retries cover Windows lock errors (EBUSY/EPERM).
   for (const [name, value] of Object.entries(electronHome.saved)) {
     if (value !== undefined) process.env[name] = value
   }
@@ -33,7 +27,6 @@ afterAll(() => {
   }
 })
 
-// Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -51,8 +44,6 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-// Override only the model-download startup gate; everything else in the
-// download manager stays real (it is already part of launch.ts's graph).
 const modelStartup = vi.hoisted(() => ({
   impl: null as null | (() => Promise<{ safe: boolean; unsafePaths: string[] }>)
 }))
@@ -65,48 +56,28 @@ vi.mock('../../comfyDownloadManager', async (importOriginal) => {
   }
 })
 
-/** Drives a real `handleLaunch` far enough to reach the pre-spawn gates. Everything the launch
- *  touches on the way (source, args schema, grants, taps, spawn) is answered from here, so a
- *  test can park the launch at an exact point and observe what was reported by then. */
 const launchHarness = vi.hoisted(() => ({
   launchCommand: null as null | Record<string, unknown>,
-  /** Every `planCoreBetaArgs` input, from the launch and the preview alike. */
   plans: [] as unknown[],
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
   registryThrows: false,
   registryCalls: 0,
   betaEnabled: true,
-  /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
-   *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
-  /** Stands in for `settings.readSettled`; null = the real one. */
   readSettled: null as null | ((signal?: AbortSignal) => Promise<unknown>),
   grants: [] as CoreBetaGrant[],
-  /** Stands in for the git ancestry checks when set; `null` runs the real ones. */
   commits: null as null | CoreCommitState,
-  /** The SHAs each launch asked the ancestry checks about. */
   commitShas: [] as string[][],
-  /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
-   *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
-  /** A child whose process could not be created (ENOENT): no 'spawn', and an 'error' wherever
-   *  the launch listens for one (the skip-port path doesn't). */
   spawnFails: false,
-  /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
-   *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
   waitForPort: null as null | (() => Promise<void>),
   nextPort: 48999,
-  /** Ports the harness reports as held (by pid 31337); null = real probes. */
   busyPorts: null as null | number[],
-  /** Ports `waitForPortFree` was asked to wait on. */
   portFreeWaits: [] as number[],
-  /** The listeners `findPidsByPort` reports on a busy port. */
   busyPids: [31337] as number[],
-  /** A live Desktop port lock on a busy port (the pid it names); null = none. */
   portLockPid: null as null | number,
-  /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true,
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
@@ -118,11 +89,8 @@ const launchHarness = vi.hoisted(() => ({
   recordsUpdateThrows: false,
   recordsUpdateGate: null as null | Promise<void>,
   campaignsReject: false,
-  /** Installation records `installations.list` answers with, by id; null = the real store. */
   installRecords: null as null | Record<string, { name: string; sourceId: string }>,
-  /** Holds every `installations.list` call until it resolves; null = answer at once. */
   listGate: null as null | Promise<void>,
-  /** Stands in for a remote server's URL poll; null = the real one. */
   waitForUrl: null as null | (() => Promise<void>)
 }))
 
@@ -179,9 +147,7 @@ vi.mock('../shared', async (importOriginal) => {
         | { emit?: (event: string, err?: Error) => void; listenerCount?: (event: string) => number }
         | undefined
       if (typeof proc?.emit !== 'function') return proc
-      // A real child emits 'spawn' asynchronously, once its process exists.
       if (!launchHarness.spawnFails) queueMicrotask(() => proc.emit!('spawn'))
-      // After the launch has wired its listeners, as a real creation error arrives.
       else
         setImmediate(() => {
           if ((proc.listenerCount?.('error') ?? 0) > 0)
@@ -224,7 +190,6 @@ vi.mock('../shared', async (importOriginal) => {
     }),
     waitForPortFree: async (port: number) => {
       launchHarness.portFreeWaits.push(port)
-      // The prior process's port frees up during the wait, as the socket teardown finishes.
       if (launchHarness.busyPorts) {
         launchHarness.busyPorts = launchHarness.busyPorts.filter((p) => p !== port)
       }
@@ -248,15 +213,10 @@ vi.mock('../shared', async (importOriginal) => {
       launchHarness.busyPorts
         ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
         : actual.getProcessInfo(...args),
-    // Never let a test reach the real one: the fake child's pid is invented, and killing it
-    // would signal whatever real process happens to hold that pid.
     killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
   }
 })
 
-/** The ownership record module, answered from here. Never the real one: records would land in
- *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
- *  live process at one of those pids to be an orphan. */
 const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
@@ -268,7 +228,6 @@ const ownership = vi.hoisted(() => ({
 vi.mock('../../comfyProcessRecord', () => ({
   resolvePriorProcess: async (sessionKey: string, opts: unknown) => {
     ownership.priorCalls.push({ sessionKey, opts })
-    // Lets a test act while the check is "running" (e.g. cancel the launch).
     ownership.onResolve?.(opts)
     if (ownership.priorThrows) throw new Error('state dir unreadable')
     return ownership.prior
@@ -310,8 +269,6 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   }
 })
 
-/** Stands in for the uv subprocess the agent-requirements step drives, so a launch
- *  under test installs nothing and a test can choose the outcome. */
 const pipHarness = vi.hoisted(() => ({
   calls: [] as unknown[][],
   checks: [] as unknown[][],
@@ -358,7 +315,6 @@ vi.mock('../../coreBetaAncestry', async (importOriginal) => {
       launchHarness.commitShas.push([...args[2]])
       const { commits } = launchHarness
       if (commits === null) return actual.resolveCoreCommitState(...args)
-      // Like the real one, it proves only what this call asked about.
       const asked = new Set(args[2])
       return Promise.resolve({
         head: commits.head,
@@ -552,7 +508,6 @@ describe('isCrashedExit', () => {
   })
 
   it('treats a POSIX signal-only kill (code null, signal set) as crashed', () => {
-    // SIGKILL via `kill -9` or OOM: Node hands back null code + signal.
     expect(isCrashedExit(null, 'SIGKILL')).toBe(true)
     expect(isCrashedExit(null, 'SIGTERM')).toBe(true)
   })
@@ -562,7 +517,6 @@ describe('isCrashedExit', () => {
   })
 
   it('treats Windows TerminateProcess (numeric code, null signal) as crashed', () => {
-    // Windows force-kill reports a large unsigned code; signal is always null.
     expect(isCrashedExit(4294967295, null)).toBe(true)
     expect(isCrashedExit(0xc0000005, null)).toBe(true)
   })
@@ -612,7 +566,6 @@ describe('onProcessTerminated', () => {
       vi.runAllTimers()
 
       expect(callback).toHaveBeenCalledOnce()
-      // Something still holds the pipes: reported, never acted on.
       expect(callback).toHaveBeenCalledWith(null, 'SIGKILL', { pipesHeld: true })
     } finally {
       vi.useRealTimers()
@@ -643,10 +596,6 @@ describe('_cleanupFailedLaunchSetup', () => {
     expect(abort.signal.aborted).toBe(true)
   })
 
-  // Arming happens just before the spawn, and on the `skipPortWait` path a spawn failure
-  // rethrows out of `guardLaunchSetup` rather than reaching the `!launchResult.ok` cleanup.
-  // This is the chokepoint every guarded setup failure passes through, so the claim is
-  // dropped here: otherwise the title bar announces a beta feature for a Core that never ran.
   it('drops a beta claim armed by a launch that then failed to spawn', () => {
     _resetBetaNotice()
     armBetaActivationNotice(INSTALL, [{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
@@ -684,8 +633,6 @@ describe('handleLaunch model-download startup await (#1322)', () => {
   const ctxFor = (installationId: string): ActionContext => ({
     event: { sender: { send: vi.fn() } } as unknown as Electron.IpcMainInvokeEvent,
     installationId,
-    // An unknown source makes runLaunch fail at the FIRST check after the
-    // gate, proving how far a safe pass proceeded without spawning anything.
     inst: installOf('not-a-real-source'),
     actionData: {}
   })
@@ -701,10 +648,6 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     })
     const res = await handleLaunch(ctxFor('gate-unsafe-paths'))
     expect(res.ok).toBe(false)
-    // Failure comes from the NEXT check (unknown source): the unsafe pass
-    // warned and the launch proceeded past the model-download startup await.
-    // A truncated file that fails to load in ComfyUI is strictly better than
-    // refusing to start; the Downloads warning rows carry the details.
     expect(res.message).toMatch(/unknownSource|unrecognized source/)
   })
 
@@ -728,7 +671,6 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     modelStartup.impl = async () => ({ safe: true, unsafePaths: [] })
     const res = await handleLaunch(ctxFor('gate-safe'))
     expect(res.ok).toBe(false)
-    // Failure comes from the NEXT check (unknown source), not the gate.
     expect(res.message).toMatch(/unknownSource|unrecognized source/)
   })
 
@@ -780,8 +722,6 @@ describe('createAssetsTapSafe', () => {
     }).not.toThrow()
     expect(consoleError).toHaveBeenCalled()
 
-    // Every lifecycle call the launch path makes must be a safe no-op on the
-    // substitute, or containment at construction buys nothing.
     const inert = tap as unknown as ReturnType<typeof createAssetsTapSafe>
     expect(() => {
       inert.beginBoot()
@@ -931,8 +871,6 @@ describe('attachLaunchStreams event-log tap wiring', () => {
   })
 })
 
-/** Every arg the pinned core knows is boolean here; the beta grants and the
- *  opposite tokens under test are all switches. */
 const schemaOf = (...names: string[]): ComfyArgsSchema => ({
   args: names.map((name) => ({
     name,
@@ -1117,7 +1055,6 @@ describe('buildLaunchArgs core beta injection', () => {
       '[assets] --enable-assets withheld: core 0.3.81 proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n',
       '[core-beta] --enable-assets withheld: entry 1: no ancestry-proven release (base 0.3.81)\n'
     ])
-    // Refusing the version claim is not the core refusing the arg; telemetry must not conflate them.
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
@@ -1134,7 +1071,6 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 
   it('drops a granted arg the running core does not accept, and reports it', () => {
-    // Version window and toggle both pass; only the args schema says no.
     const built = build({ userArgs: ['--listen'], schema: schemaOf('listen') })
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
@@ -1201,14 +1137,10 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
     expect(built.args.filter((arg) => arg === '--enable-assets')).toHaveLength(1)
     expect(built.beta.applied).toEqual([])
-    // A grant withheld because the user already had the arg is not a grant the core refused.
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
   it("keeps the user's own --enable-assets when the beta toggle is off", () => {
-    // `--enable-assets` is a first-class launch argument the Desktop UI invites users to set.
-    // Grants may only ADD flags: opting out of beta withdraws the GRANT, never the user's
-    // own argument.
     const built = build({
       userArgs: ['--enable-assets', '--listen'],
       schema: schemaOf('enable-assets', 'listen'),
@@ -1243,8 +1175,6 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 
   it('drops a user arg the running core cannot parse', () => {
-    // With no grant in play, the args schema is the only thing left that removes a user token —
-    // an unparseable `--enable-assets` goes exactly like any other unsupported user arg.
     const built = build({
       userArgs: ['--enable-assets', '--listen'],
       schema: schemaOf('listen'),
@@ -1257,8 +1187,6 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 
   it('suppresses the grant when the user typed the opposite the core cannot parse', () => {
-    // Conflict suppression reads the UNFILTERED user args, so a user who opted out still wins
-    // even on a core too old to parse their token.
     const built = build({
       userArgs: ['--disable-assets', '--listen'],
       schema: schemaOf('enable-assets', 'listen')
@@ -1311,12 +1239,10 @@ describe('buildLaunchArgs core beta injection', () => {
     ['opted in', true],
     ['opted out', false]
   ])('carries the resolved beta toggle on the DTO when %s', (_label, betaEnabled) => {
-    // The DTO carries opt_state even when the launch never reaches argument assembly.
     expect(build({ schema: schemaOf('enable-assets'), betaEnabled }).beta.optedIn).toBe(betaEnabled)
   })
 
   it('keeps injecting for a user who declined telemetry but opted into beta features', () => {
-    // Consent is not an input here at all — the gate is the beta toggle alone.
     telemetry.setConsentState('denied')
     const built = build({ schema: schemaOf('enable-assets') })
 
@@ -1328,12 +1254,6 @@ describe('buildLaunchArgs core beta injection', () => {
 const RECORD = '[core-beta] --enable-assets (core 0.3.81 >= 0.3.80, opted in)\n'
 const CHILD_LINE = 'Total VRAM 24576 MB, total RAM 64000 MB\n'
 
-// Both launch paths build the same sink pair — the log stream from
-// `acquireLaunchResources` and `makeSendOutput` for the renderer — so the wiring is pinned
-// once. This was a `describe.each(['skip-port','normal'])` whose callback took no parameter:
-// the label alternated while the body stayed byte-identical, running the same assertions
-// twice and proving nothing about either path. Path-specific behaviour is covered by the
-// report-placement tests below instead.
 describe('emitCoreBetaRecords', () => {
   const sinksWithBuffers = (): {
     sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
@@ -1456,24 +1376,18 @@ describe('core beta report placement', () => {
     launchHarness.commitShas = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
-    // Both halves of the activation-notice state: the in-process pending queue and the
-    // persisted announced list, which the real settings module keeps in this run's temp
-    // app dir. Without the reset, the first test to launch spends the notice for the rest.
     _resetBetaNotice()
     settingsModule.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, [])
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       return fakeChild()
     }
-    // `process.execPath` is a real executable, so the pre-launch existsSync passes without
-    // mocking fs. `-s <main.py>` is the shape the arg splitter keys on.
     launchHarness.launchCommand = {
       cmd: process.execPath,
       args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
       cwd: installDir,
       skipPortWait: true
     }
-    // The assets tap ignores lines seen without consent, so these record events as a consenting user.
     vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
     vi.spyOn(telemetry, 'emit').mockImplementation(((
       event: string,
@@ -1497,8 +1411,6 @@ describe('core beta report placement', () => {
 
   const reportedEvents = (): string[] => events.map((e) => e.event)
 
-  /** Minimal live child: streams to attach to, a pid to kill, and no exit unless a test
-   *  emits one, so a launch that reaches spawn settles instead of hanging. */
   function fakeChild(): FakeChild {
     const proc = new EventEmitter() as FakeChild
     proc.stdout = new EventEmitter()
@@ -1549,7 +1461,6 @@ describe('core beta report placement', () => {
         'listen',
         'feature-flag'
       ]
-      // Assets as production gets it: Desktop's own decision on a core with the floor commit.
       launchHarness.grants = []
       launchHarness.commits = {
         head: 'e'.repeat(40),
@@ -1558,7 +1469,6 @@ describe('core beta report placement', () => {
     })
 
     it('enrols an assets-on machine on enrol: arg after slot #0, a record, and the enrolled event', async () => {
-      // A fixed clock, so the lag is exactly the answer's age whatever the wall clock does.
       const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 12))
       onTestFinished(() => clock.mockRestore())
       serveCampaign('enrol')
@@ -1626,7 +1536,6 @@ describe('core beta report placement', () => {
           skipPortWait: false,
           port: 48233
         }
-        // Never boots, so only the creation error can settle the attempt.
         launchHarness.waitForPort = () => new Promise<void>(() => {})
       }
       await handleLaunch(ctxFor(`campaign-spawn-failed-${String(skip)}`))
@@ -1870,7 +1779,6 @@ describe('core beta report placement', () => {
       const res = await handleLaunch(ctxFor('harness-settings-cancelled'))
 
       expect(res).toEqual({ ok: false, cancelled: true })
-      // The wait itself sees the cancel, so it ends at once rather than after its retries.
       expect(waitSignal?.aborted).toBe(true)
       expect(spawned).toBe(false)
     })
@@ -1882,7 +1790,6 @@ describe('core beta report placement', () => {
         host: '127.0.0.1',
         port: '8188'
       }
-      // The remote server answers at once: no real request leaves the test.
       launchHarness.waitForUrl = async () => {}
       let reads = 0
       launchHarness.readSettled = async () => {
@@ -2057,7 +1964,6 @@ describe('core beta report placement', () => {
   })
 
   it('launches without a log file when the log directory cannot be created', async () => {
-    // A plain file where the directory should be: `mkdirSync(..., { recursive: true })` throws ENOTDIR.
     fs.writeFileSync(path.join(installDir, 'logs'), '')
 
     const res = await handleLaunch(ctxFor('harness-logdir-blocked'))
@@ -2072,8 +1978,6 @@ describe('core beta report placement', () => {
     fs.chmodSync(logs, 0o500)
     try {
       const res = await handleLaunch(ctxFor('harness-log-unopenable'))
-      // Let the asynchronous open fail while the directory is still read-only. (As root it stays
-      // writable, and the launch simply has its log.)
       await new Promise((resolve) => setTimeout(resolve, 50))
       expect(res.ok, 'a log file problem must not fail the launch').toBe(true)
     } finally {
@@ -2092,9 +1996,6 @@ describe('core beta report placement', () => {
   })
 
   it('arms nothing on a launch whose grants the args schema refused', async () => {
-    // A grant the running core cannot parse is dropped as `dropped_unsupported`, so the
-    // feature is NOT on and announcing it would be a lie. The schema is the gate the notice
-    // inherits by reading `applied` rather than the selected set.
     launchHarness.schemaNames = ['listen', 'feature-flag']
     const id = 'harness-schema-refused'
 
@@ -2209,7 +2110,6 @@ describe('core beta report placement', () => {
       'applies a force-off %s, once, without presenting it as beta',
       async (label, betaEnabled) => {
         launchHarness.betaEnabled = betaEnabled
-        // In range for this 0.3.81 install, so it would also be selected if it were treated as a grant.
         launchHarness.grants = [
           { arg: '--disable-assets', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }
         ]
@@ -2240,8 +2140,6 @@ describe('core beta report placement', () => {
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {
-    // Copy control, not flag control: the arg still reaches the command line, the user just
-    // is not told about it.
     launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
     const id = 'harness-silent-grant'
 
@@ -2276,23 +2174,15 @@ describe('core beta report placement', () => {
     expect(peekBetaActivationNotice(id)).toBeNull()
   })
 
-  /** The commit `harnessInstall`'s record names, i.e. what the version gate believes is running. */
   const RECORDED_COMMIT = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
-  /** A different commit, as a `git pull` would leave the checkout after the record was written. */
   const PULLED_COMMIT = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c'
 
-  /** Give the install a git checkout at `sha`, in the detached-HEAD shape `readGitHead` reads.
-   *  Absent by default, which is the standalone/archive install the other cases launch as. */
   function writeGitHead(sha: string): void {
     const gitDir = path.join(installDir, 'ComfyUI', '.git')
     fs.mkdirSync(gitDir, { recursive: true })
     fs.writeFileSync(path.join(gitDir, 'HEAD'), `${sha}\n`)
   }
 
-  /** Give the install a git checkout whose HEAD cannot be established: the `.git` directory is
-   *  there, but HEAD is empty. Empty rather than chmod-ed or deleted because it is the one
-   *  shape that reproduces identically on every platform CI runs on, and it is a real state —
-   *  mid-`git pull`, HEAD is rewritten, which is exactly when this gate is asked. */
   function writeUnreadableGitHead(): void {
     const gitDir = path.join(installDir, 'ComfyUI', '.git')
     fs.mkdirSync(gitDir, { recursive: true })
@@ -2300,11 +2190,6 @@ describe('core beta report placement', () => {
   }
 
   it('withholds grants when the live checkout has moved off the recorded commit', async () => {
-    // A `git pull` after the record was written leaves `commitsAhead: 0` true of a commit that
-    // is no longer checked out, so `exact` and `verified` both still pass — they are assertions
-    // about the recorded commit, not about the checkout still being at it. Core's args schema
-    // does not cover for that here: a NEWER core still parses `--enable-assets`, so the upper
-    // bound has nothing behind it but the stale record.
     writeGitHead(PULLED_COMMIT)
 
     const res = await handleLaunch(ctxFor('harness-record-superseded'))
@@ -2327,9 +2212,6 @@ describe('core beta report placement', () => {
   })
 
   it('applies grants to a standalone install, which has no HEAD to contradict the record', async () => {
-    // No `.git` at all: `readGitHead` returns null and there is no contradiction to observe, so
-    // the record stands. Archive installs are the majority of Desktop — they must not lose
-    // grants to a check that only git checkouts can answer.
     expect(fs.existsSync(path.join(installDir, 'ComfyUI', '.git'))).toBe(false)
 
     const res = await handleLaunch(ctxFor('harness-standalone-no-git'))
@@ -2339,10 +2221,6 @@ describe('core beta report placement', () => {
   })
 
   it('withholds grants when the install is git-managed but its HEAD cannot be read', async () => {
-    // Between "no git" and "HEAD says X" sits a third state: a git checkout whose HEAD we could
-    // not establish. Collapsing it into the no-git case grants on it, which inverts the gate —
-    // an unreadable HEAD is most likely mid-pull, i.e. precisely the move this check exists to
-    // catch. The `.git` directory is the observable difference from the standalone case.
     writeUnreadableGitHead()
 
     const res = await handleLaunch(ctxFor('harness-git-head-unreadable'))
@@ -2356,11 +2234,6 @@ describe('core beta report placement', () => {
   })
 
   it('withholds grants when .git is a pointer file the git dir cannot be resolved from', async () => {
-    // One layer below the unreadable-HEAD case: `.git` exists, so this IS a git-managed
-    // checkout, but it is a worktree/submodule pointer with no `gitdir:` line, so there is no
-    // git directory to read a HEAD out of. Classifying that as "not a git install" — which is
-    // what a bare `resolveGitDir() === null` check does — hands it the standalone install's
-    // unconditional grant, on a checkout whose commit was never established.
     const dotGit = path.join(installDir, 'ComfyUI', '.git')
     fs.writeFileSync(dotGit, 'this file is not a gitdir pointer\n')
 
@@ -2375,18 +2248,13 @@ describe('core beta report placement', () => {
   })
 
   it('withholds grants when .git is a dangling symlink', async () => {
-    // The case that forces `lstat` over `stat`: `stat` follows the link, finds nothing, and
-    // raises ENOENT — indistinguishable from an install that never had a `.git` at all, so the
-    // checkout is waved through as standalone. `lstat` sees the link itself, and a link
-    // pointing at a missing git dir is a broken checkout, not an absent one.
     const dotGit = path.join(installDir, 'ComfyUI', '.git')
     try {
       fs.symlinkSync(path.join(installDir, 'no-such-git-dir'), dotGit)
     } catch {
-      // Windows without Developer Mode / SeCreateSymbolicLink cannot create one at all.
       return
     }
-    expect(fs.existsSync(dotGit)).toBe(false) // `stat`-based existence says "absent"
+    expect(fs.existsSync(dotGit)).toBe(false)
 
     const res = await handleLaunch(ctxFor('harness-git-dangling-symlink'))
 
@@ -2399,11 +2267,6 @@ describe('core beta report placement', () => {
   })
 
   it('withholds grants when the .git entry cannot be stat-ed at all', async () => {
-    // The third way `.git` resolution fails: the entry is neither absent nor readable — an
-    // EACCES/EPERM/ELOOP on the `lstat` itself. No portable way to produce that on a real
-    // filesystem (a chmod-ed parent does nothing when the suite runs as root, and Windows has
-    // no equivalent), so the error is injected at the one syscall that classifies it. Every
-    // other path stays real.
     const realLstatSync = fs.lstatSync
     vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, opts?: object) => {
       if (String(target).endsWith(`${path.sep}.git`)) {
@@ -2489,9 +2352,6 @@ describe('core beta report placement', () => {
     ).toEqual(expected)
   })
 
-  // Assets can now run without a grant having been applied, so attribution must report what
-  // the grant system applied rather than what is on the command line — otherwise a self-enrolled user
-  // lands inside the cohort and skews the soak denominator.
   it("reports no beta flags when assets run from the user's own argument", async () => {
     launchHarness.betaEnabled = false
     launchHarness.grants = []
@@ -2648,11 +2508,8 @@ describe('core beta report placement', () => {
       ])
       expect(spawnArgs).toContain('--listen')
       expect(spawnArgs).toContain('--cpu')
-      // The fallback injects no grants, but it withdraws nothing either: discovery failing is
-      // not a reason to launch with fewer of the user's own args than they asked for.
       expect(spawnArgs.slice(3)).toContain('--enable-assets')
       expect(spawnArgs).toContain('--enable-asset-hashing')
-      // Mutating `launchCmd.args` in place would edit the array the source object owns.
       expect(storedArgs).toEqual([
         '--enable-assets',
         '-s',
@@ -2667,8 +2524,6 @@ describe('core beta report placement', () => {
   )
 
   it('does not report when cancelled at the skip-port pre-spawn gate', async () => {
-    // Cancel lands while resources are being acquired — after the launching marker, before
-    // the gate. The launch must return cancelled having attributed nothing.
     launchHarness.duringResourceAcquire = () => {
       _operationAborts.get('harness-skip-port-cancelled')?.abort()
     }
@@ -2682,8 +2537,6 @@ describe('core beta report placement', () => {
   })
 
   it('does not report when cancelled at the normal-path pre-spawn gate', async () => {
-    // The normal path's last gate sits INSIDE the recursing `tryLaunch`, past port reservation
-    // and resource acquisition — a different call site from the skip-port one above.
     launchHarness.launchCommand = {
       cmd: process.execPath,
       args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
@@ -2704,8 +2557,6 @@ describe('core beta report placement', () => {
   })
 
   it('reports once and drops both unterminated assets tails before a port-conflict retry without resetting caps', async () => {
-    // The only test that proves the latch: the report site lives INSIDE the recursing
-    // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
     let attempt = 0
     launchHarness.launchCommand = {
@@ -2733,8 +2584,6 @@ describe('core beta report placement', () => {
     launchHarness.waitForPort = async () => {
       attempt++
       if (attempt > 1) return
-      // Everything is wired by the time the boot probe runs, so failing the first attempt
-      // from here is deterministic — no racing the stream/exit handler registration.
       const first = children[0]!
       first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
       first.stdout.emit(
@@ -2792,7 +2641,6 @@ describe('core beta report placement', () => {
   })
 
   it.each([
-    // description, opted in, manual flag, discovery fails, flag supported, expected cohort
     ['opted out without a flag', false, false, false, true, false],
     ['opted out with a manual flag', false, true, false, true, true],
     ['discovery fails with a manual flag', true, true, true, true, true],
@@ -2902,9 +2750,6 @@ describe('core beta report placement', () => {
   })
 
   it('still filters user args, injecting nothing, when the beta setting cannot be resolved', async () => {
-    // Resolving the toggle writes the default back on first read, so a read-only profile makes
-    // it throw. That must cost the launch its beta grants — never its arg filtering, and never
-    // the launch itself.
     launchHarness.betaEnabledThrows = true
     launchHarness.launchCommand = {
       cmd: process.execPath,
@@ -2922,15 +2767,11 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain('--listen')
-    // Filtering still ran: an arg the pinned core does not know never reaches it.
     expect(spawnArgs).not.toContain('--not-a-real-comfy-flag')
-    // Fail closed: the grant is schema-supported and would have been injected at `true`.
     expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('reports opt_state true when schema discovery is unavailable', async () => {
-    // Argument assembly does not run, so there are no grants; the DTO still reports
-    // that the user opted in.
     launchHarness.schemaThrows = true
     launchHarness.betaEnabled = true
 
@@ -3088,7 +2929,6 @@ describe('Performance Test guardrail', () => {
   let installDir = ''
   let bootLogs: unknown[] = []
   const launches: [string, { abort: AbortController }][] = []
-  // Sessions earlier tests in this file left registered would all count as running here.
   let leftRunning: [string, SessionInfo][] = []
   let leftStopping: string[] = []
 
@@ -3115,7 +2955,6 @@ describe('Performance Test guardrail', () => {
     actionData: {}
   })
 
-  /** Another installation's session, running with a process of its own. */
   function runSession(id: string, name: string): void {
     _runningSessions.set(id, {
       proc: {} as ChildProcess,
@@ -3155,7 +2994,6 @@ describe('Performance Test guardrail', () => {
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = async () => {}
-    // No real port probes: the install's port must read as free on any machine.
     launchHarness.busyPorts = []
     ownership.prior = null
     ownership.onResolve = null
@@ -3185,7 +3023,6 @@ describe('Performance Test guardrail', () => {
         events.push({ event, properties })
       }) as unknown as typeof telemetry.emit)
     }
-    // No locale is loaded here: show the parameters, so the names in a message are checked.
     vi.spyOn(i18nModule, 't').mockImplementation((key, params) =>
       params ? `${key} ${JSON.stringify(params)}` : key
     )
@@ -3209,7 +3046,6 @@ describe('Performance Test guardrail', () => {
     fs.rmSync(installDir, { recursive: true, force: true })
   })
 
-  /** The refusal naming one blocker; `name` as the message shows it (quoted, or a label). */
   const refusalOne = (name: string): string =>
     `errors.performanceTestOtherInstanceRunningOne ${JSON.stringify({ name })}`
   const perfLabel = (name: string): string =>
@@ -3234,7 +3070,6 @@ describe('Performance Test guardrail', () => {
     await expectRefused(refusalOne('“Other Install”'))
   })
 
-  /** A launch still preparing: registered, and holding its operation slot. */
   function preparing(id: string): void {
     const launch = _beginLaunch(id)
     _operationAborts.set(id, launch.abort)
@@ -3247,8 +3082,6 @@ describe('Performance Test guardrail', () => {
   })
 
   it('does not count a launch handler still running after its session was stopped', async () => {
-    // Past registration (slot released) and no longer running: e.g. waiting on the
-    // template-model download after the user stopped the instance.
     launches.push(['guard-other', _beginLaunch('guard-other')])
 
     const res = await handleLaunch(ctxFor('guard-bench', PERF))
@@ -3337,7 +3170,6 @@ describe('Performance Test guardrail', () => {
 
   it('does not guard a Performance Test of a remote installation', async () => {
     runSession('guard-other', 'Other Install')
-    // The remote server answers at once: no real request leaves the test.
     launchHarness.waitForUrl = async () => {}
 
     const res = await handleLaunch({
@@ -3349,7 +3181,6 @@ describe('Performance Test guardrail', () => {
   })
 
   it('refuses while its own earlier run is still stopping', async () => {
-    // Another Performance Test window of the same installation stopped it; it has not exited yet.
     _stoppingInstallationIds.add(PERF)
     await expectRefused(refusalOne(perfLabel('Bench')))
   })
@@ -3381,12 +3212,10 @@ describe('Performance Test guardrail', () => {
     for (const boot of boots)
       expect(boot.properties).toMatchObject({ session_kind: 'performance_test' })
     expect(started).toEqual([expect.objectContaining({ sessionKind: 'performance_test' })])
-    // The renderer tags boot_log from this key, so it must be the Performance Test's own.
     expect(bootLogs).toEqual([{ installationId: PERF, bootStderr: expect.any(String) }])
     expect(createAssetsTap).toHaveBeenCalledWith(
       expect.objectContaining({ sessionKind: 'performance_test' })
     )
-    // The hardware tap forwards a scan error as it reads it; the execution tap reports at exit.
     child!.stderr.emit(
       'data',
       '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n'
@@ -3425,7 +3254,6 @@ describe('Performance Test guardrail', () => {
   it('names every other ComfyUI running', async () => {
     runSession('guard-other', 'Other Install')
     _stoppingInstallationIds.add('guard-bench')
-    // Quoted and joined in the user's language, so a comma inside a name stays readable.
     await expectRefused(
       `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
         names: '“Other Install” and “Bench”'
@@ -3544,8 +3372,6 @@ describe('emitCoreBetaTelemetry', () => {
   })
 
   it('hands both events to the consent-gated emit path without consulting consent itself', () => {
-    // Delivery for a telemetry-declining user is suppressed by telemetry.ts's
-    // own gate — never by a branch here, which would also silence opted-in users.
     telemetry.setConsentState('denied')
 
     emitCoreBetaTelemetry({
@@ -3572,7 +3398,6 @@ describe('agent requirements at launch', () => {
   let spawnArgs: string[] = []
   let spawned = 0
 
-  /** Create a file (and its parents) the way the real install layout has it. */
   const touch = (target: string): void => {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.writeFileSync(target, '')
@@ -3615,7 +3440,6 @@ describe('agent requirements at launch', () => {
   beforeEach(() => {
     installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-reqs-launch-'))
     fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
-    // The managed pair the shared uv helper targets, plus the file Core ships.
     touch(getUvPath(installDir))
     touch(getVenvPythonPath(installDir))
     fs.writeFileSync(agentReqPath(), 'comfyui-agent==1.0.0\n')
@@ -3659,10 +3483,6 @@ describe('agent requirements at launch', () => {
   })
 
   afterEach(async () => {
-    // The launch log stream opens asynchronously after the spawn: removing the
-    // install dir first fails that open with an ENOENT nothing is listening for.
-    // The file appears exactly when the open lands, so waiting on it is the
-    // teardown's own gate rather than a guess at how long the open takes.
     if (spawned > 0) {
       const logFile = path.join(getLogDir(installDir), 'comfyui.log')
       await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true), { timeout: 10_000 })
@@ -3683,7 +3503,6 @@ describe('agent requirements at launch', () => {
   })
 
   it('installs the requirements when a beta grant added the flag', async () => {
-    // The grant is the only source of the flag here: the install's own args have none.
     launchHarness.grants = [AGENT_GRANT]
     launchHarness.launchCommand = {
       cmd: process.execPath,
@@ -3714,8 +3533,6 @@ describe('agent requirements at launch', () => {
   })
 
   it('installs nothing when the running core cannot parse the flag', async () => {
-    // A core predating `--enable-agent` has it filtered out of the final args,
-    // so there is nothing to install for and nothing reaches the spawn either.
     launchHarness.schemaNames = ['listen', 'feature-flag']
 
     const res = await handleLaunch(ctxFor('agent-reqs-unsupported-core'))
@@ -3806,8 +3623,6 @@ describe('agent requirements at launch', () => {
   })
 
   it('publishes the install as a step the renderer can show', async () => {
-    // The renderer drops progress for a phase absent from the steps payload, so
-    // the payload is what makes the step visible at all.
     await handleLaunch(ctxFor('agent-reqs-step-published'))
 
     const lastSteps = progress.filter((p) => p.phase === 'steps').at(-1)
@@ -4715,11 +4530,6 @@ describe('agent requirements at launch', () => {
 })
 
 describe('agent install status strings', () => {
-  // `t()` resolves nothing under vitest (i18n is never initialised and its
-  // locales dir does not exist in the source tree), so the lookup itself cannot
-  // be exercised here. What can break silently is the contract between the
-  // mapper's keys and the locale file, which is what this pins. Cross-locale
-  // parity is covered separately by the locale-coverage suite.
   const strings = (en as { launch: { agentRequirements?: Record<string, string> } }).launch
     .agentRequirements
 
@@ -4827,8 +4637,6 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
-    // Never the real probes here: whatever else holds a port on the machine would decide the
-    // outcome.
     launchHarness.busyPorts = []
     launchHarness.busyPids = [31337]
     launchHarness.portLockPid = null
@@ -4918,7 +4726,6 @@ describe('prior ComfyUI process handling at launch', () => {
 
   it('waits for a stopped orphan to release its port instead of moving to the next one', async () => {
     ownership.prior = terminated
-    // Still bound for a moment after the process exited (Windows socket teardown).
     launchHarness.busyPorts = [PORT]
 
     const res = await handleLaunch(ctxFor('prior-port-lingers'))
@@ -5056,7 +4863,6 @@ describe('prior ComfyUI process handling at launch', () => {
   })
 
   it('names only the port holder when an owed exit scan blocks the launch', async () => {
-    // The recorded child is long gone; telling the user to end it would be impossible.
     ownership.prior = {
       ...terminated,
       action: 'left',
@@ -5126,7 +4932,6 @@ describe('prior ComfyUI process handling at launch', () => {
   })
 
   it("recognises this install's ComfyUI from a port lock when no listener can be listed", async () => {
-    // lsof sees nothing (another user's or another namespace's process); the lock still names it.
     launchHarness.busyPorts = [PORT]
     launchHarness.busyPids = []
     launchHarness.portLockPid = 40003
@@ -5242,7 +5047,6 @@ describe('prior ComfyUI process handling at launch', () => {
     const res = await handleLaunch(ctxFor('prior-db-locked'))
 
     expect(res.ok).toBe(false)
-    // The lock, not "Process exited with code 1".
     expect(res.message).toBe('errors.comfyDbLocked')
     await vi.waitFor(() =>
       expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
@@ -5328,7 +5132,6 @@ describe('prior ComfyUI process handling at launch', () => {
   })
 
   describe('an asset database from a newer ComfyUI', () => {
-    // What a released Core (v0.39.2 and earlier) prints when the asset database is from a newer one.
     const NEWER_DB =
       'INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n' +
       "Failed to initialize database: Can't locate revision identified by '0009_created_at_from_mtime'\n" +
@@ -5336,7 +5139,6 @@ describe('prior ComfyUI process handling at launch', () => {
     let spawnArgs: string[][] = []
 
     beforeEach(() => {
-      // Desktop asks for assets itself: the floor commit is proven and the user's args lack it.
       setArgs()
       launchHarness.commits = {
         head: 'e'.repeat(40),
@@ -5355,7 +5157,6 @@ describe('prior ComfyUI process handling at launch', () => {
       launchHarness.commits = null
     })
 
-    /** Each attempt fails with `stderr[n]`, or boots once the list runs out. */
     const attempts = (...stderr: string[]): void => {
       let attempt = 0
       launchHarness.waitForPort = async () => {
@@ -5397,7 +5198,6 @@ describe('prior ComfyUI process handling at launch', () => {
         expect.objectContaining({ assets_enabled: false, assets_retry_count: 1 })
       ])
       expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([])
-      // One launch: the retry and its completion keep the first attempt's boot_id.
       const bootIds = [
         ...eventsNamed('comfy.desktop.comfyui.boot_started'),
         ...eventsNamed('comfy.desktop.comfyui.boot_completed')

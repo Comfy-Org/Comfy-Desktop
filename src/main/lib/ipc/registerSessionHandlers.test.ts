@@ -63,8 +63,6 @@ describe('kill-port-process', () => {
   })
 
   it('does not claim success, and keeps the lock, for a holder no listener list shows', async () => {
-    // lsof sees nothing (another user's or namespace's process), but the port is still taken:
-    // the lock is what lets the retry recognise this installation's ComfyUI.
     mocks.findPidsByPort.mockResolvedValue([])
     mocks.isPortListening.mockResolvedValue(true)
     expect(await run(8188)).toEqual({ ok: false })

@@ -1,5 +1,4 @@
 // @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
-// Keep the feedback iframe in the DOM without loading the external support site.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
@@ -21,9 +20,6 @@ vi.mock('../main', () => ({
 }))
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
-/** Test-controllable `useModal` mock. Each call returns the same
- *  shared singleton so tests can stub return values per case via
- *  `mockModal.confirm.mockResolvedValueOnce(true)` etc. */
 const mockModal = {
   alert: vi.fn(),
   confirm: vi.fn(),
@@ -33,7 +29,6 @@ vi.mock('../composables/useModal', () => ({
   useModal: () => mockModal
 }))
 
-// Stub the heavy children so we can assert which sub-panel is rendered.
 vi.mock('../views/ProgressModal.vue', () => ({
   default: {
     name: 'ProgressModal',
@@ -45,8 +40,6 @@ vi.mock('../views/ProgressModal.vue', () => ({
 vi.mock('../components/ModalDialog.vue', () => ({
   default: { name: 'ModalDialog', template: '<div />' }
 }))
-// Modal teleports its slot to <body>; replace with a transparent
-// pass-through so wrapper.find() can still see the slotted children.
 vi.mock('../components/Modal.vue', () => ({
   default: {
     name: 'Modal',
@@ -114,9 +107,6 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
   default: {
     name: 'FirstUseTakeover',
     emits: ['close', 'complete-cloud', 'complete-skip', 'chain-local', 'chain-migrate'],
-    // Stub does NOT auto-call window.api.getLocale on mount — the host
-    // exercises the imperative open() reset post-mount, which is what
-    // we mock + assert on.
     template:
       '<div data-testid="first-use-takeover">' +
       '<button data-testid="first-use-cloud" @click="$emit(\'complete-cloud\')">Cloud</button>' +
@@ -143,10 +133,6 @@ import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-
-// Panel scopes (including queued media prefetches) are disposed before
-// happy-dom tears down document by the suite-wide `enableAutoUnmount` in
-// `vitest.setup.ts` - calling it a second time here throws.
 
 const messages = {
   en: {
@@ -305,26 +291,14 @@ interface MockApiState {
     filePath: string
     download: ExampleWorkflowDownload
   }) => void)[]
-  /** File-menu Skip Onboarding callbacks. Main fires this when the
-   *  user clicks the entry in the waffle popup; tests can simulate
-   *  the click by invoking each callback. */
   firstUseSkipCallbacks: (() => void)[]
-  /** Feedback callbacks. Main fires this when the user clicks the
-   *  title-bar Send Feedback button or the file-menu "Send Feedback"
-   *  entry; tests can simulate the click by invoking each callback
-   *  with the originating `source`. */
   openFeedbackCallbacks: ((data: { source: 'titlebar' | 'menu' }) => void)[]
-  /** Window-close consult callbacks. Main fires `comfy-window:request-close`
-   *  when the user clicks the ✕; tests fire each callback to simulate that. */
   closeRequestCallbacks: ((data: { requestId: string }) => void)[]
   installations: InstallationLike[]
   getInstallations: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
   getAppVersion: ReturnType<typeof vi.fn>
   getSetting: ReturnType<typeof vi.fn>
-  /** Per-key getSetting values. Tests that need first-use takeover to
-   *  auto-mount can flip `firstUseCompleted` to false here. Default is
-   *  `true` so existing tests don't trip the takeover. */
   settings: Record<string, unknown>
   installUpdate: ReturnType<typeof vi.fn>
   downloadUpdate: ReturnType<typeof vi.fn>
@@ -469,23 +443,15 @@ function installMockApi(initial?: {
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
-    // Main consults the panel renderer before tearing down the host
-    // window. PanelApp subscribes on mount; tests can fire the consult
-    // by invoking each captured callback with a `requestId`.
     onCloseRequest: vi.fn((cb: (d: { requestId: string }) => void) => {
       state.closeRequestCallbacks.push(cb)
       return () => {}
     }),
     respondCloseRequest: vi.fn(),
     ackCloseRequest: vi.fn(),
-    // Symmetric mock pair for the File menu's Return to Dashboard consult.
     onReturnToDashboardRequest: vi.fn(() => () => {}),
     respondReturnToDashboardRequest: vi.fn(),
     ackReturnToDashboardRequest: vi.fn(),
-    // Title-bar Settings icon → main routes a drawer-close request here
-    // so the ComfyUISettingsPanel can play its leave animation before
-    // closeCurrentPanel collapses the panelView. The test suite never
-    // fires it; mock is a no-op.
     onRequestCloseDrawer: vi.fn(() => () => {}),
     onInstallationsChanged: vi.fn((cb: () => void) => {
       state.installationsChangedCallbacks.push(cb)
@@ -512,19 +478,7 @@ function installMockApi(initial?: {
     setSetting: vi.fn(async (key: string, value: unknown) => {
       state.settings[key] = value
     }),
-    // PanelApp's first-use takeover host fetches the categorised
-    // install state to decide whether to skip the cloud-vs-local
-    // pick step. Default mock is "fresh user" — no prior installs,
-    // no legacy desktop — so the takeover advances through every
-    // step.
     getFirstUseState: vi.fn(async () => ({ skipPick: false, hasLegacyDesktop: false })),
-    // Cloud-pick auto-launch fans out into the chooser-launch pipeline:
-    // claim the host for in-place attach, look up the install's launch
-    // action, then execute it. Mocking the IPC surface lets the new
-    // `complete-skip` test assert these are NEVER called (returning
-    // users must NOT be teleported into Cloud they didn't pick) while
-    // the existing `complete-cloud` test continues to dismiss cleanly
-    // when no cloud install is present in the store.
     claimAttachHost: vi.fn(async () => true),
     releaseAttachHostPreview: vi.fn(async () => true),
     transferHostBoundsToInstall: vi.fn(async () => {}),
@@ -533,8 +487,6 @@ function installMockApi(initial?: {
     navigatePanel: vi.fn(),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
-    // Picker thumbnail warm-up fetches the bundled-template options on the
-    // first-use cold-start path; returning users must never trigger it.
     getFieldOptions: vi.fn(async () => []),
     getPathForFile: vi.fn((file: File) => `C:\\incoming\\${file.name}`),
     importPerformanceTestWorkflow: vi.fn(async () => ({
@@ -675,23 +627,12 @@ describe('PanelApp', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     installWizardOpen.mockClear()
-    // useLauncherPrefs has module-level shared state + memoized load
-    // promise — reset both so each test sees a fresh load against the
-    // current mock settings (in particular `firstUseCompleted`).
     __resetLauncherPrefsForTest()
-    // useOverlay's slot is also a module-level singleton — clear it
-    // so test order doesn't leak overlays between cases.
     useOverlay().current.value = null
     mockModal.alert.mockReset()
     mockModal.confirm.mockReset()
     mockModal.close.mockReset()
     mockState = installMockApi({ installations: [SAMPLE_INSTALL] })
-    // Default URL — individual tests override.
-    // `firstUseCompleted=true` short-circuits `seedLauncherPrefsFromUrl`
-    // so `showPanelBody` returns synchronously on mount (without waiting
-    // for the async `getSetting` IPC). Tests asserting the first-use
-    // gating path (where the takeover should mount) override the URL
-    // back to one without this param and flip `mockState.settings.firstUseCompleted`.
     window.history.replaceState({}, '', '/?installationId=test-id&firstUseCompleted=true')
   })
 
@@ -749,8 +690,6 @@ describe('PanelApp', () => {
   })
 
   it('renders the comfy-lifecycle view when initialised with that panel', async () => {
-    // Main initialises panel.html with `panel=comfy-lifecycle` when the
-    // Comfy tab body needs to show the lifecycle UI (instance not running).
     window.history.replaceState(
       {},
       '',
@@ -1332,17 +1271,12 @@ describe('PanelApp', () => {
   })
 
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
-    // Flow modals are Tier 3 takeover overlays. The chooser stays
-    // mounted underneath the takeover, so dismissing the takeover
-    // drops the user back into the chooser tile they came from with
-    // no navigation churn.
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     await wrapper.find('[data-testid="chooser-new-install"]').trigger('click')
     await flushPromises()
-    // Both visible — takeover sits ABOVE the chooser body.
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
     expect(installWizardOpen).toHaveBeenCalledWith({
@@ -1508,7 +1442,6 @@ describe('PanelApp', () => {
     message: 'model.safetensors (1 of 2) — 4 / 10 GB at 50.0 MB/s · 2m remaining'
   } satisfies ExampleWorkflowDownload
 
-  /** Push model download progress the way the main process does. */
   async function emitExampleDownload(
     download: ExampleWorkflowDownload,
     filePath = EXAMPLE_PATH
@@ -1519,7 +1452,6 @@ describe('PanelApp', () => {
     await flushPromises()
   }
 
-  /** Mount the performance test page with one local instance selected. */
   async function mountWithInstance(
     status = 'installed',
     otherInstallations: Array<Record<string, unknown>> = []
@@ -1807,7 +1739,6 @@ describe('PanelApp', () => {
     resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
     await flushPromises()
 
-    // The late example is dropped without replacing the workflow already chosen.
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
     expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalledWith(importedPath)
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain(importedPath)
@@ -1841,8 +1772,6 @@ describe('PanelApp', () => {
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
 
-    // The launch holds the workflow: switching instance can't remove it yet,
-    // but the example must not run on the other instance.
     await wrapper
       .get('.performance-test__instance-select button')
       .trigger('keydown', { key: 'ArrowDown' })
@@ -1980,7 +1909,6 @@ describe('PanelApp', () => {
     const { wrapper, api } = await mountWithInstance()
     const offlineMessage = 'You need to be connected to the internet to download example workflows.'
 
-    // The browser knows it is offline: skip the picker entirely.
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     try {
       await wrapper.get('.performance-test__example-workflow').trigger('click')
@@ -1991,7 +1919,6 @@ describe('PanelApp', () => {
       onLine.mockRestore()
     }
 
-    // The machine reports a connection but GitHub is unreachable when downloading.
     api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
       ok: false,
       reason: 'offline',
@@ -2326,8 +2253,6 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=new-install&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
-    // The URL-driven flow panel mounts as a takeover above the default
-    // body (chooser, since there's no installationId).
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
@@ -2377,10 +2302,6 @@ describe('PanelApp', () => {
   ])(
     "IPCs closeCurrentPanel when the $panel takeover dismisses, so main's activePanel resets and the file menu can re-open it",
     async ({ panel, selector, name }) => {
-      // Without this IPC, main's `entry.activePanel` stays stuck on the
-      // wizard key after the renderer-side dismiss; the next file-menu
-      // pick of the same item hits `setActivePanel`'s same-panel
-      // early-return and the modal silently fails to reopen.
       window.history.replaceState({}, '', `/?panel=${panel}&firstUseCompleted=true`)
       const wrapper = mountPanel()
       await flushPromises()
@@ -2402,8 +2323,6 @@ describe('PanelApp', () => {
   )
 
   it('does NOT auto-mount the first-use takeover when firstUseCompleted is true', async () => {
-    // Default mock state has firstUseCompleted: true; the takeover
-    // should never enter the overlay slot.
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
@@ -2411,12 +2330,6 @@ describe('PanelApp', () => {
   })
 
   it('auto-mounts the first-use takeover and suppresses the chooser body when firstUseCompleted is false', async () => {
-    // Body is gated out while a Tier 3 takeover owns the overlay slot —
-    // BrandTakeoverLayout has a 240ms opacity fade-in, so rendering the
-    // chooser behind it would bleed through during the entrance. The
-    // dismiss tests below assert the body reveals when the takeover
-    // clears (see "marks firstUseCompleted=true and closes the takeover
-    // on Cloud-branch pick").
     mockState.settings.firstUseCompleted = false
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
@@ -2445,11 +2358,6 @@ describe('PanelApp', () => {
 
   it('marks firstUseCompleted=true and closes the takeover on Cloud-branch pick', async () => {
     mockState.settings.firstUseCompleted = false
-    // Seed a cloud install so the auto-launch path can resolve a
-    // target — the host pulls launch actions for it via the chooser
-    // launch pipeline. We assert getListActions IS called here so the
-    // returning-user `complete-skip` test below can credibly assert
-    // the opposite.
     mockState.installations = [
       { id: 'cloud-id', name: 'Comfy Cloud', sourceLabel: 'Cloud', sourceCategory: 'cloud' }
     ]
@@ -2471,20 +2379,11 @@ describe('PanelApp', () => {
 
     expect(api.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
-    // Chooser body underneath remains mounted.
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
-    // Cloud auto-launch ran — getListActions resolves the launch
-    // action for the seeded cloud install.
     expect(api.getListActions).toHaveBeenCalledWith('cloud-id')
   })
 
   it('marks firstUseCompleted=true on returning-user complete-skip WITHOUT auto-launching cloud', async () => {
-    // when `skipPick` is true (returning user with prior
-    // local installs), accepting consent emits `complete-skip` rather
-    // than `complete-cloud`. The host must mark completion and dismiss,
-    // but MUST NOT launch the seeded cloud install: the user never
-    // picked Cloud (the fork was suppressed), so auto-launching it
-    // would hijack their existing local install.
     mockState.settings.firstUseCompleted = false
     mockState.installations = [
       { id: 'cloud-id', name: 'Comfy Cloud', sourceLabel: 'Cloud', sourceCategory: 'cloud' },
@@ -2509,7 +2408,6 @@ describe('PanelApp', () => {
     expect(api.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
-    // Critical guarantee — no implicit cloud launch happened.
     expect(api.getListActions).not.toHaveBeenCalled()
   })
 
@@ -2522,7 +2420,6 @@ describe('PanelApp', () => {
     await wrapper.find('[data-testid="first-use-local"]').trigger('click')
     await flushPromises()
 
-    // Tier 3 → Tier 3 swap: first-use unmounts, new-install mounts.
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
 
@@ -2533,20 +2430,12 @@ describe('PanelApp', () => {
     ).api.setSetting
     expect(setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
 
-    // New-install close (success or cancel) flips the persisted gate.
     await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
     await flushPromises()
     expect(setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
   })
 
   it('marks firstUseCompleted=true and closes the takeover when main fires the file-menu Skip Onboarding event', async () => {
-    // Main routes the file-menu Skip Onboarding click into the
-    // panel renderer via the
-    // `comfy-panel:first-use-skip` IPC. PanelApp's listener should
-    // run the same `markFirstUseCompleted` + dismiss-takeover
-    // sequence the Cloud-branch pick uses, so the takeover
-    // disappears and the chooser body underneath is the landing
-    // surface (matching the Cloud-pick test above).
     mockState.settings.firstUseCompleted = false
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
@@ -2560,26 +2449,16 @@ describe('PanelApp', () => {
     ).api.setSetting
     expect(setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
 
-    // Simulate the main → renderer Skip Onboarding push.
     expect(mockState.firstUseSkipCallbacks.length).toBeGreaterThan(0)
     mockState.firstUseSkipCallbacks.forEach((cb) => cb())
     await flushPromises()
 
     expect(setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
-    // Chooser body underneath remains mounted, same as Cloud-pick.
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
   })
 
   it('emits comfy.desktop.feedback.opened with the originating source and opens the support URL', async () => {
-    // Both the title-bar feedback button and the file-menu "Send
-    // Feedback" entry route through main's `comfy-panel:open-feedback`
-    // IPC. The panel renderer is the natural home for the click side-
-    // effects because `buildSupportUrl()` reads `navigator.userAgent`
-    // and the telemetry helper lives renderer-side. Verify the listener
-    // (a) emits the telemetry action with `source` baked into the
-    // context so we can tell the two affordances apart, and
-    // (b) opens the typeform URL with the cached app version in `ver`.
     mountPanel()
     await flushPromises()
 
@@ -2594,10 +2473,8 @@ describe('PanelApp', () => {
     window.addEventListener('launcher-telemetry-action', listener)
 
     expect(mockState.openFeedbackCallbacks.length).toBeGreaterThan(0)
-    // Title-bar button click.
     mockState.openFeedbackCallbacks.forEach((cb) => cb({ source: 'titlebar' }))
     await flushPromises()
-    // File-menu entry click.
     mockState.openFeedbackCallbacks.forEach((cb) => cb({ source: 'menu' }))
     await flushPromises()
 
@@ -2607,9 +2484,6 @@ describe('PanelApp', () => {
       (e) => e.actionName === 'comfy.desktop.feedback.opened'
     )
     expect(feedbackTelemetry.map((e) => e.context?.source)).toEqual(['titlebar', 'menu'])
-    // FeedbackModal teleports its iframe to <body>, so query the
-    // document directly rather than the wrapper subtree. The iframe
-    // src is the resolved support URL.
     const frame = document.body.querySelector<HTMLIFrameElement>('iframe.feedback-modal-frame')
     expect(frame).not.toBeNull()
     const url = frame?.getAttribute('src') ?? ''
@@ -2618,21 +2492,7 @@ describe('PanelApp', () => {
     expect(url).toMatch(/[?&]platform=/)
   })
 
-  // The first-use takeover has no in-app ✕ close button (first-use
-  // is a binding flow). Mid-flow dismissal happens via OS-chrome
-  // window close, which routes through `onCloseRequest` →
-  // `closeOverlay` (a renderer-internal direct mutation that doesn't
-  // go through any FirstUseTakeover emit). The "doesn't mark
-  // firstUseCompleted on mid-flow exit" guarantee holds because no
-  // code path between mount and the explicit Cloud / Local picks
-  // calls `markFirstUseCompleted` — the cloud / chain-local tests
-  // above already assert that ordering by checking `setSetting`
-  // hasn't been called with `firstUseCompleted` until the user makes
-  // the explicit pick.
-
   it('keeps the comfy-lifecycle body when a panel-switch IPC event re-confirms it', async () => {
-    // The default body for an install-backed host is already comfy-lifecycle;
-    // a redundant panel-switch must leave it intact.
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
@@ -2643,9 +2503,6 @@ describe('PanelApp', () => {
   })
 
   it('opens the instance picker (expanded, Update tab) and auto-fires update when a panel-trigger-overlay install-update event arrives', async () => {
-    // Main forwards the title-bar install-update click as an install-update overlay
-    // event. Open the instance picker's Update tab with autoAction: update-comfyui
-    // so the confirmation opens immediately.
     mountPanel()
     await flushPromises()
     const api = (window as unknown as { api: { openInstancePicker: ReturnType<typeof vi.fn> } }).api
@@ -2705,9 +2562,6 @@ describe('PanelApp', () => {
   })
 
   it('opens the instance picker on the Config tab when a panel-trigger-overlay open-settings event arrives with tab=comfy', async () => {
-    // `comfy://open-settings?tab=comfy` on an install-backed host
-    // opens the picker on the Config tab — the same surface the
-    // title-bar Settings entry routes to.
     mountPanel()
     await flushPromises()
     const api = (
@@ -2733,8 +2587,6 @@ describe('PanelApp', () => {
   })
 
   it('opens global settings when a panel-trigger-overlay open-settings event arrives with tab=global', async () => {
-    // `comfy://open-settings?tab=global` routes to the dedicated
-    // Global Settings popup regardless of which host received it.
     mountPanel()
     await flushPromises()
     const api = (
@@ -2756,8 +2608,6 @@ describe('PanelApp', () => {
   })
 
   it('opens global settings on its Storage tab when open-settings arrives with tab=global-storage', async () => {
-    // The instance pane's "Manage Shared Directories" link deep-links to
-    // Global Desktop Settings landed on Storage, not just the popup itself.
     mountPanel()
     await flushPromises()
     const api = (
@@ -2780,11 +2630,6 @@ describe('PanelApp', () => {
   })
 
   it('shows the "Desktop Update Ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
-    // auto-on click on the 'ready' pill (or the auto
-    // restart-prompt that fires on user-initiated download
-    // completion) routes through `app-update-restart-prompt`. The
-    // panel renderer pops a confirm modal; clicking Restart calls
-    // `installUpdate()`.
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -2817,10 +2662,6 @@ describe('PanelApp', () => {
   })
 
   it('shows the "Desktop Update Available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
-    // auto-off click on the 'available' pill routes
-    // through `app-update-download-prompt`. Clicking Download calls
-    // `downloadUpdate()`; the auto restart-prompt fires later (covered
-    // by `onAppUpdatePromptRestart`).
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -2839,7 +2680,6 @@ describe('PanelApp', () => {
   })
 
   it('auto-shows the restart prompt when onAppUpdatePromptRestart fires (auto-off post-download)', async () => {
-    // Cover the auto-off Download → wait → Restart flow.
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -2869,8 +2709,6 @@ describe('PanelApp', () => {
   })
 
   it('ignores install-update events whose installationId does not match the host', async () => {
-    // Defensive — main scopes the install-update broadcast to the
-    // matching host's panelView, but the renderer also re-validates.
     const wrapper = mountPanel()
     await flushPromises()
     mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
@@ -2880,15 +2718,6 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="detail-modal"]').exists()).toBe(false)
   })
 
-  // ---------------------------------------------------------------------------
-  // Telemetry — verify `comfy.desktop.install.flow.opened`
-  // and `comfy.desktop.view.opened` fire from PanelApp's
-  // `openFlowTakeover` / `switchPanel`.
-  //
-  // Captures CustomEvents on the `window` (the same channel
-  // `emitTelemetryAction` uses to bridge into the providers) so the test
-  // doesn't have to mock the Datadog / PostHog modules.
-  // ---------------------------------------------------------------------------
   describe('telemetry', () => {
     it('fires comfy.desktop.install.flow.opened with entrypoint=chooser when chooser empty-state CTA fires', async () => {
       window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
@@ -2934,12 +2763,9 @@ describe('PanelApp', () => {
       for (const { panel } of cases) {
         mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
         await flushPromises()
-        // The takeover slot only holds one component; emit close so the
-        // next case can open. Each *Modal stub emits 'close'.
         const open = events
           .filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')
           .pop()
-        // Dismiss whatever takeover is currently mounted.
         useOverlay().current.value = null
         await flushPromises()
         expect(open?.context?.flow, `panel=${panel}`).toBe(
@@ -2949,8 +2775,6 @@ describe('PanelApp', () => {
     })
 
     it('fires comfy.desktop.install.flow.opened with entrypoint=url when the URL initial panel is a flow', async () => {
-      // Captures must be installed BEFORE mount because the URL-driven
-      // initial-panel branch fires from inside `onMounted`.
       const events = captureTelemetry()
       window.history.replaceState({}, '', '/?panel=load-snapshot&firstUseCompleted=true')
       mountPanel()
@@ -2983,25 +2807,15 @@ describe('PanelApp', () => {
       mountPanel()
       await flushPromises()
       const events = captureTelemetry()
-      // Default body is comfy-lifecycle; re-confirming it is a no-op.
       mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
       await flushPromises()
       expect(events.filter((e) => e.actionName === 'comfy.desktop.view.opened')).toHaveLength(0)
     })
 
     it('does NOT fire comfy.desktop.install.flow.opened when openFlowTakeover is rejected by an in-flight Tier 2 op', async () => {
-      // useOverlay's tier-collision rules can reject a Tier 3 open if a
-      // Tier 2 progress op is in flight and the user cancels the
-      // confirm-prompt. The renderer must not fire the telemetry event
-      // when the takeover never actually mounted. Simulate by pre-
-      // populating the overlay slot with a progress op (Tier 2) and
-      // routing a flow open through panel-switch — useOverlay will
-      // request confirmation via window.api which our mock leaves
-      // unresolved, so openOverlay returns false.
       window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
       mountPanel()
       await flushPromises()
-      // Pre-populate Tier 2 progress overlay.
       useOverlay().current.value = {
         kind: 'progress',
         installationId: 'test-id',
@@ -3009,10 +2823,6 @@ describe('PanelApp', () => {
         onCancel: () => {}
       }
       const events = captureTelemetry()
-      // Trigger the flow open. The collision logic in useOverlay will
-      // either prompt (default-deny in tests since no confirm handler is
-      // wired) or silently reject — either way openFlowTakeover should
-      // bail before emitting telemetry.
       mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
       await flushPromises()
       expect(
@@ -3022,10 +2832,7 @@ describe('PanelApp', () => {
   })
 
   describe('window close consult', () => {
-    // With no active overlay, the renderer defers close confirmation to main.
-    // The panel may be hidden behind a running ComfyUI view.
     it('defers an install-backed ✕ to main when no overlay is open (no renderer modal)', async () => {
-      // Default URL already set in beforeEach: installationId=test-id
       mountPanel()
       await flushPromises()
 

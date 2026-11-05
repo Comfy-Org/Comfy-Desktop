@@ -1,17 +1,3 @@
-/**
- * Title-bar hover-gate state machine on the install-backed comfy
- * window. Mirrors `title-bar-hover-gate.test.ts` but runs after
- * clicking the always-seeded Cloud chooser tile, which transitions
- * the host's title bar into install-backed mode (`sourceCategory='cloud'`,
- * `is-install-less` dropped) reactively over IPC — the title-bar
- * WebContentsView persists across identity changes. This covers the
- * install-backed surface as well as the chooser.
- *
- * Network: the cloud launch path runs `waitForUrl(remoteUrl, 15s)`
- * against `https://cloud.comfy.org/`. The probe accepts any HTTP
- * response (status code agnostic), so a reachable endpoint is
- * sufficient — no auth, no specific status required.
- */
 
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
@@ -34,14 +20,6 @@ test.beforeAll(async () => {
   ctx = await launchApp({ settings: { firstUseCompleted: true, telemetryEnabled: false } })
   titleBar = ctx.titleBar
 
-  // Click the auto-seeded Cloud install row (post unsticky-cloud, it's no
-  // longer a dedicated `.chooser-tile-cloud` CTA — it renders through
-  // `ChooserInstallTile` like any other install). Wait for the existing
-  // title-bar view to flip into install-backed mode via the
-  // `comfy-titlebar:installation-id-changed` IPC. The pill dropping
-  // `.is-install-less` is the user-visible signal that the identity
-  // handshake completed; it doubles as a sanity check before the
-  // hover-gate assertions below.
   await ctx.panel.click('.chooser-tile[data-source-category="cloud"] .chooser-tile-launch')
   await expect.poll(() => titleBar.exists('.title-install-pill:not(.is-install-less)'), {
     timeout: 30_000,

@@ -36,8 +36,6 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 defineOptions({ inheritAttrs: false })
 
 const open = ref(false)
-// Reka reserves an empty string for clearing the selection. Desktop uses it for
-// choices such as "All", so map every option through a stable per-control prefix.
 const prefix = useId()
 const choices = computed(() =>
   props.options.map((option, index) => ({ ...option, key: `${prefix}-${index}` }))
@@ -56,8 +54,6 @@ function select(value: unknown): void {
 
 let suppressFocusReturn = false
 function onWindowBlur(): void {
-  // Clicking another Electron view is outside this document; the shared
-  // dismissable layer cannot observe that pointer event.
   if (!open.value) return
   suppressFocusReturn = true
   open.value = false

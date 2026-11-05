@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// Module loads electron at import even though the pure helpers under test never use it.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -14,7 +13,6 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-// Stub embeddedPopupView so its electron usage doesn't load.
 vi.mock('./embeddedPopupView', () => ({ EmbeddedPopupView: class {} }))
 
 import {
@@ -43,10 +41,6 @@ describe('buildCoachmarkConfig', () => {
     expect(cfg.theme.accent).toMatch(/^#/)
   })
 
-  // One popup backs both cards, and the renderer resets `actionLabel` on every config push.
-  // An action-less card must therefore omit the key outright rather than send an empty
-  // string, which the renderer would read the same way but which would also let a typo'd
-  // label reach the card as a blank button.
   it('omits actionLabel entirely for a card with no secondary action', () => {
     const cfg = buildCoachmarkConfig({
       kind: 'pill-hint',
@@ -76,7 +70,6 @@ describe('positionCoachmark beak tracking', () => {
   const bubble = { width: 280, height: 90 }
   const cardWidth = bubble.width
 
-  /** Where the beak actually lands in parent coordinates. */
   function beakX(placement: ReturnType<typeof positionCoachmark>): number {
     return placement.x + COACHMARK_SHADOW_GUTTER + placement.beakFraction * cardWidth
   }
@@ -88,9 +81,6 @@ describe('positionCoachmark beak tracking', () => {
   ])(
     'reports a card centre that lands on the anchor (card %s, clamped or not)',
     (width, anchor) => {
-      // Compare the beak position with its anchor while varying card width and anchor
-      // position, including right-edge clamping. Reusing the layout formula as the
-      // expectation would not independently verify alignment.
       const placement = positionCoachmark({
         anchor: { ...anchor, bottomY: 36 },
         bubble: { width, height: 90 },
@@ -100,8 +90,6 @@ describe('positionCoachmark beak tracking', () => {
       const cardCentreInWindow = placement.x + placement.cardCentreInView
       const clamped = placement.x <= 0 || placement.x + placement.width >= 1200
       if (clamped) {
-        // Clamped, the card cannot sit on the anchor — but it must still be centred in its
-        // own view, which is what the beak fraction is then measured against.
         expect(placement.cardCentreInView).toBeCloseTo(placement.width / 2, 5)
       } else {
         expect(cardCentreInWindow).toBeCloseTo(anchorCentre, 5)
@@ -120,8 +108,6 @@ describe('positionCoachmark beak tracking', () => {
   })
 
   it('keeps the beak on the anchor when the card clamps at the right edge', () => {
-    // The bell is the first right-edge anchor; on macOS the card does not fit beside it, so
-    // the view clamps. A beak fixed at 50% would then point at whatever the clamp slid it onto.
     const anchorCentre = 1140
     const placement = positionCoachmark({
       anchor: { leftX: 1130, rightX: 1150, bottomY: 36 },
@@ -134,8 +120,6 @@ describe('positionCoachmark beak tracking', () => {
   })
 
   it('keeps the beak on the anchor when the card clamps at the left edge', () => {
-    // 45 is inside the card once clamped, but far enough from its left corner that the
-    // edge margin does not bite — so the beak can track the anchor exactly.
     const anchorCentre = 45
     const placement = positionCoachmark({
       anchor: { leftX: 35, rightX: 55, bottomY: 36 },
@@ -151,9 +135,6 @@ describe('positionCoachmark beak tracking', () => {
     ['right', { leftX: 1198, rightX: 1200, bottomY: 36 }],
     ['left', { leftX: 0, rightX: 2, bottomY: 36 }]
   ])('never lets the beak reach the card corners (%s)', (_side, anchor) => {
-    // An anchor hard against the window edge sits outside the clamped card, so exact tracking
-    // would put the beak off a rounded corner, detached from the edge it grows out of. The
-    // margin wins over tracking in that case, on purpose.
     const placement = positionCoachmark({
       anchor,
       bubble,

@@ -2,11 +2,6 @@ import { reactive, readonly } from 'vue'
 import type { ModalDetailGroup, SnapshotDiffResult } from '../types/ipc'
 import type { ActionSheetItem } from '../components/ui/BaseActionSheet.vue'
 
-// Promise-based driver for the BaseModal-shell primitives, rendered by the
-// singleton DialogHost.vue. Mirrors `useModal()`; `confirm` resolves to
-// `'primary' | 'secondary' | false`. Runs parallel to `useModal`, which still
-// owns confirmWithOptions and the rich migrate-flow confirms.
-
 export interface PromptOpts {
   title: string
   message?: string
@@ -32,29 +27,22 @@ export interface AlertOpts {
   title: string
   message?: string
   buttonLabel?: string
-  /** Tone for the single OK button. Default `'primary'`. */
   tone?: 'primary' | 'danger'
-  /** Recessed sub-blocks rendered below the message. */
   messageDetails?: ModalDetailGroup[]
 }
 
 export interface ConfirmOpts {
   title: string
   message?: string
-  /** Low-emphasis guidance rendered below the message and details. */
   hint?: string
   confirmLabel?: string
   cancelLabel?: string
   tone?: 'primary' | 'danger'
-  /** Middle action between Cancel and Primary. */
   secondaryLabel?: string
   secondaryTone?: 'primary' | 'danger' | 'default'
   showCancel?: boolean
-  /** Header ✕ dismiss affordance; mutually exclusive with `showCancel`. */
   showCloseIcon?: boolean
-  /** Recessed sub-blocks (release notes, change summaries). */
   messageDetails?: ModalDetailGroup[]
-  /** Collapsible snapshot diff below the message (restore-confirm flow). */
   restoreDiff?: SnapshotDiffResult | null
 }
 
@@ -174,8 +162,6 @@ function settle(value: unknown): void {
   if (resolve) resolve(value)
 }
 
-// Cancel resolves a kind-specific falsy value (null / undefined / false), so
-// callers checking one shape don't fall through on another.
 function cancelValueForKind(kind: DialogKind): unknown {
   switch (kind) {
     case 'prompt':

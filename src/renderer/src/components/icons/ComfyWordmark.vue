@@ -1,8 +1,4 @@
-<script setup lang="ts">
-// Canonical Comfy wordmark, mirrors `comfy.org/icons/logo.svg`. Earlier
-// inline path shipped at 100x23 — ~17% squashed vs the brand asset's
-// 173x48 aspect ratio.
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <svg xmlns="http://www.w3.org/2000/svg" width="173" height="48" viewBox="0 0 173 48" fill="none">

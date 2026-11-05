@@ -30,7 +30,6 @@ function version(v: number, status: string): BuildVersion {
   return { id: `v${v}`, version: v, status, createdAt: '2026-07-20T00:00:00Z' }
 }
 
-/** A stub client whose wire catalog and per-version data are table-driven. */
 function stubClient(opts: {
   builds?: Build[]
   versionsByBuild?: Record<string, BuildVersion[]>
@@ -107,7 +106,6 @@ describe('listBuildRows', () => {
       ],
       state: 'installable'
     })
-    // The latest complete version (2) is the one resolved, not version 1.
     expect(client.getVersion).toHaveBeenCalledWith('v2')
   })
 
@@ -170,8 +168,6 @@ describe('listBuildRows', () => {
         v3: [
           artifact({ os: 'windows', gpu: 'nvidia' }),
           artifact({ os: 'mac' }),
-          // Same OS twice must not double up, and a half-built target isn't
-          // somewhere you could actually run it.
           artifact({ os: 'windows', gpu: 'cpu' }),
           artifact({ os: 'linux', status: 'building' })
         ]
@@ -205,7 +201,7 @@ describe('listBuildRows', () => {
     const client = stubClient({
       builds: [{ id: 'd1', name: 'WinOnly' }],
       versionsByBuild: { d1: [version(2, 'complete')] },
-      artifactsByVersion: { v2: [artifact({ os: 'windows' })] } // no linux/nvidia build
+      artifactsByVersion: { v2: [artifact({ os: 'windows' })] }
     })
     const rows = await listBuildRows(client as never, HOST, new Map([['d1', 1]]))
     expect(rows[0]).toMatchObject({ state: 'platform-mismatch' })
@@ -260,8 +256,6 @@ describe('listCompleteVersions', () => {
 
 describe('version cache warming', () => {
   it("caches a build's complete versions as a side effect of listing rows", async () => {
-    // The manage view builds its Update tab synchronously and cannot fetch, so
-    // the catalog read the chooser already does is what fills it.
     const client = stubClient({
       builds: [{ id: 'd1', name: 'Image' }],
       versionsByBuild: {

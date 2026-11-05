@@ -69,7 +69,6 @@ function commit(confirmed: boolean): void {
   resolver = null
 }
 
-// The host can remove the flow while its confirmation promise is pending.
 onBeforeUnmount(() => {
   if (resolver) commit(false)
 })

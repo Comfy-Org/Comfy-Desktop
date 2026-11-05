@@ -1,15 +1,3 @@
-/**
- * E2E: a Performance Test runs alone. Starting one is refused, naming what is running, while any
- * other local ComfyUI Desktop started is up; once that is stopped, the Performance Test boots on
- * the installation itself (its own configured port), like a normal launch.
- *
- * Users meet this from File > Performance Tests with an installation already running. A second
- * ComfyUI competes for the GPU and memory, and on the same installation fails on its database lock.
- *
- * Two installations, so the refusal is shown for another installation, not only the benchmarked
- * one. The ComfyUI here is `fakeComfyInstall`. Linux only, because the stand-in is (see its header).
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -68,7 +56,6 @@ const installation = (id: string, name: string) => ({
 })
 
 test.beforeAll(async () => {
-  // The app launches here, not in a test, so the hook needs the test's budget, not the 45s default.
   test.setTimeout(180_000)
   profileDir = await mkdtemp(path.join(os.tmpdir(), 'comfyui-perf-guard-profile-'))
   const taken = new Set<number>()
@@ -89,7 +76,6 @@ test.beforeAll(async () => {
       firstUseCompleted: true,
       telemetryEnabled: false,
       hasSeenCentralPillHint: true,
-      // The refusal is asserted in English.
       language: 'en'
     },
     installations: [
@@ -126,7 +112,6 @@ test('a Performance Test is refused while another installation runs, and named @
     (await events('comfy.desktop.comfyui.boot_started')).length,
     'no ComfyUI was started'
   ).toBe(bootsBefore)
-  // The installation that was running is untouched.
   expect(await getRunningSessionSnapshot(ctx!.app, OTHER_ID)).not.toBeNull()
 })
 
@@ -136,8 +121,6 @@ test('once that is stopped, the Performance Test boots on its installation, on i
   const perf = await launch(BENCH_ID, PERF_SESSION)
 
   expect(perf, perf.message).toMatchObject({ ok: true })
-  // It started from the installation's own configured port. Checked through boot_started: if
-  // another process took that port after the fixture released it, the launcher rightly moves on.
   const boot = (await events('comfy.desktop.comfyui.boot_started')).at(-1)!
   expect(boot).toMatchObject({ session_kind: 'performance_test' })
   expect(boot.port_bumped_from ?? boot.port).toBe(ports[BENCH_ID])

@@ -16,8 +16,6 @@ function createTestI18n() {
   return createI18n({ legacy: false, locale: 'en', messages })
 }
 
-// Stub BrandTakeoverLayout's Teleport + focus-trap so assertions can
-// query the rendered tree inline.
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
   props: ['theme', 'vignette', 'ariaLabel'],
@@ -99,8 +97,6 @@ describe('BrandFinishedSurface', () => {
     })
 
     it('gives each instance a unique logs id so two surfaces cannot collide', () => {
-      // Both surfaces must mount under one Vue app: useId()'s counter is
-      // per-app, so separate mount() calls would each restart and collide.
       const parent = {
         components: { BrandFinishedSurface },
         template: `

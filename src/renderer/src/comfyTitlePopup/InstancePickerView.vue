@@ -44,7 +44,6 @@ interface PickerStorageDir {
   isPrimary: boolean
 }
 
-/** Must stay in sync with `PickerStorageSlice` in `src/main/popups/titlePopup.ts`. */
 interface PickerStorageSlice {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: PickerStorageDir[]
@@ -67,20 +66,12 @@ interface PickerOperationStatus {
 interface PickerSnapshot {
   installs: PickerInstall[]
   activeInstallationId: string | null
-  /** Host view-kind + active-install category for the navigation matrix.
-   *  Mirrors `InstancePickerSnapshot` in main; optional for older bundles. */
   currentView?: ViewKind
   currentCategory?: Category | null
   runningInstallationIds: string[]
-  /** `startedAt` per running session; changes on a restart the id list cannot show. */
   runningSessionStartedAt?: Record<string, number>
-  /** Installs launching but not yet started. Hydrated into
-   *  sessionStore because the popup preload has no onInstanceLaunching. */
   launchingInstallationIds: string[]
   selectedInstallationId: string | null
-  /** Bumped only when main intentionally retargets the selection. The view
-   *  applies selectedInstallationId over a local pick only when this advances,
-   *  so a stale rebroadcast can't snap the user back to a prior row. */
   pickerSelectionEpoch?: number
   selectedSettings: DetailSection[] | null
   selectedSnapshots: SnapshotListData | null
@@ -96,7 +87,6 @@ const props = defineProps<{
   snapshot: PickerSnapshot
 }>()
 
-// The popup is hidden, not unmounted, between opens, and every open bumps this epoch.
 provide(
   SETTINGS_REOPEN_EPOCH,
   computed(() => props.snapshot.pickerSelectionEpoch ?? 0)
@@ -120,13 +110,9 @@ function hydrateSessionStoreFromSnapshot(): void {
       }
       sessionStore.runningInstances.set(id, placeholder)
     } else if (startedAt[id] !== undefined && current.startedAt !== startedAt[id]) {
-      // A restart that landed between two snapshots: same id, new session. Replaced rather than
-      // mutated so the settings view's session watch sees a new value.
       sessionStore.runningInstances.set(id, { ...current, startedAt: startedAt[id] })
     }
   }
-  // The snapshot is the only path that brings launching state in (the
-  // popup preload has no onInstanceLaunching).
   const nextLaunching = new Set(props.snapshot.launchingInstallationIds ?? [])
   for (const id of Array.from(sessionStore.launchingInstances.keys())) {
     if (!nextLaunching.has(id)) sessionStore.launchingInstances.delete(id)
@@ -203,7 +189,6 @@ const visibleChips = computed(() => {
   })
 })
 
-/** Default selection when the popup opens with no active/selected install. */
 function mostRecentInstallId(installs: PickerInstall[]): string | null {
   let best: PickerInstall | undefined
   for (const inst of installs) {
@@ -220,23 +205,17 @@ function resolveInitialSelection(snapshot: PickerSnapshot): string | null {
   return mostRecentInstallId(snapshot.installs)
 }
 const selectedId = ref<string | null>(resolveInitialSelection(props.snapshot))
-// Largest pickerSelectionEpoch applied so far; only a strictly-greater
-// snapshot epoch counts as a main-authoritative retarget.
 const appliedSelectionEpoch = ref<number>(props.snapshot.pickerSelectionEpoch ?? 0)
 
 watch(
   () => props.snapshot.pickerSelectionEpoch ?? 0,
   (nextEpoch) => {
     if (nextEpoch <= appliedSelectionEpoch.value) return
-    // Main intentionally retargeted; a fresh open overrides any local pick.
     appliedSelectionEpoch.value = nextEpoch
     selectedId.value = resolveInitialSelection(props.snapshot)
   }
 )
 
-// Cold-start fallback: seed selectedId once installs land if the snapshot
-// first arrived empty. Once a selection exists, live install-list updates
-// must not touch it (would reintroduce the snap-back).
 watch(
   () => props.snapshot.installs,
   (installs) => {
@@ -258,8 +237,6 @@ const selectedInstall = computed<Installation | null>(() => {
 })
 
 const runningSet = computed(() => new Set(props.snapshot.runningInstallationIds))
-// Optimistic local state set on click so the progress view appears before
-// the IPC round-trip + snapshot lands; cleared once the snapshot confirms.
 const localOperationStatus = ref<Map<string, PickerOperationStatus>>(new Map())
 
 watch(
@@ -294,7 +271,6 @@ function isRowCurrent(inst: Installation): boolean {
   return !!props.snapshot.activeInstallationId && inst.id === props.snapshot.activeInstallationId
 }
 
-/** Must mirror the `showUpdateBadge` check in `ComfyUISettingsContent.vue`. */
 function isRowUpdateAvailable(inst: Installation): boolean {
   const tagged = inst as Installation & { statusTag?: { style?: string }; status?: string }
   return tagged.statusTag?.style === 'update' || tagged.status === 'update-available'
@@ -304,8 +280,6 @@ function handleSelect(inst: Installation): void {
   selectedId.value = inst.id
 }
 
-// FLIP: pin a leaving row's box so it fades out of flow while the survivors
-// slide up into the gap (mirrors ChooserView's `lockLeavingTileSize`).
 function lockLeavingRowSize(el: Element): void {
   const node = el as HTMLElement
   const list = node.parentElement
@@ -328,8 +302,6 @@ function handleClose(): void {
 
 const isInstallHost = computed(() => !!props.snapshot.activeInstallationId)
 
-/** Routes through `new-window` rather than `return-to-dashboard`: the latter
- *  detaches the install, which stops the running instance. */
 function handleOpenDashboard(): void {
   bridge?.activate?.('new-window')
 }
@@ -341,8 +313,6 @@ watch(
   }
 )
 
-// On an install-less host the initial fallback selection never reaches main
-// via the change-only watcher above, so persist it once on mount.
 if (
   selectedId.value &&
   !props.snapshot.selectedInstallationId &&
@@ -355,14 +325,10 @@ const initialExpandedTab = computed<PickerTab>(() =>
   resolvePickerTab(props.snapshot.initialTab, 'update')
 )
 
-// Both lifecycle id arrays must be watched: the snapshot is the sole source
-// of truth for sessionStore, and watching only runningInstallationIds would
-// miss launching-only transitions. NUL-joined to avoid comma collisions.
 watch(
   [
     () => props.snapshot.runningInstallationIds.join('\0'),
     () => (props.snapshot.launchingInstallationIds ?? []).join('\0'),
-    // A restart between two snapshots changes only this.
     () => JSON.stringify(props.snapshot.runningSessionStartedAt ?? {})
   ],
   () => hydrateSessionStoreFromSnapshot(),
@@ -376,8 +342,6 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
     localOperationStatus.value.get(opts.installationId)
   if (existingOperation && !existingOperation.done) return
 
-  // opts.actionData may be a Vue reactive proxy, which can't cross the
-  // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData
     ? (JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>)
     : undefined
@@ -386,9 +350,6 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
     props.snapshot.activeInstallationId
   )
   if (routing === 'inline-picker') {
-    // Seed optimistic local state so the progress view appears before the
-    // IPC round-trip lands. Seed main's first-tick status for snapshot
-    // restore so the line doesn't flash the "Working…" fallback.
     localOperationStatus.value.set(opts.installationId, {
       percent: -1,
       status: opts.actionId === 'snapshot-restore' ? 'Loading snapshot…' : '',
@@ -457,14 +418,8 @@ function handleSettingsNavigateList(): void {
 const dialogs = useDialogs()
 const { t } = useI18n()
 
-// Single funnel for navigation decisions (primary CTA + caret). The decision is
-// computed in `ComfyUISettingsContent` via `decideNavigation`; this routes its
-// verb onto the bridge, applying the renderer-side gates.
 const instanceActions = useInstanceActions({
   bridge,
-  // Local restarts/switches confirm in-drawer (cloud/remote have no local
-  // process to kill); keeps the drawer open instead of a system-modal over the
-  // host. Non-local installs short-circuit to confirmed.
   confirmLocalKill: async (inst) => {
     if (inst.sourceCategory !== 'local') return true
     const result = await dialogs.confirm({
@@ -481,9 +436,6 @@ const instanceActions = useInstanceActions({
     })
     return result === 'primary'
   },
-  // In-drawer 3-way prompt (popup stays open) when the CURRENT host is a local
-  // install — swapping would stop its process. Cloud/remote hosts have no local
-  // process to stop → switch straight away.
   confirmSwitch: async (inst) => {
     const hostIsLocalInstall =
       props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'

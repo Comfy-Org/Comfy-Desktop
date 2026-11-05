@@ -1,43 +1,18 @@
-// Canonical IPC types shared across main, preload, and renderer.
-// This file is the single source of truth — do not duplicate these types elsewhere.
-
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
-// Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
-// from the cloud library so the renderer imports them from one place; tokens
-// are never part of these shapes.
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
-// One Core beta activation card, as main resolves it for the title bar. Re-exported from its
-// producer rather than restated here: this file's header forbids duplicating types, and an
-// independent copy would drift silently — `ipcMain.handle` is ungeneric and `ipcRenderer.invoke`
-// returns `Promise<any>`, so nothing would fail the build.
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
-/** Payload of `comfy-titletooltip:set-beak`: where the coachmark card and its beak belong.
- *
- *  Declared here because three processes have to agree on it — main sends it, the preload
- *  validates it, the renderer applies it — and an IPC boundary gives no compile error when
- *  they drift. `ipcMain.send` is untyped and `ipcRenderer.on` hands back `unknown`, so
- *  independent declarations would disagree silently and the card would land in the wrong
- *  place with everything still building.
- */
 export interface CoachmarkBeakPayload {
-  /** Where the beak sits along the card, 0..1 from its left edge. */
   beakFraction: number
-  /** Where the card's midpoint belongs within its view, in CSS px.
-   *
-   *  A centre rather than an edge so it holds at whatever width the card actually renders,
-   *  and `null` when main did not send one — the renderer then falls back to CSS centring
-   *  rather than to a guess. */
   cardCentreInView: number | null
 }
 
-/** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
   | 'no-build'
@@ -46,8 +21,6 @@ export type DevPlatformBuildState =
   | 'installed'
   | 'update-available'
 
-/** One installable target from a published Build release. Storage references,
- *  integrity values, and other trusted artifact data stay in main. */
 export interface DevPlatformBuildTarget {
   artifactId: string
   releaseVersion: number
@@ -57,20 +30,14 @@ export interface DevPlatformBuildTarget {
   recommended: boolean
 }
 
-/** One build as a renderer-safe display row. */
 export interface DevPlatformBuild {
   id: string
   name: string
   description?: string
-  /** Builder identity-provider subject and its best-effort workspace display name. */
   createdBy?: string
   creatorName?: string
   version?: string
-  /** The ComfyUI version this build bundles.
-   *  TODO(builder-backend): not yet populated by `listBuildRows` - the
-   *  build metadata needs to carry it through. Absent renders as unknown. */
   comfyuiVersion?: string
-  /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
   numModels?: number
@@ -78,20 +45,13 @@ export interface DevPlatformBuild {
   numCustomNodes?: number
   updatedAt?: string
   state: DevPlatformBuildState
-  /** Machine-readable reason for a blocking state. */
   blockedReason?: string
-  /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
-  /** Runnable targets in the latest complete release, recommended first. */
   releaseTargets?: DevPlatformBuildTarget[]
   minDesktopVersion?: string
-  /** Local-only: present for installed / update-available. A build
-   *  version is an integer, matching how the row builder sets it. */
   installedVersion?: number
 }
 
-/** Kickoff result of `installBuild`: mirrors `addInstallation` so the
- *  renderer drives the same `installInstance` + progress flow. */
 export interface InstallBuildResult {
   ok: boolean
   message?: string
@@ -111,14 +71,11 @@ export interface PromoteLocalInstanceResult {
   message?: string
 }
 
-// Unsubscribe function returned by event listeners
 export type Unsubscribe = () => void
 
-// Theme identifiers
 export type Theme = 'system' | 'dark' | 'light'
 export type ResolvedTheme = Exclude<Theme, 'system'>
 
-/** One row of a `version-stats` field's table. */
 export interface VersionStatRow {
   id: string
   label: string
@@ -127,7 +84,6 @@ export interface VersionStatRow {
   highlight?: boolean
 }
 
-/** Payload of a `version-stats` field: the Update tab's version summary. */
 export interface VersionStatsValue {
   headline: string
   headlineHighlight?: boolean
@@ -136,17 +92,13 @@ export interface VersionStatsValue {
   rows: VersionStatRow[]
 }
 
-/** Signed-in user's Comfy Cloud subscription tier. `'unknown'` means signed
- *  out or no fetch has succeeded yet this lifetime. See `userTier.ts`. */
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
-// --- Installation types ---
 export interface Installation {
   id: string
   name: string
   sourceLabel: string
   sourceCategory: string
-  /** Workspace that owns this installation. Absent for local and legacy records. */
   workspaceId?: string
   version?: string
   statusTag?: { style: string; label: string; version?: string; detail?: string }
@@ -158,15 +110,10 @@ export interface Installation {
   installPath?: string
   status?: string
   lastLaunchedAt?: number
-  /** Per-source-category last-launched timestamps (epoch ms). Written
-   *  alongside `lastLaunchedAt` by `installations.markLaunched()` on the
-   *  main side; consumed by recency-aware UI surfaces such as the
-   *  startup picker. */
   lastLaunchedAtByCategory?: Record<string, number>
-  [key: string]: unknown // allow extra fields from sources
+  [key: string]: unknown
 }
 
-/** Full-page screens of a dashboard window, reachable from its sidebar. */
 export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
 
 export interface BuildStorageSnapshot {
@@ -182,17 +129,11 @@ export interface RunningInstance {
   url?: string
   mode: string
   startedAt?: number
-  /** Boot duration (ms from launch start to server-ready). Present on the
-   *  `instance-started` broadcast; absent from `getRunningInstances()`. */
   bootTimeMs?: number
-  /** Spawn-retry counts for this boot, folded onto `instance-started` so the
-   *  renderer's telemetry carries them without a separate `server_ready`
-   *  event. 0 on the remote / skip-port paths. */
   portRetries?: number
   rebootRetries?: number
 }
 
-// --- Source / New Install types ---
 export interface Source {
   id: string
   label: string
@@ -221,7 +162,6 @@ export interface FieldOption {
   data?: Record<string, unknown>
 }
 
-// --- Detail types ---
 export interface DetailSection {
   title?: string
   description?: string
@@ -240,12 +180,9 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
-/** One level of a cascading picker path (id is stable, label is display). */
 export interface DetailOptionGroup {
   id: string
   label: string
-  /** Shown under the label in the group dropdown (e.g. what a CUDA series
-   *  is for, or a too-old-driver warning). */
   description?: string
 }
 
@@ -254,22 +191,15 @@ export interface DetailFieldOption {
   label: string
   description?: string
   recommended?: boolean
-  /** Cascading picker path for `channel-cards`: options sharing a path
-   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
-   *  -> version). The field builder emits it only when it distinguishes
-   *  (two or more groups); absent = today's flat single dropdown. */
   groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
-/** One Core beta grant as the settings view shows it. */
 export interface BetaArgView {
   arg: string
-  /** Payload-supplied feature name, or `null` when the payload named none. */
   name: string | null
 }
 
-/** The running session's grants, or while stopped those the next launch is eligible for. */
 export interface CoreBetaArgs {
   timing: 'session' | 'next-launch'
   args: BetaArgView[]
@@ -279,8 +209,6 @@ export interface ComfyArgDef {
   name: string
   flag: string
   help: string
-  /** `multi-value` is a variadic flag (argparse nargs `*`/`+`, shown as `[X ...]`
-   *  in --help) that accepts several space-separated values, e.g. `--cache-ram 4 8`. */
   type: 'boolean' | 'value' | 'optional-value' | 'multi-value'
   metavar?: string
   choices?: string[]
@@ -300,54 +228,23 @@ export interface DetailField {
     | 'number'
     | 'path'
     | 'channel-cards'
-    /** Read-only version summary: headline + badge over a table of facts. The
-     *  source supplies the wording; the renderer only lays it out. */
     | 'version-stats'
     | 'args-builder'
     | 'env-vars'
     | 'model-dirs'
     | 'hidden'
   options?: DetailFieldOption[]
-  /** Display names for each `groupPath` level of a cascading `channel-cards`
-   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
   groupLabels?: string[]
   refreshSection?: boolean
-  /** Action id to fire automatically when this field's value changes
-   *  (e.g. switching update channel triggers `check-update`). */
   onChangeAction?: string
   browseOnly?: boolean
-  /** Renders the field indented behind a hairline rail to signal it
-   *  depends on the toggle directly above it (e.g. the per-install
-   *  output-path picker under "Use shared output directory"). Set
-   *  explicitly by the field builder — the renderer must not infer
-   *  nesting from the field id, since ids like `outputDir` are reused
-   *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
-  /** Consecutive fields sharing the same rowGroup render side-by-side in one
-   *  row (equal widths, stacking again on narrow layouts) instead of each
-   *  taking the full width. Set by the field builder; the renderer only
-   *  groups adjacent fields so unrelated fields never merge. */
   rowGroup?: string
   tooltip?: string
-  /** Blocks only the off -> on transition of a boolean row; turning it back
-   *  off stays available. Derived renderer-side from live state (the beta
-   *  opt-in reads telemetry consent), never copied out of a `SettingsField` —
-   *  `toDetailField` has no business knowing about it. */
   turnOnDisabled?: boolean
-  /** i18n key for the hover text explaining why turning this row on is
-   *  blocked. A key rather than a string because the deriving renderer and
-   *  the rendering control share one catalog. */
   turnOnDisabledTooltipKey?: string
-  /** Marks fields that only take effect on next process start.
-   *  Renderer shows a per-field tag + promotes the footer Restart
-   *  button when one of these is edited while the install is running. */
   requiresRestart?: boolean
-  /** Inline explanatory text rendered beneath the control. Used for
-   *  fields whose effect is not self-evident from the label (e.g.
-   *  Chinese mirrors lists which hosts it swaps). */
   description?: string
-  // text / number support — surfaced from SettingsField when DetailField
-  // is built from a global SettingsSection (Global Settings panel).
   placeholder?: string
   min?: number
   max?: number
@@ -356,11 +253,6 @@ export interface DetailField {
 export interface ActionDef {
   id: string
   label: string
-  /** Visual style for the action button.
-   *  - `primary`: solid blue, does the thing immediately on click.
-   *  - `accent`: hollow blue, telegraphs that a confirmation step
-   *    will run before doing anything.
-   *  - `danger`: red, destructive action. */
   style?: 'primary' | 'accent' | 'danger'
   enabled?: boolean
   disabledMessage?: string
@@ -381,8 +273,6 @@ export interface ConfirmDef {
   confirmLabel?: string
   options?: ConfirmOption[]
   messageDetails?: ModalDetailGroup[]
-  /** Optional snapshot diff rendered as a collapsible SnapshotDiffView in the
-   *  confirm modal (restore flow). Reuses the Snapshots-tab diff component. */
   restoreDiff?: SnapshotDiffResult | null
 }
 
@@ -420,10 +310,6 @@ export interface PromptDef {
   field: string
   required?: boolean | string
   messageDetails?: ModalDetailGroup[]
-  /** When true, the shown `defaultValue` is first run through
-   *  `getUniqueName()` so the pre-filled name matches what will actually be
-   *  assigned on save. Set on flows that create a NEW install (copy /
-   *  copy-update); never on rename, where keeping the current name is valid. */
   uniquifyDefault?: boolean
 }
 
@@ -432,7 +318,6 @@ export interface ModalDetailGroup {
   items: string[]
 }
 
-// --- List actions ---
 export interface ListAction {
   id: string
   label: string
@@ -445,76 +330,25 @@ export interface ListAction {
   cancellable?: boolean
 }
 
-/** Payload carried by every component's `show-progress` emit. The host
- *  (typically `PanelApp`) consumes the closure-bound `apiCall` to drive
- *  ProgressModal. */
 export interface ShowProgressOpts {
   installationId: string
   title: string
   apiCall: () => Promise<unknown>
   cancellable?: boolean
   returnTo?: string
-  /** Set when the operation will spawn a ComfyUI instance (launch /
-   *  restart). The chooser host listens for the resulting
-   *  `instance-started` broadcast and closes itself so the new comfy
-   *  window replaces the chooser visually. Without this flag,
-   *  launches initiated from the dashboard would
-   *  leave the chooser host alongside the new comfy window. */
   triggersInstanceStart?: boolean
-  /** Set on install ops that should auto-launch the resulting install
-   *  once the op finishes successfully. Routes the install op through
-   *  the Tier 3 brand-chrome takeover so the install bar and the
-   *  subsequent launch sequence (security scan → starting server) share
-   *  one continuous screen. The auto-launch is wired in
-   *  `useFirstUseChain` (its existing watcher fits the same shape). */
   autoLaunchOnFinish?: boolean
-  /** Categorises the op for ProgressModal so the brand branch can pick
-   *  the right caption set, iconography, and finished-state copy. Launch
-   *  ops keep the rolling 5-step `launchCaption`; everything else maps
-   *  through `friendlyCaption` (per-phase i18n) instead — without this
-   *  flag, delete and update ops inherit the launch captions ("Mounting
-   *  model libraries…") which read as wrong copy. Falls back to
-   *  `'generic'` when omitted so legacy callers keep working. */
   opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
-  /** Tags this op as one leg of an install→launch chain so ProgressModal
-   *  can render a unified 0→100% bar across both ops instead of letting
-   *  the install fill 0→100 then stalling the launch at 100. `'install'`
-   *  maps the bar to 0→70%; `'launch'` maps to 70→100%. Stamped by
-   *  `useFirstUseChain` when capturing the install op and again when its
-   *  auto-launch watcher fires the chained launch. Standalone ops leave
-   *  this unset and keep their existing 0→100 behaviour. */
   chainSpan?: 'install' | 'launch'
-  /** Set on ops that remove the install from the registry as a
-   *  successful side-effect (today: the install-level delete action).
-   *  Drives three carve-outs on top of the standard takeover flow:
-   *    - skip the chooser-host claim (host stays in the initiating
-   *      window — nothing meaningful to attach when the install is
-   *      about to vanish),
-   *    - in-flight footer swaps Return-to-Dashboard for Cancel,
-   *    - on success the host auto-detaches before the takeover closes,
-   *    - on error only Return-to-Dashboard renders (no Reboot — the
-   *      install state is undefined after a partial destroy). */
   destroysInstance?: boolean
-  /** Raw action identity, included so a host that can't run the closure
-   *  itself (the picker popup) can forward the request to one that can
-   *  (the panel) and have it rebuild `apiCall`. Drawer/panel callers
-   *  ignore these and use `apiCall` directly. */
   actionId?: string
   actionData?: Record<string, unknown>
-  /** When set, ProgressModal skips its 700ms auto-close on success and
-   *  renders a terminal choice screen with the supplied actions. Picker-
-   *  driven mutating-non-launch ops opt in via `resolveProgressRouting`
-   *  to surface a `[Go to Dashboard | Open Instance]` follow-up. Generic
-   *  shape — new flows mint new presets without touching ProgressModal.
-   *  Imported lazily as a structural type so this declaration stays in
-   *  the shared types layer. */
   successTerminal?: {
     title?: string
     actions: Array<{ id: string; label: string; variant: 'primary' | 'ghost' }>
   }
 }
 
-// --- Action results ---
 export interface ActionResult {
   ok?: boolean
   navigate?: 'list' | 'detail'
@@ -523,9 +357,6 @@ export interface ActionResult {
   portConflict?: PortConflictInfo
   cancelled?: boolean
   running?: boolean
-  /** Set by actions that produce a new install record (copy /
-   *  copy-update / release-update). ProgressModal.handleDone opens
-   *  the new install in its own window — the source host stays put. */
   newInstallationId?: string
 }
 
@@ -534,13 +365,8 @@ export interface PortConflictInfo {
   pids?: number[]
   nextPort?: number
   isComfy?: boolean
-  /** The holder is this install's ComfyUI left running by an earlier Desktop, and it is still
-   *  running a prompt. "Stop" relaunches with `stopBusyPriorProcess`, which re-proves ownership
-   *  and stops it through the launch path rather than by port. */
   priorBusy?: boolean
-  /** With `priorBusy`: it never answered whether it is working, so nothing may claim it is. */
   priorUnknown?: boolean
-  /** With `priorBusy`: it is not the earlier ComfyUI but processes it left behind (`pids`). */
   priorSurvivors?: boolean
 }
 
@@ -559,7 +385,6 @@ export interface QuitActiveItem {
   type: 'session' | 'operation' | 'download'
 }
 
-// --- Settings types ---
 export interface SettingsSection {
   title?: string
   fields: SettingsField[]
@@ -587,7 +412,6 @@ export interface SettingsField {
   description?: string
 }
 
-// --- Models types ---
 export interface ModelsResult {
   systemDefault: string
   sections: ModelsSection[]
@@ -606,20 +430,15 @@ export interface ModelsField {
   tooltip?: string
 }
 
-// --- Probe types ---
 export interface ProbeResult {
   sourceLabel: string
   version?: string
   repo?: string
   branch?: string
-  /** Resolved install root. Set when the probe corrected the user-picked path
-   *  (e.g. they pointed at the nested `ComfyUI/` folder of a standalone or
-   *  portable install). When present, it should be recorded as the installPath. */
   installPath?: string
   [key: string]: unknown
 }
 
-// --- Progress types ---
 export interface ProgressData {
   installationId: string
   phase: string
@@ -627,33 +446,21 @@ export interface ProgressData {
   percent?: number
   steps?: ProgressStep[]
   error?: boolean
-  /** Main initiated cancellation outside the progress surface (for example, sign-out). */
   cancelRequested?: boolean
 }
 
 export interface ProgressStep {
   phase: string
   label: string
-  /** Share of the 0→100 bar this phase owns. When set on any step, the
-   *  renderer paces the bar from these (the producer is the single source of
-   *  truth); when absent it falls back to a curated weight table. */
   weight?: number
 }
 
-/**
- * A mid-operation prompt the main process needs the user to answer (e.g.
- * during Legacy Desktop adoption). Surfaced as an in-app dialog above the
- * ProgressModal — never a native OS message box. Labels arrive pre-translated
- * from main; the renderer must not re-translate them. The renderer ACKs
- * delivery, then replies with the chosen `buttonIndex`.
- */
 export interface AdoptPromptRequest {
   promptId: string
   type: 'info' | 'warning' | 'error' | 'question'
   title: string
   message: string
   detail?: string
-  /** Pre-translated heading for the `detail` block. */
   detailLabel?: string
   buttons: string[]
   defaultId: number
@@ -669,24 +476,17 @@ export interface AdoptPromptResponse {
   buttonIndex: number
 }
 
-// --- Event data types ---
 export interface ComfyOutputData {
   installationId: string
   text: string
 }
 
-/** Snapshot for repainting an interactive console: the retained scrollback,
- *  the shell's current size, and whether the session has been killed. */
 export interface TerminalRestore {
   buffer: string[]
   size: { cols: number; rows: number }
   exited: boolean
 }
 
-/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
- *  `unknown` covers a decoded fault code we have no specific guidance for.
- *  Shared across the IPC boundary so producer (main decode) and consumer
- *  (renderer crash copy) can't drift on the string values. */
 export type CrashKind =
   | 'access-violation'
   | 'illegal-instruction'
@@ -699,35 +499,11 @@ export interface ComfyExitedData {
   installationName: string
   crashed?: boolean
   exitCode?: number
-  /** POSIX signal name when the process was killed by signal (e.g.
-   *  `'SIGKILL'`, `'SIGTERM'`). `null` / absent on a normal exit and on
-   *  Windows TerminateProcess paths (Windows reports an exit code only).
-   *  Surfacing this lets the lifecycle view differentiate "killed by
-   *  signal" from "crashed with non-zero exit". */
   signal?: string
   lastStderr?: string
-  /** Hex form of `exitCode` when it decodes to a Windows native-crash
-   *  (NTSTATUS) code, e.g. `'0xC0000005'`. Absent for plain application
-   *  exits. Lets the UI show the meaningful hex alongside the raw decimal. */
   exitCodeHex?: string
-  /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
-   *  used to pick human-readable, actionable crash copy. Absent when the exit
-   *  code isn't a decodable native fault. */
   crashKind?: CrashKind
-  /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
-   *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
-   *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
-   *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
   vcRuntimeMissing?: string[]
-  /**
-   * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
-   * Set by `recordCrash()` so a renderer that hydrates the crash *after*
-   * the live `comfy-exited` IPC (panel WebContents recreated, second
-   * window opened on the same install, etc.) still has a real value to
-   * compute crash-to-relaunch latency from. Live-path subscribers also
-   * stamp this on their own copy with `Date.now()`; the main-side value
-   * takes precedence on hydration so the two paths agree.
-   */
   crashedAtMs?: number
 }
 
@@ -745,10 +521,6 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
-  /** Non-blocking, user-actionable problem on otherwise supported hardware
-   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
-   *  access). Install may proceed, but GPU acceleration will not work until
-   *  the user resolves it. */
   warning?: string
 }
 
@@ -760,12 +532,9 @@ export interface NvidiaDriverCheck {
 
 export type TemplateDownloadStatus = 'resolving' | 'downloading' | 'done' | 'error' | 'cancelled'
 
-/** Model download progress for a prepared performance-test example workflow. */
 export interface ExampleWorkflowDownload {
   status: TemplateDownloadStatus
-  /** 0–100, or -1 while the total is unknown. */
   percent: number
-  /** Localized progress line, e.g. "model.safetensors (1 of 3) — 2.1 / 14 GB …". */
   message: string
   error?: string
 }
@@ -777,7 +546,6 @@ export interface DiskSpaceInfo {
 
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
-// --- Model download types ---
 export type ModelDownloadStatus =
   | 'pending'
   | 'downloading'
@@ -787,8 +555,6 @@ export type ModelDownloadStatus =
   | 'cancelled'
 
 export interface ModelDownloadProgress {
-  /** Stable per-job identifier assigned by main. Control APIs accept it in
-   *  place of the URL; optional only for snapshots predating the field. */
   id?: string
   url: string
   filename: string
@@ -801,18 +567,10 @@ export interface ModelDownloadProgress {
   etaSeconds?: number
   status: ModelDownloadStatus
   error?: string
-  /** First-seen wall-clock timestamp (ms). Stable across status
-   *  transitions — the renderer uses it to render a single
-   *  insertion-ordered list so terminal entries don't jump to the
-   *  bottom when they leave the in-flight bucket. Optional only for
-   *  back-compat with snapshots that predate the field. */
   createdAt?: number
-  /** Set on a completed asset download whose file is an image, so the surface
-   *  knows to lazily request a thumbnail via `getDownloadThumbnail`. */
   isImage?: boolean
 }
 
-// --- Track types ---
 export interface TrackResult {
   ok: boolean
   message?: string
@@ -829,9 +587,7 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
-  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
-  /** Rounded VRAM of the selected primary GPU, in GiB. */
   gpu_vram_gb: number | null
   gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
@@ -974,7 +730,6 @@ export interface PerformanceTestBenchmark {
   medianJobDurationSeconds: number | null
   measuredJobCount: number
   hardwareName: string | null
-  /** Complete results.json payload used to discover configurable table columns. */
   result: Record<string, PerformanceTestResultValue>
 }
 
@@ -1051,10 +806,6 @@ export interface InstallationDdContext {
   snapshot_diffs: SnapshotDiffEntry[]
 }
 
-/** Compact per-install summary for the per-session boot census
- *  emitted as `comfy.desktop.session.installs_inventory`. Strictly metadata
- *  + counts + diff summaries (no per-node / per-package contents) so
- *  the inventory can pack many installs into a single PostHog event. */
 export interface InstallInventoryEntry {
   installation_id: string
   source_id: string
@@ -1066,9 +817,6 @@ export interface InstallInventoryEntry {
   latest_snapshot: {
     createdAt: string
     trigger: string
-    /** Presence flag only — user-typed labels can carry PII / paths /
-     *  model names. The inventory event bypasses the renderer-side
-     *  `scrubAll` pass, so we never ship the raw label string. */
     has_label: boolean
     comfyui: { ref: string; commit: string | null; releaseTag: string }
     custom_nodes_count: number
@@ -1077,7 +825,6 @@ export interface InstallInventoryEntry {
   snapshot_diffs: Array<{
     createdAt: string
     trigger: string
-    /** Same PII reasoning as `latest_snapshot.has_label`. */
     has_label: boolean
     nodesAdded: number
     nodesRemoved: number
@@ -1091,19 +838,9 @@ export interface InstallInventoryEntry {
 }
 
 export interface InstallsInventory {
-  /** Total visible (non-`installing`) installs on disk, regardless of
-   *  whether they fit in the inventory payload. */
   total_install_count: number
-  /** Number of installs actually packed into `installs[]` after
-   *  per-install + total byte caps were applied. */
   included_install_count: number
-  /** True when the total byte cap was hit and one or more
-   *  least-recently-launched installs were dropped from the tail
-   *  (installs are sorted most-recent first, so truncation always
-   *  costs the oldest entries). */
   truncated: boolean
-  /** Installs sorted most-recently-launched first; never-launched at
-   *  the end. */
   installs: InstallInventoryEntry[]
 }
 
@@ -1113,26 +850,15 @@ export interface DatadogForwardedError {
   stack?: string
   level?: 'debug' | 'info' | 'warn' | 'error' | 'critical'
   context?: Record<string, unknown>
-  /**
-   * Set when main has already handled the PostHog side of this error (which
-   * since `COMFY_DESKTOP_POSTHOG_EXCEPTIONS` became opt-in may mean it deliberately sent
-   * nothing). Either way the renderer's listener forwards to Datadog only,
-   * so it never double-reports.
-   */
   skipPostHog?: boolean
 }
 
-// --- Snapshot tab types ---
 export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
   copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
-  /** `out` = another install was copied FROM the install whose rail this is
-   *  shown on (installationName is the destination's name).
-   *  `in`  = THIS install was copied from another (installationName is the
-   *  source's name, snapshotted at copy time via `copiedFromName`). */
   direction: 'in' | 'out'
 }
 
@@ -1237,28 +963,17 @@ export interface SnapshotFilePreview {
   newestSnapshot: SnapshotDetailData
 }
 
-// --- Error detail (async follow-up after a locked-file error) ---
 export interface ErrorDetailData {
   installationId: string
   message: string
 }
 
-// --- App-update state (mirrors src/main/lib/updater.ts AppUpdateState) ---
 export interface AppUpdateState {
-  /** `'available'` after `update-available`, `'downloading'` once the
-   *  first user-initiated `download-progress` tick lands, `'ready'`
-   *  after `update-downloaded`, `null` when nothing is pending. */
   kind: 'available' | 'downloading' | 'ready' | null
-  /** Target version when `kind` is non-null, otherwise null. */
   version: string | null
-  /** Mirrors the `autoInstallUpdates` setting at the moment the
-   *  state was committed. */
   autoUpdate: boolean
 }
 
-/** Narrowed slice of electron-updater's `ProgressInfo` forwarded by
- *  main on `app-update:download-progress`. Any field may be null when
- *  the auto-updater doesn't report it for a given tick. */
 export interface AppUpdateDownloadProgress {
   percent: number | null
   transferred: number | null
@@ -1266,14 +981,9 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
-// --- IPC API interface ---
 export interface ElectronApi {
-  /** Host OS — set synchronously by the preload from `process.platform`.
-   *  Renderer uses this for OS-conditional copy (e.g. "Show in Finder"
-   *  vs "Show in Explorer") without IPC. */
   platform: NodeJS.Platform
 
-  // Sources / New Install
   getSources(): Promise<Source[]>
   getFieldOptions(
     sourceId: string,
@@ -1290,7 +1000,6 @@ export interface ElectronApi {
   validateHardware(): Promise<HardwareValidation>
   checkNvidiaDriver(): Promise<NvidiaDriverCheck | null>
 
-  // File/URL
   browseFolder(defaultPath?: string): Promise<string | null>
   importPerformanceTestWorkflow(filePath?: string): Promise<{
     ok: boolean
@@ -1301,17 +1010,13 @@ export interface ElectronApi {
   getPerformanceTestExampleWorkflows(
     installationId: string
   ): Promise<{ options: FieldOption[]; diskSpace: DiskSpaceInfo | null }>
-  /** Stores the workflow and starts its model download in the background; later
-   *  progress arrives through `onPerformanceTestExampleDownload`. */
   preparePerformanceTestExampleWorkflow(
     installationId: string,
     templateId: string
   ): Promise<{
     ok: boolean
     filePath?: string
-    /** Model download progress at start. */
     download?: ExampleWorkflowDownload
-    /** `offline`: the workflow repository was unreachable. `unavailable`: it has no such example. */
     reason?: 'offline' | 'unavailable'
     message?: string
   }>
@@ -1348,44 +1053,21 @@ export interface ElectronApi {
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
-  /** Show a file in the OS file manager instead of opening it. */
   revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
-  /** Read-only snapshot of an install's durable log buffer (joined string). */
   logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
 
-  // Locale
   getLocaleMessages(): Promise<Record<string, unknown>>
   getAvailableLocales(): Promise<{ value: string; label: string }[]>
-  /** Resolved locale string from main (`language` setting or
-   *  `app.getLocale()` fallback). Renderers mirror this into vue-i18n;
-   *  main is the single locale authority. */
   getLocale(): Promise<string>
 
-  /** Categorised snapshot of the persisted installs for the first-use
-   *  takeover. `skipPick` is true when any non-cloud, non-legacy-desktop
-   *  install exists (returning user — the cloud-vs-local pick step is
-   *  suppressed). `hasLegacyDesktop` is true when the auto-tracked
-   *  Legacy Desktop install is present (gates the migrate-vs-install-new
-   *  sub-step on the Local branch). See `firstUseDetection.ts`. */
   getFirstUseState(): Promise<{ skipPick: boolean; hasLegacyDesktop: boolean }>
 
-  // Installations
   getInstallations(): Promise<Installation[]>
-  /** Coarse cohort summary of persisted installs for telemetry global
-   *  context. Counters / booleans only — no IDs, paths, or names — so
-   *  the payload is safe to register as PostHog / Datadog cohort
-   *  properties on every event.
-   *
-   *  `localCount` excludes the always-seeded Comfy Cloud entry; that
-   *  entry is re-seeded on every boot, so counting it would just shift
-   *  every user's count by +1. `hasLaunchedCloud` is the meaningful
-   *  Cloud signal — it's true only when the user has actually opened
-   *  the Cloud entry at least once. */
   getInstallationsSummary(): Promise<{
     localCount: number
     hasLaunchedCloud: boolean
@@ -1395,226 +1077,65 @@ export interface ElectronApi {
   reorderInstallations(orderedIds: string[]): Promise<void>
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
-  /** `express` flags the one-click express-install path (vs the manual
-   *  Configure wizard). Used only to label the `install.completed`
-   *  telemetry event's `method`; defaults to false. */
   installInstance(installationId: string, express?: boolean): Promise<void>
-  /** Skip waiting on the starter-template model download — hands the still-
-   *  running task off to the title-bar downloads tray (no restart). */
   skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
   ): Promise<ActionResult | void>
 
-  // Running
   stopComfyUI(installationId: string): Promise<void>
-  /** Bring the host window backing `installationId` to the front. Resolves
-   *  to `true` when a window (or external process window) was focused,
-   *  `false` when none exists. */
   focusComfyWindow(installationId: string): Promise<boolean>
 
-  // Interactive console (per-installation shell, shared across windows)
-  /** Spawn the install's shell if needed, subscribe this surface, and return
-   *  the current scrollback/size/exited state to repaint. */
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
   terminalWrite(installationId: string, data: string): Promise<void>
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
-  /** Kill the current shell (if any) and start a fresh one. */
   terminalRestart(installationId: string): Promise<TerminalRestore>
-  /** Open a window for the install backing `installationId`. Focuses
-   *  any existing install-backed window; otherwise opens a fresh
-   *  chooser host so the user can pick the install from the dashboard.
-   *  Used by ProgressModal's `handleDone` after copy / copy-update /
-   *  release-update so the newly-created destination install gets
-   *  focus without swapping the source host. */
   openInstallWindow(installationId: string): Promise<boolean>
-  /** Land an install in its own window, leaving this one alone. Focuses the
-   *  window it already has, if any. */
   openInstallInNewWindow(installationId: string): void
-  /** Close the BrowserWindow that hosts the given installation's ComfyUI
-   *  view (and its title-bar / panel WebContentsViews). Returns true if a
-   *  window was found and closed. Used by the embedded install-settings
-   *  panel after a navigate-list emit (e.g. delete) so the parent window
-   *  doesn't linger with no install backing it.
-   *
-   *  `skipConfirm` pre-clears the close so the panel-renderer quit-confirm
-   *  consult is bypassed. Callers should only set it when the user has
-   *  already explicitly consented (e.g. the launch guard's
-   *  "Close Running & Launch" choice). */
   closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
-  /** Close the BrowserWindow that contains the calling panel
-   *  WebContents. Used by the chooser to retire its install-less
-   *  host window after a successful pick → launch hand-off.
-   *  Returns true if a window was found and closed. */
   closeHostWindow(): Promise<boolean>
-  /** Flip the install-backed host window containing the calling panel
-   *  WebContents back to chooser mode in place — same BrowserWindow,
-   *  same bounds, same window-key; the install binding is torn down
-   *  (running ComfyUI stopped, listeners off, comfyView navigated to
-   *  about:blank) and the title bar repaints to the chooser identity.
-   *  Returns true when an install-backed entry was found and detached. */
   returnToDashboard(): Promise<boolean>
-  /** Page X-close (Settings / Directories / Install Settings header).
-   *  Asks main to reset the panel-history stack and return the body to
-   *  the comfy/chooser root. Fire-and-forget; the panel will receive
-   *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
-  /** Tell main an overlay panel (feedback / announcement) has painted, so it can
-   *  reveal the until-now-hidden panel view without an opaque flash. */
   signalOverlayReady(): void
-  /** Switch this dashboard window to one of its full-page screens. */
   navigatePanel(page: DashboardPage): void
-  /** Shared storage settings shown on a build's Storage tab. */
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
-  /** Boot-time restore reveal handshake. The restore window is opened
-   *  hidden; the panel calls this once it knows whether its launch
-   *  takeover came up (`'takeover-ready'` → reveal the launching surface)
-   *  or it fell back to the dashboard (`'dashboard-fallback'`). Main
-   *  reveals the sender's hidden host either way. Fire-and-forget. */
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
-  /** Open the Global Settings popup for the panel's host window. Used
-   *  by the panel-side file-menu "Settings" item and the
-   *  `comfy://open-settings?tab=global` deep link. Main reuses the
-   *  same helper the hamburger Settings entry calls. `tab` lands the
-   *  popup on that tab instead of its remembered one. */
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: {
-      /** Field id to scroll to and flash once the tab renders (e.g.
-       *  `'betaFeaturesEnabled'`). A per-open command like `tab`, not state:
-       *  the rebroadcast snapshot carries none, so the flash does not repeat. */
       highlightField?: string
     }
   ): void
-  /** Open the instance-picker popup for the panel's host window with
-   *  `installationId` seeded as the picker's right-pane selection.
-   *  Used by chooser-card "Manage…" (and future per-install entry
-   *  points) to land on the same WebContentsView popup the title-bar
-   *  centre pill opens. Omitting `installationId` falls back to the
-   *  host's active install — matches the pill-click behaviour.
-   *
-   *  `initialTab` seeds the active tab and `autoAction` fires an action
-   *  on mount. Used by the chooser kebab's specialised entries
-   *  (Update / Migrate / Restore-Snapshot / Delete) and by the
-   *  per-install deep links (`comfy://install-update/<id>`,
-   *  `comfy://open-settings?tab=comfy`). */
   openInstancePicker(opts?: {
     installationId?: string | null
     initialTab?: 'config' | 'status' | 'update' | 'snapshots' | 'storage' | 'console'
     autoAction?: string | null
   }): void
-  /** Push the first-use takeover's current step to main so it can
-   *  (a) cache the value on the host entry for
-   *  `buildTitlePopupMenuItems` to read synchronously and (b)
-   *  forward to the title-bar webContents. Fire-and-forget;
-   *  FirstUseTakeover.vue calls this on every step change and on
-   *  unmount with `'none'`. */
   setFirstUseMode(mode: FirstUseMode): void
-  /** Main routes the file-menu Skip Onboarding click here. Handler
-   *  runs the same `markFirstUseCompleted` + dismiss-takeover
-   *  sequence the Cloud pick path uses. Returns an unsubscribe. */
   onFirstUseSkip(callback: () => void): Unsubscribe
-  /** Main forwards both the title-bar feedback button and the file-menu
-   *  "Send Feedback" entry here. The panel renderer fires the
-   *  `comfy.desktop.feedback.opened` telemetry action (with `source` so we
-   *  can tell the two affordances apart) and opens the support URL via
-   *  `openExternal` — the renderer is the natural home because
-   *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
-   *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
-  /** Main forwards the title-bar news-bell click here so the panel renderer
-   *  mounts the announcement modal over the live canvas. Returns an
-   *  unsubscribe. */
   onOpenAnnouncement(callback: () => void): Unsubscribe
-  /** Main consults the panel renderer before tearing down
-   *  the host window. Returns an unsubscribe; the callback receives a
-   *  `requestId` it must echo back via `respondCloseRequest` so main
-   *  can pair the response with the request that fired it. */
   onCloseRequest(callback: (data: { requestId: string }) => void): Unsubscribe
-  /** Reply to a `comfy-window:request-close` consult. `cleared: true`
-   *  lets main proceed, `cleared: false` aborts (overlay cancel-prompt
-   *  dismissed). `defer: true` means no overlay was in flight, so main
-   *  owns the close-window confirm itself. */
   respondCloseRequest(payload: { requestId: string; cleared?: boolean; defer?: boolean }): void
-  /** Send immediately on receiving a `comfy-window:request-close` so
-   *  main knows the renderer picked it up and is processing. Main's
-   *  hung-renderer safety timeout only fires until the ack lands; once
-   *  acked main waits indefinitely for the actual response (the user
-   *  may take their time on the cancel-prompt). */
   ackCloseRequest(payload: { requestId: string }): void
-  /** Main consults the panel renderer before flipping an install-backed
-   *  host window back to the dashboard (File menu Return to Dashboard).
-   *  The renderer layers the Tier 2/3 cancel-prompt on top of the
-   *  local-install "Stop ComfyUI?" confirm and echoes the result back
-   *  via `respondReturnToDashboardRequest`. */
   onReturnToDashboardRequest(callback: (data: { requestId: string }) => void): Unsubscribe
-  /** Reply to a `comfy-window:request-return-to-dashboard` consult —
-   *  `cleared: true` lets main detach the install, `cleared: false`
-   *  aborts. */
   respondReturnToDashboardRequest(payload: { requestId: string; cleared: boolean }): void
-  /** Sent immediately on receiving the return-to-dashboard request so
-   *  main extends its hung-renderer timeout while the renderer prompts
-   *  the user. Symmetric with `ackCloseRequest`. */
   ackReturnToDashboardRequest(payload: { requestId: string }): void
-  /** Stamp the calling chooser host window's current bounds onto the
-   *  install's saved-bounds slot (visual continuity). Fallback wiring
-   *  for `claimAttachHost` rejections (e.g. the install uses
-   *  `browserPartition === 'unique'` and needs a fresh window with
-   *  its own partition). No-op for install-backed callers. */
   transferHostBoundsToInstall(installationId: string): Promise<boolean>
-  /** Claim the calling install-less host window for in-place attach.
-   *  Run by the chooser-host renderer right before kicking off the
-   *  launch action; when the launch event eventually lands in main,
-   *  `onLaunch()` consumes the claim and attaches the install to
-   *  THIS host window instead of constructing a fresh one. Returns
-   *  `true` when the claim was accepted (renderer should skip its
-   *  fallback `closeHostWindow` + `transferHostBoundsToInstall`
-   *  wiring); `false` otherwise (sender isn't an install-less host's
-   *  panelView, or main rejected the claim — fall back to the
-   *  close+open swap). */
   claimAttachHost(installationId: string): Promise<boolean>
-  /** Release the in-progress install identity preview that
-   *  `claimAttachHost` installed on this chooser host's title bar.
-   *  Fired by the panel renderer when an overlay (progress / takeover)
-   *  closes without producing an attach — the op was cancelled,
-   *  errored, or the user backed out — so the title bar reverts to
-   *  the chooser-host identity. No-op for install-backed callers and
-   *  for chooser hosts with no preview currently active. */
   releaseAttachHostPreview(): Promise<boolean>
   getRunningInstances(): Promise<RunningInstance[]>
-  /** Snapshot of installs currently mid-launch (id + name). Lets a window
-   *  opened during an in-flight launch hydrate `sessionStore.launchingInstances`
-   *  instead of missing the one-shot `onInstanceLaunching` broadcast. */
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
-  /** Snapshot of installs currently being stopped. Lets a window opened
-   *  mid-stop hydrate the "Stopping…" state instead of missing the one-shot
-   *  `onInstanceStopping` broadcast. */
   getStoppingInstances(): Promise<string[]>
-  /** Snapshot of installs with an action currently in flight through the
-   *  run-action / picker background-op dispatch (id + action id). Lets a
-   *  window opened mid-operation hydrate the dashboard's busy state instead
-   *  of missing the one-shot `onOperationChanged` broadcast. */
   getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
-  /**
-   * Read the retained crash detail for an installation, if any. Main holds
-   * the last `comfy-exited` payload (with stderr tail) per installation
-   * until the next launch attempt. The lifecycle view calls this on mount
-   * so a refresh / view recreation after a crash still surfaces the error
-   * context, even if the live `onComfyExited` event fired before this
-   * panel WebContents existed. Returns `null` when no crash is on record.
-   */
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>
-  /** Bulk crash snapshot — every retained `comfy-exited` payload. Lets a
-   *  freshly-opened window hydrate error state for crashes that happened
-   *  before it existed (e.g. the dashboard's red error tiles). */
   getCrashInstances(): Promise<ComfyExitedData[]>
   cancelLaunch(): Promise<void>
   cancelOperation(installationId: string): Promise<void>
   killPortProcess(port: number): Promise<KillResult>
 
-  // Actions
   getListActions(installationId: string): Promise<ListAction[]>
   getDetailSections(installationId: string): Promise<DetailSection[]>
   getComfyArgs(installationId: string): Promise<{ args: ComfyArgDef[]; error?: string } | null>
@@ -1625,7 +1146,6 @@ export interface ElectronApi {
     actionData?: Record<string, unknown>
   ): Promise<ActionResult>
 
-  // Snapshots
   getSnapshots(installationId: string): Promise<SnapshotListData>
   getSnapshotDetail(installationId: string, filename: string): Promise<SnapshotDetailData>
   getSnapshotDiff(
@@ -1650,8 +1170,6 @@ export interface ElectronApi {
     ok: boolean
     imported?: number
     restoreToken?: string
-    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
-     *  cannot be applied here, so the restore will keep the local stack. */
     torchStackNotice?: string | null
     message?: string
   }>
@@ -1673,7 +1191,6 @@ export interface ElectronApi {
   ): Promise<{ ok: boolean; entry?: { id: string; name: string }; message?: string }>
   getPathForFile(file: File): string
 
-  // Settings
   getSettingsSections(): Promise<SettingsSection[]>
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
@@ -1681,55 +1198,23 @@ export interface ElectronApi {
   setSetting(key: string, value: unknown): Promise<void>
   getSetting(key: string): Promise<unknown>
 
-  // Core beta activation notice
-  /** The activation card this install owes the user, or `null`. Read repeatedly
-   *  without side effects — the pending set is only cleared by
-   *  `acknowledgeBetaNotice`, so a card that is shown but never retired comes
-   *  back on the next launch. `description` carries the feature name the
-   *  PostHog payload supplied, when it supplied one. */
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
-  /** Retire this install's activation notice: the args are persisted as
-   *  announced and never raise a card again. Called when the user dismisses
-   *  the card or follows its settings link.
-   *
-   *  `shownArgs` names what the card actually displayed. Main retires exactly
-   *  those rather than whatever is queued at retire time — a relaunch can
-   *  re-arm while the sticky card floats, and the announced list is
-   *  append-only, so acknowledging the wrong set silences it forever. */
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
 
-  // Theme
   getResolvedTheme(): Promise<ResolvedTheme>
 
-  // App
   getAppVersion(): Promise<string>
-  /** Every stable ComfyUI release tag, newest first. Returns `[]` when the
-   *  remote is unreachable. Used by the install-wizard version dropdown and
-   *  the per-install ChannelPicker. */
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
-  /** Whether the free tier is live, for the "5 free runs" trial pill.
-   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
-   *  tracks the real rollout. False for everyone today; flips on its own
-   *  when the ramp lands. Fails CLOSED — the pill asserts a live
-   *  entitlement, so an unresolvable flag means we don't claim it. */
   getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
   getSystemInfo(): Promise<SystemInfo>
   getInstallationDdContext(installationId: string): Promise<InstallationDdContext | null>
-  /** Per-session boot census of every persisted install (metadata +
-   *  snapshot diff counts). Powers the `comfy.desktop.session.installs_inventory`
-   *  telemetry event so dashboards see the user's full install footprint
-   *  without waiting for them to launch each one. Byte-capped main-side to
-   *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
 
-  // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
-  // for this flow. Access/refresh tokens never cross IPC: every method returns
-  // or observes a renderer-safe AuthStatus / Workspace / build row.
   comfybuilder: {
     signIn(): Promise<AuthStatus>
     signOut(): Promise<AuthStatus>
@@ -1743,64 +1228,35 @@ export interface ElectronApi {
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
 
-  // Updates
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
   getUpdateCapabilities(): Promise<{ canAutoUpdate: boolean; systemManaged: boolean }>
-  /**
-   * Snapshot of main's cached app-update state. Used by Global Settings
-   * to render the update-action panel in the right state when the
-   * panel mounts AFTER an `update-available` / `update-downloaded`
-   * broadcast already fired. Live updates arrive via
-   * `onAppUpdateStateChanged`.
-   */
   getAppUpdateState(): Promise<AppUpdateState>
 
-  // Model downloads. Every control accepts a download ref: the row's stable
-  // job `id` or its source URL (kept for compatibility).
   listModelDownloads(): Promise<ModelDownloadProgress[]>
   pauseModelDownload(ref: string): Promise<boolean>
   resumeModelDownload(ref: string): Promise<boolean>
   cancelModelDownload(ref: string): Promise<boolean>
-  /** Drop a single terminal (completed / error / cancelled) entry
-   *  from main's recent-downloads buffer; broadcasts a
-   *  `model-download-removed` event so every renderer surface drops
-   *  the entry from its store in lockstep. */
   dismissModelDownload(ref: string): Promise<boolean>
-  /** Bulk-dismiss every terminal entry from main's recent buffer.
-   *  Returns the number of entries removed. */
   clearFinishedModelDownloads(): Promise<number>
-  /** Re-dispatch a terminal (error) download from main's captured
-   *  original params. Returns false if it's still in flight or the
-   *  params were evicted from the recent buffer. */
   retryModelDownload(ref: string): Promise<boolean>
   showDownloadInFolder(savePath: string): Promise<void>
-  /** Downscaled `data:` URL preview of a completed image download, or null for
-   *  non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
 
-  // Adopt prompts: in-app replacement for native message boxes shown
-  // mid-operation (e.g. Legacy Desktop adoption). The renderer subscribes,
-  // ACKs delivery, and replies with the chosen button index.
   onAdoptPrompt(callback: (request: AdoptPromptRequest) => void): Unsubscribe
   ackAdoptPrompt(payload: AdoptPromptAck): void
   respondAdoptPrompt(payload: AdoptPromptResponse): void
 
-  // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
   onPerformanceTestProgress(
     callback: (data: { sessionId: string; completedRuns: number; totalRuns: number }) => void
   ): Unsubscribe
-  /** Model download progress of a prepared example workflow, until it settles. */
   onPerformanceTestExampleDownload(
     callback: (data: { filePath: string; download: ExampleWorkflowDownload }) => void
   ): Unsubscribe
   onComfyExited(callback: (data: ComfyExitedData) => void): Unsubscribe
-  /** Crash broadcast to every renderer (unlike `onComfyExited`, which only
-   *  reaches the launching window). Lets any open dashboard show the red
-   *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
   onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
@@ -1812,9 +1268,6 @@ export interface ElectronApi {
   onInstanceStarted(callback: (data: RunningInstance) => void): Unsubscribe
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
-  /** An action started (`active: true`) or finished (`active: false`) for an
-   *  install, regardless of which window dispatched it. Drives ambient busy
-   *  UI (e.g. the dashboard tile's "Updating" pill) in every window. */
   onOperationChanged(
     callback: (data: { installationId: string; actionId: string; active: boolean }) => void
   ): Unsubscribe
@@ -1827,92 +1280,25 @@ export interface ElectronApi {
   onInstallationsVersionsUpdated(
     callback: (updates: { id: string; version: string }[]) => void
   ): Unsubscribe
-  /**
-   * Fires when `release-cache.enrichCommitsAhead` actually writes a new
-   * `commitsAhead` value (not on no-op short-circuits). Open settings
-   * panels can refresh their channel-card section so the "Latest from
-   * GitHub" label upgrades from `tag (sha)` to `tag + N commits (sha)`
-   * in place, without holding the section IPC hostage during the
-   * background `git fetch`/`rev-list` calls.
-   */
   onReleaseCacheEnriched(callback: (data: { repo: string }) => void): Unsubscribe
-  /**
-   * Fires when an auto-off "Desktop Update Available" download completes
-   * (i.e. user explicitly opted in via the pill confirm-modal). The
-   * panel renderer pops the "Restart now?" follow-up modal automatically
-   * so the flow lands on a single user gesture instead of forcing the
-   * user to find the pill again.
-   */
   onAppUpdatePromptRestart(callback: (data: { version: string }) => void): Unsubscribe
-  /**
-   * Fires whenever main's cached app-update state transitions
-   * (update-available, update-downloaded, autoUpdate setting flip).
-   * Mirrors the title-bar pill's `onAppUpdateStateChanged` so the
-   * Global Settings update-action panel can stay in sync.
-   */
   onAppUpdateStateChanged(callback: (state: AppUpdateState) => void): Unsubscribe
-  /**
-   * Per-tick download progress while electron-updater is fetching the
-   * pending update payload. Drives the progress bar in the Global
-   * Settings update panel. Any field may be null if the auto-updater
-   * didn't supply it for that tick.
-   */
   onAppUpdateDownloadProgress(callback: (progress: AppUpdateDownloadProgress) => void): Unsubscribe
-  /**
-   * Fires when a user-initiated update action (download / install) fails.
-   * Background auto-on download errors are NOT broadcast — only failures
-   * the user is actively waiting on. Renderer pops an alert modal.
-   */
   onAppUpdateUserActionFailed(callback: (err: { message: string }) => void): Unsubscribe
   onZoomChanged(callback: (level: number) => void): Unsubscribe
   onModelDownloadProgress(callback: (progress: ModelDownloadProgress) => void): Unsubscribe
-  /** Fires when main drops a single terminal entry from its recent
-   *  buffer (via `dismissModelDownload`). */
   onModelDownloadRemoved(callback: (data: { url: string; id?: string }) => void): Unsubscribe
-  /** Fires when main bulk-dismisses every terminal entry. The payload
-   *  carries the removed rows' URLs plus `refs` (stable job id when the row
-   *  had one, else its URL) so listeners can drop them in one pass. */
   onModelDownloadsClearedFinished(
     callback: (data: { urls: string[]; refs?: string[] }) => void
   ): Unsubscribe
-  /**
-   * Forward a renderer-originated telemetry event to main, which captures it
-   * via PostHog Node under the current distinct_id and consent state.
-   *
-   * Replaces the renderer's direct `posthog-js` capture path. Fire-and-forget:
-   * the renderer does not await delivery. Main is the single PostHog capture
-   * point so identity, consent, and dedup all live in one place.
-   */
   captureTelemetry(event: string, properties: Record<string, unknown>): void
-  /**
-   * Forward a renderer-originated exception to main's PostHog Node
-   * `captureException` path. Used by `window.error` / `unhandledrejection`
-   * handlers and any explicit `try/catch` reporter. Fire-and-forget.
-   */
   captureExceptionTelemetry(payload: {
     message: string
     stack?: string
     properties?: Record<string, unknown>
   }): void
-  /**
-   * Update person-level cohort properties on the current PostHog person.
-   * Main holds pre-auth properties until a verified Firebase user is bound.
-   */
   registerTelemetryProperties(properties: Record<string, unknown>): void
-  /**
-   * Look up an A/B experiment / feature-flag variant for this user.
-   * Returns the cached value (string for multivariate, boolean for a
-   * single-flag rollout) or `null` if the flag is not present in the
-   * cache. Callers MUST default to the control branch on `null`.
-   * Backed by `posthog.getAllFlags` via the boot-time experiments
-   * refresh; see `src/main/lib/experiments.ts`.
-   */
   telemetryGetExperimentFlag(key: string): Promise<string | boolean | null>
-  /**
-   * Record an A/B experiment exposure. Per-session dedup is enforced
-   * main-side, so it's safe to call this on every render of an
-   * experiment surface (a re-render won't double-count).
-   */
   telemetryRecordExposure(payload: {
     experimentKey: string
     variant: string
@@ -1930,39 +1316,7 @@ export interface ElectronApi {
   onErrorDetail(callback: (data: ErrorDetailData) => void): Unsubscribe
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
-  /**
-   * Fired by main when something requests a panel switch in the embedded
-   * panel WebContentsView (e.g. from the ComfyUI window's title-bar buttons).
-   */
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
-  /**
-   * Main forwards a title-bar status pill / tray click here. The
-   * renderer subscribes once on mount and dispatches each kind:
-   *   - `'app-update-restart-prompt'` → `useModal.confirm` "Desktop
-   *     Update Ready" dialog. Confirm → `installUpdate()`.
-   *     Carries the target `version`.
-   *   - `'app-update-download-prompt'` → `useModal.confirm` "Desktop
-   *     Update Available" dialog. Confirm → `downloadUpdate()`.
-   *     Carries the target `version`.
-   *   - `'install-update'` → instance picker on the
-   *     update tab, scoped to the carried `installationId`.
-   *   - `'open-settings'` → Tier 1 unified Settings modal at the
-   *     given `settingsTab` (defaults to the host's default tab).
-   *     Currently used by the title-bar downloads popup's
-   *     "View all in Settings…" deep-link.
-   *   - `'picker-pick-install'` → instance-picker popover picked an
-   *     install that isn't already running on another window. Routed
-   *     to the panel renderer (rather than launched main-side) so the
-   *     same `useListAction` confirm/port-conflict UX the chooser
-   *     uses fires for picker launches too. NEVER swaps the active
-   *     install out of the host (that's the chooser-host path).
-   *   - `'picker-install-action'` → instance-picker popover's "More"
-   *     menu picked a per-install action (Open Folder / Copy /
-   *     Untrack / Delete). Forwarded to the panel so the panel-side
-   *     `useInstallContextMenu` dispatch reuses the dashboard's same
-   *     code path — same source-action confirms, same progress UI,
-   *     no parallel implementation in the picker.
-   */
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
@@ -1980,29 +1334,17 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
-      /** Picker-only (`picker-pick-install`): set on boot-time restore. The
-       *  panel takes the dashboard-fallback path on a missing launch action
-       *  (instead of opening new-install) and resolves the reveal handshake. */
       startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
-      /** Picker-only: when `true`, ProgressModal should render a
-       *  terminal choice screen on success rather than auto-closing.
-       *  The panel-side handler maps this flag to a
-       *  `successTerminal` preset before handing off to
-       *  `progressStore.startOperation`. */
       successChoice?: boolean
     }) => void
   ): Unsubscribe
 }
 
-/** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
- *  Shared between main and renderer so both sides agree on the relaunch contract. */
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
-/** Action IDs that require the installation to be stopped before running.
- *  Shared between main and renderer processes. */
 export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
@@ -2016,8 +1358,6 @@ export const REQUIRES_STOPPED = new Set([
   'change-pytorch'
 ])
 
-/** Title-popup kind tags — the discriminant for popup config/opts across main,
- *  preload, and the popup renderer. Single source so the tag can't desync. */
 export const POPUP_KIND = {
   menu: 'menu',
   downloads: 'downloads',
@@ -2028,14 +1368,11 @@ export const POPUP_KIND = {
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
-/** Resolved popup theme passed in every popup config. */
 export interface PopupTheme {
   bg: string
   text: string
 }
 
-/** Picker popup's settings-passthrough IPC channels — main registers them,
- *  preload invokes them. Single source so a typo can't desync the two sides. */
 export const PICKER_SETTINGS_CHANNELS = {
   getDetailSections: 'comfy-titlepopup:picker-settings-get-detail-sections',
   getDiskSpace: 'comfy-titlepopup:picker-settings-get-disk-space',

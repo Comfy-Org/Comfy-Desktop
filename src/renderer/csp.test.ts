@@ -56,9 +56,6 @@ describe('Content-Security-Policy: panel.html', () => {
   })
 
   it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
-    // The template picker hydrates card previews from the live workflow_templates
-    // repo; without this the panel CSP would block them and every card would fall
-    // back to its modality glyph.
     expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
   })
 })
@@ -88,8 +85,6 @@ describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
   (file) => {
     const csp = parseCSP(readHtml(file))
 
-    // These transient popups don't initialise Datadog/PostHog; the narrow CSP enforces
-    // that, so adding a telemetry SDK here would also need a CSP change (a useful tripwire).
     it('does NOT include Datadog endpoints', () => {
       expect(csp['connect-src']).not.toContain('datadoghq.com')
     })

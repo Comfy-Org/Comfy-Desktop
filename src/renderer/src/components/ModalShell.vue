@@ -4,12 +4,6 @@ import { useI18n } from 'vue-i18n'
 import Modal from './Modal.vue'
 import Button from '@comfyorg/design-system/button/Button'
 
-/**
- * Shared modal chrome (header + scrollable body) wrapping `Modal.vue` and
- * forwarding its sizing/backdrop props. Slots: `#header` (whole header row),
- * `#title` (title content only), default (body), `#footer` (pinned footer row).
- */
-
 type Opacity = 'dim' | 'heavy-dim' | 'opaque'
 
 withDefaults(
@@ -19,11 +13,8 @@ withDefaults(
     width?: 'regular' | 'wide'
     contentClass?: string
     inline?: boolean
-    /** Plain text title shown in the default header. Ignored if a `#header` slot is provided. */
     title?: string
-    /** Hide the corner close button (binding takeovers without an in-header dismiss). */
     hideClose?: boolean
-    /** Glyph for the corner close (defaults to ✕; ProgressModal swaps to − while running). */
     closeGlyph?: string
   }>(),
   {

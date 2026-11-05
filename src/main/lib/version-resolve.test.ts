@@ -68,8 +68,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('upgrades to best backport tag when latest has unreachable content', async () => {
-    // Commit on master; latest tag v0.17.2 on a release branch has content not yet on master, but
-    // v0.17.1's only unique commit was cherry-picked → upgrade to v0.17.1 (highest fully-represented tag).
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.17.0'
       if (ref === 'v0.17.2') return 'v0.17.2'
@@ -85,9 +83,7 @@ describe('resolveLocalVersion', () => {
       return false
     })
     mockedCountUniqueCommits.mockImplementation(async (_repo, ref1, ref2) => {
-      // v0.17.2: 3 unique > threshold 2 → skip
       if (ref1 === 'v0.17.2' && ref2 === 'abc1234') return 3
-      // v0.17.1: 1 unique ≤ threshold 1 → qualifies
       if (ref1 === 'v0.17.1' && ref2 === 'abc1234') return 1
       if (ref1 === 'abc1234' && ref2 === 'v0.17.1') return 8
       return undefined
@@ -105,7 +101,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('upgrades to latest backport tag when all content is on master', async () => {
-    // Commit further ahead: all v0.17.2 content is now on master, so v0.17.2 qualifies (2 unique ≤ threshold 2).
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.17.0'
       if (ref === 'v0.17.2') return 'v0.17.2'
@@ -121,10 +116,8 @@ describe('resolveLocalVersion', () => {
       return false
     })
     mockedCountUniqueCommits.mockImplementation(async (_repo, ref1, ref2) => {
-      // v0.17.1: 1 unique (version bump); threshold = 1 → qualifies
       if (ref1 === 'v0.17.1' && ref2 === 'abc1234') return 1
       if (ref1 === 'abc1234' && ref2 === 'v0.17.1') return 11
-      // v0.17.2: 2 unique (both version bumps); threshold = 2 → qualifies
       if (ref1 === 'v0.17.2' && ref2 === 'abc1234') return 2
       if (ref1 === 'abc1234' && ref2 === 'v0.17.2') return 10
       return undefined
@@ -141,7 +134,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('falls back to ancestor tag when no backport tag qualifies', async () => {
-    // Even the lowest tag on the release branch has content not on master.
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.17.0'
       if (ref === 'v0.17.2') return 'v0.17.2'
@@ -157,7 +149,6 @@ describe('resolveLocalVersion', () => {
       return false
     })
     mockedCountUniqueCommits.mockImplementation(async (_repo, ref1, ref2) => {
-      // v0.17.1 has 2 unique commits (version bump + content); threshold = 1 → fails
       if (ref1 === 'v0.17.1' && ref2 === 'abc1234') return 2
       return undefined
     })
@@ -172,7 +163,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('falls back to merge-base when cherry-pick detection is unreliable (shallow clone)', async () => {
-    // Shallow clone inflates countUniqueCommits; the guard (unique > ancestorDist) bails to merge-base.
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.17.0'
       if (ref === 'v0.17.2') return 'v0.17.2'
@@ -192,14 +182,11 @@ describe('resolveLocalVersion', () => {
       return false
     })
     mockedCountUniqueCommits.mockImplementation(async () => {
-      // Shallow clone: returns thousands — way more than ancestorDist (12)
       return 4905
     })
     mockedFindMergeBase.mockResolvedValue('merge-base-sha')
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    // This path runs only because v0.17.2 is NOT an ancestor of the commit, so the label is a
-    // display convenience, not a claim the install contains that release.
     expect(result).toEqual({
       commit: 'abc1234',
       baseTag: 'v0.17.2',
@@ -210,9 +197,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('keeps the verified ancestor when upstream publishes a patch tag the unchanged install never reached', async () => {
-    // ComfyUI 2026-09-22: install b0f4b7b2 is master, v0.37.0+5. v0.37.1 was then cut on a release
-    // branch (3 commits: two cherry-picks of master PRs not in the install, plus the version bump),
-    // so it is never an ancestor of master. Nothing in the checkout changed.
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'b0f4b7b2') return 'v0.37.0'
       if (ref === 'v0.37.1') return 'v0.37.1'
@@ -246,8 +230,6 @@ describe('resolveLocalVersion', () => {
     clearVersionCache()
     mockedFindLatestVersionTag.mockResolvedValue('v0.37.1')
     const after = await resolveLocalVersion('/repo', 'b0f4b7b2')
-    // The label still moves (display behaviour is unchanged), but the tag the install provably
-    // contains survives beside it for the gate.
     expect(after).toEqual({
       commit: 'b0f4b7b2',
       baseTag: 'v0.37.1',
@@ -273,8 +255,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('falls back to ancestor tag when merge-base equals commit (older commit, newer tag)', async () => {
-    // Commit older than latestTag on the same branch: merge-base = commit itself, which without the
-    // guard would yield a wrong "v0.18.3+0", so the merge-base path is skipped.
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.17.0'
       if (ref === 'v0.18.3') return 'v0.18.3'
@@ -307,7 +287,6 @@ describe('resolveLocalVersion', () => {
   })
 
   it('falls back to ancestor tag when merge-base fails (backport path)', async () => {
-    // Backport branch where the walk and findMergeBase both fail → fall back to ancestor tag.
     mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
       if (ref === 'abc1234') return 'v0.16.4'
       if (ref === 'v0.17.1') return 'v0.17.1'
@@ -400,7 +379,6 @@ describe('resolveLocalVersion', () => {
       const r1 = await resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
       expect(r1.baseTag).toBe('v0.14.0')
 
-      // Second call without fallback should NOT get the previous fallback
       const r2 = await resolveLocalVersion('/repo', 'abc1234')
       expect(r2.baseTag).toBeUndefined()
       expect(r2.baseTagVerified).toBe(false)
@@ -429,8 +407,6 @@ describe('resolveLocalVersion', () => {
       const resolved = await resolveLocalVersion('/repo', 'abc1234')
       expect(resolved.baseTagVerified).toBe(true)
 
-      // The overlay only fires for an entry with no baseTag, so a caller's unverified tag can
-      // never displace an ancestry-established one on a shared cache entry.
       const withFallback = await resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
       expect(withFallback).toEqual({
         commit: 'abc1234',
@@ -462,7 +438,6 @@ describe('resolveLocalVersion', () => {
       await resolveLocalVersion('/repo', 'aaa1111')
       await resolveLocalVersion('/repo', 'bbb2222')
 
-      // Cached per repo, so only called once across both commits.
       expect(mockedFindLatestVersionTag).toHaveBeenCalledTimes(1)
     })
   })

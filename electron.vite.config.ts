@@ -17,8 +17,6 @@ export default defineConfig({
     build: {
       sourcemap: 'hidden',
       rollupOptions: {
-        // node-pty is a native addon; it must stay external (its .node binary
-        // can't be bundled) and is loaded from the unpacked node_modules.
         external: ['node-pty']
       }
     }

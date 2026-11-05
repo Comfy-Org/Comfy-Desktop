@@ -17,12 +17,8 @@ const { t } = useI18n()
 
 const { state, close, dismiss, setCheckboxValue } = useModal()
 
-/** Migrate-to-Standalone flow; `snapshotPreview` is only set by
- *  useMigrateAction, so its presence reliably cues the brand layout. */
 const isMigrateConfirm = computed(() => state.type === 'confirm' && state.snapshotPreview != null)
 
-/** A confirm with no extras renders through BaseAlert; rich confirms keep
- *  the legacy markup with its scrollable body. */
 const isSimpleConfirm = computed(
   () =>
     state.type === 'confirm' &&
@@ -34,8 +30,6 @@ const isSimpleConfirm = computed(
     !state.variantLoading
 )
 
-/** BaseAlert owns its own teleport + overlay, so the legacy overlay below
- *  must skip when this is true to avoid double-mounting a backdrop. */
 const usesBaseAlert = computed(() => state.type === 'alert' || isSimpleConfirm.value)
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
@@ -44,7 +38,6 @@ const baseAlertTone = computed<'primary' | 'danger'>(() =>
     : 'primary'
 )
 
-/** Alert uses buttonLabel (single OK); simple confirm uses confirmLabel. */
 const baseAlertButtonLabel = computed(() =>
   state.type === 'alert' ? state.buttonLabel : state.confirmLabel
 )
@@ -58,8 +51,6 @@ function onBaseAlertCancel(): void {
   close(false)
 }
 
-/** Mirror checkbox flips back into state.checkboxes so
- *  useModal.getLastCheckboxValues() sees them at submit time. */
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
   setCheckboxValue(id, checked)
 }
@@ -148,8 +139,6 @@ watch(
 </script>
 
 <template>
-  <!-- Alerts and simple confirms render through BaseAlert; rich confirms /
-       prompt / select / options stay in the legacy markup below. -->
   <BaseAlert
     :open="state.visible && usesBaseAlert"
     :title="state.title"
@@ -170,7 +159,6 @@ watch(
     overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-8"
     @close="dismiss"
   >
-    <!-- Rich confirm; simple confirms fall through to BaseAlert above. -->
     <div
       v-if="state.type === 'confirm'"
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
@@ -208,8 +196,6 @@ watch(
               : 'max-h-[50vh]'
         "
       >
-        <!-- Hidden when message is empty (migrate flow sets none) to
-               avoid a stray empty box at the top. -->
         <div
           v-if="state.message"
           class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
@@ -227,7 +213,6 @@ watch(
           <span>{{ $t('common.loading') }}</span>
         </div>
 
-        <!-- Migrate-flow brand layout (counts only, no device picker). -->
         <template v-if="isMigrateConfirm && !state.loading && state.snapshotPreview">
           <MigrateConfirmBody
             :preview="state.snapshotPreview"
@@ -237,7 +222,6 @@ watch(
           />
         </template>
 
-        <!-- Detailed snapshot preview; gated off for the migrate flow. -->
         <template v-if="!isMigrateConfirm && !state.loading && state.snapshotPreview">
           <div class="dialog-grid mb-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
             <div class="dialog-field mb-1 flex flex-col gap-0.5">
@@ -349,8 +333,6 @@ watch(
           </div>
         </template>
 
-        <!-- Generic details + checkboxes; the migrate layout renders its
-               own, so skip when migrate is active. -->
         <template v-if="!isMigrateConfirm">
           <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
             <div

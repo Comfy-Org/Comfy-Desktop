@@ -1,41 +1,7 @@
-/**
- * A ComfyUI install that is fake everywhere except the two places the Core beta grant path
- * actually looks.
- *
- * `buildLaunchArgs` only ever sees a grant through two real gates, and both have to be genuine
- * for an end-to-end run to prove anything:
- *
- *   1. `getComfyArgsSchema` runs `<python> -s main.py --help` and parses the argparse block, so
- *      the stub answers `--help` with a real usage listing. A grant the listing omits is
- *      filtered out as `dropped_unsupported`, exactly as an older core would drop it.
- *   2. The launch then spawns that same stub for real and waits for the port, so the stub
- *      serves HTTP until it is killed. Without that the launch fails at the boot wait and the
- *      window never leaves the progress takeover.
- *
- * Node runs the server rather than Python because there is no interpreter to depend on: the
- * absolute path of the node binary already running Playwright is baked into the stub.
- *
- * LINUX only.
- *
- * A Windows stub would have to be a real PE executable: `venvPython`
- * resolves to `venv/python.exe`, and both callers run it with no shell (`execFile` in
- * `comfy-args.ts`, `spawn` in `process.ts`), so `CreateProcessW` rejects anything that is not a
- * PE image. Naming a batch file `.exe` does not help — only a `.bat`/`.cmd` EXTENSION makes
- * Windows hand off to `cmd.exe`. `e2e/comfybuilder-launch.test.ts` writes an EMPTY `python.exe`
- * for exactly this reason: its assertion is that the launch is attempted and fails.
- *
- * macOS was excluded because the harness could not isolate its profile. It can now, so these
- * specs have not been tried there rather than being known to fail.
- *
- * Specs using this fixture are therefore tagged `@linux` only.
- */
 import path from 'node:path'
 import process from 'node:process'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 
-/** Flags the stub's `--help` advertises. `--enable-asset-hashing` is here because the grant
- *  under test names it; a core that did not know the flag would leave it out and the launch
- *  would drop it. `--port` and `--listen` are what the launcher itself passes. */
 const SUPPORTED_FLAGS = [
   ['--port PORT', 'Set the listen port.'],
   ['--listen [IP]', 'Specify the IP address to listen on.'],
@@ -62,10 +28,6 @@ function helpText(): string {
   ].join('\n')
 }
 
-/** Minimal always-200 server on the launcher's chosen port, so `waitForPort` succeeds and the
- *  host window navigates to a page rather than an error. The body is deliberately plain and
- *  labelled — it is the backdrop every screenshot of the notice is taken against, and an
- *  unlabelled blank page would look like a rendering failure in the evidence. */
 const SERVER_JS = `
 const http = require('node:http')
 // A \`startup-failure\` file beside this script makes the stub print it to stderr and exit 1,
@@ -127,17 +89,6 @@ server.on('listening', () => {
 server.listen(port, '127.0.0.1')
 `
 
-/**
- * A port nothing is listening on right now, found by binding 0 and reading back what the OS
- * chose. Far better than a constant, which collides with whatever else is on the machine and
- * fails as either `EADDRINUSE` or — worse — the launcher mistaking an unrelated listener for
- * the booted fixture.
- *
- * A gap remains between releasing the probe socket and the stub binding the port, and it
- * cannot be closed from here without handing the listening socket to the child. The stub
- * absorbs it instead: it retries the same port on `EADDRINUSE` (see `stubServerSource`), so a
- * lost race costs a few hundred milliseconds rather than a failed run.
- */
 export async function reserveFreePort(): Promise<number> {
   const { createServer } = await import('node:net')
   return new Promise((resolve, reject) => {
@@ -156,19 +107,10 @@ export async function reserveFreePort(): Promise<number> {
 }
 
 export interface FakeComfyInstall {
-  /** `installPath` for the seeded record. */
   installPath: string
-  /** Port the stub serves on; also passed through `launchArgs` so it is explicit and the
-   *  launcher's port-conflict auto-shift can never move it out from under an assertion. */
   port: number
 }
 
-/**
- * Write the on-disk layout `comfybuilder`'s `buildLaunchSpec` requires: a venv interpreter and
- * `ComfyUI/main.py`. Deliberately NOT a git checkout — `coreRecordCurrent` treats a non-git
- * install as "nothing can contradict the record", which is the ordinary standalone/archive
- * case and keeps the seeded `comfyVersion` authoritative.
- */
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
@@ -207,18 +149,10 @@ export async function writeFakeComfyInstall(opts: {
   return { installPath, port }
 }
 
-/** The persisted ops-flag entry `coreBetaGrants` applies at launch, before any fetch. Unstamped,
- *  as v1.1.6 wrote it: any saved entry counts. Handed to
- *  `launchApp`'s `opsFlags`, which delivers it through `E2E_OPS_FLAGS_SEED` so MAIN writes it to
- *  `configDir()` before its first read. */
 export function opsFlagsGrantSeed(opts: {
   arg: string
-  /** A version-window grant from this release up... */
   minCoreVersion?: string
-  /** ...or a commit-range grant, `[lower, upper | null]` per lineage. Exactly one is given. */
   commitRanges?: [string, string | null][]
-  /** Optional per-flag notice wording, written in the payload's own wire shape so the fixture
-   *  exercises the real parser rather than the already-parsed type. */
   description?: string
   notice?: 'silent'
 }): Record<string, unknown> {

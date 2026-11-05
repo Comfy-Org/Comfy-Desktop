@@ -1,36 +1,7 @@
-/**
- * Per-installation log broadcast + buffered backfill.
- *
- * The launching window receives ComfyUI stdout/stderr via direct
- * `sender.send('comfy-output', ...)` calls scattered across the launch /
- * delegate / installation handlers. That's fine for the one window that
- * triggered the launch, but the logs pop-out window needs the SAME stream
- * delivered to a different webContents — and it wants the recent history
- * up front, not just text that arrives after it subscribes.
- *
- * This module owns the broadcast side:
- *
- *   - `appendLog(installationId, text)` is called at every send-site so the
- *     buffer + subscriber broadcast stay in lockstep with the legacy direct
- *     send. The existing send to the launching window is preserved unchanged
- *     — this is a parallel fan-out.
- *
- *   - `subscribeLogs(installationId, wc)` registers a webContents as a live
- *     subscriber and returns the current ring-buffer contents so the
- *     subscriber can paint immediately.
- *
- *   - `unsubscribeLogs(installationId, wc)` removes the subscriber (called
- *     on window close).
- *
- * The buffer is a simple ring of text chunks (not lines). We cap by
- * total character count rather than entries so a burst of tiny chunks
- * can't be evicted by a single big one.
- */
-
 import type { WebContents } from 'electron'
 import { writeOperationOutput } from './appLog'
 
-const MAX_BUFFER_CHARS = 256 * 1024 // 256 KB per install — generous, fits any reasonable scrollback
+const MAX_BUFFER_CHARS = 256 * 1024
 
 interface InstallLogState {
   buffer: string[]
@@ -56,15 +27,8 @@ function evictUntilBelowCap(state: InstallLogState): void {
   }
 }
 
-/**
- * Record a log chunk and broadcast it to every live subscriber.
- * Called at every `sender.send('comfy-output', ...)` site so the
- * pop-out window stays in lockstep with the launching window.
- */
 export function appendLog(installationId: string, text: string): void {
   if (!text) return
-  // Tee into the durable global app log so operation output survives the
-  // modal/app lifecycle and background runs with no window.
   writeOperationOutput(installationId, text)
   const state = ensureState(installationId)
   state.buffer.push(text)
@@ -77,9 +41,7 @@ export function appendLog(installationId: string, text: string): void {
     }
     try {
       wc.send('logs-output', { installationId, text })
-    } catch {
-      // Subscriber may have torn down between checks; ignore.
-    }
+    } catch {}
   }
 }
 
@@ -88,17 +50,9 @@ export interface LogsRestore {
   buffer: string[]
 }
 
-/**
- * Register a webContents as a subscriber and return the current ring
- * buffer so the new subscriber can paint immediately. Idempotent —
- * re-subscribing the same webContents is a no-op (just returns the
- * fresh buffer).
- */
 export function subscribeLogs(installationId: string, wc: WebContents): LogsRestore {
   const state = ensureState(installationId)
   state.subscribers.add(wc)
-  // Auto-cleanup if the subscriber webContents goes away without an
-  // explicit unsubscribe (window crash, abrupt close).
   wc.once('destroyed', () => {
     state.subscribers.delete(wc)
   })
@@ -114,8 +68,6 @@ export function unsubscribeLogs(installationId: string, wc: WebContents): void {
   state.subscribers.delete(wc)
 }
 
-/** Read-only snapshot of the current buffer — used by the popout HTML
- *  for the initial paint when it can't await the subscribe IPC. */
 export function getLogsBuffer(installationId: string): string[] {
   const state = states.get(installationId)
   if (!state) return []

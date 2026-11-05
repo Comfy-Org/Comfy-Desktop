@@ -6,10 +6,6 @@ import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
 import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
 
-// Pins the deselectable "Choose one" contract: the exclusive group renders as
-// a compact BaseSelect with a synthetic "None" option so it can clear, the
-// label previews every member, and an active group is promoted to the top
-// "Active" section as the same dropdown.
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
@@ -54,8 +50,6 @@ const SCHEMA: ComfyArgDef[] = [
 ]
 
 function stubElectronApi(): void {
-  // Attach to the real window so jsdom listeners survive teardown
-  // (swapping the whole window object breaks BaseSelect's resize/scroll cleanup).
   ;(window as unknown as { api: unknown }).api = {
     getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA })
   }
@@ -68,8 +62,6 @@ async function mountPage(initialValue = '', pendingRestart = false): Promise<Vue
     props: { installationId: 'inst-1', initialValue, pendingRestart },
     global: {
       plugins: [i18n],
-      // BaseSelect teleports its popover to <body>; render it in-tree
-      // so we can query options through the wrapper.
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     },
     attachTo: document.body
@@ -84,8 +76,6 @@ function lastUpdate(wrapper: VueWrapper): string {
   return (events.at(-1)?.[0] as string | undefined) ?? ''
 }
 
-// An active group renders the same dropdown twice (Active section + category),
-// so target the first combobox; both share the group's state.
 async function openSelect(wrapper: VueWrapper, index = 0): Promise<void> {
   const triggers = wrapper.findAll('[role="combobox"]')
   const trigger = triggers[index]
@@ -109,17 +99,12 @@ function activeSection(wrapper: VueWrapper) {
     .find((s) => s.find('.args-page-category-title').text() === 'Active')
 }
 
-// Use fake setTimeout timers to drive emitArgsChanged's 500 ms debounce.
-// The page flushes on unmount; useRealTimers also clears any remaining fake timer.
-// Leave setImmediate real so flushPromises can drain pending work.
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   stubElectronApi()
 })
 
 afterEach(() => {
-  // `finally`, or one throwing unmount leaves fake timers installed for every
-  // remaining test in the file.
   try {
     while (wrappers.length) wrappers.pop()?.unmount()
   } finally {
@@ -188,7 +173,6 @@ describe('ArgsBuilderPage — exclusive group dropdown', () => {
   it('emits the picked flag and replaces siblings on selection', async () => {
     const wrapper = await mountPage('--lowvram')
     await pickOption(wrapper, '--cpu')
-    // No `--lowvram` survives — the parent commits a single-flag string.
     expect(lastUpdate(wrapper)).toBe('--cpu')
   })
 
@@ -216,7 +200,6 @@ describe('ArgsBuilderPage — exclusive group dropdown', () => {
   it('keeps unrelated flags intact when toggling the exclusive group', async () => {
     const wrapper = await mountPage('--port 8188 --lowvram')
     await pickOption(wrapper, 'None (default)')
-    // Only the cluster member is removed; `--port 8188` survives.
     const result = lastUpdate(wrapper)
     expect(result).toContain('--port')
     expect(result).toContain('8188')
@@ -265,7 +248,6 @@ describe('ArgsBuilderPage — raw-args validation', () => {
     const err = wrapper.find('.args-raw-validation-error')
     expect(err.exists()).toBe(true)
     expect(err.text()).toContain('--bogus')
-    // BaseInput surfaces the invalid state via aria-invalid.
     expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(true)
   })
 
@@ -293,27 +275,19 @@ describe('ArgsBuilderPage — raw-args validation', () => {
 
   it('holds off flagging the trailing flag while the raw input is focused', async () => {
     const wrapper = await mountPage('--po')
-    // Unfocused: the partial is flagged as unsupported.
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
 
-    // Focus the text input so the flag being edited is excluded from validation.
-    // Focus on the adjacent buttons must not count as input focus.
     await wrapper.find('.args-raw-input input').trigger('focusin')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(false)
     expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(false)
 
-    // Blur: validation applies again.
     await wrapper.find('.args-raw-input input').trigger('focusout')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
   })
 })
 
-// Faking `setTimeout` for the whole file means the 500ms debounce never
-// elapses on its own, which would leave `comfy.desktop.args.changed` - emitted
-// from this component and nowhere else - with no coverage in the suite. Drive
-// it deliberately instead, which also pins the debounce itself.
 describe('ArgsBuilderPage — args.changed telemetry', () => {
   function captureTelemetry(): { events: string[]; stop: () => void } {
     const events: string[] = []
@@ -345,7 +319,6 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
     try {
       await wrapper.find('button[role="switch"]').trigger('click')
       await flushPromises()
-      // Still debouncing: nothing emitted yet.
       expect(events).toEqual([])
 
       await vi.advanceTimersByTimeAsync(500)
@@ -371,11 +344,6 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
     }
   })
 
-  // The debounced call is telemetry only - args themselves commit
-  // synchronously through `update` on every mutation - so nothing the user set
-  // is at stake here. What is at stake is whether the last edit before leaving
-  // the page gets counted, and dropping it would bias `args.changed` against
-  // exactly the change-then-navigate-away case.
   it('flushes a pending args.changed when the page unmounts mid-debounce', async () => {
     const wrapper = await mountPage()
     const { contexts, stop } = captureArgsChanged()
@@ -384,11 +352,9 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
       await flushPromises()
       expect(contexts).toEqual([])
 
-      // Leave well inside the 500ms window.
       await vi.advanceTimersByTimeAsync(100)
       wrapper.unmount()
       expect(contexts).toHaveLength(1)
-      // The only plain switch in SCHEMA; the exclusive group renders as a select.
       expect(contexts[0]?.arg_key).toBe('port')
     } finally {
       stop()
@@ -404,7 +370,6 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
       wrapper.unmount()
       expect(contexts).toHaveLength(1)
 
-      // The timer the unmount flushed must not also fire on its own.
       await vi.advanceTimersByTimeAsync(1000)
       expect(contexts).toHaveLength(1)
     } finally {

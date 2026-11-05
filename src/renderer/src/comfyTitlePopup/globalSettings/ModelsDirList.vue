@@ -19,28 +19,15 @@ import StorageItemIcon from '../../components/StorageItemIcon.vue'
 interface ModelsDir {
   path: string
   isPrimary: boolean
-  /** Locked rows (e.g. the install's own models dir) can't be removed or
-   *  browsed/replaced; they show a lock icon. */
   locked?: boolean
-  /** Read-only rows (e.g. global shared dirs shown in a per-instance list)
-   *  can't be removed or browsed/replaced here, but keep the normal folder
-   *  icon (no lock) and stay promotable unless `promotable` is false. */
   readonly?: boolean
-  /** Set false to also forbid promoting the row to primary (e.g. the
-   *  install's own models dir while shared models is on — the primary is a
-   *  global shared dir there). Defaults to true. */
   promotable?: boolean
-  /** Read-only row for the install's `extra_model_paths.yaml` file: opens a
-   *  detail modal (via `details`), no browse/promote/remove. */
   kind?: 'extra'
-  /** Globally-shared dir → shows the shared badge on its icon. */
   shared?: boolean
 }
 
 interface Props {
   dirs: ModelsDir[]
-  /** Add-button label; defaults to the shared-directory wording used by
-   *  Desktop Settings. The per-instance pane passes plain "Add Directory". */
   addLabel?: string
 }
 
@@ -51,7 +38,6 @@ const emit = defineEmits<{
   remove: [index: number]
   'make-primary': [index: number]
   open: [index: number]
-  /** Open the detail modal for a read-only `kind: 'extra'` row. */
   details: [index: number]
   add: []
 }>()
@@ -93,8 +79,6 @@ function handleRemove(index: number): void {
   emit('remove', index)
 }
 
-/** Path most recently promoted to primary, driving a brief highlight pulse.
- *  Keyed by `path` so the class rides the row as Vue reorders the list. */
 const justPromotedPath = ref<string | null>(null)
 const justPromotedTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 

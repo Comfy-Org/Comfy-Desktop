@@ -1,14 +1,3 @@
-/**
- * Lifecycle E2E: ProgressModal "Reboot" of an errored install.
- *
- * Distinct from the failure-then-retry path — here the install is
- * already in `sessionStore.errorInstances` BEFORE the user interacts with
- * the ProgressModal. We seed an errorInstance directly, then drive a
- * retryable apiCall through `injectRetryableProgressError` so the op
- * lands in ProgressModal's error footer; clicking Reboot must re-invoke
- * the SAME `op.apiCall` (proven by the call-counter helper) and the op
- * must transition back through running → finished/ok in place.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -55,9 +44,6 @@ test.afterAll(async () => {
 })
 
 test('ProgressModal Reboot re-runs the same apiCall to recover an errored install @windows @macos @linux', async () => {
-  // Seed an install that is already errored before the user starts an operation.
-  // This exercises reboot from an existing error rather than retrying a failure
-  // produced by the operation under test.
   await ctx.panel.evaluate<void>(`(() => {
     window.__e2eRenderer.seedErrorInstance({
       installationId: ${JSON.stringify(INSTALL_ID)},
@@ -70,12 +56,6 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
   )
   expect(seeded, 'seedErrorInstance must register the install in errorInstances').toBe(true)
 
-  // Inject a retryable failing op: first apiCall returns
-  // `{ ok: false, message }`, the next one (driven by Reboot) returns
-  // `{ ok: true }`. progressStore writes the failure into
-  // `currentOp.error` AND replaces the errorInstance entry with the
-  // op-failure message — exercising the same store path the production
-  // failure flow takes.
   await ctx.panel.evaluate<void>(`(async () => {
     await window.__e2eRenderer.injectRetryableProgressError({
       installationId: ${JSON.stringify(INSTALL_ID)},
@@ -85,23 +65,16 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
     })
   })()`)
 
-  // Error footer appears.
   await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
   await ctx.panel.waitForVisible(byTestId(TID.progressReboot), { timeout: 10_000 })
 
-  // The apiCall has been invoked exactly once at this point.
   const beforeReboot = await ctx.panel.evaluate<number>(
     `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
   )
   expect(beforeReboot, 'apiCall must have run once for the seeded failure').toBe(1)
 
-  // Click Reboot. handleReboot calls `progressStore.startOperation`
-  // with `op.apiCall || (() => runAction(id, 'launch'))` — proving the
-  // re-run requires the counter to advance to 2 (NOT a fresh
-  // runAction('launch') fallback, which would leave the counter at 1).
   expect(await ctx.panel.click(byTestId(TID.progressReboot))).toBe(true)
 
-  // Counter advances: same closure was re-invoked.
   await expect
     .poll(
       () =>
@@ -112,9 +85,6 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
     )
     .toBeGreaterThanOrEqual(2)
 
-  // Op transitions back to in-flight (error footer disappears), then
-  // resolves with `{ ok: true }` and the auto-close watcher tears the
-  // takeover down — `.brand-progress` leaves the DOM.
   await expect
     .poll(() => ctx.panel.exists(byTestId(TID.progressErrorMessage)), {
       timeout: 10_000,

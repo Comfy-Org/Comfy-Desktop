@@ -1,14 +1,3 @@
-/**
- * Instance-picker settings must follow the selected install.
- *
- * The wrapper's data-install-id changes immediately on selection. Keep the
- * previous sections visible while the next get-detail-sections request runs;
- * reserve the loading placeholder for an initial load. A late response from
- * a previous selection must not overwrite the current pane.
- *
- * The intermediate-state assertion accepts either the new installation id or
- * the loading placeholder; the settled pane must belong to the new selection.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -69,10 +58,6 @@ test.afterAll(async () => {
 })
 
 test('right pane clears stale sections when switching install A → B @windows @macos @linux', async () => {
-  // Open the picker directly in expanded mode, pre-selected on A.
-  // `openInstancePicker` is the same renderer-facing bridge the title
-  // bar uses; we drive it from the panel so we don't have to chase
-  // the title-bar button geometry.
   const opened = await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -87,7 +72,6 @@ test('right pane clears stale sections when switching install A → B @windows @
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
-  // Wait for A's sections to render in the right pane.
   await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
   await popup.waitFor(
     async () => (await popup.evaluate<string | null>(
@@ -96,15 +80,9 @@ test('right pane clears stale sections when switching install A → B @windows @
     { timeout: 10_000, message: 'right pane never settled on Install A' },
   )
 
-  // Click Install B's left-pane row.
   const clickedB = await popup.click(byTestId(TID.pickerRow(INSTALL_B_ID)))
   expect(clickedB, 'Install B row click dispatched').toBe(true)
 
-  // Staleness assertion: after switching, the sections pane must NOT
-  // still carry A's id. Either the loading placeholder takes over
-  // (sections gone), or the pane flips to B. The bug we're guarding
-  // against would leave A's data-install-id painted while B's IPC
-  // resolves.
   await popup.waitFor(
     async () => {
       const state = await popup.evaluate<{ sectionsId: string | null; loadingVisible: boolean }>(
@@ -123,8 +101,6 @@ test('right pane clears stale sections when switching install A → B @windows @
     },
   )
 
-  // And the pane should eventually settle on B (proves the new IPC
-  // response was applied, not the stale one).
   await popup.waitFor(
     async () => (await popup.evaluate<string | null>(
       `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`,

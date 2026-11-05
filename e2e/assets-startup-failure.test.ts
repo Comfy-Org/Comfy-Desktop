@@ -1,13 +1,3 @@
-/**
- * E2E: a ComfyUI that turns the assets system on by default refuses to start when its asset
- * database cannot open, printing `ASSETS_STARTUP_FAILED: <kind>` and a message for the user, then
- * exiting 1. Desktop shows that message instead of "Process exited with code 1", and when the
- * kind is `in_use` (another ComfyUI holds the database) it shows its own lock copy, even though
- * Desktop did not pass --enable-assets.
- *
- * Linux only: the ComfyUI stand-in is `fakeComfyInstall`, which is Linux-only (see its header).
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -30,7 +20,6 @@ let ctx: AppContext | null = null
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(180_000)
 
-/** What ComfyUI's logger prints: alembic noise first, then the marker behind a coloured tag. */
 function coreRefusal(kind: string, ...message: string[]): string {
   return (
     'INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n' +
@@ -45,7 +34,6 @@ async function launchAndReadError(stderr: string): Promise<string | null> {
   await ctx!.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 60_000 })
   await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 30_000 }).toBe(false)
   const text = await ctx!.panel.textOf(byTestId(TID.progressErrorMessage))
-  // Back to the chooser for the next case.
   expect(await ctx!.panel.click(byTestId(TID.progressBack))).toBe(true)
   await expectChooserVisible(ctx!.panel)
   return text
@@ -61,8 +49,6 @@ test.beforeAll(async () => {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      // No --enable-assets: the v0.3.99 record below sits under Desktop's 0.38.0 assets floor,
-      // and the lock case must hold without it.
       betaFeaturesEnabled: false,
       hasSeenCentralPillHint: true
     },
@@ -74,7 +60,6 @@ test.beforeAll(async () => {
         sourceLabel: 'ComfyBuilder',
         installPath,
         status: 'installed',
-        // No --enable-assets: the core under test has assets on by default.
         launchArgs: `--port ${port}`,
         launchMode: 'window',
         seen: true,

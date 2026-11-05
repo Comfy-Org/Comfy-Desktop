@@ -13,7 +13,6 @@ import { TID } from '../../../../shared/testIds'
 interface Props {
   field: DetailField
   sectionActions?: ActionDef[]
-  /** Inline-action busy set driving the per-button spinner + disabled state. */
   runningActionIds?: Set<string>
 }
 
@@ -47,11 +46,6 @@ watch(
 
 const currentValue = computed(() => String(props.field.value ?? ''))
 
-// --- Cascading group dropdowns (generic, driven by `groupPath`) ---
-// Options sharing a path prefix sit behind one dropdown per level (e.g.
-// PyTorch backend series -> version). Every group selection maps to a
-// concrete option so preview/actions always describe a real choice.
-
 const groupDepth = computed(() => {
   let depth = 0
   for (const opt of props.field.options ?? []) {
@@ -60,8 +54,6 @@ const groupDepth = computed(() => {
   return depth
 })
 
-// Cascade only when every option carries a full-depth path; mixed or partial
-// paths fall back to the flat picker so no option becomes unreachable.
 const cascadeActive = computed(
   () =>
     groupDepth.value > 0 &&
@@ -71,15 +63,9 @@ const cascadeActive = computed(
 const selectedOption = computed<DetailFieldOption | undefined>(() => {
   const opts = props.field.options ?? []
   const exact = opts.find((o) => o.value === state.draft)
-  // In cascade mode an unknown draft (e.g. the value vanished in an options
-  // refresh) falls back to the first option so the group dropdowns, concrete
-  // dropdown, preview, and actions all describe the same real choice; flat
-  // mode keeps exact-match semantics.
   return exact ?? (cascadeActive.value ? opts[0] : undefined)
 })
 
-/** The value the concrete dropdown displays: the effective (possibly
- *  fallen-back) selection in cascade mode, the raw draft when flat. */
 const concreteValue = computed(() =>
   cascadeActive.value ? (selectedOption.value?.value ?? state.draft) : state.draft
 )
@@ -92,23 +78,14 @@ const selectedActions = computed<ActionDef[]>(() => {
 const draftIsCurrent = computed(() => concreteValue.value === currentValue.value)
 
 interface PreviewData {
-  /** What this card updates ("ComfyUI", "PyTorch"); keeps the headline
-   *  self-identifying when the Update tab shows several update cards. */
   productName?: string
   installedVersion?: string
   latestVersion?: string
-  /** Overrides the "Latest" stat-row label - e.g. the PyTorch card says
-   *  "Selected" because the user may have picked a downgrade. */
   latestLabel?: string
   lastChecked?: string
   lastCheckedAt?: number
   updateAvailable?: boolean
-  /** Suppress the "Up to date" badge when there is no update. The PyTorch
-   *  card sets this: other stacks are still selectable in the picker, so
-   *  "Up to date" would wrongly imply nothing is available. */
   hideUpToDateBadge?: boolean
-  /** True while `commitsAhead` is still being computed; drives the
-   *  "Computing commits ahead…" hint so the label swap isn't a surprise. */
   enriching?: boolean
 }
 
@@ -128,8 +105,6 @@ const preview = computed<PreviewData | null>(() => {
   }
 })
 
-// Safety net: if the background `commitsAhead` enrichment never completes
-// (offline / timeout), hide the hint after 10s so it doesn't hang forever.
 const ENRICHING_HINT_MAX_MS = 10_000
 const enrichingTimedOut = ref(false)
 let enrichingTimer: ReturnType<typeof setTimeout> | null = null
@@ -184,8 +159,6 @@ const versionsMatch = computed(() => {
   return installed === latest
 })
 
-/** Product prefix ("ComfyUI", "PyTorch") so multiple update cards on the
- *  same tab each say what they update. */
 const headlineProduct = computed(() => preview.value?.productName ?? '')
 
 const headlineVersion = computed(() => {
@@ -305,7 +278,6 @@ const showCheckInHeader = computed(
     otherSecondaryActions.value.length === 0
 )
 
-// Only surface the manual check when no update is already visible.
 const showCheckUpdateInFooter = computed(
   () =>
     checkUpdateAction.value != null &&
@@ -330,7 +302,6 @@ const footerActions = computed<
   }
 
   for (const action of otherSecondaryActions.value) {
-    // Switch Channel is the primary intent after picking a channel, so accent it.
     const variant =
       action.id === 'switch-channel' ? 'accent' : action.style === 'danger' ? 'danger' : 'default'
     out.push({ action, variant })
@@ -347,15 +318,11 @@ const footerActions = computed<
     out.push({ action: updateNow, variant: 'accent' })
   }
 
-  // Copy & Change PyTorch is the safe alternative, so it sits before the
-  // accented Change button, mirroring Copy & Update vs Update Now.
   const copyPytorch = promotedPrimaryActions.value.find((a) => a.id === 'copy-pytorch')
   if (copyPytorch) {
     out.push({ action: copyPytorch, variant: 'default' })
   }
 
-  // The PyTorch card's per-option switch action; accented for the same
-  // reason as Update Now (it is the primary intent after picking a stack).
   const changePytorch = promotedPrimaryActions.value.find((a) => a.id === 'change-pytorch')
   if (changePytorch) {
     out.push({ action: changePytorch, variant: 'accent' })
@@ -378,9 +345,6 @@ function toSelectOption(opt: DetailFieldOption): BaseSelectOption {
   return { value: opt.value, label: optionLabel(opt), description: opt.description }
 }
 
-/** Group-id path of the selected option; anchors every level dropdown.
- *  `selectedOption` already falls back to the first option in cascade mode,
- *  so a transiently unknown draft can't blank the cascade. */
 const selectedPath = computed<string[]>(() => {
   if (!cascadeActive.value) return []
   return (selectedOption.value?.groupPath ?? []).map((g) => g.id)
@@ -421,8 +385,6 @@ const cascadeLevels = computed<CascadeLevel[]>(() => {
   return levels
 })
 
-/** Selecting a group jumps to the first (newest - main emits newest-first)
- *  concrete option under the new prefix, keeping preview/actions real. */
 function selectCascadeGroup(level: number, groupId: string): void {
   const prefix = [...selectedPath.value.slice(0, level), groupId]
   const match = (props.field.options ?? []).find((opt) =>
@@ -431,8 +393,6 @@ function selectCascadeGroup(level: number, groupId: string): void {
   if (match) state.draft = match.value
 }
 
-/** Options for the final (concrete) dropdown: the whole list when flat, only
- *  the selected group's options when cascading. */
 const selectOptions = computed<BaseSelectOption[]>(() => {
   const opts = props.field.options ?? []
   if (!cascadeActive.value) return opts.map(toSelectOption)
@@ -473,8 +433,6 @@ function actionClass(
       :rows="statRows"
     />
 
-    <!-- Hint shown while `commitsAhead` is still being computed; self-hides
-         after the max window if enrichment never completes. -->
     <p
       v-if="showEnrichingHint"
       class="channel-picker-enriching m-0 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted italic"

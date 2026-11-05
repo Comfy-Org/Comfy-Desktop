@@ -14,7 +14,6 @@ const props = withDefaults(
     spinnerClass: string
     disableWithMessage?: boolean
     directStyleClass?: boolean
-    /** Explicit utility colors supplied by migrated callers instead of legacy style classes. */
     variantClass?: string
   }>(),
   {

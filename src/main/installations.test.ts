@@ -25,7 +25,6 @@ beforeEach(() => {
       getPath: () => userDataPath
     }
   }))
-  // Force win32 so the XDG branches in paths.ts don't kick in on a Linux runner.
   vi.stubGlobal('process', {
     ...process,
     platform: 'win32'
@@ -62,7 +61,6 @@ describe('installations.markLaunched', () => {
     expect(updated!.lastLaunchedAt!).toBeGreaterThanOrEqual(before)
     expect(updated!.lastLaunchedAtByCategory).toEqual({ local: updated!.lastLaunchedAt })
 
-    // Persisted to disk, not just returned in memory.
     const reloaded = await installations.get(entry.id)
     expect(reloaded!.lastLaunchedAt).toBe(updated!.lastLaunchedAt)
     expect(reloaded!.lastLaunchedAtByCategory).toEqual({ local: updated!.lastLaunchedAt })
@@ -91,8 +89,6 @@ describe('installations.markLaunched', () => {
     const entry = await installations.add({
       name: 'No Category',
       installPath: path.join(tmpRoot, 'no-cat'),
-      // Unrecognised source → resolver returns undefined → only the global
-      // timestamp is stamped.
       sourceId: 'mystery',
       status: 'installed'
     })
@@ -165,11 +161,8 @@ describe('installations.markLaunched', () => {
 })
 
 describe('installations.add (id uniqueness)', () => {
-  // `inst-${Date.now()}` collided for same-millisecond `add()` calls, aliasing
-  // records under one id; the fix appends a per-process counter.
   it('produces a distinct id for each add(), even back-to-back inside the same millisecond', async () => {
     const installations = await loadInstallations()
-    // Pin Date.now so all 5 add() calls hit the same-ms collision path.
     const fixed = 1_700_000_000_000
     vi.spyOn(Date, 'now').mockReturnValue(fixed)
     const records = []
@@ -367,7 +360,6 @@ describe('installations.resolveAutoLaunchInstall', () => {
 
 describe('installations.load (legacy shared-storage flag migrations)', () => {
   function writeRawInstallations(records: Record<string, unknown>[]): string {
-    // On win32 `dataDir()` is the Electron userData path directly (no `data/`).
     fs.mkdirSync(userDataPath, { recursive: true })
     const file = path.join(userDataPath, 'installations.json')
     fs.writeFileSync(file, JSON.stringify(records))
@@ -397,8 +389,6 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
   })
 
   it('translates legacy useSharedPaths: false -> useSharedModels: true, per-folder flags false', async () => {
-    // The migration forces `useSharedModels: true` regardless of the legacy
-    // value (isolating paths meant input/output, not the model library).
     writeRawInstallations([
       {
         id: 'legacy-off',
@@ -454,8 +444,6 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
   })
 
   it('keeps newer per-folder flags when a mixed-schema record also has the legacy flag', async () => {
-    // A downgrade/upgrade cycle can leave both the legacy flag and the new
-    // per-folder flags on one record; the per-folder values are newer and win.
     writeRawInstallations([
       {
         id: 'mixed',
@@ -477,8 +465,6 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
   })
 
   it('leaves records without useSharedPaths untouched (no implicit migration)', async () => {
-    // Records already on the new schema must round-trip without the
-    // migration adding fields that weren't there before.
     writeRawInstallations([
       {
         id: 'modern',
@@ -501,9 +487,6 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
   })
 
   it('rewrites a legacy mid-update ComfyBuilder record from installing to updating', async () => {
-    // Older versions reused status 'installing' for in-place updates,
-    // disambiguated by the rollback payload; that state now reads 'updating'.
-    // A fresh install (no rollback) and other sources keep 'installing'.
     writeRawInstallations([
       {
         id: 'mid-update',
@@ -552,7 +535,6 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
       }
     ])
     const installations = await loadInstallations()
-    // Update triggers a save, which re-serializes the migrated record.
     await installations.update('legacy-strip', { name: 'Renamed' })
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, unknown>[]
     const persisted = raw.find((r) => r['id'] === 'legacy-strip')!
@@ -607,7 +589,6 @@ describe('installations.getRecentByCategory', () => {
       lastLaunchedAt: 400,
       lastLaunchedAtByCategory: { local: 400 }
     })
-    // Cloud install with a much higher timestamp must NOT win the local query.
     await installations.add({
       name: 'Cloud High',
       installPath: path.join(tmpRoot, 'ch'),
@@ -623,7 +604,6 @@ describe('installations.getRecentByCategory', () => {
 
   it('falls back to global lastLaunchedAt for installs without a per-category entry', async () => {
     const installations = await loadInstallations()
-    // Legacy install: only the global field set.
     const legacy = await installations.add({
       name: 'Legacy Local',
       installPath: path.join(tmpRoot, 'leg'),
@@ -631,7 +611,6 @@ describe('installations.getRecentByCategory', () => {
       status: 'installed',
       lastLaunchedAt: 500
     })
-    // Newer install with a per-category entry, but lower timestamp.
     await installations.add({
       name: 'Newer Local',
       installPath: path.join(tmpRoot, 'new'),
@@ -647,7 +626,6 @@ describe('installations.getRecentByCategory', () => {
 
   it('prefers the per-category timestamp over the global one when both exist', async () => {
     const installations = await loadInstallations()
-    // Even though A's global timestamp is lower, its per-category entry is higher.
     const winner = await installations.add({
       name: 'A',
       installPath: path.join(tmpRoot, 'a'),
@@ -671,8 +649,6 @@ describe('installations.getRecentByCategory', () => {
 
   it('ignores installs in other categories even when their per-category map mentions ours', async () => {
     const installations = await loadInstallations()
-    // A cloud install whose per-category map has a stray `local` key must still
-    // be filtered out, since the resolver says it's 'cloud'.
     await installations.add({
       name: 'Stray Cloud',
       installPath: path.join(tmpRoot, 'stray'),
@@ -715,7 +691,6 @@ describe('installations.getRecentByCategory', () => {
 
     expect((await installations.getRecentByCategory('local', resolveCategory))!.id).toBe(b.id)
 
-    // markLaunched(a) should bump A above B.
     await installations.markLaunched(a.id, resolveCategory)
     expect((await installations.getRecentByCategory('local', resolveCategory))!.id).toBe(a.id)
   })
@@ -823,7 +798,6 @@ describe('installations.clearPendingTemplateOpen', () => {
 
     expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(true)
     expect((await installations.get(entry.id))!.pendingTemplateOpen).toBeNull()
-    // Already clear → no second mutation.
     expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
   })
 
@@ -872,8 +846,7 @@ describe('installations.uniqueName', () => {
 
   it('does not compound even after repeated chaining of the deduped name', async () => {
     const { uniqueName } = await loadInstallations()
-    const first = uniqueName('ComfyUI', recs('ComfyUI')) // "ComfyUI (1)"
-    // Feeding the deduped name back in while it is now taken must not nest.
+    const first = uniqueName('ComfyUI', recs('ComfyUI'))
     expect(uniqueName(first, recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
   })
 
@@ -884,7 +857,7 @@ describe('installations.uniqueName', () => {
 
   it('excludes the renamed install from the conflict set', async () => {
     const { uniqueName } = await loadInstallations()
-    const existing = recs('ComfyUI') // id-0
+    const existing = recs('ComfyUI')
     expect(uniqueName('ComfyUI', existing, 'id-0')).toBe('ComfyUI')
   })
 })
@@ -899,7 +872,6 @@ describe('mutations fail closed when installations.json cannot be recovered (iss
       status: 'installed'
     })
     const dataPath = path.join(userDataPath, 'installations.json')
-    // A stale backup that predates a later rename of the install.
     fs.copyFileSync(dataPath, dataPath + '.bak')
 
     const realRead = fs.promises.readFile.bind(fs.promises) as typeof fs.promises.readFile
@@ -909,16 +881,13 @@ describe('mutations fail closed when installations.json cannot be recovered (iss
     ) => {
       if (p === dataPath) {
         const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM' // lock never clears
+        err.code = 'EPERM'
         return Promise.reject(err)
       }
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.promises.readFile)
 
-    // Reads degrade to the backup records...
     expect(await installations.list()).toHaveLength(1)
-    // ...but a read-modify-write must fail closed: saving a list built from
-    // the stale backup would overwrite the newer primary once the lock clears.
     await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
       /cannot be recovered/
     )
@@ -937,15 +906,11 @@ describe('mutations fail closed when installations.json cannot be recovered (iss
       status: 'installed'
     })
     const dataPath = path.join(userDataPath, 'installations.json')
-    // Truncated write / interrupted power cycle: readable, but not JSON.
     const corrupt = fs.readFileSync(dataPath, 'utf-8').slice(0, 20)
     fs.writeFileSync(dataPath, corrupt)
     fs.rmSync(dataPath + '.bak', { force: true })
 
-    // Reads degrade to an empty list...
     expect(await installations.list()).toEqual([])
-    // ...but a mutation must not replace the corrupt file with a list built
-    // from nothing, losing every prior record.
     await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
       /cannot be recovered/
     )

@@ -77,8 +77,6 @@ describe('useReturnToDashboardConfirm', () => {
     mockConfirm.mockResolvedValue(false)
     const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
-    // An install in progress has status 'installing' and is hidden from the
-    // renderer list, so the record lookup resolves to null.
     expect(await confirmReturnToDashboard(null, 'in_flight')).toBe(false)
     expect(
       await confirmReturnToDashboard(makeInstallation({ sourceCategory: 'cloud' }), 'in_flight')

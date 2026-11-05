@@ -21,25 +21,13 @@ import type {
   DetailSection
 } from '../types/ipc'
 
-/**
- * Global Settings popup view — two-pane tabbed card (desktop-only).
- *
- * Receives a `snapshot` prop built main-side by `buildGlobalSettingsSnapshot`
- * in `src/main/popups/titlePopup.ts` and dispatches mutations through
- * `window.__comfyTitlePopup`.
- */
-
 interface ModelsDir {
   path: string
   isPrimary: boolean
 }
 
 interface Snapshot {
-  /** Tab to land on; non-null only on the open push (rebroadcasts carry
-   *  null so live data refreshes never retarget the user's tab). */
   initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
-  /** Field id to scroll to and flash; same per-open semantics as
-   *  `initialTab`, so rebroadcasts (which carry null) never re-flash. */
   highlightFieldId?: string | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
@@ -51,7 +39,6 @@ interface Snapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: ModelsDir[]
   modelsSystemDefault: string
-  /** Explicit telemetry consent. Gates opting into beta features. */
   telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
@@ -103,9 +90,6 @@ type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 const activeTab = ref<TabId>('general')
 const requestedTabCount = ref(0)
 
-// Each open pushes a fresh snapshot object, so watching by identity lets a
-// reopen re-apply its requested tab. Rebroadcasts carry initialTab null and
-// are ignored, so a live refresh never yanks the user off their tab.
 watch(
   () => props.snapshot,
   (snap) => {
@@ -118,14 +102,8 @@ watch(
   { immediate: true }
 )
 
-/** How long the flashed row keeps its ring. Long enough to catch the eye after
- *  the scroll settles, short enough that the row is back to normal before the
- *  user reaches for it. */
 const HIGHLIGHT_MS = 2200
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
-/** The element the live timer belongs to, so a second flash can strip the class off the first
- *  rather than leaving it ringed — which matters under `prefers-reduced-motion`, where the
- *  class holds a static ring instead of a finishing animation. */
 let highlightEl: HTMLElement | null = null
 
 function clearHighlight(): void {
@@ -137,18 +115,7 @@ function clearHighlight(): void {
 
 onUnmounted(clearHighlight)
 
-/**
- * Scroll a settings row into view and flash it.
- *
- * Deep links land on a tab, not a control, and the Privacy rows sit well below
- * the fold on the General tab — so "we opened Settings for you" can still leave
- * the user hunting. Queried from the document rather than a template ref
- * because the rows are rendered by `SettingsSectionList` several components down,
- * which exposes them only as `data-field-id`.
- */
 async function flashField(fieldId: string): Promise<void> {
-  // Two ticks: the first flushes the tab switch this same watch may have just
-  // requested, the second the field list that tab renders.
   await nextTick()
   await nextTick()
   const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`)
@@ -156,13 +123,9 @@ async function flashField(fieldId: string): Promise<void> {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
   el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
   clearHighlight()
-  // Re-added rather than toggled so a second flash of the same row restarts the
-  // animation instead of being swallowed as "class already present".
   el.classList.remove('gs-field-flash')
   void el.offsetWidth
   el.classList.add('gs-field-flash')
-  // Keyboard focus follows the link to the control it points at, instead of dropping to <body>
-  // when the popup swaps to this view.
   el.querySelector<HTMLElement>('button, input, select, textarea')?.focus({ preventScroll: true })
   highlightEl = el
   highlightTimer = setTimeout(() => {
@@ -192,10 +155,6 @@ const languageSections = computed<DetailSection[]>(() => [
 const generalSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.generalFields as unknown as DetailField[] }
 ])
-/** Opting in is gated on telemetry consent (opting *out* never is), and consent
- *  is live snapshot state rather than a property of the settings field — so the
- *  gate is derived here instead of main-side, where `toDetailField` would have
- *  to learn about it. */
 const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 const telemetrySections = computed<DetailSection[]>(() => [
   {
@@ -213,8 +172,6 @@ const telemetrySections = computed<DetailSection[]>(() => [
 const desktopUpdatePreferenceFields = computed<DetailField[]>(
   () => props.snapshot.desktopUpdateFields as unknown as DetailField[]
 )
-/** The cache directory path field, rendered as a readonly path row (same UI as
- *  the shared input/output dirs) instead of a generic textbox. */
 const cacheDirField = computed<DetailField | undefined>(() => {
   const fields = props.snapshot.cacheFields as unknown as DetailField[]
   return fields.find((f) => f.id === 'cacheDir') ?? fields[0]
@@ -239,8 +196,6 @@ const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
 ])
 
-/** The default install-location path field, rendered as a readonly path row
- *  (same UI as the cache + shared input/output dirs) instead of a textbox. */
 const installDirField = computed<DetailField | undefined>(() => {
   const fields = props.snapshot.installLocationFields as unknown as DetailField[]
   return fields.find((f) => f.id === 'installDir') ?? fields[0]
@@ -299,7 +254,6 @@ const isChecking = ref(false)
 async function handleCheckForUpdate(): Promise<void> {
   isChecking.value = true
   try {
-    // Floor the busy state so a sub-frame response still flashes "Checking…".
     await withMinDuration(async () => {
       await bridge?.globalSettingsCheckForUpdate()
     })
@@ -307,9 +261,7 @@ async function handleCheckForUpdate(): Promise<void> {
     const now = Date.now()
     try {
       window.localStorage.setItem(LAST_CHECKED_KEY, String(now))
-    } catch {
-      /* noop */
-    }
+    } catch {}
     bridge?.globalSettingsSetLastCheckedAt(now)
     isChecking.value = false
   }
@@ -323,9 +275,7 @@ onMounted(() => {
         const n = Number(raw)
         if (Number.isFinite(n)) bridge?.globalSettingsSetLastCheckedAt(n)
       }
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }
 })
 </script>
@@ -378,8 +328,6 @@ onMounted(() => {
         class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
-          <!-- Locale picker first, no microsection header — it's a single
-               control and the lone "Language" label on it is enough. -->
           <SettingsSectionList
             :sections="languageSections"
             @update-field="handleUpdateField"

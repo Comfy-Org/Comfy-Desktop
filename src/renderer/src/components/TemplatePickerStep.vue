@@ -17,15 +17,9 @@ import ComfyCLogo from './icons/ComfyCLogo.vue'
 import TruncatedText from './TruncatedText.vue'
 import Tooltip from './ui/Tooltip.vue'
 
-/**
- * Starter-template picker — modality tabs (Image / Video / 3D / Audio) over a
- * gallery of image cards, each with a name/task/size info bar below the preview.
- * The disk alert is surfaced to (and rendered by) the host wizard.
- */
 const props = withDefaults(
   defineProps<{
     options: FieldOption[]
-    /** Value of the "no template" option to hide from the cards, when the list has one. */
     noneValue?: string
     selectedValue: string | null
     diskSpace: DiskSpaceInfo | null
@@ -55,12 +49,9 @@ const selectedOption = computed(
 )
 
 const thumbFailed = reactive<Record<string, boolean>>({})
-/** Per-card load state, so a card fades its image in (and shows the branded
- *  placeholder meanwhile) instead of flashing a blank box. */
 const thumbLoaded = reactive<Record<string, boolean>>({})
 
 const sizeBytesOf = templateSizeBytes
-/** Card preview URL, or null for non-image previews (audio → branded tile). */
 function thumbnailOf(option: FieldOption): string | null {
   const url = option.data?.thumbnailUrl
   return typeof url === 'string' && url ? url : null
@@ -72,7 +63,6 @@ function sizeLabelOf(option: FieldOption): string {
 function modelsPresentOf(option: FieldOption): boolean {
   return option.data?.modelsPresent === true
 }
-/** Tooltip/AT text: "Downloaded · ~17 GB", or just the word when size is unknown. */
 function presentLabelOf(option: FieldOption): string {
   const downloaded = t('standalone.templateModelsDownloaded')
   const size = sizeLabelOf(option)
@@ -81,18 +71,14 @@ function presentLabelOf(option: FieldOption): string {
 function hasNothingToDownload(option: FieldOption): boolean {
   return isApiNodeTemplate(option) && sizeBytesOf(option) === 0
 }
-/** Short model name (falls back to the full label). */
 function nameOf(option: FieldOption): string {
   const name = option.data?.name
   return typeof name === 'string' && name ? name : option.label
 }
-/** Task descriptor subtitle (e.g. "Text to Image"), or '' when none. */
 function taskOf(option: FieldOption): string {
   const task = option.data?.task
   return typeof task === 'string' ? task : ''
 }
-/** True while a real thumbnail is still in flight — drives the loader pulse.
- *  A template with no image preview (audio) shows a static branded tile. */
 function isThumbLoading(option: FieldOption): boolean {
   return !!thumbnailOf(option) && !thumbLoaded[option.value] && !thumbFailed[option.value]
 }
@@ -118,8 +104,6 @@ function focusRow(index: number): void {
   })
 }
 
-/** Arrow/Home/End navigation, scoped to the active tab's cards. The gallery is a
- *  single horizontal row, so Left/Right and Up/Down both step between cards. */
 function onRowKeydown(e: KeyboardEvent, index: number): void {
   const last = visibleCards.value.length - 1
   let nextIndex: number
@@ -137,8 +121,6 @@ function onRowKeydown(e: KeyboardEvent, index: number): void {
   focusRow(nextIndex)
 }
 
-// Disk alert message; the host wizard renders it above the card (so it's
-// never clipped by the list scroll) and owns the blocked-Install shake.
 defineExpose({ shownDiskError })
 </script>
 
@@ -240,7 +222,6 @@ defineExpose({ shownDiskError })
           </span>
         </span>
 
-        <!-- Outside the aria-hidden media span so the cost reaches the accessible name. -->
         <span
           v-if="isApiNodeTemplate(opt)"
           class="tps__api absolute top-2 left-2 z-1 inline-flex items-center gap-1 rounded-[999px] bg-neutral-900 px-[9px] py-1 text-[9px] font-bold tracking-[0.06em] whitespace-nowrap text-[var(--upgrade)] uppercase [box-shadow:0_2px_10px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
@@ -271,7 +252,6 @@ defineExpose({ shownDiskError })
           >
             <HardDriveDownload :size="14" :stroke-width="2" aria-hidden="true" />
           </Tooltip>
-          <!-- Decorative: the badge above already names the cost. -->
           <Crown
             v-else-if="hasNothingToDownload(opt)"
             class="tps__card-crown flex-none text-[var(--upgrade)]"

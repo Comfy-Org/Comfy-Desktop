@@ -12,11 +12,6 @@ function looksSensitive(key: string): boolean {
   return SENSITIVE_KEY.test(key)
 }
 
-/**
- * Environment variables key/value editor. The field header and security
- * callout live in SettingsSectionList — this component is body only.
- */
-
 interface Props {
   field: DetailField
 }
@@ -66,7 +61,6 @@ watch(
     const dict =
       val && typeof val === 'object' && !Array.isArray(val) ? (val as Record<string, string>) : {}
     const serverRows: Row[] = Object.entries(dict).map(([key, value]) => ({ key, value }))
-    // Keep keyless in-progress rows; the server never saw them (emitUpdate filters them out), so a snapshot can't evict them.
     const localPartial = rows.value.filter((r) => !r.key.trim())
     rows.value = [...serverRows, ...localPartial]
   },

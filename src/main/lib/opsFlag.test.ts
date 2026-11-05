@@ -1,7 +1,3 @@
-// The plumbing every ops flag shares: one in-flight fetch, an accessor that awaits it rather
-// than racing it to the default, and a fallback that survives both a rejection and a payload
-// `parse` doesn't recognise. Per-flag key/fail-direction/parsing is covered by that flag's own
-// spec (see `cloudFreeRuns.test.ts`).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -13,17 +9,11 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
-/** The `onLateResult` callback `init` handed to the fetch, or `undefined` when it passed none.
- *  Firing it by hand is how a post-deadline arrival is staged: `getOpsFlagResult` owns which
- *  outcomes reach it (truthy only — see `telemetry.test.ts`), this file owns what the wrapper
- *  does once one does. */
 function lateCallback(): ((result: unknown) => void) | undefined {
   const call = getOpsFlagResult.mock.calls.at(-1)
   return call?.[3] as ((result: unknown) => void) | undefined
 }
 
-// `configDir()` reads XDG_CONFIG_HOME on Linux and electron's userData elsewhere; mocking the
-// module directly is how `experiments.test.ts` pins the persisted cache to a temp dir.
 let testConfigDir = ''
 vi.mock('./paths', () => ({
   configDir: () => testConfigDir
@@ -39,7 +29,6 @@ function unreachable(): unknown {
   return { kind: 'unreachable' }
 }
 
-/** A three-value flag, so "unrecognised payload" is distinguishable from "valid value". */
 function makeTestFlag() {
   return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
     key: 'test-flag',
@@ -59,18 +48,14 @@ function makePersistedFlag() {
   })
 }
 
-/** Pinned clock, so a written entry's `fetchedAt` stamp compares exactly. */
 const NOW = Date.UTC(2026, 9, 5)
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Lets a detached refresh settle: with a saved treatment, `init` resolves before the fetch. */
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
   getOpsFlagResult.mockReset()
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
-  // Every test, not just the persistence ones: an empty `configDir()` would resolve
-  // `ops-flags.json` relative to cwd and drop a file in the repo root.
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-flag-'))
 })
 
@@ -89,10 +74,6 @@ describe('makeOpsFlag', () => {
   })
 
   it.each([['garbage'], [true]])('keeps the fallback for %s', async (value) => {
-    // `parse` returning undefined is how an unrecognised payload is told apart from a
-    // legitimate value — it must not overwrite the fail direction. Both values here are real
-    // `FeatureFlagValue`s the parser declines, so this reaches the value branch as production
-    // would; a fixture carrying `value: undefined` would not be a valid result at all.
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(value))
     await flag.init({ distinctId: 'anon' })
@@ -101,9 +82,6 @@ describe('makeOpsFlag', () => {
   })
 
   it('keeps the fallback when the fetch rejects', async () => {
-    // Defensive: `getOpsFlagResult` classifies its own failures as `unreachable` and does not
-    // reject (telemetry.ts). This pins the wrapper's own catch so a future caller that does
-    // reject cannot drop the flag to an unparsed state.
     const flag = makeTestFlag()
     getOpsFlagResult.mockRejectedValue(new Error('network'))
     await flag.init({ distinctId: 'anon' })
@@ -137,9 +115,6 @@ describe('makeOpsFlag', () => {
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon', timeoutMs: 50 })
     await settle()
-    // The trailing `undefined` is the late-result callback, which only a persisted flag gets —
-    // see `makeOpsFlag late results`. Asserted rather than elided so a callback handed to a
-    // non-persisting flag fails here.
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined)
   })
 
@@ -173,7 +148,6 @@ describe('makeOpsFlag', () => {
     await a.init({ distinctId: 'anon' })
     await settle()
     expect(await a.get()).toBe('disabled')
-    // `b` was never inited, so it has no fetch to await and reports its own fallback.
     expect(await b.get()).toBe('normal')
   })
 
@@ -184,7 +158,6 @@ describe('makeOpsFlag', () => {
     await settle()
     flag._resetForTest()
     expect(await flag.get()).toBe('normal')
-    // A fresh init must actually re-fetch rather than short-circuit on the old promise.
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await flag.init({ distinctId: 'anon' })
     await settle()
@@ -209,22 +182,17 @@ describe('makeOpsFlag persistence', () => {
   }
 
   it('uses the persisted value when the fetch resolves undefined', async () => {
-    // Given a treatment persisted by an earlier online launch
     writeFlagsFile(
       JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
     )
     const flag = makePersistedFlag()
-    // When the boot fetch times out — `getOpsFlagResult` classifies that as `unreachable`
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     await settle()
-    // Then the offline launch keeps the treatment instead of dropping to the fail direction
     expect(await flag.get()).toBe('disabled')
   })
 
   it('leaves the persisted file untouched when the fetch resolves undefined', async () => {
-    // Indented on purpose: a byte comparison against canonical `JSON.stringify` output cannot
-    // tell "never written" from "rewritten identically", and rewriting is the bug under test.
     const stored = JSON.stringify(
       { 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } },
       null,
@@ -363,10 +331,6 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('survives a write failure without rejecting init or losing the fetched value', async () => {
-    // `writeFileSafe` stages through `<file>.tmp`; a directory there makes the staging write
-    // fail terminally (EISDIR), which is the throw at safe-file.ts:154 the contract must contain.
-    // The stale entry is what makes the containment observable: an uncaught write error lands
-    // in the miss handler, which would serve `disabled` over the value just fetched.
     writeFlagsFile(
       JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
     )
@@ -379,11 +343,6 @@ describe('makeOpsFlag persistence', () => {
   })
 })
 
-// Revocation is DISABLE, not deletion: a missing key reads as `unreachable` and HOLDS the
-// persisted treatment, so serving an explicit `false` is the only operation that takes a grant
-// back. That only works if the revocation reaches the backup too — `readFileSafe` will serve
-// `.bak` when the primary is gone or unreadable, so a backup still carrying the old grant
-// resurrects it on the next offline launch.
 describe('makeOpsFlag revocation coherence', () => {
   function flagsFilePath(): string {
     return path.join(testConfigDir, 'ops-flags.json')
@@ -393,9 +352,6 @@ describe('makeOpsFlag revocation coherence', () => {
     return flagsFilePath() + '.bak'
   }
 
-  /** Tri-state on purpose: `revoked` is distinguishable from the `unknown` fail direction, so
-   *  reading a revocation back proves the persisted file answered rather than that the flag
-   *  merely fell back. */
   function makeGrantFlag() {
     return makeOpsFlag<'granted' | 'revoked' | 'unknown'>({
       key: 'grant-flag',
@@ -434,37 +390,27 @@ describe('makeOpsFlag revocation coherence', () => {
   }
 
   it('writes the revocation to the backup as well as the primary', async () => {
-    // Given a grant carried by both files from an earlier online launch
     seedGrantedFiles()
 
-    // When ops disables the flag — an explicit `false`, the supported revocation
     await disableGrant()
 
-    // Then neither file still carries the grant. A `backup: true` write would have copied the
-    // pre-rename (still granted) primary over the backup instead.
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
     expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
   })
 
   it('does not resurrect a revoked grant when the primary is missing on an offline launch', async () => {
-    // Given a grant that ops has since revoked
     seedGrantedFiles()
     await disableGrant()
 
-    // When the primary is lost and the next launch cannot reach PostHog
     fs.rmSync(flagsFilePath())
 
-    // Then the backup restores the revocation, not the grant it replaced
     expect(await launchOffline()).toBe('revoked')
   })
 
   it('does not resurrect a revoked grant from a backup-only read', async () => {
-    // Given a grant that ops has since revoked
     seedGrantedFiles()
     await disableGrant()
 
-    // When the primary exists but cannot be read (a directory reads EISDIR, the same
-    // `unreadable` outcome as a lock outlasting the retry budget), so only the backup answers
     fs.rmSync(flagsFilePath())
     fs.mkdirSync(flagsFilePath())
 
@@ -472,7 +418,6 @@ describe('makeOpsFlag revocation coherence', () => {
   })
 
   it('aborts the persist when the backup write fails, leaving the primary untouched', async () => {
-    // Given the backup's staging path blocked, so the FIRST write of the sequence throws EISDIR
     seedGrantedFiles()
     fs.mkdirSync(bakFilePath() + '.tmp')
 
@@ -481,18 +426,11 @@ describe('makeOpsFlag revocation coherence', () => {
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     await settle()
 
-    // Then this launch still uses what it fetched, and the primary was never reached — proving
-    // the backup is written first, so the two files can never disagree in the resurrecting
-    // direction (primary revoked, backup still granted).
     expect(await flag.get()).toBe('revoked')
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
 
   it('refuses the persisted write when the primary exists but is unreadable', async () => {
-    // Given a primary that EXISTS but cannot be read, with a readable backup standing in for it.
-    // `readFileSafe` serves the backup
-    // tagged `primaryUnreadable`, so the file's REAL content is unknown — a read-modify-write
-    // would replace an intact primary with state reconstructed from the backup.
     seedGrantedFiles()
     vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({
       kind: 'data',
@@ -505,20 +443,13 @@ describe('makeOpsFlag revocation coherence', () => {
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     await settle()
 
-    // Then the launch still uses what it just fetched — refusing to persist is not refusing
-    // to apply.
     expect(await flag.get()).toBe('revoked')
 
-    // And neither file was rewritten: the refusal happens before the backup write too, so it
-    // cannot leave the pair half-updated.
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
     expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
 
   it('refuses the persisted write when the primary is unreadable and no backup stands in', async () => {
-    // Given an unreadable primary with NO backup, `readFileSafe` reports `unreadable` rather
-    // than serving data. Still a refusal: an unrecoverable file is not an empty one, and
-    // writing would replace real entries with a single reconstructed key.
     fs.writeFileSync(flagsFilePath(), grantEntry(true), 'utf-8')
     vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({ kind: 'unreadable' })
 
@@ -533,7 +464,6 @@ describe('makeOpsFlag revocation coherence', () => {
   })
 
   it('keeps the revocation in the backup when the primary write fails', async () => {
-    // Given the primary's staging path blocked, so the SECOND write of the sequence throws
     seedGrantedFiles()
     fs.mkdirSync(flagsFilePath() + '.tmp')
 
@@ -542,24 +472,12 @@ describe('makeOpsFlag revocation coherence', () => {
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     await settle()
 
-    // Then the backup already holds the revocation, so a later backup-served read cannot
-    // resurrect the grant. The stale primary is the accepted residual: two files cannot be
-    // written atomically, and the next successful fetch rewrites both.
     expect(await flag.get()).toBe('revoked')
     expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
 })
 
-// A cold `/flags` POST measured ~2572 ms on Windows and is always cold at boot, so the 2000 ms
-// deadline loses every launch: the fetch is abandoned mid-flight, the launch reads `unreachable`,
-// and a cached grant survives every restart. The deadline still governs THIS launch's decision —
-// what changes is that an explicit value arriving after it is persisted for the NEXT one and
-// applied for later reads, so a revocation converges instead of never landing.
-//
-// Only `kind: 'value'` may be written late. A late miss or rejection classifies as `unreachable`,
-// which must never be persisted by any route — otherwise deleting a flag would revoke it, which
-// is exactly the contract `persist` documents against.
 describe('makeOpsFlag late results', () => {
   function flagsFilePath(): string {
     return path.join(testConfigDir, 'ops-flags.json')
@@ -586,8 +504,6 @@ describe('makeOpsFlag late results', () => {
     return JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))
   }
 
-  /** A launch that loses the race: the deadline resolves `unreachable` while the fetch is still
-   *  in flight. Returns the flag so the caller can fire its late result. */
   async function launchLosingTheRace() {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
@@ -597,20 +513,15 @@ describe('makeOpsFlag late results', () => {
   }
 
   it('persists a late explicit false so the next unreachable launch reads the revocation', async () => {
-    // Given a grant persisted by an earlier online launch
     seedGrant(true)
     const flag = await launchLosingTheRace()
     expect(await flag.get()).toBe('granted')
 
-    // When the disable lands after the deadline, too late for this launch to act on
     lateCallback()?.(flagResult(false, null))
 
-    // Then later reads in this session see the revocation
     expect(await flag.get()).toBe('revoked')
-    // And the cache now holds the revocation
     expect(storedGrant()).toEqual({ 'grant-flag': { value: false, payload: null, fetchedAt: NOW } })
 
-    // And the next launch, also unreachable, reads it back
     const next = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await next.init({ distinctId: 'anon' })
@@ -619,7 +530,6 @@ describe('makeOpsFlag late results', () => {
   })
 
   it('persists a late explicit true, so a grant can also arrive one launch behind', async () => {
-    // Given a revocation on disk — the opposite starting cache, so this cannot pass by inertia
     seedGrant(false)
     const flag = await launchLosingTheRace()
     expect(await flag.get()).toBe('revoked')
@@ -629,15 +539,7 @@ describe('makeOpsFlag late results', () => {
     expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
   })
 
-  // A late miss and a late rejection both classify as `unreachable`, so `getOpsFlagResult`
-  // withholds the callback and nothing reaches this wrapper. That it withholds them is the
-  // load-bearing half and is pinned in `telemetry.test.ts` ("withholds a late result that
-  // carries no result for the key" / "withholds a late rejection"). This is the other half:
-  // a launch that never receives a late value has no OTHER route to the file, so withholding
-  // really is a no-op. Named for what it asserts — the wrapper cannot distinguish WHY no late
-  // value arrived, so a test here claiming to cover a specific late outcome would be a fiction.
   it('writes nothing when a launch is never handed a late value', async () => {
-    // Given a grant on disk, and a launch whose fetch was abandoned at the deadline
     const stored = JSON.stringify(
       { 'grant-flag': { value: true, payload: null, fetchedAt: NOW } },
       null,
@@ -646,43 +548,33 @@ describe('makeOpsFlag late results', () => {
     fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
     const flag = await launchLosingTheRace()
 
-    // When the callback is registered but never invoked, as a withheld outcome leaves it
     expect(lateCallback()).toBeTypeOf('function')
     await Promise.resolve()
 
-    // Then the grant stands, byte for byte. Deletion is not revocation, late or otherwise.
-    // Indented JSON on purpose: canonical output could not tell "untouched" from "rewritten
-    // identically", and rewriting is the bug under test.
     expect(fs.readFileSync(flagsFilePath(), 'utf-8')).toBe(stored)
     expect(await flag.get()).toBe('granted')
   })
 
   it('writes exactly once when the fetch wins the race', async () => {
-    // Given a fetch that beats the deadline, so there is no abandoned promise to report late
     const writes = vi.spyOn(safeFile, 'writeFileSafe')
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(true, null))
     await flag.init({ distinctId: 'anon' })
     await settle()
 
-    // Then the in-band write is the only one. A late callback firing here too would double it.
     expect(writes.mock.calls.filter(([file]) => file === flagsFilePath())).toHaveLength(1)
     expect(await flag.get()).toBe('granted')
   })
 
   it('ignores a late result belonging to a superseded init', async () => {
-    // Given a launch that lost the race, whose fetch is still in flight
     seedGrant(true)
     const flag = await launchLosingTheRace()
     const strandedCallback = lateCallback()
 
-    // When the flag is reset — a new test, or a fresh init — before that fetch settles
     flag._resetForTest()
 
-    // Then its late result is discarded rather than written under the state that replaced it
     strandedCallback?.(flagResult(false, null))
     expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
-    // Nor applied to the reset flag, which is back at its fallback
     expect(await flag.get()).toBe('unknown')
   })
 
@@ -692,7 +584,6 @@ describe('makeOpsFlag late results', () => {
     getOpsFlagResult.mockReturnValue(new Promise((resolve) => (answer = resolve)))
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'anon' })
-    // The late revocation is delivered first, then the deadline's `unreachable` settles
     lateCallback()?.(flagResult(false, null))
     answer(unreachable())
     await settle()
@@ -707,7 +598,6 @@ describe('makeOpsFlag late results', () => {
   })
 
   it('swallows and logs a failed late write', async () => {
-    // Given `writeFileSafe`'s staging path blocked by a directory, so the write throws EISDIR
     seedGrant(true)
     const logs = vi.spyOn(console, 'log').mockImplementation(() => {})
     const flag = makeOpsFlag<'granted' | 'revoked' | 'unknown'>({
@@ -722,20 +612,13 @@ describe('makeOpsFlag late results', () => {
     await settle()
     fs.mkdirSync(flagsFilePath() + '.bak.tmp')
 
-    // When the late result lands, the throw must not escape — nothing awaits this callback, so
-    // an uncaught error becomes an unhandled rejection rather than a caught test failure.
     expect(() => lateCallback()?.(flagResult(false, null))).not.toThrow()
     expect(logs.mock.calls.some(([msg]) => msg === '[grant] late persist error:')).toBe(true)
-    // A late value is logged, so a boot log reading `unreachable` is not the last word
     expect(logs).toHaveBeenCalledWith('[grant] late: fetched=', false)
-    // And the failed write does not cost later reads the value
     expect(await flag.get()).toBe('revoked')
   })
 
   it('hands a non-persisting flag no late callback at all', async () => {
-    // `cloudFreeRuns` must stay write-free structurally, not by a guard inside a callback: no
-    // write path is handed to its abandoned fetch in the first place. `getOpsFlagResult` still
-    // observes that fetch to report how it settled, which is not a write.
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
@@ -769,7 +652,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     })
   }
 
-  /** A fetch that has not answered yet; `answer` settles it. */
   function pendingFetch(): { answer: (result: unknown) => void } {
     let answer: (result: unknown) => void = () => {}
     getOpsFlagResult.mockReturnValue(
@@ -786,7 +668,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('granted')
-    // The refresh keeps the flag's deadline; an answer past it still lands through the late path
     expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
   })
 
@@ -806,7 +687,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     const fetch = pendingFetch()
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'anon' })
-    // This launch read the saved grant
     const atLaunch = await flag.get()
 
     fetch.answer(flagResult(false, null))
@@ -852,7 +732,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     let read: unknown = 'pending'
     void flag.get().then((value) => (read = value))
     await settle()
-    // Still waiting: nothing saved, so this launch needs the answer
     expect(read).toBe('pending')
     expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
 
@@ -892,7 +771,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     ['answers unreachable', () => getOpsFlagResult.mockResolvedValue(unreachable())],
     ['rejects', () => getOpsFlagResult.mockRejectedValue(new Error('network'))]
   ])('holds a saved treatment that parses to null when the fetch %s', async (_, stage) => {
-    // Only `undefined` means "nothing usable"; a flag whose type includes null keeps it offline.
     seedGrant({ value: false, payload: null, fetchedAt: NOW })
     const flag = makeOpsFlag<'granted' | null | undefined>({
       key: 'grant-flag',

@@ -4,7 +4,6 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import type { Installation } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
-/** Keeps install lists scoped to the workspace selected in the shared dashboard control. */
 export function useWorkspaceInstallScope(installations: Ref<Installation[]>) {
   const authStore = useAuthStore()
   const dashboardScope = useDashboardScopeStore()

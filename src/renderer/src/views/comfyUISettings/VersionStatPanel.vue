@@ -1,8 +1,4 @@
 <script setup lang="ts">
-/**
- * Shared version summary: a headline and status badge above a bordered table.
- * Callers supply the version facts for release-channel and Builder installs.
- */
 import type { ActionDef, VersionStatRow } from '../../types/ipc'
 import SectionActionButton from './SectionActionButton.vue'
 
@@ -12,13 +8,10 @@ const props = withDefaults(
   defineProps<{
     headline: string
     headlineProduct?: string
-    /** Accent the headline (an update is waiting). */
     headlineHighlight?: boolean
     badge?: string | null
     badgeTone?: 'current' | 'update'
     rows?: VersionStatRow[]
-    /** Rendered inside the table's bottom edge, right-aligned - they act on
-     *  what the table states, so they belong to it rather than the page. */
     actions?: ActionDef[]
     runningActionIds?: Set<string>
   }>(),

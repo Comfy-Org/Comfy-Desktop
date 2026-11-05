@@ -1,8 +1,3 @@
-/**
- * Hover-gate helpers for the title-bar e2e tests. Title-bar `:hover` styles
- * are gated on `.is-hover-active`, dropped on blur/pointerleave and re-enabled
- * only on a fresh pointermove (not bare focus, to avoid a stale cursor pos).
- */
 import { expect } from '@playwright/test'
 import type { WebContentsPage } from './cdpPages'
 

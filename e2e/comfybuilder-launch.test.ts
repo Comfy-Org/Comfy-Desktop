@@ -1,28 +1,3 @@
-/**
- * E2E: launching a ComfyBuilder build from the chooser.
- *
- * The renderer resolves launch ONLY from `get-list-actions`
- * (`performChooserLaunch`), so a source plugin without `getListActions`
- * hands it an empty array, which reads as "this install cannot launch" and
- * bounces the tile click into the new-install wizard. This file pins the
- * comfybuilder plugin's `getListActions` end-to-end:
- *
- *   1. an installed build tile launches (run-action `launch` plus the
- *      progress takeover) and never mounts the wizard;
- *   2. clicking a not-ready one explains itself instead of bouncing there.
- *
- * The per-status action contract itself lives in the plugin unit test, which
- * pins it without needing a seeded record.
- *
- * Tagged @windows @macos only: seeding install records does not work under the
- * linux CI project (every other seeding test in this directory is lifecycle-only,
- * and lifecycle is not in the CI matrix), so the tiles never render there.
- *
- * The seeded venv python exits immediately, so the launch is attempted and
- * then fails at the boot wait. Attempted-vs-never-attempted is the whole
- * discriminator here; a real ComfyUI boot is not.
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -33,7 +8,6 @@ import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers
 import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
-/** Both steps of the new-install wizard. */
 const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
 
 interface BuildCase {
@@ -50,10 +24,6 @@ const INSTALLED: BuildCase = {
   installPath: ''
 }
 
-/** `failed` is the only not-installed status that renders a tile:
- *  `enrichInstallationsForRenderer` filters `installing` out. The per-status
- *  action contract is pinned deterministically by the plugin unit test; here we
- *  only cover what a user can actually click. */
 const FAILED: BuildCase = {
   id: 'inst-comfybuilder-failed',
   name: 'desktop-4target-stg-v0192',
@@ -66,7 +36,6 @@ let rootDir: string
 
 test.describe.configure({ mode: 'serial' })
 
-/** Mirrors what the build install handler writes for a real build install. */
 function buildRecord(build: BuildCase): SeedInstallation {
   return {
     id: build.id,
@@ -89,10 +58,6 @@ function buildRecord(build: BuildCase): SeedInstallation {
   }
 }
 
-/** `buildLaunchSpec` returns null unless the venv interpreter and
- *  `ComfyUI/main.py` both exist, and a null launch command fails the launch
- *  before it is ever attempted. Written for every case so the disabled-action
- *  assertions prove the gate is the record status, not the disk. */
 async function writeBuildLayout(installPath: string): Promise<void> {
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
   await writeFile(path.join(installPath, 'ComfyUI', 'main.py'), '')
@@ -103,8 +68,6 @@ async function writeBuildLayout(installPath: string): Promise<void> {
   }
   await mkdir(path.join(installPath, 'venv', 'bin'), { recursive: true })
   const python = path.join(installPath, 'venv', 'bin', 'python3')
-  // Exits straight away so the attempted launch dies at the boot wait rather
-  // than leaking a background process.
   await writeFile(python, '#!/bin/sh\nexit 1\n')
   await chmod(python, 0o755)
 }
@@ -133,9 +96,6 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
   await resetIpcInvocations(ctx.app)
   await clickInstallTile(ctx.panel, INSTALLED.name)
 
-  // The whole chain (tile pick -> get-list-actions -> useListAction ->
-  // show-progress -> run-action) ends here; with no launch action in the
-  // list it never starts and the wizard takes over instead.
   await expect
     .poll(
       async () => {
@@ -152,10 +112,6 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
 
-  // The seeded interpreter dies at the boot wait, so the launch is still in
-  // flight when the assertions above pass. Wait for the launch handler to
-  // settle and dismiss its failure surface, so the serial next test starts
-  // from an idle chooser instead of racing this launch's terminal UI.
   await expect
     .poll(() => hasActiveLaunch(ctx.app, INSTALLED.id), {
       timeout: 30_000,
@@ -163,8 +119,6 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
     })
     .toBe(false)
   await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
-  // Back returns to the chooser
-  // without a confirm for a finished op.
   expect(await ctx.panel.click(byTestId(TID.progressBack))).toBe(true)
   await expectChooserVisible(ctx.panel)
 })
@@ -172,8 +126,6 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
 test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos', async () => {
   await clickInstallTile(ctx.panel, FAILED.name)
 
-  // `useListAction` short-circuits a disabled action into an alert, so the
-  // user is told why nothing launched rather than being handed a wizard.
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await ctx.panel.textOf('.base-alert-message-text')).toContain(en.errors.installNotReady)
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)

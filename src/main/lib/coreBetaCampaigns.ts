@@ -1,11 +1,3 @@
-/**
- * KILLING a campaign: drop the record's epoch from `epochs`, remove the grant, unlist the key from
- * the registry, or serve `false` from a flag that stays ENABLED (a 0% release condition). Never
- * disable or delete a campaign flag or the registry: PostHog omits a disabled flag from `/flags`,
- * which reads as unreachable, so every machine keeps its saved answer for up to seven days.
- * Retire a finished campaign by voiding its epoch: members go silent. Unlisting, serving `false`
- * or removing the grant are emergency levers that leave ex-members reporting idle `no_answer`.
- */
 import {
   CORE_BETA_FEATURES_FLAG_KEY,
   oppositeArg,
@@ -34,10 +26,8 @@ const CAMPAIGN_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/
 
 export const ENROL_MAX_AGE_MS = 48 * 60 * 60 * 1000
 const ENROL_FUTURE_SKEW_MS = 60 * 60 * 1000
-/** Checked at every launch: `opsFlag` never expires a saved answer, so this is the only bound. */
 export const HOLD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-/** Read by the agent requirements override through `appliedPassThrough` during installation. */
 const AGENT_PASS_THROUGH_FIELD = 'agent_requirements_override'
 
 export interface CampaignRegistryEntry {
@@ -74,7 +64,6 @@ function isEpoch(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
 }
 
-/** Anything malformed lists nothing: every campaign deactivates and every record is kept. */
 export function parseCampaignRegistry(
   value: FeatureFlagValue | undefined,
   payload: unknown
@@ -97,7 +86,6 @@ export function parseCampaignRegistry(
 function parseCampaignGrant(candidate: unknown): CampaignGrant | null {
   const [grant] = parseCoreBetaGrants(true, { flags: [candidate] })
   if (grant === undefined || !isEnableArg(grant.arg)) return null
-  // `parseCoreBetaGrants` accepted it, so it is an object.
   const { enrolment, requires_args } = candidate as { enrolment?: unknown; requires_args?: unknown }
   if (!enrolment || typeof enrolment !== 'object') return null
   const { epoch, epochs } = enrolment as { epoch?: unknown; epochs?: unknown }
@@ -112,7 +100,6 @@ function parseCampaignGrant(candidate: unknown): CampaignGrant | null {
   return { grant, epoch, epochs: [...epochs], requiresArgs }
 }
 
-/** A malformed grant is dropped, never degraded to a plain grant that would apply on every `hold`. */
 export function parseCampaignAnswer(
   value: FeatureFlagValue | undefined,
   payload: unknown,
@@ -134,7 +121,6 @@ export function parseCampaignAnswer(
   return { ...answer, grants: args.size === grants.length ? grants : [] }
 }
 
-/** Prototype-free, so `__proto__` or `constructor` in the file is just a key. */
 export function parseCampaignRecords(entries: Record<string, unknown>): CampaignRecords {
   const records: Record<string, Record<string, CampaignRecord>> = Object.create(null)
   for (const [key, byArg] of Object.entries(entries)) {
@@ -157,7 +143,6 @@ function heldRecord(
   return record !== undefined && candidate.epochs.includes(record.epoch) ? record : undefined
 }
 
-/** Only these grants are worth proving commit ranges for. */
 export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
@@ -183,7 +168,6 @@ export interface CampaignFacts {
   readonly answers: ReadonlyMap<string, CampaignAnswer>
   readonly records: CampaignRecords
   readonly betaEnabled: boolean
-  /** The user's own args plus the args slot #0 applied this launch. */
   readonly presentArgs: readonly string[]
   readonly core: CoreVersionState
   readonly commits: CoreCommitState
@@ -208,7 +192,6 @@ export type CampaignMissReason =
   | 'unsupported'
   | 'stale_answer'
   | 'id_class'
-  /** Enrolled this launch but unrecorded: running, not counted. */
   | 'record_failed'
   | 'no_answer'
 
@@ -236,7 +219,6 @@ function answerFresh(
   return age <= maxAgeMs && age >= -skewMs
 }
 
-/** Why this answer can't carry a grant for this machine, or `null`; the candidate filter shares it. */
 function answerRefusal(
   answer: CampaignAnswer,
   member: boolean,
@@ -252,8 +234,6 @@ function answerRefusal(
   return idClass === 'machine_derived' ? null : ['id_class', `id class ${idClass}`]
 }
 
-/** What a campaign grant sees as already on the command line: the user's args, Desktop's assets
- *  decision and slot #0's grants. The launch and the preview both use it. */
 export function campaignPresentArgs(
   userArgs: readonly string[],
   slot0: Pick<CoreBetaPlan, 'assetsArgs' | 'applied'>
@@ -291,7 +271,6 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('present', 'already decided by the launch args or an earlier grant')
         continue
       }
-      // Present AND supported: the schema strips an unsupported user arg from the command line.
       const missing = candidate.requiresArgs.filter(
         (required) =>
           !present.has(required) || filterUnsupportedArgs([required], facts.schema).length === 0
@@ -300,7 +279,6 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('requires_args', `requires ${missing.join(' ')}`)
         continue
       }
-      // Before the gates: a stale answer's commit ranges are never proven, so they would fail there.
       const refusal = answerRefusal(answer, member, facts.now, facts.idClass)
       if (refusal !== null) {
         miss(...refusal)
@@ -349,12 +327,6 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   return { applied, misses, trace }
 }
 
-/**
- * The agent override an answer that would enrol this machine carries, for fetching the agent's
- * packages ahead of the launch that enrols: the campaign must list `--enable-agent`, and the
- * answer pass the freshness and id-class checks a launch's enrolment makes. `undefined` inside when
- * it carries none; null when no answer qualifies. Opaque here: the override module validates it.
- */
 export function enrolledAgentOverride(
   campaigns: {
     registry: readonly CampaignRegistryEntry[]
@@ -379,18 +351,12 @@ export function enrolledAgentOverride(
   return null
 }
 
-/** Opaque here: the override module validates the value. */
 export function appliedPassThrough(applied: readonly CampaignApplied[], arg: string): unknown {
   const payload = applied.find((entry) => entry.grant.arg === arg)?.payload
   if (!payload || typeof payload !== 'object') return undefined
   return (payload as Record<string, unknown>)[AGENT_PASS_THROUGH_FIELD]
 }
 
-/**
- * Whether a member's `arg` missed only because its campaign's flag gave no answer at all: the
- * campaign is still listed for it and has no answer, saved or fetched. An answer that grants it
- * nothing (`false`, a voided epoch) or an unlisted campaign is a decision, and is not this.
- */
 export function heldArgUnanswered(
   misses: readonly CampaignMiss[],
   campaigns: {

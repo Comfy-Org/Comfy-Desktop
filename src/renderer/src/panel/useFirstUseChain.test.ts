@@ -8,7 +8,6 @@ import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
 
-// The stubbed `window` lacks dispatchEvent, so mock the telemetry emit out.
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
   toVariantBucket: (id?: string) => (id ? id.replace(/^(win|mac|linux)-/, '') : 'unknown')
@@ -274,7 +273,6 @@ describe('useFirstUseChain — chainSpan stamping', () => {
 
     const showOpts = chain.handleShowProgress.mock.calls[0]?.[0] as ShowProgressOpts | undefined
     expect(showOpts).toBeDefined()
-    // The mock handleShowProgress doesn't call onShowProgress, so simulate the host here.
     chain.api!.hooks.onShowProgress(showOpts!)
     expect(showOpts!.chainSpan).toBe('install')
   })
@@ -295,7 +293,6 @@ describe('useFirstUseChain — chainSpan stamping', () => {
 
   it('stamps chainSpan=launch when the auto-launch watcher fires the chained launch leg', async () => {
     const chain = mountChain()
-    // Hold performChooserLaunch open so .finally() doesn't clear pendingChainedLaunch before the launch leg arrives.
     let resolveLaunch: (v: unknown) => void = () => {}
     chain.performChooserLaunch.mockReturnValue(
       new Promise((res) => {
@@ -315,12 +312,10 @@ describe('useFirstUseChain — chainSpan stamping', () => {
       } as never
     ]
 
-    // First leg: install op enters the chain → onShowProgress stamps it.
     const installOpts = progressOpts('inst-chained-1', { autoLaunchOnFinish: true })
     chain.api!.hooks.onShowProgress(installOpts)
     expect(installOpts.chainSpan).toBe('install')
 
-    // Seed a finished+ok op so the watcher fires performChooserLaunch.
     progressStore.startOperation({
       installationId: 'inst-chained-1',
       title: 'Installing',
@@ -331,12 +326,10 @@ describe('useFirstUseChain — chainSpan stamping', () => {
     op.result = { ok: true }
     await vi.waitFor(() => expect(chain.performChooserLaunch).toHaveBeenCalledTimes(1))
 
-    // Second leg: the launch op arrives while performChooserLaunch is still pending, so it's stamped 'launch'.
     const launchOpts = progressOpts('inst-chained-1', { triggersInstanceStart: true })
     chain.api!.hooks.onShowProgress(launchOpts)
     expect(launchOpts.chainSpan).toBe('launch')
 
-    // Once the launch settles, .finally() clears the flag so a later unrelated op isn't stamped.
     resolveLaunch('launched')
     await Promise.resolve()
     await Promise.resolve()
@@ -346,7 +339,6 @@ describe('useFirstUseChain — chainSpan stamping', () => {
   })
 
   it('clears pendingChainedLaunch via the watcher .finally() when performChooserLaunch resolves', async () => {
-    // 'missing-action' means the launch never reached handleShowProgress, so .finally() must reset the flag.
     const chain = mountChain()
     chain.performChooserLaunch.mockResolvedValue('missing-action')
 

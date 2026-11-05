@@ -1,22 +1,3 @@
-/**
- * Copy / copy-update destination focus.
- *
- * `handleCopy` / `handleCopyUpdate` / `handleReleaseUpdate` now return
- * `{ ok: true, navigate: 'list', newInstallationId }` and
- * `ProgressModal.handleDone` reads `newInstallationId` to call
- * `window.api.openInstallWindow(newInstallationId)` — opening the
- * newly-created destination install in its own window without
- * swapping the source host.
- *
- * Test strategy: drive the panel's existing show-progress chain with
- * a synthetic apiCall that resolves to a success payload carrying
- * `newInstallationId`. The actual copy handler is bypassed (it's covered
- * by integration tests + the field is populated unconditionally on
- * the success path of all three handlers); this exercises the
- * renderer-side handleDone branch + the main-side
- * `open-install-window` IPC + the focus-existing-or-open-new
- * behaviour.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -69,9 +50,6 @@ test.beforeEach(async () => {
 })
 
 test('Copy success opens the destination install in a new window @windows @macos @linux', async () => {
-  // Drive ProgressModal with a synthetic copy result carrying the
-  // destination install id. The renderer's `handleDone` consumes
-  // `op.result.newInstallationId` and calls `openInstallWindow`.
   await ctx.panel.evaluate<void>(
     `window.__e2eRenderer.injectProgressSuccess({
       installationId: ${JSON.stringify(SOURCE_ID)},
@@ -80,8 +58,6 @@ test('Copy success opens the destination install in a new window @windows @macos
     })`,
   )
 
-  // The brand loader auto-closes 700ms after `finished`, then
-  // handleDone fires. Poll the recorded IPC invocations.
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'open-install-window')).length, {
       timeout: 5_000,
@@ -96,9 +72,6 @@ test('Copy success opens the destination install in a new window @windows @macos
 })
 
 test('No newInstallationId → no open-install-window call @windows @macos @linux', async () => {
-  // Same shape but no newInstallationId — should NOT trigger
-  // openInstallWindow. Guards the conditional branch in handleDone
-  // against accidentally firing for non-copy success paths.
   await ctx.panel.evaluate<void>(
     `window.__e2eRenderer.injectProgressSuccess({
       installationId: ${JSON.stringify(SOURCE_ID)},
@@ -106,7 +79,6 @@ test('No newInstallationId → no open-install-window call @windows @macos @linu
     })`,
   )
 
-  // Wait for handleDone's auto-close window to elapse (≥700ms).
   await new Promise((r) => setTimeout(r, 1_500))
 
   const calls = await getIpcInvocations(ctx.app, 'open-install-window')

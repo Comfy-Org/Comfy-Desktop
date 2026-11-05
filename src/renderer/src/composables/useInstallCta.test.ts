@@ -3,12 +3,10 @@ import { ref, shallowRef, triggerRef } from 'vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    // Identity translator so labels are predictable in assertions.
     t: (_key: string, fallback?: string) => fallback ?? _key
   })
 }))
 
-// A shallowRef version lets `set*` retrigger the composable's computeds.
 const sessionState = vi.hoisted(() => ({
   running: new Set<string>(),
   launching: new Set<string>()
@@ -25,7 +23,6 @@ const sessionStoreVersion = shallowRef(0)
 vi.mock('../stores/sessionStore', () => ({
   useSessionStore: () => ({
     isRunning: (id: string) => {
-      // Touch the version ref so the computed re-runs on `set*`.
       void sessionStoreVersion.value
       return sessionState.running.has(id)
     },
@@ -110,7 +107,6 @@ describe('useInstallCta', () => {
     const active = ref<string | null>('inst-A')
     const cta = useInstallCta(inst, { activeInstallationId: active })
     expect(cta.label.value).toBe('Restart')
-    // Proves the composable subscribes to the session store, not a test-held ref.
     setRunning(new Set<string>())
     expect(cta.label.value).toBe('Start')
   })
@@ -121,13 +117,10 @@ describe('useInstallCta', () => {
     const active = ref<string | null>('inst-A')
     const cta = useInstallCta(inst, { activeInstallationId: active })
     expect(cta.label.value).toBe('Restart')
-    // Detaching clears activeInstallationId, so it now reads as running elsewhere.
     active.value = null
     expect(cta.label.value).toBe('Switch')
   })
 
-  // Launching counts as an attached session, so the launching window reads
-  // Restart (not Start) before `instance-started` fires.
   it('returns Restart when the install is LAUNCHING in this host window', () => {
     setLaunching(new Set<string>(['inst-A']))
     const cta = useInstallCta(ref(installation('inst-A')), {
@@ -152,7 +145,6 @@ describe('useInstallCta', () => {
   })
 
   it('keeps Restart across the launching → running handoff in the same window', () => {
-    // launching → running must stay Restart with no flicker through Start.
     setLaunching(new Set<string>(['inst-A']))
     const cta = useInstallCta(ref(installation('inst-A')), {
       activeInstallationId: ref<string | null>('inst-A')

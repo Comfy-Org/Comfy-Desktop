@@ -44,7 +44,6 @@ const emit = defineEmits<{
   close: []
   'show-detail': [installationId: string]
   'show-console': [installationId: string]
-  /** `successTerminal` ops resolve here instead of auto-closing; the host maps the action id to behaviour. */
   'success-choice': [actionId: string, installationId: string]
 }>()
 
@@ -56,8 +55,6 @@ const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const currentId = ref<string | null>(null)
 const resolvingConflict = ref(false)
-/** The port a "Stop process and retry" just failed to free: said under the conflict, which
- *  otherwise comes back unchanged. Cleared by anything that replaces the conflict. */
 const killFailedPort = ref<number | null>(null)
 
 const currentOp = computed(() => {
@@ -68,17 +65,11 @@ const currentOp = computed(() => {
 
 const displayId = computed(() => currentId.value ?? props.installationId)
 
-// "Skip model download": shown only while the trailing `template-models` phase
-// is the active row (every earlier install+launch step is therefore done) and
-// the download is still in progress. Clicking hands the resume-capable task off
-// to the title-bar downloads tray and lets the user into ComfyUI immediately.
 const templateSkipped = ref(false)
 const canSkipTemplateDownload = computed<boolean>(() => {
   if (templateSkipped.value) return false
   const op = currentOp.value
   if (!op || op.finished || op.activePhase !== 'template-models') return false
-  // Only when it's genuinely still working — a finished/errored phase has
-  // nothing to skip (the error substatus is the surface there).
   return !op.phaseErrors?.['template-models'] && globalProgress.value.percent < 100
 })
 
@@ -88,23 +79,15 @@ async function handleSkipTemplateDownload(): Promise<void> {
   emitTelemetryAction('comfy.desktop.template.download.skipped', { flow: 'launch' })
   try {
     await window.api.skipTemplateDownload(id)
-    // Mark consumed only on success, so a failed hand-off leaves the button live.
     templateSkipped.value = true
-  } catch {
-    // Best-effort hand-off; the download keeps running regardless.
-  }
+  } catch {}
 }
 
-// A finished, successful INSTALL leg of a chain is NOT the end — the launch
-// leg is about to take over. During this brief handoff we suppress the
-// success banner and keep the in-progress bar+stepper mounted, so install →
-// launch reads as one continuous stepper with no flash/remount seam.
 const isChainHandoff = computed<boolean>(() => {
   const op = currentOp.value
   return !!op?.finished && !!op.result?.ok && op.chainSpan === 'install'
 })
 
-// True while a finished op has an unresolved, still-actionable port conflict (false once the user picks a fix and re-runs).
 const isPortConflictOpen = computed<boolean>(() => {
   const op = currentOp.value
   if (!op?.finished) return false
@@ -115,7 +98,6 @@ const isPortConflictOpen = computed<boolean>(() => {
   return true
 })
 
-// Error / port-conflict detail under the finished banner. Centralised so the gate and the copy value can't drift. Null in any non-error terminal state.
 const finishedErrorMessage = computed<string | null>(() => {
   const op = currentOp.value
   if (!op?.finished) return null
@@ -132,14 +114,12 @@ const finishedErrorMessage = computed<string | null>(() => {
   return null
 })
 
-// Unified 0→100 progress via `progressStore.globalProgressFor` (handles flat/stepped + monotonic clamp).
 const globalProgress = computed<{ percent: number; indeterminate: boolean }>(() => {
   const op = currentOp.value
   if (!op) return { percent: 0, indeterminate: true }
   return progressStore.globalProgressFor(op)
 })
 
-// Friendly label registered by main via `sendProgress('steps', { steps })` for the active phase (used by the adopt/migration flow).
 const activeStepLabel = computed<string | null>(() => {
   const op = currentOp.value
   if (!op?.steps || !op.activePhase) return null
@@ -157,10 +137,6 @@ function localizedPhaseLabel(phase: string): string | null {
   return te(key) ? t(key) : null
 }
 
-// Live sub-status for the active phase. Main may push either a literal
-// (e.g. node count "3 / 7 · Manager") or an i18n key (`launch.activity.*`,
-// translated here so the tracker stays locale-agnostic). Keys that don't
-// resolve fall back to null rather than leaking a dev-y slug.
 const activePhaseStatus = computed<string | null>(() => {
   const op = currentOp.value
   if (!op?.steps || !op.activePhase) return null
@@ -173,8 +149,6 @@ const activePhaseStatus = computed<string | null>(() => {
   return raw
 })
 
-// User-facing caption per phase. Meaningful registered labels win for dynamic
-// phases; generic labels fall through to curated locale labels.
 const friendlyCaption = computed<string>(() => {
   const op = currentOp.value
   if (!op) return t('progress.starting')
@@ -191,7 +165,6 @@ const friendlyCaption = computed<string>(() => {
   return op.flatStatus || t('progress.starting')
 })
 
-// Second-line caption: rich `lastStatus[activePhase]` (bytes/speed/ETA) when it adds info beyond the headline. Suppresses the raw phase-id fallback so dev-y slugs never leak in as a sub-label.
 const subStatus = computed<string | null>(() => {
   const raw = activePhaseStatus.value
   if (!raw) return null
@@ -202,7 +175,6 @@ const subStatus = computed<string | null>(() => {
   return raw
 })
 
-// Polish the rich substatus: group byte counts (lookahead scoped to a byte unit so ports/PIDs aren't mangled), drop a collapsed "· 0s remaining" tail, fix the leftover separator.
 const formattedSubStatus = computed<string | null>(() => {
   const raw = subStatus.value
   if (!raw) return null
@@ -216,26 +188,14 @@ const formattedSubStatus = computed<string | null>(() => {
   )
 })
 
-// The bar binds DIRECTLY to the store's real percent — no creep, no synthetic
-// motion. The store already clamps monotonically (`_globalFloor`) so the value
-// only ever moves forward, and only on real log milestones. During a silent
-// gap (e.g. the ~110s GPU/torch init) the bar simply HOLDS; the active step's
-// spinner conveys "working". Honest by construction.
 const displayedPercent = computed<number>(() => globalProgress.value.percent)
 
-// Resolve a step's display label without leaking dynamic phase slugs.
 function stepLabel(phase: string, fallback?: string): string {
   return (
     meaningfulStepLabel(phase, fallback) ?? localizedPhaseLabel(phase) ?? fallback?.trim() ?? phase
   )
 }
 
-// Two-level step rows for the swappable progress view, rendered as ONE
-// continuous list across a chain: the completed prior leg (`priorSteps`, e.g.
-// install) is prepended as done steps, then the current op's steps. So
-// install → launch reads as a single stepper with no seam and the user can
-// see the next step coming. Steps before the active one are `done`, the
-// active one carries the live sub-activity, the rest are `pending`.
 const progressSteps = computed<ProgressStepVM[]>(() => {
   const op = currentOp.value
   if (!op) return []
@@ -249,9 +209,6 @@ const progressSteps = computed<ProgressStepVM[]>(() => {
     isError: false
   }))
 
-  // Launch leg's steps haven't arrived yet (IPC in flight) but the prior leg
-  // exists — keep the merged stepper on screen with a synthetic active
-  // "Starting ComfyUI…" tail so there's no flash back to the flat caption.
   if (!op.steps?.length) {
     if (!prior.length) return []
     return [
@@ -299,7 +256,6 @@ async function handleShowcaseCloud(): Promise<void> {
   emitTelemetryAction('comfy.desktop.install.showcase.cloud_open', {
     phase: currentOp.value?.activePhase ?? null
   })
-  // A silent no-op reads as a dead button, so a failed launch says so.
   if (await cloudGate.openCloud()) return
   await modal.alert({
     title: t('installShowcase.cloudFailedTitle'),
@@ -307,14 +263,12 @@ async function handleShowcaseCloud(): Promise<void> {
   })
 }
 
-/** Brand centrepiece for any still-working op, whatever its kind. */
 const showScene = computed<boolean>(() => {
   const op = currentOp.value
   if (!op) return false
   return !op.finished || isChainHandoff.value
 })
 
-/** Cloud upsell, install-only: rides both legs of the install chain. */
 const showShowcase = computed<boolean>(() => {
   const op = currentOp.value
   if (!op) return false
@@ -322,10 +276,8 @@ const showShowcase = computed<boolean>(() => {
   return isInstallWait && (!op.finished || isChainHandoff.value)
 })
 
-// Separate from the modal-branch `terminalExpanded` so the brand accordion's state doesn't leak into the modal reopen path.
 const brandLogsExpanded = ref(false)
 const brandTerminalRef = ref<HTMLDivElement | null>(null)
-// Gate the getter while the accordion is closed so the two live `useTerminalScroll` instances don't both wake on every stdout chunk and scroll a null ref.
 const { isAtBottom: brandIsAtBottom, handleTerminalScroll: handleBrandTerminalScroll } =
   useTerminalScroll(brandTerminalRef, () =>
     brandLogsExpanded.value ? currentOp.value?.terminalOutput : undefined
@@ -335,18 +287,12 @@ function toggleBrandLogs(): void {
   brandLogsExpanded.value = !brandLogsExpanded.value
 }
 
-// Each op starts with the logs accordion closed and a fresh skip state.
 watch(displayId, () => {
   brandLogsExpanded.value = false
   brandIsAtBottom.value = true
   templateSkipped.value = false
 })
 
-// Auto-expand the logs panel when an operation finishes with an error so the full
-// substep output is visible immediately, instead of the user having to discover
-// the collapsed "View logs" toggle to find out why an update/restore/migrate failed.
-// `immediate` covers reopening an already-failed op; the logs accordion itself is
-// gated on `terminalOutput`, so expanding when there's nothing to show is harmless.
 watch(
   finishedErrorMessage,
   (msg) => {
@@ -355,19 +301,16 @@ watch(
   { immediate: true }
 )
 
-// Render only a trailing window; the store keeps the full buffer for telemetry. Rendering megabytes into one text node re-layouts the whole takeover.
 const MAX_LOG_TAIL_CHARS = 256 * 1024
 const displayedTerminalOutput = computed(() => {
   const s = currentOp.value?.terminalOutput ?? ''
   return s.length > MAX_LOG_TAIL_CHARS ? s.slice(-MAX_LOG_TAIL_CHARS) : s
 })
 
-// Copy returns the FULL buffer (not the truncated render copy); materialised at click time.
 function getTerminalLogText(): string {
   return currentOp.value?.terminalOutput ?? ''
 }
 
-// Sync currentId with prop
 watch(
   () => props.installationId,
   (id) => {
@@ -392,7 +335,6 @@ function startOperation(opts: {
   returnTo?: string
   opKind?: ShowProgressOpts['opKind']
   destroysInstance?: boolean
-  /** Forwarded to the store so a host driving the modal via the exposed handle can still set up an install→launch chain. */
   chainSpan?: ShowProgressOpts['chainSpan']
   successTerminal?: ShowProgressOpts['successTerminal']
 }): void {
@@ -401,7 +343,6 @@ function startOperation(opts: {
   progressStore.startOperation(opts)
 }
 
-// True when a successful op is parked on its terminal-choice screen; gates the footer swap and auto-close.
 const successTerminalActive = computed<boolean>(() => {
   const op = currentOp.value
   if (!op?.finished) return false
@@ -418,7 +359,6 @@ function handleSuccessChoice(actionId: string): void {
   emit('close')
 }
 
-// Window-mode launches close instantly so the new comfy window takes focus; other op kinds auto-close via the delayed `handleDone` watcher below.
 watch(
   () => {
     const id = displayId.value
@@ -439,18 +379,15 @@ function handleDone(): void {
   if (!id) return
   const op = progressStore.operations.get(id)
   if (!op?.result) return
-  // Destroy ops: detach the host before closing so it isn't left pointing at a now-removed install.
   if (op.destroysInstance) {
     void window.api.returnToDashboard()
   }
   emit('close')
-  // copy / copy-update / release-update produced a new install — open it in its own window; the source host stays put.
   const newInstallationId = op.result.newInstallationId
   if (newInstallationId) {
     void window.api.openInstallWindow(newInstallationId)
     return
   }
-  // Guard show-detail against a stale id (destroy ops would route to a missing detail view).
   const installStillExists = !!installationStore.getById(id)
   if (installStillExists && (op.returnTo === 'detail' || op.result.navigate === 'detail')) {
     emit('show-detail', id)
@@ -459,12 +396,10 @@ function handleDone(): void {
   }
 }
 
-// Return-to-Dashboard from any op state. In-flight always prompts (returning cancels the operation, even when the installing record is hidden from the list); idle states skip it. Flips an install-backed window back to chooser mode in place.
 async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void> {
   const id = displayId.value
   const op = id ? progressStore.operations.get(id) : null
   const installation = id ? (installationStore.getById(id) ?? null) : null
-  // No-op for the finished branches; only the in-flight footer button surfaces the prompt.
   const ok = await confirmReturnToDashboard(installation, reason)
   if (!ok) return
   if (reason === 'in_flight' && op && !op.finished && id) {
@@ -472,11 +407,9 @@ async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void>
   }
   emitTelemetryAction('comfy.desktop.instance.return_to_dashboard', { from: 'progress', reason })
   emit('close')
-  // No-op when the host isn't install-backed (chooser launches that errored before the swap).
   await window.api.returnToDashboard()
 }
 
-// Re-run the errored op: feed the stored `apiCall` (or a fresh `runAction('launch')`) back into `startOperation`.
 function handleReboot(): void {
   const id = displayId.value
   if (!id) return
@@ -492,7 +425,6 @@ function handleReboot(): void {
   })
 }
 
-// Cancel an in-flight destroy op, gated by the local-install confirm (a cancelled delete leaves the install partial). Host stays put rather than auto-detaching.
 async function cancelDestructiveOp(): Promise<void> {
   const id = displayId.value
   if (!id) return
@@ -509,7 +441,6 @@ async function cancelDestructiveOp(): Promise<void> {
   emit('close')
 }
 
-// Auto-close on success/cancel after a short delay (lets the banner register), then run `handleDone`. Errors don't auto-close.
 const AUTO_CLOSE_DELAY_MS = 700
 let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
 function clearAutoCloseTimer(): void {
@@ -524,7 +455,6 @@ watch(
     if (!op?.finished) return null
     if (op.error) return null
     if (op.result?.portConflict) return null
-    // successTerminal parks on a choice screen; auto-close would race and dismiss it before it's readable.
     if (successTerminalActive.value) return null
     return displayId.value
   },
@@ -554,8 +484,6 @@ function handleUseNextPort(nextPort: number): void {
   })
 }
 
-// An earlier ComfyUI of this install still running a prompt: stopping goes back through launch,
-// which re-proves the process is ours before stopping it (never a kill by port).
 async function handleStopBusyPrior(): Promise<void> {
   if (resolvingConflict.value) return
   const id = displayId.value
@@ -659,8 +587,6 @@ defineExpose({ startOperation, showOperation })
       <div
         class="brand-progress__stack relative z-2 flex w-[min(85%,880px)] max-w-[calc(100vw-48px)] flex-col items-center gap-[clamp(0.75rem,1.8vh,1.125rem)] overflow-visible text-center"
       >
-        <!-- Plate wraps logo + status and carries the radial scrim that knocks
-             back the yellow glyph so stepper text stays legible. -->
         <div
           class="brand-progress__plate relative isolate w-full before:pointer-events-none before:absolute before:top-[46%] before:left-1/2 before:-z-1 before:h-[min(340%,34rem)] before:w-[min(148%,38rem)] before:rounded-[50%] before:bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--neutral-800)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-800)_38%,transparent)_34%,transparent_62%)] before:content-[''] before:[transform:translate(-50%,-50%)]"
         >
@@ -676,8 +602,6 @@ defineExpose({ startOperation, showOperation })
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap flex w-full flex-col gap-1">
-                <!-- Determinate fill bound directly to the store's real
-                     percent — moves only on log milestones, holds during gaps. -->
                 <div
                   class="brand-progress__bar h-[5.079px] w-full overflow-hidden rounded-2xl bg-[var(--brand-surface-bg)]"
                 >
@@ -797,7 +721,6 @@ defineExpose({ startOperation, showOperation })
           </div>
         </div>
 
-        <!-- Success terminal actions, outside the caption Transition so it isn't a second child. -->
         <div
           v-if="successTerminalActive && currentOp.successTerminal"
           class="brand-progress__terminal-actions flex flex-row flex-wrap items-center justify-center gap-3"
@@ -818,7 +741,6 @@ defineExpose({ startOperation, showOperation })
           </Button>
         </div>
 
-        <!-- Error / port-conflict detail beneath the banner. Copy writes the same string shown. -->
         <div
           v-if="finishedErrorMessage"
           class="brand-progress__error-row -mt-1 flex w-full max-w-[640px] items-start gap-2"
@@ -836,7 +758,6 @@ defineExpose({ startOperation, showOperation })
           />
         </div>
 
-        <!-- Error actions in the hero stack, keeping the Reboot CTA with the failure context. -->
         <div
           v-if="
             currentOp.finished &&
@@ -867,7 +788,6 @@ defineExpose({ startOperation, showOperation })
             @click="handleReboot"
           >
             <RefreshCcw :size="14" />
-            <!-- A launch's retry restarts ComfyUI, not the computer some errors mention. -->
             {{
               currentOp.opKind === 'launch' ? $t('progress.restartComfyui') : $t('progress.reboot')
             }}
@@ -875,13 +795,11 @@ defineExpose({ startOperation, showOperation })
         </div>
       </div>
     </div>
-    <!-- Footer band pinned to the takeover's bottom edge. In-flight → Return to Dashboard; port conflict → Use-Port / Kill-Process; error → Reboot + Return. Empty (collapsed) on success/cancel. -->
     <template #footer>
       <div
         v-if="currentOp"
         class="brand-progress__footer pointer-events-none absolute top-[clamp(72px,14vh,160px)] right-[clamp(16px,2.5vw,32px)] bottom-[clamp(16px,2.5vh,32px)] left-[clamp(16px,2.5vw,32px)] z-3 flex min-h-0 flex-col justify-end gap-2 [&>*]:pointer-events-auto"
       >
-        <!-- Log panel (opens above the footer bar) -->
         <BaseAccordion
           v-if="currentOp.terminalOutput"
           :open="brandLogsExpanded"

@@ -23,19 +23,6 @@ import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
-/**
- * Chooser view - recents grid.
- *
- * A golden-ratio tile grid the user picks from. The install-less host
- * window hosts this as the Comfy tab body when no install backs the
- * entry.
- *
- * Every user has a local Personal workspace. Signed-in users additionally see
- * authenticated team workspaces; the server Personal workspace merges into
- * the local Personal scope.
- * Available Builds belong in the workspace New Instance flow, not this grid.
- */
-
 const props = withDefaults(
   defineProps<{
     visible?: boolean
@@ -46,15 +33,9 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  /** User picked an install - caller decides whether to swap-in-place,
-   *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
-  /** User asked to see or manage a build. */
   'open-details': [installation: Installation]
-  /** User triggered the new-install flow in the current dashboard scope. */
   'show-new-install': []
-  /** Forward a long-running dashboard action to PanelApp so it can wire
-   *  the operation through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
 }>()
 
@@ -71,32 +52,13 @@ onMounted(() => {
   }
 })
 
-// Filter / search / recency logic is shared with the title-bar
-// instance picker popover via `useInstallList` so the two surfaces
-// cannot drift. The chip UI is currently hidden in the brand redesign
-// but the underlying `activeFilter` ref + filter switch stay wired;
-// tests reach into `vm.activeFilter` to drive the filter-based
-// regressions guard.
-//
-// "Local" includes both standalone local installs and Legacy Desktop
-// installs (both report `sourceCategory === 'local'`) - they're
-// conceptually the same family from the user's POV. Cloud installs
-// flow through `visibleInstalls` like every other source - there is no
-// special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
 const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useInstallList({
   installations: installationsRef
 })
 
-// Explicitly expose `activeFilter` so the brand-redesign tests can
-// drive the underlying filter state without the chip UI mounted.
-// `<script setup>` would otherwise auto-hide it because the template
-// doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
-// --- Dashboard scope ---
-
-/** Server workspace whose Builds belong to the selected dashboard scope. */
 const selectedManagedWorkspaceId = computed(() => {
   if (!authStore.isSignedIn) return null
   if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
@@ -106,10 +68,6 @@ const selectedManagedWorkspaceId = computed(() => {
   return authStore.personalWorkspace?.id ?? null
 })
 
-// Warm the selected workspace's Build catalog while the user is still on the
-// dashboard. New Instance can then choose its initial tab without waiting for
-// a network request. A generation guard prevents a slower previous selection
-// from fetching after the user has moved to another workspace.
 let buildPrefetchGeneration = 0
 watch(
   [() => authStore.isSignedIn, selectedManagedWorkspaceId],
@@ -126,10 +84,7 @@ watch(
       )
         return
       await authStore.fetchBuilds()
-    } catch {
-      // The wizard retains its normal authorization and retry UI when a
-      // background prefetch cannot complete.
-    }
+    } catch {}
   },
   { immediate: true }
 )
@@ -154,7 +109,6 @@ const scopedVisibleInstalls = computed(() => {
 })
 const scopedInstalls = computed(() => effectiveInstalls.value.filter(installationIsInSelectedScope))
 
-/** Cloud and Remote only get a tab when the scope has one. */
 const whereOptions = computed(() => {
   const count = (category: string): number =>
     scopedInstalls.value.filter((inst) => inst.sourceCategory === category).length
@@ -192,8 +146,6 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-// --- Manage / context menu ---
-
 function canPromoteToWorkspace(inst: Installation): boolean {
   return (
     authStore.isSignedIn &&
@@ -219,15 +171,11 @@ const {
 } = useInstallContextMenu({
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
-  // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
-  // pipeline used by every other long op fires here too.
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
   canPromoteToWorkspace
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
-  // The instance window owns lifecycle, so an install with a window is brought
-  // forward instead of starting a second launch with a dashboard takeover.
   if (await focusRunningBuild(inst)) return
   emit('pick', inst)
 }

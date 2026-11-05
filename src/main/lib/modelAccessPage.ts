@@ -147,7 +147,6 @@ export async function openModelAccessPageWindow(
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      // Keep provider login and access grants available to subsequent downloads.
       session: sender.session,
       preload: undefined,
       nodeIntegration: false,

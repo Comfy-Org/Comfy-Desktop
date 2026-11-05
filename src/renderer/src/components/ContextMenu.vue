@@ -37,7 +37,6 @@ const entries = computed(() =>
     } satisfies MenuItemAction
   }))
 )
-// The menu takes focus when it opens, and its hidden trigger can't take it back.
 let focusToRestore: HTMLElement | null = null
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return

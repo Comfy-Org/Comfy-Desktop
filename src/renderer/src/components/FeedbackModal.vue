@@ -4,10 +4,6 @@ import { useI18n } from 'vue-i18n'
 import BaseModal from './ui/BaseModal.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 
-// Send Feedback modal wrapping the typeform in an iframe. The iframe origin
-// must stay whitelisted in panel.html's `frame-src` CSP directive. On submit
-// (detected via the typeform postMessage protocol) we wait 2s, then auto-close.
-
 const TYPEFORM_ORIGIN = 'https://form.typeform.com'
 const AUTOCLOSE_MS = 2000
 
@@ -56,8 +52,6 @@ function handleTypeformMessage(event: MessageEvent): void {
   if (!props.open || submitted.value) return
   const data = event.data as { type?: string } | string | null
   const type = typeof data === 'string' ? data : data?.type
-  // Match any `*-submit` variant: typeform's event names have changed across
-  // SDK versions but always include `submit`.
   if (typeof type !== 'string' || !type.toLowerCase().includes('submit')) return
   submitted.value = true
   emitTelemetryAction('comfy.desktop.feedback.submitted', {})

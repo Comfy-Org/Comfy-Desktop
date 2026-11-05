@@ -4,10 +4,6 @@ import { X } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
 
-// Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,
-// body scroll lock, and a11y attrs. One of aria-label / aria-labelledby is
-// required (it is the modal element for assistive tech).
-
 type Size = 'sm' | 'md' | 'lg' | 'xl'
 
 interface Props {
@@ -19,7 +15,6 @@ interface Props {
   dismissOnOutside?: boolean
   showCloseButton?: boolean
   preventScroll?: boolean
-  /** Opt-in: backdrop-filter is GPU-bound and costly on Electron. */
   blurOverlay?: boolean
   contentClass?: string | string[] | Record<string, boolean>
 }

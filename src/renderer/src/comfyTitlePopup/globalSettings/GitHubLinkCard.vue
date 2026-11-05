@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-// Intentionally NOT a variant of ChoiceCard.vue (an onboarding takeover
-// primitive); reusing it here would fork its typography and surface.
 import { computed } from 'vue'
 import { ExternalLink, Github, Star } from 'lucide-vue-next'
 

@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Terminal takeover surface for the lifecycle view, serving both the crash
-// (`tone="error"`) and clean-stop (`tone="neutral"`) states. The
-// `brand-progress__*` class names are layout-only and shared with ProgressModal
-// so the surfaces stay visually identical; keep them in sync.
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Power, ChevronDown } from 'lucide-vue-next'
@@ -16,18 +12,12 @@ import BaseCopyButton from './ui/BaseCopyButton.vue'
 interface Props {
   title: string
   message?: string
-  /** When set, renders a collapsible logs accordion above the footer. */
   logs?: string
-  /** Override for the "View logs" label; defaults to `launch.viewLogs`. */
   logsLabel?: string
   ariaLabel?: string
-  /** `'error'` (default) is the red crash chrome; `'neutral'` is the calm
-   *  surface for a deliberate stop. */
   tone?: 'error' | 'neutral'
 }
 
-// Slot actions share the finished surface's responsive control recipe. Keeping
-// it here lets their owners preserve click handlers without global button CSS.
 const footerButtonClass =
   'static inline-flex min-w-auto appearance-auto items-center gap-1.5 rounded-md border border-solid px-3.5 py-[7px] font-sans text-[13px] leading-[inherit] font-medium whitespace-nowrap touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 [@media(max-width:720px)]:px-2.5 [@media(max-width:720px)]:py-1.5 [@media(max-width:720px)]:text-[12px]'
 const buttonClass = `${footerButtonClass} flex-1 justify-center`
@@ -46,14 +36,12 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n()
 const logsExpanded = ref(false)
-// Per-instance id so simultaneous surfaces don't collide on aria-controls.
 const logsId = useId()
 
 function toggleLogs(): void {
   logsExpanded.value = !logsExpanded.value
 }
 
-// Resolves logs at click time since the terminal buffer can grow after mount.
 function getLogText(): string {
   return props.logs ?? ''
 }
@@ -96,8 +84,6 @@ function getLogText(): string {
           >
             {{ message }}
           </div>
-          <!-- Copy only makes sense for an error message worth pasting into a
-               bug report — a neutral status line ("ComfyUI is stopped") doesn't. -->
           <BaseCopyButton
             v-if="tone === 'error'"
             :value="message"
@@ -105,8 +91,6 @@ function getLogText(): string {
             class="brand-progress__error-copy mt-1 flex-none"
           />
         </div>
-        <!-- Actions live in the hero stack (under the message), matching
-             ProgressModal, so the CTAs stay with the failure context. -->
         <div
           v-if="$slots.actions"
           class="brand-progress__error-actions flex w-full max-w-[420px] flex-row items-stretch gap-3"

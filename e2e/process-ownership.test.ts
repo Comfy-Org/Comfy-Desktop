@@ -1,19 +1,3 @@
-/**
- * E2E: Desktop cleans up a ComfyUI that an earlier, crashed Desktop left running, and nothing
- * else.
- *
- * With assets on, ComfyUI holds an OS lock on its database, so an orphan left by a Desktop that
- * died makes the next launch fail. This spec creates a real orphan the way users get one — the
- * Desktop main process is SIGKILLed while ComfyUI runs — and then relaunches the app on the SAME
- * profile:
- *
- *   1. the orphan is proven ours (the ownership record, pid + start time) and stopped, the new
- *      boot comes up on the same port, and `prior_process_found` reports it;
- *   2. an orphan that is still running a prompt is left alone until the user chooses to stop it;
- *   3. a ComfyUI Desktop did not start (a manual launch of the same install) is never stopped.
- *
- * Linux only: the ComfyUI stand-in is `fakeComfyInstall`, which is Linux-only (see its header).
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -36,7 +20,6 @@ let profileDir = ''
 let installPath = ''
 let port = 0
 let ctx: AppContext | null = null
-/** Every stub pid this spec has seen, so a failure never leaks one. */
 const stubPids = new Set<number>()
 
 interface OwnershipRecord {
@@ -125,8 +108,6 @@ async function start(): Promise<AppContext> {
   return ctx
 }
 
-/** Launch the install from the chooser and wait until a NEW stub (not `previousPid`) serves
- *  the port and its record carries a start time. */
 async function launchInstall(app: AppContext, previousPid?: number): Promise<OwnershipRecord> {
   await clickInstallTile(app.panel, INSTALL_NAME)
   let record: OwnershipRecord | null = null
@@ -149,10 +130,6 @@ async function launchInstall(app: AppContext, previousPid?: number): Promise<Own
   return record!
 }
 
-/** What users hit: the Desktop main process dies with ComfyUI running. Only the main process
- *  is killed; Chromium's own helpers exit once it is gone, and are cleared if they linger so the
- *  next launch starts clean. ComfyUI is in a session of its own, so the group kill cannot reach
- *  it. */
 async function crashDesktop(app: AppContext): Promise<void> {
   const pid = app.app.process().pid!
   process.kill(pid, 'SIGKILL')
@@ -171,9 +148,6 @@ async function crashDesktop(app: AppContext): Promise<void> {
     process.kill(-pid, 'SIGKILL')
   } catch {}
   await expect.poll(groupAlive, { timeout: 10_000 }).toBe(false)
-  // No `cleanup()`: a signal-killed process keeps `exitCode === null` (the signal is in
-  // `signalCode`), so the harness would try to close an app that is already gone and hang. The
-  // profile is ours to keep until afterAll.
   ctx = null
 }
 
@@ -207,7 +181,6 @@ test('an orphan left by a killed Desktop is stopped, and the install boots on it
   expect(first.port).toBe(port)
 
   await crashDesktop(ctx!)
-  // The precondition the fix exists for: ComfyUI outlived its Desktop and still holds the port.
   expect(isAlive(first.childPid), 'ComfyUI outlived the killed Desktop').toBe(true)
   expect(await portAnswers()).toBe(true)
   const app = await start()
@@ -292,13 +265,10 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
       { timeout: 30_000, message: 'the busy check never started' },
     )
 
-    // The real in-flight footer button, then its confirmation: the cancel only happens once
-    // "Cancel operation" is confirmed.
     expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(true)
     await app.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
     expect(await app.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
-    // Well past the 10 s check: no busy prompt, nothing stopped, nothing spawned.
     await new Promise((r) => setTimeout(r, 12_000))
     expect(await app.panel.exists(byTestId(TID.progressPortConflictBanner))).toBe(false)
     expect(isAlive(before!.childPid), 'the earlier ComfyUI was left running').toBe(true)
@@ -310,8 +280,6 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
 })
 
 test('a ComfyUI of the same install that Desktop did not start is never stopped @linux', async () => {
-  // End the previous run completely, including its ComfyUI, so what holds the port next is
-  // provably not something Desktop spawned.
   const previous = await readRecord()
   await crashDesktop(ctx!)
   if (previous) {
@@ -321,7 +289,6 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
     await expect.poll(() => isAlive(previous.childPid), { timeout: 10_000 }).toBe(false)
   }
 
-  // A manual launch of the same install: same interpreter, same main.py, same port.
   const manual = spawn(
     path.join(installPath, 'venv', 'bin', 'python3'),
     ['-s', path.join('ComfyUI', 'main.py'), '--port', String(port)],
@@ -337,6 +304,5 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
 
   expect(isAlive(manual.pid!), 'a process Desktop did not start was left running').toBe(true)
   expect(await portAnswers()).toBe(true)
-  // The stale record of the ComfyUI stopped above proves nothing and is dropped silently.
   expect(await priorEvents(app)).toEqual([])
 })

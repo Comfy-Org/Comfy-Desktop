@@ -4,8 +4,6 @@ import { createI18n } from 'vue-i18n'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 
-// Mocked so tests can drive `modal.confirm(...)`, which never resolves
-// on its own.
 const modalMock = {
   confirm: vi.fn(),
   alert: vi.fn(),
@@ -23,8 +21,6 @@ import { useProgressStore } from '../stores/progressStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
-// `getDetailSections` is spied so tests can assert the delete fast path
-// never calls it.
 const apiMock = {
   platform: 'darwin',
   runAction: vi.fn().mockResolvedValue({ ok: true }),
@@ -103,8 +99,6 @@ interface HarnessHandles {
   progress: ReturnType<typeof useProgressStore>
 }
 
-// Shared harness reused across factories (one component to satisfy
-// `vue/one-component-per-file`); `setup` runs the per-mount closure.
 let _harnessSetup: (() => void) | null = null
 const HarnessComponent = defineComponent({
   setup() {
@@ -168,8 +162,6 @@ it('groups common desktop-card actions in the requested order', () => {
 })
 
 describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
-  // Update and migrate are mutually exclusive (a single `statusTag`), so each
-  // is exercised against an install carrying the matching tag.
   it.each(['failed', 'partial-delete'])(
     'offers Uninstall for a managed Build in the %s state',
     (status) => {
@@ -200,7 +192,7 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   })
 
   it('renders update / restore-snapshot / delete enabled when the install is idle', () => {
-    const inst = makeInstall() // statusTag style 'update'
+    const inst = makeInstall()
     const { menu } = mountHarness(inst)
     const items = menu.ctxMenuItems.value
 
@@ -236,7 +228,6 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
     expect(findItem(items, 'delete')?.disabled).toBe(true)
     expect(menu.isStoppedActionGated(inst)).toBe(true)
 
-    // Always-safe items stay enabled.
     expect(findItem(items, 'manage')?.disabled).toBeFalsy()
     expect(findItem(items, 'reveal-in-folder')?.disabled).toBeFalsy()
   })
@@ -341,7 +332,6 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
 
-    // The actual destructive call runs inside ProgressModal, not here.
     expect(apiMock.runAction).not.toHaveBeenCalled()
   })
 
@@ -433,9 +423,6 @@ describe('useInstallContextMenu - copy-install routing', () => {
 })
 
 describe('useInstallContextMenu - migrate item keys off the migrate status tag', () => {
-  // Portable, git, and Legacy Desktop installs all report a `migrate`
-  // status tag (and `sourceCategory === 'local'`), so the Migrate item must
-  // follow the tag, not a single source.
   it.each([
     ['portable', 'standalone'],
     ['git', 'standalone'],
@@ -451,7 +438,7 @@ describe('useInstallContextMenu - migrate item keys off the migrate status tag',
   })
 
   it('hides the Migrate item when there is no migrate tag (e.g. an update is pending)', () => {
-    const inst = makeInstall() // statusTag style 'update'
+    const inst = makeInstall()
     const { menu } = mountHarness(inst)
     expect(findItem(menu.ctxMenuItems.value, 'migrate')).toBeUndefined()
   })
@@ -511,12 +498,10 @@ describe('useInstallContextMenu - export latest snapshot', () => {
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
 
-    // Cancel - export IPC returns { ok: false } with no message.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).not.toHaveBeenCalled()
 
-    // Real failure - a message is present, so it surfaces.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false, message: 'Disk full' })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)

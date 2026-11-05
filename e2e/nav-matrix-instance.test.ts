@@ -1,19 +1,3 @@
-/**
- * E2E: instance/window navigation matrix — Instance → X.
- *
- * Asserts the bridge → main → window wiring for the instance-host deltas via
- * recorded IPC + window counts. The decision logic is exhaustively unit tested
- * (`navDecision.test.ts`); this pins the side effects.
- *
- * NOTE on the 3-way "Switch / Open in new window / Cancel" modal: it fires in
- * main's `pickInstallFromPicker` only when the picker's PARENT host is an
- * install-backed LOCAL entry. Standing up a truly attached local host in e2e
- * needs a real ComfyUI process, which the harness fakes but does not attach — so
- * the modal's rendering is covered by unit + manual verification. Here we pin
- * the routing that the modal's "Open in new window" button triggers: the
- * `openInstallNewWindow` bridge → `open-install-new-window` IPC → fresh window,
- * which is the new behavior that matters.
- */
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -80,8 +64,6 @@ test.beforeEach(async () => {
 })
 
 test('Instance B via "Open in new window": spawns a new window (no swap of the host) @windows @macos @linux', async () => {
-  // B has no window of its own, so the caret action spawns a fresh host for it
-  // without touching the picker's host. Mirrors the passing dashboard→cloud case.
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
 
@@ -94,9 +76,6 @@ test('Instance B via "Open in new window": spawns a new window (no swap of the h
     return calls.some((c) => c.installationId === INSTALL_B_ID && c.focusedExisting === false)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // A fresh window was added (a swap would keep the count flat) and the host was
-  // not focused away — the picker's host is left untouched. Sample the full
-  // window so a late `focus-comfy-window` IPC can't slip past.
   await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
   await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
     message: 'unexpected focus-comfy-window when opening B in a new window',
@@ -116,16 +95,9 @@ test('Instance B (running elsewhere): focus its existing window @windows @macos 
     return calls.some((c) => c.installationId === INSTALL_B_ID)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // Focus path, NOT a relaunch: no `launch` run-action fired. Sample the full
-  // window so a late `launch` IPC can't slip past.
   await expectNoIpcInvocation(ctx.app, 'run-action', (c) => c.actionId === 'launch', {
     message: 'unexpected run-action launch on a focus-existing path',
   })
   expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 
-// NOTE: the "already-running local install focuses instead of duplicating"
-// invariant (one process = one window) is covered reliably by the cloud spec's
-// allowDuplicate control test, where the target genuinely owns a window. Standing
-// up a real local-install window in e2e needs a live ComfyUI process, so it's not
-// reproduced here.

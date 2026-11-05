@@ -34,8 +34,6 @@ function handlePick(action: MenuAction): void {
 }
 function onInteractOutside(event: Event): void {
   const target = (event as CustomEvent<{ originalEvent: Event }>).detail.originalEvent.target
-  // The parent trigger toggles open on click. Let it own that click, so the
-  // dismiss layer cannot close on pointerdown and then reopen on click.
   if (target instanceof Node && props.anchor?.contains(target)) {
     event.preventDefault()
     return

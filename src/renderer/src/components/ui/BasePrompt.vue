@@ -7,9 +7,6 @@ import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import { TID } from '../../../../shared/testIds'
 import type { ModalDetailGroup } from '../../types/ipc'
 
-// Prompt primitive (title, message, text input, Cancel + primary) built on
-// BaseModal. Two-way `open` via `v-model:open`.
-
 interface Props {
   open: boolean
   title: string
@@ -19,9 +16,7 @@ interface Props {
   confirmLabel?: string
   cancelLabel?: string
   inputLabel?: string
-  /** Truthy requires a non-empty value; a string overrides the error copy. */
   required?: boolean | string
-  /** Recessed sub-blocks below the message (e.g. release notes). */
   messageDetails?: ModalDetailGroup[]
   size?: 'sm' | 'md' | 'lg' | 'xl'
   dismissOnEscape?: boolean

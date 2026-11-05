@@ -131,7 +131,6 @@ describe('ComfyBuilderClient', () => {
     })
 
     await expect(client.listBuilds()).rejects.toThrow(/repeated build cursor/)
-    // First page without a cursor, one page for the cursor, then the repeat is refused.
     expect(f).toHaveBeenCalledTimes(2)
   })
 

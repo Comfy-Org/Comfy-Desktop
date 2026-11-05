@@ -1,15 +1,10 @@
 import type { ComfyArgDef } from '../types/ipc'
 
-// Pure parser/serializer for ComfyUI launch-argument strings.
-
 export interface ParsedArgs {
-  /** Schema-known flags keyed by arg name (no `--` prefix); value is empty for booleans. */
   known: Map<string, string>
-  /** Unrecognized tokens, preserved verbatim so they round-trip without data loss. */
   extra: string[]
 }
 
-/** Shell-style tokenizer: splits on whitespace, respects single/double quotes. */
 export function tokenize(raw: string): string[] {
   const tokens: string[] = []
   let current = ''
@@ -37,7 +32,6 @@ export function tokenize(raw: string): string[] {
   return tokens
 }
 
-/** Parse a raw launch-args string against the schema into `known` + `extra`. */
 export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
   const tokens = tokenize(raw)
   const schemaMap = new Map(schema.map((a) => [a.name, a]))
@@ -61,8 +55,6 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
           known.set(name, eqValue)
           i++
         } else if (def.type === 'multi-value') {
-          // Variadic flag: greedily consume every following non-flag token and
-          // store them space-joined (e.g. `--cache-ram 4 8` -> "4 8").
           const values: string[] = []
           let j = i + 1
           while (j < tokens.length && !tokens[j]!.startsWith('--')) {
@@ -82,7 +74,6 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
           }
         }
       } else {
-        // Unknown flag — keep verbatim, including any value token.
         extra.push(token)
         i++
         if (eqValue === undefined && i < tokens.length && !tokens[i]!.startsWith('--')) {
@@ -99,8 +90,6 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
   return { known, extra }
 }
 
-/** Per-token validation status for the raw-args field. `partial` is the trailing
- *  flag the user is still typing — neither valid nor an error yet. */
 export type ArgTokenStatus =
   | 'ok'
   | 'unsupported'
@@ -116,34 +105,18 @@ export interface ArgToken {
 }
 
 export interface ArgValidation {
-  /** Every token in order, tagged with its status (drives the colored display). */
   tokens: ArgToken[]
-  /** Unrecognized `--flag` names (without the leading dashes). */
   unsupportedFlags: string[]
-  /** `--flag` tokens that require a value but have none (not the trailing one). */
   missingValueFlags: string[]
-  /** Bare positional tokens not consumed by any flag. */
   orphanedTokens: string[]
-  /** Trailing value-flag still waiting for its value — an info hint, not an error. */
   awaiting: ArgToken | null
-  /** True when there is at least one real (non-awaiting) problem. */
   hasIssues: boolean
 }
 
 export interface ValidateArgsOptions {
-  /** When set (input focused), don't flag the trailing flag the user is still
-   *  typing — e.g. `--po` on the way to `--port` shouldn't turn red. The token
-   *  is reported as `partial` instead, and only once a space/another token
-   *  follows (or focus leaves) does normal validation apply. */
   suppressTrailingPartial?: boolean
 }
 
-/**
- * Classify a raw launch-args string against the schema for inline validation.
- * Pure (no DOM) so it can be unit-tested. A trailing value-flag with no value
- * yet is reported as `awaiting-value` (info) rather than an error, so it doesn't
- * flash red while the user is still typing.
- */
 export function validateArgs(
   raw: string,
   schema: ComfyArgDef[],
@@ -164,7 +137,6 @@ export function validateArgs(
       const eqValue = eqIdx >= 0 ? rest.slice(eqIdx + 1) : undefined
       const def = schemaMap.get(name)
       if (name === '') {
-        // A bare `--`; harmless, leave unflagged.
         result.push({ text: token, status: 'ok' })
         i++
       } else if (!def) {
@@ -174,7 +146,6 @@ export function validateArgs(
           tooltip: 'Unrecognized argument — will not be passed when launching'
         })
         i++
-        // Swallow a trailing value so it isn't double-flagged as orphaned.
         if (i < tokens.length && !tokens[i]!.startsWith('--')) {
           result.push({ text: tokens[i]!, status: 'unsupported' })
           i++
@@ -212,8 +183,6 @@ export function validateArgs(
           i++
         }
       } else if (def.type === 'multi-value') {
-        // Variadic flag: the flag and every following non-flag value are valid
-        // (zero values is fine for nargs `*`), so none get flagged as orphaned.
         result.push({ text: token, status: 'ok' })
         i++
         while (i < tokens.length && !tokens[i]!.startsWith('--')) {
@@ -221,7 +190,6 @@ export function validateArgs(
           i++
         }
       } else {
-        // Boolean or optional-value flag.
         result.push({ text: token, status: 'ok' })
         i++
         if (def.type === 'optional-value' && i < tokens.length && !tokens[i]!.startsWith('--')) {
@@ -239,9 +207,6 @@ export function validateArgs(
     }
   }
 
-  // While the input is focused and the value has no trailing space, the last
-  // token is still being typed: downgrade an as-yet-unrecognized trailing flag
-  // from `unsupported` to `partial` so it doesn't flash red mid-word.
   if (opts.suppressTrailingPartial && result.length > 0 && raw.trimEnd() === raw) {
     const last = result[result.length - 1]!
     const lastToken = tokens[tokens.length - 1]
@@ -269,9 +234,6 @@ export function validateArgs(
   }
 }
 
-/** Render parsed args back to a shell string, quoting values with whitespace so they round-trip.
- *  `schema` lets multi-value flags emit their space-separated values as bare tokens
- *  (`--cache-ram 4 8`) instead of one quoted blob (`--cache-ram "4 8"`). */
 export function serialize(
   known: Map<string, string>,
   extra: string[],
@@ -282,8 +244,6 @@ export function serialize(
   for (const [name, value] of known) {
     parts.push(`--${name}`)
     if (value !== '') {
-      // A multi-value flag's value is already space-separated tokens; emitting it
-      // raw keeps them as distinct args once the whole string is re-tokenized.
       parts.push(multiValue.has(name) || !value.includes(' ') ? value : `"${value}"`)
     }
   }

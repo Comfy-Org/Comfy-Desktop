@@ -5,12 +5,6 @@ import path from 'path'
 
 const netState = vi.hoisted(() => ({ online: true }))
 
-// Managed model-job identity semantics: jobs are keyed by a
-// stable job id, joined only by canonical final destination, and URL-based
-// control refs (the in-Comfy bridge compatibility path) resolve only when
-// unambiguous. The transport is mocked with controllable fake transfers so
-// each test drives pause/cancel/error/completion outcomes deterministically.
-
 vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => {
@@ -20,8 +14,6 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: Object.assign(class {}, {
     getAllWindows: () => [],
-    // Resolve a (fake) hosted WebContentsView back to its owner window, the
-    // way the real BrowserWindow.fromWebContents does for hosted views.
     fromWebContents: (wc: unknown) =>
       (wc as { __ownerWindow?: unknown } | undefined)?.__ownerWindow ?? null
   }),
@@ -73,8 +65,6 @@ vi.mock('./modelDownloadTransport', () => ({
   startModelTransfer: (opts: FakeTransfer['opts']) => startModelTransfer(opts)
 }))
 
-// Returns true like the real implementation when removal succeeds (the
-// deferred-cancel path branches on this to decide cancelled vs error).
 const removeStagedArtifacts = vi.fn((_p: string) => true)
 const ensureStagedPlaceholder = vi.fn((_finalPath: string, _meta: unknown) => true)
 const scanForStagedDownloads = vi.fn(async (_roots: string[]) => ({
@@ -93,10 +83,6 @@ interface FakeDiscovered {
   stagedBytes: number
   meta: unknown
 }
-// Hydration re-reads the pair from disk right before registering it. Default:
-// agree with the most recent scan result that mentioned the path, so tests
-// that fabricate discovered pairs need no real files. Tests exercising the
-// stale-snapshot guard override this to return null.
 const revalidateStagedPair = vi.fn((finalPath: string) => {
   const settled = scanForStagedDownloads.mock.settledResults
   for (let i = settled.length - 1; i >= 0; i--) {
@@ -117,14 +103,9 @@ vi.mock('./modelDownloadStaging', () => ({
   revalidateStagedPair: (finalPath: string) => revalidateStagedPair(finalPath)
 }))
 
-// Targeted overrides for otherwise-real modules: a test flips one on, runs,
-// and restores null so every other test keeps the real behavior.
 const overrides = vi.hoisted(() => ({
   installationsGet: null as null | ((id: string) => Promise<unknown>),
   collectModelScanRoots: null as null | (() => Promise<string[]>),
-  // Isolated models base dir (set in beforeAll): the real one resolves from
-  // settings/homedir, and the tests that stage real files at computed
-  // destinations must never dirty a developer's actual models directory.
   modelsBaseDir: null as null | string
 }))
 vi.mock('../installations', async (importOriginal) => {
@@ -167,20 +148,12 @@ afterAll(() => {
   }
 })
 
-/** Wait until the fake transport for the most recent job(s) exists. */
 async function waitForTransfers(count: number): Promise<void> {
   await vi.waitFor(() => {
     expect(transfers.length).toBeGreaterThanOrEqual(count)
   })
 }
 
-/** Let the runModelTransport continuation (after `done` settles) run.
- *  A deliberately BOUNDED settling window (not an event wait): negative
- *  assertions ("no extra transfer started") rely on it staying finite, and
- *  positive state checks that can wait on an observable use `vi.waitFor` /
- *  `waitForTransfers` instead. Two macrotask rounds, each draining a run of
- *  microtasks, cover the manager's await chain with margin so adding an
- *  await to the manager does not silently shorten the window. */
 async function flush(): Promise<void> {
   for (let round = 0; round < 2; round++) {
     for (let i = 0; i < 6; i++) await Promise.resolve()
@@ -196,8 +169,6 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve }
 }
 
-/** Gate `fs.promises.mkdir` so a test can hold a job inside its admission
- *  preflight and land controls (pause/resume/cancel/quit) mid-flight. */
 function gateMkdir(): { open: () => void; restore: () => void } {
   const gate = deferred()
   const spy = vi.spyOn(fs.promises, 'mkdir').mockImplementation(async () => {
@@ -320,9 +291,6 @@ describe('managed model-job identity (issue #1322)', () => {
       directory: 'checkpoints'
     })
     await waitForTransfers(before + 1)
-    // A second request for the same source and final file (concurrent
-    // install / template + manual download) joins the active transfer
-    // instead of writing the same model twice.
     const h2 = await mod.startManagedModelJob({
       url,
       filename: name,
@@ -332,8 +300,6 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(h2.savePath).toBe(h1.savePath)
     await flush()
     expect(transfers.length).toBe(before + 1)
-    // The transport is told the job id so it persists into the sidecar and
-    // restart hydration restores the same stable identity.
     expect(transfers[before]!.opts.jobId).toBe(h1.id)
 
     transfers[before]!.resolve({ outcome: 'completed', savePath: h1.savePath })
@@ -351,9 +317,6 @@ describe('managed model-job identity (issue #1322)', () => {
       directory: 'checkpoints'
     })
     await waitForTransfers(before + 1)
-    // Same final file, DIFFERENT source URL: joining would silently hand this
-    // caller another URL's bytes. It must fail as a conflict instead - and
-    // must not start a second transport racing the first for one .part file.
     const h2 = await mod.startManagedModelJob({
       url: `https://host-b.example/mirror/${name}`,
       filename: name,
@@ -363,7 +326,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await expect(h2.completion).resolves.toMatchObject({ status: 'error' })
     await flush()
     expect(transfers.length).toBe(before + 1)
-    // The original transfer is untouched by the rejected request.
     expect(activeRows().find((r) => r.id === h1.id)?.status).not.toBe('error')
     expect(mod.cancelModelDownload(h1.id)).toBe(true)
     await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
@@ -380,10 +342,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await flush()
     expect(activeRows().find((r) => r.id === h1.id)?.status).toBe('paused')
 
-    // A new caller (e.g. template orchestration after restart hydration)
-    // joining a parked job must restart the transfer - otherwise the
-    // caller's awaited completion would never settle and the template
-    // launch step would hang forever.
     const h2 = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
     expect(h2.id).toBe(h1.id)
     await waitForTransfers(before + 2)
@@ -409,31 +367,25 @@ describe('managed model-job identity (issue #1322)', () => {
     const t2 = transfers[before + 1]!
     expect(t1.opts.finalPath).not.toBe(t2.opts.finalPath)
 
-    // URL-based control refs are ambiguous while both jobs are active - the
-    // manager must refuse rather than act on an arbitrary job.
     expect(mod.pauseModelDownload(url)).toBe(false)
     expect(mod.cancelModelDownload(url)).toBe(false)
     expect(t1.pause).not.toHaveBeenCalled()
     expect(t2.pause).not.toHaveBeenCalled()
 
-    // Id-based controls target exactly one job.
     expect(mod.pauseModelDownload(h1.id)).toBe(true)
     expect(t1.pause).toHaveBeenCalledTimes(1)
     expect(t2.pause).not.toHaveBeenCalled()
     await flush()
 
-    // With h1 parked, cancel h2 by id; only its transfer is torn down.
     expect(mod.cancelModelDownload(h2.id)).toBe(true)
     expect(t2.cancel).toHaveBeenCalledTimes(1)
     await expect(h2.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
 
-    // h2 is gone, so the URL now resolves unambiguously to h1.
     expect(mod.resumeModelDownload(url)).toBe(true)
     await waitForTransfers(before + 3)
     expect(transfers[before + 2]!.opts.finalPath).toBe(t1.opts.finalPath)
 
-    // Cleanup: cancel h1's resumed transfer.
     expect(mod.cancelModelDownload(h1.id)).toBe(true)
     await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
@@ -477,17 +429,14 @@ describe('managed model-job identity (issue #1322)', () => {
       .recent.find((r) => r.id === h.id && r.status === 'error')
     expect(errorRow).toBeDefined()
 
-    // Retry by the terminal row's id: dispatches a NEW managed job.
     expect(mod.retryDownload(h.id)).toBe(true)
     await waitForTransfers(before + 2)
     expect(transfers[before + 1]!.opts.url).toBe(url)
-    // The old terminal row is removed in favor of the new attempt.
     expect(mod.getDownloadsTrayState().recent.find((r) => r.id === h.id)).toBeUndefined()
     const fresh = activeRows().find((r) => r.url === url)
     expect(fresh).toBeDefined()
     expect(fresh!.id).not.toBe(h.id)
 
-    // While the equivalent retry is active, a second retry request is refused.
     expect(mod.retryDownload(h.id)).toBe(false)
 
     expect(mod.cancelModelDownload(fresh!.id!)).toBe(true)
@@ -512,7 +461,6 @@ describe('managed model-job identity (issue #1322)', () => {
     const tActive = transfers[before]!
     const tUserPaused = transfers[before + 1]!
 
-    // The user pauses one job; sleep then parks the other.
     expect(mod.pauseModelDownload(hUserPaused.id)).toBe(true)
     await flush()
     mod.suspendActiveModelDownloadsForSleep()
@@ -522,14 +470,12 @@ describe('managed model-job identity (issue #1322)', () => {
       expect(activeRows().find((r) => r.id === id)?.status).toBe('paused')
     }
 
-    // Wake resumes only the sleep-parked job, reusing its stable id.
     await mod.resumeModelDownloadsAfterWake()
     await waitForTransfers(before + 3)
     expect(transfers[before + 2]!.opts.jobId).toBe(hActive.id)
     expect(transfers.length).toBe(before + 3)
     expect(activeRows().find((r) => r.id === hUserPaused.id)?.status).toBe('paused')
 
-    // A second wake with nothing parked resumes nothing.
     await mod.resumeModelDownloadsAfterWake()
     await flush()
     expect(transfers.length).toBe(before + 3)
@@ -553,9 +499,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await flush()
     expect(activeRows().find((r) => r.id === h.id)?.status).toBe('paused')
 
-    // Wake fires; while the connectivity wait is still pending, the user
-    // explicitly pauses the job. Their decision owns the job now - the wake
-    // waiter must not auto-resume over it.
     const wake = mod.resumeModelDownloadsAfterWake()
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     await wake
@@ -569,8 +512,6 @@ describe('managed model-job identity (issue #1322)', () => {
   })
 
   it('does not let a URL-keyed action touch a job restored for a different destination (hydration)', async () => {
-    // Earlier tests memoized a safe startup pass through the admission
-    // barrier; reset so THIS test's scan result is consumed.
     mod._test_resetModelDownloadsInit()
     const url = 'https://host.example/hydrated-model.safetensors'
     const destA = path.join(os.tmpdir(), 'cdm-idjob-hydrate', 'checkpoints', 'hydrA.safetensors')
@@ -634,12 +575,10 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(rowA.receivedBytes).toBe(250)
     expect(rowA.totalBytes).toBe(1000)
 
-    // The sidecar's persisted job id survives hydration as the row identity.
     const rowC = activeRows().find((r) => r.url === persistedUrl)
     expect(rowC?.id).toBe(persistedId)
     expect(rowC?.status).toBe('paused')
 
-    // Ambiguous URL -> no-op; exact ids remain fully actionable.
     expect(mod.resumeModelDownload(url)).toBe(false)
 
     const before = transfers.length
@@ -647,8 +586,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     expect(transfers[before]!.opts.finalPath).toBe(destA)
 
-    // Resuming the restored job hands the SAME persisted id to the transport
-    // so the refreshed sidecar keeps the stable identity.
     expect(mod.resumeModelDownload(persistedId)).toBe(true)
     await waitForTransfers(before + 2)
     expect(transfers[before + 1]!.opts.finalPath).toBe(destC)
@@ -656,7 +593,6 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(mod.cancelModelDownload(persistedId)).toBe(true)
     await flush()
 
-    // Cancelling the parked job B removes ITS staged artifacts only.
     expect(mod.cancelModelDownload(rowB.id!)).toBe(true)
     expect(removeStagedArtifacts).toHaveBeenCalledWith(destB)
     expect(removeStagedArtifacts).not.toHaveBeenCalledWith(destA)
@@ -676,9 +612,6 @@ describe('managed model-job identity (issue #1322)', () => {
     })
     await waitForTransfers(before + 1)
 
-    // Pause then resume back-to-back: the resume lands while the paused
-    // transport's `done` continuation is still queued. The stale attempt must
-    // not re-park the job or leak a second concurrent transport.
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     expect(mod.resumeModelDownload(h.id)).toBe(true)
     await waitForTransfers(before + 2)
@@ -704,9 +637,6 @@ describe('managed model-job identity (issue #1322)', () => {
     })
     await waitForTransfers(before + 1)
 
-    // Pause, then cancel while the transport is still settling: the cancel
-    // must win, remove the staged artifacts (after the old stream is done),
-    // and the stale pause attempt must not resurrect a paused row.
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
@@ -729,10 +659,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     const t = transfers[before]!
 
-    // The transport refuses the cancel: finalize verification already holds
-    // its terminal claim (the completed model may be mid-install). The cancel
-    // is deferred to the outcome - and the outcome is 'completed', so the
-    // installed model must win; nothing may report cancelled or delete it.
     const callsBefore = removeStagedArtifacts.mock.calls.length
     t.cancel.mockImplementation(() => false)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
@@ -755,10 +681,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     const t = transfers[before]!
 
-    // The transport refuses the cancel (another path holds its terminal
-    // claim), so the cancel defers to the outcome. The transport then parks:
-    // the deferred cancel must apply destructively - staged state removed,
-    // job settled cancelled, nothing left to rehydrate.
     t.cancel.mockImplementation(() => false)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     t.resolve({ outcome: 'paused' })
@@ -779,10 +701,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     const t = transfers[before]!
 
-    // Refused cancel deferred to the outcome; the transport parks, but the
-    // staged removal leaves resumable metadata behind - the job WOULD
-    // rehydrate next launch, so a clean 'cancelled' would lie; it must
-    // surface as an error.
     t.cancel.mockImplementation(() => false)
     removeStagedArtifacts.mockReturnValueOnce(false)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
@@ -803,10 +721,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     const t = transfers[before]!
 
-    // Cancel is refused and deferred, then the user pauses and resumes before
-    // the old outcome lands. The resume is the latest user intent: the stale
-    // deferred cancel must not linger and destroy the resumed attempt the
-    // next time it parks.
     const callsBefore = removeStagedArtifacts.mock.calls.length
     t.cancel.mockImplementation(() => false)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
@@ -821,7 +735,6 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(row?.status).toBe('paused')
     expect(removeStagedArtifacts.mock.calls.length).toBe(callsBefore)
 
-    // Cleanup: a cancel on the parked job is still destructive.
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
@@ -838,8 +751,6 @@ describe('managed model-job identity (issue #1322)', () => {
     })
     await waitForTransfers(before + 1)
     const t = transfers[before]!
-    // A second caller (e.g. another install's template) joins the same
-    // canonical destination.
     const h2 = await mod.startManagedModelJob({
       url,
       filename: name,
@@ -847,9 +758,6 @@ describe('managed model-job identity (issue #1322)', () => {
     })
     expect(h2.id).toBe(h1.id)
 
-    // One caller abandons its lease (template abort): the other caller's
-    // transfer keeps running. Releasing the SAME lease again is idempotent -
-    // it can never eat the other caller's lease.
     h1.release()
     h1.release()
     h1.release()
@@ -858,17 +766,12 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(t.cancel).not.toHaveBeenCalled()
     expect(activeRows().find((r) => r.id === h1.id)).toBeDefined()
 
-    // The last lease going away PARKS the transfer resumably (staged bytes +
-    // sidecar kept, row shows paused): a closing window must not destroy
-    // bytes the Downloads UI can resume. Only the user's explicit Downloads
-    // Cancel is destructive.
     h2.release()
     expect(t.pause).toHaveBeenCalledTimes(1)
     expect(t.cancel).not.toHaveBeenCalled()
     await flush()
     expect(activeRows().find((r) => r.id === h1.id)?.status).toBe('paused')
 
-    // Cleanup: the explicit Cancel control removes the parked job.
     expect(mod.cancelModelDownload(h1.id)).toBe(true)
     await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
@@ -892,8 +795,6 @@ describe('managed model-job identity (issue #1322)', () => {
     })
     expect(h2.id).toBe(h1.id)
 
-    // The user's explicit Cancel in the Downloads UI tears the job down for
-    // everyone - it is not a lease release.
     expect(mod.cancelModelDownload(h1.id)).toBe(true)
     expect(transfers[before]!.cancel).toHaveBeenCalledTimes(1)
     await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
@@ -913,10 +814,6 @@ describe('managed model-job identity (issue #1322)', () => {
     await waitForTransfers(before + 1)
     const t = transfers[before]!
     try {
-      // App quit destroys host windows BEFORE `will-quit` parking runs, and
-      // window teardown releases the install's template leases. That release
-      // must NOT cancel (it would delete the staged bytes the quit dialog
-      // promised to preserve) - the quit path parks the job resumably.
       setQuitReason('user-quit')
       h.release()
       await flush()
@@ -941,12 +838,7 @@ describe('model-job lifecycle races (issue #1322)', () => {
       await vi.waitFor(() => {
         expect(activeRows().find((r) => r.url === url)).toBeDefined()
       })
-      // The job is admitted but its preflight has not finished: quit must
-      // treat it as active (its durable placeholder has not landed yet).
       expect(mod.hasActiveModelTransfers()).toBe(true)
-      // Pause -> resume land while the preflight is mid-flight. Only the
-      // preflight completion may start the first transport - the resume must
-      // not race it into a second one.
       expect(mod.pauseModelDownload(url)).toBe(true)
       expect(mod.resumeModelDownload(url)).toBe(true)
       expect(transfers.length).toBe(before)
@@ -979,7 +871,6 @@ describe('model-job lifecycle races (issue #1322)', () => {
       gate.open()
       const h = await admission
       await flush()
-      // The preflight completed but the pause owns the job: it stays parked.
       expect(transfers.length).toBe(before)
       expect(activeRows().find((r) => r.id === h.id)?.status).toBe('paused')
 
@@ -1011,8 +902,6 @@ describe('model-job lifecycle races (issue #1322)', () => {
       const h = await admission
       await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
       await flush()
-      // The late preflight completion saw the job was gone: it must not
-      // recreate staging artifacts for a cancelled job or start a transport.
       expect(transfers.length).toBe(before)
       expect(ensureStagedPlaceholder.mock.calls.length).toBe(stagedCallsBefore)
       expect(activeRows().find((r) => r.id === h.id)).toBeUndefined()
@@ -1037,17 +926,12 @@ describe('model-job lifecycle races (issue #1322)', () => {
         quitSettled = true
       })
       await flush()
-      // Quit must not report parked while the admitted job's durable
-      // placeholder has not landed on disk - the job would be lost on restart.
       expect(quitSettled).toBe(false)
       gate.open()
       await quit
       const h = await admission
       await flush()
-      // The placeholder landed before quit resolved...
       expect(ensureStagedPlaceholder.mock.calls.length).toBe(stagedCallsBefore + 1)
-      // ...but no transport may start once quit parking has begun, not even
-      // through an explicit resume.
       expect(transfers.length).toBe(before)
       expect(mod.resumeModelDownload(h.id)).toBe(false)
       await flush()
@@ -1070,28 +954,20 @@ describe('model-job lifecycle races (issue #1322)', () => {
     const h1 = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
     await waitForTransfers(before + 1)
     const t1 = transfers[before]!
-    // The old stream keeps flushing: pause() is accepted but `done` stays
-    // pending, then cancel lands while the transport is still settling.
     t1.pause.mockImplementation(() => true)
     expect(mod.pauseModelDownload(h1.id)).toBe(true)
     expect(mod.cancelModelDownload(h1.id)).toBe(true)
-    // The cancel is committed but must not report/settle while the old
-    // stream is still flushing - a clean 'cancelled' before the staged
-    // cleanup outcome is known would lie about the on-disk state.
     let h1Settled = false
     void h1.completion.then(() => {
       h1Settled = true
     })
     await flush()
     expect(h1Settled).toBe(false)
-    // The closing stream still holds the destination; quit would wait for it.
     expect(mod.hasActiveModelTransfers()).toBe(true)
 
     const h2 = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
     expect(h2.id).not.toBe(h1.id)
     await flush()
-    // The replacement must not open the staging file while the old stream is
-    // still closing (Windows cannot even unlink an open file).
     expect(transfers.length).toBe(before + 1)
 
     t1.resolve({ outcome: 'paused' })
@@ -1099,8 +975,6 @@ describe('model-job lifecycle races (issue #1322)', () => {
     await waitForTransfers(before + 2)
     expect(transfers[before + 1]!.opts.jobId).toBe(h2.id)
     await flush()
-    // The old cancel's deferred cleanup saw the destination re-owned and did
-    // not delete the replacement's staged artifacts.
     expect(removeStagedArtifacts).not.toHaveBeenCalledWith(h1.savePath)
 
     expect(mod.cancelModelDownload(h2.id)).toBe(true)
@@ -1124,18 +998,12 @@ describe('model-job lifecycle races (issue #1322)', () => {
         quitSettled = true
       })
       await flush()
-      // Exiting before the old stream closes could truncate staged bytes.
       expect(quitSettled).toBe(false)
       t.resolve({ outcome: 'paused' })
-      // The deferred cancel settles only after the stream closed and the
-      // staged artifacts were removed.
       await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
       await quit
       expect(quitSettled).toBe(true)
       await flush()
-      // No new job claimed the destination, so the deferred cancel cleanup
-      // removed the staged artifacts once the stream had closed - and quit
-      // waited for that cleanup, not just the stream close.
       expect(removeStagedArtifacts).toHaveBeenCalledWith(h.savePath)
     } finally {
       mod._test_resetModelDownloadsQuitLatch()
@@ -1154,20 +1022,14 @@ describe('model-job lifecycle races (issue #1322)', () => {
       await flush()
       expect(activeRows().find((r) => r.id === h.id)?.status).toBe('paused')
 
-      // Wake fires while the network is still down: the waiter starts
-      // polling for connectivity. The machine then sleeps AGAIN before the
-      // network returns - the old waiter is now stale.
       const staleWake = mod.resumeModelDownloadsAfterWake()
       mod.suspendActiveModelDownloadsForSleep()
       netState.online = true
       await staleWake
       await flush()
-      // The stale waiter saw connectivity but was superseded: it must not
-      // resume a job the newer sleep parked.
       expect(transfers.length).toBe(before + 1)
       expect(activeRows().find((r) => r.id === h.id)?.status).toBe('paused')
 
-      // Only the newest wake pass resumes it.
       await mod.resumeModelDownloadsAfterWake()
       await waitForTransfers(before + 2)
       expect(transfers[before + 1]!.opts.jobId).toBe(h.id)
@@ -1186,19 +1048,12 @@ describe('model-job lifecycle races (issue #1322)', () => {
     const h = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
     await waitForTransfers(before + 1)
     const t1 = transfers[before]!
-    // Pause claims the transport but its stream keeps flushing (`done` stays
-    // pending), then an immediate resume starts a new attempt that parks the
-    // old `done` as the destination's closing stream and waits on it - at
-    // this point the job has NO live transport.
     t1.pause.mockImplementation(() => true)
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     expect(mod.resumeModelDownload(h.id)).toBe(true)
     await flush()
     expect(transfers.length).toBe(before + 1)
 
-    // Cancel lands in that window. The old stream could still recreate the
-    // staged artifacts after an eager deletion, so the teardown must neither
-    // delete nor settle until the stream has closed.
     const removalsBefore = removeStagedArtifacts.mock.calls.length
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     let settled = false
@@ -1208,14 +1063,10 @@ describe('model-job lifecycle races (issue #1322)', () => {
     await flush()
     expect(settled).toBe(false)
     expect(removeStagedArtifacts.mock.calls.length).toBe(removalsBefore)
-    // The committed teardown owns the job: no control may revive or re-park it.
     expect(mod.pauseModelDownload(h.id)).toBe(false)
     expect(mod.resumeModelDownload(h.id)).toBe(false)
-    // A second cancel is an idempotent success, not a second teardown.
     expect(mod.cancelModelDownload(h.id)).toBe(true)
 
-    // Old stream closes: the superseded resumed attempt must NOT start a
-    // transport, and the deferred teardown removes the artifacts and settles.
     t1.resolve({ outcome: 'paused' })
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
@@ -1232,9 +1083,6 @@ describe('model-job lifecycle races (issue #1322)', () => {
     const placeholdersBefore = ensureStagedPlaceholder.mock.calls.length
     try {
       await mod.suspendActiveModelDownloadsForQuit(50)
-      // Admitted after the quit snapshot, nothing would await this job's
-      // preflight or transport - it must be refused outright: settled error,
-      // no registry row, no staging placeholder, no transport.
       const h = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
       await expect(h.completion).resolves.toMatchObject({ status: 'error' })
       await flush()
@@ -1257,12 +1105,8 @@ describe('model-job lifecycle races (issue #1322)', () => {
       installationId: 'inst-quit-session'
     })
     await waitForTransfers(before + 1)
-    // Clean pause: the transport settles immediately, leaving no live
-    // transport and no closing stream for this destination.
     expect(mod.pauseModelDownload(h.id)).toBe(true)
     await flush()
-    // Hold the resumed attempt in its install/session lookup, with no transport,
-    // preflight, or closing stream. Quit must still wait for this job.
     const gate = deferred()
     overrides.installationsGet = async () => {
       await gate.promise
@@ -1272,17 +1116,12 @@ describe('model-job lifecycle races (issue #1322)', () => {
       expect(mod.resumeModelDownload(h.id)).toBe(true)
       await flush()
       expect(transfers.length).toBe(before + 1)
-      // Quit must see this in-between attempt as active work needing parking.
       expect(mod.hasActiveModelTransfers()).toBe(true)
       await mod.suspendActiveModelDownloadsForQuit(5000)
-      // The session lookup resolves after quit parking: the parked attempt
-      // must not start a transport during shutdown.
       gate.resolve()
       overrides.installationsGet = null
       await flush()
       expect(transfers.length).toBe(before + 1)
-      // The job stays registered with its durable staged pair: it hydrates
-      // as an actionable paused row on the next launch instead of vanishing.
       expect(activeRows().find((r) => r.id === h.id)).toBeDefined()
     } finally {
       gate.resolve()
@@ -1337,7 +1176,6 @@ describe('destination-keyed retry (issue #1322)', () => {
     expect(mod.resumeModelDownload(rowB.id!)).toBe(true)
     await waitForTransfers(before + 1)
 
-    // Job A fails; its row becomes a retryable terminal entry.
     before = transfers.length
     expect(mod.resumeModelDownload(rowA.id!)).toBe(true)
     await waitForTransfers(before + 1)
@@ -1346,9 +1184,6 @@ describe('destination-keyed retry (issue #1322)', () => {
     await flush()
     expect(mod.getDownloadsTrayState().recent.find((r) => r.id === rowA.id)?.status).toBe('error')
 
-    // Job B matches A's URL AND directory exactly - only the canonical
-    // resolved destination distinguishes them. B being active must not block
-    // A's retry (URL + directory dedupe would wrongly refuse it).
     before = transfers.length
     expect(mod.retryDownload(rowA.id!)).toBe(true)
     await waitForTransfers(before + 1)
@@ -1371,8 +1206,6 @@ describe('destination-keyed retry (issue #1322)', () => {
     await expect(h1.completion).resolves.toMatchObject({ status: 'error' })
     await flush()
 
-    // A fresh job now owns the destination the failed row would retry into:
-    // dispatching the retry would race two transports for one .part file.
     const h2 = await mod.startManagedModelJob({ url, filename: name, directory: 'checkpoints' })
     await waitForTransfers(before + 2)
     expect(mod.retryDownload(h1.id)).toBe(false)
@@ -1406,14 +1239,9 @@ describe('owner-window detach (issue #1322)', () => {
       senderContents: sender as never
     })
     await waitForTransfers(before + 1)
-    // The initiating sender received the admission report.
     expect(sender.send).toHaveBeenCalled()
     sender.send.mockClear()
 
-    // The download was initiated by a ComfyUI WebContentsView HOSTED by the
-    // window - not the window's own webContents. Closing the window must
-    // still detach the sender, or later reports would target a destroyed
-    // WebContents (and pin it in memory).
     mod.detachWindowDownloads(fakeWin as never)
     transfers[before]!.resolve({ outcome: 'completed', savePath: h.savePath })
     await expect(h.completion).resolves.toMatchObject({ status: 'completed' })
@@ -1437,14 +1265,10 @@ describe('model download startup safety (issue #1322)', () => {
     expect(first.safe).toBe(false)
     expect(first.unsafePaths).toEqual([lockedPath])
 
-    // An unsafe pass is NOT memoized: the next launch attempt re-runs the
-    // migration (the lock may have been released) instead of reusing a stale
-    // "checked" result - and this time it comes back safe.
     const second = await mod.initializeModelDownloads()
     expect(second.safe).toBe(true)
     expect(second.unsafePaths).toEqual([])
 
-    // A safe pass IS memoized: no further migration runs.
     const migrations = migrateLegacyModelDownloadArtifacts.mock.calls.length
     const third = await mod.initializeModelDownloads()
     expect(third.safe).toBe(true)
@@ -1471,13 +1295,10 @@ describe('model download startup safety (issue #1322)', () => {
       const result = await mod.initializeModelDownloads()
       expect(result.safe).toBe(false)
       expect(result.unsafePaths).toEqual([])
-      // Without the full root list nothing can be certified: the migration
-      // must not have run against a silently-partial scan.
       expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrationsBefore)
     } finally {
       overrides.collectModelScanRoots = null
     }
-    // Fail-closed passes are not memoized: the next attempt reruns and passes.
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)
     mod._test_resetModelDownloadsInit()
@@ -1497,16 +1318,12 @@ describe('model download startup safety (issue #1322)', () => {
     expect(warningRows()).toHaveLength(1)
     const warningId = warningRows()[0]!.id
 
-    // The unsafe pass is retried (not memoized); the same still-stuck marker
-    // updates its existing warning row instead of stacking a duplicate on
-    // every blocked launch attempt.
     scanForStagedDownloads.mockResolvedValueOnce({ downloads: [], unsafeFinalPaths: [marker] })
     const second = await mod.initializeModelDownloads()
     expect(second.safe).toBe(false)
     expect(warningRows()).toHaveLength(1)
     expect(warningRows()[0]!.id).toBe(warningId)
 
-    // A later pass that finds the marker cleared dismisses the stale warning.
     const third = await mod.initializeModelDownloads()
     expect(third.safe).toBe(true)
     expect(third.unsafePaths).toEqual([])
@@ -1533,8 +1350,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(warningRows()).toHaveLength(1)
     const warningId = warningRows()[0]!.id!
 
-    // Still stuck: Retry re-attempts the quarantine (a fresh migration run)
-    // and the SAME row stays in place instead of stacking a duplicate.
     migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
       finalized: [],
       staged: [],
@@ -1544,15 +1359,12 @@ describe('model download startup safety (issue #1322)', () => {
     })
     const migrationsBefore = migrateLegacyModelDownloadArtifacts.mock.calls.length
     expect(mod.retryDownload(warningId)).toBe(true)
-    // retryDownload kicked the pass synchronously; this joins the same run.
     const stillStuck = await mod.initializeModelDownloads()
     expect(stillStuck.safe).toBe(false)
     expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrationsBefore + 1)
     expect(warningRows()).toHaveLength(1)
     expect(warningRows()[0]!.id).toBe(warningId)
 
-    // Lock released: Retry re-runs the pass, the quarantine succeeds, and the
-    // warning row is dismissed.
     expect(mod.retryDownload(warningId)).toBe(true)
     const resolved = await mod.initializeModelDownloads()
     expect(resolved.safe).toBe(true)
@@ -1592,8 +1404,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rowsAfterFirst).toHaveLength(1)
     const rowId = rowsAfterFirst[0]!.id!
 
-    // The retried unsafe pass rescans the same staged pair; the existing
-    // paused row must be kept, not duplicated into a second job.
     scanForStagedDownloads.mockResolvedValueOnce({
       downloads: [stagedPair()],
       unsafeFinalPaths: [marker]
@@ -1604,7 +1414,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rowsAfterSecond).toHaveLength(1)
     expect(rowsAfterSecond[0]!.id).toBe(rowId)
 
-    // Final safe pass, then remove the hydrated job.
     const third = await mod.initializeModelDownloads()
     expect(third.safe).toBe(true)
     expect(mod.cancelModelDownload(rowId)).toBe(true)
@@ -1614,13 +1423,9 @@ describe('model download startup safety (issue #1322)', () => {
 
   it('a staged-scan exception makes the pass unsafe and is not memoized', async () => {
     mod._test_resetModelDownloadsInit()
-    // The staged scan is what finds zero-byte final-name claim markers; a
-    // failed scan cannot certify that nothing broken is visible under a
-    // final model name, so the whole pass must fail closed.
     scanForStagedDownloads.mockRejectedValueOnce(new Error('walk failed'))
     const first = await mod.initializeModelDownloads()
     expect(first.safe).toBe(false)
-    // Fail-closed passes are not memoized: the next attempt reruns clean.
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)
     mod._test_resetModelDownloadsInit()
@@ -1639,9 +1444,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rows()).toHaveLength(1)
     const warningId = rows()[0]!.id
 
-    // The scan itself fails on the retried pass: its previous findings are
-    // still unresolved, so the marker stays unsafe and its warning row stays
-    // visible - a producer failure must not launder away known-bad paths.
     scanForStagedDownloads.mockRejectedValueOnce(new Error('walk failed'))
     const second = await mod.initializeModelDownloads()
     expect(second.safe).toBe(false)
@@ -1649,7 +1451,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rows()).toHaveLength(1)
     expect(rows()[0]!.id).toBe(warningId)
 
-    // A later successful scan that proves the marker gone clears it.
     const third = await mod.initializeModelDownloads()
     expect(third.safe).toBe(true)
     expect(rows()).toHaveLength(0)
@@ -1677,9 +1478,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rows()).toHaveLength(1)
     const warningId = rows()[0]!.id
 
-    // Migration clears its report but the scan still sees the marker: the
-    // path stays unsafe with the SAME stable row (keying rows by path once
-    // let a clean migration pass dismiss the scan's only warning).
     scanForStagedDownloads.mockResolvedValueOnce({ downloads: [], unsafeFinalPaths: [marker] })
     const second = await mod.initializeModelDownloads()
     expect(second.safe).toBe(false)
@@ -1687,7 +1485,6 @@ describe('model download startup safety (issue #1322)', () => {
     expect(rows()).toHaveLength(1)
     expect(rows()[0]!.id).toBe(warningId)
 
-    // Only when BOTH producers stop reporting it is the warning dismissed.
     const third = await mod.initializeModelDownloads()
     expect(third.safe).toBe(true)
     expect(rows()).toHaveLength(0)
@@ -1699,8 +1496,6 @@ describe('model download startup safety (issue #1322)', () => {
     const name = uniqueName()
     const dest = path.join(getModelsBaseDir(), 'checkpoints', name)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    // The truncated final is still on disk (quarantine rename failed) - the
-    // existence check below admission must NOT certify it as alreadyPresent.
     fs.writeFileSync(dest, 'truncated legacy bytes')
     migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
       finalized: [],
@@ -1720,11 +1515,8 @@ describe('model download startup safety (issue #1322)', () => {
       error: expect.stringContaining('incomplete download is stuck')
     })
     await flush()
-    // No staging, no transport, and no alreadyPresent certification of the
-    // truncated file: the job was refused at admission.
     expect(transfers.length).toBe(before)
     fs.rmSync(dest, { force: true })
-    // The unsafe pass was not memoized; a clean retry recovers.
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)
     mod._test_resetModelDownloadsInit()
@@ -1746,8 +1538,6 @@ describe('model download startup safety (issue #1322)', () => {
       filename: name,
       directory: 'checkpoints'
     })
-    // One stuck file elsewhere must not disable every model download: a real
-    // transfer starts for this unrelated destination.
     await waitForTransfers(before + 1)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
@@ -1767,8 +1557,6 @@ describe('model download startup safety (issue #1322)', () => {
       filename: name,
       directory: 'checkpoints'
     })
-    // The pass could not certify anything (safe=false, no findings), but that
-    // must not disable the download system - the job proceeds.
     await waitForTransfers(before + 1)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
@@ -1783,12 +1571,8 @@ describe('model download startup safety (issue #1322)', () => {
     const name = uniqueName()
     const dest = path.join(getModelsBaseDir(), 'checkpoints', name)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    // A truncated download from an affected release sits under the FINAL
-    // model name. Checking existence before the migration pass finishes
-    // would certify it as a complete model (`alreadyPresent`).
     fs.writeFileSync(dest, 'truncated legacy bytes')
     migrateLegacyModelDownloadArtifacts.mockImplementationOnce(async () => {
-      // Quarantine: the truncated final leaves the model namespace.
       fs.rmSync(dest)
       return {
         finalized: [],
@@ -1804,8 +1588,6 @@ describe('model download startup safety (issue #1322)', () => {
       filename: name,
       directory: 'checkpoints'
     })
-    // A real transfer started for the migrated-away destination instead of
-    // reporting the truncated file complete.
     await waitForTransfers(before + 1)
     expect(h.savePath).toBe(dest)
     expect(transfers[before]!.opts.finalPath).toBe(dest)
@@ -1819,12 +1601,9 @@ describe('model download startup safety (issue #1322)', () => {
     mod._test_resetModelDownloadsInit()
     await mod.initializeModelDownloads()
     const migrations = migrateLegacyModelDownloadArtifacts.mock.calls.length
-    // Memoized while safe: another call runs no new migration.
     await mod.initializeModelDownloads()
     expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrations)
 
-    // A new installation was created: its (possibly reused, pre-existing)
-    // model dirs were never covered by the memoized pass.
     mod.invalidateModelDownloadStartupPass()
     const name = uniqueName()
     const before = transfers.length
@@ -1834,7 +1613,6 @@ describe('model download startup safety (issue #1322)', () => {
       directory: 'checkpoints'
     })
     await waitForTransfers(before + 1)
-    // Admission re-ran the migration over the current roots first.
     expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrations + 1)
     expect(mod.cancelModelDownload(h.id)).toBe(true)
     await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
@@ -1850,8 +1628,6 @@ describe('model download startup safety (issue #1322)', () => {
       return { finalized: [], staged: [], removedStaleMeta: [], quarantined: [], unsafe: [] }
     })
     const p1 = mod.initializeModelDownloads()
-    // The roots changed while the pass was already walking them: its result
-    // cannot certify the new roots and must not be reused.
     mod.invalidateModelDownloadStartupPass()
     gate.resolve()
     const s1 = await p1
@@ -1861,7 +1637,6 @@ describe('model download startup safety (issue #1322)', () => {
     const s2 = await mod.initializeModelDownloads()
     expect(s2.safe).toBe(true)
     expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrations + 1)
-    // The fresh pass is memoized again.
     await mod.initializeModelDownloads()
     expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrations + 1)
     mod._test_resetModelDownloadsInit()
@@ -1890,9 +1665,6 @@ describe('hydration revalidation (issue #1322)', () => {
       ],
       unsafeFinalPaths: []
     })
-    // A destructive cancel finished (and deleted the pair) after the scan's
-    // async walk snapshotted it: the synchronous re-read right before
-    // registration sees nothing, so the cancelled row is NOT resurrected.
     revalidateStagedPair.mockReturnValueOnce(null)
     const safety = await mod.initializeModelDownloads()
     expect(safety.safe).toBe(true)
@@ -1917,8 +1689,6 @@ describe('hydration revalidation (issue #1322)', () => {
       downloads: [{ finalPath: dest, stagedBytes: 100, meta }],
       unsafeFinalPaths: []
     })
-    // The pair changed on disk after the scan snapshot; hydration registers
-    // the FRESH byte count, not the stale one.
     revalidateStagedPair.mockReturnValueOnce({ meta, stagedBytes: 400 })
     const safety = await mod.initializeModelDownloads()
     expect(safety.safe).toBe(true)
@@ -1934,9 +1704,6 @@ describe('hydration revalidation (issue #1322)', () => {
 
 describe('recent-row eviction (issue #1322)', () => {
   it('broadcasts model-download-removed for rows evicted past the recent cap', async () => {
-    // Renderer stores keep every row they were sent; an eviction that is not
-    // broadcast leaves the row visible forever in open windows (a later
-    // dismissal finds nothing in the recent buffer, so emits nothing).
     const target = {
       send: vi.fn(),
       isDestroyed: () => false,
@@ -1944,9 +1711,6 @@ describe('recent-row eviction (issue #1322)', () => {
     }
     _registerExtraBroadcastTarget(target as unknown as Electron.WebContents)
     try {
-      // Invalid model extension: each job settles as an immediate terminal
-      // error row with a unique URL, filling the recent buffer past its cap
-      // of 10 without touching staging or the network.
       const handles = []
       for (let i = 0; i < 11; i++) {
         const name = `evict-${Date.now()}-${i}.exe`
@@ -1965,9 +1729,7 @@ describe('recent-row eviction (issue #1322)', () => {
       )
       expect(removedCalls).toHaveLength(1)
       expect(removedCalls[0]![1]).toMatchObject({ id: first.id, url: first.url })
-      // The evicted row really left the recent snapshot.
       expect(mod.getDownloadsTrayState().recent.find((r) => r.id === first.id)).toBeUndefined()
-      // The 10 newest rows were kept, not broadcast as removed.
       for (const h of handles.slice(1)) {
         expect(
           target.send.mock.calls.filter(
@@ -2009,7 +1771,6 @@ describe('sha-256 expectations and install-local roots', () => {
 
     expect(mod.retryDownload(h.id)).toBe(true)
     await waitForTransfers(before + 2)
-    // The retry is a fresh job, but the integrity expectation must survive it.
     expect(transfers[before + 1]!.opts.sha256).toBe(SHA_A)
     expect(mod.cancelModelDownload(transfers[before + 1]!.opts.jobId as string)).toBe(true)
     await flush()
@@ -2027,8 +1788,6 @@ describe('sha-256 expectations and install-local roots', () => {
     })
     await waitForTransfers(before + 1)
 
-    // Same final file, different expected bytes: a join would hand one of the
-    // callers a file that fails its own verification.
     const conflict = await mod.startManagedModelJob({
       url,
       filename: name,
@@ -2087,7 +1846,6 @@ describe('sha-256 expectations and install-local roots', () => {
       })
       await expect(blocked.completion).resolves.toMatchObject({ status: 'error' })
 
-      // A bypass naming a DIFFERENT root exempts nothing.
       const wrongBypass = await mod.startManagedModelJob({
         url: `https://host.example/${uniqueName()}`,
         filename: uniqueName(),
@@ -2098,7 +1856,6 @@ describe('sha-256 expectations and install-local roots', () => {
       await expect(wrongBypass.completion).resolves.toMatchObject({ status: 'error' })
       expect(transfers).toHaveLength(before)
 
-      // The transaction holding the lock runs its own jobs inside it.
       const name = uniqueName()
       const admitted = await mod.startManagedModelJob({
         url: `https://host.example/${name}`,
@@ -2143,13 +1900,11 @@ describe('sha-256 expectations and install-local roots', () => {
       await mod.initializeModelDownloads()
       const row = activeRows().find((r) => r.filename === 'parked.safetensors')
       expect(row?.status).toBe('paused')
-      // The parked row owns a destination inside the root: lock refused.
       expect(mod.acquireModelDownloadRootLock(modelsRoot)).toBeNull()
 
       removeStagedArtifacts.mockClear()
       mod.releaseParkedModelJobsUnder(modelsRoot)
       expect(activeRows().find((r) => r.id === row!.id)).toBeUndefined()
-      // The staged pair stays on disk so a re-staged download resumes it.
       expect(removeStagedArtifacts).not.toHaveBeenCalled()
 
       const release = mod.acquireModelDownloadRootLock(modelsRoot)
@@ -2174,7 +1929,6 @@ describe('sha-256 expectations and install-local roots', () => {
       await waitForTransfers(before + 1)
 
       mod.releaseParkedModelJobsUnder(modelsRoot)
-      // Still registered and still blocking the lock: only PARKED rows retire.
       expect(activeRows().find((r) => r.id === h.id)).toBeDefined()
       expect(mod.acquireModelDownloadRootLock(modelsRoot)).toBeNull()
 
@@ -2220,8 +1974,6 @@ describe('sha-256 expectations and install-local roots', () => {
       transfers[before]!.resolve({ outcome: 'error', error: 'presigned url expired' })
       await flush()
 
-      // The retry must re-target the root the pair was staged under - NOT the
-      // current shared models directory, which is a different location here.
       before = transfers.length
       expect(mod.retryDownload(row.id!)).toBe(true)
       await waitForTransfers(before + 1)

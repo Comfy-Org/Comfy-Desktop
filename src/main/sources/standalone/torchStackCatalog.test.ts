@@ -150,7 +150,6 @@ describe('resolveSnapshotManagedTarget', () => {
         packages: { torch: '2.12.0+cu130' }
       })
     ).toBeNull()
-    // Symmetric drift: a package the catalog dropped (or added) counts too.
     expect(
       await resolveSnapshotManagedTarget(inst, {
         stackId: CU130_ID,
@@ -192,13 +191,8 @@ describe('getLastVerifiedTorchStack source validation', () => {
   it('rejects amd-multi-arch-index refs that are not the exact persisted shape, and unknown kinds', () => {
     for (const source of [
       { kind: 'amd-multi-arch-index' },
-      // Not a rocm tag - repair must not re-acquire an arbitrary tuple
-      // from AMD's index on the strength of a corrupted ref.
       { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
-      // Tag disagrees with the tuple's torch build - AMD's index serves
-      // many ROCm versions, so a mismatched ref must fail closed.
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.13.0' },
-      // Extra fields (e.g. a smuggled url) mark the ref as not ours.
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
       { kind: 'evil-url', url: 'https://evil.example' }
     ]) {
@@ -224,12 +218,10 @@ describe('getLastVerifiedTorchStack source validation', () => {
   })
 
   it('rejects an amd-multi-arch-index ref whose stackId does not name its tag + tuple', () => {
-    // The stackId is the identity the renderer and catalog resolve by; an
-    // AMD source riding under a foreign id could misidentify the stack.
     for (const stackId of [
-      'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
-      'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
-      'amd-index:rocm7.14.0:2.11.0' // version disagrees with the tuple
+      'pytorch-index:rocm7.14.0:2.10.0',
+      'amd-index:rocm7.13.0:2.10.0',
+      'amd-index:rocm7.14.0:2.11.0'
     ]) {
       const inst = {
         ...install('3.13.2'),
@@ -257,13 +249,10 @@ describe('remote manifest availability on resolve', () => {
 describe('compute-cap mismatch is informational, never a gate', () => {
   it('a mismatched entry lists with a warning, still resolves, and resolves without it', async () => {
     _setRemoteDefsForTest([{ ...cu130Def, computeCap: { min: 7.5, max: 12.0 } }])
-    _setComputeCapsForTest([6.1]) // Pascal - outside the entry's kernel range
+    _setComputeCapsForTest([6.1])
     const inst = install('3.13.2')
     const listed = getCachedTorchStacks(inst).find((e) => e.stackId === CU130_ID)
     expect(listed?.capWarning).toEqual({ min: 7.5, max: 12.0, detected: [6.1] })
-    // The mismatch never blocks the change (detection may be wrong or
-    // partial), and the display-only warning must not reach the entry the
-    // transaction persists.
     const entry = await resolveTorchStack(inst, CU130_ID)
     expect(entry?.stackId).toBe(CU130_ID)
     expect(entry?.capWarning).toBeUndefined()
@@ -291,7 +280,6 @@ describe('compute-cap mismatch is informational, never a gate', () => {
 
 describe('refreshTorchStackCatalogs', () => {
   beforeEach(() => {
-    // Stub the GPU probes so the refresh never spawns nvidia-smi in tests.
     _setComputeCapProbeForTest(async () => null)
     _setNvidiaDriverProbeForTest(async () => null)
     vi.mocked(fetchR2VendorReleases).mockClear()

@@ -5,8 +5,6 @@ import { FileText, RefreshCw } from 'lucide-vue-next'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 
-/** One resolved per-type directory inside a section (mirrors the main-process
- *  `ExtraModelPathDir`). */
 export interface ExtraModelPathDir {
   type: string
   rawType: string
@@ -14,8 +12,6 @@ export interface ExtraModelPathDir {
   dirExists: boolean
 }
 
-/** A grouped `extra_model_paths.yaml` section (mirrors the main-process
- *  `ExtraModelPathSection`). */
 export interface ExtraModelPathSection {
   name: string
   basePath: string | null
@@ -26,9 +22,7 @@ export interface ExtraModelPathSection {
 
 interface Props {
   open: boolean
-  /** Every section in the install's `extra_model_paths.yaml`. */
   sections: ExtraModelPathSection[]
-  /** Absolute path of the install's `extra_model_paths.yaml`. */
   yamlPath: string
 }
 
@@ -36,11 +30,8 @@ defineProps<Props>()
 
 const emit = defineEmits<{
   close: []
-  /** Open a folder (base_path or a per-type dir) in the OS file manager. */
   'open-path': [path: string]
-  /** Reveal a file (the .yaml) in the OS file manager, highlighting it. */
   'reveal-path': [path: string]
-  /** Re-fetch on-disk status (the main process resolves existence per fetch). */
   refresh: []
 }>()
 

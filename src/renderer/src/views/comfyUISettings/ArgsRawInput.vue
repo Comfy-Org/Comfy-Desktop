@@ -7,13 +7,6 @@ import { useArgsAutocomplete } from '../../composables/useArgsAutocomplete'
 import { validateArgs } from '../../lib/argsParser'
 import type { ComfyArgDef } from '../../types/ipc'
 
-/**
- * Raw startup-arguments text input with inline flag autocomplete and inline
- * validation (colored token echo + per-issue messages + red invalid border).
- * Shared by the compact settings field and the full args sub-page, so the
- * correctness check shows wherever the raw field appears.
- */
-
 const props = withDefaults(
   defineProps<{
     modelValue: string
@@ -55,9 +48,6 @@ const autocomplete = useArgsAutocomplete({
   }
 })
 
-// Inline validation: colored tokens + per-issue messages so unsupported flags,
-// missing values, and stray positionals are visible instead of silently
-// surviving. The trailing flag being typed is held off while focused.
 const validation = computed(() =>
   props.schema.length
     ? validateArgs(localValue.value, props.schema, { suppressTrailingPartial: focused.value })
@@ -75,9 +65,6 @@ function handleChange(value: string): void {
   emit('change', value)
 }
 
-// The wrapper also hosts the trailing slot's buttons (gear, beta-args pill). Only the text
-// input drives autocomplete: Enter on one of those buttons must press it, not complete a
-// partially typed flag and persist the rewritten args.
 function fromTextInput(e: Event): boolean {
   return e.target instanceof HTMLInputElement
 }
@@ -152,7 +139,6 @@ function onKeydown(e: KeyboardEvent): void {
       </li>
     </ul>
 
-    <!-- Colored echo of the raw string so problem tokens are easy to spot. -->
     <div
       v-if="validation && showTokenDisplay && validation.tokens.length"
       class="args-raw-tokens mt-1.5 flex flex-wrap gap-x-1.5 gap-y-1 rounded-md border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 px-2.5 py-1.5 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-[1.5] text-text-muted"
