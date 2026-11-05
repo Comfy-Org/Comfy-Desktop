@@ -24,6 +24,8 @@ import { go, newInstanceHooks, proto, toast } from '../../useProto'
  */
 export type LocalSetup = 'off' | 'on'
 export type Machine = 'ready' | 'legacy' | 'lowdisk' | 'intel' | 'fails'
+/** The computer the checks run on: its drawing, hardware and paths follow. */
+export type SetupOs = 'mac' | 'windows' | 'linux'
 export type RunOnCards = 'glow' | 'row' | 'today'
 export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
   { value: 'glow', label: 'Cards' },
@@ -53,19 +55,32 @@ export const MACHINES: { value: Machine; label: string }[] = [
   { value: 'fails', label: 'Install fails halfway' }
 ]
 
+export const SETUP_OSES: { value: SetupOs; label: string }[] = [
+  { value: 'mac', label: 'Mac' },
+  { value: 'windows', label: 'Windows' },
+  { value: 'linux', label: 'Linux' }
+]
+
 const KEY = 'comfy.design.mar.localSetup'
 
-function load(): { mode: LocalSetup; machine: Machine; cards: RunOnCards; scope: SetupScope } {
+function load(): {
+  mode: LocalSetup
+  machine: Machine
+  cards: RunOnCards
+  scope: SetupScope
+  os: SetupOs
+} {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
     return {
       mode: v.mode === 'on' ? 'on' : 'off',
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
       cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
-      scope: v.scope === 'next' ? 'next' : 'm1'
+      scope: v.scope === 'next' ? 'next' : 'm1',
+      os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac'
     }
   } catch {
-    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1' }
+    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1', os: 'mac' }
   }
 }
 
@@ -83,6 +98,9 @@ const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
 // Without one, the shared link shows the first release: the install lands on Builds.
 else if (linkFirst) localSetup.scope = 'm1'
+// And the computer: `&os=windows` or `&os=linux`.
+const linkOs = new URLSearchParams(location.search).get('os')
+if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.os = linkOs
 
 watch(
   () => ({ ...localSetup }),
@@ -107,18 +125,50 @@ function showScope(): void {
   if (proto.milestone !== m) proto.milestone = m
 }
 
-/** What the checks found on this computer (mock, follows `machine`). */
-export const DETECTED = {
-  chip: 'Apple M3 Max',
-  memGb: 36,
-  build: 'Apple Silicon (MPS)',
+// What the checks find on each kind of computer (mock).
+const COMPUTERS: Record<
+  SetupOs,
+  { chip: string; memGb: number; build: string; noun: string; path: string; otherPath: string }
+> = {
+  mac: {
+    chip: 'Apple M3 Max',
+    memGb: 36,
+    build: 'Apple Silicon (MPS)',
+    noun: 'this Mac',
+    path: '~/ComfyUI-Installs/ComfyUI',
+    otherPath: '/Volumes/Studio SSD/ComfyUI'
+  },
+  windows: {
+    chip: 'NVIDIA GeForce RTX 4070',
+    memGb: 32,
+    build: 'NVIDIA (CUDA)',
+    noun: 'this PC',
+    path: 'C:\\Users\\You\\ComfyUI-Installs\\ComfyUI',
+    otherPath: 'D:\\ComfyUI'
+  },
+  linux: {
+    chip: 'NVIDIA GeForce RTX 4090',
+    memGb: 64,
+    build: 'NVIDIA (CUDA)',
+    noun: 'this computer',
+    path: '~/ComfyUI-Installs/ComfyUI',
+    otherPath: '/mnt/studio-ssd/ComfyUI'
+  }
+}
+
+/** What the checks found on this computer (mock, follows `machine` and `os`). */
+export const DETECTED = reactive({
+  ...COMPUTERS[localSetup.os],
   version: 'v0.42.4',
   downloadGb: 1.2,
-  path: '~/ComfyUI-Installs/ComfyUI',
   freeGb: 412,
   lowFreeGb: 0.9,
   otherDisk: { name: 'Studio SSD', freeGb: 1600 }
-}
+})
+watch(
+  () => localSetup.os,
+  (os) => Object.assign(DETECTED, COMPUTERS[os])
+)
 
 export interface Starter {
   id: string
@@ -127,6 +177,8 @@ export interface Starter {
   /** Runs on partner models: nothing to download, spends credits. */
   credits?: boolean
   tag?: string
+  /** What it does, where the title doesn't say ("Name: Task"). */
+  task?: string
   /** Image under mar/assets. */
   img: string
 }
@@ -134,8 +186,22 @@ export interface Starter {
 /** The starter picker's four per tab (Desktop's curated list, sizes as shipped). */
 export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
   image: [
-    { id: 'zit', title: 'Z-Image-Turbo', gb: 20.8, tag: 'Recommended', img: 'portrait-garden.jpg' },
-    { id: 'sdxl', title: 'SDXL Turbo', gb: 6.9, tag: 'Lightest', img: 'hills-sunset.jpg' },
+    {
+      id: 'zit',
+      title: 'Z-Image-Turbo',
+      task: 'Text to Image',
+      gb: 20.8,
+      tag: 'Recommended',
+      img: 'portrait-garden.jpg'
+    },
+    {
+      id: 'sdxl',
+      title: 'SDXL Turbo',
+      task: 'Text to Image',
+      gb: 6.9,
+      tag: 'Lightest',
+      img: 'hills-sunset.jpg'
+    },
     { id: 'pixeldit', title: 'PixelDiT: Text to Image', gb: 7.8, img: 'lake-fog.jpg' },
     {
       id: 'seedream',
@@ -153,8 +219,20 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
       tag: 'Recommended',
       img: 'forest-fog.jpg'
     },
-    { id: 'wan-inp', title: 'Wan 2.1 Inpainting', gb: 11.4, img: 'portrait-window.jpg' },
-    { id: 'wan-cam', title: 'Wan 2.1 Fun Camera 1.3B', gb: 11.5, img: 'hills-fog.jpg' },
+    {
+      id: 'wan-inp',
+      title: 'Wan 2.1 Inpainting',
+      task: 'Video Inpainting',
+      gb: 11.4,
+      img: 'portrait-window.jpg'
+    },
+    {
+      id: 'wan-cam',
+      title: 'Wan 2.1 Fun Camera 1.3B',
+      task: 'Camera Control',
+      gb: 11.5,
+      img: 'hills-fog.jpg'
+    },
     {
       id: 'seedance',
       title: 'Seedance 2.5: Reference to Video',
@@ -178,7 +256,13 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
       tag: 'Lightest',
       img: 'hills-fog.jpg'
     },
-    { id: 'hy3d', title: 'HY 3D 2.0 MV Turbo', gb: 4.9, img: 'forest-fog.jpg' },
+    {
+      id: 'hy3d',
+      title: 'HY 3D 2.0 MV Turbo',
+      task: 'Image to Model',
+      gb: 4.9,
+      img: 'forest-fog.jpg'
+    },
     {
       id: 'tripo',
       title: 'Tripo H3.1: Image to Model',
@@ -191,12 +275,19 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
     {
       id: 'sa3',
       title: 'Stable Audio 3.0 Medium',
+      task: 'Text to Audio',
       gb: 15.7,
       tag: 'Recommended',
       img: 'hills-sunset.jpg'
     },
-    { id: 'sa1', title: 'Stable Audio 1.0', gb: 5.7, img: 'lake-fog.jpg' },
-    { id: 'ace', title: 'ACE-Step 1.5 Music', gb: 10.7, img: 'portrait-grass.jpg' },
+    { id: 'sa1', title: 'Stable Audio 1.0', task: 'Text to Audio', gb: 5.7, img: 'lake-fog.jpg' },
+    {
+      id: 'ace',
+      title: 'ACE-Step 1.5 Music',
+      task: 'Text to Music',
+      gb: 10.7,
+      img: 'portrait-grass.jpg'
+    },
     {
       id: 'seedaudio',
       title: 'Seed Audio 1.0: Text to Audio',
@@ -231,7 +322,8 @@ export const flow = reactive({
 })
 
 export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow.movedDisk)
-export const unsupported = computed(() => localSetup.machine === 'intel')
+// Only a Mac can be an Intel Mac.
+export const unsupported = computed(() => localSetup.machine === 'intel' && localSetup.os === 'mac')
 
 // Today's standalone install steps, in order.
 const PHASES = [

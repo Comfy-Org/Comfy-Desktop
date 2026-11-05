@@ -213,9 +213,16 @@ export const TWEAKS = {
       localSetup.mode === 'off' &&
       localSetup.machine === 'ready' &&
       localSetup.cards === 'glow' &&
-      localSetup.scope === 'm1',
+      localSetup.scope === 'm1' &&
+      localSetup.os === 'mac',
     reset: () =>
-      Object.assign(localSetup, { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1' })
+      Object.assign(localSetup, {
+        mode: 'off',
+        machine: 'ready',
+        cards: 'glow',
+        scope: 'm1',
+        os: 'mac'
+      })
   },
   look: one(marLook, 'current'),
   knobs: {

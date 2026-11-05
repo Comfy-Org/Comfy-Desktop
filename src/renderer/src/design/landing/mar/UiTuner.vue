@@ -24,6 +24,7 @@ import {
   LOCAL_SETUPS,
   SETUP_SCOPES,
   MACHINES,
+  SETUP_OSES,
   SETUP_SCREENS,
   canvas,
   RUN_ON_CARDS,
@@ -355,6 +356,9 @@ function onScroll(e: Event): void {
               <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
                 >Compare cards</Button
               >
+            </Row>
+            <Row label="Operating system">
+              <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />
             </Row>
             <Row label="This computer">
               <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />

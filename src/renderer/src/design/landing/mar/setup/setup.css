@@ -697,10 +697,28 @@
   .mss-pick-lead {
     grid-column: 1 / -1;
   }
+  .mss-pick-tabs {
+    justify-self: start;
+  }
   .mss-cards {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
+  }
+  /* Explore's media chip. */
+  .mss-card-badge {
+    display: inline-flex;
+    height: 20px;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--color-media-overlay);
+    backdrop-filter: blur(12px);
+    color: rgb(255 255 255 / 0.92);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
   }
   .mss-card {
     min-width: 0;
@@ -1310,7 +1328,7 @@
   grid-template-columns: 148px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
-  padding-block: 14px;
+  padding-block: 12px;
   box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 .mss-form-row:first-child {
@@ -1336,7 +1354,7 @@
   font-size: var(--text-ui);
 }
 .mss-form-aside {
-  margin: 16px 0 0;
+  margin: 20px 0 16px;
   color: var(--color-subtle-foreground);
   font-size: var(--text-ui);
 }
@@ -1361,9 +1379,6 @@
   text-align: left;
   outline: none;
   cursor: pointer;
-  transition:
-    background-color 160ms ease,
-    box-shadow 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-opt:hover {
   background: oklch(0.6 0 0 / 0.09);
@@ -1385,7 +1400,6 @@
   border-radius: 9px;
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-muted-foreground);
-  transition: color 160ms ease;
 }
 .mss-opt[data-state='checked'] .mss-opt-icon {
   color: var(--color-base-foreground);
@@ -1414,17 +1428,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mss-opt-dot {
-  width: 16px;
-  height: 16px;
+/* The pick is a check, as on the workflow cards; it switches at once. */
+.mss-opt-check {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
   align-self: flex-start;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 28%, transparent);
-  transition: box-shadow 160ms ease;
+  border-radius: 6px;
+  background-color: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+  visibility: hidden;
 }
-.mss-opt[data-state='checked'] .mss-opt-dot {
-  box-shadow: inset 0 0 0 5px var(--color-base-foreground);
+.mss-opt[data-state='checked'] .mss-opt-check {
+  visibility: visible;
 }
 
 /* ── Install: one-line Cloud pitch in the bar ───────────────────── */

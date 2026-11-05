@@ -8,6 +8,7 @@ import {
   Cloud,
   Copy,
   Cpu,
+  Crown,
   HardDrive,
   LoaderCircle,
   Package,
@@ -69,9 +70,7 @@ const open = computed({
   }
 })
 
-const where = computed(() =>
-  flow.movedDisk ? `/Volumes/${DETECTED.otherDisk.name}/ComfyUI` : DETECTED.path
-)
+const where = computed(() => (flow.movedDisk ? DETECTED.otherPath : DETECTED.path))
 const free = computed(() =>
   flow.movedDisk ? DETECTED.otherDisk.freeGb : lowSpace.value ? DETECTED.lowFreeGb : DETECTED.freeGb
 )
@@ -129,6 +128,11 @@ const TABS = [
 function pick(s: Starter): void {
   flow.picked = flow.picked?.id === s.id ? null : s
 }
+// Today's card: the model's name over its task, split from the title.
+const starterName = (s: Starter): string => s.title.split(': ')[0] ?? s.title
+const starterTask = (s: Starter): string => s.title.split(': ')[1] ?? s.task ?? ''
+// Today's disk check: a workflow whose models don't fit can't be installed.
+const starterBlocked = computed(() => lowSpace.value && !!flow.picked && !flow.picked.credits)
 function installWith(s: Starter | null): void {
   flow.picked = s
   startInstall()
@@ -209,13 +213,11 @@ const CHANNELS = [
   { value: 'stable' as const, label: 'Stable' },
   { value: 'latest' as const, label: 'Latest on GitHub' }
 ]
-const HARDWARE = [
+const HARDWARE = computed(() => [
   { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
   { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
-]
-const pickedHardware = computed(
-  () => HARDWARE[hardware.value === 'cpu' ? 1 : 0] as (typeof HARDWARE)[number]
-)
+])
+const pickedHardware = computed(() => HARDWARE.value[hardware.value === 'cpu' ? 1 : 0]!)
 
 // The install wait's Cloud pitch, in the product's own strings.
 const say = (key: string): string =>
@@ -403,7 +405,7 @@ function rowState(i: number): string {
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <template v-if="!unsupported">
             <DialogTitle as="h3" class="text-title font-semibold"
-              >Install ComfyUI on this Mac</DialogTitle
+              >Install ComfyUI on {{ DETECTED.noun }}</DialogTitle
             >
             <DialogDescription
               >Checked for your {{ DETECTED.chip }}. Change anything before you
@@ -413,7 +415,7 @@ function rowState(i: number): string {
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
             <div class="mss-machine is-hero">
-              <SetupLaptop />
+              <SetupLaptop :os="localSetup.os" />
               <span class="grid min-w-0">
                 <span class="mss-machine-kicker"
                   ><Check :size="11" :stroke-width="3" />Detected</span
@@ -539,7 +541,9 @@ function rowState(i: number): string {
                     <span class="mss-opt-name">{{ m.label }}</span>
                     <span class="mss-opt-meta">{{ m.meta }}</span>
                   </span>
-                  <span class="mss-opt-dot" aria-hidden="true"></span>
+                  <span class="mss-opt-check" aria-hidden="true"
+                    ><Check :size="11" :stroke-width="3"
+                  /></span>
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
@@ -597,7 +601,9 @@ function rowState(i: number): string {
                     <span class="mss-opt-name">{{ h.label }}</span>
                     <span class="mss-opt-meta">{{ h.meta }}</span>
                   </span>
-                  <span class="mss-opt-dot" aria-hidden="true"></span>
+                  <span class="mss-opt-check" aria-hidden="true"
+                    ><Check :size="11" :stroke-width="3"
+                  /></span>
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
@@ -625,7 +631,7 @@ function rowState(i: number): string {
             </div>
             <p class="mss-form-aside">
               <button type="button" class="mss-link" @click="method = 'public'">
-                Install on this Mac instead
+                Install on {{ DETECTED.noun }} instead
               </button>
             </p>
           </div>
@@ -656,46 +662,79 @@ function rowState(i: number): string {
           <DialogDescription
             >Opens a ready-to-run workflow. Models download during setup.</DialogDescription
           >
-          <div class="mss-pick-head">
-            <MarSeg v-model="flow.tab" label="Workflow type" :options="TABS" />
-          </div>
-          <div class="mss-cards">
-            <MediaCard
-              v-for="s in STARTERS[flow.tab]"
-              :key="s.id"
-              ratio="4/3"
-              :selected="flow.picked?.id === s.id"
-              :aria-pressed="flow.picked?.id === s.id"
-              class="mss-card"
-              @click="pick(s)"
-              @keydown.enter.prevent="pick(s)"
-              @keydown.space.prevent="pick(s)"
-            >
-              <template #media>
-                <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
-              </template>
-              <template v-if="flow.picked?.id === s.id" #top-left>
-                <span class="mss-card-check"><Check :size="12" :stroke-width="3" /></span>
-              </template>
-              <span class="line-clamp-2 text-ui font-medium text-base-foreground">{{
-                s.title
-              }}</span>
-              <span class="text-ui tabular-nums text-subtle-foreground">{{
-                s.credits ? 'No download' : `${s.gb} GB`
-              }}</span>
-            </MediaCard>
+          <div class="mss-pick">
+            <MarSeg
+              v-model="flow.tab"
+              label="Workflow type"
+              :options="TABS"
+              class="mss-pick-tabs"
+            />
+            <!-- Explore's template card, with what today's step says on it:
+                 Recommended, Requires credits, the task and the download. -->
+            <div class="mss-cards" role="radiogroup" aria-label="Choose a starter workflow">
+              <MediaCard
+                v-for="s in STARTERS[flow.tab]"
+                :key="s.id"
+                role="radio"
+                :selected="flow.picked?.id === s.id"
+                :aria-checked="flow.picked?.id === s.id"
+                class="mss-card"
+                @click="pick(s)"
+                @keydown.enter.prevent="pick(s)"
+                @keydown.space.prevent="pick(s)"
+              >
+                <template #media>
+                  <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
+                </template>
+                <template v-if="flow.picked?.id === s.id || s.tag === 'Recommended'" #top-left>
+                  <span v-if="flow.picked?.id === s.id" class="mss-card-check"
+                    ><Check :size="12" :stroke-width="3"
+                  /></span>
+                  <span v-if="s.tag === 'Recommended'" class="mss-card-badge">Recommended</span>
+                </template>
+                <template #bottom-right>
+                  <span v-if="s.credits" class="mss-card-badge"
+                    ><Crown :size="11" :stroke-width="2.5" />Requires credits</span
+                  >
+                  <span v-else class="mss-card-badge tabular-nums">~{{ s.gb }} GB</span>
+                </template>
+                <span class="truncate text-ui font-medium text-base-foreground">{{
+                  starterName(s)
+                }}</span>
+                <span class="truncate text-ui text-subtle-foreground">{{ starterTask(s) }}</span>
+              </MediaCard>
+            </div>
           </div>
           <Checkbox v-if="!flow.takeover" v-model="dontShowTemplates"
             >Don't show this template step again</Checkbox
           >
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" class="mr-auto" @click="flow.step = 'setup'"
+          <Button variant="ghost" size="lg" @click="flow.step = 'setup'"
             ><ArrowLeft :size="14" />Back</Button
           >
-          <span class="mss-foot-sum tabular-nums">{{ pickedGb }} GB download</span>
+          <!-- Today's block: the picked workflow's models don't fit. -->
+          <span v-if="starterBlocked" class="mx-2 grid min-w-0 flex-1 text-ui">
+            <span class="font-medium text-base-foreground"
+              >Not Enough Space for Template Models</span
+            >
+            <span class="text-subtle-foreground"
+              >Needs ~{{ pickedGb }} GB, only {{ freeLabel(free) }} free. Free up space or pick a
+              lighter workflow.</span
+            >
+          </span>
+          <template v-else>
+            <span class="flex-1"></span>
+            <span class="mss-foot-sum tabular-nums">{{ pickedGb }} GB download</span>
+          </template>
           <Button size="lg" @click="installWith(null)">Skip &amp; Install</Button>
-          <Button variant="primary" size="lg" @click="installWith(flow.picked)">Install</Button>
+          <Button
+            variant="primary"
+            size="lg"
+            :disabled="starterBlocked"
+            @click="installWith(flow.picked)"
+            >Install</Button
+          >
         </footer>
       </template>
 
