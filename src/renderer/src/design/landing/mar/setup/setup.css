@@ -1699,6 +1699,11 @@
   content: none;
 }
 
+/* Three across, at the size Explore's app cards have on the Home. */
+.mss-pick .mss-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
 /* Workflow step: Explore's card (explore/MarExplore.vue), as a pick. A flat
  * surface, the picture, then the name over its task and download. */
 :root .proto-ui.proto-ui.proto-ui .mss-wf {
@@ -1709,14 +1714,15 @@
   padding: 4px;
   border-radius: var(--radius-card);
   background: oklch(0.6 0 0 / 0.07);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   text-align: left;
   outline: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-wf:hover {
-  background: oklch(0.6 0 0 / 0.11);
+  background: oklch(0.6 0 0 / 0.12);
 }
 :root .proto-ui.proto-ui.proto-ui .mss-wf[aria-checked='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 13%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mss-wf:focus-visible {
@@ -1727,7 +1733,7 @@
   display: block;
   overflow: hidden;
   border-radius: var(--radius-control);
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
 }
 .mss-wf-media img {
   width: 100%;
@@ -1740,10 +1746,10 @@
 }
 .mss-wf-badge {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 8px;
+  left: 8px;
   display: inline-flex;
-  height: 20px;
+  height: 22px;
   align-items: center;
   gap: 4px;
   padding: 0 7px;
@@ -1757,8 +1763,8 @@
 }
 .mss-wf-check {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 8px;
+  right: 8px;
   display: none;
   width: 20px;
   height: 20px;
@@ -1774,7 +1780,7 @@
 .mss-wf-text {
   display: grid;
   min-width: 0;
-  padding: 10px 6px 6px;
+  padding: 10px 8px 8px;
   font-size: var(--text-ui);
   line-height: 20px;
 }
@@ -1793,8 +1799,8 @@
 }
 .mss-wf-badge.is-size {
   top: auto;
-  right: 6px;
-  bottom: 6px;
+  right: 8px;
+  bottom: 8px;
   left: auto;
 }
 @media (prefers-reduced-motion: reduce) {

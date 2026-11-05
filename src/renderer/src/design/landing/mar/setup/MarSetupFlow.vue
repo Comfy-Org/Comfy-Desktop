@@ -134,6 +134,12 @@ const THUMBS = import.meta.glob<string>('../assets/templates/*.webp', {
 })
 const starterImg = (s: Starter): string =>
   (s.thumb && THUMBS[`../assets/templates/${s.thumb}.webp`]) || imgUrl(s.img)
+// Three to a tab, so the cards have Explore's room: the recommended one, a
+// lighter one and the one that runs on credits.
+const shownStarters = computed(() => {
+  const all = STARTERS[flow.tab]
+  return [...all.filter((s) => !s.credits).slice(0, 2), ...all.filter((s) => s.credits)]
+})
 // Today's card: the model's name over its task, split from the title.
 const starterName = (s: Starter): string => s.title.split(': ')[0] ?? s.title
 const starterTask = (s: Starter): string => s.title.split(': ')[1] ?? s.task ?? ''
@@ -679,7 +685,7 @@ function rowState(i: number): string {
                  Recommended, Requires credits, the task and the download. -->
             <div class="mss-cards" role="radiogroup" aria-label="Choose a starter workflow">
               <button
-                v-for="s in STARTERS[flow.tab]"
+                v-for="s in shownStarters"
                 :key="s.id"
                 type="button"
                 role="radio"
