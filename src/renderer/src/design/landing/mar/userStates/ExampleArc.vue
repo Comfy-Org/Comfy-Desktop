@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
@@ -11,8 +11,8 @@ import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
  * page. The one in front faces you, flat, with a thin ring; each card
  * carries its own name and run time at the top, so nothing below it moves
  * when you flip. The arc wraps around and turns on a spring: ← →, a click
- * on a side card, a drag or a sideways scroll. Pointing at a card (or
- * focusing it) shows its Run button at the bottom; Enter runs the front one.
+ * on a side card, a drag or a sideways scroll. Pointing at the front card
+ * (or focusing it) shows its Run button at the bottom; Enter runs it.
  * Run never says where: on Desktop it runs on Desktop, on Cloud on Cloud.
  */
 const N = EXAMPLES.length
@@ -95,11 +95,6 @@ function pick(i: number): void {
   if (moved) return
   if (i === active.value) runExample(EXAMPLES[i]!)
   else void turn(Math.round(offset(i) + pos.value - target.value))
-}
-/** The Run button on a cover runs that one, front or side; anywhere else on a
- *  side cover only brings it to the front. */
-function runFrom(i: number): void {
-  if (!moved) runExample(EXAMPLES[i]!)
 }
 function key(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') void turn(-1, true)
@@ -210,22 +205,9 @@ function wheel(e: WheelEvent): void {
           <span class="mar-arc-meta">{{ x.kind }} · {{ x.runs }}</span>
         </span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true" @click.stop="runFrom(i)">Run</span>
+        <span class="mar-arc-go" aria-hidden="true">Run</span>
       </button>
     </div>
-
-    <!-- For a mouse wheel, which can't swipe sideways: shown on hover. -->
-    <button
-      type="button"
-      class="mar-arc-nav is-prev"
-      aria-label="Previous example"
-      @click="turn(-1)"
-    >
-      <ChevronLeft :size="18" />
-    </button>
-    <button type="button" class="mar-arc-nav is-next" aria-label="Next example" @click="turn(1)">
-      <ChevronRight :size="18" />
-    </button>
 
     <div class="mar-arc-actions">
       <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
@@ -238,44 +220,6 @@ function wheel(e: WheelEvent): void {
 <style scoped>
 .mar-arc {
   position: relative;
-}
-/* In the gap between the second card and the one fading out. */
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
-  position: absolute;
-  top: 170px;
-  z-index: 10;
-  display: flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
-  color: var(--color-base-foreground);
-  opacity: 0;
-  backdrop-filter: blur(12px);
-  transform: translateY(-50%);
-  transition:
-    opacity 160ms ease,
-    background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-prev {
-  left: max(0px, calc(50% - 372px));
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-next {
-  right: max(0px, calc(50% - 372px));
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc:hover .mar-arc-nav,
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:focus-visible {
-  opacity: 1;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
-}
-@media (hover: none) {
-  :root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
-    opacity: 1;
-  }
 }
 .mar-arc-stage {
   position: relative;
@@ -346,8 +290,8 @@ function wheel(e: WheelEvent): void {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-/* Run at the bottom: a white button over a soft scrim, shown on the card
-   you point at (or focus). */
+/* Run at the bottom: a white button over a soft scrim, shown on the front
+   card when you point at it (or focus it). */
 .mar-arc-scrim {
   position: absolute;
   inset: 0;
@@ -384,8 +328,8 @@ function wheel(e: WheelEvent): void {
     transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
     background-color 160ms ease;
 }
-.mar-arc-card:hover .mar-arc-go,
-.mar-arc-card:focus-visible .mar-arc-go {
+.mar-arc-card.is-front:hover .mar-arc-go,
+.mar-arc-card.is-front:focus-visible .mar-arc-go {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -396,8 +340,8 @@ function wheel(e: WheelEvent): void {
 .mar-arc-card .mar-arc-go:active {
   transform: translateY(0) scale(0.98);
 }
-.mar-arc-card:hover .mar-arc-scrim,
-.mar-arc-card:focus-visible .mar-arc-scrim {
+.mar-arc-card.is-front:hover .mar-arc-scrim,
+.mar-arc-card.is-front:focus-visible .mar-arc-scrim {
   opacity: 1;
 }
 .mar-arc-actions {
