@@ -43,8 +43,9 @@ export type AppRun =
 
 export const APP_RUNS: Record<string, AppRun> = {
   's-image': { kind: 'local', download: '12 GB' },
-  's-edit': { kind: 'split', download: '4 GB', local: 'Prepare the image', cloud: 'Edit it' },
-  's-video': { kind: 'cloud' }
+  's-reshoot': { kind: 'split', download: '4 GB', local: 'Prepare the clip', cloud: 'Re-shoot it' },
+  's-cine': { kind: 'cloud' },
+  's-jutsu': { kind: 'cloud' }
 }
 
 /** Models already downloaded, for this window. */

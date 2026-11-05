@@ -493,53 +493,62 @@ const describeField = (placeholder: string): Field => ({
   on: true,
   placeholder
 })
-/** The starter apps on Home: named by what they make, never by a model,
- *  three inputs at most. */
+/** The starter apps on Home: the apps on comfy.org, plus Image Generator as
+ *  the fourth. Costs are samples. */
 export const STARTER_APPS: LibApp[] = [
+  {
+    ...hub(
+      's-cine',
+      'Cinematic Studio',
+      'Direct your shot like a film set',
+      'app~app-cinematic-studio',
+      'Comfy',
+      0.31
+    ),
+    fields: [describeField('A woman on a rooftop at golden hour, slow push in')]
+  },
+  {
+    ...hub(
+      's-reshoot',
+      'Re-shoot a video',
+      'Re-shoot from any angle',
+      'app~app-reshoot-a-video',
+      'Comfy',
+      0.31
+    ),
+    fields: [{ id: 'clip', label: 'Your clip', kind: 'image', node: 'Load Video #1', on: true }]
+  },
+  {
+    ...hub(
+      's-jutsu',
+      'Openjutsu',
+      'Swap a character in a video',
+      'app~app-openjutsu',
+      'Comfy',
+      0.31
+    ),
+    fields: [
+      { id: 'clip', label: 'Video', kind: 'image', node: 'Load Video #1', on: true },
+      { id: 'photo', label: 'Character image', kind: 'image', node: 'Load Image #2', on: true },
+      describeField('Optional: add character details')
+    ]
+  },
   {
     ...hub(
       's-image',
       'Image Generator',
-      'Describe it, get an image.',
+      'Describe it, get an image',
       'image_z_image_turbo',
       'Comfy',
       0.04
     ),
     fields: [describeField('A ceramic lamp on a linen table')]
-  },
-  {
-    ...hub(
-      's-edit',
-      'Image Edit',
-      'Change or restyle a picture.',
-      'api_google_nano_banana2_image_edit',
-      'Comfy',
-      0.05
-    ),
-    fields: [
-      { id: 'photo', label: 'Image', kind: 'image', node: 'Load Image #1', on: true },
-      describeField('Make it golden hour')
-    ]
-  },
-  {
-    ...hub(
-      's-video',
-      'Video Generator',
-      'From words or a picture.',
-      'video_ltx2_5_i2v',
-      'Comfy',
-      0.31
-    ),
-    fields: [
-      describeField('Slow push in on the product'),
-      { id: 'photo', label: 'Image', kind: 'image', node: 'Load Image #1', on: true }
-    ]
   }
 ]
 
 export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
 /** M3 of the Apps PRD: new apps join the picker without a Desktop update. */
-export const MORE_APPS = EXPLORE_APPS.slice(0, 3)
+export const MORE_APPS = EXPLORE_APPS.slice(0, 4)
 
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
