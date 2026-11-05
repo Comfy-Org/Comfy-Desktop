@@ -1,25 +1,19 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed } from 'vue'
+import { look } from '../../look'
+import { WIRE } from './imagery'
 
 /**
- * A workflow's cover as its own gradient (UI Playground › Workflow cover):
- * soft colour clouds that fill the image's space, so each workflow is told
- * apart at a glance. The name picks the colours and where they sit, so it
- * always gets the same one.
+ * A workflow's cover as its own gradient (UI Playground › Workflow cover,
+ * DS › Brand imagery): one link colour, as every picture we make, in a soft
+ * monochrome wash with the trio (brandMotif.ts) barely there across it, so
+ * it reads as Comfy before you notice why. The name picks the colour, where
+ * the light sits and where the slabs fall, so it always gets the same one.
  */
 const { name = '' } = defineProps<{ name?: string }>()
 
-// Base, then the colours that drift over it.
-const PALETTES = [
-  ['#0b7fe8', '#7fd4ff', '#e8f8ff', '#0a4fd0'],
-  ['#0d2547', '#2f6fc4', '#12335f', '#5b9be0'],
-  ['#c9b8f0', '#f0391e', '#5a35a8', '#ffffff'],
-  ['#0f5a4a', '#37d29a', '#d8ffe9', '#0a3d52'],
-  ['#ff7a18', '#ffd25e', '#ff3d6e', '#fff2d6'],
-  ['#3b1a78', '#b14dff', '#ff7ad9', '#1b0f4a'],
-  ['#f2c6d8', '#ff5f8f', '#ffffff', '#b43bd0'],
-  ['#14213d', '#fca311', '#e5533d', '#0f2a57']
-]
+/** The calm link colours: red and yellow would shout from a grid of covers. */
+const HUES = [WIRE.model, WIRE.image, WIRE.mask, WIRE.conditioning, WIRE.latent]
 
 const hash = computed(() => {
   let h = 2166136261
@@ -27,34 +21,32 @@ const hash = computed(() => {
   return h >>> 0
 })
 /** A repeatable number from 0 to 1, one per use of the name. */
-const pick = (n: number): number =>
-  (Math.imul(hash.value ^ (n * 2654435761), 2246822519) >>> 8) / 2 ** 24
+const pick = (n: number): number => {
+  let h = Math.imul(hash.value + n * 2654435761, 2246822519)
+  h = Math.imul(h ^ (h >>> 15), 3266489917)
+  return ((h ^ (h >>> 13)) >>> 0) / 2 ** 32
+}
 
-const palette = computed(() => PALETTES[hash.value % PALETTES.length]!)
-const background = computed(() => {
-  const [base, ...clouds] = palette.value
-  const layers = clouds.map((color, i) => {
-    const x = Math.round(pick(i * 3 + 1) * 100)
-    const y = Math.round(pick(i * 3 + 2) * 100)
-    const size = Math.round(38 + pick(i * 3 + 3) * 34)
-    return `radial-gradient(circle at ${x}% ${y}%, ${color} 0%, transparent ${size}%)`
-  })
-  return [...layers, `linear-gradient(${base}, ${base})`].join(', ')
+const paint = computed(() => {
+  const hue = HUES[Math.floor(pick(0) * HUES.length)]!
+  const dark = look.theme !== 'light'
+  const ground = dark ? '#0f0f12' : '#f6f6f8'
+  const x = Math.round(15 + pick(1) * 70)
+  const y = Math.round(pick(2) * 45)
+  return {
+    '--wfg-base': `color-mix(in oklch, ${hue} ${dark ? 10 : 14}%, ${ground})`,
+    '--wfg-glow': `color-mix(in oklch, ${hue} ${dark ? 34 : 40}%, ${ground})`,
+    '--wfg-slab': dark ? 'rgb(255 255 255 / 0.05)' : 'rgb(255 255 255 / 0.3)',
+    '--wfg-x': `${x}%`,
+    '--wfg-y': `${y}%`,
+    '--wfg-trio': `${Math.round(-6 + pick(3) * 56)}%`
+  }
 })
-const seed = computed(() => hash.value % 97)
-const warp = useId()
 </script>
 
 <template>
-  <div class="wfg" aria-hidden="true">
-    <svg class="wfg-defs" width="0" height="0">
-      <filter :id="warp" x="-20%" y="-20%" width="140%" height="140%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.007" numOctaves="2" :seed />
-        <feDisplacementMap in="SourceGraphic" scale="90" />
-        <feGaussianBlur stdDeviation="7" />
-      </filter>
-    </svg>
-    <div class="wfg-paint" :style="{ background, filter: `url(#${warp})` }" />
+  <div class="wfg" :style="paint" aria-hidden="true">
+    <span class="wfg-trio"><i /><i /><i /></span>
   </div>
 </template>
 
@@ -64,12 +56,32 @@ const warp = useId()
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background:
+    radial-gradient(90% 110% at var(--wfg-x) var(--wfg-y), var(--wfg-glow), transparent 72%),
+    var(--wfg-base);
 }
-.wfg-defs {
+/* The C mark's three slabs at 16°, far larger than the card and fading out
+   as they fall: seen as light, not as a shape. */
+.wfg-trio {
   position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: var(--wfg-trio);
+  display: flex;
+  width: 62%;
+  gap: 6%;
+  mask-image: linear-gradient(to bottom, #000, transparent 88%);
+  transform: skewX(-16deg);
 }
-.wfg-paint {
-  position: absolute;
-  inset: -18%;
+.wfg-trio > i {
+  flex: 1;
+  border-radius: 14px;
+  background: var(--wfg-slab);
+}
+.wfg-trio > i:nth-child(2) {
+  opacity: 0.7;
+}
+.wfg-trio > i:nth-child(3) {
+  opacity: 0.4;
 }
 </style>

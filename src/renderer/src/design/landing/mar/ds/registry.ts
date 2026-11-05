@@ -194,7 +194,8 @@ export const PAGES: DsPage[] = [
     label: 'Brand imagery',
     group: 'Foundations',
     title: 'Brand imagery',
-    source: 'mar/brand/imagery.ts, GradedImage.vue; mar/shell/MarWires.vue, homeBackgrounds.css',
+    source:
+      'mar/brand/imagery.ts, GradedImage.vue, WorkflowGradient.vue; mar/shell/MarWires.vue, homeBackgrounds.css',
     use: 'Any picture we make (tiles, covers, Home backgrounds): one grade, the link colours, one grain.',
     component: lazy(() => import('./pages/BrandImageryPage.vue'))
   },

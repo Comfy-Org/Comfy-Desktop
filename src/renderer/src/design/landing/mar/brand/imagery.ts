@@ -30,6 +30,14 @@ export const LATENT_GRADE: Grade = {
   light: 'oklch(0.87 0.075 350)'
 }
 
+/** The Silver grade: graphite in the shadows, near white in the light, hard
+ *  contrast and no hue. For pictures that sit in the chrome (the login strip),
+ *  where the Latent grade's colour would be the loudest thing in the sidebar. */
+export const SILVER_GRADE: Grade = {
+  shadow: 'oklch(0.14 0.004 285)',
+  light: 'oklch(0.97 0.003 85)'
+}
+
 /** One wire colour as a monochrome tint, for cards that each own a hue
  *  (use cases): a deep shade of it in the shadows, a pale one in the light. */
 export function tint(wire: Wire): Grade {

@@ -87,6 +87,7 @@ function openCloud(): void {
   color: var(--color-muted-foreground);
 }
 .mar-start-go {
+  margin-right: 8px;
   color: var(--color-subtle-foreground);
   transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -7,10 +7,11 @@ import hillsSunset from '../assets/hills-sunset.jpg'
 import portraitGarden from '../assets/portrait-garden.jpg'
 import portraitSun from '../assets/portrait-sun.jpg'
 import GradedImage from '../brand/GradedImage.vue'
+import { SILVER_GRADE } from '../brand/imagery'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
  *  SignInCard (Nav options › Account), restyled. A strip of outputs in the
- *  Latent grade (DS › Brand imagery) shows what logging in is for; on hover
+ *  Silver grade (DS › Brand imagery) shows what logging in is for; on hover
  *  it drifts. On the rail it's one icon. */
 const { open = true } = defineProps<{ open?: boolean }>()
 
@@ -21,14 +22,11 @@ const STRIP = [portraitSun, hillsSunset, portraitGarden]
   <div v-if="open" class="mar-signin">
     <div class="mar-signin-strip">
       <span v-for="src in STRIP" :key="src" class="mar-signin-shot">
-        <GradedImage :src="src" class="size-full" />
+        <GradedImage :src="src" :grade="SILVER_GRADE" class="size-full" />
       </span>
       <span class="mar-signin-mark"><ComfyCLogo :size="14" /></span>
     </div>
-    <div class="px-2 pt-2.5 pb-3">
-      <p class="font-medium text-base-foreground">Log in to Comfy</p>
-      <p class="mt-0.5 text-subtle-foreground">Sync your work and run it on Comfy Cloud.</p>
-    </div>
+    <p class="px-2 pt-2.5 pb-3 font-medium text-base-foreground">Sync and run on Comfy Cloud</p>
     <Button variant="primary" block @click="hostActions.signIn()">Log in</Button>
   </div>
   <button
