@@ -167,7 +167,6 @@ const recent = computed(() =>
             :key="r.w.id"
             :src="r.src"
             :title="r.title"
-            :category="r.w.category"
             :meta="r.env?.name ?? ''"
             :right="r.w.modified"
             @open="r.env && hostActions.launch(r.env, r.w.name)"

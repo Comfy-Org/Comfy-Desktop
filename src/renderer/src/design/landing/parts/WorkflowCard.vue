@@ -88,12 +88,7 @@ function open(): void {
     </template>
     <template #media>
       <!-- Can show what the workflow makes instead. -->
-      <WorkflowCover
-        v-if="isBranded(cover.id)"
-        :kind="cover.id"
-        :category="wf.category"
-        :name="wf.name"
-      />
+      <WorkflowCover v-if="isBranded(cover.id)" :name="wf.name" />
       <img
         v-else-if="cover.id === 'output'"
         :src="thumb(wf.thumbId)"

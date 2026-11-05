@@ -227,7 +227,7 @@ function lines(w: MarWorkflow): MenuLine[] {
         @star="workflows.star(w.id)"
       >
         <template v-if="isBranded(cover.id)" #media>
-          <WorkflowCover :kind="cover.id" :category="w.category" :name="w.name" />
+          <WorkflowCover :name="w.name" />
         </template>
       </MarItem>
       <!-- A project's grid ends on the way to add more. -->

@@ -1,22 +1,16 @@
 import { reactive, watch } from 'vue'
 
-/** Workflow cards' cover (UI Playground › Workflow cover): the graph, as
- *  Pablo has it, the output it makes, or, since workflows carry no picture
- *  yet, one of the brand's generic covers (brand/WorkflowCover.vue). */
-export type BrandedCover = 'wire' | 'trio' | 'latent' | 'mark'
-export type Cover = 'graph' | 'output' | BrandedCover
+/** Workflow cards' cover (UI Playground › Workflow cover): the tilted
+ *  canvas (brand/WorkflowCover.vue), since workflows carry no picture yet,
+ *  or the image the workflow makes. */
+export type Cover = 'canvas' | 'output'
 
 export const COVERS: { value: Cover; label: string }[] = [
-  { value: 'graph', label: 'Graph' },
-  { value: 'output', label: 'Output' },
-  { value: 'wire', label: 'Wire' },
-  { value: 'trio', label: 'Trio' },
-  { value: 'latent', label: 'Latent' },
-  { value: 'mark', label: 'Signed' }
+  { value: 'canvas', label: 'Canvas' },
+  { value: 'output', label: 'Image' }
 ]
 
-const BRANDED: Cover[] = ['wire', 'trio', 'latent', 'mark']
-export const isBranded = (c: Cover): c is BrandedCover => BRANDED.includes(c)
+export const isBranded = (c: Cover): boolean => c === 'canvas'
 
 const KEY = 'comfy.design.mar.cover'
 
@@ -24,9 +18,9 @@ export const cover = reactive<{ id: Cover }>({
   id: (() => {
     try {
       const v = localStorage.getItem(KEY) as Cover | null
-      return v && COVERS.some((c) => c.value === v) ? v : 'graph'
+      return v && COVERS.some((c) => c.value === v) ? v : 'canvas'
     } catch {
-      return 'graph'
+      return 'canvas'
     }
   })()
 })
