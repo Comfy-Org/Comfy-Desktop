@@ -705,21 +705,6 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
   }
-  /* Explore's media chip. */
-  .mss-card-badge {
-    display: inline-flex;
-    height: 20px;
-    align-items: center;
-    gap: 4px;
-    padding: 0 7px;
-    border-radius: 999px;
-    background: var(--color-media-overlay);
-    backdrop-filter: blur(12px);
-    color: rgb(255 255 255 / 0.92);
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1;
-  }
   .mss-card {
     min-width: 0;
   }
@@ -1684,8 +1669,21 @@
   justify-content: flex-start;
   gap: 10px;
 }
+/* The text takes the room, so the link holds its place beside the exit
+ * while the lines rotate; the icon sits on the title's line. */
 .mss-foot .mss-pitch .mss-pitch-line {
-  flex: 0 1 auto;
+  flex: 1 1 0;
+}
+.mss-foot .mss-pitch > svg {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.mss-foot .mss-pitch .mss-link {
+  margin-inline: 8px 4px;
+}
+/* A ghost exit: its label ends on the column's right edge. */
+:root .proto-ui.proto-ui.proto-ui.mss-in-takeover .mar-wizard-foot > .mss-foot-exit {
+  margin-right: -16px;
 }
 /* Two lines, title over body: production's cards are too long for one. */
 .mss-foot .mss-pitch .mss-pitch-line {
@@ -1699,6 +1697,110 @@
 }
 .mss-foot .mss-pitch .mss-pitch-sep::before {
   content: none;
+}
+
+/* Workflow step: Explore's card (explore/MarExplore.vue), as a pick. A flat
+ * surface, the picture, then the name over its task and download. */
+:root .proto-ui.proto-ui.proto-ui .mss-wf {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: var(--radius-card);
+  background: oklch(0.6 0 0 / 0.07);
+  text-align: left;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf:hover {
+  background: oklch(0.6 0 0 / 0.11);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf[aria-checked='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mss-wf-media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  aspect-ratio: 4 / 3;
+}
+.mss-wf-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 500ms ease;
+}
+.mss-wf:hover .mss-wf-media img {
+  transform: scale(1.04);
+}
+.mss-wf-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--color-media-overlay);
+  backdrop-filter: blur(12px);
+  color: rgb(255 255 255 / 0.92);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+.mss-wf-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background-color: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+}
+.mss-wf[aria-checked='true'] .mss-wf-check {
+  display: inline-flex;
+}
+.mss-wf-text {
+  display: grid;
+  min-width: 0;
+  padding: 10px 6px 6px;
+  font-size: var(--text-ui);
+  line-height: 20px;
+}
+.mss-wf-name {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-wf-task {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-wf-badge.is-size {
+  top: auto;
+  right: 6px;
+  bottom: 6px;
+  left: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mss-wf-media img {
+    transition: none;
+  }
 }
 
 /* The first screen's title and lead match every other step's. */

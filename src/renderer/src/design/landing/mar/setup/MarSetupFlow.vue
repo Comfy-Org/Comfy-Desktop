@@ -26,7 +26,6 @@ import Button from '../../ui/Button.vue'
 import Checkbox from '../../ui/Checkbox.vue'
 import DialogContent from '../../ui/DialogContent.vue'
 import Input from '../../ui/Input.vue'
-import MediaCard from '../../ui/MediaCard.vue'
 import Select from '../../ui/Select.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import en from '@locales/en.json'
@@ -128,6 +127,13 @@ const TABS = [
 function pick(s: Starter): void {
   flow.picked = flow.picked?.id === s.id ? null : s
 }
+// Template pictures where the workflow has one; a stock photo otherwise.
+const THUMBS = import.meta.glob<string>('../assets/templates/*.webp', {
+  eager: true,
+  import: 'default'
+})
+const starterImg = (s: Starter): string =>
+  (s.thumb && THUMBS[`../assets/templates/${s.thumb}.webp`]) || imgUrl(s.img)
 // Today's card: the model's name over its task, split from the title.
 const starterName = (s: Starter): string => s.title.split(': ')[0] ?? s.title
 const starterTask = (s: Starter): string => s.title.split(': ')[1] ?? s.task ?? ''
@@ -672,37 +678,33 @@ function rowState(i: number): string {
             <!-- Explore's template card, with what today's step says on it:
                  Recommended, Requires credits, the task and the download. -->
             <div class="mss-cards" role="radiogroup" aria-label="Choose a starter workflow">
-              <MediaCard
+              <button
                 v-for="s in STARTERS[flow.tab]"
                 :key="s.id"
+                type="button"
                 role="radio"
-                :selected="flow.picked?.id === s.id"
                 :aria-checked="flow.picked?.id === s.id"
-                class="mss-card"
+                class="mss-wf"
                 @click="pick(s)"
-                @keydown.enter.prevent="pick(s)"
-                @keydown.space.prevent="pick(s)"
               >
-                <template #media>
-                  <img :src="imgUrl(s.img)" alt="" loading="lazy" class="mss-card-img" />
-                </template>
-                <template v-if="flow.picked?.id === s.id || s.tag === 'Recommended'" #top-left>
-                  <span v-if="flow.picked?.id === s.id" class="mss-card-check"
-                    ><Check :size="12" :stroke-width="3"
-                  /></span>
-                  <span v-if="s.tag === 'Recommended'" class="mss-card-badge">Recommended</span>
-                </template>
-                <template #bottom-right>
-                  <span v-if="s.credits" class="mss-card-badge"
+                <span class="mss-wf-media">
+                  <img :src="starterImg(s)" alt="" loading="lazy" />
+                  <span v-if="s.tag === 'Recommended'" class="mss-wf-badge">Recommended</span>
+                  <span v-else-if="s.credits" class="mss-wf-badge"
                     ><Crown :size="11" :stroke-width="2.5" />Requires credits</span
                   >
-                  <span v-else class="mss-card-badge tabular-nums">~{{ s.gb }} GB</span>
-                </template>
-                <span class="truncate text-ui font-medium text-base-foreground">{{
-                  starterName(s)
-                }}</span>
-                <span class="truncate text-ui text-subtle-foreground">{{ starterTask(s) }}</span>
-              </MediaCard>
+                  <span v-if="!s.credits" class="mss-wf-badge is-size tabular-nums"
+                    >~{{ s.gb }} GB</span
+                  >
+                  <span class="mss-wf-check" aria-hidden="true"
+                    ><Check :size="12" :stroke-width="3"
+                  /></span>
+                </span>
+                <span class="mss-wf-text">
+                  <span class="mss-wf-name">{{ starterName(s) }}</span>
+                  <span class="mss-wf-task">{{ starterTask(s) }}</span>
+                </span>
+              </button>
             </div>
           </div>
           <Checkbox v-if="!flow.takeover" v-model="dontShowTemplates"
@@ -848,6 +850,7 @@ function rowState(i: number): string {
               v-if="flow.takeover"
               variant="ghost"
               size="lg"
+              class="mss-foot-exit"
               @click="flow.confirmCancel = true"
               >Cancel install</Button
             >

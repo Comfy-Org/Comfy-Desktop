@@ -181,6 +181,8 @@ export interface Starter {
   task?: string
   /** Image under mar/assets. */
   img: string
+  /** Its template picture under mar/assets/templates, where there is one. */
+  thumb?: string
 }
 
 /** The starter picker's four per tab (Desktop's curated list, sizes as shipped). */
@@ -188,6 +190,7 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
   image: [
     {
       id: 'zit',
+      thumb: 'image_z_image_turbo',
       title: 'Z-Image-Turbo',
       task: 'Text to Image',
       gb: 20.8,
@@ -196,15 +199,23 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
     },
     {
       id: 'sdxl',
+      thumb: 'image_krea2_turbo_t2i',
       title: 'SDXL Turbo',
       task: 'Text to Image',
       gb: 6.9,
       tag: 'Lightest',
       img: 'hills-sunset.jpg'
     },
-    { id: 'pixeldit', title: 'PixelDiT: Text to Image', gb: 7.8, img: 'lake-fog.jpg' },
+    {
+      id: 'pixeldit',
+      thumb: 'image_flux2',
+      title: 'PixelDiT: Text to Image',
+      gb: 7.8,
+      img: 'lake-fog.jpg'
+    },
     {
       id: 'seedream',
+      thumb: 'api_google_nano_banana2_image_edit',
       title: 'Seedream 5.0 Pro: Image Edit',
       gb: 0,
       credits: true,
@@ -214,6 +225,7 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
   video: [
     {
       id: 'minimax',
+      thumb: 'video_minimax_h3_i2v',
       title: 'MiniMax H3: Text to Video',
       gb: 56.9,
       tag: 'Recommended',
@@ -221,6 +233,7 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
     },
     {
       id: 'wan-inp',
+      thumb: 'video_wan2_2_14B_i2v',
       title: 'Wan 2.1 Inpainting',
       task: 'Video Inpainting',
       gb: 11.4,
@@ -228,6 +241,7 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
     },
     {
       id: 'wan-cam',
+      thumb: 'video_ltx2_5_i2v',
       title: 'Wan 2.1 Fun Camera 1.3B',
       task: 'Camera Control',
       gb: 11.5,
@@ -244,6 +258,7 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
   '3d': [
     {
       id: 'triposplat',
+      thumb: '3d_pixal3d_trellis2_image_to_model',
       title: 'TripoSplat: Image to Gaussian Splat',
       gb: 4.0,
       tag: 'Recommended',
