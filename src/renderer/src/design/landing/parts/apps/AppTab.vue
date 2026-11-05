@@ -50,7 +50,10 @@ const { id } = defineProps<{ id: string }>()
 const app = computed(() => libApp(id)!)
 const as = computed<PreviewAs | undefined>(() => appsProto.preview[id])
 const starter = computed(() => isStarter(id))
-const output = computed(() => (id === 's-image' ? 'image' : 'video'))
+// Home's examples (EXAMPLE_APPS) make images too, except the video one.
+const output = computed(() =>
+  id === 's-image' || (id.startsWith('e-') && id !== 'e-video') ? 'image' : 'video'
+)
 /** The stages of the PRD (UI Playground › Apps stage): M2 says where it
  *  runs, and a fully local run costs nothing; M3 adds more to tweak. */
 const staged = computed(() => starter.value && appsStage.id !== 'm1')

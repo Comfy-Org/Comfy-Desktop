@@ -144,16 +144,22 @@ const emit = defineEmits<{ action: []; second: [] }>()
   height: 32px;
   place-items: center;
   border-radius: 999px;
-  background: var(--color-inverted-background);
+  /* Mixed on the page's colour, so it stays solid over the fan. */
+  background: color-mix(
+    in oklch,
+    var(--color-base-foreground) 12%,
+    var(--color-content-background)
+  );
   /* The page's colour as a ring: the badge is cut out of the fan. */
   box-shadow: 0 0 0 4px var(--color-content-background);
-  color: var(--color-inverted-foreground);
+  color: var(--color-base-foreground);
   transform: translateX(-50%);
 }
 .mar-empty-art.is-bare .mar-empty-badge {
   bottom: 0;
   width: 48px;
   height: 48px;
+  box-shadow: none;
 }
 .mar-empty.is-error .mar-empty-badge {
   background: var(--color-card-background);

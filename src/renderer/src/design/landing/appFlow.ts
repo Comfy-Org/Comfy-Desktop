@@ -493,6 +493,52 @@ const describeField = (placeholder: string): Field => ({
   on: true,
   placeholder
 })
+/** What Home's examples open once apps are in (mar/userStates/examples.ts):
+ *  each example as the app, under the name the card gave it. Not listed in
+ *  Explore. Costs are samples. */
+export const EXAMPLE_APPS: LibApp[] = [
+  hub(
+    'e-background',
+    'Remove a background',
+    'A clean cutout in one run.',
+    'template_product_placement~start-remove-a-background',
+    'Comfy',
+    0.02
+  ),
+  hub(
+    'e-video',
+    'Turn a photo into video',
+    'A still becomes a 5 s clip.',
+    'video_ltx2_5_i2v~clip-eye',
+    'Comfy',
+    0.31
+  ),
+  hub(
+    'e-reshoot',
+    'Reshoot your product',
+    'Put your product in a new scene.',
+    'api_google_nano_banana2_image_edit~start-reshoot-your-product',
+    'Comfy',
+    0.06
+  ),
+  hub(
+    'e-upscale',
+    'Upscale to 4K',
+    'Any render to clean 4K.',
+    'utility_seedvr2_image_upscale~start-upscale-to-4k',
+    'Comfy',
+    0.04
+  ),
+  hub(
+    'e-relight',
+    'Relight a portrait',
+    'New light on any portrait.',
+    'image_z_image_turbo~start-relight-a-portrait',
+    'Comfy',
+    0.04
+  )
+]
+
 /** The starter apps, first in Explore: the apps on comfy.org, plus Image
  *  Generator as the fourth. Costs are samples. */
 export const STARTER_APPS: LibApp[] = [
@@ -588,7 +634,8 @@ EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
 export const libApp = (id: string): LibApp | undefined =>
   LIB.find((a) => a.id === id) ??
   EXPLORE_APPS.find((a) => a.id === id) ??
-  STARTER_APPS.find((a) => a.id === id)
+  STARTER_APPS.find((a) => a.id === id) ??
+  EXAMPLE_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {
