@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   Camera,
-  ChevronDown,
+  Ellipsis,
   CircleStop,
   Cloud,
   CloudUpload,
@@ -421,7 +421,9 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         />
         <MarItemMenu v-if="k !== 'managed' || remote" :lines="moreLines" label="More">
           <template #trigger>
-            <Button variant="secondary">More<ChevronDown :size="14" /></Button>
+            <Button variant="secondary" size="icon" aria-label="More"
+              ><Ellipsis :size="16"
+            /></Button>
           </template>
         </MarItemMenu>
       </template>

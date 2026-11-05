@@ -10,6 +10,7 @@ import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
 import { COVERS, cover } from './cover'
+import { TORCH_PICKS, torchPick } from './build/torchPick'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
@@ -133,6 +134,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'buildPage', show: () => when.buildPage.value },
+  { id: 'torchPick', show: () => when.torchPick.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -294,6 +296,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('buildPage')" label="Build page">
             <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />
+          </Row>
+          <Row :show="shows('torchPick')" label="Selected PyTorch">
+            <Seg v-model="torchPick.id" label="Selected PyTorch" :options="TORCH_PICKS" />
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
