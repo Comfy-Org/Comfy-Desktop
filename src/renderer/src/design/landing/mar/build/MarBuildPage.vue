@@ -2,17 +2,30 @@
 import { computed, ref, watch } from 'vue'
 import {
   Camera,
+  ChevronDown,
+  CircleStop,
   Cloud,
   CloudUpload,
+  CopyPlus,
   Download,
+  EyeOff,
   Folder,
+  FolderOpen,
   Laptop,
+  Pencil,
+  Play,
+  Repeat2,
   Rocket,
+  RotateCcw,
   RotateCw,
   Save,
   ScrollText,
+  Server,
   Settings2,
+  Share2,
   Square,
+  SquareArrowOutUpRight,
+  Trash2,
   Upload,
   Workflow
 } from 'lucide-vue-next'
@@ -48,11 +61,18 @@ import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import MarSplitButton from '../pages/MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from '../pages/MarStatus.vue'
 import type { MenuLine } from '../pages/menu'
 import { marTabsOn } from '../shell/titleTabs'
 import EnvModels from './EnvModelsEntry.vue'
 import BuildAbout from './BuildAbout.vue'
+import BuildArgs from './BuildArgs.vue'
+import BuildOp from './BuildOp.vue'
+import BuildStorage from './BuildStorage.vue'
+import BuildTerminal from './BuildTerminal.vue'
+import { opOf } from './buildOps'
+import { extraOf, isRemote } from './m1Builds'
 import BuildSettings from './BuildSettings.vue'
 import BuildSnapshots from './BuildSnapshots.vue'
 import BuildUpdate from './BuildUpdate.vue'
@@ -74,11 +94,15 @@ import '../table/table.css'
  * same row. Versions and deployments are tables in the one table
  * pattern (mar/table/table.css).
  *
- * The Builds milestone (before the breadcrumb) keeps today's Desktop tabs,
- * in production's order (views/DetailModal.vue): About, Update, Snapshots,
- * Settings. UI Playground › Build page offers Overview first instead
- * (About and Update in one tab, then Snapshots and Settings). Neither has
- * a Workflows tab: nothing links a workflow to its build yet.
+ * The Builds milestone (before the breadcrumb) is Desktop's build page
+ * (components/settings/ComfyUISettingsContent.vue on bl/desktop-as-a-
+ * platform): a "← Builds" link, the header's one button (Start, Restart,
+ * Restart to apply changes, Open Cloud, Open Remote) with Window options
+ * in its caret and More beside it; then Desktop's tabs - Update, Startup
+ * Args, Snapshots, Storage, Terminal, About (Cloud: Storage and About;
+ * Remote: About). Update carries a dot while one is waiting. Long work
+ * runs inside the tab (buildOps.ts). UI Playground › Build page keeps
+ * Overview first as the alternative.
  */
 const { env } = defineProps<{ env: ProtoInstance }>()
 
@@ -93,6 +117,9 @@ type Tab =
   | 'update'
   | 'snapshots'
   | 'settings'
+  | 'args'
+  | 'storage'
+  | 'terminal'
 
 // The Builds milestone: production's tabs (or Overview first).
 const mvp = computed(() => !can.value.breadcrumb)
@@ -117,27 +144,48 @@ const hasDeployments = computed(
   () => deps.value.length > 0 || (can.value.builder && proto.signedIn && k.value !== 'managed')
 )
 const own = computed(() => k.value === 'local')
-const MVP_TABS = computed<{ value: Tab; label: string; count?: number }[]>(() =>
-  buildPage.id === 'overview'
-    ? [
-        { value: 'overview', label: 'Overview' },
-        ...(own.value
-          ? [
-              { value: 'snapshots' as Tab, label: 'Snapshots', count: snaps.length },
-              { value: 'settings' as Tab, label: 'Settings' }
-            ]
-          : [])
-      ]
-    : [
-        { value: 'about', label: 'About' },
-        ...(own.value
-          ? [
-              { value: 'update' as Tab, label: 'Update' },
-              { value: 'snapshots' as Tab, label: 'Snapshots', count: snaps.length },
-              { value: 'settings' as Tab, label: 'Settings' }
-            ]
-          : [])
-      ]
+const remote = isRemote(env)
+const remoteUrl = computed(() => extraOf(env.id).remote?.replace(/^https?:\/\//, ''))
+const DESKTOP_TABS = computed<{ value: Tab; label: string; dot?: boolean }[]>(() =>
+  remote
+    ? [{ value: 'about', label: 'About' }]
+    : own.value
+      ? [
+          { value: 'update', label: 'Update', dot: Boolean(pending.value) },
+          { value: 'args', label: 'Startup Args' },
+          { value: 'snapshots', label: 'Snapshots' },
+          { value: 'storage', label: 'Storage' },
+          { value: 'terminal', label: 'Terminal' },
+          { value: 'about', label: 'About' }
+        ]
+      : [
+          { value: 'storage', label: 'Storage' },
+          { value: 'about', label: 'About' }
+        ]
+)
+const MVP_TABS = computed<{ value: Tab; label: string; count?: number; dot?: boolean }[]>(() =>
+  buildPage.id === 'production'
+    ? DESKTOP_TABS.value
+    : buildPage.id === 'overview'
+      ? [
+          { value: 'overview', label: 'Overview' },
+          ...(own.value
+            ? [
+                { value: 'snapshots' as Tab, label: 'Snapshots', count: snaps.length },
+                { value: 'settings' as Tab, label: 'Settings' }
+              ]
+            : [])
+        ]
+      : [
+          { value: 'about', label: 'About' },
+          ...(own.value
+            ? [
+                { value: 'update' as Tab, label: 'Update' },
+                { value: 'snapshots' as Tab, label: 'Snapshots', count: snaps.length },
+                { value: 'settings' as Tab, label: 'Settings' }
+              ]
+            : [])
+        ]
 )
 const LATER_TABS = computed(() => [
   { value: 'overview' as Tab, label: 'Overview' },
@@ -177,22 +225,102 @@ function retry(): void {
 }
 
 const status = computed<{ id: ItemStatus; label: string }>(() => {
-  if (error.value) return { id: 'failed', label: 'Failed to start' }
+  if (error.value) return { id: 'failed', label: mvp.value ? 'Error' : 'Failed to start' }
+  if (remote)
+    return state.run === 'running'
+      ? { id: 'running', label: 'Running' }
+      : { id: 'stopped', label: 'Stopped' }
   if (k.value === 'managed')
     return st.value.live
       ? { id: 'live', label: st.value.label }
       : { id: 'stopped', label: st.value.label }
-  if (env.state === 'running') return { id: 'running', label: 'Running' }
+  if ((mvp.value ? state.run : env.state) === 'running') return { id: 'running', label: 'Running' }
   if (mvp.value ? pending.value : env.state === 'update')
     return { id: 'update', label: 'Update available' }
-  return { id: 'stopped', label: st.value.label }
+  return { id: 'stopped', label: mvp.value ? 'Stopped' : st.value.label }
 })
 
 // Where it runs, inline in the meta line; deployments open their tab.
 const where = computed(() =>
-  runsOn(env).filter((r) => r.where !== 'deployments' || can.value.builder)
+  remote ? [] : runsOn(env).filter((r) => r.where !== 'deployments' || can.value.builder)
 )
 const ICON = { computer: Laptop, cloud: Cloud, deployments: Rocket }
+
+/* ---- The Builds milestone's header: Desktop's button, caret and More ---- */
+const op = computed(() => opOf(env.id))
+const running = computed(() => state.run === 'running')
+function startHere(): void {
+  state.run = 'launching'
+  setTimeout(() => (state.run = 'running'), 1400)
+}
+function stopHere(): void {
+  toast(`Stopping ${state.name}…`)
+  setTimeout(() => (state.run = 'stopped'), 1200)
+}
+function restartHere(): void {
+  state.restart = false
+  toast(`Restarting ${env.name}…`)
+}
+const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
+  if (remote) return { label: 'Open Remote', icon: Server, run: () => toast(`Opening ${env.name}`) }
+  if (k.value !== 'local')
+    return { label: 'Open Cloud', icon: Cloud, run: () => toast('Opening Comfy Cloud') }
+  if (running.value)
+    return state.restart
+      ? { label: 'Restart to apply changes', icon: RotateCcw, run: restartHere }
+      : { label: 'Restart', icon: RotateCcw, run: restartHere }
+  return { label: 'Start', icon: Play, run: startHere }
+})
+const newWindow: MenuLine = {
+  label: 'Open in new window',
+  icon: SquareArrowOutUpRight,
+  run: () => toast(`Opening ${env.name} in a new window`)
+}
+const windowLines = computed<MenuLine[]>(() =>
+  running.value && own.value
+    ? [
+        { label: 'Switch', icon: Repeat2, run: () => toast(`Switched this window to ${env.name}`) },
+        newWindow,
+        'sep',
+        { label: 'Stop', icon: CircleStop, danger: true, run: stopHere }
+      ]
+    : [newWindow]
+)
+// More: the install's own actions, Desktop's order; Stop, Forget and
+// Uninstall last.
+const moreLines = computed<MenuLine[]>(() => [
+  { label: 'Rename', icon: Pencil, run: () => (tab.value = 'about') },
+  ...(own.value
+    ? [
+        {
+          label: 'Duplicate Instance',
+          icon: CopyPlus,
+          disabled: running.value,
+          title: running.value ? 'Stop the running instance first.' : undefined,
+          run: () => toast(`Duplicating ${env.name}…`)
+        },
+        { label: 'Open Directory', icon: FolderOpen, run: () => toast(`Opened ${env.name}`) },
+        { label: 'Share', icon: Share2, run: () => toast('Snapshot ready to share') }
+      ]
+    : []),
+  'sep',
+  ...(running.value && own.value
+    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
+    : []),
+  { label: 'Forget', icon: EyeOff, run: () => go('environments' as Page) },
+  ...(own.value
+    ? [
+        {
+          label: 'Uninstall',
+          icon: Trash2,
+          danger: true,
+          disabled: running.value,
+          title: running.value ? 'Stop the running instance first.' : undefined,
+          run: () => go('environments' as Page)
+        }
+      ]
+    : [])
+])
 
 const lines = computed<MenuLine[]>(() => [
   ...(can.value.builder && k.value === 'local'
@@ -224,17 +352,25 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 <template>
   <div class="mar-bp mx-auto w-full max-w-300 px-10 pb-24" :class="!marTabsOn && 'is-trail'">
     <MarEntityHeader
-      :back="marTabsOn ? 'Builds' : undefined"
-      :title="env.name"
+      :back="marTabsOn || mvp ? 'Builds' : undefined"
+      :title="mvp ? state.name : env.name"
       :status="status.id"
       :status-label="status.label"
       @back="go('environments' as Page)"
     >
       <template #cover>
-        <span class="mar-bp-glyph"><InstanceGlyph :inst="env" size="lg" /></span>
+        <span class="mar-bp-glyph"
+          ><Server v-if="remote" :size="26" class="text-muted-foreground" /><InstanceGlyph
+            v-else
+            :inst="env"
+            size="lg"
+        /></span>
       </template>
       <template #meta>
-        <template v-if="k === 'managed'">
+        <template v-if="remote">
+          <Server :size="13" /><span class="font-mono">{{ remoteUrl }}</span>
+        </template>
+        <template v-else-if="k === 'managed'">
           <span>Managed by Comfy</span>
         </template>
         <Badge v-else-if="mvp" size="sm">{{ state.version }}</Badge>
@@ -261,7 +397,22 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
           </button>
         </template>
       </template>
-      <template #actions>
+      <template v-if="mvp && buildPage.id === 'production'" #actions>
+        <MarSplitButton
+          :label="state.run === 'launching' ? 'Starting…' : main.label"
+          :icon="main.icon as never"
+          :disabled="state.run === 'launching' || op?.status === 'running'"
+          :lines="windowLines"
+          menu-label="Window options"
+          @run="main.run()"
+        />
+        <MarItemMenu v-if="k !== 'managed' || remote" :lines="moreLines" label="More">
+          <template #trigger>
+            <Button variant="secondary">More<ChevronDown :size="14" /></Button>
+          </template>
+        </MarItemMenu>
+      </template>
+      <template v-else #actions>
         <Button
           v-if="k === 'local' && env.state === 'running'"
           @click="toast(`Stopping ${env.name}…`)"
@@ -275,7 +426,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       </template>
     </MarEntityHeader>
 
-    <div v-if="error" class="mar-bp-alert" role="alert">
+    <div v-if="error && !mvp" class="mar-bp-alert" role="alert">
       <div class="min-w-0 flex-1">
         <p class="mar-bp-alert-title">{{ env.name }} didn’t start</p>
         <p class="mar-bp-alert-text">{{ error }}</p>
@@ -292,7 +443,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       <Button v-if="tab === 'versions' && versions.length" class="ml-auto" @click="saveVersion"
         ><Save :size="13" />Save a version</Button
       >
-      <div v-if="tab === 'snapshots'" class="ml-auto flex items-center gap-2">
+      <div v-if="tab === 'snapshots' && !mvp" class="ml-auto flex items-center gap-2">
         <Button variant="ghost" @click="toast('Choose a snapshot file to import')"
           ><Upload :size="13" />Import</Button
         >
@@ -305,7 +456,9 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 
     <!-- The Builds milestone: production's tabs, or Overview first. -->
     <template v-if="mvp">
-      <template v-if="tab === 'overview'">
+      <!-- A long operation takes the tab's place until it settles. -->
+      <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
+      <template v-else-if="tab === 'overview'">
         <BuildUpdateSummary v-if="own" :env />
         <BuildAbout :env />
       </template>
@@ -313,6 +466,9 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       <BuildUpdate v-else-if="tab === 'update'" :env />
       <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
       <BuildSettings v-else-if="tab === 'settings'" :env />
+      <BuildArgs v-else-if="tab === 'args'" :env />
+      <BuildStorage v-else-if="tab === 'storage'" :env />
+      <BuildTerminal v-else-if="tab === 'terminal'" :env />
     </template>
 
     <template v-else-if="tab === 'overview'">

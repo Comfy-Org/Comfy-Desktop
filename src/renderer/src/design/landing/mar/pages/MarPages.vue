@@ -14,6 +14,7 @@ import MarFavoritesPage from '../MarFavoritesPage.vue'
 import MarKeysPage from './MarKeysPage.vue'
 import MarDeploymentsPage from '../deploy/MarDeploymentsPage.vue'
 import MarLogsPage from '../deploy/MarLogsPage.vue'
+import MarToolPage from './MarToolPage.vue'
 
 /**
  * Mar's library pages (Workflows, Apps, Assets, Builds, Projects, Spaces,
@@ -37,4 +38,5 @@ const page = computed<string>(() => proto.page)
   <MarLogsPage v-else-if="page === 'logs'" />
   <MarKeysPage v-else-if="page === 'keys'" />
   <MarFavoritesPage v-else-if="page === 'favorites'" />
+  <MarToolPage v-else-if="page.startsWith('tool:')" :id="page.slice(5)" :key="page" />
 </template>

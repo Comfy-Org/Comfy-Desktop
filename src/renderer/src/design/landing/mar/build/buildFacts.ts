@@ -61,6 +61,12 @@ export interface BuildState {
   version: string
   channel: Channel
   updating: boolean
+  /** Changed while running: the header's button says Restart to apply changes. */
+  restart: boolean
+  /** Renamed on its page. */
+  name: string
+  /** Started or stopped from its page. */
+  run: ProtoInstance['state']
 }
 const STATES = new Map<string, BuildState>()
 
@@ -71,7 +77,10 @@ export function stateOf(b: ProtoInstance): BuildState {
     s = reactive<BuildState>({
       version: b.version ?? 'Latest',
       channel: initialChannel(b),
-      updating: false
+      updating: false,
+      restart: false,
+      name: b.name,
+      run: b.state
     })
     STATES.set(b.id, s)
   }
@@ -171,10 +180,11 @@ export function snapshotsOf(b: ProtoInstance): Snapshot[] {
   return list
 }
 
-export function createSnapshot(b: ProtoInstance): void {
+export function createSnapshot(b: ProtoInstance, label?: string): void {
   const list = snapshotsOf(b)
   list.unshift({
     id: `s${Date.now()}`,
+    label: label?.trim() || undefined,
     trigger: 'manual',
     when: 'Just now',
     comfy: stateOf(b).version,

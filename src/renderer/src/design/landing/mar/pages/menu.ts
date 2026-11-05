@@ -10,6 +10,12 @@ export interface MenuAction {
   hint?: string
   checked?: boolean
   disabled?: boolean
+  /** Why it's disabled, on hover. */
+  title?: string
   sub?: MenuAction[]
 }
-export type MenuLine = MenuAction | 'sep'
+/** A quiet line of words, not an action (why some lines are greyed). */
+export interface MenuNote {
+  note: string
+}
+export type MenuLine = MenuAction | MenuNote | 'sep'

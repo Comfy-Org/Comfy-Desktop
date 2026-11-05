@@ -42,6 +42,7 @@ const open = defineModel<boolean>('open', { default: false })
     <DropdownMenuContent align="end" :side="side" :side-offset="6" class="w-56">
       <template v-for="(l, i) in lines" :key="i">
         <DropdownMenuSeparator v-if="l === 'sep'" />
+        <p v-else-if="'note' in l" class="mar-menu-note">{{ l.note }}</p>
         <DropdownMenuSub v-else-if="l.sub">
           <DropdownMenuSubTrigger
             ><component :is="l.icon" v-if="l.icon" :size="15" />{{
@@ -61,6 +62,7 @@ const open = defineModel<boolean>('open', { default: false })
         <DropdownMenuItem
           v-else
           :disabled="l.disabled"
+          :title="l.title"
           :class="l.danger && 'mar-menu-danger'"
           @select="l.run?.()"
         >
@@ -104,6 +106,13 @@ const open = defineModel<boolean>('open', { default: false })
 .mar-menu-danger,
 .mar-menu-danger > svg {
   color: var(--color-status-danger) !important;
+}
+.mar-menu-note {
+  margin: 0;
+  padding: 6px 8px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
 }
 .mar-menu-hint {
   color: var(--color-subtle-foreground);

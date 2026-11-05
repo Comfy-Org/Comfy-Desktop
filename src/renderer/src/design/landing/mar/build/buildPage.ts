@@ -1,25 +1,25 @@
 import { reactive, watch } from 'vue'
 
 /** How a build's page is laid out in the Builds milestone (UI Playground ›
- *  Build page), until one is decided. Production keeps today's Desktop
- *  tabs (About, Update, Snapshots, Settings); Overview, Ben's proposal and
- *  the default: About and Update in one tab that leads with being up to date. */
+ *  Build page). Desktop's tabs, the default, are the ones Desktop ships
+ *  (Update, Startup Args, Snapshots, Storage, Terminal, About); Overview
+ *  first, Ben's earlier proposal, puts About and Update in one tab. */
 export type BuildPage = 'production' | 'overview'
 
 export const BUILD_PAGES: { value: BuildPage; label: string }[] = [
-  { value: 'production', label: 'Production tabs · About, Update, Snapshots, Settings' },
-  { value: 'overview', label: 'Overview first · the default' }
+  { value: 'production', label: 'Desktop’s tabs · the default' },
+  { value: 'overview', label: 'Overview first' }
 ]
 
-const KEY = 'comfy.design.mar.buildPage.v2'
+const KEY = 'comfy.design.mar.buildPage.v3'
 
 export const buildPage = reactive<{ id: BuildPage }>({
   id: (() => {
     try {
       const v = localStorage.getItem(KEY) as BuildPage | null
-      return v && BUILD_PAGES.some((c) => c.value === v) ? v : 'overview'
+      return v && BUILD_PAGES.some((c) => c.value === v) ? v : 'production'
     } catch {
-      return 'overview'
+      return 'production'
     }
   })()
 })

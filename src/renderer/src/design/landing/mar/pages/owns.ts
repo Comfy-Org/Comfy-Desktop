@@ -17,7 +17,8 @@ export const MAR_PAGES = [
   'favorites',
   'deployments',
   'logs',
-  'keys'
+  'keys',
+  'tool:'
 ]
 
 export const marOwns = (page: string): boolean =>

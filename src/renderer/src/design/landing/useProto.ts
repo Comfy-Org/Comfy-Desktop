@@ -37,6 +37,8 @@ export type Page =
   | `project:${string}`
   // Apps (Milestone 10): one app's page
   | `app:${string}`
+  // Tools before Home: Benchmarks, Performance Tests
+  | `tool:${string}`
   // Mar's proposal: everything starred
   | 'favorites'
 

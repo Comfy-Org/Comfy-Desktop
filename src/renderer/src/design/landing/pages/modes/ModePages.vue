@@ -16,13 +16,18 @@ import MarBuildsPage from '../../mar/pages/MarBuildsPage.vue'
 import MarPages from '../../mar/pages/MarPages.vue'
 import { marOwns } from '../../mar/pages/owns'
 import { deploymentById, envById } from '../../parts/env/env'
+import { m1BuildById } from '../../mar/build/m1Builds'
 import { isNewUser, proto } from '../../useProto'
 import { can } from '../../milestones'
 
 /** Router for the Create / Build IA. */
 const envId = computed(() => (proto.page.startsWith('environment:') ? proto.page.slice(12) : ''))
 const depId = computed(() => (proto.page.startsWith('deployment:') ? proto.page.slice(11) : ''))
-const env = computed(() => (envId.value ? envById(envId.value) : undefined))
+const env = computed(() =>
+  envId.value
+    ? (envById(envId.value) ?? (!can.value.home ? m1BuildById(envId.value) : undefined))
+    : undefined
+)
 const dep = computed(() => (depId.value ? deploymentById(depId.value) : undefined))
 const app = computed(() =>
   proto.page.startsWith('app:') ? libApp(proto.page.slice(4)) : undefined

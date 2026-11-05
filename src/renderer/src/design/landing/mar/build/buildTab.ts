@@ -1,8 +1,18 @@
 import { ref } from 'vue'
 import { go, type Page } from '../../useProto'
 
-/** The tabs of a build's page (MarBuildPage). */
-export type BuildTab = 'overview' | 'snapshots' | 'settings' | 'deployments'
+/** The tabs of a build's page (MarBuildPage): Desktop's in the Builds
+ *  milestone, the later ones after it. */
+export type BuildTab =
+  | 'overview'
+  | 'update'
+  | 'args'
+  | 'snapshots'
+  | 'storage'
+  | 'terminal'
+  | 'about'
+  | 'settings'
+  | 'deployments'
 
 /** The tab the next build page opens on; it reads it once and clears it. */
 export const nextBuildTab = ref<BuildTab | ''>('')

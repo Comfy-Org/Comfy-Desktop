@@ -38,7 +38,8 @@ const {
   favKind,
   lines,
   ratio = '16 / 10',
-  fit = 'cover'
+  fit = 'cover',
+  contextMenu = false
 } = defineProps<{
   name: string
   thumb?: string
@@ -61,6 +62,8 @@ const {
   lines: MenuLine[]
   ratio?: string
   fit?: 'cover' | 'contain'
+  /** Right-click opens the ⋯ menu (Builds). */
+  contextMenu?: boolean
 }>()
 const emit = defineEmits<{
   open: []
@@ -124,6 +127,7 @@ function click(e: MouseEvent): void {
     :aria-label="name"
     :aria-pressed="selectable && selecting ? selected : undefined"
     @click="click"
+    @contextmenu="contextMenu && lines.length && ($event.preventDefault(), (menuOpen = true))"
     @keydown.enter.self="emit('open')"
     @keydown.space.self.prevent="selectable && emit('select', false)"
   >

@@ -124,8 +124,9 @@
   gap: 10px;
   padding: 16px 18px;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-bt-channel.is-on {
-  box-shadow: inset 0 0 0 1.5px var(--color-base-foreground);
+:root .proto-ui.proto-ui.proto-ui .mar-bt-channel.is-on,
+:root .proto-ui.proto-ui.proto-ui .mar-bt-row.is-on {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 28%, transparent);
 }
 .mar-bt-radio {
   width: 14px;
@@ -181,4 +182,319 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- Desktop's tabs (Update, Startup Args, Snapshots, Storage, About) ---- */
+.mar-bt-status {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-bt-status.is-warn {
+  color: var(--color-status-warning, #f5b14c);
+  font-weight: 500;
+}
+.mar-bt-dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.mar-bt-dl dt {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-bt-dl dd {
+  margin: 2px 0 0;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-bt-acts-row {
+  display: flex;
+  min-height: 28px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* A change waiting for a restart: one quiet line on top. */
+.mar-bt-note {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-status-warning, #f5b14c) 10%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
+/* Storage */
+:root .proto-ui.proto-ui.proto-ui .mar-st-toggle {
+  display: inline-flex;
+  line-height: 18px;
+  font-weight: 400;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-st-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-muted-foreground);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-st-link:hover {
+  color: var(--color-base-foreground);
+}
+/* Startup Args: raw on top, search, then the flags by group. */
+.mar-args-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+}
+.mar-args-search {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-args-search input {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--color-base-foreground);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-args-search button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--color-subtle-foreground);
+}
+.mar-args-none {
+  margin: 0;
+  padding: 16px 20px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+.mar-args-title {
+  margin: 0;
+  padding: 14px 20px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mar-args-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 20px;
+}
+.mar-args-flag {
+  color: var(--color-base-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.mar-args-help {
+  margin: 2px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-args-choose {
+  margin: 6px 0 0;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+/* Snapshots: the bar, Create's label, then one row per snapshot. */
+.mar-sn-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.mar-sn-create {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  background: var(--color-card-background);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+.mar-sn-list {
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--color-card-background);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+.mar-sn + .mar-sn {
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mar-sn-row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 14px;
+  cursor: default;
+  outline: none;
+}
+.mar-sn-row:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
+}
+.mar-sn-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+.mar-sn-chev {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  transition: transform 150ms ease;
+}
+.is-open .mar-sn-chev {
+  transform: rotate(90deg);
+}
+.mar-sn-trigger {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-sn-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-sn-delta {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-sn-when {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-sn-body {
+  padding: 4px 16px 16px 38px;
+}
+.mar-sn-h {
+  margin: 10px 0 6px;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mar-sn-diff {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+.mar-sn-diff dt {
+  color: var(--color-subtle-foreground);
+}
+.mar-sn-diff dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--color-base-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.mar-sn-diff .is-add {
+  color: var(--color-status-running);
+}
+.mar-sn-diff .is-del {
+  color: var(--color-status-danger);
+}
+/* About: the name, then a card per group of facts. */
+.mar-ab {
+  display: flex;
+  max-width: 720px;
+  flex-direction: column;
+  gap: 12px;
+}
+.mar-ab-hero {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.mar-ab-name {
+  margin: 0;
+  color: var(--color-base-foreground);
+  font-size: 16px;
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-ab-input {
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  outline: 2px solid var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-ab-input.is-name {
+  max-width: 320px;
+  flex: none;
+  font-size: 16px;
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-ab-group {
+  padding: 6px 18px 8px;
+}
+.mar-ab-title {
+  margin: 8px 0 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mar-ab-fact {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.mar-ab-fact + .mar-ab-fact {
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mar-ab-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
 }

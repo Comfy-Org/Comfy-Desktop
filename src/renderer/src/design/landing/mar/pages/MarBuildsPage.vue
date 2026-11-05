@@ -1,20 +1,32 @@
 <script setup lang="ts">
 import { computed, reactive, ref, type Component } from 'vue'
 import {
+  ArrowRightLeft,
   ArrowUpCircle,
   Camera,
+  CircleStop,
+  CloudUpload,
   Copy,
+  Download,
   ExternalLink,
+  EyeOff,
   FolderOpen,
+  History,
+  Info,
+  Loader2,
+  OctagonAlert,
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCw,
   ScrollText,
+  Server,
   Settings2,
   Square,
   Trash2
 } from 'lucide-vue-next'
+import Tooltip from '../../ui/Tooltip.vue'
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
@@ -26,6 +38,15 @@ import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
 import { openBuild } from '../build/buildTab'
 import { clearError, errorOf } from '../build/buildErrors'
+import BuildCrashDialog from '../build/BuildCrashDialog.vue'
+import {
+  M1_BUILDS,
+  PROBLEM_ACTION,
+  PROBLEM_LABEL,
+  extraOf,
+  whereOf,
+  type BuildWhere
+} from '../build/m1Builds'
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
@@ -60,14 +81,16 @@ import type { ItemStatus } from './MarStatus.vue'
  */
 type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 
+// The Builds milestone also lists the states today's Desktop has
+// (m1Builds.ts): a remote build, one to migrate, three a problem stopped.
 const builds = collection<Build>(
-  instances.value.map((i) =>
+  [...instances.value, ...(proto.milestone < 3 ? M1_BUILDS : [])].map((i) =>
     errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }
   ),
   'build'
 )
 
-type Where = 'all' | 'local' | 'cloud'
+type Where = 'all' | BuildWhere
 const where = ref<Where>('all')
 const sort = ref('used')
 const query = ref('')
@@ -78,18 +101,17 @@ const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
 // Milestone 1 shows only the one-line rows.
 const rowsOnly = computed(() => proto.milestone < 3 && !building.value)
 
+// Cloud and Remote show only when there are builds there (ChooserView).
+const countWhere = (w: BuildWhere): number => builds.items.filter((b) => whereOf(b) === w).length
 const WHERE = computed(() => [
   { value: 'all' as const, label: 'All', count: builds.items.length },
-  {
-    value: 'local' as const,
-    label: 'This computer',
-    count: builds.items.filter((b) => b.kind === 'local').length
-  },
-  {
-    value: 'cloud' as const,
-    label: 'Cloud',
-    count: builds.items.filter((b) => b.kind === 'cloud').length
-  }
+  { value: 'local' as const, label: 'This computer', count: countWhere('local') },
+  ...(countWhere('cloud') || !rowsOnly.value
+    ? [{ value: 'cloud' as const, label: 'Cloud', count: countWhere('cloud') }]
+    : []),
+  ...(countWhere('remote')
+    ? [{ value: 'remote' as const, label: 'Remote', count: countWhere('remote') }]
+    : [])
 ])
 const SORTS = [
   { value: 'used', label: 'Last used' },
@@ -99,9 +121,13 @@ const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
   const list = builds.items.filter(
     (b) =>
-      (where.value === 'all' || b.kind === where.value) &&
-      (!q || `${b.name} ${b.channel} ${b.gpu}`.toLowerCase().includes(q))
+      (where.value === 'all' || whereOf(b) === where.value) &&
+      // The Builds milestone searches names only, as Desktop does.
+      (!q ||
+        (rowsOnly.value ? b.name : `${b.name} ${b.channel} ${b.gpu}`).toLowerCase().includes(q))
   )
+  // The Builds milestone: most recently used first, nothing else.
+  if (rowsOnly.value) return [...list].sort((a, b) => a.lastUsedRank - b.lastUsedRank)
   return sort.value === 'name'
     ? [...list].sort((a, b) => a.name.localeCompare(b.name))
     : [...list].sort(
@@ -190,7 +216,17 @@ function start(b: Build): void {
     hostActions.launch(original(b))
   }, 1400)
 }
+// Builds stopping now: the row dims and waits, with nothing to undo.
+const stopping = reactive(new Set<string>())
 function stop(b: Build): void {
+  if (rowsOnly.value) {
+    stopping.add(b.id)
+    setTimeout(() => {
+      stopping.delete(b.id)
+      b.state = 'stopped'
+    }, 1400)
+    return
+  }
   b.state = 'stopped'
   notify(`Stopped ${b.name}`, () => (b.state = 'running'))
 }
@@ -232,6 +268,145 @@ function second(
     }
   return undefined
 }
+/* ---- Milestone 1: today's states and menu (ChooserInstallTile) ---- */
+// Builds becoming a Build on Comfy Platform (Create Build).
+const creating = reactive(new Set<string>())
+// The build whose error details are open.
+const crashOf = ref<Build>()
+const problemOf = (b: Build) => extraOf(b.id).problem
+const isRemote = (b: Build): boolean => whereOf(b) === 'remote'
+// Busy: nothing to start or change until it settles.
+const busy = (b: Build): boolean =>
+  stopping.has(b.id) || creating.has(b.id) || updating.has(b.id) || b.state === 'launching'
+// Start, or Open where there is nothing to start (running, Cloud, Remote).
+function launch(b: Build): { label: string; icon: Component; run: () => void } {
+  if (b.state === 'running' || b.state === 'error' || b.kind === 'cloud')
+    return {
+      label: 'Open',
+      icon: ExternalLink,
+      run: () => (b.state === 'running' ? hostActions.launch(original(b)) : start(b))
+    }
+  return { label: 'Start', icon: Play, run: () => start(b) }
+}
+const launchWhere = (b: Build): string =>
+  isRemote(b) ? 'on Remote' : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
+// The state, one word: the chip after the name says what else is going on.
+function m1State(b: Build): {
+  label: string
+  tone: 'ok' | 'warn' | 'bad' | 'idle'
+  spin?: boolean
+} {
+  if (creating.has(b.id)) return { label: 'Creating…', tone: 'idle', spin: true }
+  if (updating.has(b.id)) return { label: 'Updating…', tone: 'idle', spin: true }
+  if (stopping.has(b.id)) return { label: 'Stopping…', tone: 'idle', spin: true }
+  if (b.state === 'launching') return { label: 'Starting…', tone: 'ok', spin: true }
+  if (b.state === 'running') return { label: 'Running', tone: 'ok' }
+  if (b.kind === 'cloud' && !isRemote(b)) return { label: 'Asleep', tone: 'idle' }
+  return { label: 'Stopped', tone: 'idle' }
+}
+function migrate(b: Build): void {
+  toast(`Migrating ${b.name} to Standalone…`)
+  updating.add(b.id)
+  setTimeout(() => {
+    updating.delete(b.id)
+    b.channel = 'Standalone'
+    extraOf(b.id).migrate = false
+    notify(`${b.name} is now a Standalone build`)
+  }, 1800)
+}
+function fixProblem(b: Build): void {
+  const p = problemOf(b)!
+  if (p === 'delete-interrupted') return void builds.remove([b.id])
+  toast(p === 'missing' ? `Choose where ${b.name} is now` : `Installing ${b.name} again…`)
+}
+function createBuild(b: Build): void {
+  const id = `${b.id}-platform`
+  builds.items.push({
+    ...b,
+    id,
+    name: `${b.name} Build`,
+    kind: 'cloud',
+    channel: 'Comfy Platform',
+    version: 'Build v1',
+    state: 'stopped',
+    lastUsedRank: -1
+  })
+  creating.add(id)
+  setTimeout(() => creating.delete(id), 2600)
+}
+// Desktop's menu, in its order (composables/useInstallContextMenu.ts):
+// Manage, then the state's change, then the install's own; snapshots;
+// Create Build; Stop and Uninstall last. While it runs, what would change
+// it is greyed, and the note says why.
+function m1Lines(b: Build): MenuLine[] {
+  const local = b.kind === 'local'
+  const running = b.state === 'running' || busy(b)
+  const gated = {
+    disabled: running,
+    title: running ? 'Stop the running instance first.' : undefined
+  }
+  const problem = problemOf(b)
+  const top: MenuLine[] = [
+    { label: 'Manage', icon: Settings2, run: () => open(b) },
+    ...(b.state === 'update'
+      ? [{ label: 'Update', icon: ArrowUpCircle, run: () => update(b), ...gated }]
+      : []),
+    ...(extraOf(b.id).migrate
+      ? [{ label: 'Migrate to Standalone', icon: ArrowRightLeft, run: () => migrate(b), ...gated }]
+      : []),
+    ...(local && !problem
+      ? [
+          { label: 'Duplicate Instance', icon: Copy, run: () => builds.duplicate(b.id), ...gated },
+          { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${b.name}`) }
+        ]
+      : [])
+  ]
+  const snaps: MenuLine[] =
+    local && !problem
+      ? [
+          { label: 'Export Snapshot', icon: Download, run: () => toast('Snapshot exported.') },
+          {
+            label: 'Restore Snapshot',
+            icon: History,
+            run: () => openBuild(b.id, 'snapshots'),
+            ...gated
+          },
+          ...(proto.signedIn
+            ? [{ label: 'Create Build', icon: CloudUpload, run: () => createBuild(b) }]
+            : [])
+        ]
+      : []
+  const end: MenuLine[] = [
+    ...(local && b.state === 'running'
+      ? [{ label: 'Stop', icon: CircleStop, danger: true, run: () => stop(b) }]
+      : []),
+    ...(local
+      ? [
+          {
+            label: 'Uninstall',
+            icon: Trash2,
+            danger: true,
+            run: () => builds.remove([b.id]),
+            ...gated
+          }
+        ]
+      : isRemote(b)
+        ? [{ label: 'Forget', icon: EyeOff, run: () => builds.remove([b.id]) }]
+        : [])
+  ]
+  return [
+    ...top,
+    ...(snaps.length ? ['sep' as const, ...snaps] : []),
+    ...(end.length ? ['sep' as const, ...end] : []),
+    ...(running && local ? [{ note: 'Stop the running instance first to change it.' }] : [])
+  ]
+}
+const refreshing = ref(false)
+function refresh(): void {
+  refreshing.value = true
+  setTimeout(() => (refreshing.value = false), 1100)
+}
+
 // A click opens the build's page; Open and Start are the button's.
 function open(b: Build): void {
   openBuild(b.id)
@@ -240,6 +415,7 @@ function open(b: Build): void {
 // The menu keeps what's rare or destructive; the frequent actions sit on
 // the card and the row, and the page's tabs are one click away.
 function lines(b: Build): MenuLine[] {
+  if (rowsOnly.value) return m1Lines(b)
   // A build's own tabs, where its page has them (the Builds milestone).
   const own = b.id !== 'cloud' && !can.value.breadcrumb
   return [
@@ -306,8 +482,15 @@ const TONE: Record<ProtoInstance['state'], 'ok' | 'warn' | 'bad' | 'idle'> = {
 }
 /* ---- Milestone 1: one build to a line ---- */
 // The specs, hardware first. Where it runs is the mark and the button.
+// Desktop's meta line: where it comes from, then its version (a remote
+// build's address without the protocol).
 const specs = (b: Build): string =>
-  [gpuName(b), b.deployment ? undefined : b.channel, b.version].filter(Boolean).join(' · ')
+  [
+    isRemote(b) ? extraOf(b.id).remote!.replace(/^https?:\/\//, '') : b.channel,
+    b.kind === 'cloud' && !isRemote(b) ? undefined : b.version
+  ]
+    .filter(Boolean)
+    .join(' · ')
 // Open and Start say where; Try again stays short.
 const runsOn = (b: Build): string | undefined =>
   b.state === 'error' ? undefined : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
@@ -398,9 +581,13 @@ const newLabel = computed(() =>
       text: 'A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.',
       pics: EMPTY_PICS.builds,
       action: newLabel,
-      second: surface.id === 'desktop' ? 'Use Comfy Cloud' : undefined
+      second: surface.id === 'desktop' && !rowsOnly ? 'Use Comfy Cloud' : undefined
     }"
-    error-text="Cloud builds are out of reach right now. The ones on this computer start as usual."
+    :error-text="
+      rowsOnly
+        ? undefined
+        : 'Cloud builds are out of reach right now. The ones on this computer start as usual.'
+    "
     @action="hostActions.newInstance()"
     @second="toast('Signing in to Comfy Cloud')"
     @clear="clear"
@@ -417,7 +604,17 @@ const newLabel = computed(() =>
     <template #toolbar>
       <MarSeg v-model="where" :options="WHERE" label="Where" />
       <div class="ml-auto flex items-center gap-2">
-        <Select v-model="sort" :options="SORTS" label="Sort" class="w-38" />
+        <Tooltip v-if="rowsOnly && proto.signedIn" content="Refresh workspaces">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Refresh workspaces"
+            :disabled="refreshing"
+            @click="refresh"
+            ><RefreshCw :size="15" :class="refreshing && 'animate-spin'"
+          /></Button>
+        </Tooltip>
+        <Select v-if="!rowsOnly" v-model="sort" :options="SORTS" label="Sort" class="w-38" />
         <MarSearchField v-model="query" placeholder="Search builds" />
         <MarViewToggle v-if="!rowsOnly" v-model="view" />
       </div>
@@ -433,60 +630,110 @@ const newLabel = computed(() =>
         :name="b.name"
         :lines="lines(b)"
         :selectable="false"
-        :renaming="lib.renaming.value === b.id"
+        context-menu
         class="mar-bc-row"
-        @open="open(b)"
-        @start-rename="lib.renaming.value = b.id"
-        @rename="lib.rename(b.id, $event)"
-        @cancel-rename="lib.renaming.value = ''"
+        :class="stopping.has(b.id) && 'is-stopping'"
+        @open="!stopping.has(b.id) && open(b)"
       >
         <template #media>
-          <LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
+          <Server v-if="whereOf(b) === 'remote'" :size="16" />
+          <LocationIcon v-else :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
         </template>
         <template #meta
-          ><span class="mar-bc-specs-text">{{ b.state === 'error' ? b.error : specs(b) }}</span
-          ><button
-            v-if="b.state === 'update' || updating.has(b.id)"
+          ><span class="mar-bc-specs-text">{{ specs(b) }}</span
+          ><!-- One chip after the specs: what needs a look (Desktop's order). -->
+          <button
+            v-if="b.state === 'error'"
+            type="button"
+            class="mar-bc-chip is-bad"
+            title="View error details"
+            @click.stop="crashOf = b"
+          >
+            <OctagonAlert :size="12" aria-hidden="true" />Error
+          </button>
+          <button
+            v-else-if="problemOf(b)"
+            type="button"
+            class="mar-bc-chip is-bad"
+            @click.stop="fixProblem(b)"
+          >
+            <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
+          </button>
+          <button
+            v-else-if="extraOf(b.id).migrate && !updating.has(b.id)"
             type="button"
             class="mar-bc-update"
-            :disabled="updating.has(b.id)"
-            :title="updating.has(b.id) ? undefined : 'Update this build'"
+            :disabled="busy(b) || b.state === 'running'"
+            :title="
+              b.state === 'running' ? 'Stop the running instance first.' : 'Migrate to Standalone'
+            "
+            @click.stop="migrate(b)"
+          >
+            <ArrowRightLeft :size="12" aria-hidden="true" />Migrate
+          </button>
+          <button
+            v-else-if="b.state === 'update' && !updating.has(b.id)"
+            type="button"
+            class="mar-bc-update"
+            :disabled="busy(b)"
+            title="Update to v0.37.6"
             @click.stop="update(b)"
           >
-            <ArrowUpCircle :size="12" aria-hidden="true" />{{
-              updating.has(b.id) ? 'Updating…' : 'Update available'
-            }}
-          </button></template
-        >
+            <ArrowUpCircle :size="12" aria-hidden="true" />Update available
+          </button>
+          <template v-else-if="b.id === 'cloud' && !proto.signedIn">
+            <span class="mar-bc-free">Try free</span>
+            <Tooltip
+              content="Run on fast cloud GPUs with nothing to install. Your first runs are free."
+            >
+              <button type="button" class="mar-bc-why" aria-label="Why try Cloud?" @click.stop>
+                <Info :size="13" />
+              </button>
+            </Tooltip> </template
+        ></template>
         <template #cols>
           <span class="mar-item-col mar-bc-row-state"
-            ><span class="mar-bc-badge" :class="`is-${rowTone(b)}`"
-              ><i aria-hidden="true" />{{ rowState(b) }}</span
+            ><span
+              v-if="!problemOf(b)"
+              class="mar-bc-badge"
+              :class="[`is-${m1State(b).tone}`, m1State(b).spin && 'is-spin']"
+              ><Loader2 v-if="m1State(b).spin" :size="12" class="animate-spin" /><i
+                v-else
+                aria-hidden="true"
+              />{{ m1State(b).label }}</span
             ></span
           >
         </template>
         <template #actions>
+          <Button
+            v-if="problemOf(b)"
+            variant="secondary"
+            size="sm"
+            class="mar-bc-main"
+            @click.stop="fixProblem(b)"
+            >{{ PROBLEM_ACTION[problemOf(b)!] }}</Button
+          >
           <MarSplitButton
+            v-else-if="!creating.has(b.id) && !stopping.has(b.id)"
             tone="secondary"
-            :label="b.state === 'launching' && !updating.has(b.id) ? 'Starting…' : primary(b).label"
-            :suffix="b.state === 'launching' && !updating.has(b.id) ? undefined : runsOn(b)"
-            :disabled="b.state === 'launching'"
+            :label="busy(b) ? m1State(b).label : launch(b).label"
+            :suffix="busy(b) ? undefined : launchWhere(b)"
+            :disabled="busy(b)"
             :lines="
-              second(b)
-                ? [
-                    {
-                      label: second(b)!.label,
-                      icon: second(b)!.icon as Component,
-                      run: second(b)!.run
-                    }
-                  ]
+              b.state === 'running' && b.kind === 'local' && !busy(b)
+                ? [{ label: 'Stop', icon: CircleStop, run: () => stop(b) }]
                 : []
             "
-            menu-label="More ways to run"
-            @run="primary(b).run()"
+            menu-label="Window options"
+            @run="launch(b).run()"
           />
         </template>
       </MarItem>
+      <BuildCrashDialog
+        :build="crashOf"
+        @close="crashOf = undefined"
+        @start="crashOf && retry(crashOf)"
+      />
     </div>
     <!-- Grouped: the group says where, with the hardware its builds share. -->
     <template v-else-if="view === 'grid' && buildCard.id === 'grouped'">
@@ -939,6 +1186,73 @@ const newLabel = computed(() =>
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update:disabled {
   opacity: 0.8;
+}
+/* Stopping: the row waits, dimmed, with nothing to click. */
+.mar-bc-row.is-stopping {
+  opacity: 0.7;
+  pointer-events: none;
+}
+/* What needs a look, after the specs: an error or a problem, in red. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-chip {
+  display: inline-flex;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px 0 5px;
+  border: 0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-chip.is-bad {
+  background: color-mix(in oklch, var(--color-status-danger) 14%, transparent);
+  color: var(--color-status-danger);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-chip.is-bad:hover {
+  background: color-mix(in oklch, var(--color-status-danger) 22%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-chip:focus-visible,
+:root .proto-ui.proto-ui.proto-ui .mar-bc-why:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+/* Cloud before it's used: a small pill and why. */
+.mar-bc-free {
+  display: inline-flex;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--color-base-foreground);
+  color: var(--color-base-background, #000);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-why {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-why:hover {
+  color: var(--color-base-foreground);
+}
+.mar-bc-row .mar-bc-badge.is-spin > svg {
+  color: var(--color-muted-foreground);
 }
 /* The state lines up from row to row; the chip column stays empty. */
 .mar-bc-row .mar-item-col.is-status {

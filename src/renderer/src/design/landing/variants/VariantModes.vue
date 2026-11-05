@@ -24,6 +24,7 @@ import MarBackdrop from '../mar/shell/MarBackdrop.vue'
 import MarSidebarToggle from '../mar/shell/MarSidebarToggle.vue'
 import MarPanelsHead from '../mar/shell/MarPanelsHead.vue'
 import MarFavoritesGroup from '../mar/shell/MarFavoritesGroup.vue'
+import MarBuildsNav from '../mar/shell/MarBuildsNav.vue'
 import { marSidebarClosed } from '../mar/shell/marShell'
 import MarModeSeg from '../mar/modes/MarModeSeg.vue'
 import MarModeSwitch from '../mar/modes/MarModeSwitch.vue'
@@ -31,7 +32,7 @@ import { marTabsOn } from '../mar/shell/titleTabs'
 
 /**
  * The launcher from Milestone 2 on: a sidebar and the page it opens.
- *   2-3  Builds only: All builds (the landing), then each build
+ *   2-3  Builds (the landing), then Tools: Benchmarks, Performance Tests
  *   4-5  Home (then Explore and Learn) above the builds
  *   6    Create / Build: the Builder's lens to ship builds as APIs
  *   8    Projects take the builds' place in the sidebar group
@@ -92,7 +93,9 @@ const MODES = computed(() => [
         <MarFavoritesGroup v-if="proto.mode === 'create' && can.exploreApps && !proto.fresh" />
         <!-- Kept for a new user, each with an empty state, and the builds
              show even with no local install. -->
-        <SidebarGroup v-if="proto.mode === 'create'" />
+        <!-- Before Home: Builds and Tools, as Desktop has them today. -->
+        <MarBuildsNav v-if="proto.mode === 'create' && !can.home" />
+        <SidebarGroup v-else-if="proto.mode === 'create'" />
         <SpacesGroup v-if="proto.mode === 'create' && can.spaces" />
 
         <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>

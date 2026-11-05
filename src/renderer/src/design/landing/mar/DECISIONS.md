@@ -39,3 +39,20 @@ there; `mar/` decides how it looks.
 - Off the UI Playground, since only Pablo's designs used them: Proposal, Navigation
   › Original, Mode switch › Pill, Build navigation › Current. Off the Prototype
   menu: Customize, only his Agent read it. From Pablo became Nav options.
+
+## Builds milestone: design asks for Ben (2026-11-05)
+
+The Builds milestone now follows `bl/desktop-as-a-platform`: Desktop's build
+tabs (Update, Startup Args, Snapshots, Storage, Terminal, About), the header
+button with Window options and More, every list state, the list's menu and
+right-click, and the sidebar's Builds and Tools. Where the prototype keeps a
+different choice, it is a design ask:
+
+| #   | Ask                                                                      | Why                                                                                                          |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| B1  | Builds as one-line rows, not a card grid                                 | Names, state and the one action line up; more builds fit before scrolling.                                   |
+| B2  | Start stays the action when an update is waiting; Update is a chip       | Many people keep a build as it is (Pablo). Desktop swaps the button for Update and shrinks Start to an icon. |
+| B3  | The action says where it runs: "Start on this computer", "Open on Cloud" | Desktop says only Start / Open; where it runs is otherwise a small icon.                                     |
+| B4  | A problem's way out on the row: Locate, Retry install, Finish uninstall  | Desktop shows the red label only; the fix lives in the menu or the build page.                               |
+| B5  | Greyed menu items explain themselves in a line at the menu's foot        | Desktop puts "Stop the running instance first." in a tooltip on each greyed item.                            |
+| B6  | Startup Args opens on the flag builder, raw arguments on top             | Desktop shows a raw text field and the builder one click away.                                               |
