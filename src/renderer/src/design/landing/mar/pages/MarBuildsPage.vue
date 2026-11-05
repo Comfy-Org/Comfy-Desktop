@@ -337,7 +337,7 @@ function createBuild(b: Build): void {
 // Desktop's menu, in its order (composables/useInstallContextMenu.ts):
 // Manage, then the state's change, then the install's own; snapshots;
 // Create Build; Stop and Uninstall last. While it runs, what would change
-// it is greyed, and the note says why.
+// it is greyed, and its tooltip says why.
 function m1Lines(b: Build): MenuLine[] {
   const local = b.kind === 'local'
   const running = b.state === 'running' || busy(b)
@@ -397,8 +397,7 @@ function m1Lines(b: Build): MenuLine[] {
   return [
     ...top,
     ...(snaps.length ? ['sep' as const, ...snaps] : []),
-    ...(end.length ? ['sep' as const, ...end] : []),
-    ...(running && local ? [{ note: 'Stop the running instance first to change it.' }] : [])
+    ...(end.length ? ['sep' as const, ...end] : [])
   ]
 }
 const refreshing = ref(false)

@@ -6,6 +6,7 @@ import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import DropdownMenuSubContent from '../../ui/DropdownMenuSubContent.vue'
 import DropdownMenuSubTrigger from '../../ui/DropdownMenuSubTrigger.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import type { MenuLine } from './menu'
 
 /** An item's ⋯ menu (Mar's pages): smoked glass, a second panel for
@@ -59,17 +60,17 @@ const open = defineModel<boolean>('open', { default: false })
             </template>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-        <DropdownMenuItem
-          v-else
-          :disabled="l.disabled"
-          :title="l.title"
-          :class="l.danger && 'mar-menu-danger'"
-          @select="l.run?.()"
-        >
-          <component :is="l.icon" v-if="l.icon" :size="15" />
-          <span class="flex-1 truncate">{{ l.label }}</span>
-          <kbd v-if="l.hint" class="mar-menu-hint">{{ l.hint }}</kbd>
-        </DropdownMenuItem>
+        <Tooltip v-else :content="l.title ?? ''" :disabled="!l.title" side="left">
+          <DropdownMenuItem
+            :disabled="l.disabled"
+            :class="[l.danger && 'mar-menu-danger', l.title && 'mar-menu-why']"
+            @select="l.run?.()"
+          >
+            <component :is="l.icon" v-if="l.icon" :size="15" />
+            <span class="flex-1 truncate">{{ l.label }}</span>
+            <kbd v-if="l.hint" class="mar-menu-hint">{{ l.hint }}</kbd>
+          </DropdownMenuItem>
+        </Tooltip>
       </template>
     </DropdownMenuContent>
   </DropdownMenuRoot>
@@ -106,6 +107,10 @@ const open = defineModel<boolean>('open', { default: false })
 .mar-menu-danger,
 .mar-menu-danger > svg {
   color: var(--color-status-danger) !important;
+}
+/* A greyed line still takes the hover, so its tooltip can say why. */
+:root .proto-ui.proto-ui.proto-ui .mar-menu-why[data-disabled] {
+  pointer-events: auto;
 }
 .mar-menu-note {
   margin: 0;
