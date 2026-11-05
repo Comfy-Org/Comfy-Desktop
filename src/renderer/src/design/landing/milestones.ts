@@ -41,7 +41,7 @@ export const MILESTONES = [
   { value: '2', label: '2 · Builds · MVP (Milestone 1)' },
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
-  { value: '4.5', label: '5 · Explore apps' },
+  { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
   { value: '5', label: '6 · Explore & Learn' },
   { value: '6', label: '7 · Builder' },
   { value: '7', label: '8 · One window' },
