@@ -31,6 +31,48 @@ this on every OS; it skips `home` and `downloads` on Windows, where Electron can
 resolve the Downloads folder inside a redirected profile. Running `electron .` directly
 bypasses the harness and uses the real profile.
 
+## Local focus behaviour (Windows)
+
+Playwright launches the real app, and its windows normally take keyboard focus. That
+interrupts whatever you're doing on the machine. On a local Windows run the harness
+avoids this. It loads `e2e/support/backgroundWindowsShim.cjs` with Electron's `-r`
+flag, before the app's own code. The shim patches Electron only in that test process:
+
+- `BrowserWindow.show()` becomes `showInactive()`. A window constructed visible is
+  created hidden and then shown inactive.
+- `win.focus()`, `win.moveTop()`, `app.focus()`, `webContents.focus()` and
+  `setAlwaysOnTop()` do nothing. `setAlwaysOnTop` is disabled because of the
+  always-on-top trick in `bringToFront`. `webContents.focus()` is disabled because it
+  activates the host window on Windows, which was measured, not assumed.
+  `sendInputEvent` still reaches the page without it.
+- `--disable-features=CalculateNativeWinOcclusion` and
+  `--disable-backgrounding-occluded-windows` keep windows that are covered by yours
+  painting, because `capturePage()` and first-paint reveals wait on the compositor.
+
+The `-r` flag is handled by Electron's default app, which is what `electron.launch`
+starts. The shim is test-only, and nothing under `src/` references it.
+
+| Run | Focus behaviour |
+| --- | --- |
+| Local Windows, default | Background. `@needs-focus` tests are excluded from `windows`. |
+| `pnpm run test:e2e:windows:focus` | Only `@needs-focus` tests, with real focus (project `windows-focus`). |
+| `E2E_FOREGROUND=1` | Real focus. The whole suite runs in `windows`, as before. |
+| `CI` set | Real focus. The whole suite runs in `windows`, and `windows-focus` does not exist. |
+| `lifecycle` project | Always real focus. The zero-mock policy forbids patching Electron. |
+| macOS / Linux | Unchanged, because the shim has only been measured on Windows. |
+
+The `windows-focus` project and the `grepInvert` only exist on a background run, so
+coverage in CI is unchanged.
+
+### `@needs-focus`
+
+Add `@needs-focus` to a test's title only when it fails, or behaves differently, in a
+background run but passes in the foreground. Leave a one-line reason next to it. A test
+that also fails in the foreground has a real failure, and the tag must not hide it.
+
+Currently tagged: none. Three full background passes and two foreground passes of the
+`windows` project on Windows 11 found no test that needs focus (2026-11-05).
+
 ## Zero-mock policy (lifecycle tests)
 
 Lifecycle tests replace manual release testing. A human tester does not mock the app,

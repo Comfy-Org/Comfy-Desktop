@@ -88,5 +88,12 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    // Electron `-r` preloads run before the app's ESM bundle and must be CommonJS. Last, so
+    // it wins over the TypeScript presets above.
+    files: ['./e2e/support/**/*.cjs'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
   }
 ])

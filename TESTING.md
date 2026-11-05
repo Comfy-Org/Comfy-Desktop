@@ -36,12 +36,19 @@ pnpm run test:integration
 pnpm run build
 pnpm run test:e2e:windows    # or :macos / :linux
 pnpm exec playwright test --project=windows chooser.test.ts   # one spec
+pnpm run test:e2e:windows:focus   # Windows: only the @needs-focus tests, with real focus
 
 # Lifecycle (real installs/downloads — see warning below)
 pnpm run build
 pnpm run test:e2e:lifecycle
 pnpm exec playwright test --project=lifecycle lifecycle-copy.test.ts   # one spec
 ```
+
+On a local Windows run the app's windows open behind yours and never take
+keyboard focus, so you can keep working while the suite runs. Tests tagged
+`@needs-focus` move to the `windows-focus` project, which keeps real focus.
+`E2E_FOREGROUND=1` turns this off. CI always runs the whole suite with real
+focus. See [`e2e/README.md`](e2e/README.md#local-focus-behaviour-windows).
 
 > [!WARNING]
 > `pnpm run test:e2e` with no `--project` runs **all** projects, including
