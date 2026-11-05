@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { isMariana } from '../proposal'
 import { marUser, setUser } from '../userStates/userState'
-import { newInstanceHooks, toast } from '../../useProto'
+import { go, newInstanceHooks, toast } from '../../useProto'
 
 /**
  * Local setup (UI Playground › Local setup): the proposed first install of
@@ -30,6 +30,14 @@ export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
   { value: 'row', label: 'Rows' },
   { value: 'today', label: 'Today' }
 ]
+/** What the first release ships. M1: Builds only, so the install lands on
+ *  All builds and there are no example workflows. Next: the Home exists and
+ *  offers the starter workflows after the install (StarterShelf.vue). */
+export type SetupScope = 'm1' | 'next'
+export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
+  { value: 'm1', label: 'M1' },
+  { value: 'next', label: 'Next iterations' }
+]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
@@ -46,16 +54,17 @@ export const MACHINES: { value: Machine; label: string }[] = [
 
 const KEY = 'comfy.design.mar.localSetup'
 
-function load(): { mode: LocalSetup; machine: Machine; cards: RunOnCards } {
+function load(): { mode: LocalSetup; machine: Machine; cards: RunOnCards; scope: SetupScope } {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
     return {
       mode: v.mode === 'on' ? 'on' : 'off',
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
-      cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow'
+      cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
+      scope: v.scope === 'next' ? 'next' : 'm1'
     }
   } catch {
-    return { mode: 'off', machine: 'ready', cards: 'glow' }
+    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1' }
   }
 }
 
@@ -68,6 +77,9 @@ export const canvas = ref(new URLSearchParams(location.search).get('canvas') ===
 // `?setup=first` links straight to the proposed flow, on first launch.
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
 if (linkFirst) localSetup.mode = 'on'
+// A link can pick the scope: `&scope=m1` or `&scope=next`.
+const linkScope = new URLSearchParams(location.search).get('scope')
+if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
 
 watch(
   () => ({ ...localSetup }),
@@ -243,6 +255,8 @@ function finish(): void {
   stop()
   marUser.local = 'one'
   flow.open = false
+  // M1 has no Home: the install lands on All builds.
+  go(localSetup.scope === 'm1' ? 'environments' : 'overview')
   toast(flow.picked ? `Opening ComfyUI with ${flow.picked.title}` : 'Opening ComfyUI')
 }
 

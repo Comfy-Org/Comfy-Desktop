@@ -33,7 +33,7 @@ import MarViewToggle from './MarViewToggle.vue'
 import MarSelectBar from './MarSelectBar.vue'
 import { collection } from './collection'
 import { useLibrary } from './library'
-import { shownState } from './pageState'
+import { pageState, shownState, type PageState } from './pageState'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 import type { ItemStatus } from './MarStatus.vue'
@@ -56,6 +56,14 @@ const builds = collection<Build>(
   ),
   'build'
 )
+
+// A first-time user's libraries are empty, but not Builds once they have
+// installed one (the local setup lands here in its M1 scope).
+const buildsState = computed<PageState | undefined>(() => {
+  if (shownState.value === 'live' && builds.items.length === 0) return 'empty'
+  if (pageState.id === 'live' && !proto.fresh && builds.items.length) return 'live'
+  return undefined
+})
 
 type Where = 'all' | 'local' | 'cloud'
 const where = ref<Where>('all')
@@ -258,7 +266,7 @@ const newLabel = computed(() =>
     title="Builds"
     :skeleton="view === 'grid' ? 'cards' : 'list'"
     :no-results="shown.length === 0 && filtered"
-    :state="shownState === 'live' && builds.items.length === 0 ? 'empty' : undefined"
+    :state="buildsState"
     :empty="{
       icon: Plus,
       title: 'Set up where your work runs',

@@ -22,6 +22,7 @@ import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   LOCAL_SETUPS,
+  SETUP_SCOPES,
   MACHINES,
   SETUP_SCREENS,
   canvas,
@@ -331,6 +332,10 @@ function onScroll(e: Event): void {
             <Seg v-model="localSetup.mode" label="Flow" :options="LOCAL_SETUPS" />
           </Row>
           <template v-if="localSetup.mode === 'on'">
+            <!-- M1 ships Builds only: no Home, no example workflows. -->
+            <Row label="Scope">
+              <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
+            </Row>
             <Row label="Jump to">
               <div class="grid grid-cols-2 gap-1" role="group" aria-label="Jump to">
                 <button

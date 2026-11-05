@@ -220,8 +220,12 @@ export const TWEAKS = {
   // Local setup: Today's toast until the proposal is switched on.
   localSetup: {
     isDefault: () =>
-      localSetup.mode === 'off' && localSetup.machine === 'ready' && localSetup.cards === 'glow',
-    reset: () => Object.assign(localSetup, { mode: 'off', machine: 'ready', cards: 'glow' })
+      localSetup.mode === 'off' &&
+      localSetup.machine === 'ready' &&
+      localSetup.cards === 'glow' &&
+      localSetup.scope === 'm1',
+    reset: () =>
+      Object.assign(localSetup, { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1' })
   },
   look: one(marLook, 'current'),
   knobs: {
