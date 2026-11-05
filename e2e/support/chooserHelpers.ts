@@ -1,5 +1,10 @@
 import { expect, type ElectronApplication } from '@playwright/test'
-import { isPopupVisible, titlePopupPage, waitForWebContents, type WebContentsPage } from './cdpPages'
+import {
+  isPopupVisible,
+  titlePopupPage,
+  waitForWebContents,
+  type WebContentsPage
+} from './cdpPages'
 import { byTestId, TID } from './testIds'
 
 export async function expectChooserVisible(panel: WebContentsPage): Promise<void> {
@@ -12,15 +17,22 @@ export async function clickNewInstallTile(panel: WebContentsPage): Promise<void>
   expect(ok, 'New install tile click dispatched').toBe(true)
 }
 
-export async function clickInstallTile(panel: WebContentsPage, nameSubstring: string): Promise<void> {
-  const selector = '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
+export async function clickInstallTile(
+  panel: WebContentsPage,
+  nameSubstring: string
+): Promise<void> {
+  const selector =
+    '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
   const needle = nameSubstring.toLowerCase()
   await panel.waitFor(
     async () => {
       const texts = await panel.allText(selector)
       return texts.some((t) => t.toLowerCase().includes(needle))
     },
-    { timeout: 15_000, message: `Install tile matching "${nameSubstring}" never appeared in chooser` },
+    {
+      timeout: 15_000,
+      message: `Install tile matching "${nameSubstring}" never appeared in chooser`
+    }
   )
   const launched = await panel.evaluate<boolean>(`(() => {
     const needle = ${JSON.stringify(needle)}
@@ -51,20 +63,26 @@ export async function openManageViaDashboard(
   app: ElectronApplication,
   panel: WebContentsPage,
   installationId: string,
-  tabKey?: string,
+  tabKey?: string
 ): Promise<WebContentsPage> {
   await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
   await panel.evaluate<void>(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`,
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`
   )
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
-    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), { timeout: 15_000, intervals: [100, 250] })
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
+      timeout: 15_000,
+      intervals: [100, 250]
+    })
     .toBe(true)
   const popup = titlePopupPage(app)
   if (tabKey) {
     await popup.waitForVisible(byTestId(TID.settingsTab(tabKey)), { timeout: 15_000 })
-    expect(await popup.click(byTestId(TID.settingsTab(tabKey))), `picker ${tabKey} tab clicked`).toBe(true)
+    expect(
+      await popup.click(byTestId(TID.settingsTab(tabKey))),
+      `picker ${tabKey} tab clicked`
+    ).toBe(true)
   }
   return popup
 }
@@ -72,21 +90,32 @@ export async function openManageViaDashboard(
 export async function openPickerViaTitlePill(
   app: ElectronApplication,
   titleBar: WebContentsPage,
-  tabKey?: string,
+  tabKey?: string
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
-    throw new Error('openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill')
+    throw new Error(
+      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+    )
   }
   await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
-  expect(await titleBar.click('.title-install-pill.is-interactive'), 'title-bar install pill clicked').toBe(true)
+  expect(
+    await titleBar.click('.title-install-pill.is-interactive'),
+    'title-bar install pill clicked'
+  ).toBe(true)
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
-    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), { timeout: 15_000, intervals: [100, 250] })
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
+      timeout: 15_000,
+      intervals: [100, 250]
+    })
     .toBe(true)
   const popup = titlePopupPage(app)
   if (tabKey) {
     await popup.waitForVisible(byTestId(TID.settingsTab(tabKey)), { timeout: 15_000 })
-    expect(await popup.click(byTestId(TID.settingsTab(tabKey))), `picker ${tabKey} tab clicked`).toBe(true)
+    expect(
+      await popup.click(byTestId(TID.settingsTab(tabKey))),
+      `picker ${tabKey} tab clicked`
+    ).toBe(true)
   }
   return popup
 }

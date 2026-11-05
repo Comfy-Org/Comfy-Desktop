@@ -118,18 +118,18 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 
 ### Common tasks
 
-| Command                          | Description                                                           |
-| -------------------------------- | --------------------------------------------------------------------- |
-| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then run `pnpm run dev` |
-| `pnpm run dev`                   | Start the app in dev mode                                             |
-| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
-| `pnpm run test:integration`      | Integration suite                                                     |
-| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| Command                          | Description                                                                 |
+| -------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then run `pnpm run dev`       |
+| `pnpm run dev`                   | Start the app in dev mode                                                   |
+| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                                  |
+| `pnpm run test:integration`      | Integration suite                                                           |
+| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))                    |
 | `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
-| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
-| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
-| `pnpm run format`                | Format (Prettier)                                                     |
-| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
+| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                                 |
+| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                               |
+| `pnpm run format`                | Format (Prettier)                                                           |
+| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                        |
 
 For the test categories, how to run each, and which one a new test belongs in, see [`TESTING.md`](TESTING.md).
 
@@ -151,8 +151,8 @@ locales/         # i18n translations
 
 The app ships a minimal (~15–20 MB) standalone Python with `pygit2` baked in, under `bootstrap-python/<platform>/`. It provides git operations (clone, fetch, ls-remote) before any standalone ComfyUI environment is provisioned, so the app works on machines without system `git`.
 
-| Command                    | What it does                                                                                                                                                                                              |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command                    | What it does                                                                                                                                                                                               |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.mjs` (no system Python needed). Auto-detects the host platform and architecture; pass `--platform win-x64\|win-arm64\|mac-arm64\|linux-x64` for another. |
 | `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v3`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v3) release (faster). Set `GITHUB_TOKEN` to authenticate.                          |
 

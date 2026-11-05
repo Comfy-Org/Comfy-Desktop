@@ -10,8 +10,8 @@ renderer (CTA label + caret) and main (executor). **To change a behavior, edit
 that table and its test.**
 
 **Cloud ≡ Remote, with one asymmetry.** `navClass` folds `remote → cloud` (no
-local process), so a Remote *host* navigates like a Cloud host, and a Remote
-*target* routes through the Cloud-target cells. They diverge only on
+local process), so a Remote _host_ navigates like a Cloud host, and a Remote
+_target_ routes through the Cloud-target cells. They diverge only on
 **stoppability**: a remote session can be stopped, a cloud session can't — so the
 caret offers **Stop** for a running remote and **nothing** for a running cloud.
 
@@ -21,42 +21,42 @@ caret offers **Stop** for a running remote and **nothing** for a running cloud.
 shows only when the target is **not running** (a running one can't open a second
 window); once running the caret offers **Stop** (remote) or nothing (cloud).
 
-| # | Current view | Target | State | Primary CTA | Caret ▾ |
-|---|---|---|---|---|---|
-| 1 | Dashboard | Dashboard | — | no-op | – |
-| 2 | Dashboard | Instance | stopped | Start (same window) | – |
-| 3 | Dashboard | Instance | running elsewhere | Switch (focus) | – |
-| 4 | Dashboard | Cloud | stopped | Open Cloud (same window) | Open in new window |
-| 5 | Dashboard | Cloud | running elsewhere | Switch (focus) | – |
-| 6 | Dashboard | Remote | stopped | Open Remote (same window) | Open in new window |
-| 7 | Dashboard | Remote | running elsewhere | Switch (focus) | Stop |
-| 8 | Dashboard | + New Instance | — | New Install (wizard) | – |
-| 9 | Instance | Dashboard | — | Open Dashboard (new window; instance keeps running) | – |
-| 10 | Instance | self | running here | Restart | Stop |
-| 11 | Instance | Instance B | stopped | Switch (swap in place) | Open in new window → 3-way confirm¹ |
-| 12 | Instance | Instance B | running elsewhere | Switch (focus) | – |
-| 13 | Instance | Cloud | stopped | Open Cloud (new window; instance keeps running) | – |
-| 14 | Instance | Cloud | running elsewhere | Switch (focus) | – |
-| 15 | Instance | Remote | stopped | Open Remote (new window; instance keeps running) | – |
-| 16 | Instance | Remote | running elsewhere | Switch (focus) | Stop |
-| 17 | Cloud | Dashboard | — | Open Dashboard (new window²) | – |
-| 18 | Cloud | Instance | stopped | Open in new window (cloud keeps running) | – |
-| 19 | Cloud | Instance | running elsewhere | Switch (focus) | – |
-| 20 | Cloud | self | running here | Restart³ | – |
-| 21 | Cloud | Cloud/Remote | stopped | Open in new window | – |
-| 22 | Cloud | Cloud | running elsewhere | Switch (focus) | – |
-| 23 | Cloud | Remote | running elsewhere | Switch (focus) | Stop |
-| 24 | Cloud | + New Instance | — | New Install (wizard, new window) | – |
+| #   | Current view | Target         | State             | Primary CTA                                         | Caret ▾                             |
+| --- | ------------ | -------------- | ----------------- | --------------------------------------------------- | ----------------------------------- |
+| 1   | Dashboard    | Dashboard      | —                 | no-op                                               | –                                   |
+| 2   | Dashboard    | Instance       | stopped           | Start (same window)                                 | –                                   |
+| 3   | Dashboard    | Instance       | running elsewhere | Switch (focus)                                      | –                                   |
+| 4   | Dashboard    | Cloud          | stopped           | Open Cloud (same window)                            | Open in new window                  |
+| 5   | Dashboard    | Cloud          | running elsewhere | Switch (focus)                                      | –                                   |
+| 6   | Dashboard    | Remote         | stopped           | Open Remote (same window)                           | Open in new window                  |
+| 7   | Dashboard    | Remote         | running elsewhere | Switch (focus)                                      | Stop                                |
+| 8   | Dashboard    | + New Instance | —                 | New Install (wizard)                                | –                                   |
+| 9   | Instance     | Dashboard      | —                 | Open Dashboard (new window; instance keeps running) | –                                   |
+| 10  | Instance     | self           | running here      | Restart                                             | Stop                                |
+| 11  | Instance     | Instance B     | stopped           | Switch (swap in place)                              | Open in new window → 3-way confirm¹ |
+| 12  | Instance     | Instance B     | running elsewhere | Switch (focus)                                      | –                                   |
+| 13  | Instance     | Cloud          | stopped           | Open Cloud (new window; instance keeps running)     | –                                   |
+| 14  | Instance     | Cloud          | running elsewhere | Switch (focus)                                      | –                                   |
+| 15  | Instance     | Remote         | stopped           | Open Remote (new window; instance keeps running)    | –                                   |
+| 16  | Instance     | Remote         | running elsewhere | Switch (focus)                                      | Stop                                |
+| 17  | Cloud        | Dashboard      | —                 | Open Dashboard (new window²)                        | –                                   |
+| 18  | Cloud        | Instance       | stopped           | Open in new window (cloud keeps running)            | –                                   |
+| 19  | Cloud        | Instance       | running elsewhere | Switch (focus)                                      | –                                   |
+| 20  | Cloud        | self           | running here      | Restart³                                            | –                                   |
+| 21  | Cloud        | Cloud/Remote   | stopped           | Open in new window                                  | –                                   |
+| 22  | Cloud        | Cloud          | running elsewhere | Switch (focus)                                      | –                                   |
+| 23  | Cloud        | Remote         | running elsewhere | Switch (focus)                                      | Stop                                |
+| 24  | Cloud        | + New Instance | —                 | New Install (wizard, new window)                    | –                                   |
 
 ¹ Fires only when the host is a local install (the swap would stop its process):
-an in-drawer dialog — *Switch* (stop A, swap B in) / *Open in new window* (keep A)
-/ *Cancel*. Cloud/remote/dashboard hosts have nothing to stop → straight switch.
+an in-drawer dialog — _Switch_ (stop A, swap B in) / _Open in new window_ (keep A)
+/ _Cancel_. Cloud/remote/dashboard hosts have nothing to stop → straight switch.
 
 ² **Deviation:** the matrix specified same-window. The "Open Dashboard" chip
 routes through `activate('new-window')`, not the table — kept until the chip
 consults `decideNavigation`.
 
-³ Matrix row 16 wanted a *second* cloud window; a second view of one session
+³ Matrix row 16 wanted a _second_ cloud window; a second view of one session
 isn't supported (single-window auth). The `allowDuplicate` plumbing is reserved
 for a future implementation.
 
@@ -101,9 +101,10 @@ for a future implementation.
 
 `pnpm dev`, then with two local installs (A, B) + Cloud/Remote available, walk
 the matrix rows. Spot-checks worth confirming:
+
 - A running **remote** target's caret shows **Stop**; a running **cloud** target
   shows **no caret** (just Switch/focus).
-- Cloud/Remote → a *different* Cloud/Remote target shows a live CTA, never a dead
+- Cloud/Remote → a _different_ Cloud/Remote target shows a live CTA, never a dead
   "Start".
 - Local restart still shows the in-drawer "Restart instance?" confirm; cloud/
   remote actions never show a local-process kill confirm.

@@ -1,14 +1,10 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
-import {
-  getIpcInvocations,
-  resetIpcInvocations,
-} from './support/devHooks'
+import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
 
 let ctx: AppContext
 let sourcePath: string
@@ -33,9 +29,9 @@ test.beforeAll(async () => {
         name: SOURCE_NAME,
         installPath: sourcePath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -55,18 +51,19 @@ test('Copy success opens the destination install in a new window @windows @macos
       installationId: ${JSON.stringify(SOURCE_ID)},
       title: 'Copy — ' + ${JSON.stringify(SOURCE_NAME)},
       newInstallationId: ${JSON.stringify(DEST_ID)},
-    })`,
+    })`
   )
 
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'open-install-window')).length, {
       timeout: 5_000,
-      intervals: [100, 250],
+      intervals: [100, 250]
     })
     .toBeGreaterThanOrEqual(1)
 
-  const calls = await getIpcInvocations(ctx.app, 'open-install-window') as
-    { installationId?: string }[]
+  const calls = (await getIpcInvocations(ctx.app, 'open-install-window')) as {
+    installationId?: string
+  }[]
   expect(calls.length).toBe(1)
   expect(calls[0]?.installationId).toBe(DEST_ID)
 })
@@ -76,7 +73,7 @@ test('No newInstallationId → no open-install-window call @windows @macos @linu
     `window.__e2eRenderer.injectProgressSuccess({
       installationId: ${JSON.stringify(SOURCE_ID)},
       title: 'Other op — ' + ${JSON.stringify(SOURCE_NAME)},
-    })`,
+    })`
   )
 
   await new Promise((r) => setTimeout(r, 1_500))

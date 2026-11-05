@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
@@ -52,8 +51,8 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 1,
-            },
+              commitsAhead: 1
+            }
           },
           {
             trigger: 'manual',
@@ -65,26 +64,28 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 2,
-            },
-          },
-        ],
-      },
-    ],
+              commitsAhead: 2
+            }
+          }
+        ]
+      }
+    ]
   })
 
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
-    ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-      _win: unknown,
-      opts: { defaultPath?: string },
-    ) => {
-      const raw = opts.defaultPath ?? 'snapshot-export.json'
-      const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-      const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-      const sep = dir.includes('\\') ? '\\' : '/'
-      return { canceled: false, filePath: `${dir}${sep}${base}` }
-    }
-  }, exportDir))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dir) => {
+      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+        _win: unknown,
+        opts: { defaultPath?: string }
+      ) => {
+        const raw = opts.defaultPath ?? 'snapshot-export.json'
+        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+        const sep = dir.includes('\\') ? '\\' : '/'
+        return { canceled: false, filePath: `${dir}${sep}${base}` }
+      }
+    }, exportDir)
+  )
 
   await expectChooserVisible(ctx.panel)
 })
@@ -107,7 +108,8 @@ async function readSharedEnvelope(): Promise<ShareEnvelope> {
       const entries = await readdir(exportDir)
       const match = entries.find((e) => e.startsWith('snapshot-') && e.endsWith('.json'))
       if (match) return resolve(path.join(exportDir, match))
-      if (Date.now() > deadline) return reject(new Error('shared snapshot file did not appear within 10s'))
+      if (Date.now() > deadline)
+        return reject(new Error('shared snapshot file did not appear within 10s'))
       setTimeout(poll, 200)
     }
     void poll()
@@ -144,13 +146,17 @@ test('picker footer More → Share exports the latest snapshot @lifecycle', asyn
         initialTab: 'config',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('share')), { timeout: 30_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.pickerMoreTrigger),
+    byTestId(TID.pinBottomAction('share')),
+    { timeout: 30_000 }
+  )
   expect(await popup.click(byTestId(TID.pinBottomAction('share')))).toBe(true)
 
   expectLatestEnvelope(await readSharedEnvelope())

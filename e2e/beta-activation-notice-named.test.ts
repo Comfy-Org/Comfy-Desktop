@@ -5,7 +5,11 @@ import { expect, test, type ElectronApplication } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
-import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import {
+  opsFlagsGrantSeed,
+  reserveFreePort,
+  writeFakeComfyInstall
+} from './support/fakeComfyInstall'
 import { captureHostWindow } from './support/windowCapture'
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 })

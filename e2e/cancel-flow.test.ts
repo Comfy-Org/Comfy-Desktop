@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -10,7 +9,7 @@ import {
   clearRunningSessions,
   getIpcInvocations,
   resetIpcInvocations,
-  seedRunningSession,
+  seedRunningSession
 } from './support/devHooks'
 
 let ctx: AppContext
@@ -35,9 +34,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -64,7 +63,7 @@ async function startInFlightOp(opts: { destroysInstance?: boolean } = {}): Promi
         opKind: 'update',
         destroysInstance: ${opts.destroysInstance ? 'true' : 'false'},
       })
-    })()`,
+    })()`
   )
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
 }
@@ -74,7 +73,7 @@ async function settleInFlightOp(result: { ok: boolean; cancelled?: boolean }): P
     `window.__e2eRenderer.settleInFlightOp({
       installationId: ${JSON.stringify(INSTALL_ID)},
       result: ${JSON.stringify(result)},
-    })`,
+    })`
   )
 }
 
@@ -85,7 +84,7 @@ async function runGuardInBackground(actionLabel: string): Promise<void> {
         installationId: ${JSON.stringify(INSTALL_ID)},
         actionLabel: ${JSON.stringify(actionLabel)},
       })
-    })()`,
+    })()`
   )
 }
 
@@ -103,10 +102,10 @@ test('useActionGuard fires cancel-operation when the user confirms cancelling th
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'cancel-operation')).length, {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(1)
-  const cancelCalls = await getIpcInvocations(ctx.app, 'cancel-operation') as string[]
+  const cancelCalls = (await getIpcInvocations(ctx.app, 'cancel-operation')) as string[]
   expect(cancelCalls[0]).toBe(INSTALL_ID)
 
   await settleInFlightOp({ ok: false, cancelled: true })
@@ -130,14 +129,15 @@ test('useActionGuard returns false without cancelling when the user dismisses th
 test('Return-to-Dashboard from in-flight op cancels and closes the takeover @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
-    installationName: INSTALL_NAME,
+    installationName: INSTALL_NAME
   })
   await expect
     .poll(
-      async () => ctx.panel.evaluate<boolean>(
-        `window.__e2eRenderer.isRunning(${JSON.stringify(INSTALL_ID)})`,
-      ),
-      { timeout: 5_000, intervals: [100, 200] },
+      async () =>
+        ctx.panel.evaluate<boolean>(
+          `window.__e2eRenderer.isRunning(${JSON.stringify(INSTALL_ID)})`
+        ),
+      { timeout: 5_000, intervals: [100, 200] }
     )
     .toBe(true)
 
@@ -150,23 +150,23 @@ test('Return-to-Dashboard from in-flight op cancels and closes the takeover @win
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'cancel-operation')).length, {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(1)
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'stop-comfyui')).length, {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(1)
 
-  const cancelCalls = await getIpcInvocations(ctx.app, 'cancel-operation') as string[]
+  const cancelCalls = (await getIpcInvocations(ctx.app, 'cancel-operation')) as string[]
   expect(cancelCalls[0]).toBe(INSTALL_ID)
 
   await expect
     .poll(async () => ctx.panel.exists('.brand-progress'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 

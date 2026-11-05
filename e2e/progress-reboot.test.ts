@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -31,9 +30,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -52,7 +51,7 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
     })
   })()`)
   const seeded = await ctx.panel.evaluate<boolean>(
-    `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`,
+    `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`
   )
   expect(seeded, 'seedErrorInstance must register the install in errorInstances').toBe(true)
 
@@ -69,7 +68,7 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
   await ctx.panel.waitForVisible(byTestId(TID.progressReboot), { timeout: 10_000 })
 
   const beforeReboot = await ctx.panel.evaluate<number>(
-    `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+    `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`
   )
   expect(beforeReboot, 'apiCall must have run once for the seeded failure').toBe(1)
 
@@ -79,22 +78,22 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
     .poll(
       () =>
         ctx.panel.evaluate<number>(
-          `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+          `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`
         ),
-      { timeout: 5_000, intervals: [100, 200] },
+      { timeout: 5_000, intervals: [100, 200] }
     )
     .toBeGreaterThanOrEqual(2)
 
   await expect
     .poll(() => ctx.panel.exists(byTestId(TID.progressErrorMessage)), {
       timeout: 10_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
   await expect
     .poll(() => ctx.panel.exists('.brand-progress'), {
       timeout: 10_000,
-      intervals: [200, 500],
+      intervals: [200, 500]
     })
     .toBe(false)
 })

@@ -1,4 +1,3 @@
-
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
@@ -31,14 +30,15 @@ test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals t
       const wrap = document.querySelector('[data-testid="first-use-express-install"]')
       const cb = wrap && wrap.querySelector('[role="checkbox"]')
       if (cb && cb.getAttribute('aria-checked') === 'true') cb.click()
-    })()`,
+    })()`
   )
   expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
   await ctx.panel.waitFor(
-    async () => ctx.panel.evaluate<boolean>(
-      `!document.querySelector('[data-testid="first-use-continue"]').disabled`,
-    ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' },
+    async () =>
+      ctx.panel.evaluate<boolean>(
+        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
+      ),
+    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
   )
 
   await resetIpcInvocations(ctx.app, 'set-setting')
@@ -56,15 +56,22 @@ test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals t
 
   await ctx.panel.waitForVisible('.chooser-view', { timeout: 10_000 })
 
-  await expect.poll(
-    async () => {
-      const calls = await getIpcInvocations(ctx.app, 'set-setting') as Array<{ key: string; value: unknown }>
-      return calls.filter((c) => c.key === 'firstUseCompleted' && c.value === true).length
-    },
-    { timeout: 5_000, intervals: [100, 250] },
-  ).toBe(1)
+  await expect
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'set-setting')) as Array<{
+          key: string
+          value: unknown
+        }>
+        return calls.filter((c) => c.key === 'firstUseCompleted' && c.value === true).length
+      },
+      { timeout: 5_000, intervals: [100, 250] }
+    )
+    .toBe(1)
 
-  const modeCalls = await getIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode') as Array<{ mode: string }>
+  const modeCalls = (await getIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')) as Array<{
+    mode: string
+  }>
   expect(modeCalls.length).toBeGreaterThan(0)
   expect(modeCalls[modeCalls.length - 1]!.mode).toBe('none')
 })

@@ -8,7 +8,7 @@ import { WebContentsPage, titlePopupPage } from './support/cdpPages'
 import {
   opsFlagsGrantSeed,
   reserveFreePort,
-  writeFakeComfyInstall,
+  writeFakeComfyInstall
 } from './support/fakeComfyInstall'
 import { captureHostWindow } from './support/windowCapture'
 
@@ -19,7 +19,6 @@ const INSTALL_NAME = 'Beta Notice Fixture'
 let port = 0
 const GRANT_ARG = '--enable-asset-hashing'
 const GRANT_MIN_CORE = '0.3.80'
-
 
 let ctx: AppContext
 let installPath: string
@@ -50,7 +49,7 @@ test.beforeAll(async () => {
       firstUseCompleted: true,
       telemetryEnabled: true,
       betaFeaturesEnabled: true,
-      hasSeenCentralPillHint: true,
+      hasSeenCentralPillHint: true
     },
     installations: [
       {
@@ -68,11 +67,11 @@ test.beforeAll(async () => {
           commit: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
           baseTag: 'v0.3.99',
           commitsAhead: 0,
-          baseTagVerified: true,
-        },
-      },
+          baseTagVerified: true
+        }
+      }
     ],
-    opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE }),
+    opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE })
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -92,9 +91,9 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
       (await ctx.app.evaluate(
         ({ webContents }, p) =>
           webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(p))),
-        port,
+        port
       )) === true,
-    { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' },
+    { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
 
   const popup = coachmarkPopup(ctx.app)
@@ -106,7 +105,7 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
         return false
       }
     },
-    { timeout: 30_000, message: 'beta activation notice never appeared' },
+    { timeout: 30_000, message: 'beta activation notice never appeared' }
   )
 
   expect(await popup.textOf('.coachmark-title')).toBe('A beta feature is on')
@@ -210,7 +209,7 @@ test('the card is anchored on the bell it points at @linux', async () => {
     const detail = taken!.detail
     expect(
       offset,
-      'the beak must point at the bell, not merely sit in a view that is centred on it. ' + detail,
+      'the beak must point at the bell, not merely sit in a view that is centred on it. ' + detail
     ).toBeLessThanOrEqual(2)
   }
 })
@@ -244,9 +243,12 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
 
   await settings.waitFor(
     () => settings.exists('[data-field-id="betaFeaturesEnabled"].gs-field-flash'),
-    { timeout: 10_000, message: 'beta opt-in row was never highlighted' },
+    { timeout: 10_000, message: 'beta opt-in row was never highlighted' }
   )
-  const state = await settings.evaluate<{ checked: string | null; disabled: string | null }>(`(() => {
+  const state = await settings.evaluate<{
+    checked: string | null
+    disabled: string | null
+  }>(`(() => {
     const el = document.querySelector('[data-field-id="betaFeaturesEnabled"] button[role="switch"]')
     if (!el) return { checked: null, disabled: null }
     return {
@@ -263,12 +265,12 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
 
 test('the notice is spent: a second launch stays silent @linux', async () => {
   const stillPending = await ctx.titleBar.evaluate<unknown>(
-    `window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`
   )
   expect(stillPending).toBeNull()
 
   const announced = await ctx.titleBar.evaluate<unknown>(
-    `window.api.getSetting('betaNoticeAnnouncedArgs')`,
+    `window.api.getSetting('betaNoticeAnnouncedArgs')`
   )
   expect(announced).toEqual([GRANT_ARG])
 })

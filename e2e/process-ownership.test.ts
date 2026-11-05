@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
@@ -38,7 +37,7 @@ function seed(): SeedOptions {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      hasSeenCentralPillHint: true,
+      hasSeenCentralPillHint: true
     },
     installations: [
       {
@@ -56,10 +55,10 @@ function seed(): SeedOptions {
           commit: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
           baseTag: 'v0.3.99',
           commitsAhead: 0,
-          baseTagVerified: true,
-        },
-      },
-    ],
+          baseTagVerified: true
+        }
+      }
+    ]
   }
 }
 
@@ -79,7 +78,7 @@ async function readRecord(): Promise<OwnershipRecord | null> {
     'state',
     'comfyui-desktop-2',
     'comfy-procs',
-    `${INSTALL_ID}.json`,
+    `${INSTALL_ID}.json`
   )
   try {
     return JSON.parse(await readFile(file, 'utf-8')) as OwnershipRecord
@@ -123,7 +122,7 @@ async function launchInstall(app: AppContext, previousPid?: number): Promise<Own
           (await portAnswers())
         )
       },
-      { timeout: 90_000, message: 'the install never booted a new ComfyUI stub' },
+      { timeout: 90_000, message: 'the install never booted a new ComfyUI stub' }
     )
     .toBe(true)
   stubPids.add(record!.childPid)
@@ -195,8 +194,8 @@ test('an orphan left by a killed Desktop is stopped, and the install boots on it
       action: 'terminated',
       proof: 'desktop_record',
       exited_in_time: true,
-      busy_override: false,
-    }),
+      busy_override: false
+    })
   ])
 })
 
@@ -211,12 +210,12 @@ test('an orphan still running a prompt is left alone until the user stops it @li
 
     await app.panel.waitForVisible(byTestId(TID.progressPortConflictBanner), { timeout: 60_000 })
     expect(await app.panel.textOf(byTestId(TID.progressPortConflictBanner))).toContain(
-      'still running a prompt',
+      'still running a prompt'
     )
     expect(isAlive(busy!.childPid), 'a busy ComfyUI is not stopped without asking').toBe(true)
     expect(await app.panel.exists(byTestId(TID.progressPortConflictUsePort))).toBe(false)
     expect(await priorEvents(app)).toEqual([
-      expect.objectContaining({ action: 'busy_left', proof: 'desktop_record' }),
+      expect.objectContaining({ action: 'busy_left', proof: 'desktop_record' })
     ])
 
     expect(await app.panel.click(byTestId(TID.progressPortConflictKill))).toBe(true)
@@ -235,14 +234,14 @@ test('an orphan still running a prompt is left alone until the user stops it @li
             (await portAnswers())
           )
         },
-        { timeout: 90_000, message: 'stopping the busy ComfyUI never led to a new boot' },
+        { timeout: 90_000, message: 'stopping the busy ComfyUI never led to a new boot' }
       )
       .toBe(true)
     stubPids.add(replaced!.childPid)
     expect(isAlive(busy!.childPid)).toBe(false)
     expect(await priorEvents(app)).toEqual([
       expect.objectContaining({ action: 'busy_left' }),
-      expect.objectContaining({ action: 'terminated', busy_override: true }),
+      expect.objectContaining({ action: 'terminated', busy_override: true })
     ])
   } finally {
     await rm(path.join(installPath, 'queue-busy'), { force: true })
@@ -262,10 +261,12 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
         (await app.panel.allText('.brand-progress__status'))
           .join(' ')
           .includes('Checking an earlier ComfyUI'),
-      { timeout: 30_000, message: 'the busy check never started' },
+      { timeout: 30_000, message: 'the busy check never started' }
     )
 
-    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(true)
+    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(
+      true
+    )
     await app.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
     expect(await app.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
@@ -292,7 +293,7 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
   const manual = spawn(
     path.join(installPath, 'venv', 'bin', 'python3'),
     ['-s', path.join('ComfyUI', 'main.py'), '--port', String(port)],
-    { cwd: installPath, detached: true, stdio: 'ignore' },
+    { cwd: installPath, detached: true, stdio: 'ignore' }
   )
   manual.unref()
   stubPids.add(manual.pid!)

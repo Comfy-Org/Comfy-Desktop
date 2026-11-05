@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -15,7 +14,10 @@ const INSTALL_NAME = 'Progress Error Me'
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
 const LONG_ERROR = Array.from({ length: 80 })
-  .map((_, i) => `Step ${i + 1}: simulated long failure output that would normally fill many lines of the error block and force the modal to scroll on small windows.`)
+  .map(
+    (_, i) =>
+      `Step ${i + 1}: simulated long failure output that would normally fill many lines of the error block and force the modal to scroll on small windows.`
+  )
   .join(' ')
 
 test.describe.configure({ mode: 'serial' })
@@ -33,9 +35,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -78,8 +80,12 @@ test('ProgressModal error block caps its height and scrolls @windows @macos @lin
 
   expect(layout, 'progress error message element layout query returned null').not.toBeNull()
   expect(layout.textLength).toBeGreaterThan(2_000)
-  expect(layout.clientHeight, 'error block should not exceed the 240px clamp').toBeLessThanOrEqual(241)
-  expect(layout.scrollHeight, 'error block scrollHeight must exceed clientHeight (overflow active)')
-    .toBeGreaterThan(layout.clientHeight)
+  expect(layout.clientHeight, 'error block should not exceed the 240px clamp').toBeLessThanOrEqual(
+    241
+  )
+  expect(
+    layout.scrollHeight,
+    'error block scrollHeight must exceed clientHeight (overflow active)'
+  ).toBeGreaterThan(layout.clientHeight)
   expect(layout.overflowY).toBe('auto')
 })

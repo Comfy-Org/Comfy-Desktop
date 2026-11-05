@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -9,13 +8,13 @@ import {
   closeTitlePopupIfOpen,
   isPopupVisible,
   titlePopupPage,
-  waitForWebContents,
+  waitForWebContents
 } from './support/cdpPages'
 import {
   clearRunningSessions,
   getIpcInvocations,
   resetIpcInvocations,
-  seedRunningSession,
+  seedRunningSession
 } from './support/devHooks'
 
 let ctx: AppContext
@@ -40,9 +39,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -66,47 +65,45 @@ async function openExpandedPicker(): Promise<void> {
         installationId: ${JSON.stringify(INSTALL_ID)},
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitFor(
-    async () => popup.evaluate<boolean>(
-      'typeof window.__comfyTitlePopup?.pickInstall === "function"',
-    ),
-    { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' },
+    async () =>
+      popup.evaluate<boolean>('typeof window.__comfyTitlePopup?.pickInstall === "function"'),
+    { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' }
   )
 }
 
 test('pick-install for a running install dismisses the popup and focuses the existing host @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
-    installationName: INSTALL_NAME,
+    installationName: INSTALL_NAME
   })
 
   await openExpandedPicker()
 
   const popup = titlePopupPage(ctx.app)
-  await popup.evaluate<void>(
-    `window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_ID)})`,
-  )
+  await popup.evaluate<void>(`window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_ID)})`)
 
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, 'focus-comfy-window')).length,
-      { timeout: 5_000, intervals: [100, 250] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, 'focus-comfy-window')).length, {
+      timeout: 5_000,
+      intervals: [100, 250]
+    })
     .toBeGreaterThanOrEqual(1)
 
-  const focusCalls = await getIpcInvocations(ctx.app, 'focus-comfy-window') as
-    { installationId?: string }[]
+  const focusCalls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
+    installationId?: string
+  }[]
   expect(focusCalls[0]?.installationId).toBe(INSTALL_ID)
 })
 
@@ -114,23 +111,26 @@ test('pick-install for a stopped install dismisses the popup and fires runAction
   await openExpandedPicker()
 
   const popup = titlePopupPage(ctx.app)
-  await popup.evaluate<void>(
-    `window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_ID)})`,
-  )
+  await popup.evaluate<void>(`window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_ID)})`)
 
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 
   await expect
-    .poll(async () => {
-      const calls = (await getIpcInvocations(ctx.app, 'run-action')) as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.installationId === INSTALL_ID && c.actionId === 'launch')
-    }, { timeout: 10_000, intervals: [200, 500] })
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+          actionId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_ID && c.actionId === 'launch')
+      },
+      { timeout: 10_000, intervals: [200, 500] }
+    )
     .toBe(true)
 
   const stopCalls = await getIpcInvocations(ctx.app, 'stop-comfyui')
@@ -144,14 +144,12 @@ test('open-new-install dismisses the popup and mounts the new-install takeover @
   await openExpandedPicker()
 
   const popup = titlePopupPage(ctx.app)
-  await popup.evaluate<void>(
-    `window.__comfyTitlePopup.openNewInstall()`,
-  )
+  await popup.evaluate<void>(`window.__comfyTitlePopup.openNewInstall()`)
 
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 
@@ -164,19 +162,24 @@ test('open-install-action with reveal-in-folder keeps the popup open and fires t
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(
-    `window.__comfyTitlePopup.openInstallAction(${JSON.stringify(INSTALL_ID)}, 'reveal-in-folder')`,
+    `window.__comfyTitlePopup.openInstallAction(${JSON.stringify(INSTALL_ID)}, 'reveal-in-folder')`
   )
 
   await expect
-    .poll(async () => {
-      const calls = (await getIpcInvocations(ctx.app, 'run-action')) as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.installationId === INSTALL_ID && c.actionId === 'open-folder')
-    }, { timeout: 5_000, intervals: [100, 250] })
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+          actionId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_ID && c.actionId === 'open-folder')
+      },
+      { timeout: 5_000, intervals: [100, 250] }
+    )
     .toBe(true)
 
   expect(
     await isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    'picker popup should remain open for non-modal Open Folder action',
+    'picker popup should remain open for non-modal Open Folder action'
   ).toBe(true)
 })

@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -56,9 +55,9 @@ test.beforeAll(async () => {
         comfyVersion: { commit: 'a'.repeat(40), baseTag: 'v0.1.0', commitsAhead: 0 },
         releaseTag: 'v0.1.0',
         variant: 'cpu',
-        pythonVersion: '3.12',
-      },
-    ],
+        pythonVersion: '3.12'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -72,7 +71,7 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   test.setTimeout(120_000)
 
   await ctx.panel.evaluate<void>(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(SOURCE_ID)}, initialTab: 'update' })`,
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(SOURCE_ID)}, initialTab: 'update' })`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -80,10 +79,11 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   const copyUpdateButton = byTestId(TID.updateActionButton('copy-update'))
   await popup.waitForVisible(copyUpdateButton, { timeout: 30_000 })
   await popup.waitFor(
-    () => popup.evaluate<boolean>(
-      `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.disabled })()`,
-    ),
-    { timeout: 30_000, message: 'copy-update button never became enabled' },
+    () =>
+      popup.evaluate<boolean>(
+        `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.disabled })()`
+      ),
+    { timeout: 30_000, message: 'copy-update button never became enabled' }
   )
   expect(await popup.click(copyUpdateButton)).toBe(true)
 
@@ -112,10 +112,17 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   }
 
   let installations: InstallationLike[] = []
-  await expect.poll(async () => {
-    installations = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
-    return installations.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
-  }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        installations = await ctx.panel.evaluate<InstallationLike[]>(
+          'window.api.getInstallations()'
+        )
+        return installations.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
+      },
+      { timeout: 60_000, intervals: [250, 500, 1_000] }
+    )
+    .toBe(true)
 
   const newEntry = installations.find((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   expect(newEntry, 'new install id missing from registry after copy-update failure').toBeDefined()
@@ -123,7 +130,9 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   const newId = newEntry!.id
 
   const destPath = newEntry!.installPath!
-  expect(await pathExists(destPath), `destination dir ${destPath} missing after copy-update`).toBe(true)
+  expect(await pathExists(destPath), `destination dir ${destPath} missing after copy-update`).toBe(
+    true
+  )
   const destMarker = await readFile(path.join(destPath, MARKER_FILENAME), 'utf8')
   expect(destMarker, 'destination marker should carry the new install id').toBe(newId)
 
@@ -134,13 +143,16 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   const logsDir = await evalWithRetry(() => ctx.app.evaluate(({ app }) => app.getPath('logs')))
   const appLogPath = path.join(logsDir, 'app.log')
   await expect
-    .poll(async () => {
-      try {
-        return await readFile(appLogPath, 'utf8')
-      } catch {
-        return ''
-      }
-    }, { timeout: 30_000, intervals: [250, 500, 1_000] })
+    .poll(
+      async () => {
+        try {
+          return await readFile(appLogPath, 'utf8')
+        } catch {
+          return ''
+        }
+      },
+      { timeout: 30_000, intervals: [250, 500, 1_000] }
+    )
     .toContain('retry the update from the new installation')
   const logText = await readFile(appLogPath, 'utf8')
   expect(logText, `app.log never carried the update-failure marker`).toMatch(/Update/)

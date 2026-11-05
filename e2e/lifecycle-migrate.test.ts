@@ -1,4 +1,3 @@
-
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -35,12 +34,18 @@ interface Installation {
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  test.skip(process.platform !== 'win32', 'Legacy Desktop detection sandbox only works on Windows (APPDATA-based)')
+  test.skip(
+    process.platform !== 'win32',
+    'Legacy Desktop detection sandbox only works on Windows (APPDATA-based)'
+  )
   if (!process.env['GITHUB_TOKEN']) {
     for (let depth = 2; depth <= 8; depth++) {
       const segments = Array(depth).fill('..')
       const p = resolve(__dirname, ...segments, 'githubtoken.txt')
-      try { process.env['GITHUB_TOKEN'] = readFileSync(p, 'utf-8').trim(); break } catch { }
+      try {
+        process.env['GITHUB_TOKEN'] = readFileSync(p, 'utf-8').trim()
+        break
+      } catch {}
     }
   }
 
@@ -58,9 +63,9 @@ test.beforeAll(async () => {
       await mkdir(desktopConfigDir, { recursive: true })
       await writeFile(
         path.join(desktopConfigDir, 'config.json'),
-        JSON.stringify({ basePath: legacyBasePath }),
+        JSON.stringify({ basePath: legacyBasePath })
       )
-    },
+    }
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -74,11 +79,11 @@ test('auto-tracker registers Legacy Desktop install on boot @lifecycle', async (
   await ctx.panel.waitFor(
     async () => {
       const names = await ctx.panel.allText(
-        '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name',
+        '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
       )
       return names.includes(LEGACY_NAME)
     },
-    { timeout: 15_000, message: 'auto-tracked Legacy Desktop tile never appeared in chooser' },
+    { timeout: 15_000, message: 'auto-tracked Legacy Desktop tile never appeared in chooser' }
   )
 
   const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
@@ -94,7 +99,7 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
 
   expect(
     await ctx.panel.click(byTestId(TID.dashboardTileKebab(legacyInstallId))),
-    'kebab click on legacy desktop tile',
+    'kebab click on legacy desktop tile'
   ).toBe(true)
   await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('migrate')), { timeout: 5_000 })
   expect(await ctx.panel.click(byTestId(TID.contextMenuItem('migrate')))).toBe(true)
@@ -105,16 +110,16 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
   await popup.waitForVisible(byTestId(TID.modalCancel))
 
   expect(await popup.click(byTestId(TID.modalCancel))).toBe(true)
-  await popup.waitFor(
-    async () => !(await popup.exists(byTestId(TID.modalConfirm))),
-    { timeout: 10_000, message: 'adoption confirm never dismissed after Cancel' },
-  )
+  await popup.waitFor(async () => !(await popup.exists(byTestId(TID.modalConfirm))), {
+    timeout: 10_000,
+    message: 'adoption confirm never dismissed after Cancel'
+  })
 
   type RunActionCall = { installationId: string; actionId: string }
-  const calls = await getIpcInvocations(ctx.app, 'run-action') as RunActionCall[]
+  const calls = (await getIpcInvocations(ctx.app, 'run-action')) as RunActionCall[]
   expect(
     calls.some((c) => c.actionId === 'migrate-to-standalone'),
-    'cancelled adoption confirm must not dispatch migrate-to-standalone',
+    'cancelled adoption confirm must not dispatch migrate-to-standalone'
   ).toBe(false)
   const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
   const desktop = installs.find((i) => i.id === legacyInstallId)
@@ -126,15 +131,18 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
 
 test('standalone source exposes a CPU variant the migration variant pick can pin @lifecycle', async () => {
   const releaseOptions = await ctx.panel.evaluate<FieldOption[]>(
-    `window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })`,
+    `window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })`
   )
   expect(releaseOptions.length, 'no standalone releases available').toBeGreaterThan(0)
   const release = releaseOptions.find((r) => r.recommended) ?? releaseOptions[0]!
 
   const variantOptions = await ctx.panel.evaluate<FieldOption[]>(
-    `window.api.getFieldOptions('standalone', 'variant', ${JSON.stringify({ release })})`,
+    `window.api.getFieldOptions('standalone', 'variant', ${JSON.stringify({ release })})`
   )
   expect(variantOptions.length, 'no standalone variants available').toBeGreaterThan(0)
   const cpuVariant = variantOptions.find((v) => /cpu/i.test(v.value))
-  expect(cpuVariant, `no CPU variant exposed for release ${release.value}: ${JSON.stringify(variantOptions.map((v) => v.value))}`).toBeDefined()
+  expect(
+    cpuVariant,
+    `no CPU variant exposed for release ${release.value}: ${JSON.stringify(variantOptions.map((v) => v.value))}`
+  ).toBeDefined()
 })

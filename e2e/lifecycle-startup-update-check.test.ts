@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
@@ -47,9 +46,9 @@ test.beforeAll(async () => {
         comfyVersion: { commit: 'a'.repeat(40), baseTag: 'v0.1.0', commitsAhead: 0 },
         releaseTag: 'v0.1.0',
         variant: 'cpu',
-        pythonVersion: '3.12',
-      },
-    ],
+        pythonVersion: '3.12'
+      }
+    ]
   })
 })
 
@@ -62,20 +61,25 @@ test('startup pre-warm fills the release cache without any UI gesture @lifecycle
   test.setTimeout(60_000)
 
   await expect
-    .poll(async () => {
-      const sections = await ctx.panel.evaluate<DetailSection[]>(
-        `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
-      )
-      const updateSection = sections.find((s) => s.tab === 'update')
-      const channelField = updateSection?.fields?.find((f) => f.id === 'updateChannel')
-      const stableCard = channelField?.options?.find((o) => o.value === 'stable')
-      const data = stableCard?.data
-      return !!data && typeof data.latestVersion === 'string' && /v\d+\.\d+/.test(data.latestVersion)
-    }, { timeout: 30_000, intervals: [500, 1_000, 2_000] })
+    .poll(
+      async () => {
+        const sections = await ctx.panel.evaluate<DetailSection[]>(
+          `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`
+        )
+        const updateSection = sections.find((s) => s.tab === 'update')
+        const channelField = updateSection?.fields?.find((f) => f.id === 'updateChannel')
+        const stableCard = channelField?.options?.find((o) => o.value === 'stable')
+        const data = stableCard?.data
+        return (
+          !!data && typeof data.latestVersion === 'string' && /v\d+\.\d+/.test(data.latestVersion)
+        )
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] }
+    )
     .toBe(true)
 
   const sections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`
   )
   const stableCard = sections
     .find((s) => s.tab === 'update')!
@@ -83,6 +87,6 @@ test('startup pre-warm fills the release cache without any UI gesture @lifecycle
     .options!.find((o) => o.value === 'stable')!
   expect(
     stableCard.data?.updateAvailable,
-    'startup pre-warm fetched releases but isUpdateAvailable still false',
+    'startup pre-warm fetched releases but isUpdateAvailable still false'
   ).toBe(true)
 })

@@ -1,4 +1,3 @@
-
 import { test, expect } from '@playwright/test'
 import { evalWithRetry } from './support/evalRetry'
 import { launchApp, type AppContext } from './launchApp'
@@ -26,25 +25,33 @@ test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle'
 
   expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
   await ctx.panel.waitFor(
-    async () => ctx.panel.evaluate<boolean>(
-      `!document.querySelector('[data-testid="first-use-continue"]').disabled`,
-    ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' },
+    async () =>
+      ctx.panel.evaluate<boolean>(
+        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
+      ),
+    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
   )
 
   expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
 
-  await expect.poll(
-    () => ctx.titleBar.exists('.title-install-pill:not(.is-install-less)'),
-    { timeout: 30_000, intervals: [100, 200, 500] },
-  ).toBe(true)
+  await expect
+    .poll(() => ctx.titleBar.exists('.title-install-pill:not(.is-install-less)'), {
+      timeout: 30_000,
+      intervals: [100, 200, 500]
+    })
+    .toBe(true)
 
-  await expect.poll(
-    () => evalWithRetry(() => ctx.app.evaluate(({ webContents }) =>
-      webContents.getAllWebContents().some((wc) =>
-        /^https:\/\/(cloud\.)?comfy\.org\//.test(wc.getURL()),
-      ),
-    )),
-    { timeout: 15_000, intervals: [200, 500, 1000] },
-  ).toBe(true)
+  await expect
+    .poll(
+      () =>
+        evalWithRetry(() =>
+          ctx.app.evaluate(({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .some((wc) => /^https:\/\/(cloud\.)?comfy\.org\//.test(wc.getURL()))
+          )
+        ),
+      { timeout: 15_000, intervals: [200, 500, 1000] }
+    )
+    .toBe(true)
 })

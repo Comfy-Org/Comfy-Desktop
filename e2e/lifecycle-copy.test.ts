@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -50,9 +49,9 @@ test.beforeAll(async () => {
         name: SOURCE_NAME,
         installPath: sourcePath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -70,7 +69,7 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
         initialTab: 'settings',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -78,10 +77,11 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   await popup.waitForVisible('button.settings-v2-more', { timeout: 30_000 })
   await popup.evaluate<void>('new Promise((resolve) => setTimeout(resolve, 1000))')
   await popup.waitFor(
-    () => popup.evaluate<boolean>(
-      `document.querySelector('button.settings-v2-more')?.hasAttribute('disabled') === false`,
-    ),
-    { timeout: 30_000, message: 'Settings More button did not become enabled' },
+    () =>
+      popup.evaluate<boolean>(
+        `document.querySelector('button.settings-v2-more')?.hasAttribute('disabled') === false`
+      ),
+    { timeout: 30_000, message: 'Settings More button did not become enabled' }
   )
   expect(await popup.click('button.settings-v2-more')).toBe(true)
   const copyAction = byTestId(TID.pinBottomAction('copy'))
@@ -91,32 +91,42 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   const promptInput = byTestId(TID.basePromptInput)
   const promptAction = byTestId(TID.basePromptAction)
   await popup.waitForVisible(promptInput, { timeout: 10_000 })
-  expect(await popup.evaluate<boolean>(`(() => {
+  expect(
+    await popup.evaluate<boolean>(`(() => {
     const el = document.querySelector(${JSON.stringify(promptInput)})
     if (!(el instanceof HTMLInputElement)) return false
     el.value = ${JSON.stringify(COPY_NAME)}
     el.dispatchEvent(new Event('input', { bubbles: true }))
     return true
-  })()`)).toBe(true)
+  })()`)
+  ).toBe(true)
   expect(await popup.click(promptAction)).toBe(true)
 
-  await expect.poll(
-    async () => {
-      const current = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
-      return current.some((installation) =>
-        installation.id !== SOURCE_ID && installation.name === COPY_NAME)
-    },
-    { timeout: 60_000, intervals: [500, 1_000] },
-  ).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        const current = await ctx.panel.evaluate<InstallationLike[]>(
+          'window.api.getInstallations()'
+        )
+        return current.some(
+          (installation) => installation.id !== SOURCE_ID && installation.name === COPY_NAME
+        )
+      },
+      { timeout: 60_000, intervals: [500, 1_000] }
+    )
+    .toBe(true)
 
   const installations = await ctx.panel.evaluate<InstallationLike[]>(
-    'window.api.getInstallations()',
+    'window.api.getInstallations()'
   )
   const newEntry = installations.find((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   expect(newEntry, 'new install not enumerated after copy').toBeDefined()
   expect(newEntry?.name).toBe(COPY_NAME)
   expect(newEntry?.installPath, 'new install must have a destination path').toBeTruthy()
-  expect(installations.find((i) => i.id === SOURCE_ID), 'source install dropped after copy').toBeDefined()
+  expect(
+    installations.find((i) => i.id === SOURCE_ID),
+    'source install dropped after copy'
+  ).toBeDefined()
   const newId = newEntry!.id
 
   const destPath = newEntry!.installPath!

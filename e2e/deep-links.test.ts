@@ -34,9 +34,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -66,10 +66,10 @@ test('comfy://open-settings?tab=global opens Global Settings @windows @macos @li
   await fireDeepLink({ kind: 'open-settings', settingsTab: 'global' })
 
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, GLOBAL_SETTINGS_CHANNEL)).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, GLOBAL_SETTINGS_CHANNEL)).length, {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
     .toBe(1)
 
   const pickerCalls = await getIpcInvocations(ctx.app, PICKER_CHANNEL)
@@ -80,16 +80,16 @@ test('comfy://open-settings?tab=comfy on chooser host opens the picker (compact 
   await fireDeepLink({ kind: 'open-settings', settingsTab: 'comfy' })
 
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, PICKER_CHANNEL)).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, PICKER_CHANNEL)).length, {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
     .toBe(1)
 
-  const calls = await getIpcInvocations(ctx.app, PICKER_CHANNEL) as OpenInstancePickerCall[]
+  const calls = (await getIpcInvocations(ctx.app, PICKER_CHANNEL)) as OpenInstancePickerCall[]
   expect(calls[0]).toMatchObject({
     installationId: null,
-    initialTab: null,
+    initialTab: null
   })
 
   const globalCalls = await getIpcInvocations(ctx.app, GLOBAL_SETTINGS_CHANNEL)
@@ -101,10 +101,10 @@ test('comfy://install-update with a non-matching installationId is ignored on ch
 
   await fireDeepLink({ kind: 'open-settings', settingsTab: 'global' })
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, GLOBAL_SETTINGS_CHANNEL)).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, GLOBAL_SETTINGS_CHANNEL)).length, {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
     .toBe(1)
 
   const pickerCalls = await getIpcInvocations(ctx.app, PICKER_CHANNEL)

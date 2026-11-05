@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -20,7 +19,12 @@ const DELETE_NAME = 'Delete Me'
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
 async function pathExists(p: string): Promise<boolean> {
-  try { await access(p); return true } catch { return false }
+  try {
+    await access(p)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function tileExists(installationId: string): Promise<boolean> {
@@ -53,16 +57,16 @@ test.beforeAll(async () => {
         name: UNTRACK_NAME,
         installPath: untrackPath,
         sourceId: 'standalone',
-        status: 'installed',
+        status: 'installed'
       },
       {
         id: DELETE_ID,
         name: DELETE_NAME,
         installPath: deletePath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -86,22 +90,30 @@ test('Manage drawer Untrack drops the record but preserves the install directory
         initialTab: 'settings',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 30_000 })
-  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('remove')), { timeout: 30_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.pickerMoreTrigger),
+    byTestId(TID.pinBottomAction('remove')),
+    { timeout: 30_000 }
+  )
   expect(await popup.click(byTestId(TID.pinBottomAction('remove')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.baseAlertAction)), 'untrack confirm click dispatched').toBe(true)
-
-  await ctx.panel.waitFor(
-    async () => !(await tileExists(UNTRACK_ID)),
-    { timeout: 15_000, message: 'untracked tile never disappeared from chooser' },
+  expect(await popup.click(byTestId(TID.baseAlertAction)), 'untrack confirm click dispatched').toBe(
+    true
   )
+
+  await ctx.panel.waitFor(async () => !(await tileExists(UNTRACK_ID)), {
+    timeout: 15_000,
+    message: 'untracked tile never disappeared from chooser'
+  })
   await closeTitlePopupIfOpen(ctx.app)
-  expect(await pathExists(untrackPath), 'untrack must leave the install directory on disk').toBe(true)
+  expect(await pathExists(untrackPath), 'untrack must leave the install directory on disk').toBe(
+    true
+  )
 })
 
 test('kebab Delete drops the record AND removes the install directory @lifecycle', async () => {
@@ -111,10 +123,10 @@ test('kebab Delete drops the record AND removes the install directory @lifecycle
   const confirmed = await ctx.panel.click(byTestId(TID.baseAlertAction))
   expect(confirmed, 'delete confirm click dispatched').toBe(true)
 
-  await ctx.panel.waitFor(
-    async () => !(await tileExists(DELETE_ID)),
-    { timeout: 30_000, message: 'deleted tile never disappeared from chooser' },
-  )
+  await ctx.panel.waitFor(async () => !(await tileExists(DELETE_ID)), {
+    timeout: 30_000,
+    message: 'deleted tile never disappeared from chooser'
+  })
   await expect
     .poll(() => pathExists(deletePath), { timeout: 30_000, intervals: [250, 500, 1000] })
     .toBe(false)

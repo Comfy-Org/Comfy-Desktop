@@ -57,21 +57,25 @@ test.beforeAll(async () => {
     ]
   })
   popup = titlePopupPage(ctx.app)
-  settingsDir = await evalWithRetry(() => ctx.app.evaluate(({ app }) => {
-    if (process.platform !== 'linux') return app.getPath('userData')
-    const base = process.env.XDG_CONFIG_HOME || `${app.getPath('home')}/.config`
-    return `${base}/comfyui-desktop-2`
-  }))
-  await evalWithRetry(() => ctx.app.evaluate(
-    ({ dialog }, selectedPaths) => {
-      const queue = [...selectedPaths]
-      ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [queue.shift()]
-      })
-    },
-    [addedModelsDir, replacementOutputDir]
-  ))
+  settingsDir = await evalWithRetry(() =>
+    ctx.app.evaluate(({ app }) => {
+      if (process.platform !== 'linux') return app.getPath('userData')
+      const base = process.env.XDG_CONFIG_HOME || `${app.getPath('home')}/.config`
+      return `${base}/comfyui-desktop-2`
+    })
+  )
+  await evalWithRetry(() =>
+    ctx.app.evaluate(
+      ({ dialog }, selectedPaths) => {
+        const queue = [...selectedPaths]
+        ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
+          canceled: false,
+          filePaths: [queue.shift()]
+        })
+      },
+      [addedModelsDir, replacementOutputDir]
+    )
+  )
 })
 
 test.afterAll(async () => {

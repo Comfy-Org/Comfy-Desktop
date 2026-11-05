@@ -1,4 +1,3 @@
-
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { openTitleMenu } from './support/chooserHelpers'
@@ -6,7 +5,7 @@ import {
   closeTitlePopupIfOpen,
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
-  type WebContentsPage,
+  type WebContentsPage
 } from './support/cdpPages'
 
 test.describe.configure({ mode: 'serial' })
