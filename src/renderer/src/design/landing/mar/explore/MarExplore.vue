@@ -126,7 +126,7 @@ const empty = computed(
             <span class="text-ui text-subtle-foreground">{{ s.hint }}</span>
           </template>
         </SectionHeader>
-        <div class="mar-ex-grid">
+        <div class="mar-ex-grid is-apps">
           <div
             v-for="a in s.apps"
             :key="a.id"
@@ -155,7 +155,7 @@ const empty = computed(
                 </Button>
               </span></span
             >
-            <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
+            <span class="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1 text-left">
               <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
               <span class="truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
               <span class="mt-2 flex items-center gap-2 text-ui text-subtle-foreground">
@@ -229,6 +229,18 @@ const empty = computed(
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
 }
+.mar-ex-grid.is-apps {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.mar-ex-grid.is-apps .mar-ex-media {
+  position: static;
+  width: 96px;
+  flex-shrink: 0;
+  aspect-ratio: 1;
+}
+.mar-ex-grid.is-apps .mar-ex-media img {
+  border-radius: var(--radius-control);
+}
 .mar-ex-mark {
   display: inline-flex;
   width: 40px;
@@ -299,6 +311,13 @@ const empty = computed(
   display: flex;
   flex-direction: column;
   padding: 4px;
+}
+/* An app: the picture beside its name, like Home's Apps row. */
+:root .proto-ui.proto-ui.proto-ui .mar-ex-grid.is-apps .mar-ex-card {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-ex-model {
   display: flex;

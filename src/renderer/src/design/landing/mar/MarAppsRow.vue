@@ -19,20 +19,11 @@ import { go } from '../useProto'
         :key="a.id"
         as="button"
         interactive
-        padding="none"
-        class="group overflow-hidden text-left"
+        class="flex h-20 items-center gap-4 overflow-hidden text-left"
         @click="openApp(a.id)"
       >
-        <img
-          :src="thumb(a.thumbId)"
-          alt=""
-          loading="lazy"
-          class="aspect-16/9 w-full object-cover"
-        />
-        <span class="flex flex-col gap-0.5 px-3.5 py-3">
-          <span class="truncate text-ui font-medium">{{ a.name }}</span>
-          <span class="truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
-        </span>
+        <img :src="thumb(a.thumbId)" alt="" loading="lazy" class="size-20 shrink-0 object-cover" />
+        <span class="truncate pr-4 text-ui font-medium">{{ a.name }}</span>
       </Card>
     </div>
   </section>
