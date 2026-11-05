@@ -2,6 +2,8 @@
 import { useElementSize } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import { look } from '../../look'
+import { cover } from '../cover'
+import WorkflowGradient from './WorkflowGradient.vue'
 
 /**
  * A workflow's cover when there is no picture to show (workflows carry
@@ -42,7 +44,9 @@ const FIELDS = [
 </script>
 
 <template>
+  <WorkflowGradient v-if="cover.id === 'gradient'" :name />
   <div
+    v-else
     ref="root"
     class="wfc"
     :class="look.theme === 'light' ? 'is-light' : 'is-dark'"

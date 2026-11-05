@@ -2,15 +2,17 @@ import { reactive, watch } from 'vue'
 
 /** Workflow cards' cover (UI Playground › Workflow cover): the tilted
  *  canvas (brand/WorkflowCover.vue), since workflows carry no picture yet,
- *  or the image the workflow makes. */
-export type Cover = 'canvas' | 'output'
+ *  a gradient of their own (brand/WorkflowGradient.vue), or the image the
+ *  workflow makes. */
+export type Cover = 'canvas' | 'gradient' | 'output'
 
 export const COVERS: { value: Cover; label: string }[] = [
   { value: 'canvas', label: 'Canvas' },
+  { value: 'gradient', label: 'Gradient' },
   { value: 'output', label: 'Image' }
 ]
 
-export const isBranded = (c: Cover): boolean => c === 'canvas'
+export const isBranded = (c: Cover): boolean => c !== 'output'
 
 const KEY = 'comfy.design.mar.cover'
 
