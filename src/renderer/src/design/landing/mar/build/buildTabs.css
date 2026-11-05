@@ -237,7 +237,10 @@
 }
 /* Storage */
 :root .proto-ui.proto-ui.proto-ui .mar-st-toggle {
-  display: inline-flex;
+  /* Label left, switch at the column's end: the switches line up down the page. */
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
   line-height: 18px;
   font-weight: 400;
   align-items: center;

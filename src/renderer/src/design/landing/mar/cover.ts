@@ -1,4 +1,5 @@
 import { reactive, watch } from 'vue'
+import { can } from '../milestones'
 
 /** Workflow cards' cover (UI Playground › Workflow cover): a gradient of
  *  their own (brand/WorkflowGradient.vue), since workflows carry no picture
@@ -36,4 +37,14 @@ watch(
       // Storage blocked: the pick lasts for this window only.
     }
   }
+)
+
+// Each stage opens on its own: the blur until the future milestones, where
+// workflows carry the image they make. The tweak still overrides it after.
+watch(
+  () => can.value.projects,
+  (future) => {
+    cover.id = future ? 'output' : 'gradient'
+  },
+  { immediate: true }
 )
