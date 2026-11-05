@@ -41,7 +41,6 @@ const {
   --mt-1: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   --mt-2: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
   --mt-edge: color-mix(in oklch, var(--color-base-foreground) 26%, transparent);
-  --mt-hl: rgb(255 255 255 / 0.07);
   --mt-sh: rgb(0 0 0 / 0.35);
   --mt-slot: rgb(255 255 255 / 0.05);
   position: relative;
@@ -52,7 +51,6 @@ const {
   vertical-align: middle;
 }
 :root[data-ds-theme='light'] .mar-trio {
-  --mt-hl: rgb(255 255 255 / 0.9);
   --mt-sh: rgb(0 0 0 / 0.08);
   --mt-slot: rgb(255 255 255 / 0.6);
 }
@@ -90,13 +88,11 @@ const {
   transition: color 200ms ease;
 }
 
-/* Slot, Live finish: the filled two carry a lit top edge, the third is
+/* Slot, Live finish: the filled two sit on a soft shadow, the third is
    an open slot. */
 .mar-trio.is-slot > i:nth-child(-n + 2) {
   background: linear-gradient(180deg, color-mix(in oklab, var(--c), white 5%), var(--c));
-  box-shadow:
-    inset 0 1px 0 var(--mt-hl),
-    0 1px 2px var(--mt-sh);
+  box-shadow: 0 1px 2px var(--mt-sh);
 }
 .mar-trio.is-slot > i:nth-child(3) {
   background: linear-gradient(180deg, var(--mt-slot), transparent 70%);

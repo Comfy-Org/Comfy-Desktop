@@ -14,7 +14,8 @@ import './buildTabs.css'
 /**
  * Up to date or not, first thing on the page (UI Playground › Build page ›
  * Overview first): an icon, one line and the action. The channel sits in
- * that line, once, as a menu that says what each channel means.
+ * that line, once, as a menu that says what each channel means. Beside
+ * the button, the note that an update can be undone.
  */
 const { env } = defineProps<{ env: ProtoInstance }>()
 const facts = factsOf(env)
@@ -64,13 +65,13 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
         <span>checked {{ facts.checked }}</span>
       </p>
     </div>
+    <span v-if="pending && !state.updating" class="bus-safe">Saves a snapshot first</span>
     <Button v-if="pending" variant="primary" :disabled="state.updating" @click="updateBuild(env)"
       ><ArrowUpCircle :size="14" />Update Now</Button
     >
     <Button v-else variant="ghost" @click="toast(`${env.name} is up to date`)"
       ><RefreshCw :size="13" />Check for updates</Button
     >
-    <p v-if="pending" class="bus-foot">A snapshot is saved first, so you can go back.</p>
   </Card>
 </template>
 
@@ -122,12 +123,10 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
   color: var(--color-muted-foreground);
   font-size: 12px;
 }
-.bus-foot {
-  width: 100%;
-  margin: 0;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+.bus-safe {
+  flex-shrink: 0;
   color: var(--color-subtle-foreground);
   font-size: 12px;
+  white-space: nowrap;
 }
 </style>

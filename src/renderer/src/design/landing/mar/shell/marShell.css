@@ -1174,6 +1174,10 @@
 :where(:root[data-mar-ui='on']) .shadow-highlight {
   box-shadow: var(--shadow-highlight);
 }
+/* Avatar's default tone keeps its even ring, without the lit top. */
+:where(:root[data-mar-ui='on']) [class*='inset_0_1px_0_rgb'] {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
 :root[data-mar-ui='on'][data-ds-theme='light']:not([data-mar-shadows='off']) {
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.05), 0 6px 16px -6px oklch(0 0 0 / 0.08);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.06), 0 10px 22px -8px oklch(0 0 0 / 0.1);

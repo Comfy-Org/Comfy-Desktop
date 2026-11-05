@@ -354,7 +354,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 20px;
+  left: 106px;
   width: 1px;
   background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
   content: '';
@@ -370,7 +370,7 @@
   position: absolute;
   z-index: 1;
   top: 24px;
-  left: 20.5px;
+  left: 106.5px;
   width: 9px;
   height: 9px;
   box-sizing: border-box;
@@ -396,7 +396,7 @@
   min-height: 48px;
   align-items: center;
   gap: 10px;
-  padding: 0 8px 0 38px;
+  padding: 0 8px 0 16px;
   cursor: default;
   outline: none;
 }
@@ -438,13 +438,18 @@
   font-variant-numeric: tabular-nums;
 }
 .mar-sn-when {
-  margin-left: auto;
+  width: 76px;
+  margin-right: 18px;
   flex-shrink: 0;
   color: var(--color-muted-foreground);
   font-size: 12px;
+  white-space: nowrap;
+}
+.mar-sn-row .mar-bt-acts {
+  margin-left: auto;
 }
 .mar-sn-body {
-  padding: 4px 16px 16px 62px;
+  padding: 4px 16px 16px 144px;
 }
 .mar-sn-h {
   margin: 10px 0 6px;

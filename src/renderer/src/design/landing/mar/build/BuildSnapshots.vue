@@ -21,8 +21,8 @@ import './buildTabs.css'
 
 /**
  * Desktop's Snapshots tab (views/comfyUISettings/SnapshotsView.vue): a
- * vertical timeline, a dot per snapshot, the newest first, each with what
- * took it and how much changed. Open one to
+ * vertical timeline, a dot per snapshot with its date before it, the newest
+ * first, each with what took it and how much changed. Open one to
  * see what changed in it and what restoring it would change: ComfyUI's
  * version, custom nodes, pip packages. Create asks for an optional label;
  * a restore runs in the tab (buildOps.ts).
@@ -152,12 +152,12 @@ const latest = computed(() => snaps[0]?.when)
         @click="open = open === s.id ? undefined : s.id"
         @keydown.enter="open = open === s.id ? undefined : s.id"
       >
+        <span class="mar-sn-when">{{ s.when }}</span>
         <ChevronRight :size="14" class="mar-sn-chev" />
         <span class="mar-sn-trigger">{{ TRIGGERS[s.trigger] }}</span>
         <span class="mar-sn-name">{{ s.label ?? s.comfy }}</span>
         <span v-if="i === 0" class="mar-tag">Latest</span>
         <span v-if="delta(i)" class="mar-sn-delta">{{ delta(i) }}</span>
-        <span class="mar-sn-when">{{ s.when }}</span>
         <span class="mar-bt-acts" @click.stop>
           <Button v-if="i > 0" variant="ghost" size="sm" @click="restore(s)"
             ><RotateCcw :size="13" />Restore</Button

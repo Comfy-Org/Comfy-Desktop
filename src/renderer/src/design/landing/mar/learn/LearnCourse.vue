@@ -192,7 +192,6 @@ const cta = computed(() =>
     color-mix(in oklab, var(--color-muted-foreground), white 8%),
     var(--color-muted-foreground)
   );
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 .mar-learn-steps.is-trio > span.is-current {
   background: transparent;
