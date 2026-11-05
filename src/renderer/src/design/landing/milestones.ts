@@ -1,5 +1,6 @@
 import { computed, watch } from 'vue'
 import { proto, type Page } from './useProto'
+import { appsProto } from './appFlow'
 
 /**
  * The roadmap from today's Desktop to the Builder, one prototype variant per
@@ -15,6 +16,10 @@ import { proto, type Page } from './useProto'
  *                   Builds › build ⌄. Each build opens in its own window.
  *   4  Home       - Home leads the sidebar: first run (example workflows,
  *                   Cloud or this computer) and returning (examples, recent).
+ * 4.5  Explore apps - Explore arrives, leading with apps people can run
+ *                   (use cases); an app opens in a tab, as its user. Shown
+ *                   as "5" in the menu; the later ones are shown one up.
+ *                   (The value stays 4.5 so every `m >= n` check holds.)
  *   5  Explore    - Explore and Learn.
  *   6  Builder    - the Build lens (deploy builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
@@ -26,19 +31,23 @@ import { proto, type Page } from './useProto'
  *  10  Agent      - future: a third lens beside Create and Build, where an
  *                   agent makes workflows and apps from a prompt; Home
  *                   gains the prompt box.
+ *
+ * Every milestone from 1 on is drawn in the New UI (mar/). A milestone only
+ * decides what is there, never how it looks.
  */
 export const MILESTONES = [
   { value: '0', label: '0 · Today (main)' },
   { value: '1', label: '1 · Design system' },
-  { value: '2', label: '2 · Builds' },
+  { value: '2', label: '2 · Builds · MVP (Milestone 1)' },
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
-  { value: '5', label: '5 · Explore & Learn' },
-  { value: '6', label: '6 · Builder' },
-  { value: '7', label: '7 · One window' },
-  { value: '8', label: '8 · Projects (future)' },
-  { value: '9', label: '9 · Spaces (future)' },
-  { value: '10', label: '10 · Agent (future)' }
+  { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
+  { value: '5', label: '6 · Explore & Learn' },
+  { value: '6', label: '7 · Builder' },
+  { value: '7', label: '8 · One window' },
+  { value: '8', label: '9 · Projects (future)' },
+  { value: '9', label: '10 · Spaces (future)' },
+  { value: '10', label: '11 · Agent (future)' }
 ]
 
 // Each run of the app opens on the latest milestone; within a run (a
@@ -60,6 +69,8 @@ export const can = computed(() => {
     builds: m >= 2,
     breadcrumb: m >= 3,
     home: m >= 4,
+    /** Explore, leading with apps; apps open in their own tabs. */
+    exploreApps: m >= 4.5,
     explore: m >= 5,
     builder: m >= 6,
     oneWindow: m >= 7,
@@ -89,6 +100,8 @@ watch(
   () => proto.milestone,
   () => {
     proto.tabs = []
+    appsProto.tabs = []
+    appsProto.front = ''
     proto.activeTab = 'home'
     proto.mode = 'create'
     proto.page = landingPage()

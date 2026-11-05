@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { AppWindow, ChevronDown, Images, Plus, Search, Server, Workflow } from 'lucide-vue-next'
 import CreateMenu from '../CreateMenu.vue'
 import TabsAccount from './TabsAccount.vue'
-import { firstRunKeeps, firstRunLabel, ports } from '../pabloPorts'
+import { firstRunKeeps, firstRunLabel, ports } from '../navOptions'
 import { go, goIn, proto, toast, type Mode, type Page } from '../../useProto'
 import { can, landingPage } from '../../milestones'
 import { PROJECTS } from '../../mock'
@@ -15,6 +15,7 @@ import lakeFog from '../assets/lake-fog.jpg'
 import portraitWindow from '../assets/portrait-window.jpg'
 import portraitGrass from '../assets/portrait-grass.jpg'
 import hillsFog from '../assets/hills-fog.jpg'
+import MarModeSeg from '../modes/MarModeSeg.vue'
 
 /**
  * 08 · Paper tabs (Figma 118:1901): no sidebar. One bar under the title
@@ -57,7 +58,7 @@ const BUILD: Tab[] = [
 const AGENT: Tab[] = [{ key: 'agent', label: 'Chat', page: 'agent' }]
 
 const tabs = computed<Tab[]>(() => {
-  // From Pablo › Docs: his Build nav ends with Docs (docs.comfy.org).
+  // Nav options › Docs: his Build nav ends with Docs (docs.comfy.org).
   if (proto.mode === 'build')
     return [...BUILD, ...(ports.navDocs ? [{ key: 'docs', label: 'Docs', href: 'docs' }] : [])]
       .filter((t) => firstRunKeeps(t.page))
@@ -208,21 +209,14 @@ onBeforeUnmount(() => {
 
 <template>
   <header ref="root" class="p08-bar" aria-label="Navigation">
-    <div v-if="can.builder" class="p08-modes mar-seg" role="radiogroup" aria-label="Mode">
-      <button
-        v-for="m in modes"
-        :key="m.value"
-        type="button"
-        role="radio"
-        class="p08-mode"
-        :class="proto.mode === m.value && 'is-on'"
-        :aria-checked="proto.mode === m.value"
-        :aria-pressed="proto.mode === m.value"
-        @click="pickMode(m.value)"
-      >
-        {{ m.label }}
-      </button>
-    </div>
+    <MarModeSeg
+      v-if="can.builder"
+      :model-value="proto.mode"
+      :options="modes"
+      show="label"
+      class="self-center"
+      @update:model-value="pickMode"
+    />
 
     <nav ref="strip" class="p08-tabs">
       <div v-for="t in tabs" :key="t.key" class="p08-tab-slot">
@@ -319,15 +313,6 @@ onBeforeUnmount(() => {
   color: var(--color-base-foreground);
   font-size: var(--text-ui);
   -webkit-app-region: no-drag;
-}
-.p08-modes {
-  display: flex;
-  flex-shrink: 0;
-  align-self: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 11px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
 .p08-tabs {
   position: relative;
@@ -496,25 +481,6 @@ onBeforeUnmount(() => {
 
 <style>
 /* Pablo's reset wipes padding and width on buttons inside .proto-ui. */
-:root .proto-ui.proto-ui.proto-ui .p08-mode {
-  width: auto;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-  transition:
-    background-color 160ms ease,
-    color 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .p08-mode:hover {
-  color: var(--color-base-foreground);
-}
-/* The picked mode's pill is Mar's sliding one (motion/tabSlide.ts). */
-:root .proto-ui.proto-ui.proto-ui .p08-mode.is-on {
-  color: var(--color-base-foreground);
-  font-weight: 500;
-}
 :root .proto-ui.proto-ui.proto-ui .p08-tab {
   display: inline-flex;
   width: auto;
@@ -585,7 +551,7 @@ onBeforeUnmount(() => {
   font-family: inherit;
   font-size: 11px;
 }
-:root .proto-ui.proto-ui.proto-ui :is(.p08-mode, .p08-tab, .p08-item, .p08-search):focus-visible {
+:root .proto-ui.proto-ui.proto-ui :is(.p08-tab, .p08-item, .p08-search):focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: -2px;
 }

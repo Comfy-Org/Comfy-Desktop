@@ -1,4 +1,5 @@
 import { reactive, watch } from 'vue'
+import { can } from '../milestones'
 
 /**
  * UI tuner: live knobs on top of the picked UI (Void, A, B, C) to compare
@@ -17,14 +18,12 @@ export interface Tuning {
   radius: 'default' | 'soft'
   contrast: 'low' | 'default' | 'high'
   borders: 'none' | 'hairline'
-  shadows: 'off' | 'default'
 }
 
 const DEFAULTS: Tuning = {
   radius: 'default',
   contrast: 'default',
-  borders: 'none',
-  shadows: 'default'
+  borders: 'none'
 }
 
 export const KNOBS: Knob[] = [
@@ -51,14 +50,6 @@ export const KNOBS: Knob[] = [
     options: [
       { value: 'none', label: 'None' },
       { value: 'hairline', label: 'Hairline' }
-    ]
-  },
-  {
-    key: 'shadows',
-    label: 'Shadows',
-    options: [
-      { value: 'off', label: 'Off' },
-      { value: 'default', label: 'On' }
     ]
   }
 ]
@@ -96,13 +87,6 @@ const TOKENS: { [K in keyof Tuning]: Partial<Record<Tuning[K], Record<string, st
     hairline: {
       '--color-border-default': 'color-mix(in oklch, var(--color-base-foreground) 9%, transparent)',
       '--color-border-strong': 'color-mix(in oklch, var(--color-base-foreground) 14%, transparent)'
-    }
-  },
-  shadows: {
-    off: {
-      '--shadow-elev': 'none',
-      '--shadow-elev-hover': 'none',
-      '--shadow-highlight': 'none'
     }
   }
 }
@@ -157,12 +141,23 @@ function darkSheet(): HTMLStyleElement {
   }
   return el
 }
+// Written on <html>, so Milestone 0 (Desktop as it ships) must not get them.
 watch(
-  () => ({ ...tuning }),
-  (t) => {
+  [() => ({ ...tuning }), () => can.value.design] as const,
+  ([t, design]) => {
     const style = document.documentElement.style
     for (const name of applied) style.removeProperty(name)
     applied.clear()
+    try {
+      localStorage.setItem(KEY, JSON.stringify(t))
+    } catch {
+      // Storage blocked: the tuning lasts for this window only.
+    }
+    if (!design) {
+      darkSheet().textContent = ''
+      delete document.documentElement.dataset.marBorders
+      return
+    }
     // Surfaces (contrast) are dark-theme colours: they go in a sheet that
     // only applies outside light mode, so light keeps its own surfaces.
     let dark = ''
@@ -178,12 +173,6 @@ watch(
     }
     darkSheet().textContent = dark ? `:root:not([data-ds-theme='light']) { ${dark} }` : ''
     document.documentElement.dataset.marBorders = t.borders
-    document.documentElement.dataset.marShadows = t.shadows
-    try {
-      localStorage.setItem(KEY, JSON.stringify(t))
-    } catch {
-      // Storage blocked: the tuning lasts for this window only.
-    }
   },
   { immediate: true }
 )

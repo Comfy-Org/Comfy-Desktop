@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
+  Check,
   CreditCard,
   Gauge,
   KeyRound,
@@ -18,9 +19,12 @@ import ContextSwitchSub from '../parts/ContextSwitchSub.vue'
 import WorkspaceAvatar from '../parts/WorkspaceAvatar.vue'
 import { go, proto, toast, type Page } from '../useProto'
 import { WORKSPACES } from '../mock'
+import { can } from '../milestones'
 import {
   realAccount,
   realSignOut,
+  realSwitchWorkspace,
+  realWorkspace,
   realWorkspaces,
   shownCredits,
   shownEmail,
@@ -50,6 +54,16 @@ const canSwitch = computed(
 
 const role = (r: string): string => r.charAt(0).toUpperCase() + r.slice(1).toLowerCase()
 
+// Before Home, the menu is today's Desktop: the workspaces, then Sign out
+// (no credits, admin or settings in it yet).
+const today = computed(() => !can.value.home)
+const workspaces = computed(() => (realAccount.value ? realWorkspaces.value : WORKSPACES))
+const currentId = computed(() => (realAccount.value ? realWorkspace.value?.id : proto.workspaceId))
+function pick(id: string): void {
+  if (realAccount.value) void realSwitchWorkspace(id)
+  else proto.workspaceId = id as 'personal' | 'design-team'
+}
+
 function signOut(): void {
   if (realAccount.value) return void realSignOut()
   proto.signedIn = false
@@ -60,7 +74,17 @@ function signOut(): void {
 <template>
   <DropdownMenuRoot :modal="false">
     <DropdownMenuTrigger as-child><slot /></DropdownMenuTrigger>
-    <DropdownMenuContent :side align="start" :side-offset="8" class="mar-ws-menu w-68">
+    <DropdownMenuContent v-if="today" :side align="start" :side-offset="8" class="mar-ws-menu w-64">
+      <DropdownMenuItem v-for="w in workspaces" :key="w.id" @select="pick(w.id)">
+        <WorkspaceAvatar :ws="w" size="sm" /><span class="flex-1 truncate">{{ w.name }}</span>
+        <Check v-if="w.id === currentId" :size="14" />
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem @select="signOut"
+        ><LogOut :size="15" class="text-subtle-foreground" />Sign out</DropdownMenuItem
+      >
+    </DropdownMenuContent>
+    <DropdownMenuContent v-else :side align="start" :side-offset="8" class="mar-ws-menu w-68">
       <!-- Who and where, and what's left to spend. -->
       <div class="mar-ws-card mar-menu-panel">
         <div class="flex items-center gap-3">

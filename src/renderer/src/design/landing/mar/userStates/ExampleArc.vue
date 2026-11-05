@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
@@ -214,8 +214,21 @@ function wheel(e: WheelEvent): void {
       </button>
     </div>
 
+    <!-- For a mouse wheel, which can't swipe sideways: shown on hover. -->
+    <button
+      type="button"
+      class="mar-arc-nav is-prev"
+      aria-label="Previous example"
+      @click="turn(-1)"
+    >
+      <ChevronLeft :size="18" />
+    </button>
+    <button type="button" class="mar-arc-nav is-next" aria-label="Next example" @click="turn(1)">
+      <ChevronRight :size="18" />
+    </button>
+
     <div class="mar-arc-actions">
-      <button v-if="can.explore" type="button" class="mar-arc-all" @click="go('explore')">
+      <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
         See all examples<ArrowRight :size="14" />
       </button>
     </div>
@@ -223,6 +236,47 @@ function wheel(e: WheelEvent): void {
 </template>
 
 <style scoped>
+.mar-arc {
+  position: relative;
+}
+/* In the gap between the second card and the one fading out. */
+:root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
+  position: absolute;
+  top: 170px;
+  z-index: 10;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  color: var(--color-base-foreground);
+  opacity: 0;
+  backdrop-filter: blur(12px);
+  transform: translateY(-50%);
+  transition:
+    opacity 160ms ease,
+    background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-prev {
+  left: max(0px, calc(50% - 372px));
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-next {
+  right: max(0px, calc(50% - 372px));
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc:hover .mar-arc-nav,
+:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:focus-visible {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
+}
+@media (hover: none) {
+  :root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
+    opacity: 1;
+  }
+}
 .mar-arc-stage {
   position: relative;
   height: 340px;

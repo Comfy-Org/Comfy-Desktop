@@ -18,6 +18,7 @@ import {
   Upload,
   X
 } from 'lucide-vue-next'
+import MarSpin from '../brand/MarSpin.vue'
 import {
   DialogClose,
   DialogContent,
@@ -691,10 +692,11 @@ watch(
               <li v-for="s in dep.steps" :key="s" :data-s="stepState(s)">
                 <span class="mar-dep-dot">
                   <Check v-if="stepState(s) === 'done'" :size="13" />
-                  <Loader
+                  <MarSpin
                     v-else-if="stepState(s) === 'now' && !dep.paused"
+                    :icon="Loader"
                     :size="13"
-                    class="mar-dep-spin"
+                    spin="mar-dep-spin"
                   />
                   <Pause v-else-if="stepState(s) === 'now'" :size="12" />
                   <X v-else-if="stepState(s) === 'failed'" :size="13" />
@@ -804,7 +806,7 @@ watch(
               >
             </div>
             <div v-else-if="dep.status === 'updating'" class="mar-dep-callout" data-tone="info">
-              <Loader :size="14" class="mar-dep-spin" />
+              <MarSpin :icon="Loader" :size="14" spin="mar-dep-spin" />
               <span
                 ><b>Updating to release {{ dep.nextRelease }}</b
                 >{{ dep.release }} answers requests until {{ dep.nextRelease }} is up.
@@ -952,10 +954,12 @@ watch(
                   "
                   @click="testRun"
                 >
-                  <Loader v-if="dep.test === 'running'" :size="12" class="mar-dep-spin" /><Play
-                    v-else
+                  <MarSpin
+                    v-if="dep.test === 'running'"
+                    :icon="Loader"
                     :size="12"
-                  />{{
+                    spin="mar-dep-spin"
+                  /><Play v-else :size="12" />{{
                     dep.test === 'running' ? (dep.draft?.min ? 'Running' : 'Cold start…') : 'Run'
                   }}
                 </button>

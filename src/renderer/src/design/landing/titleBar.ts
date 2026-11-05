@@ -98,7 +98,7 @@ export const titleBarState = computed<TitleBarState>(() => ({
         update: i.state === 'update' ? 'Update available' : undefined
       }
     }),
-  apps: appsProto.tabs.flatMap((id) => {
+  apps: (can.value.exploreApps ? appsProto.tabs : []).flatMap((id) => {
     const app = libApp(id)
     return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),

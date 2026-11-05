@@ -51,7 +51,7 @@ const SNIPPETS: Record<string, Ref[]> = {
     ['mar/shell/marShell.css', 'backdrop-filter: none;', 0],
     ['mar/shell/marShell.css', '> .glass-titlebar {']
   ],
-  toast: [['ui/Toaster.vue', 'bg-inverted-background', 0, false]]
+  toast: [['mar/pages/MarUndoToast.vue', 'backdrop-filter', 0, false]]
 }
 /** Details: who uses what, rules, performance. Code: the CSS. */
 const { part = 'details' } = defineProps<{ part?: 'details' | 'code' }>()
@@ -308,7 +308,7 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
 }
 .ds-mat-doc h3 {
   margin-top: 6px;
-  color: #ececee;
+  color: var(--color-base-foreground);
   font-size: 13px;
   font-weight: 600;
 }
@@ -321,7 +321,7 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
 }
 .ds-mat-uses code,
 .ds-mat-dups code {
-  color: #8a8a92;
+  color: var(--color-subtle-foreground);
   font-size: 11px;
 }
 .ds-mat-dups > span {
@@ -330,7 +330,7 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
   gap: 2px 12px;
 }
 .ds-mat-dup-v {
-  color: #ececee !important;
+  color: var(--color-base-foreground) !important;
 }
 .ds-mat-snips {
   display: flex;
@@ -343,22 +343,22 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
   gap: 4px;
 }
 .ds-mat-snips figcaption code {
-  color: #8a8a92;
+  color: var(--color-subtle-foreground);
   font-size: 11px;
 }
 .ds-mat-code {
   overflow-x: auto;
   padding: 12px 14px;
   border-radius: 10px;
-  background: #16161a;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
-  color: #d4d4d8;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-content-background));
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  color: var(--color-base-foreground);
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre;
 }
 .ds-mat-missing {
-  color: #e5a0a0;
+  color: var(--color-status-danger);
   font-size: 12px;
 }
 </style>

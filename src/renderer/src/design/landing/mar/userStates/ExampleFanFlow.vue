@@ -150,7 +150,7 @@ function wheel(e: WheelEvent): void {
     </div>
 
     <div class="mar-ff-action">
-      <button v-if="can.explore" type="button" class="mar-ff-all" @click="goTo('explore')">
+      <button v-if="can.exploreApps" type="button" class="mar-ff-all" @click="goTo('explore')">
         See all examples<ArrowRight :size="14" />
       </button>
     </div>

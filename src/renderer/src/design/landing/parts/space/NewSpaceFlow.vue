@@ -22,7 +22,6 @@ import {
   type Payer
 } from '../../spaces'
 import { go, proto, toast } from '../../useProto'
-import { isMariana } from '../../mar/proposal'
 import { APPS, BRAND_SWATCHES, thumb } from '../../mock'
 
 /**
@@ -129,18 +128,14 @@ const PAYERS: { value: Payer; label: string }[] = [
       size="lg"
       :class="
         cn(
-          'grid h-[600px] grid-cols-[200px_minmax(0,1fr)] p-0',
-          isMariana &&
-            'mar-wizard h-[500px] w-[min(860px,calc(100vw-48px))] grid-cols-[224px_minmax(0,1fr)]'
+          'mar-wizard grid h-[500px] w-[min(860px,calc(100vw-48px))] grid-cols-[224px_minmax(0,1fr)] p-0'
         )
       "
     >
       <!-- Steps -->
       <aside class="mar-wizard-rail flex flex-col gap-1 border-r border-border-default p-5">
-        <DialogTitle :class="cn('mb-4 text-heading font-semibold', isMariana && 'mb-0')"
-          >New space</DialogTitle
-        >
-        <p v-if="isMariana" class="mar-wizard-count">Step {{ step + 1 }} of {{ STEPS.length }}</p>
+        <DialogTitle class="mb-0 text-heading font-semibold">New space</DialogTitle>
+        <p class="mar-wizard-count">Step {{ step + 1 }} of {{ STEPS.length }}</p>
         <button
           v-for="(s, i) in STEPS"
           :key="s"
@@ -166,9 +161,6 @@ const PAYERS: { value: Payer; label: string }[] = [
             ><Check v-if="i < step" :size="11" /><template v-else>{{ i + 1 }}</template></span
           >{{ s }}
         </button>
-        <p v-if="!isMariana" class="mt-auto text-ui text-subtle-foreground">
-          Starts as a draft. Nobody sees it until you go live.
-        </p>
       </aside>
 
       <section class="mar-wizard-main flex min-h-0 flex-col">

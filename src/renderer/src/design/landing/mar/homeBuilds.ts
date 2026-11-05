@@ -3,7 +3,7 @@ import { reactive, watch } from 'vue'
 /** Builds on Mar's Home (UI Playground › Build on Home): On by default, a
  *  compact Builds row with Pablo's Home content (your recent builds, their
  *  state, click to launch), or Off. Desktop only: Cloud has no local
- *  builds, so the row never shows there. Mar's proposal only. */
+ *  builds, so the row never shows there. */
 export type HomeBuilds = 'off' | 'on'
 
 export const HOME_BUILDS: { value: HomeBuilds; label: string }[] = [

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Play } from 'lucide-vue-next'
 import Card from '../ui/Card.vue'
 import SectionHeader from '../ui/SectionHeader.vue'
 import StatusDot from '../ui/StatusDot.vue'
@@ -27,7 +26,7 @@ const shown = computed(() => recentInstances.value.slice(0, 3))
         :key="i.id"
         as="button"
         interactive
-        class="mar-row-card group"
+        class="mar-row-card"
         @click="hostActions.launch(i)"
       >
         <span class="mar-row-icon">
@@ -42,10 +41,6 @@ const shown = computed(() => recentInstances.value.slice(0, 3))
             }}</span></span
           >
         </span>
-        <Play
-          :size="14"
-          class="shrink-0 text-subtle-foreground transition-colors group-hover:text-base-foreground"
-        />
       </Card>
     </div>
   </section>

@@ -90,24 +90,33 @@ async function copy(text: string): Promise<void> {
 .ds-specs-probe {
   display: flex;
   max-width: 240px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .ds-specs-probe > * {
   width: 100%;
 }
 .ds-specs {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  font-size: 13px;
+  line-height: 20px;
 }
 .ds-specs th {
-  padding: 6px 10px;
-  color: var(--color-muted-foreground);
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.06em;
   text-align: left;
+  text-transform: uppercase;
 }
 .ds-specs td {
-  padding: 7px 10px;
+  padding: 10px 14px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -115,10 +124,17 @@ async function copy(text: string): Promise<void> {
 .ds-specs td:nth-child(3) {
   color: var(--color-muted-foreground);
 }
+.ds-specs td:last-child {
+  width: 1%;
+  padding-right: 10px;
+}
 .ds-specs code {
   color: var(--color-base-foreground);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
+}
+.ds-specs td:nth-child(2) code {
+  color: var(--color-muted-foreground);
 }
 .ds-specs-copy {
   display: inline-flex;

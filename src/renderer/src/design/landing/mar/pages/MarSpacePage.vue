@@ -147,10 +147,8 @@ const lines = computed<MenuLine[]>(() => {
       icon: Trash2,
       danger: true,
       run: () => {
-        const i = SPACES.indexOf(s)
-        SPACES.splice(i, 1)
+        SPACES.splice(SPACES.indexOf(s), 1)
         go('spaces')
-        notify(`Deleted “${s.name}”`, () => SPACES.splice(i, 0, s))
       }
     }
   ]

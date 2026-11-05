@@ -1,8 +1,8 @@
 /*
  * Mar's UI and shell (see marShell.ts). `data-mar-ui` scopes the look
- * (transparencies, page photos) to all of Mar's proposal, Pablo's v10
- * included; `data-mar-shell` adds the floating sidebar on Mar draft only.
- * Pablo's proposal has neither.
+ * (transparencies, page photos) to every milestone from 1 on;
+ * `data-mar-shell` adds the earlier floating sidebar. Milestone 0, Desktop
+ * as it ships, has neither.
  */
 
 /* One flat, dark page: no glass mesh behind the content. The title bar
@@ -49,16 +49,18 @@
   }
 }
 
-/* A page under a photo: its title sits low on the photo, larger. */
+/* A page under a photo: its title sits low on the photo, larger. Space
+   above follows the window's height and the title its smaller side, so a
+   laptop and a big monitor both read right. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
-  padding-top: 88px;
+  padding-top: clamp(16px, calc(9vh - 40px), 88px);
 }
 /* Home's greeting sits a quarter higher, so less of the top is empty. */
 :root[data-mar-ui='on'] .mar-home > section:first-child {
   padding-top: 12px;
 }
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child h1 {
-  font-size: 52px;
+  font-size: clamp(32px, min(3.6vw, 6vh), 52px);
   line-height: 1.05;
   letter-spacing: -0.025em;
 }
@@ -215,11 +217,6 @@
   height: 44px;
   padding: 0;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-lens-btn {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-flyout-row {
   padding: 6px 8px;
 }
@@ -231,15 +228,6 @@
 }
 :root[data-mar-surface='cloud'] .proto-shell {
   padding-top: 78px;
-}
-
-/* With the title bar's tabs on, the agent opens from the title bar, so the
-   dock's lens switch keeps Create and Build, each with its name. */
-:root .proto-ui.proto-ui.proto-ui .mar-lens-btn.is-named {
-  width: auto;
-  gap: 6px;
-  padding: 0 12px;
-  font-size: var(--text-ui);
 }
 
 /* Pages under a photo: text and controls keep their contrast. The
@@ -480,10 +468,6 @@
   height: 34px;
   padding: 0;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  height: 30px;
-  padding: 0 8px;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-side-credits {
   height: 38px;
   padding: 0 12px;
@@ -518,52 +502,6 @@
   .proto-ui:has(> .glass-titlebar)
   .mar-top-actions {
   top: 58px;
-}
-/* Sidebar lens tabs fit three names on one line. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  padding: 0 4px;
-  gap: 5px;
-  font-size: 12.5px;
-}
-
-/* Rail: the lens switch stacks, each icon in its own 40×32 cell. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens.is-rail .mar-side-lens-btn {
-  flex: none;
-  width: 40px;
-  height: 32px;
-  padding: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens.is-rail {
-  width: auto;
-}
-
-/* Expanded sidebar: the picked lens shows its name and takes the room;
-   the others are icon-only cells. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) .mar-side-lens-btn {
-  flex: none;
-  width: 38px;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  flex: 1;
-  width: auto;
-  gap: 6px;
-  font-size: var(--text-ui);
-}
-
-/* The lens switch hugs its tabs instead of spanning the sidebar. */
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) {
-  width: auto;
-  align-self: flex-start;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  flex: none;
-  padding: 0 12px 0 10px;
 }
 
 /* Integrated sidebar (like Pablo's, attached to the window): no floating
@@ -635,24 +573,6 @@
   font-size: 13px;
   letter-spacing: 0.05em;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens-btn {
-  height: 28px;
-  font-size: 13px;
-  border-radius: 7px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens:not(.is-rail) .mar-side-lens-btn {
-  width: 32px;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-lens:not(.is-rail)
-  .mar-side-lens-btn[aria-pressed='true'] {
-  width: auto;
-  padding: 0 10px 0 8px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-side-lens {
-  border-radius: 10px;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-side-icon {
   width: 28px;
   height: 28px;
@@ -692,14 +612,6 @@
 }
 :root[data-mar-surface='cloud']:has(.proto-ui) {
   --mar-chrome: 78px;
-}
-
-/* Shadows: Off (Tune the UI) flattens every raised surface. */
-:root[data-mar-shadows='off']
-  .proto-ui
-  :is(.shadow-elev, .mar-prompt, .mar-side, .mar-dock, [role='menu']),
-:root[data-mar-shadows='off'] .proto-ui .shadow-elev:hover {
-  box-shadow: none !important;
 }
 
 /* Borders: None hides the divider inside cards, so it gives back the
@@ -817,10 +729,7 @@
 :root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) {
   gap: 4px;
 }
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-side-head:has(.mar-side-chip)
-  .mar-side-lens-btn:not([aria-pressed='true']) {
+:root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) .mar-mode-btn.is-icon {
   width: 28px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-chip {
@@ -1237,7 +1146,7 @@
 }
 
 /* Shadows: On is a soft, short lift, never a dark pool under a card. */
-:root[data-mar-ui='on']:not([data-mar-shadows='off']) {
+:root[data-mar-ui='on'] {
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.12), 0 6px 16px -6px oklch(0 0 0 / 0.18);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.14), 0 10px 22px -8px oklch(0 0 0 / 0.22);
 }
@@ -1247,7 +1156,23 @@
 :root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
   box-shadow: var(--shadow-elev-hover);
 }
-:root[data-mar-ui='on'][data-ds-theme='light']:not([data-mar-shadows='off']) {
+/* Tailwind bakes the shadow's value into its utility, so the New UI tokens
+   only reach it through the variable. Without this any surface off
+   edge-shine keeps the base theme's lit top edge. */
+:where(:root[data-mar-ui='on']) .shadow-elev {
+  box-shadow: var(--shadow-elev);
+}
+:where(:root[data-mar-ui='on']) .shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+:where(:root[data-mar-ui='on']) .shadow-highlight {
+  box-shadow: var(--shadow-highlight);
+}
+/* Avatar's default tone keeps its even ring, without the lit top. */
+:where(:root[data-mar-ui='on']) [class*='inset_0_1px_0_rgb'] {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] {
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.05), 0 6px 16px -6px oklch(0 0 0 / 0.08);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.06), 0 10px 22px -8px oklch(0 0 0 / 0.1);
 }

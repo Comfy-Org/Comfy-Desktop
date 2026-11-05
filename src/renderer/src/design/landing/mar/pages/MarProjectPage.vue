@@ -13,7 +13,6 @@ import MarSeg from './MarSeg.vue'
 import MarEntityHeader from './MarEntityHeader.vue'
 import MarEmpty from './MarEmpty.vue'
 import { EMPTY_PICS } from './emptyArt'
-import MarUndoToast from './MarUndoToast.vue'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
 import { projects } from './projectsStore'
@@ -166,7 +165,6 @@ const lines = computed<MenuLine[]>(() =>
           icon: Archive,
           run: () => {
             p.value!.archived = true
-            notify(`Archived “${p.value!.name}”`, () => (p.value!.archived = false))
             go('projects')
           }
         },
@@ -318,11 +316,10 @@ function removePerson(m: string): void {
             </span>
             <span class="mar-proj-event-thumb">
               <img v-if="e.thumbId" :src="thumb(e.thumbId)" alt="" />
-              <MarStatus
+              <span
                 v-if="e.status === 'running' || e.status === 'executing' || e.status === 'queued'"
-                :status="e.status"
-                on-media
-                class="mar-proj-event-status"
+                :class="['mar-proj-event-live', e.status === 'queued' && 'is-queued']"
+                :aria-label="e.status === 'queued' ? 'Queued' : 'Running'"
               />
             </span>
           </li>
@@ -433,8 +430,6 @@ function removePerson(m: string): void {
         />
       </div>
     </MarPage>
-
-    <MarUndoToast />
   </div>
 </template>
 
@@ -500,13 +495,18 @@ function removePerson(m: string): void {
 :root .proto-ui.proto-ui.proto-ui .mar-proj-latest {
   position: relative;
   display: block;
-  height: 220px;
+  /* Stretches to the feed beside it, so the two cards share one height. */
+  height: 100%;
+  min-height: 220px;
   overflow: hidden;
   padding: 0;
   border-radius: var(--radius-card, 14px);
   text-align: left;
 }
 .mar-proj-latest img {
+  /* Out of flow, so the picture fills the card without setting its height. */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -589,9 +589,19 @@ function removePerson(m: string): void {
   height: 100%;
   object-fit: cover;
 }
-.mar-proj-event-status {
+/* A 36px thumb can't hold the status pill: a dot in the corner says it. */
+.mar-proj-event-live {
   position: absolute;
-  inset: auto 2px 2px auto;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-status-running, #22c55e);
+  box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.55);
+}
+.mar-proj-event-live.is-queued {
+  background: rgb(255 255 255 / 0.8);
 }
 
 /* People: a narrow column, the invite on top, members in one list. */

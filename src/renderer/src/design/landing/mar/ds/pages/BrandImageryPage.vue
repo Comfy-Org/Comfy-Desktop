@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ArrowRight } from 'lucide-vue-next'
 import GradedImage from '../../brand/GradedImage.vue'
-import { LATENT_GRADE, WIRE, tint, type Wire } from '../../brand/imagery'
+import { LATENT_GRADE, SILVER_GRADE, WIRE, tint, type Wire } from '../../brand/imagery'
+import WorkflowGradient from '../../brand/WorkflowGradient.vue'
 import MarWires from '../../shell/MarWires.vue'
 import '../../shell/homeBackgrounds.css'
 import forestFog from '../../assets/forest-fog.jpg'
@@ -24,10 +25,20 @@ const BACKGROUNDS = [
   { id: 'grade', label: 'Latent grade · latest output, duotone' }
 ]
 
+const COVERS = [
+  'Portrait relight',
+  'Product shots',
+  'Upscale 4x',
+  'Storyboard',
+  'Style transfer',
+  'Inpaint'
+]
+
 const RULES = [
   'Chrome stays neutral (Graphite). Colour only comes from pictures; text, buttons and surfaces never take a brand hue.',
   'Palette: ComfyUI’s link colours, one per data type, and nothing else. A picture uses one hue or the Latent grade, never a rainbow.',
   'Grade: every picture we make (category tiles, covers, graded backgrounds) goes through the Latent grade: grey, then MODEL violet in the shadows and LATENT pink in the light. Same subject variety, one look.',
+  'Silver: pictures that sit in the chrome (the login strip) take the Silver grade: graphite to near white, hard contrast, no hue.',
   'Tint: cards that each own a topic take one link colour as a monochrome tint, the card filled with a pale wash of the same hue.',
   'Grain: one fine film grain over every treatment, the same tile at its own size (never scaled), about 10%.',
   'Motif: the graph (nodes, wires, sockets, the canvas dots) is cropped by the frame edge and sits behind the top band, never whole and never behind text.',
@@ -139,9 +150,54 @@ const SWATCHES = Object.entries(WIRE) as [Wire, string][]
       </article>
     </div>
   </Section>
+
+  <Section
+    title="Workflow cover · a blur of its own"
+    note="When a workflow has no picture: three blurred clouds of colour. The name picks the hues and positions, so each workflow has its own and keeps it; lightness and chroma are fixed, so a grid stays at one level of light."
+  >
+    <div class="bi-covers">
+      <figure v-for="n in COVERS" :key="n">
+        <span class="bi-cover"><WorkflowGradient :name="n" /></span>
+        <figcaption>{{ n }}</figcaption>
+      </figure>
+    </div>
+  </Section>
+
+  <Section
+    title="Silver grade · pictures in the chrome"
+    note="Graphite to near white, hard contrast, no hue. Used by the login strip."
+  >
+    <div class="bi-covers">
+      <figure v-for="c in CATEGORIES.slice(0, 3)" :key="c.label">
+        <span class="bi-cover"
+          ><GradedImage :src="c.src" :grade="SILVER_GRADE" class="size-full"
+        /></span>
+        <figcaption>{{ c.label }}</figcaption>
+      </figure>
+    </div>
+  </Section>
 </template>
 
 <style scoped>
+.bi-covers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.bi-covers figure {
+  margin: 0;
+}
+.bi-covers figcaption {
+  margin-top: 6px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
+.bi-cover {
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+}
 .bi-home {
   position: relative;
   display: flex;

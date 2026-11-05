@@ -118,9 +118,9 @@ export const LEVELS: Level[] = [
   {
     id: 'toast',
     name: 'Toast',
-    usedBy: 'Confirmations at the top of the window.',
-    defined: 'ui/Toaster.vue',
-    note: 'Solid on purpose: inverted, no blur.'
+    usedBy: 'Every confirmation, top right, in a tone: blue, green, orange or red.',
+    defined: 'mar/pages/MarUndoToast.vue',
+    note: 'Tinted glass: the tone over a blurred card.'
   }
 ]
 

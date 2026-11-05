@@ -1,62 +1,42 @@
-# Mariana's proposal
+# The New UI
 
-Lives apart from Pablo's prototype. Pick it in the Prototype menu
-(Proposal: Pablo or Mar, the first section) or open the preview with
-`?proposal=mariana`.
-
-Mar's proposal always shows Pablo's latest milestone (first run included,
-which keeps his example cards). Picking another milestone switches to
-Pablo's at that milestone. What changed and why is in
+The look of every prototype milestone from 1 on (`milestones.ts` decides what
+is there; this folder decides how it looks). Milestone 0 is Desktop as it ships
+and takes nothing from here: everything that writes to `<html>` or watches the
+document follows `can.design`. What changed and why is in
 [DECISIONS.md](DECISIONS.md).
+
+Milestone 1 keeps today's dashboard layout (`parts/milestones/ClassicDashboard.vue`)
+and draws it with this folder's parts. Pablo's earlier designs are on the
+prototype branch, draft PR #1782.
 
 ## UI and the tuner
 
-The menu's **UI** section picks the look: **Void** (the main one) or the
-other directions in `ui/looks/`. **Tune the UI…** opens a panel with live
-knobs on top of it (corners, surfaces, borders, shadows), saved per browser. The knobs live in `uiTuner.ts`.
+The menu's **UI** row opens the UI Playground (⌘.): **Graphite** (the main one; Void, the cool grey before it, stays in Palette) or
+the other directions in `ui/looks/`, with live knobs on top of it (corners,
+surfaces, borders, shadows), saved per browser. The knobs live in `uiTuner.ts`.
+It lists only what changes the screen you're on (`tunerContext.ts`).
 
 ## Title bar tweak
 
-Prototype menu › **Title bar**: **Breadcrumb** (Pablo's) or **Tabs**
-(`shell/titleTabs.ts`). Tabs: Home as a fixed icon tab, one tab per open
-workflow and app, then where things run (it opens the build switcher) and
-the agent on the right. The sidebar's lens switch keeps Create and Build,
-both named (`shell/MarLensSwitch.vue`); the agent leaves it.
+Prototype menu › **Title bar**: **Breadcrumb** or **Tabs**
+(`shell/titleTabs.ts`), from Milestone 3. Tabs: Home as a fixed icon tab, one tab
+per open workflow and app, then where things run (it opens the build switcher)
+and the agent on the right. The sidebar's lens switch keeps Create and Build,
+both named (`modes/MarModeSeg.vue`, the one mode switch); the agent leaves it.
 
-## What it changes
+## Where it lives
 
-Mar's draft follows Figma "Exploration 17 · Ambient dock":
+The shell is `shell/` (Floating panels by default), the library pages are
+`pages/` (handed over by `pages/modes/ModePages.vue`, `pages/owns.ts` lists them),
+Home is `MarHomeV10.vue`, Explore `explore/`, Learn `learn/`, a build's page and
+Build's pages `build/` and `deploy/`, the agent `agent/`, the menus `menus/`,
+motion `motion/`. Shared parts in `ui/` and `parts/` take the look through
+`data-mar-ui` (`shell/marShell.css`). The design system pages are at
+`/src/design/landing/mar/ds/index.html`.
 
-- No sidebar: one floating dock at the bottom (`shell/MarDock.vue`) with
-  the pages, the recent builds and their state, projects and spaces in a
-  flyout, the workspace, and the Create / Build / Agent switch at the end,
-  like Figma's mode switch. In Build it shows Build's pages.
-- Home: a tall page photo with a large greeting, the Create menu top
-  right, a compact prompt box, recent work as photo cards, What's new as
-  tabs. Example workflows live in Agent, not on Home.
-- Agent: Mar's chat (`agent/MarAgent.vue`) over the same scripted flows.
-- Chips on images are dark grey with a blur; tabs slide; micro-animations
-  live in `motion/`.
-
-## How it stays apart
-
-Everything new is in this folder. Pablo's files only gain small hooks:
-
-- `prototypeOptions.ts`: the Proposal, UI and Tune groups, and Title bar.
-- `comfyTitleBar/TitleBarApp.vue`: the Prototype menu shows a heading per
-  section, with Proposal first.
-- `LandingPrototypes.vue`: mounts the UI tuner.
-- `pages/modes/ModePages.vue`: Home goes through `HomeEntry.vue`.
-- `variants/VariantModes.vue`: the Agent icon comes from `proposal.ts`;
-  with Title bar › Tabs, the lens switch is `MarLensSwitch.vue`.
-- `parts/nav/TitleBarBreadcrumb.vue`: shows `MarTitleTabs.vue` instead
-  while Title bar › Tabs is on.
-- `titleBar.ts`, `titleBarBridge.ts`: publish the tabs and take their
-  clicks (tab, close tab, agent).
-
-With Proposal: Pablo, the prototype is exactly his.
-
-## Daily sync with Pablo's branch
+## Sync with Pablo's branch
 
 `scripts/design/sync-pablo.sh` merges `origin/PabloWiedemann/instances-landing-prototypes`
 into the current branch. It never rewrites history and stops on a conflict.
+New features there arrive in Pablo's pages, so port them to this folder's.

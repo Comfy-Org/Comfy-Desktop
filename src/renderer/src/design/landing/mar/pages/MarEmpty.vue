@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import Button from '../../ui/Button.vue'
+import { brandMotif } from '../brand/brandMotif'
+import MarTrio from '../brand/MarTrio.vue'
 
 /**
  * Every empty state in Mar's proposal, in the Favorites design: a small
@@ -8,7 +10,8 @@ import Button from '../../ui/Button.vue'
  * place's icon, a title, one line on what goes here, and the one action
  * that fills it (an optional quieter second). `compact` for a section
  * inside a page (a project's tab, a space's tab, a search with nothing);
- * no pictures shows the badge alone.
+ * no pictures shows the badge alone. With the brand motif on, the trio
+ * takes the art's place and its open slab holds the icon.
  */
 const {
   icon,
@@ -35,7 +38,10 @@ const emit = defineEmits<{ action: []; second: [] }>()
 
 <template>
   <section class="mar-empty" :class="[compact && 'is-compact', tone && `is-${tone}`]">
-    <div class="mar-empty-art" :class="!pics.length && 'is-bare'" aria-hidden="true">
+    <div v-if="brandMotif.id === 'trio'" class="mar-empty-trio mar-trio-host">
+      <MarTrio :u="compact ? 20 : 32" :icon :icon-size="compact ? 10 : 14" />
+    </div>
+    <div v-else class="mar-empty-art" :class="!pics.length && 'is-bare'" aria-hidden="true">
       <img
         v-for="(src, i) in pics.slice(0, 3)"
         :key="src"
@@ -44,7 +50,9 @@ const emit = defineEmits<{ action: []; second: [] }>()
         class="mar-empty-pic"
         :class="`is-${i}`"
       />
-      <span class="mar-empty-badge"><component :is="icon" :size="compact ? 14 : 16" /></span>
+      <span class="mar-empty-badge"
+        ><component :is="icon" :size="compact ? 14 : 16" :stroke-width="2.25"
+      /></span>
     </div>
     <div class="flex flex-col gap-1.5">
       <h2 class="mar-empty-h">{{ title }}</h2>
@@ -73,6 +81,9 @@ const emit = defineEmits<{ action: []; second: [] }>()
 .mar-empty.is-compact {
   gap: 18px;
   padding: 44px 0 36px;
+}
+.mar-empty-trio {
+  padding: 8px;
 }
 .mar-empty-art {
   position: relative;
@@ -125,18 +136,22 @@ const emit = defineEmits<{ action: []; second: [] }>()
 }
 .mar-empty-badge {
   position: absolute;
-  bottom: -4px;
+  bottom: -14px;
   left: 50%;
   z-index: 2;
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border-radius: 999px;
-  background: var(--color-card-background);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
-    0 8px 20px rgb(0 0 0 / 0.3);
+  /* Mixed on the page's colour, so it stays solid over the fan. */
+  background: color-mix(
+    in oklch,
+    var(--color-base-foreground) 12%,
+    var(--color-content-background)
+  );
+  /* The page's colour as a ring: the badge is cut out of the fan. */
+  box-shadow: 0 0 0 4px var(--color-content-background);
   color: var(--color-base-foreground);
   transform: translateX(-50%);
 }
@@ -144,8 +159,10 @@ const emit = defineEmits<{ action: []; second: [] }>()
   bottom: 0;
   width: 48px;
   height: 48px;
+  box-shadow: none;
 }
 .mar-empty.is-error .mar-empty-badge {
+  background: var(--color-card-background);
   color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-empty-h {

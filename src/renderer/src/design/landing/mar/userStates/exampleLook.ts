@@ -6,7 +6,7 @@ import { reactive, watch } from 'vue'
 export type ExampleLook = 'fan' | 'fanflow' | 'row' | 'coverflow' | 'arc' | 'bento' | 'deck'
 
 export const EXAMPLE_LOOKS: { value: ExampleLook; label: string }[] = [
-  { value: 'fan', label: "Fan · Pablo's hand of cards" },
+  { value: 'fan', label: 'Fan · a hand of cards' },
   { value: 'fanflow', label: "Fan × Coverflow · the fan's caption, coverflow's covers" },
   { value: 'row', label: 'Row · big pictures side by side' },
   { value: 'coverflow', label: 'Coverflow · a 3D carousel' },

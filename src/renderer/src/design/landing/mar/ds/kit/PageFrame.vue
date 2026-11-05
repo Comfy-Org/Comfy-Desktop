@@ -29,8 +29,18 @@ provideMode(ctx)
 
 const root = ref<HTMLElement>()
 onMounted(() => {
-  const post = (): void =>
+  // Its height, and where its titled sections sit (the page's “On this
+  // page” links), each time it changes size.
+  const post = (): void => {
     parent.postMessage({ type: 'mar-ds:height', h: Math.ceil(root.value!.offsetHeight) }, '*')
+    if (mode === 'hero' || mode === 'dodont' || mode === 'specs') return
+    const top = root.value!.getBoundingClientRect().top
+    const list = [...root.value!.querySelectorAll<HTMLElement>('.ds-section-title')].map((h) => ({
+      title: h.textContent?.trim() ?? '',
+      top: Math.round(h.getBoundingClientRect().top - top)
+    }))
+    parent.postMessage({ type: 'mar-ds:sections', list }, '*')
+  }
   new ResizeObserver(post).observe(root.value!)
   // The hero tells the page whether it is the whole page (one example).
   if (mode === 'hero')

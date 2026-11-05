@@ -1,6 +1,12 @@
 <script setup lang="ts">
+import { ArrowRight } from 'lucide-vue-next'
+import { PAGES } from '../registry'
+
 // Wherever this page is served from (the dev server's port can change).
 const url = `${location.origin}${location.pathname}`
+// Each part's first page and how many it holds, for the cards.
+const first = (g: string): string => `#/${PAGES.find((p) => p.group === g)?.id ?? 'about'}`
+const count = (g: string): number => PAGES.filter((p) => p.group === g).length
 </script>
 
 <template>
@@ -14,21 +20,37 @@ const url = `${location.origin}${location.pathname}`
     </p>
 
     <h2>How it's organised</h2>
-    <ul>
-      <li><strong>Foundations</strong>: colour, type, radius, materials, motion, interactions.</li>
-      <li>
-        <strong>Components</strong>: one large example, when to use it, Do / Don't, its rules; then
-        States, Specs and Code.
-      </li>
-      <li>
-        <strong>Patterns</strong>: components put together: filters bar, empty states, page header,
-        cards grid, menus with summary, the library pages and flows.
-      </li>
-      <li><strong>Playground</strong>: any component with any props; copy its usage.</li>
-    </ul>
+    <div class="ds-parts">
+      <a :href="first('Foundations')" class="ds-part">
+        <strong>Foundations</strong>
+        <span>colour, type, radius, materials, motion, interactions.</span>
+        <small>{{ count('Foundations') }} pages <ArrowRight :size="13" /></small>
+      </a>
+      <a :href="first('Components')" class="ds-part">
+        <strong>Components</strong>
+        <span
+          >one large example, when to use it, Do / Don't, its rules; then States, Specs and
+          Code.</span
+        >
+        <small>{{ count('Components') }} pages <ArrowRight :size="13" /></small>
+      </a>
+      <a :href="first('Patterns')" class="ds-part">
+        <strong>Patterns</strong>
+        <span
+          >components put together: filters bar, empty states, page header, cards grid, menus with
+          summary, the library pages and flows.</span
+        >
+        <small>{{ count('Patterns') }} pages <ArrowRight :size="13" /></small>
+      </a>
+      <a href="#/buttons?tab=playground" class="ds-part">
+        <strong>Playground</strong>
+        <span>any component with any props; copy its usage.</span>
+        <small>Open <ArrowRight :size="13" /></small>
+      </a>
+    </div>
     <p>
-      The default view: Proposal › New UI, every UI Playground knob at its default. Dark by default;
-      Light or Both from the header.
+      The default view: every UI Playground knob at its default. Dark by default; Light or Both from
+      the header.
     </p>
 
     <details class="ds-fold">
@@ -102,8 +124,8 @@ const url = `${location.origin}${location.pathname}`
         <li>
           <strong>One corner for controls</strong>: tabs, filters, sort, search and view share
           <code>--mar-tab-radius</code> (track) and <code>--mar-tab-item-radius</code> (item), from
-          UI Playground › Corners (Default 10 / 7, the default; Soft 14 / 11). No fully rounded controls
-          in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
+          UI Playground › Corners (Default 10 / 7, the default; Soft 14 / 11). No fully rounded
+          controls in filter bars. Buttons use <code>--radius-control</code>: no pill buttons; only
           icon-only circular buttons are round.
         </li>
         <li>
@@ -116,8 +138,8 @@ const url = `${location.origin}${location.pathname}`
           sits over the thumbnail. With no picture yet, a card shows the canvas's dot grid.
         </li>
         <li>
-          <strong>The New tile is shaped like a card</strong>: same picture ratio, a dashed slot with
-          + and the label.
+          <strong>The New tile is shaped like a card</strong>: same picture ratio, a dashed slot
+          with + and the label.
         </li>
         <li>Progress for an item in flight is the bottom edge of its cover.</li>
       </ul>
@@ -134,8 +156,8 @@ const url = `${location.origin}${location.pathname}`
           search and view on the right.
         </li>
         <li>
-          <strong>One table for every list view</strong> (<code>mar/table/table.css</code>):
-          Builds, Workflows, Apps, Assets, Projects, Spaces, Models, Deployments, Logs, API keys.
+          <strong>One table for every list view</strong> (<code>mar/table/table.css</code>): Builds,
+          Workflows, Apps, Assets, Projects, Spaces, Models, Deployments, Logs, API keys.
         </li>
         <li>
           <strong>Build reuses Create's pages</strong>: the same page frame, headers, section heads,
@@ -167,8 +189,8 @@ const url = `${location.origin}${location.pathname}`
         </li>
         <li>
           <strong>Global search</strong> is one command palette surface. It opens with
-          <code>⌘K</code> anywhere and from the sidebar's first row in Create; Build's sidebar has no
-          Search.
+          <code>⌘K</code> anywhere and from the sidebar's first row in Create; Build's sidebar has
+          no Search.
         </li>
         <li>The graph editor goes back Home from the Comfy logo heading its rail.</li>
         <li>On Comfy Cloud the title bar has no build switcher.</li>
@@ -176,7 +198,7 @@ const url = `${location.origin}${location.pathname}`
           Signed out, the sidebar's Log in card leads with a strip of graded outputs; the button is
           the standard primary.
         </li>
-        <li>Pages open with Fade and rise (UI Playground › Page transition).</li>
+        <li>Pages open with Fade and rise.</li>
       </ul>
 
       <h3>Fidelity to the product</h3>
@@ -255,3 +277,51 @@ const url = `${location.origin}${location.pathname}`
     </details>
   </article>
 </template>
+
+<style>
+/* How it's organised: one card per part, each opens its first page. */
+.ds-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+.ds-doc a.ds-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  background: var(--color-app-background);
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  line-height: 21px;
+  text-decoration: none;
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.ds-doc a.ds-part:hover {
+  background: var(--color-card-background);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+.ds-part strong {
+  font-size: 15px;
+}
+.ds-part span::first-letter {
+  text-transform: uppercase;
+}
+.ds-part small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.ds-doc a.ds-part:hover small {
+  color: var(--color-base-foreground);
+}
+</style>

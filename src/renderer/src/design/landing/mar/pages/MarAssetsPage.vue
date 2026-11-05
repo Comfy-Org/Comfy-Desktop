@@ -18,7 +18,6 @@ import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
-import AssetViewMenu from '../assets/AssetViewMenu.vue'
 import { assetView } from '../assets/assetView'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
@@ -26,10 +25,11 @@ import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
 import MarSelectBar from './MarSelectBar.vue'
+import MarViewToggle from './MarViewToggle.vue'
 import { assets, type MarAsset } from './assetsStore'
 import { useLibrary } from './library'
 import { projectNames } from './projectsStore'
-import { shownState } from './pageState'
+import { pageState } from './pageState'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 
@@ -37,7 +37,8 @@ import type { MenuLine } from './menu'
  * Assets (Mar's proposal): everything your runs made and everything you
  * brought in, on this computer and in Comfy Cloud. Runs still going sit
  * first (generating, queued), a failed one says so and offers a retry.
- * Her View menu sets layout and size; ⋯ and the selection bar do the rest.
+ * Grid or list like the other library pages; ⋯ and the selection bar do
+ * the rest.
  */
 const { project: fixedProject } = defineProps<{ project?: string }>()
 
@@ -107,7 +108,10 @@ function clear(): void {
 }
 
 const lib = useLibrary(assets, shown)
-const MIN = { s: 160, m: 220, l: 300 }
+const view = computed({
+  get: () => (assetView.layout === 'list' ? ('list' as const) : ('grid' as const)),
+  set: (v) => (assetView.layout = v)
+})
 
 const meta = (a: MarAsset): string =>
   a.status && a.status !== 'failed'
@@ -169,11 +173,11 @@ function lines(a: MarAsset): MenuLine[] {
 <template>
   <MarPage
     title="Assets"
-    :skeleton="assetView.layout === 'list' ? 'list' : 'grid'"
+    :skeleton="view"
     :no-results="shown.length === 0 && filtered"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
-    :state="shownState === 'live' && base.length === 0 ? 'empty' : undefined"
+    :state="pageState.id === 'live' ? (base.length ? 'live' : 'empty') : undefined"
     :empty="{
       icon: ComfyAssets,
       title: fixedProject ? 'No assets in this project yet' : 'Nothing made yet',
@@ -213,23 +217,18 @@ function lines(a: MarAsset): MenuLine[] {
         <Select v-if="!fixedProject" v-model="project" :options="PROJECTS" class="w-40" />
         <Select v-model="sort" :options="SORTS" label="Sort" class="w-34" />
         <MarSearchField v-model="query" placeholder="Search assets" />
-        <AssetViewMenu />
+        <MarViewToggle v-model="view" />
       </div>
     </template>
 
-    <div
-      v-if="assetView.layout !== 'list'"
-      class="mar-grid"
-      :class="!assetView.details && 'no-details'"
-      :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${MIN[assetView.size]}px, 1fr))` }"
-    >
+    <div v-if="view === 'grid'" class="mar-grid is-wide">
       <MarItem
         v-for="a in shown"
         :key="a.id"
         :name="a.name"
         :thumb="a.thumbId ? thumb(a.thumbId) : undefined"
         :icon="a.type === 'audio' ? Music : ImagePlus"
-        :ratio="assetView.layout === 'square' ? '1 / 1' : '4 / 3'"
+        ratio="4 / 3"
         :meta="meta(a)"
         :status="a.status"
         :status-label="a.statusLabel"
@@ -305,9 +304,6 @@ function lines(a: MarAsset): MenuLine[] {
 </template>
 
 <style>
-.mar-grid.no-details .mar-item-text {
-  display: none;
-}
 .mar-asset-running img {
   filter: blur(14px) saturate(0.8);
   transform: scale(1.1);

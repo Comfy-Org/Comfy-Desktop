@@ -35,7 +35,8 @@ const {
   gate,
   compact = false,
   layout = 'left',
-  runLabel = 'Run'
+  runLabel = 'Run',
+  output = 'image'
 } = defineProps<{
   fields: Field[]
   thumbId: string
@@ -49,6 +50,8 @@ const {
   layout?: AppLayout
   /** The Run button's words (the app's theme). */
   runLabel?: string
+  /** What a run makes, in the line under the result. */
+  output?: string
 }>()
 const emit = defineEmits<{ done: [] }>()
 
@@ -251,11 +254,12 @@ defineExpose({ run })
         </div>
       </TransitionGroup>
 
+      <slot name="place" />
       <div class="flex flex-col gap-2 pt-1">
         <Button variant="primary" size="lg" block :disabled="state === 'running'" @click="run">
           <Loader2 v-if="state === 'running'" :size="14" class="animate-spin" />
           {{ state === 'running' ? 'Running' : runLabel }}
-          <span class="font-normal opacity-60">· about {{ usd(cost * count) }}</span>
+          <span v-if="cost" class="font-normal opacity-60">· about {{ usd(cost * count) }}</span>
         </Button>
         <p class="text-center text-ui text-subtle-foreground">{{ payer }}</p>
       </div>
@@ -322,9 +326,10 @@ defineExpose({ run })
       </div>
       <div v-if="state === 'done'" class="flex items-center gap-2">
         <span class="flex-1 text-ui text-subtle-foreground"
-          >{{ results.length }} {{ results.length === 1 ? 'image' : 'images' }} · 18 s ·
+          >{{ results.length }} {{ results.length === 1 ? output : `${output}s` }} · 18 s ·
           {{ usd(cost * count) }}</span
         >
+        <slot name="saved" />
         <Button size="sm" variant="ghost" @click="state = 'idle'">Run again</Button>
         <Button size="sm" @click="toast('Downloading…')"><Download :size="12" />Download</Button>
       </div>

@@ -1,4 +1,6 @@
 import { hostActions } from '../../useProto'
+import { openAppUrl } from '../../appFlow'
+import { can } from '../../milestones'
 import { INSTANCES } from '../../mock'
 import { mock } from '../assets/mock'
 
@@ -15,17 +17,21 @@ export interface Example {
   runs: string
   src: string
   video?: string
+  /** The app it opens once apps are in (EXAMPLE_APPS). */
+  app: string
 }
 
 export const EXAMPLES: Example[] = [
   {
     label: 'Remove a background',
+    app: 'e-background',
     kind: 'Image',
     runs: '~10 s',
     src: mock('start-remove-a-background')
   },
   {
     label: 'Turn a photo into video',
+    app: 'e-video',
     kind: 'Video',
     runs: '~1 min',
     // A real ComfyUI output: the What's new banner's loops sit on this page too.
@@ -34,23 +40,32 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Reshoot your product',
+    app: 'e-reshoot',
     kind: 'Image',
     runs: '~20 s',
     src: mock('start-reshoot-your-product')
   },
-  { label: 'Upscale to 4K', kind: 'Image', runs: '~15 s', src: mock('start-upscale-to-4k') },
+  {
+    label: 'Upscale to 4K',
+    app: 'e-upscale',
+    kind: 'Image',
+    runs: '~15 s',
+    src: mock('start-upscale-to-4k')
+  },
   {
     label: 'Relight a portrait',
+    app: 'e-relight',
     kind: 'Image',
     runs: '~20 s',
     src: mock('start-relight-a-portrait')
   }
 ]
 
-/** Picking an example opens it in ComfyUI on Comfy Cloud (a new tab with
- *  its workflow, asking to sign in if needed), never the prompt or the
- *  agent: an example is a workflow to run. */
+/** Picking an example opens it as an app, ready to run. Before apps are in,
+ *  it opens in ComfyUI on Comfy Cloud (a new tab with its workflow, asking to
+ *  sign in if needed). Never the prompt or the agent. */
 export function runExample(x: Example): void {
+  if (can.value.exploreApps) return openAppUrl(x.app)
   hostActions.launch(INSTANCES[0]!, x.label)
 }
 

@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
-import { isMariana } from '../proposal'
 import { marUser, setUser } from '../userStates/userState'
-import { go, newInstanceHooks, toast } from '../../useProto'
+import { can, MILESTONES } from '../../milestones'
+import { go, newInstanceHooks, proto, toast } from '../../useProto'
 
 /**
  * Local setup (UI Playground › Local setup): the proposed first install of
@@ -94,8 +94,17 @@ watch(
   }
 )
 
-/** The proposed flow replaces "New build flow" only in Mar's proposal. */
-export const setupOn = computed(() => isMariana.value && localSetup.mode === 'on')
+/** The proposed flow replaces "New build flow" wherever the New UI is drawn. */
+export const setupOn = computed(() => can.value.design && localSetup.mode === 'on')
+
+// The scope is a milestone: M1 is Builds · MVP, where All builds is the
+// landing; the next iterations are the latest one, with its Home.
+const M1_MILESTONE = 2
+const LATEST_MILESTONE = Number(MILESTONES.at(-1)!.value)
+function showScope(): void {
+  const m = localSetup.scope === 'm1' ? M1_MILESTONE : LATEST_MILESTONE
+  if (proto.milestone !== m) proto.milestone = m
+}
 
 /** What the checks found on this computer (mock, follows `machine`). */
 export const DETECTED = {
@@ -257,7 +266,8 @@ function finish(): void {
   stop()
   marUser.local = 'one'
   flow.open = false
-  // M1 has no Home: the install lands on All builds.
+  // M1 has no Home: the install lands on All builds, in M1's own shell.
+  showScope()
   go(localSetup.scope === 'm1' ? 'environments' : 'overview')
   toast(flow.picked ? `Opening ComfyUI with ${flow.picked.title}` : 'Opening ComfyUI')
 }
@@ -334,6 +344,7 @@ export function closeSetup(): void {
 }
 
 if (linkFirst) {
+  showScope()
   setUser('first')
   openSetup()
 }

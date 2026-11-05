@@ -1,11 +1,11 @@
 import { watch } from 'vue'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 
 /**
  * Sliding tab indicator for Mar's proposal: in every tab group (reka
  * toggle groups, and `.mar-seg` button rows), one pill sits behind the
  * picked option and slides to the next one instead of the background
- * jumping. Pablo's proposal is left alone.
+ * jumping. Milestone 0 is left alone.
  *
  * Groups are found as they appear (MutationObserver), so pages and panels
  * that mount later get the indicator too.
@@ -70,8 +70,9 @@ function scan(root: ParentNode = document): void {
 let observer: MutationObserver | undefined
 const onResize = (): void => scan()
 
+// Off at Milestone 0: Desktop as it ships keeps its own tabs.
 watch(
-  isMariana,
+  () => can.value.design,
   (on) => {
     if (on && !observer) {
       observer = new MutationObserver(() => requestAnimationFrame(() => scan()))

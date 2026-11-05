@@ -1,31 +1,39 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Clock, Play } from 'lucide-vue-next'
+import { Check, Clock, Play, Plus } from 'lucide-vue-next'
+import Button from '../../ui/Button.vue'
+import SectionHeader from '../../ui/SectionHeader.vue'
 import Select from '../../ui/Select.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
-import { APPS, ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
+import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
+import { EXPLORE, STARTER_APPS, isAdded, openAppPage, toggleAdded } from '../../appFlow'
 import { go, toast } from '../../useProto'
-import FavoriteStar from '../FavoriteStar.vue'
+import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 
 /**
- * Explore in Mar's proposal. One line holds everything that narrows the
- * page: what you're looking at (Templates, Models, Apps, Tutorials), its
- * type, and a search, so there is one kind of tab, not two. Each tab
- * shows its own things. The frame (title, toolbar, Loading, Error,
+ * Explore. One line holds everything that narrows the page: what you're
+ * looking at (Apps, Templates, Models, Tutorials), its type, and a search,
+ * so there is one kind of tab, not two. It leads with apps, use cases anyone
+ * can run; from Explore & Learn on, the rest follow as tabs. An app opens in
+ * its own tab, as its user. The frame (title, toolbar, Loading, Error,
  * Nothing matches) is MarPage; the catalogue is never empty.
  */
-type Tab = 'templates' | 'models' | 'apps' | 'tutorials'
-const tab = ref<Tab>('templates')
+type Tab = 'apps' | 'templates' | 'models' | 'tutorials'
+const tab = ref<Tab>('apps')
 const type = ref('all')
 const query = ref('')
 
 const TABS: { value: Tab; label: string; count: number }[] = [
+  {
+    value: 'apps',
+    label: 'Apps',
+    count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+  },
   { value: 'templates', label: 'Templates', count: TEMPLATES.length },
   { value: 'models', label: 'Models', count: ROUTER_MODELS.length },
-  { value: 'apps', label: 'Apps', count: APPS.length },
   { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length }
 ]
 const TYPES: Record<Tab, { value: string; label: string }[]> = {
@@ -42,8 +50,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
   ],
   apps: [
     { value: 'all', label: 'All apps' },
-    { value: 'mine', label: 'Made by you' },
-    { value: 'team', label: 'Shared with you' }
+    ...EXPLORE.map((s) => ({ value: s.title, label: s.title }))
   ],
   tutorials: [
     { value: 'all', label: 'All topics' },
@@ -75,10 +82,12 @@ const models = computed(() =>
     (m) => type.value === 'all' || m.kind.toLowerCase().includes(type.value)
   ).filter((m) => has(`${m.model} ${m.provider}`))
 )
-const apps = computed(() =>
-  APPS.filter((a) => type.value === 'all' || (type.value === 'mine' ? a.you : !a.you)).filter((a) =>
-    has(a.name)
-  )
+// The use cases, each with its apps; a use case with none matching drops out.
+const appSections = computed(() =>
+  [{ title: 'Start here', hint: 'Ready to run', apps: STARTER_APPS }, ...EXPLORE]
+    .filter((s) => type.value === 'all' || s.title === type.value)
+    .map((s) => ({ ...s, apps: s.apps.filter((a) => has(`${a.name} ${a.blurb}`)) }))
+    .filter((s) => s.apps.length)
 )
 const tutorials = computed(() =>
   TUTORIALS.filter((t) => type.value === 'all' || t.category === type.value).filter((t) =>
@@ -90,7 +99,7 @@ const empty = computed(
     ({
       templates: templates.value,
       models: models.value,
-      apps: apps.value,
+      apps: appSections.value,
       tutorials: tutorials.value
     })[tab.value].length === 0
 )
@@ -106,15 +115,63 @@ const empty = computed(
   >
     <!-- One line: what, which kind, search. -->
     <template #toolbar>
-      <MarSeg v-model="tab" :options="TABS" label="Explore" />
+      <MarSeg v-if="can.explore" v-model="tab" :options="TABS" label="Explore" />
       <div class="ml-auto flex items-center gap-2">
         <Select v-model="type" :options="TYPES[tab]" class="w-36" />
         <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
       </div>
     </template>
 
+    <!-- Apps: use cases, each with its apps. -->
+    <template v-if="tab === 'apps'">
+      <section v-for="s in appSections" :key="s.title" class="mb-10">
+        <SectionHeader :title="s.title">
+          <template #controls>
+            <span class="text-ui text-subtle-foreground">{{ s.hint }}</span>
+          </template>
+        </SectionHeader>
+        <div class="mar-ex-grid is-apps">
+          <div
+            v-for="a in s.apps"
+            :key="a.id"
+            role="button"
+            tabindex="0"
+            class="mar-ex-card group"
+            :aria-label="`Open ${a.name}`"
+            @click="openAppPage(a.id)"
+            @keydown.enter="openAppPage(a.id)"
+          >
+            <span class="mar-ex-media"
+              ><img :src="thumb(a.thumbId)" alt="" loading="lazy" />
+              <!-- No library yet at Explore apps, so nothing to add to. -->
+              <span v-if="can.explore" class="mar-ex-star">
+                <Button
+                  variant="overlay"
+                  size="sm"
+                  :aria-pressed="isAdded(a.id)"
+                  :aria-label="`${isAdded(a.id) ? 'Remove' : 'Add'} ${a.name} ${isAdded(a.id) ? 'from' : 'to'} my apps`"
+                  @click.stop="toggleAdded(a)"
+                  @keydown.enter.stop
+                >
+                  <Check v-if="isAdded(a.id)" :size="12" /><Plus v-else :size="12" />{{
+                    isAdded(a.id) ? 'Added' : 'Add'
+                  }}
+                </Button>
+              </span></span
+            >
+            <span class="block min-w-0 px-1.5 pt-2.5 pb-1.5 text-left">
+              <span class="block truncate text-ui font-medium text-base-foreground">{{
+                a.name
+              }}</span>
+              <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
+            </span>
+          </div>
+        </div>
+      </section>
+    </template>
+
     <!-- Templates -->
-    <div v-if="tab === 'templates'" class="mar-ex-grid">
+    <div v-else-if="tab === 'templates'" class="mar-ex-grid">
       <TemplateCard v-for="t in templates" :key="t.id" :t />
     </div>
 
@@ -135,28 +192,6 @@ const empty = computed(
         <span class="flex flex-col items-end gap-1">
           <span class="mar-tag">{{ m.kind }}</span>
           <span class="text-[12px] text-subtle-foreground tabular-nums">{{ m.price }}</span>
-        </span>
-      </button>
-    </div>
-
-    <!-- Apps -->
-    <div v-else-if="tab === 'apps'" class="mar-ex-grid">
-      <button
-        v-for="a in apps"
-        :key="a.id"
-        type="button"
-        class="mar-ex-card group"
-        @click="go(`app:${a.id}` as never)"
-      >
-        <span class="mar-ex-media"
-          ><img :src="thumb(a.thumbId)" alt="" loading="lazy" /><span class="mar-ex-star"
-            ><FavoriteStar :id="a.id" kind="app" /></span
-        ></span>
-        <span class="flex flex-col gap-0.5 px-2 pt-2.5 pb-2 text-left">
-          <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
-          <span class="truncate text-ui text-subtle-foreground"
-            >{{ a.owner }} · {{ a.runs.toLocaleString('en-US') }} runs</span
-          >
         </span>
       </button>
     </div>
@@ -194,6 +229,15 @@ const empty = computed(
 .mar-ex-grid.is-models {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
+}
+.mar-ex-grid.is-apps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.mar-ex-grid.is-apps .mar-ex-media {
+  aspect-ratio: 16 / 10;
+}
+.mar-ex-grid.is-apps .mar-ex-media img {
+  border-radius: var(--radius-control);
 }
 .mar-ex-mark {
   display: inline-flex;

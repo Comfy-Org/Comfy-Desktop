@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 import './looks.css'
 
 /**
@@ -11,7 +11,7 @@ import './looks.css'
 export type MarLook = 'current'
 
 export const LOOKS: { value: MarLook; label: string }[] = [
-  { value: 'current', label: 'Current · Void as it is' }
+  { value: 'current', label: 'Current · as it is' }
 ]
 
 const KEY = 'comfy.design.mar.look'
@@ -27,9 +27,9 @@ export const marLook = reactive<{ id: MarLook }>({
   })()
 })
 
-/** The look on screen, or undefined for Current (and Pablo's proposal). */
+/** The look on screen, or undefined for Current (and Milestone 0). */
 export const lookOn = computed<Exclude<MarLook, 'current'> | undefined>(() =>
-  isMariana.value && marLook.id !== 'current' ? marLook.id : undefined
+  can.value.design && marLook.id !== 'current' ? marLook.id : undefined
 )
 
 watch(

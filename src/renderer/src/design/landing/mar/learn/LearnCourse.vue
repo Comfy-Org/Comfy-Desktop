@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Check, Play } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
+import { brandMotif } from '../brand/brandMotif'
 import { thumb, type Tutorial } from '../../mock'
 
 /** "Start here": the Basics lessons as one short course, in order. The
@@ -20,7 +21,11 @@ const left = computed(() =>
   Math.max(1, Math.round(next.value.minutes * (1 - (next.value.progress ?? 0))))
 )
 const cta = computed(() =>
-  allDone.value ? 'Watch again' : (next.value.progress ?? 0) > 0 ? 'Continue lesson' : 'Start lesson'
+  allDone.value
+    ? 'Watch again'
+    : (next.value.progress ?? 0) > 0
+      ? 'Continue lesson'
+      : 'Start lesson'
 )
 </script>
 
@@ -55,7 +60,11 @@ const cta = computed(() =>
           {{ done }} of {{ lessons.length }} done · {{ total }} min
         </p>
       </div>
-      <div class="mar-learn-steps mx-2 mt-2.5" aria-hidden="true">
+      <div
+        class="mar-learn-steps mx-2 mt-2.5"
+        :class="brandMotif.id === 'trio' && 'is-trio'"
+        aria-hidden="true"
+      >
         <span
           v-for="(t, i) in lessons"
           :key="t.title"
@@ -159,6 +168,34 @@ const cta = computed(() =>
 }
 .mar-learn-steps > span.is-done {
   background: var(--color-base-foreground);
+}
+/* Brand motif (brandMotif.ts): steps as pips at the C mark's 16°. Done
+   is material, the current one an open slot, the rest card tone. */
+.mar-learn-steps.is-trio {
+  display: flex;
+  gap: 3px;
+  padding-left: 2px;
+}
+.mar-learn-steps.is-trio > span {
+  width: 16px;
+  height: 9px;
+  border-radius: 2.5px;
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  transform: skewX(-16deg);
+}
+.mar-learn-steps.is-trio > span > span {
+  display: none;
+}
+.mar-learn-steps.is-trio > span.is-done {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-muted-foreground), white 8%),
+    var(--color-muted-foreground)
+  );
+}
+.mar-learn-steps.is-trio > span.is-current {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.25px var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-learn-row {
   display: flex;

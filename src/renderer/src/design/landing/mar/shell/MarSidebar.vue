@@ -43,6 +43,7 @@ import { PROJECTS, TEMPLATES, thumb } from '../../mock'
 import { favorites } from '../favorites'
 import { creditsShort, creditsStyle, creditsTotal } from '../credits'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
+import MarModeSeg from '../modes/MarModeSeg.vue'
 import MarCreditsFlyout from '../MarCreditsFlyout.vue'
 import RailFlyout from '../p20/RailFlyout.vue'
 import { p20 } from '../p20/p20'
@@ -52,7 +53,7 @@ import { marNav } from './marShell'
 import { marTabsOn } from './titleTabs'
 import { search } from '../search/search'
 import { PROJECT_ART } from '../assets/mock'
-import { firstRunKeeps, firstRunLabel, ports } from '../pabloPorts'
+import { firstRunKeeps, firstRunLabel, ports } from '../navOptions'
 import MarSignIn from './MarSignIn.vue'
 import { goModeHome } from '../modes/home'
 
@@ -112,7 +113,7 @@ const BUILD: { title?: string; items: Item[] }[] = [
     ]
   }
 ]
-// From Pablo › Docs: his Build nav ends with Docs (docs.comfy.org).
+// Nav options › Docs: his Build nav ends with Docs (docs.comfy.org).
 const DOCS: Item = { page: 'docs' as Page, label: 'Docs', icon: BookOpen, href: 'docs' }
 const withDocs = (gs: typeof BUILD): typeof BUILD =>
   ports.navDocs
@@ -175,30 +176,14 @@ function newChat(): void {
   <aside class="mar-side" :class="!open && 'is-rail'" aria-label="Navigation">
     <!-- Lens switch and collapse, on one line (stacked on the rail). -->
     <div class="mar-side-head" :class="!open && 'is-rail'">
-      <div
+      <MarModeSeg
         v-if="can.builder"
-        class="mar-seg mar-side-lens"
-        :class="!open && 'is-rail'"
-        role="radiogroup"
-        aria-label="Mode"
-      >
-        <button
-          v-for="l in lenses"
-          :key="l.value"
-          type="button"
-          role="radio"
-          :aria-checked="proto.mode === l.value"
-          :aria-pressed="proto.mode === l.value"
-          :aria-label="l.label"
-          :title="l.label"
-          class="mar-side-lens-btn"
-          @click="lens(l.value)"
-        >
-          <component :is="l.icon" :size="15" /><span v-if="open && proto.mode === l.value">{{
-            l.label
-          }}</span>
-        </button>
-      </div>
+        :model-value="proto.mode"
+        :options="lenses"
+        :show="open ? 'picked' : 'icon'"
+        :vertical="!open"
+        @update:model-value="lens"
+      />
       <MarCreditsFlyout v-if="open && creditsStyle.id === 'chip'" side="bottom" align="start">
         <button type="button" class="mar-side-chip" :title="`${creditsTotal} credits`">
           <Coins :size="13" />{{ creditsShort }}
@@ -378,7 +363,7 @@ function newChat(): void {
       </template>
     </nav>
 
-    <!-- Signed out with From Pablo › Account: no balance to show. -->
+    <!-- Signed out with Nav options › Account: no balance to show. -->
     <MarCreditsFlyout
       v-if="
         (proto.signedIn || !ports.navAccount) &&
@@ -392,7 +377,7 @@ function newChat(): void {
       </button>
     </MarCreditsFlyout>
 
-    <!-- Signed out (From Pablo › Account): his Log in card instead. -->
+    <!-- Signed out (Nav options › Account): his Log in card instead. -->
     <MarSignIn v-if="ports.navAccount && !proto.signedIn" :open />
     <!-- Workspace, always last at the foot like Pablo's; credits above it. -->
     <div v-else class="mar-side-foot" :class="open && creditsStyle.id === 'meter' && 'is-meter'">
@@ -512,33 +497,6 @@ function newChat(): void {
 .mar-side-icon:hover {
   color: var(--color-base-foreground);
   opacity: 1;
-}
-.mar-side-lens {
-  display: flex;
-  width: 100%;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
-}
-.mar-side-lens.is-rail {
-  flex-direction: column;
-}
-.mar-side-lens-btn {
-  display: inline-flex;
-  flex: 1;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: 9px;
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-  transition: color 160ms ease;
-}
-.mar-side-lens-btn[aria-pressed='true'],
-.mar-side-lens-btn:hover {
-  color: var(--color-base-foreground);
 }
 .mar-side-scroll {
   display: flex;

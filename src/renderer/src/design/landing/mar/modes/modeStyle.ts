@@ -1,14 +1,12 @@
 import { reactive, watch } from 'vue'
 
-/** How the Create / Build / Agent switch looks in Mar's proposal
- *  (UI Playground › Mode switch), until one is decided. */
-export type ModeStyle = 'pablo' | 'stack' | 'title' | 'split' | 'foot'
+/** How the Create / Build / Agent switch looks. */
+export type ModeStyle = 'stack' | 'title' | 'split' | 'foot'
 
 // Stack, Title and Foot still render (MarModeSwitch) but are out of the
-// picker: Mar kept Split as the default and Pablo's pill to compare.
+// picker: Mar kept Split.
 export const MODE_STYLES: { value: ModeStyle; label: string }[] = [
-  { value: 'split', label: 'Split · Create or Build, Agent apart' },
-  { value: 'pablo', label: 'Pill · picked one named (before)' }
+  { value: 'split', label: 'Split · Create or Build, Agent apart' }
 ]
 
 const KEY = 'comfy.design.mar.modeStyle'

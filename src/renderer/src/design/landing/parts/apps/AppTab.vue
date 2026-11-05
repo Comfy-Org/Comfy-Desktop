@@ -16,15 +16,20 @@ import Input from '../../ui/Input.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
-import { toast } from '../../useProto'
+import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
+import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
+import { assets } from '../../mar/pages/assetsStore'
+import { go, isNewUser, proto, toast } from '../../useProto'
 import {
   appsProto,
   exitPreview,
+  isStarter,
   libApp,
   previewAs,
   previewLabel,
   PREVIEWS,
   usd,
+  type Field,
   type PreviewAs
 } from '../../appFlow'
 
@@ -38,10 +43,48 @@ import {
  *   no access      - Request access, or switch account
  *   link gone      - revoked, expired or over its cap
  * The creator checks this with "Preview as" (a thin bar on top says so).
+ * A starter app is for a new Desktop user: it runs on their own account, so
+ * Run asks them to sign in and add credits, and the result lands in Assets.
  */
 const { id } = defineProps<{ id: string }>()
 const app = computed(() => libApp(id)!)
 const as = computed<PreviewAs | undefined>(() => appsProto.preview[id])
+const starter = computed(() => isStarter(id))
+// Home's examples (EXAMPLE_APPS) make images too, except the video one.
+const output = computed(() =>
+  id === 's-image' || (id.startsWith('e-') && id !== 'e-video') ? 'image' : 'video'
+)
+/** The stages of the PRD (UI Playground › Apps stage): M2 says where it
+ *  runs, and a fully local run costs nothing; M3 adds more to tweak. */
+const staged = computed(() => starter.value && appsStage.id !== 'm1')
+const iterate = computed(() => starter.value && appsStage.id === 'm3')
+const local = computed(
+  () => staged.value && APP_RUNS[id]?.kind === 'local' && Boolean(downloaded[id])
+)
+const cost = computed(() => (local.value ? 0 : app.value.cost))
+const fields = computed<Field[]>(() =>
+  iterate.value
+    ? [
+        ...app.value.fields,
+        {
+          id: 'aspect',
+          label: 'Aspect',
+          kind: 'choice',
+          node: 'Size #3',
+          on: true,
+          options: ['1:1', '16:9', '9:16']
+        },
+        {
+          id: 'variations',
+          label: 'Variations',
+          kind: 'count',
+          node: 'Batch #4',
+          on: true,
+          options: ['1', '2', '4']
+        }
+      ]
+    : app.value.fields
+)
 const owner = computed(() => (app.value.owner === 'You' ? 'Pablo' : app.value.owner))
 const author = computed(() => (app.value.owner === 'You' ? 'Pablo · Silverside' : app.value.owner))
 
@@ -71,11 +114,19 @@ const access = computed<Access>(() => {
   return a.link ? 'signin' : 'none'
 })
 /** Inside the team: team credits pay. Outside: free runs, then their own. */
-const inTeam = computed(() => !as.value || (as.value === 'teammate' && app.value.team))
+const inTeam = computed(
+  () => (!as.value && !starter.value) || (as.value === 'teammate' && app.value.team)
+)
 
 const me = reactive({ signedIn: true, guest: false, credits: 0, used: 0 })
 function reset(): void {
-  Object.assign(me, { signedIn: as.value !== 'link', guest: false, credits: 0, used: 0 })
+  Object.assign(me, {
+    signedIn: starter.value ? proto.signedIn : as.value !== 'link',
+    guest: false,
+    // A returning user already has credits; a new one adds them at Run.
+    credits: starter.value && proto.signedIn && !isNewUser.value ? 10 : 0,
+    used: 0
+  })
 }
 reset()
 watch(() => [id, as.value], reset)
@@ -88,6 +139,9 @@ const freeLeft = computed(() => Math.max(0, app.value.freeRuns - me.used))
 const sponsored = computed(() => !inTeam.value && app.value.payer === 'you' && freeLeft.value > 0)
 const payer = computed(() => {
   const a = app.value
+  if (local.value) return 'Free · runs on this computer'
+  // Variations change the price, and Run shows it.
+  if (iterate.value) return 'From your credits'
   if (!as.value)
     return a.group === 'shared'
       ? `About ${usd(a.cost)} from your credits`
@@ -101,7 +155,7 @@ const payer = computed(() => {
 })
 
 function gate(): boolean {
-  if (inTeam.value) return true
+  if (inTeam.value || local.value) return true
   if (!me.signedIn && !me.guest) {
     sheet.value = 'signin'
     return false
@@ -114,6 +168,7 @@ function gate(): boolean {
 }
 function signIn(how: string): void {
   me.signedIn = true
+  if (starter.value) proto.signedIn = true
   toast(`Signed in with ${how}. Your inputs are still here.`)
   continueRun()
 }
@@ -134,8 +189,29 @@ function continueRun(): void {
   }
   setTimeout(() => panel.value?.run(), 250)
 }
+function saveResult(): void {
+  const made = assets.items.filter((a) => a.id.startsWith(`${id}-`)).length
+  const stamp = String(made + 1).padStart(5, '0')
+  const video = output.value === 'video'
+  assets.items.unshift({
+    id: `${id}-${stamp}`,
+    name: `${app.value.slug}_${stamp}.${video ? 'mp4' : 'png'}`,
+    type: video ? 'video' : 'image',
+    source: 'cloud',
+    thumbId: app.value.thumbId,
+    size: video ? '18 MB' : '2.4 MB',
+    sizeMb: video ? 18 : 2.4,
+    age: 0,
+    when: 'Just now'
+  })
+}
+function viewAssets(): void {
+  appsProto.front = ''
+  go('assets')
+}
 function done(): void {
-  if (inTeam.value) return
+  if (starter.value) saveResult()
+  if (inTeam.value || local.value) return
   if (sponsored.value) me.used++
   else me.credits = Math.max(0, me.credits - app.value.cost)
 }
@@ -228,19 +304,33 @@ function done(): void {
         :blurb="app.blurb"
         :author
         :thumb-id="app.thumbId"
-        :fields="app.fields"
-        :cost="app.cost"
+        :fields
+        :cost
         :payer
         :layout="app.layout"
         :theme="app.theme"
         :gate
+        :output
         @done="done"
       >
+        <template v-if="staged" #place><AppRunPlace :id /></template>
+        <template v-if="starter" #saved>
+          <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>
+        </template>
         <template #account>
-          <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
-            ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span
-          >
-          <Button v-else variant="ghost" size="sm" @click="sheet = 'signin'">Sign in</Button>
+          <span class="flex items-center gap-3">
+            <Button
+              v-if="iterate"
+              variant="ghost"
+              size="sm"
+              @click="toast('Opening the workflow in ComfyUI')"
+              >Open in ComfyUI</Button
+            >
+            <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
+              ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span
+            >
+            <Button v-else variant="ghost" size="sm" @click="sheet = 'signin'">Sign in</Button>
+          </span>
         </template>
         <template #below>
           <p v-if="me.guest" class="mt-6 text-ui text-subtle-foreground">

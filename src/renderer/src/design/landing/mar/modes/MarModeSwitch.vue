@@ -4,10 +4,12 @@ import { Check, ChevronsUpDown } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
+import MarModeSeg from './MarModeSeg.vue'
 import { modeStyle } from './modeStyle'
+import { marNav, marPanelsOn } from '../shell/marShell'
 
 /** The Create / Build / Agent switch in the style picked in the UI
- *  Playground (everything but Pablo's pill, which stays his ModeSwitch). */
+ *  Playground (Split is the one on offer). */
 const { options } = defineProps<{
   options: { value: string; label: string; icon: Component }[]
 }>()
@@ -15,6 +17,8 @@ const model = defineModel<string>({ required: true })
 const current = computed(() => options.find((o) => o.value === model.value) ?? options[0]!)
 const agent = computed(() => options.find((o) => o.value === 'agent'))
 const pair = computed(() => options.filter((o) => o.value !== 'agent'))
+// Floating panels collapsed to a rail: the pair stacks as icons.
+const rail = computed(() => marPanelsOn.value && marNav.collapsed)
 const HINT: Record<string, string> = {
   create: 'Make images, video and 3D',
   build: 'Ship workflows as APIs',
@@ -64,19 +68,13 @@ const HINT: Record<string, string> = {
 
   <!-- Split (and Foot): Create / Build as a toggle, Agent its own button. -->
   <div v-else class="mms-split" :class="modeStyle.id === 'foot' && 'is-foot'">
-    <div class="mms-pair" role="radiogroup" aria-label="Mode">
-      <button
-        v-for="o in pair"
-        :key="o.value"
-        type="button"
-        role="radio"
-        :aria-checked="model === o.value"
-        class="mms-seg"
-        @click="model = o.value"
-      >
-        <component :is="o.icon" :size="14" />{{ o.label }}
-      </button>
-    </div>
+    <MarModeSeg
+      v-model="model"
+      :options="pair"
+      :fill="!rail"
+      :vertical="rail"
+      :class="!rail && 'min-w-0 flex-1'"
+    />
     <button
       v-if="agent"
       type="button"
@@ -159,32 +157,6 @@ const HINT: Record<string, string> = {
   width: 100%;
   align-items: center;
   gap: 6px;
-}
-.mms-pair {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--mar-tab-radius, 10px);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mms-seg {
-  display: inline-flex;
-  width: auto;
-  height: 28px;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0;
-  border-radius: var(--mar-tab-item-radius, 7px);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mms-seg[aria-checked='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
-  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mms-agent {
   display: inline-flex;

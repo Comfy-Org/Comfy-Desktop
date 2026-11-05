@@ -10,9 +10,9 @@ import { reactive, watch } from 'vue'
  */
 
 // Only looks with values in ui/looks/ are listed: an empty direction
-// would look exactly like Void. Add { value: 'a', label: '…' } back once
+// would look exactly like the main one. Add { value: 'a', label: '…' } back once
 // direction-a.css has its values.
-export const DIRECTIONS = [{ value: 'original', label: 'Void' }] as const
+export const DIRECTIONS = [{ value: 'original', label: 'Graphite' }] as const
 
 export const THEMES = [
   { value: 'dark', label: 'Dark' },

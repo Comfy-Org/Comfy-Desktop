@@ -2,178 +2,340 @@
    nothing here touches the components it shows. */
 
 /* ── The page ─────────────────────────────────────────────────────── */
+/* The site's chrome uses the app's own tokens (ui/tokens.css), so it
+   follows the theme picked in the header (DsApp.vue sets <html>). */
 .ds-app {
+  --ds-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --ds-hair: var(--color-border-default);
+  --ds-code-bg: color-mix(
+    in oklch,
+    var(--color-base-foreground) 4%,
+    var(--color-content-background)
+  );
+  --ds-nav-w: 248px;
+  --ds-pad-x: 48px;
+  --ds-pad-top: 44px;
   display: flex;
   height: 100vh;
+  height: 100dvh;
   flex-direction: column;
-  background: #111112;
-  color: #ececee;
+  background: var(--color-content-background);
+  color: var(--color-base-foreground);
   font:
-    13px/1.45 'Inter',
+    14px/1.55 'Inter',
     system-ui,
     sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
 }
 .ds-header {
+  position: relative;
+  z-index: 30;
   display: flex;
-  height: 48px;
+  height: 56px;
   flex-shrink: 0;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  gap: 10px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid var(--ds-hair);
+  background: var(--color-app-background);
+}
+.ds-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-base-foreground);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ds-brand-name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ds-brand-sub {
+  padding-left: 10px;
+  border-left: 1px solid var(--color-border-strong);
+  color: var(--color-muted-foreground);
 }
 .ds-views {
-  display: flex;
   margin-left: auto;
-  padding: 3px;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 0.06);
 }
-.ds-views button {
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  color: #a1a1a8;
-}
-.ds-views button[aria-checked='true'] {
-  background: rgb(255 255 255 / 0.11);
-  color: #ececee;
+.ds-menu-btn {
+  display: none;
 }
 .ds-body {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
 }
+.ds-scrim {
+  display: none;
+}
 .ds-nav {
   display: flex;
-  width: 200px;
+  width: var(--ds-nav-w);
   flex-shrink: 0;
   flex-direction: column;
-  gap: 1px;
+  border-right: 1px solid var(--ds-hair);
+  background: var(--color-app-background);
+}
+.ds-nav-search {
+  flex-shrink: 0;
+  padding: 16px 14px 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .ds-nav-search .mar-pfind {
+  width: 100%;
+}
+.ds-nav-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
   overflow-y: auto;
-  padding: 12px 10px;
+  padding: 8px 14px 32px;
+  overscroll-behavior: contain;
+}
+.ds-nav-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .ds-nav-group {
-  margin: 14px 10px 4px;
-  color: #6e6e76;
+  margin: 0 10px 6px;
+  color: var(--color-subtle-foreground);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.ds-nav-group:first-child {
-  margin-top: 0;
-}
 .ds-nav-item {
-  padding: 6px 10px;
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 10px;
   border-radius: 8px;
-  color: #a1a1a8;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
   text-decoration: none;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 .ds-nav-item:hover {
-  color: #ececee;
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+.ds-nav-item:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 .ds-nav-item[aria-current='page'] {
-  background: rgb(255 255 255 / 0.07);
-  color: #ececee;
+  background: var(--color-secondary-background-hover);
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.ds-nav-none {
+  padding: 6px 10px;
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
 }
 .ds-main {
   min-width: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 28px 28px 80px;
+  padding: var(--ds-pad-top) var(--ds-pad-x) 120px;
+  scroll-padding-top: 24px;
 }
+.ds-main > * {
+  max-width: 1120px;
+}
+
+/* The page header: where it sits, its name, what it's for, its file,
+   then its tabs and the sections on it. */
 .ds-page-head {
   display: flex;
-  max-width: 820px;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 20px;
+  margin-bottom: 28px;
+}
+.ds-eyebrow {
+  margin-bottom: 10px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .ds-page-head h1,
 .ds-doc h1 {
-  font-size: 22px;
+  color: var(--color-base-foreground);
+  font-size: 32px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 40px;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
 }
-.ds-page-head p {
-  color: #a1a1a8;
+.ds-lede {
+  max-width: 640px;
+  margin-top: 10px;
+  color: var(--color-muted-foreground);
+  font-size: 16px;
+  line-height: 26px;
+  text-wrap: pretty;
 }
+.ds-page-src {
+  margin-top: 14px;
+}
+.ds-page-src code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--color-secondary-background);
+  color: var(--color-muted-foreground);
+  font-family: var(--ds-mono);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.ds-page-tabs {
+  max-width: 100%;
+  margin-top: 28px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ds-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.ds-anchors > span {
+  margin-right: 6px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .ds-anchors button {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .ds-anchors button:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+
 .ds-source,
 .ds-page-head .ds-source {
-  color: #6e6e76;
+  color: var(--color-subtle-foreground);
   font-size: 12px;
 }
 .ds-source code,
 .ds-doc code {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 0.92em;
+  font-family: var(--ds-mono);
+  font-size: 0.88em;
 }
+
+/* Specimens: one frame per theme, the same ring and corners everywhere. */
 .ds-themes {
   display: grid;
-  gap: 16px;
+  gap: 20px;
 }
 .ds-themes.is-both {
-  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
 }
 .ds-theme {
   position: relative;
   min-width: 0;
 }
 .ds-theme-label {
-  display: block;
-  margin: 0 0 6px 2px;
-  color: #6e6e76;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 2px;
+  color: var(--color-subtle-foreground);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .ds-theme-frame {
   display: block;
   width: 100%;
   border: 0;
-  border-radius: 14px;
+  border-radius: 16px;
   background: transparent;
+  box-shadow: 0 0 0 1px var(--ds-hair);
 }
 
 /* ── About ────────────────────────────────────────────────────────── */
 .ds-doc {
   display: flex;
-  max-width: 680px;
+  max-width: 720px;
   flex-direction: column;
-  gap: 10px;
-  color: #c8c8cd;
+  gap: 12px;
+  color: var(--color-muted-foreground);
+  font-size: 15px;
+  line-height: 25px;
+}
+.ds-doc h1 {
+  margin-bottom: 4px;
 }
 .ds-doc h2 {
-  margin-top: 18px;
-  color: #ececee;
-  font-size: 15px;
+  margin-top: 28px;
+  color: var(--color-base-foreground);
+  font-size: 19px;
   font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.01em;
 }
 .ds-doc h3 {
-  margin-top: 6px;
-  color: #ececee;
-  font-size: 13px;
+  margin-top: 8px;
+  color: var(--color-base-foreground);
+  font-size: 15px;
   font-weight: 600;
 }
 .ds-doc ul {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-left: 18px;
+  gap: 8px;
+  padding-left: 20px;
   list-style: disc;
 }
+.ds-doc li::marker {
+  color: var(--color-subtle-foreground);
+}
 .ds-doc strong {
-  color: #ececee;
+  color: var(--color-base-foreground);
   font-weight: 600;
 }
 .ds-doc a {
-  color: #ececee;
+  color: var(--color-base-foreground);
   text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
   text-underline-offset: 3px;
+}
+.ds-doc a:hover {
+  text-decoration-color: currentColor;
+}
+.ds-doc code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
 }
 
 /* ── Inside a theme frame ─────────────────────────────────────────── */
@@ -189,36 +351,40 @@ html.ds-frame #app {
 .ds-frame-page {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  padding: 18px;
-  border-radius: 14px;
+  gap: 40px;
+  padding: 24px;
+  border-radius: 16px;
 }
 .ds-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 .ds-section-title {
   color: var(--color-base-foreground);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
+  line-height: 22px;
+  letter-spacing: -0.005em;
 }
 .ds-section-note {
-  margin-top: 2px;
-  max-width: 640px;
+  margin-top: 4px;
+  max-width: 680px;
   color: var(--color-muted-foreground);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 20px;
+  text-wrap: pretty;
 }
 .ds-cells {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(var(--cell-min), 100%), 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 .ds-cell {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .ds-cell-surface {
   display: flex;
@@ -265,8 +431,9 @@ html.ds-frame #app {
 }
 .ds-cell-label {
   padding-left: 2px;
-  color: var(--color-subtle-foreground);
-  font-size: 11.5px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
 }
 .ds-sidebar .ds-cell-stage {
   justify-content: flex-start;
@@ -362,77 +529,98 @@ html.ds-app-frame #app {
 }
 
 /* ── The page template (DsApp.vue) ────────────────────────────────── */
-.ds-main > * {
-  max-width: 1120px;
-}
-.ds-nav-search {
-  height: 30px;
-  margin: 0 0 6px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 0.06);
-  color: #ececee;
-  outline: none;
-}
-.ds-nav-none {
-  padding: 6px 10px;
-  color: #6e6e76;
-}
 /* Text reads in a column; examples go wider. */
 .ds-read {
   max-width: 720px;
 }
 .ds-hero {
-  margin-bottom: 28px;
+  margin-bottom: 48px;
 }
 .ds-block {
-  margin: 0 0 28px;
+  margin: 0 0 48px;
 }
+.ds-h2 {
+  margin-bottom: 16px;
+  color: var(--color-base-foreground);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.01em;
+}
+/* When to use / When not to: two cards, a mark on each. */
 .ds-when {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 28px;
+  max-width: 1120px;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+  margin-bottom: 48px;
 }
-.ds-when h2,
-.ds-rules h2 {
-  margin-bottom: 8px;
-  color: #ececee;
-  font-size: 14px;
+.ds-when > section {
+  padding: 20px 22px 22px;
+  border-radius: 14px;
+  background: var(--color-app-background);
+  box-shadow: inset 0 0 0 1px var(--ds-hair);
+}
+.ds-when h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--color-base-foreground);
+  font-size: 15px;
   font-weight: 600;
+  line-height: 22px;
 }
-.ds-when ul,
-.ds-rules ul {
+.ds-when h2 svg {
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 999px;
+  box-sizing: content-box;
+}
+.ds-when .is-yes h2 svg {
+  background: color-mix(in oklch, var(--color-status-running) 16%, transparent);
+  color: var(--color-status-running);
+}
+.ds-when .is-no h2 svg {
+  background: color-mix(in oklch, var(--color-status-danger) 16%, transparent);
+  color: var(--color-status-danger);
+}
+.ds-when ul {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding-left: 18px;
-  color: #c8c8cd;
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  line-height: 22px;
   list-style: disc;
 }
+.ds-when li::marker {
+  color: var(--color-subtle-foreground);
+}
+/* Rules: numbered, one per row. */
 .ds-rules {
-  margin-bottom: 32px;
+  margin-bottom: 48px;
 }
-.ds-tabs {
+.ds-rules ol {
+  counter-reset: ds-rule;
+  border-top: 1px solid var(--ds-hair);
+}
+.ds-rules li {
   display: flex;
-  width: fit-content;
-  gap: 2px;
-  margin-bottom: 16px;
-  padding: 3px;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 0.06);
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ds-hair);
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  line-height: 22px;
+  counter-increment: ds-rule;
 }
-.ds-tabs button {
-  height: 28px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: #a1a1a8;
-}
-.ds-tabs button[aria-selected='true'] {
-  background: rgb(255 255 255 / 0.11);
-  color: #ececee;
+.ds-rules li::before {
+  min-width: 20px;
+  color: var(--color-subtle-foreground);
+  font-variant-numeric: tabular-nums;
+  content: counter(ds-rule, decimal-leading-zero);
 }
 /* The hero: one example, centred, with room around it. */
 .ds-section.is-hero {
@@ -450,10 +638,10 @@ html.ds-app-frame #app {
   max-width: 100%;
 }
 .ds-frame-page.is-hero .ds-cell-surface {
-  min-height: 280px;
+  min-height: 320px;
 }
 .ds-frame-page.is-hero .ds-cell-stage {
-  padding: 40px;
+  padding: 48px;
 }
 .ds-more {
   align-self: flex-start;
@@ -467,60 +655,98 @@ html.ds-app-frame #app {
   color: var(--color-base-foreground);
 }
 
+/* Code: one block style, in the theme's tokens. */
 .ds-play-code code {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ds-play-code {
   overflow: hidden;
-  border-radius: 10px;
-  background: #16161a;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-content-background));
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
 }
 
 .ds-play-code-head {
   display: flex;
+  min-height: 40px;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
 }
 
 .ds-play-code-head span {
   margin-right: auto;
-  color: #6e6e76;
+  color: var(--color-subtle-foreground);
+  font-weight: 500;
 }
 
 .ds-play-code-head button {
   display: inline-flex;
+  height: auto;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
 }
 
 .ds-play-code-head button:hover {
-  background: rgb(255 255 255 / 0.07);
+  background: var(--color-secondary-background-hover);
+  color: var(--color-base-foreground);
 }
 
 .ds-play-code pre {
   overflow-x: auto;
-  padding: 12px 14px;
-  color: #d4d4d8;
-  line-height: 1.5;
+  padding: 14px 16px;
+  color: var(--color-base-foreground);
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
+/* About's folds: a row with a chevron, a hairline between them. */
+.ds-fold {
+  border-bottom: 1px solid var(--color-border-default);
+}
 .ds-fold summary {
-  margin-top: 14px;
-  color: #ececee;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  color: var(--color-base-foreground);
   font-size: 15px;
   font-weight: 600;
+  list-style: none;
   cursor: pointer;
 }
-.ds-fold[open] summary {
-  margin-bottom: 8px;
+.ds-fold summary::-webkit-details-marker {
+  display: none;
+}
+.ds-fold summary::after {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid var(--color-subtle-foreground);
+  border-bottom: 1.5px solid var(--color-subtle-foreground);
+  content: '';
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 160ms ease;
+}
+.ds-fold[open] summary::after {
+  transform: translateY(1px) rotate(225deg);
+}
+.ds-fold[open] {
+  padding-bottom: 16px;
+}
+.ds-fold > :not(summary) + :not(summary) {
+  margin-top: 10px;
 }
 
 .ds-frame-page.is-hero .ds-cell-label {
@@ -561,4 +787,86 @@ html.ds-app-frame #app {
   width: auto;
   height: auto;
   white-space: nowrap;
+}
+
+/* ── Narrow ───────────────────────────────────────────────────────── */
+/* The nav becomes a drawer behind the header's menu button. */
+@media (max-width: 900px) {
+  .ds-app {
+    --ds-pad-x: 20px;
+    --ds-pad-top: 32px;
+  }
+  .ds-header {
+    padding: 0 12px;
+  }
+  .ds-menu-btn {
+    display: inline-flex;
+  }
+  .ds-nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(300px, 86vw);
+    box-shadow: var(--shadow-popover);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s 240ms;
+  }
+  .ds-app.is-nav-open .ds-nav {
+    transform: none;
+    visibility: visible;
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ds-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    display: block;
+    background: var(--color-media-overlay);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+  .ds-app.is-nav-open .ds-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .ds-page-head h1,
+  .ds-doc h1 {
+    font-size: 26px;
+    line-height: 32px;
+  }
+  .ds-lede {
+    font-size: 15px;
+    line-height: 24px;
+  }
+}
+@media (max-width: 520px) {
+  .ds-brand-sub {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-nav,
+  .ds-app.is-nav-open .ds-nav,
+  .ds-scrim {
+    transition: none;
+  }
+}
+/* Inside a narrow frame: less padding around the samples. */
+@media (max-width: 600px) {
+  .ds-frame-page {
+    gap: 32px;
+    padding: 14px;
+  }
+  .ds-frame-page.is-hero .ds-cell-surface {
+    min-height: 220px;
+  }
+  .ds-frame-page.is-hero .ds-cell-stage {
+    padding: 20px;
+  }
 }

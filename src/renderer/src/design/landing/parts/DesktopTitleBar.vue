@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import {
-  ArrowDownToLine,
-  Bell,
-  ChevronDown,
-  Download,
-  Menu,
-  MessageSquarePlus
-} from 'lucide-vue-next'
+import { ArrowDownToLine, Bell, ChevronDown, Menu, MessageSquarePlus } from 'lucide-vue-next'
 import TitleBarBreadcrumb from './nav/TitleBarBreadcrumb.vue'
 import ComfyCLogo from '../../../components/icons/ComfyCLogo.vue'
 import { toast } from '../useProto'
 import { can } from '../milestones'
 import { runTitleBarCommand, titleBarState } from '../titleBar'
 import MarProtoMenu from '../mar/MarProtoMenu.vue'
-import { isMariana } from '../mar/proposal'
 
 /**
  * Browser preview only: a stand-in for the desktop app's title bar, laid
@@ -60,9 +52,9 @@ import { isMariana } from '../mar/proposal'
     <span class="ml-auto flex items-center gap-3.5 text-muted-foreground">
       <Bell :size="15" />
       <MessageSquarePlus :size="15" />
-      <component :is="isMariana ? ArrowDownToLine : Download" :size="15" />
-      <!-- Mar's proposal: the prototype controls, left of the app menu. -->
-      <MarProtoMenu v-if="isMariana" />
+      <ArrowDownToLine :size="15" />
+      <!-- The prototype controls, left of the app menu. -->
+      <MarProtoMenu />
       <button
         v-if="can.breadcrumb"
         type="button"

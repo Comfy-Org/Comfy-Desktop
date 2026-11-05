@@ -1,49 +1,15 @@
-import { computed, reactive, watch } from 'vue'
+import { computed } from 'vue'
 import { proto } from '../../useProto'
 import { appsProto } from '../../appFlow'
 import { envById } from '../../parts/env/env'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 
 /**
- * A build's page navigation (UI Playground › This page › Build navigation).
- * Current: Pablo's page - a back link, the header, underline tabs.
- * Proposed: the title bar's breadcrumb says where you are (Home › Builds ›
- * the build), so the page drops its back link; the header is one compact
- * row with its meta inline; the sections are the New UI tab group, each
- * with content or an empty state. Mar's proposal only. Proposed is the
- * default: its tabs and header are the ones every other page uses.
+ * A build's page navigation: the title bar's breadcrumb says where you are
+ * (Home › Builds › the build), so the page drops its back link; the header
+ * is one compact row with its meta inline; the sections are the tab group
+ * every other page uses, each with content or an empty state.
  */
-export type BuildNav = 'current' | 'proposed'
-
-export const BUILD_NAVS: { value: BuildNav; label: string }[] = [
-  { value: 'current', label: 'Current' },
-  { value: 'proposed', label: 'Proposed' }
-]
-
-const KEY = 'comfy.design.mar.buildNav'
-
-export const buildNav = reactive<{ id: BuildNav }>({
-  id: (() => {
-    try {
-      return localStorage.getItem(KEY) === 'current' ? 'current' : 'proposed'
-    } catch {
-      return 'proposed'
-    }
-  })()
-})
-
-watch(
-  () => buildNav.id,
-  (id) => {
-    try {
-      localStorage.setItem(KEY, id)
-    } catch {
-      // Storage blocked: the pick lasts for this window only.
-    }
-  }
-)
-
-export const buildNavProposed = computed(() => isMariana.value && buildNav.id === 'proposed')
 
 /** The build whose page is on view in the app shell, if any. */
 export const buildOnView = computed(() => {
@@ -60,16 +26,19 @@ const onBuilds = computed(
     (proto.page === 'environments' || proto.page === 'instances')
 )
 
-/** What the title bar's breadcrumb shows after Home while Proposed is on:
- *  on the Builds list, Builds; on a build's page, Builds (back to the
- *  list), then the build. */
-export const buildTrail = computed(() => {
-  if (!buildNavProposed.value) return undefined
-  if (onBuilds.value) return [{ label: 'Builds' }]
+/** What the title bar's breadcrumb shows after its first crumb. From
+ *  Milestone 4 that is Home: on the Builds list, Builds; on a build's page,
+ *  Builds (back to the list), then the build. Before Home the first crumb
+ *  is Builds itself, so only the build follows. */
+export const buildTrail = computed<
+  { label: string; page?: string; kind?: 'local' | 'cloud' }[] | undefined
+>(() => {
+  const home = can.value.home
+  if (onBuilds.value) return home ? [{ label: 'Builds' }] : undefined
   const env = buildOnView.value
   if (!env) return undefined
   return [
-    { label: 'Builds', page: 'environments' },
+    ...(home ? [{ label: 'Builds', page: 'environments' }] : []),
     { label: env.name, kind: env.kind === 'cloud' ? ('cloud' as const) : ('local' as const) }
   ]
 })

@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 
 /**
  * Mar's title bar tweak (Prototype menu › Title bar), to compare with
@@ -35,5 +35,6 @@ watch(
   }
 )
 
-/** The tabs title bar is on: Mar's proposal with the tweak picked. */
-export const marTabsOn = computed(() => isMariana.value && titleTabs.style === 'tabs')
+/** The tabs title bar is on: the tweak picked, once the title bar has its
+ *  new layout (Milestone 3). */
+export const marTabsOn = computed(() => can.value.breadcrumb && titleTabs.style === 'tabs')

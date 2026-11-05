@@ -19,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import { ComfyAssets, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
 import { APPS, CLOUD_ASSETS, TEMPLATES, WORKFLOWS, thumb, type Template } from '../../mock'
+import { openApp } from '../../appFlow'
 import { SPACES } from '../../spaces'
 import {
   activeInstance,
@@ -209,7 +210,7 @@ const apps = computed<Item[]>(() =>
     meta: dot(a.you ? 'Yours' : a.owner, `${compact(a.runs)} runs`),
     image: thumb(a.thumbId),
     icon: PanelsTopLeft,
-    open: () => go(`app:${a.id}` as Page)
+    open: () => openApp(a.id)
   }))
 )
 
@@ -383,9 +384,10 @@ const nothingYet = computed(
   () => !q.value && !flat.value.length && !loading.value && !offline.value
 )
 
-/** Type and meta on a row; inside a scope the type goes without saying. */
-function sub(it: Item): string {
-  return dot(scope.value === 'all' ? TYPE[it.kind] : undefined, it.meta)
+/** Type and meta on a row; only Recent mixes types; everywhere else the
+ *  group's title already says it. */
+function sub(it: Item, group: string): string {
+  return dot(group === 'Recent' ? TYPE[it.kind] : undefined, it.meta)
 }
 
 // --- Scopes ---------------------------------------------------------------
@@ -635,7 +637,7 @@ const verbs = computed(() => {
                       ><template v-else>{{ s.text }}</template></template
                     ></span
                   >
-                  <span v-if="sub(it)" class="mar-search-sub">{{ sub(it) }}</span>
+                  <span v-if="sub(it, g.name)" class="mar-search-sub">{{ sub(it, g.name) }}</span>
                   <span class="mar-search-fill" />
                   <span v-if="it.shortcut" class="mar-search-keys">
                     <kbd v-for="k in it.shortcut" :key="k">{{ k }}</kbd>
@@ -677,7 +679,6 @@ const verbs = computed(() => {
               >{{ v.label }}
             </span>
             <span class="mar-search-fill" />
-            <span v-if="flat.length" class="mar-search-verb"><kbd>↑</kbd><kbd>↓</kbd>Move</span>
             <span class="mar-search-verb"><kbd>⇥</kbd>Scope</span>
             <span class="mar-search-verb"><kbd>esc</kbd>Close</span>
           </footer>

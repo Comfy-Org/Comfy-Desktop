@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
-import { ArrowRight, Check, ChevronDown, Laptop, LoaderCircle, Plus, Search } from 'lucide-vue-next'
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Laptop,
+  LoaderCircle,
+  Plus,
+  Search,
+  Settings2
+} from 'lucide-vue-next'
+import MarSpin from '../brand/MarSpin.vue'
+import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
@@ -17,7 +28,8 @@ import { runOnBlocked, runOnHint, runOnMeta, runOnShort } from './runOn'
  * run: This computer, then Cloud. Each row says what matters for choosing
  * (state · GPU · VRAM) and what picking it costs (time to start, credits).
  * With no local build, This computer invites you to set one up. More than
- * six builds: type to filter.
+ * six builds: type to filter. Laid out like the account menu: the build
+ * you're on is the raised panel up top; the list holds the others.
  */
 const open = ref(false)
 const query = ref('')
@@ -40,8 +52,12 @@ const needsLogin = computed(() => activeInstance.value.kind === 'cloud' && !prot
 const filterable = computed(() => local.value.length + cloud.value.length > 6)
 
 const q = computed(() => query.value.trim().toLowerCase())
+// The current build lives in the panel, so the list shows the rest, until
+// you search, when everything that matches counts.
 const match = (i: ProtoInstance): boolean =>
-  !q.value || `${i.name} ${runOnMeta(i)}`.toLowerCase().includes(q.value)
+  q.value
+    ? `${i.name} ${runOnMeta(i)}`.toLowerCase().includes(q.value)
+    : i.id !== activeInstance.value.id
 const shownLocal = computed(() => local.value.filter(match))
 const shownCloud = computed(() => cloud.value.filter(match))
 const showSetup = computed(() => !local.value.length && !q.value)
@@ -113,6 +129,26 @@ function toList(e: KeyboardEvent): void {
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" class="mar-ro-menu w-[340px]">
+      <div class="mar-ro-current mar-menu-panel">
+        <span class="mar-ro-tile">
+          <LocationIcon v-if="activeInstance.kind === 'local'" kind="local" :size="18" />
+          <LocationIcon v-else-if="activeInstance.deployment" kind="cloud" :size="18" />
+          <ComfyCLogo v-else :size="16" />
+        </span>
+        <span class="mar-ro-text">
+          <span class="mar-ro-name">{{ activeInstance.name }}</span>
+          <span class="mar-ro-meta"
+            ><span
+              v-if="activeInstance.kind === 'local' || activeInstance.deployment"
+              :class="[
+                'mar-ro-dot',
+                activeInstance.state === 'running' ? 'is-running' : 'is-stopped'
+              ]"
+            />{{ runOnMeta(activeInstance) }}</span
+          >
+        </span>
+      </div>
+
       <label v-if="filterable" class="mar-ro-filter">
         <Search :size="14" />
         <input
@@ -152,14 +188,7 @@ function toList(e: KeyboardEvent): void {
           :disabled="!!runOnBlocked(i)"
           @select="choose(i)"
         >
-          <span class="mar-ro-tile">
-            <LocationIcon kind="local" :size="18" />
-            <LoaderCircle v-if="i.state === 'launching'" :size="12" class="mar-ro-spin" />
-            <span
-              v-else
-              :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
-            />
-          </span>
+          <span class="mar-ro-tile"><LocationIcon kind="local" :size="18" /></span>
           <span class="mar-ro-text">
             <span class="mar-ro-top">
               <span class="mar-ro-name">{{ i.name }}</span>
@@ -172,7 +201,17 @@ function toList(e: KeyboardEvent): void {
                 >{{ runOnHint(i) }}</span
               >
             </span>
-            <span class="mar-ro-meta">{{ runOnMeta(i) }}</span>
+            <span class="mar-ro-meta"
+              ><MarSpin
+                v-if="i.state === 'launching'"
+                :icon="LoaderCircle"
+                :size="11"
+                spin="mar-ro-spin"
+              /><span
+                v-else-if="i.kind === 'local' || i.deployment"
+                :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
+              />{{ runOnMeta(i) }}</span
+            >
           </span>
           <Check v-if="i.id === activeInstance.id" :size="14" />
         </DropdownMenuItem>
@@ -187,13 +226,9 @@ function toList(e: KeyboardEvent): void {
           :disabled="!!runOnBlocked(i)"
           @select="choose(i)"
         >
-          <span class="mar-ro-tile" :class="!i.deployment && 'is-comfy'">
-            <LocationIcon kind="cloud" :size="18" />
-            <LoaderCircle v-if="i.state === 'launching'" :size="12" class="mar-ro-spin" />
-            <span
-              v-else-if="i.deployment"
-              :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
-            />
+          <span class="mar-ro-tile">
+            <LocationIcon v-if="i.deployment" kind="cloud" :size="18" />
+            <ComfyCLogo v-else :size="16" />
           </span>
           <span class="mar-ro-text">
             <span class="mar-ro-top">
@@ -207,7 +242,17 @@ function toList(e: KeyboardEvent): void {
                 >{{ runOnHint(i) }}</span
               >
             </span>
-            <span class="mar-ro-meta">{{ runOnMeta(i) }}</span>
+            <span class="mar-ro-meta"
+              ><MarSpin
+                v-if="i.state === 'launching'"
+                :icon="LoaderCircle"
+                :size="11"
+                spin="mar-ro-spin"
+              /><span
+                v-else-if="i.kind === 'local' || i.deployment"
+                :class="['mar-ro-dot', i.state === 'running' ? 'is-running' : 'is-stopped']"
+              />{{ runOnMeta(i) }}</span
+            >
           </span>
           <Check v-if="i.id === activeInstance.id" :size="14" />
         </DropdownMenuItem>
@@ -218,12 +263,12 @@ function toList(e: KeyboardEvent): void {
       </p>
 
       <DropdownMenuSeparator />
-      <DropdownMenuItem class="mar-ro-foot" @select="hostActions.newInstance()"
-        ><Plus :size="15" />Create new build</DropdownMenuItem
+      <DropdownMenuItem @select="hostActions.newInstance()"
+        ><Plus :size="15" class="text-subtle-foreground" />Create new build</DropdownMenuItem
       >
-      <DropdownMenuItem class="mar-ro-foot" @select="go('environments')"
-        >Manage builds<ArrowRight :size="14" class="ml-auto"
-      /></DropdownMenuItem>
+      <DropdownMenuItem @select="go('environments')"
+        ><Settings2 :size="15" class="text-subtle-foreground" />Manage builds</DropdownMenuItem
+      >
     </DropdownMenuContent>
   </DropdownMenuRoot>
 </template>
@@ -281,10 +326,10 @@ function toList(e: KeyboardEvent): void {
   display: inline-flex;
 }
 .mar-ro-glyph .mar-ro-dot {
-  right: -2px;
-  bottom: -1px;
-  width: 7px;
-  height: 7px;
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  margin: 0;
 }
 
 /* Rows. */
@@ -292,6 +337,19 @@ function toList(e: KeyboardEvent): void {
   min-height: 48px;
   gap: 10px;
   padding-block: 7px;
+}
+/* The build you're on: the account menu's raised panel. */
+.mar-ro-current {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui, 13px);
+  line-height: 1.35;
+}
+.mar-ro-current .mar-ro-tile {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mar-ro-tile {
   position: relative;
@@ -305,38 +363,28 @@ function toList(e: KeyboardEvent): void {
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-muted-foreground);
 }
-.mar-ro-tile.is-comfy {
-  background: linear-gradient(135deg, #f9d7e6, #d9d4fb 50%, #c9f0e1);
-  color: #3b2f55;
-}
-.mar-ro-tile.is-comfy :deep(svg) {
-  color: #3b2f55;
-}
+/* Status sits in the meta line, ahead of the words it qualifies: no
+   ring cut into the tile, so nothing depends on the glass behind it. */
 .mar-ro-dot {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--color-card-background);
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  margin-right: 6px;
   border-radius: 999px;
+  vertical-align: 1px;
 }
 .mar-ro-dot.is-running {
   background: var(--color-status-running, #22c55e);
 }
 .mar-ro-dot.is-stopped {
-  background: color-mix(in oklch, var(--color-base-foreground) 30%, var(--color-card-background));
+  background: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
 }
 .mar-ro-spin {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  box-sizing: content-box;
-  padding: 1.5px;
-  border-radius: 999px;
-  background: var(--color-card-background);
+  display: inline-block;
+  margin-right: 5px;
   color: var(--color-base-foreground);
-  stroke-width: 2.5;
+  vertical-align: -1px;
 }
 @media (prefers-reduced-motion: no-preference) {
   .mar-ro-spin {
@@ -405,14 +453,6 @@ function toList(e: KeyboardEvent): void {
 }
 .mar-ro-row[data-disabled] :is(.mar-ro-tile, .mar-ro-text) {
   opacity: 0.45;
-}
-
-/* Footer: quiet rows. */
-.mar-ro-foot {
-  color: var(--color-muted-foreground);
-}
-.mar-ro-foot[data-highlighted] {
-  color: var(--color-base-foreground);
 }
 
 /* Filter. */

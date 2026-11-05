@@ -7,6 +7,7 @@ import '../../search/search.css'
 import '../../templateModal/templateModal.css'
 import '../../pages/MarSelectBar.vue'
 import '../../pages/MarItem.vue'
+import '../../pages/MarUndoToast.vue'
 import '../../FavoriteStar.vue'
 
 /**
@@ -95,13 +96,9 @@ const inFlow = { position: 'relative', inset: 'auto', transform: 'none' } as con
   <div v-else-if="id === 'titlebar'" class="proto-ui ds-glass-titlebar-host">
     <div data-glass="titlebar" class="glass-titlebar ds-glass-titlebar">My builds › Local</div>
   </div>
-  <!-- ui/Toaster.vue's ToastRoot classes. -->
-  <div
-    v-else-if="id === 'toast'"
-    data-glass="toast"
-    class="rounded-control bg-inverted-background px-3.5 py-2 text-ui font-medium text-inverted-foreground shadow-popover"
-  >
-    Saved to Assets
+  <!-- mar/pages/MarUndoToast.vue, in place. -->
+  <div v-else-if="id === 'toast'" class="proto-ui">
+    <div data-glass="toast" class="mar-undo is-success is-still">Saved to Assets</div>
   </div>
 </template>
 

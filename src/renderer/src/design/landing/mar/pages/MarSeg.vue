@@ -3,7 +3,7 @@
  *  the Corners tweak; an optional count after each label. On a picture
  *  (onMedia) the row is dark glass, light-on-dark in both themes. */
 const { options, label, onMedia } = defineProps<{
-  options: { value: T; label: string; count?: number }[]
+  options: { value: T; label: string; count?: number; dot?: boolean }[]
   label: string
   onMedia?: boolean
 }>()
@@ -21,7 +21,8 @@ const model = defineModel<T>({ required: true })
       class="mar-pseg-btn"
       @click="model = o.value"
     >
-      {{ o.label }}<span v-if="o.count !== undefined" class="mar-pseg-count">{{ o.count }}</span>
+      {{ o.label }}<span v-if="o.count !== undefined" class="mar-pseg-count">{{ o.count }}</span
+      ><i v-if="o.dot" class="mar-pseg-dot" aria-label="Update available" />
     </button>
   </div>
 </template>
@@ -71,6 +72,15 @@ const model = defineModel<T>({ required: true })
 :root .proto-ui.proto-ui.proto-ui .mar-pseg.on-media .mar-pseg-btn[aria-selected='true'] {
   background: oklch(1 0 0 / 0.16);
   color: oklch(1 0 0);
+}
+.mar-pseg-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 0 1px 6px;
+  border-radius: 999px;
+  background: var(--color-status-warning, #f5b14c);
+  vertical-align: middle;
 }
 .mar-pseg-count {
   margin-left: 6px;

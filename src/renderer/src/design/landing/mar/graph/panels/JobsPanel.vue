@@ -13,6 +13,7 @@ import {
   X,
   Zap
 } from 'lucide-vue-next'
+import MarSpin from '../../brand/MarSpin.vue'
 import RailPanel from './RailPanel.vue'
 import { PAST_JOBS } from './panelData'
 import type { RunJob } from '../runEngine'
@@ -172,7 +173,7 @@ const bare = (file: string): string => file.replace(/\.[a-z0-9]+$/i, '')
         >
           <span class="jp-thumb">
             <Zap v-if="j.status === 'running'" :size="15" />
-            <LoaderCircle v-else :size="15" class="jp-spin" />
+            <MarSpin v-else :icon="LoaderCircle" :size="15" spin="jp-spin" />
           </span>
           <span class="jp-text">
             <span class="jp-name">{{ j.title }}</span>

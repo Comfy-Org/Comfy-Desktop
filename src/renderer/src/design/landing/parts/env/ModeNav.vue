@@ -21,7 +21,6 @@ import Button from '../../ui/Button.vue'
 import { cn } from '../../ui/cn'
 import { go, isNewUser, proto, toast, type Mode, type Page } from '../../useProto'
 import { can } from '../../milestones'
-import { isMariana } from '../../mar/proposal'
 import { search } from '../../mar/search/search'
 
 /**
@@ -48,11 +47,27 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   // builds move here (the sidebar group lists projects instead).
   create: [
     { page: 'overview', label: 'Home', icon: Home },
-    ...(can.value.explore
+    ...(can.value.exploreApps
       ? [
-          { page: 'explore' as Page, label: 'Explore', icon: Compass },
-          { page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }
+          {
+            page: 'explore' as Page,
+            label: 'Explore',
+            icon: Compass,
+            // An app's page sits under Explore until the Apps library comes.
+            ...(can.value.explore ? {} : { prefix: 'app:' })
+          }
         ]
+      : []),
+    // The library of added apps, before Projects brings the Libraries group.
+    ...(can.value.explore && !can.value.projects && proto.signedIn
+      ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
+      : []),
+    ...(can.value.explore
+      ? [{ page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }]
+      : []),
+    // Where an app's results land, before Projects brings the Libraries group.
+    ...(can.value.exploreApps && !can.value.projects
+      ? [{ page: 'assets' as Page, label: 'Assets', icon: Images }]
       : []),
     ...(can.value.projects
       ? [
@@ -62,10 +77,13 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             icon: Workflow,
             section: 'Libraries'
           },
-          { page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' },
+          // Apps and Builds need an account: logged out, they are not there.
+          ...(proto.signedIn
+            ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
+            : []),
           { page: 'assets' as Page, label: 'Assets', icon: Images },
-          // No builds to list: a new user before any install.
-          ...(isNewUser.value && proto.fresh
+          // No builds to list: a new user before any install, or logged out.
+          ...((isNewUser.value && proto.fresh) || !proto.signedIn
             ? []
             : [
                 {
@@ -94,12 +112,16 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             icon: Rocket,
             prefix: 'deployment:'
           },
-          {
-            page: 'environments' as Page,
-            label: 'Builds',
-            icon: Server,
-            prefix: 'environment:'
-          }
+          ...(proto.signedIn
+            ? [
+                {
+                  page: 'environments' as Page,
+                  label: 'Builds',
+                  icon: Server,
+                  prefix: 'environment:'
+                }
+              ]
+            : [])
         ]),
     { page: 'router', label: 'Models', icon: Boxes },
     ...(isNewUser.value ? [] : [{ page: 'logs' as Page, label: 'Logs', icon: ScrollText }]),
@@ -130,10 +152,10 @@ function open(i: Item): void {
   </div>
   <nav class="flex flex-col gap-px" :aria-label="mode === 'create' ? 'Create' : 'Build'">
     <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
-      <!-- Mar's proposal: the global search (⌘K) right under the first
-           place (Home), by default. Search finds Create things: not in Build. -->
+      <!-- The global search (⌘K) right under the first place (Home), by
+           default. Search finds Create things: not in Build. -->
       <Button
-        v-if="isMariana && idx === 1 && mode !== 'build'"
+        v-if="idx === 1 && mode !== 'build'"
         variant="ghost"
         class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
         @click="search.open = true"

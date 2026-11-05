@@ -13,7 +13,6 @@ import {
 } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
 import { cn } from './cn'
-import { isMariana } from '../mar/proposal'
 import { fieldVariants, type FieldVariants } from './field.variants'
 import { floatingSurface, menuItem } from './menu.styles'
 import { PORTAL_TO } from './portal'
@@ -60,10 +59,10 @@ const model = defineModel<T>({ required: true })
         )
       "
     >
-      <!-- Mar's proposal: Sort is an icon, not a word (the label stays
-           as the accessible name). -->
+      <!-- Sort is an icon, not a word (the label stays as the accessible
+           name). -->
       <ArrowUpDown
-        v-if="isMariana && label === 'Sort'"
+        v-if="label === 'Sort'"
         :size="14"
         class="shrink-0 text-subtle-foreground"
         aria-hidden="true"

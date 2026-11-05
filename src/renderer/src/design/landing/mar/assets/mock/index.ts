@@ -1,5 +1,4 @@
 import { thumbSource } from '../../../mock'
-import { isMariana } from '../../proposal'
 
 /**
  * Mar's mock pictures: one per slot, so no picture shows twice in the
@@ -7,7 +6,7 @@ import { isMariana } from '../../proposal'
  * A file's name is its slot: `hero-explore.webp` is the Explore page's
  * header, `hero-shot-v4.webp` the workflow hero-shot-v4.json. Mock data
  * names its slot after the template id (`image_flux2~flux-portraits`);
- * Pablo's proposal keeps the template's thumbnail.
+ * Anything else keeps the template's thumbnail.
  */
 const files = import.meta.glob<string>('./*.{webp,jpg}', { eager: true, import: 'default' })
 
@@ -36,7 +35,6 @@ const TEMPLATE_THUMBS: Record<string, string> = Object.fromEntries(
 )
 
 thumbSource.pick = (id) => {
-  if (!isMariana.value) return undefined
   const [template, slot] = id.split('~')
   return (slot && MOCK[slot]) || TEMPLATE_THUMBS[template!]
 }

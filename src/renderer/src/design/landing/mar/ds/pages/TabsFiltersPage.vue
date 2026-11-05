@@ -4,6 +4,7 @@ import Select from '../../../ui/Select.vue'
 import MarSeg from '../../pages/MarSeg.vue'
 import MarSearchField from '../../pages/MarSearchField.vue'
 import MarViewToggle from '../../pages/MarViewToggle.vue'
+import MarModeSeg from '../../modes/MarModeSeg.vue'
 import TunerSeg from '../../tuner/TunerSeg.vue'
 import AppShot from '../kit/AppShot.vue'
 import Cell from '../kit/Cell.vue'
@@ -38,7 +39,7 @@ const empty = ref('')
 const typed = ref('portrait')
 const grid = ref<'grid' | 'list'>('grid')
 const list = ref<'grid' | 'list'>('list')
-// The Create / Build switch: a radiogroup, so it slides too.
+// The Create / Build switch (MarModeSeg): a radiogroup, so it slides too.
 const MODES = [
   { value: 'create', label: 'Create' },
   { value: 'build', label: 'Build' }
@@ -92,24 +93,12 @@ const TOOLBAR: [number, number, number, number] = [276, 263, 972, 66]
 
   <Section
     title="Sliding pill"
-    note="Part of every tab group, with no opt-in: one pill sits behind the picked option and glides to the next (280ms, out-expo). motion/tabSlide.ts finds each group as it mounts: tablists, radiogroups, toggle groups, .mar-seg and .mar-pseg rows, so MarSeg, Pablo's ui/Tabs.vue, the Create / Build switch, the view toggle and the Playground's Seg all get it. A group opts out with data-no-pill (carousel dots). Reduced motion: the pill jumps."
+    note="Part of every tab group, with no opt-in: one pill sits behind the picked option and glides to the next (280ms, out-expo). motion/tabSlide.ts finds each group as it mounts: tablists, radiogroups, toggle groups, .mar-seg and .mar-pseg rows, so MarSeg, Pablo's ui/Tabs.vue, the Create / Build switch (MarModeSeg), the view toggle and the Playground's Seg all get it. A group opts out with data-no-pill (carousel dots). Reduced motion: the pill jumps."
   >
     <Cells :min="260">
       <Cell label="tabs · MarSeg"><MarSeg v-model="where" :options="WHERE" label="Where" /></Cell>
-      <Cell label="radiogroup · mode">
-        <div role="radiogroup" aria-label="Mode" class="mar-pseg">
-          <button
-            v-for="m in MODES"
-            :key="m.value"
-            type="button"
-            role="radio"
-            class="mar-pseg-btn"
-            :aria-checked="mode === m.value"
-            @click="mode = m.value"
-          >
-            {{ m.label }}
-          </button>
-        </div>
+      <Cell label="mode · MarModeSeg">
+        <MarModeSeg v-model="mode" :options="MODES" />
       </Cell>
       <Cell label="radiogroup · view"><MarViewToggle v-model="slid" /></Cell>
       <Cell label="segmented · Playground">

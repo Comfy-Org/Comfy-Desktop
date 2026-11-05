@@ -4,7 +4,7 @@ import { shownWorkspace as workspace } from '../../account'
 import WorkspaceAvatar from '../../parts/WorkspaceAvatar.vue'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
 
-/** The account at the end of the Tabs bar (From Pablo › Account): the
+/** The account at the end of the Tabs bar (Nav options › Account): the
  *  workspace avatar opens Mar's workspace menu (switch, credits, admin,
  *  settings), as Pablo's sidebar foot does; signed out, a Log in button. */
 </script>

@@ -21,7 +21,7 @@ try {
     })
     const p = await ctx.newPage()
     await p.goto(
-      `http://localhost:5173/design-landing.html?direction=original&theme=${theme}&proposal=mariana`,
+      `http://localhost:5173/design-landing.html?direction=original&theme=${theme}`,
       { waitUntil: 'load', timeout: 90000 }
     )
     await p.waitForTimeout(2500)

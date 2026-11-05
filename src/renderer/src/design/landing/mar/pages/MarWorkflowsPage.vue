@@ -19,6 +19,8 @@ import { go, hostActions, instanceById, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
+import WorkflowCover from '../brand/WorkflowCover.vue'
+import { cover, isBranded } from '../cover'
 import MarNewTile from './MarNewTile.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
@@ -223,7 +225,11 @@ function lines(w: MarWorkflow): MenuLine[] {
         @rename="lib.rename(w.id, $event)"
         @cancel-rename="lib.renaming.value = ''"
         @star="workflows.star(w.id)"
-      />
+      >
+        <template v-if="isBranded(cover.id)" #media>
+          <WorkflowCover :name="w.name" />
+        </template>
+      </MarItem>
       <!-- A project's grid ends on the way to add more. -->
       <MarNewTile
         v-if="fixedProject && !filtered"

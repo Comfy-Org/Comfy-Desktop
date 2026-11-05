@@ -10,6 +10,10 @@ import { createApp, type Component } from 'vue'
  *   app     the whole prototype on one page, state or knob (kit/AppShot.vue)
  *   play    one component with props from the Playground (kit/PlayFrame.vue)
  *
+ * `?playground` (or a path ending in /playground) is the Theme playground,
+ * full screen (studio/ThemeStudio.vue): `app` frames with `?pg`, which
+ * apply its tokens (theme/apply.ts) in that frame and the frames it holds.
+ *
  * `?seed={"key":"value"}` starts a frame with those prototype settings
  * (the in-memory storage, main.ts), so it can show any knob's value.
  *
@@ -38,6 +42,7 @@ async function boot(): Promise<void> {
     installForcedStates()
     const { installPlayback } = await import('./kit/playback')
     installPlayback()
+    if (url.has('pg')) (await import('./theme/apply')).applyPlaygroundCss(theme)
     root =
       frame === 'page'
         ? (await import('./kit/PageFrame.vue')).default
@@ -46,6 +51,8 @@ async function boot(): Promise<void> {
           : frame === 'play'
             ? (await import('./kit/PlayFrame.vue')).default
             : (await import('./kit/AppFrame.vue')).default
+  } else if (url.has('playground') || /\/playground\/?$/.test(location.pathname)) {
+    root = (await import('./studio/ThemeStudio.vue')).default
   } else {
     // The site's own tabs and theme switch slide like the app's.
     await import('../motion/tabSlide')

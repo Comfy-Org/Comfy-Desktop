@@ -130,6 +130,15 @@ export const PAGES: DsPage[] = [
     component: tokens('radius')
   },
   {
+    id: 'theme-playground',
+    label: 'Theme playground',
+    group: 'Foundations',
+    title: 'Theme playground',
+    source: 'ComfyUI_frontend packages/design-system/src/css/_palette.css, theme.css',
+    use: 'Its own page, full screen: tokens for dark and light, edited on the real New Home and ComfyUI.',
+    custom: lazy(() => import('./pages/ThemePlaygroundLink.vue'))
+  },
+  {
     id: 'materials-blur',
     label: 'Materials · Blur',
     group: 'Foundations',
@@ -167,7 +176,7 @@ export const PAGES: DsPage[] = [
     label: 'Home',
     group: 'Patterns',
     title: 'Default view',
-    source: 'LandingPrototypes.vue with Proposal › New UI',
+    source: 'LandingPrototypes.vue',
     use: 'To check a component in place, next to everything around it.',
     component: lazy(() => import('./pages/DefaultViewPage.vue'))
   },
@@ -185,7 +194,8 @@ export const PAGES: DsPage[] = [
     label: 'Brand imagery',
     group: 'Foundations',
     title: 'Brand imagery',
-    source: 'mar/brand/imagery.ts, GradedImage.vue; mar/shell/MarWires.vue, homeBackgrounds.css',
+    source:
+      'mar/brand/imagery.ts, GradedImage.vue, WorkflowGradient.vue; mar/shell/MarWires.vue, homeBackgrounds.css',
     use: 'Any picture we make (tiles, covers, Home backgrounds): one grade, the link colours, one grain.',
     component: lazy(() => import('./pages/BrandImageryPage.vue'))
   },
@@ -214,7 +224,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Sidebar',
     source:
-      'mar/modes/MarModeSwitch.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarSignIn.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
+      'mar/modes/MarModeSwitch.vue, mar/modes/MarModeSeg.vue, parts/env/ModeNav.vue, mar/shell/MarFavoritesGroup.vue, mar/shell/MarSignIn.vue, mar/shell/MarGroupTitle.vue, parts/env/SidebarGroup.vue, parts/space/SpacesGroup.vue, parts/WorkspaceMenu.vue',
     use: 'Navigation between lenses, pages, projects and spaces; credits and the workspace at the foot.',
     component: lazy(() => import('./pages/SidebarPage.vue'))
   },
@@ -235,6 +245,15 @@ export const PAGES: DsPage[] = [
     source: 'ui/Tooltip.vue (.mar-tip in mar/shell/marShell.css)',
     use: 'Name an icon-only control or explain a state; never for text already on screen.',
     component: lazy(() => import('./pages/TooltipPage.vue'))
+  },
+  {
+    id: 'toast',
+    label: 'Toast',
+    group: 'Components',
+    title: 'Toast',
+    source: 'mar/pages/MarUndoToast.vue, mar/pages/undo.ts',
+    use: 'Say that something changed on the page you stay on. Never after a redirect.',
+    component: lazy(() => import('./pages/ToastPage.vue'))
   },
   {
     id: 'icons',

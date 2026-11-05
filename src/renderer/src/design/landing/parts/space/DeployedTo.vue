@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import SpaceMark from './SpaceMark.vue'
 import { placementsOf, type Flavor } from '../../spaces'
-import { isMariana } from '../../mar/proposal'
 
 /** Which spaces an app or workflow is deployed to. */
 const { kind, name } = defineProps<{ kind: Flavor; name: string }>()
@@ -25,8 +24,7 @@ const spaces = computed(() => placementsOf({ kind, name }).spaces)
     </Tooltip>
     <span class="truncate">{{ spaces.length }} {{ spaces.length === 1 ? 'space' : 'spaces' }}</span>
   </span>
-  <Tooltip v-else-if="isMariana" content="Not in a space yet" wrap>
+  <Tooltip v-else content="Not in a space yet" wrap>
     <span class="mar-draft-chip" tabindex="0">Draft</span>
   </Tooltip>
-  <span v-else class="text-ui text-subtle-foreground">Not in a space</span>
 </template>

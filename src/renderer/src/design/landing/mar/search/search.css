@@ -2,8 +2,9 @@
    have to get past the prototype's button reset, which scoped styles
    can't reach. Everything is under .mar-search.
 
-   One surface: the field and scope tabs on top, one full-bleed hairline,
-   the results, one hairline, the footer. No panel inside it.
+   One surface: the field and scope tabs read as one header, one
+   full-bleed hairline under it, the results, the footer. Groups part by
+   space alone, under the app's sentence-case section titles.
    Two edges: the scope track and the row highlights sit 8px in, and
    everything you read (the glass, group titles, pictures, footer) starts
    18px in. Radius nesting follows UI Playground › Corners: rows take the
@@ -23,7 +24,7 @@
 
   display: flex;
   width: min(640px, calc(100vw - 32px));
-  max-height: min(620px, 85vh - 48px);
+  max-height: min(664px, 85vh - 48px);
   flex-direction: column;
   overflow: hidden;
   border-radius: calc(var(--s-row) + var(--s-pad));
@@ -101,7 +102,7 @@
 /* The field: one line, no box of its own. */
 .mar-search-field {
   display: flex;
-  height: 52px;
+  height: 54px;
   flex-shrink: 0;
   align-items: center;
   gap: 10px;
@@ -142,8 +143,9 @@
   color: var(--s-ink);
 }
 
-/* Scopes: the New UI tab group, its track on the rows' 8px inset. The
-   one separator in the palette is this full-bleed hairline under it. */
+/* Scopes: the New UI tab group without its track, so only the picked one
+   is a shape and its label lines up with the field's edge. They close the
+   header, over the palette's one hairline. */
 .mar-search-scopes {
   display: flex;
   flex-shrink: 0;
@@ -151,6 +153,11 @@
   padding: 0 var(--s-pad) var(--s-pad);
   border-bottom: 1px solid var(--s-line);
   scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-scopes .mar-pseg {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Key caps, everywhere in the palette. */
@@ -180,7 +187,7 @@
   flex: 0 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 var(--s-pad) var(--s-pad);
+  padding: 4px var(--s-pad) var(--s-pad);
   border: 0;
   border-radius: 0;
   outline: none;
@@ -190,17 +197,17 @@
   animation: none;
   scrollbar-width: thin;
 }
+.mar-search-group + .mar-search-group {
+  margin-top: 10px;
+}
 .mar-search-head {
   display: flex;
-  height: 28px;
-  align-items: flex-end;
-  padding: 0 0 6px calc(var(--s-edge) - var(--s-pad));
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
+  height: 30px;
+  align-items: center;
+  padding: 0 0 0 calc(var(--s-edge) - var(--s-pad));
+  color: var(--color-muted-foreground);
+  font-size: 12px;
   font-weight: 500;
-  /* Same voice as the sidebar group titles (MarGroupTitle). */
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 /* Rows: picture, name, type · where; the shortcut or ↵ on the right. The
@@ -209,17 +216,16 @@
 .mar-search-row {
   display: flex;
   min-height: 0;
-  height: 38px;
+  height: 40px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 0 10px 0 calc(var(--s-edge) - var(--s-pad));
   border-radius: var(--s-row);
   white-space: normal;
   cursor: default;
 }
 .mar-search-row.is-on {
-  background: color-mix(in oklch, var(--s-ink) 8%, transparent);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+  background: color-mix(in oklch, var(--s-ink) 7%, transparent);
 }
 [data-ds-theme='light'] .mar-search-row.is-on {
   background: var(--color-card-background);
@@ -229,8 +235,8 @@
 }
 .mar-search-lead {
   display: inline-flex;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -326,7 +332,7 @@
   animation: mar-search-shimmer 1.4s ease-in-out infinite;
 }
 .mar-search-skel.mar-search-lead {
-  height: 26px;
+  height: 28px;
   border-radius: calc(var(--s-row) - 2px);
 }
 .mar-search-skel.is-head {
@@ -357,7 +363,7 @@
   align-items: center;
   gap: 16px;
   padding: 0 12px 0 var(--s-edge);
-  border-top: 1px solid var(--s-line);
+  background: color-mix(in oklch, var(--s-ink) 3%, transparent);
   color: var(--color-subtle-foreground);
   font-size: 12px;
 }
@@ -369,6 +375,11 @@
 }
 .mar-search-verb > kbd:last-of-type {
   margin-right: 6px;
+}
+.mar-search-foot kbd {
+  background: transparent;
+  min-width: 0;
+  padding: 0 1px;
 }
 .mar-search-foot > .mar-search-verb:first-child {
   color: var(--color-muted-foreground);

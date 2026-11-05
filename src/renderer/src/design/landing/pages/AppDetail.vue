@@ -29,6 +29,7 @@ import SectionHeader from '../ui/SectionHeader.vue'
 import AppRunPanel from '../parts/apps/AppRunPanel.vue'
 import PreviewAsMenu from '../parts/apps/PreviewAsMenu.vue'
 import { thumb } from '../mock'
+import { can } from '../milestones'
 import { go, hostActions, instanceById, toast } from '../useProto'
 import {
   accessLabel,
@@ -51,6 +52,12 @@ const { id } = defineProps<{ id: string }>()
 // The store's record (ModePages keys this page by id).
 const app: LibApp = libApp(id)!
 const yours = computed(() => app.group === 'yours')
+// Before the Agent, only Explore leads here.
+const back = computed(() =>
+  can.value.agent
+    ? { page: 'apps' as const, label: 'Apps' }
+    : { page: 'explore' as const, label: 'Explore' }
+)
 type Tab = 'run' | 'activity' | 'access' | 'versions' | 'api'
 const tab = ref<Tab>('run')
 
@@ -123,9 +130,9 @@ function revokeAll(): void {
     <button
       type="button"
       class="mt-8 inline-flex items-center gap-1 text-ui text-muted-foreground outline-none hover:text-base-foreground focus-visible:text-base-foreground"
-      @click="go('apps')"
+      @click="go(back.page)"
     >
-      <ChevronLeft :size="14" />Apps
+      <ChevronLeft :size="14" />{{ back.label }}
     </button>
 
     <header class="flex items-end justify-between gap-6 pt-5 pb-8">

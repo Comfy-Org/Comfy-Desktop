@@ -9,6 +9,7 @@ import {
   OctagonAlert,
   Users
 } from 'lucide-vue-next'
+import MarSpin from '../brand/MarSpin.vue'
 
 /**
  * One item's state, as a small pill (Mar's pages). Running and Live
@@ -68,10 +69,15 @@ const tone = computed(() =>
 
 <template>
   <span class="mar-status" :class="[tone, onMedia && 'on-media']">
-    <LoaderCircle v-if="status === 'executing'" :size="11" class="motion-safe:animate-spin" />
+    <MarSpin
+      v-if="status === 'executing'"
+      :icon="LoaderCircle"
+      :size="11"
+      spin="motion-safe:animate-spin"
+    />
     <CircleCheck v-else-if="status === 'completed'" :size="11" />
     <OctagonAlert v-else-if="status === 'failed'" :size="11" />
-    <Loader2 v-else-if="status === 'launching'" :size="11" class="animate-spin" />
+    <MarSpin v-else-if="status === 'launching'" :icon="Loader2" :size="11" spin="animate-spin" />
     <Clock v-else-if="status === 'queued'" :size="11" />
     <Users v-else-if="status === 'shared'" :size="11" />
     <ArrowUpCircle v-else-if="status === 'update'" :size="11" />

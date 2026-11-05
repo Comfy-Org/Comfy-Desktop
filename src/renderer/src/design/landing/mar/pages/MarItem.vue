@@ -11,7 +11,8 @@ import '../table/table.css'
 /**
  * One thing in a library (Mar's pages), as a card or a list row. Click
  * opens it; ⌘/Ctrl- or Shift-click, or the checkbox, selects it, and
- * once anything is selected a plain click selects too. Double-click the
+ * once anything is selected a plain click selects too. `selectable`
+ * false (Builds) drops all of that: no check, a click always opens. Double-click the
  * name (or Rename in ⋯) to rename it in place. The card never grows on
  * hover; its surface lifts a shade and the controls show.
  *
@@ -30,13 +31,15 @@ const {
   layout = 'grid',
   selected = false,
   selecting = false,
+  selectable = true,
   renaming = false,
   fav,
   favId,
   favKind,
   lines,
   ratio = '16 / 10',
-  fit = 'cover'
+  fit = 'cover',
+  contextMenu = false
 } = defineProps<{
   name: string
   thumb?: string
@@ -48,6 +51,8 @@ const {
   selected?: boolean
   /** Something on the page is selected: clicks select. */
   selecting?: boolean
+  /** False: no check and no selecting, a click always opens. */
+  selectable?: boolean
   renaming?: boolean
   /** Local star (things the favourites store doesn't keep). */
   fav?: boolean
@@ -57,6 +62,8 @@ const {
   lines: MenuLine[]
   ratio?: string
   fit?: 'cover' | 'contain'
+  /** Right-click opens the ⋯ menu (Builds). */
+  contextMenu?: boolean
 }>()
 const emit = defineEmits<{
   open: []
@@ -100,7 +107,7 @@ function cancel(): void {
 
 function click(e: MouseEvent): void {
   if (renaming) return
-  if (e.metaKey || e.ctrlKey || e.shiftKey || selecting) emit('select', e.shiftKey)
+  if (selectable && (e.metaKey || e.ctrlKey || e.shiftKey || selecting)) emit('select', e.shiftKey)
   else emit('open')
 }
 </script>
@@ -110,6 +117,7 @@ function click(e: MouseEvent): void {
     class="mar-item"
     :class="[
       `is-${layout}`,
+      selectable && 'is-selectable',
       selected && 'is-selected',
       menuOpen && 'is-menu',
       selecting && 'is-selecting'
@@ -117,10 +125,11 @@ function click(e: MouseEvent): void {
     role="button"
     tabindex="0"
     :aria-label="name"
-    :aria-pressed="selecting ? selected : undefined"
+    :aria-pressed="selectable && selecting ? selected : undefined"
     @click="click"
+    @contextmenu="contextMenu && lines.length && ($event.preventDefault(), (menuOpen = true))"
     @keydown.enter.self="emit('open')"
-    @keydown.space.self.prevent="emit('select', false)"
+    @keydown.space.self.prevent="selectable && emit('select', false)"
   >
     <span class="mar-item-media" :style="layout === 'grid' ? { aspectRatio: ratio } : undefined">
       <slot name="media">
@@ -159,6 +168,7 @@ function click(e: MouseEvent): void {
     </span>
 
     <button
+      v-if="selectable"
       type="button"
       class="mar-item-check"
       role="checkbox"
@@ -170,6 +180,7 @@ function click(e: MouseEvent): void {
     </button>
 
     <span class="mar-item-text">
+      <slot name="eyebrow" />
       <input
         v-if="renaming"
         ref="input"
@@ -202,7 +213,9 @@ function click(e: MouseEvent): void {
       <span class="mar-item-col is-status"
         ><MarStatus v-if="status" :status :label="statusLabel"
       /></span>
-      <span class="mar-item-tools is-row">
+      <span class="mar-item-tools is-row" :class="$slots.actions && 'has-actions'">
+        <!-- The row's own buttons, always shown (Builds: Start, Stop, Update). -->
+        <slot name="actions" />
         <FavoriteStar v-if="favId && favKind" :id="favId" :kind="favKind" />
         <button
           v-else-if="fav !== undefined"
@@ -347,6 +360,11 @@ function click(e: MouseEvent): void {
 .mar-item:is(:hover, :focus-within, .is-menu) .mar-item-tools :is(.mar-kebab, .mar-star) {
   opacity: 1;
 }
+/* A row with its own buttons ends on its ⋯, always shown, so the buttons
+   reach the row's edge instead of stopping short of an invisible menu. */
+.mar-item-tools.is-row.has-actions .mar-kebab {
+  opacity: 1;
+}
 .mar-item-tools.is-row .mar-star {
   background: transparent;
   backdrop-filter: none;
@@ -381,7 +399,9 @@ function click(e: MouseEvent): void {
   top: 18px !important;
   left: 20px !important;
 }
-.mar-item.is-list:is(:hover, :focus-within, .is-selecting, .is-selected) .mar-item-media img {
+.mar-item.is-list.is-selectable:is(:hover, :focus-within, .is-selecting, .is-selected)
+  .mar-item-media
+  img {
   opacity: 0.45;
 }
 /* Same weight as the reset that hides it, or the check never shows. */

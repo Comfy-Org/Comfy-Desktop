@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Play, Rocket } from 'lucide-vue-next'
 import Greeting from '../parts/Greeting.vue'
 import PromptBox from '../parts/PromptBox.vue'
 import WhatsNew from './WhatsNew.vue'
 import LaunchBanner from './LaunchBanner.vue'
 import LaunchesRow from '../parts/LaunchesRow.vue'
-import QuickLaunch from '../parts/QuickLaunch.vue'
-import RecentWork from '../parts/RecentWork.vue'
 import MarStart from './MarStart.vue'
 import StarterCards from '../parts/StarterCards.vue'
-import TemplatesRow from '../parts/TemplatesRow.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
 import { homeBuilds } from './homeBuilds'
+import ExampleArc from './userStates/ExampleArc.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
@@ -36,8 +33,6 @@ import WorkflowCard from './WorkflowCard.vue'
 import { active as parts } from './marParts'
 import { allWorkflows } from '../gallery'
 import {
-  activeInstance,
-  deployEnv,
   go,
   hostActions,
   instanceById,
@@ -51,35 +46,9 @@ import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
 
 /**
- * Mar's Home on Pablo's v10 content: the sections and order of
- * pages/modes/CreateHome.vue (keep in step with it when his branch
- * changes). Each section shows Pablo's part or Mar's version, picked in
- * Tune the UI › Mar's changes (marParts.ts).
+ * Home: which version of each section shows is picked in marParts.ts. What
+ * it holds follows the milestone.
  */
-const actions = computed(() => [
-  {
-    label: 'ComfyUI',
-    icon: Play,
-    run: () => hostActions.launch(activeInstance.value)
-  },
-  ...(can.value.builder &&
-  proto.signedIn &&
-  instances.value.some((i) => !i.deployment && i.kind === 'local')
-    ? [
-        {
-          label: 'Deploy',
-          icon: Rocket,
-          run: () =>
-            deployEnv(
-              (activeInstance.value.kind === 'local'
-                ? activeInstance.value
-                : instances.value.find((i) => i.kind === 'local')!
-              ).id
-            )
-        }
-      ]
-    : [])
-])
 const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // First run: a first-time user before any local install (UI Playground ›
 // User and Local install). A returning user with no local install (on
@@ -87,7 +56,7 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // gets it too, with examples where their work will go.
 const firstRun = computed(() => firstTime.value && noLocal.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
-const tight = computed(() => parts.value.top === 'mar')
+const tight = computed(() => parts.value.top === 'tight')
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
 const EXAMPLE_ART = [1, 2, 3, 4, 5].map((n) => mock(`home-example-${n}`))
@@ -119,14 +88,9 @@ const recent = computed(() =>
 
 <template>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
-    <CreateMenu v-if="parts.actions === 'mar'" />
-    <template v-else>
-      <Button v-for="a in actions" :key="a.label" @click="a.run()">
-        <component :is="a.icon" :size="14" />{{ a.label }}
-      </Button>
-    </template>
+    <CreateMenu />
   </div>
-  <div class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
+  <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
@@ -150,7 +114,6 @@ const recent = computed(() =>
               <BuildPill v-for="i in builds" :key="i.id" :inst="i" />
             </div>
           </div>
-          <QuickLaunch v-else-if="parts.builds === 'pablo'" />
         </template>
       </div>
     </section>
@@ -159,6 +122,10 @@ const recent = computed(() =>
          your work (UI Playground › First run). -->
     <MarStart v-if="firstRun" />
     <div v-else>
+      <!-- The Apps stage: the examples arc leads for everyone. Once Explore
+           & Learn arrive, apps live in Explore only. -->
+      <ExampleArc v-if="can.exploreApps && !can.explore" class="mt-6" />
+      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). -->
@@ -202,14 +169,13 @@ const recent = computed(() =>
         </SectionHeader>
         <StarterCards />
       </section>
-      <TemplatesRow
-        v-else-if="parts.examples === 'pablo'"
-        title="Example workflows"
-        class="mt-0!"
-      />
 
-      <section v-if="parts.recent === 'mar' && recent.length" class="mt-10">
-        <SectionHeader title="Recently used" link="See all" @link="go('workflows')" />
+      <section v-if="recent.length" class="mt-10">
+        <SectionHeader
+          title="Recently used"
+          :link="can.projects ? 'See all' : undefined"
+          @link="go('workflows')"
+        />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
         <ScrollRow v-else :columns="5" class="mar-recent-row">
@@ -224,8 +190,6 @@ const recent = computed(() =>
           />
         </ScrollRow>
       </section>
-      <RecentWork v-else-if="parts.recent === 'pablo'" />
-      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader

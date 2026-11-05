@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { isMariana } from '../proposal'
+import { can } from '../../milestones'
 import { proto } from '../../useProto'
 import { PROJECTS } from '../../mock'
 import { SPACES, type Space } from '../../spaces'
@@ -7,7 +7,7 @@ import { favorites } from '../favorites'
 import { onCloud } from '../shell/surface'
 
 /**
- * Who is looking at Mar's proposal (UI Playground › User) and what is on
+ * Who is looking at the prototype (UI Playground › User) and what is on
  * this computer (UI Playground › Local install). Two axes, not one:
  *
  *  - User: First-time has made, run, starred and shared nothing yet;
@@ -25,6 +25,9 @@ import { onCloud } from '../shell/surface'
  * `proto.fresh` / `proto.oneLocal` (which local builds exist), and the
  * user's own spaces, projects and favourites, which a first-time user
  * does not have, so they are set aside and given back on Returning.
+ *
+ * First run lives on Home, so before Milestone 4 everyone is a returning
+ * user with the usual builds.
  */
 export type MarUser = 'first' | 'returning'
 export type MarLocal = 'none' | 'one' | 'several'
@@ -56,8 +59,8 @@ function load(): { user: MarUser; local: MarLocal } {
 
 export const marUser = reactive(load())
 
-/** Mar's proposal, seen as a first-time user. */
-export const firstTime = computed(() => isMariana.value && marUser.user === 'first')
+/** Seen as a first-time user. */
+export const firstTime = computed(() => can.value.home && marUser.user === 'first')
 
 /** Pick a user; each comes with its usual install (first-time: none yet,
  *  returning: several), which Local install can then change. */
@@ -77,23 +80,15 @@ watch(
   }
 )
 
-// Which local builds exist. Pablo's proposal keeps its own switch (User:
-// New / Returning sets `fresh`); leaving Mar's gives it back as it was.
-let pablosFresh: boolean | undefined
+// Which local builds exist.
 watch(
-  [isMariana, () => marUser.user, () => marUser.local, onCloud],
-  ([mar, user, local, cloud]) => {
-    if (mar) {
-      pablosFresh ??= proto.fresh
-      proto.newUser = user === 'first'
-      proto.fresh = cloud || local === 'none'
-      proto.oneLocal = local === 'one'
-    } else {
-      proto.newUser = null
-      proto.oneLocal = false
-      if (pablosFresh !== undefined) proto.fresh = pablosFresh
-      pablosFresh = undefined
-    }
+  [firstTime, () => marUser.local, onCloud, () => can.value.home, () => marUser.user],
+  ([first, local, cloud, home, user]) => {
+    proto.newUser = first
+    proto.fresh = home && (cloud || local === 'none')
+    // Before there is a Home, only someone who just ran the local setup
+    // has a single build: Builds lists it alone.
+    proto.oneLocal = local === 'one' && (home || user === 'first')
   },
   { immediate: true }
 )
