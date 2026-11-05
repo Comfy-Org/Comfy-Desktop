@@ -493,8 +493,8 @@ const describeField = (placeholder: string): Field => ({
   on: true,
   placeholder
 })
-/** The starter apps on Home: the apps on comfy.org, plus Image Generator as
- *  the fourth. Costs are samples. */
+/** The starter apps, first in Explore: the apps on comfy.org, plus Image
+ *  Generator as the fourth. Costs are samples. */
 export const STARTER_APPS: LibApp[] = [
   {
     ...hub(
@@ -547,8 +547,6 @@ export const STARTER_APPS: LibApp[] = [
 ]
 
 export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
-/** M3 of the Apps PRD: new apps join the picker without a Desktop update. */
-export const MORE_APPS = EXPLORE_APPS.slice(0, 4)
 
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */

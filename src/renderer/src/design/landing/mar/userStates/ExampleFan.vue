@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, playLoop, runExample, seeAllLabel } from './examples'
+import { EXAMPLES, playLoop, runExample } from './examples'
 
 /**
  * First-time examples · Fan: Pablo's hand of cards (parts/StarterCards.vue)
@@ -122,7 +122,7 @@ async function key(e: KeyboardEvent): Promise<void> {
         Run on Comfy Cloud<ArrowRight :size="14" />
       </button>
       <button v-else-if="can.exploreApps" type="button" class="mar-fan2-all" @click="go('explore')">
-        {{ seeAllLabel }}<ArrowRight :size="14" />
+        See all examples<ArrowRight :size="14" />
       </button>
     </div>
   </div>

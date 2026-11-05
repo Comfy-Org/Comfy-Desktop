@@ -1,14 +1,6 @@
-import { computed } from 'vue'
 import { hostActions } from '../../useProto'
 import { INSTANCES } from '../../mock'
-import { can } from '../../milestones'
 import { mock } from '../assets/mock'
-
-/** The first-run carousel's link to Explore: apps while Explore leads with
- *  them, examples from the future milestones on. */
-export const seeAllLabel = computed(() =>
-  can.value.projects ? 'See all examples' : 'See all apps'
-)
 
 /**
  * The examples a first-time user can run in a click (Start from an

@@ -7,7 +7,7 @@ import Select from '../../ui/Select.vue'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
-import { EXPLORE, isAdded, openAppUrl, toggleAdded, usd } from '../../appFlow'
+import { EXPLORE, STARTER_APPS, isAdded, openAppUrl, toggleAdded, usd } from '../../appFlow'
 import { go, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -28,7 +28,11 @@ const type = ref('all')
 const query = ref('')
 
 const TABS: { value: Tab; label: string; count: number }[] = [
-  { value: 'apps', label: 'Apps', count: EXPLORE.flatMap((s) => s.apps).length },
+  {
+    value: 'apps',
+    label: 'Apps',
+    count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+  },
   { value: 'templates', label: 'Templates', count: TEMPLATES.length },
   { value: 'models', label: 'Models', count: ROUTER_MODELS.length },
   { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length }
@@ -81,7 +85,8 @@ const models = computed(() =>
 )
 // The use cases, each with its apps; a use case with none matching drops out.
 const appSections = computed(() =>
-  EXPLORE.filter((s) => type.value === 'all' || s.title === type.value)
+  [{ title: 'Start here', hint: 'Ready to run', apps: STARTER_APPS }, ...EXPLORE]
+    .filter((s) => type.value === 'all' || s.title === type.value)
     .map((s) => ({ ...s, apps: s.apps.filter((a) => has(`${a.name} ${a.blurb}`)) }))
     .filter((s) => s.apps.length)
 )

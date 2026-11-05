@@ -3,7 +3,7 @@ import { nextTick, ref } from 'vue'
 import { ArrowRight } from 'lucide-vue-next'
 import { go as goTo } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, playLoop, runExample, seeAllLabel } from './examples'
+import { EXAMPLES, playLoop, runExample } from './examples'
 
 /**
  * First-time examples · Fan × Coverflow: the coverflow's covers, each
@@ -151,7 +151,7 @@ function wheel(e: WheelEvent): void {
 
     <div class="mar-ff-action">
       <button v-if="can.exploreApps" type="button" class="mar-ff-all" @click="goTo('explore')">
-        {{ seeAllLabel }}<ArrowRight :size="14" />
+        See all examples<ArrowRight :size="14" />
       </button>
     </div>
   </div>
