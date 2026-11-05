@@ -93,6 +93,10 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
   font-weight: 600;
   transition: background-color 140ms ease;
 }
+/* Undo and the close read as one pair at the end of the toast. */
+:root .proto-ui.proto-ui.proto-ui .mar-undo-btn + .mar-undo-x {
+  margin-left: -6px;
+}
 :root .proto-ui.proto-ui.proto-ui .mar-undo-btn:hover {
   background: color-mix(in oklab, var(--color-base-foreground) 22%, transparent);
 }
