@@ -353,34 +353,3 @@
 .mar-search-none .mar-empty {
   padding: 28px 0 20px;
 }
-
-/* Footer: what ↵ does for the row you're on, then the keys that always
-   work. */
-.mar-search-foot {
-  display: flex;
-  height: 36px;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 16px;
-  padding: 0 12px 0 var(--s-edge);
-  background: color-mix(in oklch, var(--s-ink) 3%, transparent);
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-.mar-search-verb {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
-}
-.mar-search-verb > kbd:last-of-type {
-  margin-right: 6px;
-}
-.mar-search-foot kbd {
-  background: transparent;
-  min-width: 0;
-  padding: 0 1px;
-}
-.mar-search-foot > .mar-search-verb:first-child {
-  color: var(--color-muted-foreground);
-}

@@ -41,18 +41,18 @@ import { match, segments } from './match'
 import './search.css'
 
 /**
- * Global search (⌘K) in Mar's proposal: a command palette. One field,
- * the scopes as the New UI tab group, and one list under them: rows with
- * a small picture, the name, what it is and where it lives, grouped and
- * capped per group with a "See all" row. Empty: recent work, suggested
- * templates, actions with their shortcuts. Follows the Page state
+ * Global search (⌘K) in Mar's proposal: a command palette. One field and
+ * one list under it. Opening it shows only your recent work (or suggested
+ * templates, if you have none yet); the scopes appear once you type, as
+ * the New UI tab group, over rows with a small picture, the name, what it
+ * is and where it lives, grouped and capped per group with a "See all"
+ * row. Actions show up when you search for them. Follows the Page state
  * (loading skeletons, offline, a first-time user with nothing yet).
  *
  * Keys: ↑↓ move through the one list (the pointer moves the same
  * highlight), ↵ opens, ⌘↵ opens in Comfy Cloud where that applies;
  * Tab / ⇧Tab, ←→ on an empty field or ⌘1–7 switch scope, ⌫ on an empty
- * field goes back to All; Esc or ⌘K closes. The footer says what ↵ does
- * for the row you're on.
+ * field goes back to All; Esc or ⌘K closes.
  */
 type Scope = 'all' | 'templates' | 'workflows' | 'projects' | 'spaces' | 'apps' | 'assets'
 type Kind =
@@ -313,7 +313,6 @@ function seeAll(s: Library, n: number): Item {
     kind: 'more',
     label: `See all ${n} in ${scopeLabel(s)}`,
     icon: ArrowRight,
-    shortcut: ['⌘', String(SCOPES.findIndex((x) => x.value === s) + 1)],
     open: () => setScope(s)
   }
 }
@@ -325,23 +324,21 @@ const docs = computed<Item>(() => ({
   open: () => toast(`Searching the docs for “${q.value}”`)
 }))
 
-const QUICK = ['x:new-workflow', 'x:new-project', 'x:cloud', 'x:settings']
 const groups = computed<Group[]>(() => {
   const out: { name: string; items: Item[] }[] = []
   if (!q.value && scope.value === 'all') {
-    if (state.value === 'live') {
-      const w = workflows.value
-      const p = projectItems.value
-      out.push({ name: 'Recent', items: [w[0], p[3], w[1]].filter((it): it is Item => !!it) })
-    }
-    out.push({
-      name: 'Suggested templates',
-      items: [
-        ...[4, 1].map((i) => templates.value[i]).filter((it): it is Item => !!it),
-        seeAll('templates', templates.value.length)
-      ]
-    })
-    out.push({ name: 'Actions', items: actions.value.filter((a) => QUICK.includes(a.key)) })
+    const w = workflows.value
+    const p = projectItems.value
+    const recent = [w[0], p[3], w[1]].filter((it): it is Item => !!it)
+    if (state.value === 'live' && recent.length) out.push({ name: 'Recent', items: recent })
+    else
+      out.push({
+        name: 'Suggested templates',
+        items: [
+          ...[4, 1].map((i) => templates.value[i]).filter((it): it is Item => !!it),
+          seeAll('templates', templates.value.length)
+        ]
+      })
   } else if (!q.value) {
     const s = scope.value as Library
     if (reachable(s)) out.push({ name: scopeLabel(s), items: BY_SCOPE.value[s] })
@@ -384,10 +381,10 @@ const nothingYet = computed(
   () => !q.value && !flat.value.length && !loading.value && !offline.value
 )
 
-/** Type and meta on a row; only Recent mixes types; everywhere else the
- *  group's title already says it. */
-function sub(it: Item, group: string): string {
-  return dot(group === 'Recent' ? TYPE[it.kind] : undefined, it.meta)
+/** What a row says after its name: in Recent just its type, which the
+ *  group's title says everywhere else. */
+function sub(it: Item, group: string): string | undefined {
+  return group === 'Recent' ? TYPE[it.kind] : it.meta
 }
 
 // --- Scopes ---------------------------------------------------------------
@@ -514,22 +511,9 @@ onBeforeUnmount(() => {
 const placeholder = computed(() =>
   scope.value === 'all' ? 'Search or jump to…' : `Search ${scopeLabel(scope.value).toLowerCase()}…`
 )
+/** The scopes stay out of the way until you search or pick one. */
+const scoped = computed(() => !!q.value || scope.value !== 'all')
 const optionId = (i: number): string => `mar-search-opt-${i}`
-/** What ↵ (and ⌘↵) do for the row you're on, for the footer. */
-const verbs = computed(() => {
-  const it = current.value
-  if (!it) return []
-  const main = {
-    action: 'Run',
-    more: 'Show all',
-    docs: 'Search',
-    asset: 'Show in Assets'
-  }[it.kind as string]
-  return [
-    { keys: ['↵'], label: main ?? 'Open' },
-    ...(it.cloud ? [{ keys: ['⌘', '↵'], label: 'Open in Cloud' }] : [])
-  ]
-})
 </script>
 
 <template>
@@ -572,7 +556,7 @@ const verbs = computed(() => {
             </button>
           </div>
 
-          <div class="mar-search-scopes">
+          <div v-if="scoped" class="mar-search-scopes">
             <MarSeg v-model="scope" :options="SCOPES" label="Search in" />
           </div>
 
@@ -672,16 +656,6 @@ const verbs = computed(() => {
               </div>
             </template>
           </div>
-
-          <footer class="mar-search-foot">
-            <span v-for="v in verbs" :key="v.label" class="mar-search-verb">
-              <kbd v-for="k in v.keys" :key="k">{{ k }}</kbd
-              >{{ v.label }}
-            </span>
-            <span class="mar-search-fill" />
-            <span class="mar-search-verb"><kbd>⇥</kbd>Scope</span>
-            <span class="mar-search-verb"><kbd>esc</kbd>Close</span>
-          </footer>
         </div>
       </div>
     </Transition>
