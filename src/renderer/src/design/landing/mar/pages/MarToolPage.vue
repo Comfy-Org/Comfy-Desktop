@@ -6,7 +6,6 @@ import Select from '../../ui/Select.vue'
 import { instances, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
 import MarEmpty from './MarEmpty.vue'
-import { EMPTY_PICS } from './emptyArt'
 
 /**
  * Tools (the sidebar's group before Home): Benchmarks and Performance
@@ -45,11 +44,6 @@ const buildName = computed(() => local.value.find((b) => b.value === build.value
         ><Play :size="14" />{{ tool.action }}</Button
       >
     </template>
-    <MarEmpty
-      :icon="tool.icon"
-      :title="`No ${tool.title.toLowerCase()} yet`"
-      :text="tool.text"
-      :pics="EMPTY_PICS.tools"
-    />
+    <MarEmpty :icon="tool.icon" :title="`No ${tool.title.toLowerCase()} yet`" :text="tool.text" />
   </MarPage>
 </template>

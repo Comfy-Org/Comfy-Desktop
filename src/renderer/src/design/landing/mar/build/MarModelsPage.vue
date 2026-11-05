@@ -26,7 +26,6 @@ import MarSearchField from '../pages/MarSearchField.vue'
 import MarViewToggle from '../pages/MarViewToggle.vue'
 import MarSelectBar from '../pages/MarSelectBar.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
-import { EMPTY_PICS } from '../pages/emptyArt'
 import type { MenuAction } from '../pages/menu'
 import {
   activeDownloads,
@@ -475,7 +474,6 @@ const lowDisk = computed(() => freeGb.value < 120)
           compact
           :tone="q || chips.length ? 'error' : undefined"
           :icon="scope === 'downloads' ? Download : ComfyModel"
-          :pics="q || chips.length ? undefined : EMPTY_PICS.models"
           :title="
             q || chips.length
               ? 'No models match'
