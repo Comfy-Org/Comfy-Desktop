@@ -35,7 +35,6 @@ import {
   buildModelsPayload,
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
-import { isSignedInToCloud, signInToCloud } from '../lib/ipc/registerDevPlatformHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
 import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
@@ -759,7 +758,6 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   Add Existing Install
   //   Load Snapshot
   //   ── separator ──
-  //   (Log in — while signed out, followed by its own separator)
   //   Performance Test
   //   Benchmarks
   //   ── separator ──
@@ -786,12 +784,6 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   - "Return to Dashboard" is absent: the picker's Home icon is
   //     the canonical dashboard escape (opens a fresh chooser window
   //     instead of detaching, so the running ComfyUI stays alive).
-  //   - "Log in" sits in its own group above Desktop Settings while
-  //     signed out, and is the app's ONLY sign-in affordance. Deliberately
-  //     NOT behind the Comfy Developer Platform rollout flag: that flag gates
-  //     what a signed-in account may do, and gating login itself
-  //     would put it behind a decision that cannot be made until the
-  //     user has logged in.
   const items: TitlePopupMenuItem[] = [
     { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
@@ -802,15 +794,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       labelKey: 'fileMenu.addExistingInstall'
     },
     { id: 'load-snapshot', label: 'Load Snapshot', labelKey: 'fileMenu.loadSnapshot' },
-    { kind: 'separator' }
-  ]
-  if (!isSignedInToCloud()) {
-    items.push(
-      { id: 'sign-in', label: 'Log in', labelKey: 'fileMenu.signIn' },
-      { kind: 'separator' }
-    )
-  }
-  items.push(
+    { kind: 'separator' },
     {
       id: 'performance-test',
       label: 'Performance Tests',
@@ -824,7 +808,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       labelKey: 'fileMenu.globalSettings'
     },
     { id: 'feedback', label: 'Send Beta Feedback', labelKey: 'fileMenu.sendFeedback' }
-  )
+  ]
   // Reset Zoom — discoverable recovery path for users who zoom the live
   // ComfyUI view too far to read. Dashboard hosts do not expose zoom controls.
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
@@ -2058,15 +2042,6 @@ export function activateTitlePopupMenuItem(
     // via `comfy-window:click-feedback`; `source` distinguishes the
     // two entry points in the telemetry payload.
     bindings.triggerOpenFeedback(entry.parentEntryId, 'menu')
-  } else if (id === 'sign-in') {
-    // No renderer in this loop — the popup is its own WebContentsView — so the
-    // menu calls the same primitive `comfybuilder:signIn` does, which is what
-    // keeps the sign-out race guard shared instead of forked. Fire-and-forget:
-    // the browser handoff can take minutes and every surface repaints off the
-    // `authChanged` broadcast the primitive sends, not off this call.
-    void signInToCloud().catch(() => {
-      // Cancelled or failed handoff: the menu item re-arms on the next open.
-    })
   } else if (id === 'reset-zoom') {
     // Route through the shared reset so the title-bar pill picks up the
     // `comfy-titlebar:zoom-changed` push (that event fires only for

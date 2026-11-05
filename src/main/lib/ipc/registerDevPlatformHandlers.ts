@@ -187,12 +187,6 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
   return SIGNED_OUT
 }
 
-/** Sign-in state for main-side surfaces that decide what to render (the file
- *  menu). Renderer surfaces read it over `getAuthStatus` instead. */
-export function isSignedInToCloud(): boolean {
-  return getCloudSession().status().signedIn
-}
-
 /**
  * Register the dev-platform IPC handlers. Call once at startup.
  *
