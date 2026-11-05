@@ -152,8 +152,8 @@ const SWATCHES = Object.entries(WIRE) as [Wire, string][]
   </Section>
 
   <Section
-    title="Workflow cover · the trio, barely there"
-    note="When a workflow has no picture: one link colour as a soft wash, with the mark’s three slabs at 16° across it, too faint to read as a logo. The name picks the colour and the position, so a workflow always keeps its cover."
+    title="Workflow cover · a blur of its own"
+    note="When a workflow has no picture: three blurred clouds of colour. The name picks the hues and positions, so each workflow has its own and keeps it; lightness and chroma are fixed, so a grid stays at one level of light."
   >
     <div class="bi-covers">
       <figure v-for="n in COVERS" :key="n">

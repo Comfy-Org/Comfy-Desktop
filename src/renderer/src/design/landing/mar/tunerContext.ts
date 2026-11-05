@@ -28,7 +28,6 @@ import { marOwns } from './pages/owns'
 import { marLook } from './looks/looks'
 import { PORTS, ports, type Port } from './navOptions'
 import { dep, scenarioPick } from './deploy/deployData'
-import { pageTransition } from './motion/pageTransition'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -152,8 +151,7 @@ export interface Tweak {
 const TUNING_DEFAULTS = {
   radius: 'default',
   contrast: 'default',
-  borders: 'none',
-  shadows: 'default'
+  borders: 'none'
 }
 const P20_DEFAULTS: Record<string, string> = {
   recent: 'cards',
@@ -183,7 +181,6 @@ export const TWEAKS = {
   nav: one(marNav, 'panels'),
   palette: one(palette, 'graphite'),
   theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
-  pageTransition: one(pageTransition, 'rise'),
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),

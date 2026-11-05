@@ -18,14 +18,12 @@ export interface Tuning {
   radius: 'default' | 'soft'
   contrast: 'low' | 'default' | 'high'
   borders: 'none' | 'hairline'
-  shadows: 'off' | 'default'
 }
 
 const DEFAULTS: Tuning = {
   radius: 'default',
   contrast: 'default',
-  borders: 'none',
-  shadows: 'default'
+  borders: 'none'
 }
 
 export const KNOBS: Knob[] = [
@@ -52,14 +50,6 @@ export const KNOBS: Knob[] = [
     options: [
       { value: 'none', label: 'None' },
       { value: 'hairline', label: 'Hairline' }
-    ]
-  },
-  {
-    key: 'shadows',
-    label: 'Shadows',
-    options: [
-      { value: 'off', label: 'Off' },
-      { value: 'default', label: 'On' }
     ]
   }
 ]
@@ -97,13 +87,6 @@ const TOKENS: { [K in keyof Tuning]: Partial<Record<Tuning[K], Record<string, st
     hairline: {
       '--color-border-default': 'color-mix(in oklch, var(--color-base-foreground) 9%, transparent)',
       '--color-border-strong': 'color-mix(in oklch, var(--color-base-foreground) 14%, transparent)'
-    }
-  },
-  shadows: {
-    off: {
-      '--shadow-elev': 'none',
-      '--shadow-elev-hover': 'none',
-      '--shadow-highlight': 'none'
     }
   }
 }
@@ -173,7 +156,6 @@ watch(
     if (!design) {
       darkSheet().textContent = ''
       delete document.documentElement.dataset.marBorders
-      delete document.documentElement.dataset.marShadows
       return
     }
     // Surfaces (contrast) are dark-theme colours: they go in a sheet that
@@ -191,7 +173,6 @@ watch(
     }
     darkSheet().textContent = dark ? `:root:not([data-ds-theme='light']) { ${dark} }` : ''
     document.documentElement.dataset.marBorders = t.borders
-    document.documentElement.dataset.marShadows = t.shadows
   },
   { immediate: true }
 )

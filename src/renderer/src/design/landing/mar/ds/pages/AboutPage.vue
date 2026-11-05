@@ -198,7 +198,7 @@ const count = (g: string): number => PAGES.filter((p) => p.group === g).length
           Signed out, the sidebar's Log in card leads with a strip of graded outputs; the button is
           the standard primary.
         </li>
-        <li>Pages open with Fade and rise (UI Playground › Page transition).</li>
+        <li>Pages open with Fade and rise.</li>
       </ul>
 
       <h3>Fidelity to the product</h3>

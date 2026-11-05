@@ -614,14 +614,6 @@
   --mar-chrome: 78px;
 }
 
-/* Shadows: Off (Tune the UI) flattens every raised surface. */
-:root[data-mar-shadows='off']
-  .proto-ui
-  :is(.shadow-elev, .mar-prompt, .mar-side, .mar-dock, [role='menu']),
-:root[data-mar-shadows='off'] .proto-ui .shadow-elev:hover {
-  box-shadow: none !important;
-}
-
 /* Borders: None hides the divider inside cards, so it gives back the
    padding under it too (no blank band, e.g. "Not in a space"). */
 :root[data-mar-ui='on']:not([data-mar-borders='hairline'])
@@ -1154,7 +1146,7 @@
 }
 
 /* Shadows: On is a soft, short lift, never a dark pool under a card. */
-:root[data-mar-ui='on']:not([data-mar-shadows='off']) {
+:root[data-mar-ui='on'] {
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.12), 0 6px 16px -6px oklch(0 0 0 / 0.18);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.14), 0 10px 22px -8px oklch(0 0 0 / 0.22);
 }
@@ -1180,7 +1172,7 @@
 :where(:root[data-mar-ui='on']) [class*='inset_0_1px_0_rgb'] {
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
 }
-:root[data-mar-ui='on'][data-ds-theme='light']:not([data-mar-shadows='off']) {
+:root[data-mar-ui='on'][data-ds-theme='light'] {
   --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.05), 0 6px 16px -6px oklch(0 0 0 / 0.08);
   --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.06), 0 10px 22px -8px oklch(0 0 0 / 0.1);
 }

@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { look } from '../../look'
-import { WIRE } from './imagery'
+import { GRAIN } from './imagery'
 
 /**
  * A workflow's cover as its own gradient (UI Playground › Workflow cover,
- * DS › Brand imagery): one link colour, as every picture we make, in a soft
- * monochrome wash with the trio (brandMotif.ts) barely there across it, so
- * it reads as Comfy before you notice why. The name picks the colour, where
- * the light sits and where the slabs fall, so it always gets the same one.
+ * DS › Brand imagery): three soft clouds of colour, heavily blurred. The name
+ * picks the hues and where the clouds sit, so every workflow has its own and
+ * keeps it. Lightness and chroma are fixed in oklch, so a grid of different
+ * colours still reads at one level of light and none stands out.
  */
 const { name = '' } = defineProps<{ name?: string }>()
-
-/** The calm link colours: red and yellow would shout from a grid of covers. */
-const HUES = [WIRE.model, WIRE.image, WIRE.mask, WIRE.conditioning, WIRE.latent]
 
 const hash = computed(() => {
   let h = 2166136261
@@ -27,26 +24,31 @@ const pick = (n: number): number => {
   return ((h ^ (h >>> 13)) >>> 0) / 2 ** 32
 }
 
+/** Lightness of the ground and the three clouds, and their chroma. */
+const LIGHT = {
+  dark: { ground: 0.3, clouds: [0.5, 0.44, 0.38], chroma: 0.085 },
+  light: { ground: 0.93, clouds: [0.86, 0.88, 0.9], chroma: 0.065 }
+}
+
 const paint = computed(() => {
-  const hue = HUES[Math.floor(pick(0) * HUES.length)]!
-  const dark = look.theme !== 'light'
-  const ground = dark ? '#0f0f12' : '#f6f6f8'
-  const x = Math.round(15 + pick(1) * 70)
-  const y = Math.round(pick(2) * 45)
+  const { ground, clouds, chroma } = LIGHT[look.theme === 'light' ? 'light' : 'dark']
+  const hue = pick(0) * 360
+  const turn = (pick(1) < 0.5 ? -1 : 1) * (50 + pick(2) * 50)
+  const cloud = (i: number) => {
+    const x = Math.round(10 + pick(3 + i * 2) * 80)
+    const y = Math.round(10 + pick(4 + i * 2) * 80)
+    const color = `oklch(${clouds[i]} ${chroma} ${Math.round(hue + turn * i)})`
+    return `radial-gradient(60% 75% at ${x}% ${y}%, ${color}, transparent)`
+  }
   return {
-    '--wfg-base': `color-mix(in oklch, ${hue} ${dark ? 10 : 14}%, ${ground})`,
-    '--wfg-glow': `color-mix(in oklch, ${hue} ${dark ? 34 : 40}%, ${ground})`,
-    '--wfg-slab': dark ? 'rgb(255 255 255 / 0.05)' : 'rgb(255 255 255 / 0.3)',
-    '--wfg-x': `${x}%`,
-    '--wfg-y': `${y}%`,
-    '--wfg-trio': `${Math.round(-6 + pick(3) * 56)}%`
+    background: `${[0, 1, 2].map(cloud).join(', ')}, oklch(${ground} ${chroma * 0.6} ${Math.round(hue + turn)})`
   }
 })
 </script>
 
 <template>
-  <div class="wfg" :style="paint" aria-hidden="true">
-    <span class="wfg-trio"><i /><i /><i /></span>
+  <div class="wfg" :style="{ '--wfg-grain': GRAIN }" aria-hidden="true">
+    <span class="wfg-paint" :style="paint" />
   </div>
 </template>
 
@@ -56,32 +58,19 @@ const paint = computed(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(90% 110% at var(--wfg-x) var(--wfg-y), var(--wfg-glow), transparent 72%),
-    var(--wfg-base);
 }
-/* The C mark's three slabs at 16°, far larger than the card and fading out
-   as they fall: seen as light, not as a shape. */
-.wfg-trio {
+.wfg-paint {
   position: absolute;
-  top: -20%;
-  bottom: -20%;
-  left: var(--wfg-trio);
-  display: flex;
-  width: 62%;
-  gap: 6%;
-  mask-image: linear-gradient(to bottom, #000, transparent 88%);
-  transform: skewX(-16deg);
+  inset: -20%;
+  filter: blur(22px);
 }
-.wfg-trio > i {
-  flex: 1;
-  border-radius: 14px;
-  background: var(--wfg-slab);
-}
-.wfg-trio > i:nth-child(2) {
-  opacity: 0.7;
-}
-.wfg-trio > i:nth-child(3) {
-  opacity: 0.4;
+/* The shared grain keeps the blur from banding. */
+.wfg::after {
+  position: absolute;
+  inset: 0;
+  background-image: var(--wfg-grain);
+  content: '';
+  mix-blend-mode: overlay;
+  opacity: 0.1;
 }
 </style>

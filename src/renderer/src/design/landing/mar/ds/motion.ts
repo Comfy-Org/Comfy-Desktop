@@ -147,7 +147,7 @@ export const MOTIONS: Motion[] = [
     id: 'page',
     name: 'Page transition',
     trigger:
-      'A page opens from the sidebar, a breadcrumb, a back link or ⌘K. UI Playground › Global › Page transition picks Off, Fade, Fade and rise or Stagger. In only: the old page goes at once; the sidebar, title bar and panels stay still; the new page starts at the top; a click mid-way cancels it.',
+      'A page opens from the sidebar, a breadcrumb, a back link or ⌘K. Fade and rise. In only: the old page goes at once; the sidebar, title bar and panels stay still; the new page starts at the top; a click mid-way cancels it.',
     duration:
       'Fade --mar-page-fade 160ms; Rise --mar-page-in 240ms; Stagger 240ms each, --mar-page-step 40ms apart, 5 beats at most (400ms)',
     easing: 'Fade ease-out; Rise and Stagger var(--mar-ease-page)',
