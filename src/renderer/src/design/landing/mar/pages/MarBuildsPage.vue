@@ -49,9 +49,6 @@ import {
   type BuildWhere
 } from '../build/m1Builds'
 import { surface } from '../shell/surface'
-import { localSetup, setupOn, type Starter } from '../setup/setupFlow'
-import StarterShelf from '../setup/StarterShelf.vue'
-import SectionHeader from '../../ui/SectionHeader.vue'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
@@ -292,32 +289,13 @@ function second(
 /* ---- Milestone 1: today's states and menu (ChooserInstallTile) ---- */
 // Builds becoming a Build on Comfy Platform (Create Build).
 const creating = reactive(new Set<string>())
-// Local setup proposal: M1 has no Home, so the starter workflows sit under
-// the first build. Picking one downloads its models, then starts the build.
-const starters = computed(
-  () => rowsOnly.value && setupOn.value && localSetup.scope === 'm1' && proto.oneLocal
-)
-const fetching = reactive(new Set<string>())
-function openStarter(s: Starter): void {
-  const b = builds.items.find((x) => whereOf(x) === 'local')
-  if (s.credits || !b || busy(b)) return
-  fetching.add(b.id)
-  setTimeout(() => {
-    fetching.delete(b.id)
-    if (b.state !== 'running') start(b)
-  }, 2600)
-}
 // The build whose error details are open.
 const crashOf = ref<Build>()
 const problemOf = (b: Build) => extraOf(b.id).problem
 const isRemote = (b: Build): boolean => whereOf(b) === 'remote'
 // Busy: nothing to start or change until it settles.
 const busy = (b: Build): boolean =>
-  stopping.has(b.id) ||
-  creating.has(b.id) ||
-  updating.has(b.id) ||
-  fetching.has(b.id) ||
-  b.state === 'launching'
+  stopping.has(b.id) || creating.has(b.id) || updating.has(b.id) || b.state === 'launching'
 // Start, or Open where there is nothing to start (running, Cloud, Remote).
 function launch(b: Build): { label: string; icon: Component; run: () => void } {
   if (b.state === 'running' || b.state === 'error' || b.kind === 'cloud')
@@ -338,7 +316,6 @@ function m1State(b: Build): {
 } {
   if (creating.has(b.id)) return { label: 'Creating…', tone: 'idle', spin: true }
   if (updating.has(b.id)) return { label: 'Updating…', tone: 'idle', spin: true }
-  if (fetching.has(b.id)) return { label: 'Downloading models…', tone: 'idle', spin: true }
   if (stopping.has(b.id)) return { label: 'Stopping…', tone: 'idle', spin: true }
   if (b.state === 'launching') return { label: 'Starting…', tone: 'ok', spin: true }
   if (b.state === 'running') return { label: 'Running', tone: 'ok' }
@@ -757,7 +734,7 @@ const newLabel = computed(() =>
             >{{ PROBLEM_ACTION[problemOf(b)!] }}</Button
           >
           <MarSplitButton
-            v-else-if="!creating.has(b.id) && !stopping.has(b.id) && !fetching.has(b.id)"
+            v-else-if="!creating.has(b.id) && !stopping.has(b.id)"
             tone="secondary"
             :label="busy(b) ? m1State(b).label : launch(b).label"
             :suffix="busy(b) ? undefined : launchWhere(b)"
@@ -777,10 +754,6 @@ const newLabel = computed(() =>
         @close="crashOf = undefined"
         @start="crashOf && retry(crashOf)"
       />
-      <section v-if="starters" class="mt-8">
-        <SectionHeader title="Start from a workflow" />
-        <StarterShelf @open="openStarter" />
-      </section>
     </div>
     <!-- Grouped: the group says where, with the hardware its builds share. -->
     <template v-else-if="view === 'grid' && buildCard.id === 'grouped'">

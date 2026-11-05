@@ -7,14 +7,12 @@ import zitThumb from '../assets/templates/image_z_image_turbo.webp'
 import minimaxThumb from '../assets/templates/video_minimax_h3_i2v.webp'
 
 /**
- * The starter workflows, after the first local install: the one place
- * they're offered now that Set up no longer asks. On the Home, and on Builds
- * while M1 has no Home. In the look of the Home's examples
- * (userStates/ExampleRow.vue). Each says where it runs:
+ * The starter workflows, on the Home after the first local install: the one
+ * place they're offered now that Set up no longer asks. In the look of the
+ * Home's examples (userStates/ExampleRow.vue). Each says where it runs:
  * Local with the models it downloads on first open, or Cloud, nothing to
  * download. The recommended one of each type, and one that runs on Cloud.
  */
-const emit = defineEmits<{ open: [s: Starter] }>()
 type Shelf = Starter & { kind: string; src: string }
 const pick = (k: keyof typeof STARTERS, id: string, kind: string, src?: string): Shelf => {
   const s = STARTERS[k].find((x) => x.id === id) as Starter
@@ -34,7 +32,6 @@ function open(s: Shelf): void {
       ? `Opening ${s.title} on Comfy Cloud`
       : `Downloading ${s.gb} GB of models. ${s.title} opens when they're ready.`
   )
-  emit('open', s)
 }
 </script>
 
