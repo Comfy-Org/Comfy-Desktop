@@ -7,6 +7,7 @@ import Card from '../../ui/Card.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import { toast } from '../../useProto'
+import { notify } from '../pages/undo'
 import type { ProtoInstance } from '../../mock'
 import { CHANNELS, factsOf, pendingOf, stateOf, updateBuild } from './buildFacts'
 import './buildTabs.css'
@@ -22,6 +23,12 @@ const facts = factsOf(env)
 const state = stateOf(env)
 const pending = computed(() => pendingOf(env))
 const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
+function setChannel(c: (typeof CHANNELS)[number]): void {
+  const was = state.channel
+  if (c.value === was) return
+  state.channel = c.value
+  notify(`Update channel: ${c.label}`, () => (state.channel = was))
+}
 </script>
 
 <template>
@@ -51,7 +58,7 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
               v-for="c in CHANNELS"
               :key="c.value"
               class="bus-option"
-              @select="state.channel = c.value"
+              @select="setChannel(c)"
             >
               <span class="bus-check"><Check v-if="c.value === state.channel" :size="14" /></span>
               <span class="flex min-w-0 flex-col">

@@ -64,6 +64,7 @@ import MarSeg from '../pages/MarSeg.vue'
 import MarSplitButton from '../pages/MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from '../pages/MarStatus.vue'
 import MarUndoToast from '../pages/MarUndoToast.vue'
+import { notify } from '../pages/undo'
 import type { MenuLine } from '../pages/menu'
 import { marTabsOn } from '../shell/titleTabs'
 import EnvModels from './EnvModelsEntry.vue'
@@ -78,7 +79,7 @@ import BuildSettings from './BuildSettings.vue'
 import BuildSnapshots from './BuildSnapshots.vue'
 import BuildUpdate from './BuildUpdate.vue'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
-import { createSnapshot, pendingOf, snapshotsOf, stateOf } from './buildFacts'
+import { createSnapshot, leaving, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
 import { nextBuildTab } from './buildTab'
 import { clearError, errorOf } from './buildErrors'
@@ -256,7 +257,19 @@ function startHere(): void {
 }
 function stopHere(): void {
   toast(`Stopping ${state.name}…`)
-  setTimeout(() => (state.run = 'stopped'), 1200)
+  setTimeout(() => {
+    state.run = 'stopped'
+    notify(`Stopped ${state.name}`, () => (state.run = 'running'))
+  }, 1200)
+}
+function duplicateHere(): void {
+  toast(`Duplicating ${env.name}…`)
+  setTimeout(() => notify(`Duplicated ${env.name}`), 1600)
+}
+// The Builds list removes it on arrival, with its Undo.
+function leaveHere(): void {
+  leaving.value = env.id
+  go('environments' as Page)
 }
 function restartHere(): void {
   state.restart = false
@@ -298,7 +311,7 @@ const moreLines = computed<MenuLine[]>(() => [
           icon: CopyPlus,
           disabled: running.value,
           title: running.value ? 'Stop the running instance first.' : undefined,
-          run: () => toast(`Duplicating ${env.name}…`)
+          run: duplicateHere
         },
         { label: 'Open Directory', icon: FolderOpen, run: () => toast(`Opened ${env.name}`) },
         { label: 'Share', icon: Share2, run: () => toast('Snapshot ready to share') }
@@ -308,7 +321,7 @@ const moreLines = computed<MenuLine[]>(() => [
   ...(running.value && own.value
     ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
     : []),
-  { label: 'Forget', icon: EyeOff, run: () => go('environments' as Page) },
+  { label: 'Forget', icon: EyeOff, run: leaveHere },
   ...(own.value
     ? [
         {
@@ -317,7 +330,7 @@ const moreLines = computed<MenuLine[]>(() => [
           danger: true,
           disabled: running.value,
           title: running.value ? 'Stop the running instance first.' : undefined,
-          run: () => go('environments' as Page)
+          run: leaveHere
         }
       ]
     : [])

@@ -78,6 +78,6 @@
 }
 /* The outline is the line: a card's own border would stack under it and
    read twice as strong. */
-:root[data-mar-ui='on'] .rounded-card.border-border-default {
+:root[data-mar-ui='on'] :is(.rounded-card, [role='dialog']).border-border-default {
   border-color: transparent;
 }

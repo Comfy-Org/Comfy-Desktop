@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import type { ProtoInstance } from '../../mock'
 import { toast } from '../../useProto'
 import { notify } from '../pages/undo'
@@ -114,6 +114,9 @@ export function updateBuild(b: ProtoInstance, channel?: Channel): void {
     notify(`${b.name} is on ComfyUI ${next}`, () => (s.version = was))
   }, 1600)
 }
+
+/** Forget or Uninstall from a build's page, for the Builds list to carry out. */
+export const leaving = ref<string>()
 
 /* ---- Snapshots (ComfyUI-Manager's) ---- */
 export type Trigger = 'boot' | 'manual' | 'pre-update' | 'restart'

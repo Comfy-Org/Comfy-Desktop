@@ -1,11 +1,13 @@
 import { reactive } from 'vue'
+import { notify } from '../pages/undo'
 
 /**
  * A build's long operation (update, copy, restore, migrate…), shown inside
  * the open tab in place of its content, as Desktop does: the title, a bar
  * with the step and percent, and Cancel; then done (back to the tab in a
  * moment), failed (Try Again, Dismiss) or cancelled (Dismiss). One at a
- * time per build. Prototype timing.
+ * time per build. Its end is a toast too, for whoever left the tab.
+ * Prototype timing.
  */
 export interface BuildOp {
   title: string
@@ -37,12 +39,14 @@ function tick(id: string): void {
       clearInterval(op.timer)
       op.status = 'failed'
       op.failAt = undefined
+      if (op.error) notify(op.error)
       return
     }
     if (op.pct >= 100) {
       clearInterval(op.timer)
       op.status = 'done'
       op.then?.()
+      notify(op.done)
       setTimeout(() => OPS[id] === op && delete OPS[id], 2400)
     }
   }, 160)

@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { notify } from '../pages/undo'
 
 /**
  * Build > Models in Mar's proposal: the model library on this computer.
@@ -488,6 +489,7 @@ function finish(d: Download): void {
   model.installed = true
   model.addedAt = 'Just now'
   modelsState.finished.unshift(model.id)
+  notify(`${model.file} is ready`)
 }
 
 /** The seam: swap these bodies for the real desktop / ComfyUI calls. */

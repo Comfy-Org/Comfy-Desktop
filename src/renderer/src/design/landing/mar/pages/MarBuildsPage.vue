@@ -36,6 +36,7 @@ import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
+import { leaving } from '../build/buildFacts'
 import { openBuild } from '../build/buildTab'
 import { clearError, errorOf } from '../build/buildErrors'
 import BuildCrashDialog from '../build/BuildCrashDialog.vue'
@@ -89,6 +90,10 @@ const builds = collection<Build>(
   ),
   'build'
 )
+if (leaving.value) {
+  builds.remove([leaving.value])
+  leaving.value = undefined
+}
 
 type Where = 'all' | BuildWhere
 const where = ref<Where>('all')

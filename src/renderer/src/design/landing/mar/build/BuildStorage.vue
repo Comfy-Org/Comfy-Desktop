@@ -37,13 +37,19 @@ const home = `~/Documents/ComfyUI/${env.name}`
 const changed = (): void => {
   if (state.run === 'running') state.restart = true
 }
+function useForDownloads(path: string): void {
+  const was = downloads.path
+  downloads.path = path
+  changed()
+  notify(`Model downloads go to ${path}`, () => (downloads.path = was))
+}
 const lines = (d: { path: string; locked: boolean }): MenuLine[] => [
   { label: 'Open folder', icon: FolderOpen, run: () => toast(`Opened ${d.path}`) },
   {
     label: 'Use for Model Downloads',
     icon: Download,
     disabled: downloads.path === d.path,
-    run: () => ((downloads.path = d.path), changed())
+    run: () => useForDownloads(d.path)
   },
   ...(d.locked
     ? [{ note: 'This directory is always used and cannot be removed.' }]
@@ -65,8 +71,15 @@ const lines = (d: { path: string; locked: boolean }): MenuLine[] => [
 function add(): void {
   extra.push('~/AI/models')
   changed()
+  notify('Added ~/AI/models', () => extra.pop())
 }
 const io = reactive({ input: set.inputDir, output: set.outputDir })
+function setFolder(k: 'input' | 'output', path: string): void {
+  const was = io[k]
+  io[k] = path
+  changed()
+  notify(`${k === 'input' ? 'Input' : 'Output'} folder: ${path}`, () => (io[k] = was))
+}
 const manage = (): void => toast('Opening Desktop Settings › Shared Directories')
 </script>
 
@@ -141,14 +154,14 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
           <span class="min-w-0 flex-1 truncate font-mono">{{ io[k] }}</span>
           <span v-if="io[k] === `${home}/${k}`" class="mar-tag">default</span>
           <Button variant="ghost" size="sm" @click="toast(`Opened ${io[k]}`)">Open folder</Button>
-          <Button variant="ghost" size="sm" @click="((io[k] = `/Volumes/Studio/${k}`), changed())"
+          <Button variant="ghost" size="sm" @click="setFolder(k, `/Volumes/Studio/${k}`)"
             >Browse</Button
           >
           <Button
             v-if="io[k] !== `${home}/${k}`"
             variant="ghost"
             size="sm"
-            @click="((io[k] = `${home}/${k}`), changed())"
+            @click="setFolder(k, `${home}/${k}`)"
             ><RotateCcw :size="13" />Reset to default</Button
           >
         </template>
