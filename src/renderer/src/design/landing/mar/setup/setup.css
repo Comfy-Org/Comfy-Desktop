@@ -1678,3 +1678,19 @@
 .mss-foot .mss-pitch .mss-pitch-line {
   flex: 0 1 auto;
 }
+
+/* The first screen's title, at the Home greeting's scale and tracking. */
+.mss-col .mss-first-title {
+  font-size: 36px;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+.mss-col .mss-first-lead {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 22px;
+}
+.mss-col .mss-ways,
+.mss-col .mss-first-cards {
+  margin-top: 28px;
+}
