@@ -9,11 +9,16 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
  * middle, `wide` a 1040px one. `step` adds the proposed fixed frame: the
  * step indicator on top and the action bar (`#bar`) along the bottom.
  */
-const { step, layout = 'center' } = defineProps<{
+const {
+  step,
+  layout = 'center',
+  steps: STEPS = ['Run on', 'Set up', 'Workflow', 'Install']
+} = defineProps<{
   step?: number
   layout?: 'today' | 'center' | 'wide'
+  /** The indicator's steps, where a take changes how many there are. */
+  steps?: string[]
 }>()
-const STEPS = ['Run on', 'Set up', 'Workflow', 'Install']
 const state = (i: number): string =>
   !step ? '' : i + 1 < step ? 'is-done' : i + 1 === step ? 'is-now' : ''
 </script>

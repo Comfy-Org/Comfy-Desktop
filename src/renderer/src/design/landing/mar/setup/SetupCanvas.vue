@@ -4,6 +4,7 @@ import AuditScreen, { type AuditScreenId } from './AuditScreen.vue'
 import FirstOption from './FirstOption.vue'
 import SetupOption from './SetupOption.vue'
 import StarterOption from './StarterOption.vue'
+import TemplatePlaceOption from './TemplatePlaceOption.vue'
 import { canvas } from './setupFlow'
 import Button from '../../ui/Button.vue'
 import './canvas.css'
@@ -63,6 +64,28 @@ const SETUP_OPTIONS = [
   ['Two columns', 'Question and machine on the left, the list on the right.'],
   ['One sentence', 'The setup as a sentence; each value is the control that changes it.']
 ]
+const TEMPLATE_PLACES = [
+  [
+    'A row of Set up',
+    'Workflow joins the summary; Choose opens the picker. Three steps stay. Easy to miss.'
+  ],
+  [
+    'Its own step, as today',
+    "Today's picker between Set up and Install, with Skip & Install. Nothing new; one more step."
+  ],
+  [
+    'While it installs',
+    'The picker takes the showcase panel; its models join as a last step. The space check moves after Install.'
+  ],
+  [
+    'On Builds, after the install',
+    'A shelf under the new build; picking downloads the models, then opens. Adds a section to M1 Builds.'
+  ],
+  [
+    'A closing screen',
+    'The install ends on a choice: open empty or with a workflow. One more screen; models download after the wait.'
+  ]
+]
 
 const PAGES: Page[] = [
   {
@@ -85,6 +108,13 @@ const PAGES: Page[] = [
     label: 'Starter workflow',
     title: 'Starter workflow · in the Home’s style',
     lead: 'The Home’s example cards: the picture is the card, the name on it. Click to pick.'
+  },
+  {
+    id: 'template-places',
+    group: 'Options',
+    label: 'Templates in M1',
+    title: 'Templates in M1 · where they go',
+    lead: 'M1 has no Home, so the starter workflow needs a place. Every take keeps today’s behaviour: picking one brings its models.'
   },
   {
     id: 'frame',
@@ -371,6 +401,15 @@ const approved = (p: Page): number => (p.notes ?? []).filter((n) => verdicts[n.i
           <b>{{ i + 1 }} · {{ o[0] }}</b> <span>{{ o[1] }}</span>
         </figcaption>
         <div class="mss-canvas-frame"><StarterOption :option="i + 1" /></div>
+      </figure>
+    </div>
+
+    <div v-else-if="page.id === 'template-places'" class="mss-canvas-grid">
+      <figure v-for="(o, i) in TEMPLATE_PLACES" :key="o[0]" class="mss-canvas-item">
+        <figcaption>
+          <b>{{ i + 1 }} · {{ o[0] }}</b> <span>{{ o[1] }}</span>
+        </figcaption>
+        <div class="mss-canvas-frame"><TemplatePlaceOption :option="i + 1" /></div>
       </figure>
     </div>
 
