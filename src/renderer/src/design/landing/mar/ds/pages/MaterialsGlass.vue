@@ -7,6 +7,7 @@ import '../../search/search.css'
 import '../../templateModal/templateModal.css'
 import '../../pages/MarSelectBar.vue'
 import '../../pages/MarItem.vue'
+import '../../pages/MarUndoToast.vue'
 import '../../FavoriteStar.vue'
 
 /**

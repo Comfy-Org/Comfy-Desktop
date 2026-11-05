@@ -246,6 +246,15 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/TooltipPage.vue'))
   },
   {
+    id: 'toast',
+    label: 'Toast',
+    group: 'Components',
+    title: 'Toast',
+    source: 'mar/pages/MarUndoToast.vue, mar/pages/undo.ts',
+    use: 'Say that something changed on the page you stay on. Never after a redirect.',
+    component: lazy(() => import('./pages/ToastPage.vue'))
+  },
+  {
     id: 'icons',
     label: 'Icons',
     group: 'Components',

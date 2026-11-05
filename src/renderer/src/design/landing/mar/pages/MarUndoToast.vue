@@ -64,9 +64,7 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--tone) 36%, transparent),
-    0 16px 40px -12px rgb(0 0 0 / 0.5);
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.5);
   backdrop-filter: blur(24px) saturate(1.7);
   pointer-events: auto;
 }
