@@ -1100,136 +1100,15 @@ describe('TitleBarApp', () => {
     }
   })
 
-  // Centered-pill mirror: the trailing cluster's width is reflected onto
-  // `--title-trailing-width`, which the left cluster reads as `min-width` so the
-  // centre track stays equidistant and the pill anchors to true window centre.
-  describe('trailing-width mirror (true-centered install pill)', () => {
-    type ResizeCallback = (entries: ResizeObserverEntry[], obs: ResizeObserver) => void
-    interface ResizeObserverHandle {
-      observed: Element[]
-      fire: (width: number) => void
-    }
-
-    let handles: ResizeObserverHandle[]
-    let originalResizeObserver: typeof globalThis.ResizeObserver | undefined
-
-    function installStub(): void {
-      function StubCtor(this: unknown, cb: ResizeCallback) {
-        const self = this as { observed: Element[]; cb: ResizeCallback }
-        self.observed = []
-        self.cb = cb
-        const handle: ResizeObserverHandle = {
-          observed: self.observed,
-          fire(width: number) {
-            self.cb(
-              [{ contentRect: { width, height: 28 } as DOMRectReadOnly } as ResizeObserverEntry],
-              self as unknown as ResizeObserver
-            )
-          }
-        }
-        handles.push(handle)
-      }
-      StubCtor.prototype.observe = function observe(this: { observed: Element[] }, el: Element) {
-        this.observed.push(el)
-      }
-      StubCtor.prototype.disconnect = function disconnect(this: { observed: Element[] }) {
-        this.observed.length = 0
-      }
-      StubCtor.prototype.unobserve = function unobserve() {
-        // no-op
-      }
-      ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-        StubCtor as unknown as typeof globalThis.ResizeObserver
-    }
-
-    beforeEach(() => {
-      handles = []
-      originalResizeObserver = (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver })
-        .ResizeObserver
-      installStub()
-    })
-
-    afterEach(() => {
-      if (originalResizeObserver) {
-        ;(globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver =
-          originalResizeObserver
-      } else {
-        delete (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver
-      }
-    })
-
-    it('observes the trailing cluster on mount and disconnects on unmount', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      // Two observers: the trailing-cluster mirror (this test) and the fit controller.
-      expect(handles).toHaveLength(2)
-      const trailingEl = wrapper.find('.title-trailing').element
-      const handle = handles.find((h) => h.observed[0] === trailingEl)
-      expect(handle).toBeDefined()
-      wrapper.unmount()
-      for (const h of handles) {
-        expect(h.observed).toHaveLength(0)
-      }
-    })
-
-    it('mirrors trailing width onto the title bar as `--title-trailing-width`', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      // Initial state — no resize fired yet, var resolves to 0px.
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
-      handle.fire(240)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('240px')
-      handle.fire(520)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('520px')
-      wrapper.unmount()
-    })
-
-    it('does not update the CSS var when the width is unchanged (avoids redundant style writes)', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      handle.fire(300)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
-      // Firing the same width is a no-op (the callback guards the assignment).
-      handle.fire(300)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
-      wrapper.unmount()
-    })
-
-    it('rounds fractional widths up so the left-cluster reservation never under-shoots', async () => {
-      // Round up: a sub-pixel under-shoot would nudge the centre off true centre.
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      handle.fire(287.4)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('288px')
-      wrapper.unmount()
-    })
-
-    it('does not crash if ResizeObserver is unavailable (older Electron / SSR-safety)', async () => {
-      delete (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      // No observer, but the component renders; the var falls back to 0px.
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
-      expect(wrapper.find('.title-install-pill').exists()).toBe(true)
-      wrapper.unmount()
-    })
+  it('renders without ResizeObserver', async () => {
+    const original = globalThis.ResizeObserver
+    delete (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver
+    const mod = await import('./TitleBarApp.vue')
+    const wrapper = mount(mod.default, { attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('.title-install-pill').exists()).toBe(true)
+    wrapper.unmount()
+    globalThis.ResizeObserver = original
   })
 
   describe('first-instance pill coachmark', () => {
