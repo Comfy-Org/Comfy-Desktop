@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -211,6 +211,21 @@ const pickedHardware = computed(
 // The install wait's Cloud pitch, in the product's own strings.
 const say = (key: string): string =>
   key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], en) as string
+
+// It rotates as production's showcase does (useShowcaseCarousel.ts): the
+// nine cards in its order, one every 7 s, held while hovered or focused.
+const PITCHES = ['cloud', 'gpu', 'models', 'partner', 'license', 'nodes', 'loras', 'queue', 'idle']
+const PITCH_MS = 7000
+const pitchAt = ref(0)
+const pitchHeld = ref(false)
+const pitch = computed(() => PITCHES[pitchAt.value % PITCHES.length])
+let pitchTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  pitchTimer = setInterval(() => {
+    if (flow.step === 'installing' && !pitchHeld.value) pitchAt.value++
+  }, PITCH_MS)
+})
+onBeforeUnmount(() => clearInterval(pitchTimer))
 
 const failed = computed(() => flow.step === 'error')
 
@@ -761,9 +776,24 @@ function rowState(i: number): string {
             <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
           </template>
           <template v-else-if="!flow.confirmCancel">
-            <p class="mss-pitch" role="region" :aria-label="say('installShowcase.label')">
+            <p
+              class="mss-pitch"
+              role="region"
+              :aria-label="say('installShowcase.label')"
+              @mouseenter="pitchHeld = true"
+              @mouseleave="pitchHeld = false"
+              @focusin="pitchHeld = true"
+              @focusout="pitchHeld = false"
+            >
               <Cloud :size="14" class="shrink-0" />
-              <b class="mss-pitch-line">{{ say('installShowcase.cloud.title') }}</b>
+              <Transition name="mss-pitch-swap" mode="out-in">
+                <span :key="pitch" class="mss-pitch-line"
+                  ><b>{{ say(`installShowcase.${pitch}.title`) }}</b
+                  ><span class="mss-pitch-sep">{{
+                    say(`installShowcase.${pitch}.body`)
+                  }}</span></span
+                >
+              </Transition>
               <button type="button" class="mss-link" @click="toast('Opening Comfy Cloud')">
                 {{ say('installShowcase.cloudCta') }}
               </button>
