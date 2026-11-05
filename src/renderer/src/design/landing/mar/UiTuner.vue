@@ -208,6 +208,16 @@ function onScroll(e: Event): void {
           <Row v-if="isMariana" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
+          <!-- Desktop only: the proposed first launch, from its first screen. -->
+          <Row v-if="isMariana && !onCloud" label="Onboarding">
+            <Button
+              variant="secondary"
+              size="sm"
+              class="w-full"
+              @click="showScreen((setupScreen = 'first'))"
+              >Start onboarding</Button
+            >
+          </Row>
           <Row v-if="isMariana" label="Navigation">
             <Select v-model="marNav.id" :options="NAVS" class="w-full" />
           </Row>
@@ -320,8 +330,8 @@ function onScroll(e: Event): void {
         </section>
 
         <!-- Local setup (mar/setup): the proposed install flow behind New
-             Instance and "This computer". Still being defined. -->
-        <section v-if="isMariana" aria-label="Local setup" class="mt-6 flex flex-col">
+             Instance and "This computer", on Desktop. Still being defined. -->
+        <section v-if="isMariana && !onCloud" aria-label="Local setup" class="mt-6 flex flex-col">
           <GroupHead
             title="Local setup"
             note="New Instance"
