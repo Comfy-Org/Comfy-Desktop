@@ -709,13 +709,13 @@ function rowState(i: number): string {
                   <span v-if="!s.credits" class="mss-wf-badge is-size tabular-nums"
                     >~{{ s.gb }} GB</span
                   >
-                  <span class="mss-wf-check" aria-hidden="true"
-                    ><Check :size="12" :stroke-width="3"
-                  /></span>
                 </span>
                 <span class="mss-wf-text">
                   <span class="mss-wf-name">{{ starterName(s) }}</span>
                   <span class="mss-wf-task">{{ starterTask(s) }}</span>
+                  <span class="mss-wf-check" aria-hidden="true"
+                    ><Check :size="15" :stroke-width="2.5"
+                  /></span>
                 </span>
               </button>
             </div>

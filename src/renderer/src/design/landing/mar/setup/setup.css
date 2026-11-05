@@ -1761,18 +1761,17 @@
   font-weight: 500;
   line-height: 1;
 }
+/* Picked: the flow's bare check, beside the name. */
 .mss-wf-check {
   position: absolute;
-  top: 8px;
+  top: 10px;
   right: 8px;
   display: none;
   width: 20px;
   height: 20px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  background-color: var(--color-inverted-background);
-  color: var(--color-inverted-foreground);
+  color: var(--color-base-foreground);
 }
 .mss-wf[aria-checked='true'] .mss-wf-check {
   display: inline-flex;
@@ -1780,7 +1779,8 @@
 .mss-wf-text {
   display: grid;
   min-width: 0;
-  padding: 10px 8px 8px;
+  position: relative;
+  padding: 10px 32px 8px 8px;
   font-size: var(--text-ui);
   line-height: 20px;
 }

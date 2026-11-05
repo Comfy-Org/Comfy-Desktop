@@ -55,7 +55,7 @@ const WAYS = [
         <!-- eslint-disable-next-line vue/no-v-html -- static copy, bold spans only -->
         <span class="mss-way-desc" v-html="w.description"></span>
       </span>
-      <span class="mss-way-mark" aria-hidden="true"><Check :size="12" :stroke-width="3" /></span>
+      <span class="mss-way-mark" aria-hidden="true"><Check :size="15" :stroke-width="2.5" /></span>
     </button>
   </div>
 </template>
@@ -138,7 +138,8 @@ const WAYS = [
   color: var(--color-muted-foreground);
   font-weight: 500;
 }
-/* Picked: a check in a white disc, top right. */
+/* Picked: a bare check, top right, as on every picked card of the flow.
+ * The card's fill and ring already say it's picked. */
 .mss-way-mark {
   position: absolute;
   top: 16px;
@@ -149,17 +150,11 @@ const WAYS = [
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--color-base-foreground);
-  color: var(--color-content-background);
-  opacity: 0;
-  transform: scale(0.6);
-  transition:
-    opacity 160ms ease,
-    transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  color: var(--color-base-foreground);
+  visibility: hidden;
 }
 .mss-way[aria-checked='true'] .mss-way-mark {
-  opacity: 1;
-  transform: scale(1);
+  visibility: visible;
 }
 
 /* Rows: the same cards stacked; the mark is a radio on the right. */
@@ -179,8 +174,7 @@ const WAYS = [
   margin-top: -10px;
 }
 .mss-ways.is-row .mss-way:not([aria-checked='true']) .mss-way-mark {
-  opacity: 1;
-  transform: scale(1);
+  visibility: visible;
   background: transparent;
   box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 25%, transparent);
   color: transparent;
