@@ -508,11 +508,21 @@
   font-size: 13px;
   outline: 2px solid var(--color-border-focus);
 }
+/* The name edits in place: same size and spot as the heading, the ring
+   around it, and the pencil's room kept so the tag doesn't move. */
 :root .proto-ui.proto-ui.proto-ui .mar-ab-input.is-name {
   max-width: 320px;
+  height: 1.4em;
   flex: none;
+  margin-right: 32px;
+  padding: 0;
+  border-radius: 2px;
+  background: none;
+  field-sizing: content;
   font-size: 16px;
   font-weight: 600;
+  line-height: 1.4;
+  outline-offset: 3px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-ab-group {
   padding: 6px 18px 8px;
