@@ -15,6 +15,7 @@ const props = withDefaults(
 )
 
 const innerFrameRef = ref<HTMLElement | null>(null)
+const scrollAreaRef = ref<HTMLElement | null>(null)
 
 // The non-scrolling frame is still a scroll container (overflow: hidden), and
 // the beams give it a scroll range. Without this, a step that scrolled (the
@@ -23,7 +24,9 @@ const innerFrameRef = ref<HTMLElement | null>(null)
 watch(
   () => props.scrollContent,
   (scrolls) => {
-    if (!scrolls && innerFrameRef.value) innerFrameRef.value.scrollTop = 0
+    if (scrolls) return
+    if (innerFrameRef.value) innerFrameRef.value.scrollTop = 0
+    if (scrollAreaRef.value) scrollAreaRef.value.scrollTop = 0
   },
   { flush: 'post' }
 )
@@ -42,7 +45,17 @@ watch(
       >
         <div class="brand-beam" aria-hidden="true" v-html="beamSvg" />
         <div class="brand-beam brand-beam--2" aria-hidden="true" v-html="beam2Svg" />
-        <slot />
+        <!-- In scroll mode the step content scrolls here, apart from the beams:
+             they are taller than the window and would otherwise stretch the
+             scroll range past the end of the content. Always rendered (not
+             v-if) so toggling scroll mode never remounts the step. -->
+        <div
+          ref="scrollAreaRef"
+          class="brand-scroll-area"
+          :class="{ 'brand-scroll-area--active': scrollContent }"
+        >
+          <slot />
+        </div>
       </div>
       <slot name="footer-left" />
       <slot name="footer" />
@@ -107,6 +120,22 @@ watch(
 }
 .brand-inner-frame--scroll-content {
   justify-content: flex-start;
+  padding: 0;
+}
+
+/* Inactive: no box of its own, so the step lays out in the frame as before. */
+.brand-scroll-area {
+  display: contents;
+}
+.brand-scroll-area--active {
+  position: relative;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(2rem, 5vw, 48px);
   overflow-y: auto;
 }
 </style>
