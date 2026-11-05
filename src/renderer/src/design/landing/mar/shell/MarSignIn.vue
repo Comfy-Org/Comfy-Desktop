@@ -4,12 +4,9 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Button from '../../ui/Button.vue'
 import { hostActions } from '../../useProto'
 import hillsSunset from '../assets/hills-sunset.jpg'
-import GradedImage from '../brand/GradedImage.vue'
-import { SILVER_GRADE } from '../brand/imagery'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
- *  SignInCard (Nav options › Account), restyled. A landscape in the
- *  Silver grade (DS › Brand imagery) shows what logging in is for; on hover
+ *  SignInCard (Nav options › Account), restyled. A landscape shows what logging in is for; on hover
  *  it drifts. On the rail it's one icon. */
 const { open = true } = defineProps<{ open?: boolean }>()
 </script>
@@ -17,7 +14,7 @@ const { open = true } = defineProps<{ open?: boolean }>()
 <template>
   <div v-if="open" class="mar-signin">
     <div class="mar-signin-strip">
-      <GradedImage :src="hillsSunset" :grade="SILVER_GRADE" class="mar-signin-shot size-full" />
+      <img :src="hillsSunset" alt="" class="mar-signin-shot size-full object-cover" />
       <span class="mar-signin-mark"><ComfyCLogo :size="14" /></span>
     </div>
     <div class="px-2 pt-2.5 pb-3">
