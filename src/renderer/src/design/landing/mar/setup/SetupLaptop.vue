@@ -26,14 +26,14 @@ const { bad = false } = defineProps<{ bad?: boolean }>()
         <stop offset="1" stop-color="#5b5b61" />
       </linearGradient>
       <linearGradient id="mss-lt-screen" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#2a3a6b" />
-        <stop offset="0.55" stop-color="#1a1d3a" />
-        <stop offset="1" stop-color="#0d0d14" />
+        <stop offset="0" stop-color="#3a3a3e" />
+        <stop offset="0.55" stop-color="#1f1f22" />
+        <stop offset="1" stop-color="#0e0e10" />
       </linearGradient>
       <radialGradient id="mss-lt-glow" cx="0.28" cy="0.2" r="0.75">
-        <stop offset="0" stop-color="#7fa2ff" stop-opacity="0.55" />
-        <stop offset="0.5" stop-color="#8b6cf0" stop-opacity="0.18" />
-        <stop offset="1" stop-color="#8b6cf0" stop-opacity="0" />
+        <stop offset="0" stop-color="#fff" stop-opacity="0.22" />
+        <stop offset="0.5" stop-color="#fff" stop-opacity="0.06" />
+        <stop offset="1" stop-color="#fff" stop-opacity="0" />
       </radialGradient>
       <linearGradient id="mss-lt-sheen" x1="0" y1="0" x2="1" y2="0.6">
         <stop offset="0" stop-color="#fff" stop-opacity="0.14" />
