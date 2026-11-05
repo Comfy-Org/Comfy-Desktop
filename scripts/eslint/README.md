@@ -36,3 +36,26 @@ pnpm exec vitest run scripts/eslint/no-new-vue-style-blocks.test.ts
 
 The tests also run in the normal `pnpm run test` suite. The rule and tests are
 included in the Node TypeScript check.
+
+# No code comments
+
+The local ESLint rule `desktop/no-comments` rejects every comment in linted
+files: line, block, and JSDoc comments in TypeScript, JavaScript, and Vue
+scripts, and HTML comments anywhere in a Vue SFC. It allows tool directives
+that change how a tool behaves: ESLint directives, `@ts-expect-error`,
+`@ts-ignore`, `@ts-nocheck`, triple-slash references, `@vitest-environment`,
+`prettier-ignore`, coverage ignore hints, `@vite-ignore`, `@__PURE__`, and
+shebangs. It also rejects a prose reason after an ESLint directive (`-- why`)
+or after `@ts-expect-error`.
+
+`pnpm run lint:fix` deletes the comment, including its line when the comment
+is alone on it, and strips directive reasons. Run Prettier afterwards to tidy
+any blank lines left behind. CSS comments inside `<style>` blocks, and comments
+in YAML, shell, Python, and other files ESLint does not lint, are outside this
+rule.
+
+Run the focused tests with:
+
+```sh
+pnpm exec vitest run scripts/eslint/no-comments.test.ts
+```

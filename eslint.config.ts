@@ -7,9 +7,14 @@ import globals from 'globals'
 import { configs as tseslintConfigs, parser as tseslintParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
+import noComments from './scripts/eslint/no-comments'
 import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
 
 const extraFileExtensions = ['.vue']
+
+const desktop = {
+  rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
+}
 
 const commonParserOptions = {
   parser: tseslintParser,
@@ -51,9 +56,7 @@ export default defineConfig([
   },
   {
     files: ['./**/*.vue'],
-    plugins: {
-      desktop: { rules: { 'no-new-vue-style-blocks': noNewVueStyleBlocks } }
-    },
+    plugins: { desktop },
     rules: { 'desktop/no-new-vue-style-blocks': 'error' },
     languageOptions: {
       globals: { ...globals.browser },
@@ -67,9 +70,12 @@ export default defineConfig([
   eslintConfigPrettier,
   {
     plugins: {
+      desktop,
       'unused-imports': unusedImports
     },
     rules: {
+      'desktop/no-comments': 'error',
+      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-expect-error': false }],
       'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -90,8 +96,6 @@ export default defineConfig([
     }
   },
   {
-    // Electron `-r` preloads run before the app's ESM bundle and must be CommonJS. Last, so
-    // it wins over the TypeScript presets above.
     files: ['./e2e/support/**/*.cjs'],
     languageOptions: { globals: { ...globals.node } },
     rules: { '@typescript-eslint/no-require-imports': 'off' }
