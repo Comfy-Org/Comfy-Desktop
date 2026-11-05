@@ -225,20 +225,21 @@ test('open-new-install dismisses the popup and mounts the new-install takeover @
   // Configure must scroll no further than the end of its form. The light
   // beams are taller than the window, and when they shared the scrolling box
   // they stretched the scroll range into empty space below Continue.
-  const tail = await ctx.panel.evaluate<number>(
+  const tail = await ctx.panel.evaluate<number | null>(
     `(() => {
       const shell = document.querySelector('.config-shell')
       let box = shell.parentElement
       while (box && getComputedStyle(box).overflowY !== 'auto') box = box.parentElement
-      if (!box) return -1
+      if (!box) return null
       const top = box.getBoundingClientRect().top - box.scrollTop
       const contentEnd = shell.getBoundingClientRect().bottom - top
         + parseFloat(getComputedStyle(box).paddingBottom)
       return box.scrollHeight - Math.max(box.clientHeight, Math.ceil(contentEnd))
     })()`,
   )
-  expect(tail, 'Configure should not scroll past the end of its form').toBeLessThanOrEqual(1)
-  expect(tail).toBeGreaterThanOrEqual(0)
+  expect(tail, 'Configure should have a scrolling box').not.toBeNull()
+  // 2px of slack for fractional layout under display scaling.
+  expect(tail, 'Configure should not scroll past the end of its form').toBeLessThanOrEqual(2)
 })
 
 test('open-install-action with reveal-in-folder keeps the popup open and fires the action @windows @macos @linux', async () => {
