@@ -1116,35 +1116,19 @@
   white-space: nowrap;
 }
 .mss-laptop {
-  position: relative;
   width: 72px;
-  height: 48px;
+  height: 47px;
   flex-shrink: 0;
 }
-.mss-laptop::before {
-  position: absolute;
-  inset: 0 7px 5px;
-  border-radius: 5px 5px 2px 2px;
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklch, var(--color-base-foreground) 16%, transparent),
-    color-mix(in oklch, var(--color-base-foreground) 5%, transparent)
-  );
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
-  content: '';
+.mss-laptop.is-bad .mss-laptop-screen {
+  fill: #141416;
 }
-.mss-laptop::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 5px;
-  border-radius: 1px 1px 5px 5px;
-  background: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
-  content: '';
+.mss-laptop.is-bad .mss-laptop-glow {
+  display: none;
 }
-.mss-machine.is-bad .mss-laptop::before {
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-status-danger) 70%, transparent);
+.mss-laptop.is-bad .mss-laptop-ring {
+  stroke: var(--color-status-danger);
+  stroke-opacity: 0.8;
 }
 /* Rows with their own Change: value over meta, the button at the end. */
 .mss-row.is-change {
@@ -1624,26 +1608,8 @@
     oklch(0.6 0 0 / 0.05);
 }
 .mss-machine.is-hero .mss-laptop {
-  width: 148px;
-  height: 96px;
-}
-.mss-machine.is-hero .mss-laptop::before {
-  inset: 0 14px 9px;
-  border-radius: 9px 9px 3px 3px;
-  background:
-    radial-gradient(
-      ellipse 80% 90% at 30% 0%,
-      color-mix(in oklch, var(--color-base-foreground) 26%, transparent),
-      transparent 75%
-    ),
-    color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  box-shadow:
-    inset 0 0 0 2px color-mix(in oklch, var(--color-base-foreground) 34%, transparent),
-    0 18px 40px -12px color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
-}
-.mss-machine.is-hero .mss-laptop::after {
-  height: 9px;
-  border-radius: 2px 2px 9px 9px;
+  width: 168px;
+  height: 109px;
 }
 .mss-machine.is-hero .mss-machine-title {
   font-size: 22px;

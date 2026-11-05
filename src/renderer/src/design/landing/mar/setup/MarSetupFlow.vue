@@ -51,6 +51,7 @@ import {
   unsupported,
   type Starter
 } from './setupFlow'
+import SetupLaptop from './SetupLaptop.vue'
 import './setup.css'
 
 /**
@@ -387,7 +388,7 @@ function rowState(i: number): string {
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
             <div class="mss-machine is-hero">
-              <span class="mss-laptop" aria-hidden="true"></span>
+              <SetupLaptop />
               <span class="grid min-w-0">
                 <span class="mss-machine-kicker"
                   ><Check :size="11" :stroke-width="3" />Detected</span
@@ -454,7 +455,7 @@ function rowState(i: number): string {
               supported.</DialogDescription
             >
             <div class="mss-machine is-bad">
-              <span class="mss-laptop" aria-hidden="true"></span>
+              <SetupLaptop bad />
               <span class="mss-machine-title">Intel processor</span>
             </div>
           </template>
@@ -778,8 +779,7 @@ function rowState(i: number): string {
             <span class="mr-auto grid text-ui">
               <span class="font-medium text-base-foreground">Cancel current operation?</span>
               <span class="text-subtle-foreground"
-                >The operation will stop where it is. Anything not yet completed will be rolled back
-                where possible.</span
+                >Unfinished steps are rolled back where possible.</span
               >
             </span>
             <Button variant="ghost" size="lg" @click="flow.confirmCancel = false">Cancel</Button>
