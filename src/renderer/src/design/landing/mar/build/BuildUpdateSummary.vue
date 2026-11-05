@@ -88,12 +88,15 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
   margin: 0 -5px;
   padding: 1px 5px;
   border-radius: 6px;
-  color: var(--color-base-foreground);
-  font-weight: 500;
-  transition: background-color 140ms ease;
+  color: inherit;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
+/* Quiet like the rest of the line; it lights up only when reached for. */
 :root .proto-ui.proto-ui.proto-ui .bus-channel:is(:hover, [data-state='open']) {
   background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  color: var(--color-base-foreground);
 }
 .bus-menu-head {
   margin: 0;
