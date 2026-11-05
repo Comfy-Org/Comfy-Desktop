@@ -49,16 +49,18 @@
   }
 }
 
-/* A page under a photo: its title sits low on the photo, larger. */
+/* A page under a photo: its title sits low on the photo, larger. Space
+   above follows the window's height and the title its smaller side, so a
+   laptop and a big monitor both read right. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
-  padding-top: 88px;
+  padding-top: clamp(16px, calc(9vh - 40px), 88px);
 }
 /* Home's greeting sits a quarter higher, so less of the top is empty. */
 :root[data-mar-ui='on'] .mar-home > section:first-child {
   padding-top: 12px;
 }
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child h1 {
-  font-size: 52px;
+  font-size: clamp(32px, min(3.6vw, 6vh), 52px);
   line-height: 1.05;
   letter-spacing: -0.025em;
 }
