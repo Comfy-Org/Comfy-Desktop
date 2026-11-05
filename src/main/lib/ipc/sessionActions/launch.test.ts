@@ -3704,6 +3704,15 @@ describe('agent requirements at launch', () => {
       expect(sent.join('')).toContain('Keeping the installed agent comfy-agent==0.1.0rc7')
     })
 
+    it('keeps nothing when this core dropped the hand-typed flag', async () => {
+      launchHarness.schemaNames = ['listen', 'feature-flag']
+
+      await handleLaunch(ctxFor('agent-reqs-hand-typed-unsupported'))
+
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(sent.join('')).not.toContain('Keeping the installed agent')
+    })
+
     it("follows core's file when a beta grant added the flag", async () => {
       launchHarness.grants = [AGENT_GRANT]
       launchHarness.launchCommand = {

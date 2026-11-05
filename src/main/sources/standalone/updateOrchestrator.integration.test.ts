@@ -17,7 +17,9 @@ const SENTINEL_ACTIVE_PY = '__TEST_ACTIVE_PY__'
 // vi.hoisted ensures this exists before any vi.mock factory runs.
 const spawnState = vi.hoisted(() => ({
   pythonHandler: undefined as undefined | ((args: string[]) => ChildProcess),
-  uvHandler: undefined as undefined | ((args: string[], options?: { cwd?: string }) => ChildProcess),
+  uvHandler: undefined as
+    | undefined
+    | ((args: string[], options?: { cwd?: string }) => ChildProcess),
   uvCalls: [] as string[][]
 }))
 
@@ -530,7 +532,12 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       ['no launch args recorded', undefined, '1.59.0.dev2', {}],
       ["an installed frontend equal to core's", '--enable-agent', '1.58.5', {}],
       ["an installed frontend older than core's", '--enable-agent', '1.57.0', {}],
-      ['only the placeholder agent installed', '--enable-agent', '1.59.0.dev2', { agent: '0.0.0.dev0' }],
+      [
+        'only the placeholder agent installed',
+        '--enable-agent',
+        '1.59.0.dev2',
+        { agent: '0.0.0.dev0' }
+      ],
       [
         'core pinning a real agent',
         '--enable-agent',
