@@ -4,29 +4,26 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Button from '../../ui/Button.vue'
 import { hostActions } from '../../useProto'
 import hillsSunset from '../assets/hills-sunset.jpg'
-import portraitGarden from '../assets/portrait-garden.jpg'
-import portraitSun from '../assets/portrait-sun.jpg'
 import GradedImage from '../brand/GradedImage.vue'
 import { SILVER_GRADE } from '../brand/imagery'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
- *  SignInCard (Nav options › Account), restyled. A strip of outputs in the
+ *  SignInCard (Nav options › Account), restyled. A landscape in the
  *  Silver grade (DS › Brand imagery) shows what logging in is for; on hover
  *  it drifts. On the rail it's one icon. */
 const { open = true } = defineProps<{ open?: boolean }>()
-
-const STRIP = [portraitSun, hillsSunset, portraitGarden]
 </script>
 
 <template>
   <div v-if="open" class="mar-signin">
     <div class="mar-signin-strip">
-      <span v-for="src in STRIP" :key="src" class="mar-signin-shot">
-        <GradedImage :src="src" :grade="SILVER_GRADE" class="size-full" />
-      </span>
+      <GradedImage :src="hillsSunset" :grade="SILVER_GRADE" class="mar-signin-shot size-full" />
       <span class="mar-signin-mark"><ComfyCLogo :size="14" /></span>
     </div>
-    <p class="px-2 pt-2.5 pb-3 font-medium text-base-foreground">Sync and run on Comfy Cloud</p>
+    <div class="px-2 pt-2.5 pb-3">
+      <p class="font-medium text-base-foreground">Log in to Comfy</p>
+      <p class="mt-0.5 text-subtle-foreground">Sync and run on Comfy Cloud</p>
+    </div>
     <Button variant="primary" block @click="hostActions.signIn()">Log in</Button>
   </div>
   <button
@@ -55,29 +52,17 @@ const STRIP = [portraitSun, hillsSunset, portraitGarden]
 }
 .mar-signin-strip {
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
-  height: 64px;
+  height: 72px;
   overflow: hidden;
   border-radius: var(--radius-control);
 }
 .mar-signin-shot {
-  overflow: hidden;
-}
-.mar-signin-shot > * {
   transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.mar-signin-shot:nth-child(2) > * {
-  transition-delay: 40ms;
-}
-.mar-signin-shot:nth-child(3) > * {
-  transition-delay: 80ms;
-}
-.mar-signin:hover .mar-signin-shot > * {
+.mar-signin:hover .mar-signin-shot {
   transform: scale(1.08) translateY(-2px);
 }
-/* The mark sits on the pictures, so it keeps one look in both themes. */
+/* The mark sits on the picture, so it keeps one look in both themes. */
 .mar-signin-mark {
   position: absolute;
   top: 50%;
@@ -98,7 +83,7 @@ const STRIP = [portraitSun, hillsSunset, portraitGarden]
   transform: translate(-50%, calc(-50% - 2px)) scale(1.05);
 }
 @media (prefers-reduced-motion: reduce) {
-  .mar-signin-shot > *,
+  .mar-signin-shot,
   .mar-signin-mark {
     transition: none;
   }
