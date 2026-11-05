@@ -25,7 +25,8 @@ import {
   overrideSignature,
   parseInstalled,
   parseAgentRequirementsOverride,
-  pinsOverBareLines
+  pinsOverBareLines,
+  readOverrideState
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -516,8 +517,7 @@ export type Deferral = 'agent' | 'update'
  * core's own file. On a fresh install the override waits for core's file and then goes in on the
  * same launch. What does not download in time is handed to `onDeferred` for a background download;
  * a failure of core's file no download can fix goes to `onCoreFailed` instead. Returns the decision
- * to report, if any. `handTyped`: the user put `--enable-agent` in their own launch args, so with
- * no override a working agent they installed is kept over core's placeholder too.
+ * to report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -526,8 +526,7 @@ export async function installAgentRequirements(
   override?: unknown,
   overrideState: AgentOverrideState | null = null,
   onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void,
-  onCoreFailed?: (report: InstallReport) => void,
-  handTyped = false
+  onCoreFailed?: (report: InstallReport) => void
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
@@ -612,22 +611,17 @@ export async function installAgentRequirements(
     prepare
   )
   if (signal?.aborted || decision?.decision === 'applied') return decision
-  // Core's file would put the placeholder over a working agent: keep that agent instead. Without an
-  // override only for a hand-typed flag: a campaign answer that dropped its override means core's.
-  if (
-    decision ? !(decision.decision === 'refused' && decision.reason === 'core_first') : handTyped
-  ) {
+  // Core's file would put the placeholder over a working agent: keep that agent instead.
+  if (decision && !(decision.decision === 'refused' && decision.reason === 'core_first')) {
     kept = await installedWorkingAgent(plan, overrideState, signal)
     if (signal?.aborted) return decision
   }
   if (decision?.decision === 'deferred') await defer(false)
-  if (kept !== null) {
+  if (kept !== null && decision) {
     sendOutput(
       `Keeping the installed agent ${kept} instead: ComfyUI's agent requirements pin only a placeholder\n`
     )
-    return decision
-      ? { ...decision, kept }
-      : { decision: 'kept_installed', reason: 'hand_typed', kept }
+    return { ...decision, kept }
   }
   const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
   if (signal?.aborted) return decision
@@ -674,9 +668,9 @@ export async function installedWorkingAgent(
 /**
  * The frontend an update keeps under an agent the user forces on by hand, as `name==version` for
  * uv's `--override`: their own launch args carry `--enable-agent` and the installed frontend is
- * newer than the one `requirementsText` pins, which may have no Agent button. It doesn't check that
- * a real agent is installed: the flag is the user's word for it. Null otherwise, or when anything
- * can't be read. Never throws.
+ * newer than the one `requirementsText` pins, which may have no Agent button. Only where the launch
+ * keeps the agent too: core's agent file pins the placeholder and a real agent is installed. Null
+ * otherwise, or when anything can't be read. Never throws.
  */
 export async function handForcedFrontend(
   installation: InstallationRecord,
@@ -690,11 +684,16 @@ export async function handForcedFrontend(
   if (pinned === null || typeof launchArgs !== 'string' || typeof installPath !== 'string')
     return null
   if (!parseArgs(launchArgs).includes(ENABLE_AGENT_ARG)) return null
+  const agentFile = path.join(installPath, 'ComfyUI', AGENT_REQUIREMENTS)
+  const coreText = await fs.promises.readFile(agentFile, 'utf-8').catch(() => null)
+  if (coreText === null || !corePinsPlaceholderAgent(coreText)) return null
   const listed = await listInstalled({ uvPath, pythonPath, installPath }, signal)
-  const installed = parseInstalled(listed ?? '')?.find(
-    (p) => normalizePackageName(p.name) === FRONTEND_PACKAGE
-  )?.version
+  if (listed === null) return null
   try {
+    if (keepableAgent(coreText, listed, readOverrideState(installation)) === null) return null
+    const installed = parseInstalled(listed)?.find(
+      (p) => normalizePackageName(p.name) === FRONTEND_PACKAGE
+    )?.version
     // A local label (`+cu`) has no order against a public pin: compare its public part.
     return installed !== undefined && compareVersions(installed.split('+')[0]!, pinned) > 0
       ? `${FRONTEND_PACKAGE}==${installed}`

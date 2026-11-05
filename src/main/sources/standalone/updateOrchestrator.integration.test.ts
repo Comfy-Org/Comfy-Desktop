@@ -17,7 +17,7 @@ const SENTINEL_ACTIVE_PY = '__TEST_ACTIVE_PY__'
 // vi.hoisted ensures this exists before any vi.mock factory runs.
 const spawnState = vi.hoisted(() => ({
   pythonHandler: undefined as undefined | ((args: string[]) => ChildProcess),
-  uvHandler: undefined as undefined | ((args: string[]) => ChildProcess),
+  uvHandler: undefined as undefined | ((args: string[], options?: { cwd?: string }) => ChildProcess),
   uvCalls: [] as string[][]
 }))
 
@@ -86,7 +86,7 @@ vi.mock('child_process', async (importOriginal) => {
         spawnState.uvHandler
       ) {
         spawnState.uvCalls.push([...(args ?? [])])
-        return spawnState.uvHandler([...(args ?? [])])
+        return spawnState.uvHandler([...(args ?? [])], options as { cwd?: string } | undefined)
       }
       return actual.spawn(command, args as string[], options as Parameters<typeof actual.spawn>[2])
     })
@@ -447,11 +447,12 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
   // update after a fresh install doesn't.
   describe.each([false, true])('an agent the user forces on by hand (dry run %s)', (dryRun) => {
     const NEWER = 'comfyui-frontend-package==1.59.0.dev2'
-    /** The `--override` file each real install (not the dry run) was given, read when uv ran. */
-    let overrides: string[] = []
+    const PLACEHOLDER = 'comfy-agent==0.0.0.dev0\n'
+    /** The `--override` file each uv install was given, read from uv's own cwd when it ran. */
+    let overrides: { dryRun: boolean; text: string }[] = []
 
-    /** Move v0.2.0 to a commit whose requirements pin core's older frontend. */
-    const pinCoreFrontend = (): string => {
+    /** Move v0.2.0 to a commit whose requirements pin core's older frontend and `agentFile`. */
+    const pinCoreFrontend = (agentFile: string): string => {
       const git = (...args: string[]): string =>
         execFileSync('git', args, { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' })
           .toString()
@@ -461,54 +462,83 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         path.join(comfyuiDir, 'requirements.txt'),
         'torch==2.0\nfoo==2.0\ncomfyui-frontend-package==1.58.5\n'
       )
-      git('commit', '-am', 'pin frontend')
+      fs.writeFileSync(path.join(comfyuiDir, 'agent_requirements.txt'), agentFile)
+      git('add', '-A')
+      git('commit', '-m', 'pin frontend')
       git('tag', '-f', 'v0.2.0')
       const sha = git('rev-parse', 'HEAD')
       git('checkout', 'v0.1.0', '--detach')
       return sha
     }
 
-    const run = async (launchArgs: string, installed: string): Promise<void> => {
-      spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, pinCoreFrontend())
+    const run = async (
+      launchArgs: string | undefined,
+      installed: string,
+      { agent = '0.1.0rc7', agentFile = PLACEHOLDER, installExit = 0 } = {}
+    ): Promise<{ ok: boolean; output: string }> => {
+      spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, pinCoreFrontend(agentFile))
       overrides = []
-      spawnState.uvHandler = (args: string[]) => {
+      spawnState.uvHandler = (args, options) => {
         if (args.includes('list')) {
-          return fakeProc({
-            stdout: [JSON.stringify([{ name: 'comfyui-frontend-package', version: installed }])]
-          })
+          const listed = [
+            { name: 'comfyui-frontend-package', version: installed },
+            { name: 'comfy-agent', version: agent }
+          ]
+          return fakeProc({ stdout: [JSON.stringify(listed)] })
         }
         const at = args.indexOf('--override')
-        if (at >= 0 && !args.includes('--dry-run'))
-          overrides.push(fs.readFileSync(path.join(installPath, args[at + 1]!), 'utf-8'))
-        return fakeProc({ exitCode: 0 })
+        if (at >= 0) {
+          const text = fs.readFileSync(path.resolve(options!.cwd!, args[at + 1]!), 'utf-8')
+          overrides.push({ dryRun: args.includes('--dry-run'), text })
+        }
+        return fakeProc({ exitCode: args.includes('--dry-run') ? 0 : installExit })
       }
       const opts = makeBaseOpts(installPath, { dryRunConflictCheck: dryRun })
       opts.installation = { ...opts.installation, launchArgs }
-      expect((await runComfyUIUpdate(opts)).ok).toBe(true)
+      const { ok } = await runComfyUIUpdate(opts)
+      const output = vi.mocked(opts.sendOutput!).mock.calls.join('')
+      expect(fs.existsSync(path.join(installPath, '.update-frontend-override.txt'))).toBe(false)
+      return { ok, output }
     }
+    const installs = (): string[] => overrides.filter((o) => !o.dryRun).map((o) => o.text)
 
     it("keeps a newer installed frontend over core's pin", async () => {
-      await run('--listen --enable-agent', '1.59.0.dev2')
+      const { ok, output } = await run('--listen --enable-agent', '1.59.0.dev2')
 
-      expect(overrides).toEqual([`${NEWER}\n`])
-      expect(fs.existsSync(path.join(installPath, '.update-frontend-override.txt'))).toBe(false)
+      expect(ok).toBe(true)
+      expect(overrides).toEqual(
+        [...(dryRun ? [true] : []), false].map((d) => ({ dryRun: d, text: `${NEWER}\n` }))
+      )
+      expect(output).toContain(`Keeping the installed ${NEWER} for the agent`)
     })
 
     it('keeps a newer frontend with a local build label, whole', async () => {
       await run('--enable-agent', '1.59.0.dev2+local')
 
-      expect(overrides).toEqual(['comfyui-frontend-package==1.59.0.dev2+local\n'])
+      expect(installs()).toEqual(['comfyui-frontend-package==1.59.0.dev2+local\n'])
     })
 
-    it('leaves the frontend to core without a hand-typed --enable-agent', async () => {
-      await run('--listen', '1.59.0.dev2')
+    it('removes the override file when the install fails', async () => {
+      const { ok } = await run('--enable-agent', '1.59.0.dev2', { installExit: 1 })
 
-      expect(overrides).toEqual([])
+      expect(ok).toBe(false)
+      expect(installs()).toEqual([`${NEWER}\n`])
     })
 
-    it("leaves the frontend to core when the installed one is not newer than core's", async () => {
-      await run('--listen --enable-agent', '1.57.0')
-
+    it.each([
+      ['no hand-typed --enable-agent', '--listen', '1.59.0.dev2', {}],
+      ['no launch args recorded', undefined, '1.59.0.dev2', {}],
+      ["an installed frontend equal to core's", '--enable-agent', '1.58.5', {}],
+      ["an installed frontend older than core's", '--enable-agent', '1.57.0', {}],
+      ['only the placeholder agent installed', '--enable-agent', '1.59.0.dev2', { agent: '0.0.0.dev0' }],
+      [
+        'core pinning a real agent',
+        '--enable-agent',
+        '1.59.0.dev2',
+        { agentFile: 'comfy-agent==0.1.0\n' }
+      ]
+    ])('leaves the frontend to core with %s', async (_case, launchArgs, installed, extra) => {
+      expect((await run(launchArgs, installed, extra)).ok).toBe(true)
       expect(overrides).toEqual([])
     })
   })

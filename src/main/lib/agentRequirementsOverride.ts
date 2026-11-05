@@ -391,8 +391,7 @@ export type OverrideDecision =
       staysInstalled?: OverridePins
     } & Kept)
   /** A member's campaign flag gave no answer in time, so the launch has no override to try. */
-  /** `hand_typed`: the user's own `--enable-agent` with no override. */
-  | { decision: 'kept_installed'; reason: 'no_answer' | 'hand_typed'; kept: string; pins?: never }
+  | { decision: 'kept_installed'; reason: 'no_answer'; pins?: undefined; kept: string }
 
 const PLACEHOLDER_VERSION = /^0\.0\.0(?!\d)/
 /** A `name==version` line, extras allowed: core's agent line can carry them. */
@@ -471,8 +470,6 @@ export function reportOverrideDecision(
   d: OverrideDecision,
   index: IndexKind | null = null
 ): void {
-  // No campaign decided a hand-typed keep, and this event reports campaign decisions.
-  if (d.decision === 'kept_installed' && d.reason === 'hand_typed') return
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
     const install = 'install' in d ? d.install : undefined

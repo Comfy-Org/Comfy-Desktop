@@ -2594,42 +2594,6 @@ describe('installAgentRequirements with a version override', () => {
       expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
     })
 
-    it('keeps it when the user typed --enable-agent with no override, installing nothing', async () => {
-      const sendOutput = vi.fn()
-      const decision = await installAgentRequirements(
-        plan,
-        sendOutput,
-        undefined,
-        undefined,
-        null,
-        undefined,
-        undefined,
-        true
-      )
-
-      expect(decision).toEqual({ decision: 'kept_installed', reason: 'hand_typed', kept: KEPT })
-      expect(calls).toEqual([])
-      expect(sendOutput.mock.calls.join('')).toContain(`Keeping the installed agent ${KEPT}`)
-    })
-
-    it('falls back to core for a hand-typed flag when only the placeholder is installed', async () => {
-      installedAgent('0.0.0.dev0')
-
-      const decision = await installAgentRequirements(
-        plan,
-        vi.fn(),
-        undefined,
-        undefined,
-        null,
-        undefined,
-        undefined,
-        true
-      )
-
-      expect(decision).toBeUndefined()
-      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
-    })
-
     it("follows core's file when a valid answer carries no override (a dropped override)", async () => {
       const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined)
 

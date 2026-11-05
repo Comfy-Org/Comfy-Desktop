@@ -386,9 +386,9 @@ export async function runComfyUIUpdate(
           .filter((l) => !PYTORCH_RE.test(l.trim()))
           .join('\n')
         const filteredReqPath = path.join(installPath, '.comfyui-reqs-filtered.txt')
-        await fs.promises.writeFile(filteredReqPath, filteredReqs, 'utf-8')
 
         try {
+          await fs.promises.writeFile(filteredReqPath, filteredReqs, 'utf-8')
           const indexArgs = getPipIndexArgs(
             settings.get('pypiMirror'),
             settings.get('useChineseMirrors') === true

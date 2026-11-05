@@ -1607,12 +1607,16 @@ async function runLaunch(
   //
   // A member whose campaign flag didn't answer in time keeps the agent a previous launch installed,
   // with nothing installed: there is no override to try, and core's file may pin only a placeholder.
+  // So does a user who typed the flag (and this core kept it): no campaign gives them an override.
   let kept: string | null = null
-  if (agentUnanswered && launchCmd.args) {
+  const handTyped = agentHandTyped && launchCmd.args?.includes('--enable-agent') === true
+  if ((agentUnanswered || handTyped) && launchCmd.args) {
     const plan = planAgentRequirementsInstall(inst, [...launchCmd.args, '--enable-agent'])
     kept = plan && (await installedWorkingAgent(plan, readOverrideState(inst), abort.signal))
     if (abort.signal.aborted) return { ok: false, cancelled: true }
-    if (kept) {
+    if (kept && handTyped) {
+      makeSendOutput(sender, installationId)(`\nKeeping the installed agent ${kept}\n`)
+    } else if (kept) {
       launchCmd.args.push('--enable-agent')
       makeSendOutput(
         sender,
@@ -1663,8 +1667,7 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
-      },
-      agentHandTyped
+      }
     )
     if (abort.signal.aborted) {
       startHandedBack()
