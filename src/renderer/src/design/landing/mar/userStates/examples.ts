@@ -15,49 +15,61 @@ export interface Example {
   label: string
   kind: 'Image' | 'Video'
   runs: string
+  /** What goes in. */
   src: string
+  /** What comes out: the front card of the arc sweeps between the two. */
+  after: string
+  /** Where each picture sits in a tall card (object-position x), when its
+   *  subject is off centre. */
+  focus?: [string, string]
   video?: string
-  /** The app it opens once apps are in (EXAMPLE_APPS). */
+  /** The app it opens once apps are in. */
   app: string
 }
 
 export const EXAMPLES: Example[] = [
   {
-    label: 'Remove a background',
-    app: 'e-background',
-    kind: 'Image',
-    runs: '~10 s',
-    src: mock('start-remove-a-background')
-  },
-  {
-    label: 'Turn a photo into video',
-    app: 'e-video',
+    label: 'Re-shoot a video',
+    app: 's-reshoot',
     kind: 'Video',
     runs: '~1 min',
-    // A real ComfyUI output: the What's new banner's loops sit on this page too.
-    src: mock('clip-eye'),
-    video: './install-showcase-scene/Assets/eye.webm'
+    src: mock('app-reshoot-a-video'),
+    after: mock('app-reshoot-a-video-after'),
+    focus: ['50%', '85%']
+  },
+  {
+    label: 'Relight a scene',
+    app: 'e-relight',
+    kind: 'Image',
+    runs: '~20 s',
+    src: mock('app-relight-a-scene'),
+    after: mock('app-relight-a-scene-after'),
+    focus: ['80%', '80%']
+  },
+  {
+    label: 'Cinematic Studio',
+    app: 's-cine',
+    kind: 'Image',
+    runs: '~20 s',
+    src: mock('app-cinematic-studio'),
+    after: mock('app-cinematic-studio-after')
   },
   {
     label: 'Reshoot your product',
     app: 'e-reshoot',
     kind: 'Image',
     runs: '~20 s',
-    src: mock('start-reshoot-your-product')
+    src: mock('app-reshoot-your-product'),
+    after: mock('app-reshoot-your-product-after')
   },
   {
-    label: 'Upscale to 4K',
-    app: 'e-upscale',
-    kind: 'Image',
-    runs: '~15 s',
-    src: mock('start-upscale-to-4k')
-  },
-  {
-    label: 'Relight a portrait',
-    app: 'e-relight',
-    kind: 'Image',
-    runs: '~20 s',
-    src: mock('start-relight-a-portrait')
+    label: 'Openjutsu',
+    app: 's-jutsu',
+    kind: 'Video',
+    runs: '~1 min',
+    src: mock('app-openjutsu'),
+    after: mock('app-openjutsu-after'),
+    focus: ['45%', '50%']
   }
 ]
 

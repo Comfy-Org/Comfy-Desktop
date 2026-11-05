@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
+import { EXAMPLES, reducedMotion, runExample } from './examples'
 
 /**
  * First-time examples · Arc carousel: the examples stand on a wide 3D
@@ -13,12 +13,16 @@ import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
  * when you flip. The arc wraps around and turns on a spring: ← →, a click
  * on a side card, a drag or a sideways scroll. Pointing at the front card
  * (or focusing it) shows its Run button at the bottom; Enter runs it.
- * Run never says where: on Desktop it runs on Desktop, on Cloud on Cloud.
+ * The front card shows what its app does: a soft gradient sweeps it from
+ * what goes in to what comes out and back; the rest stay still until they reach the
+ * front. Run never says where: on Desktop it runs on Desktop, on Cloud on
+ * Cloud.
  */
 const N = EXAMPLES.length
 const ANGLE = 24 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
+const HOLD = 3000 // ms each side of the front card stays up
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
 const pos = ref(Math.floor(N / 2))
@@ -26,6 +30,18 @@ const target = ref(pos.value)
 const dragging = ref(false)
 const cards = ref<HTMLElement[]>([])
 const active = computed(() => mod(Math.round(target.value), N))
+
+// The front card's sweep: each new front card starts from what goes in.
+const after = ref(false)
+let sweep: ReturnType<typeof setInterval> | undefined
+function play(): void {
+  clearInterval(sweep)
+  after.value = false
+  if (!reducedMotion()) sweep = setInterval(() => (after.value = !after.value), HOLD)
+}
+onMounted(play)
+watch(active, play)
+onBeforeUnmount(() => clearInterval(sweep))
 
 function mod(a: number, n: number): number {
   return ((a % n) + n) % n
@@ -192,12 +208,22 @@ function wheel(e: WheelEvent): void {
         :aria-label="
           i === active ? `Run ${x.label}, ${x.kind}, ${x.runs}` : `${x.label}, ${x.kind}, ${x.runs}`
         "
-        @mouseenter="i === active && playLoop($event.currentTarget as Element, true)"
-        @mouseleave="playLoop($event.currentTarget as Element, false)"
         @click="pick(i)"
       >
-        <img :src="x.src" alt="" draggable="false" />
-        <video v-if="x.video" :src="x.video" muted loop playsinline preload="none" />
+        <img
+          :src="x.src"
+          alt=""
+          draggable="false"
+          :style="x.focus && { objectPosition: `${x.focus[0]} 50%` }"
+        />
+        <img
+          :src="x.after"
+          alt=""
+          draggable="false"
+          class="mar-arc-after"
+          :class="i === active && after && 'is-on'"
+          :style="x.focus && { objectPosition: `${x.focus[1]} 50%` }"
+        />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
@@ -234,8 +260,7 @@ function wheel(e: WheelEvent): void {
 .mar-arc-stage.is-dragging {
   cursor: grabbing;
 }
-.mar-arc-card img,
-.mar-arc-card video {
+.mar-arc-card img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -243,13 +268,23 @@ function wheel(e: WheelEvent): void {
   object-fit: cover;
   pointer-events: none;
 }
-.mar-arc-card video {
-  opacity: 0;
-  transition: opacity 300ms ease;
+/* What comes out sweeps in behind a soft edge: a wide gradient, no line. */
+@property --arc-sweep {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: -40%;
 }
-.mar-arc-card.is-front:hover video,
-.mar-arc-card.is-front:focus-visible video {
-  opacity: 1;
+.mar-arc-card .mar-arc-after {
+  --arc-sweep: -40%;
+  mask-image: linear-gradient(
+    100deg,
+    #000 calc(var(--arc-sweep) - 35%),
+    transparent calc(var(--arc-sweep) + 35%)
+  );
+  transition: --arc-sweep 1500ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+.mar-arc-card .mar-arc-after.is-on {
+  --arc-sweep: 140%;
 }
 .mar-arc-fade {
   position: absolute;
@@ -353,7 +388,7 @@ function wheel(e: WheelEvent): void {
   margin-top: 8px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .mar-arc-card video,
+  .mar-arc-card .mar-arc-after,
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;

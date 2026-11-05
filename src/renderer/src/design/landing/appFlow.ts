@@ -517,7 +517,7 @@ export const EXAMPLE_APPS: LibApp[] = [
     'e-reshoot',
     'Reshoot your product',
     'Put your product in a new scene.',
-    'api_google_nano_banana2_image_edit~start-reshoot-your-product',
+    'api_google_nano_banana2_image_edit~app-reshoot-your-product',
     'Comfy',
     0.06
   ),
@@ -531,9 +531,9 @@ export const EXAMPLE_APPS: LibApp[] = [
   ),
   hub(
     'e-relight',
-    'Relight a portrait',
-    'New light on any portrait.',
-    'image_z_image_turbo~start-relight-a-portrait',
+    'Relight a scene',
+    'New light on any scene.',
+    'image_z_image_turbo~app-relight-a-scene',
     'Comfy',
     0.04
   )
