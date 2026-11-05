@@ -1702,16 +1702,9 @@
   content: none;
 }
 
-/* The first screen's title, at the Home greeting's scale and tracking. */
+/* The first screen's title and lead match every other step's. */
 .mss-col .mss-first-title {
-  font-size: 36px;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
-}
-.mss-col .mss-first-lead {
-  margin-top: 10px;
-  font-size: 15px;
-  line-height: 22px;
+  line-height: 24px;
 }
 .mss-col .mss-ways,
 .mss-col .mss-first-cards {
