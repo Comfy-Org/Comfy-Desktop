@@ -617,7 +617,7 @@ const newLabel = computed(() =>
         v-if="state === 'live' || state === 'loading'"
         variant="primary"
         @click="hostActions.newInstance()"
-        ><Plus :size="15" />Build</Button
+        ><Plus :size="15" />New Build</Button
       >
     </template>
 
