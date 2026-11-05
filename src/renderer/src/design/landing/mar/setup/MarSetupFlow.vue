@@ -690,8 +690,8 @@ function rowState(i: number): string {
            The Cloud pitch is one line in the bar. Error: today's Operation
            failed, in place. -->
       <template v-else>
-        <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body">
-          <DialogTitle as="h3" class="sr-only">{{
+        <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body mss-body-inst">
+          <DialogTitle as="h3" class="text-title font-semibold">{{
             failed ? 'Operation failed' : 'Installing ComfyUI'
           }}</DialogTitle>
           <!-- Status on the left: today's five steps, all in view, the
@@ -699,12 +699,6 @@ function rowState(i: number): string {
                today's showcase clips, one at a time, in place of the scene. -->
           <section class="mss-inst" :class="failed && 'is-err'">
             <div class="mss-inst-main">
-              <span class="mss-inst-count tabular-nums"
-                >Step {{ nowIndex + 1 }} of {{ phases.length }}</span
-              >
-              <span class="mss-stage-title is-big">{{
-                failed ? 'Operation failed' : 'Installing ComfyUI'
-              }}</span>
               <ol class="mss-inst-steps" aria-live="polite">
                 <li
                   v-for="(p, i) in phases"

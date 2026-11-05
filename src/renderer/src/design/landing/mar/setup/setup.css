@@ -1485,12 +1485,6 @@
   min-width: 0;
   align-content: start;
 }
-.mss-inst-count {
-  margin-bottom: 4px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  line-height: 16px;
-}
 .mss-inst-steps {
   display: grid;
   margin: 20px 0 14px;
@@ -1652,6 +1646,21 @@
  * download's bar comes and goes. */
 .mss-inst:not(.is-err) .mss-inst-main {
   min-height: 340px;
+}
+/* Install's title sits where every other screen's does; the steps and the
+   panel take the room under it. */
+.mar-wizard-body.mss-body-inst {
+  display: flex;
+  flex-direction: column;
+}
+.mss-body-inst .mss-inst {
+  flex: 0 0 auto;
+  height: auto;
+  margin-top: 24px;
+  align-items: start;
+}
+.mss-body-inst .mss-inst-steps {
+  margin-top: 0;
 }
 .mss-foot .mss-pitch {
   justify-content: flex-start;
