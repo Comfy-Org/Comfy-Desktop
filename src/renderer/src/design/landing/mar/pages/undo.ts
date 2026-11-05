@@ -7,7 +7,7 @@ import { proto } from '../../useProto'
  * it back for a few seconds. One at a time; a new one replaces the last.
  * Only for what changes on the page you stay on: going somewhere else, or
  * work the page already shows, says nothing. The shared toast() lands here
- * too while Mar's UI is on, less those messages.
+ * too while Mar's UI is on, less those messages and the prototype's own notes.
  */
 export type ToastTone = 'success' | 'info' | 'warning' | 'error'
 
@@ -27,7 +27,7 @@ export const undoToast = reactive<{
 export function toneOf(message: string): ToastTone {
   if (/^(couldn|could not)|failed|didn.t/i.test(message)) return 'error'
   if (/^not enough|stops working/i.test(message)) return 'warning'
-  return /\b(copied|ready|exported|saved|added|created|restored|changed|complete|duplicated|renamed|invited|queued|cleared|up to date|is live|live again|logged in|is on ComfyUI|is now a|now runs on)\b/i.test(
+  return /\b(copied|ready|exported|saved|added|created|restored|changed|complete|duplicated|renamed|invited|queued|cleared|updated|up to date|is live|live again|logged in|is on ComfyUI|is now a|now runs on)\b/i.test(
     message
   )
     ? 'success'
@@ -57,16 +57,22 @@ export function runUndo(): void {
   fn?.()
 }
 
-/** toast()'s stand-ins for a page, a window, a picker or work in progress. */
-const ELSEWHERE =
-  /(…|↗)$|\bopens\b|^(open|opening|opened|revealed|shows|pick|choose|watch|try|searching|signing|playing|learn more|release notes|all launches|add credits|update payment|create workspace|build settings|new build flow|new project|new api key|invite to)\b/i
+/** Notes of the prototype itself, standing in for a page, a window or a
+ *  picker it doesn't have: not part of the product, so they stay in the plain
+ *  white toast (ui/Toaster.vue), never this one. */
+const STAND_IN =
+  /↗$|\bopens\b|\bsettings$|rename, duplicate, delete$|^(open|opening|opened|revealed|shows|showing|pick|choose|watch|try|searching|signing|playing|guide:|delete|learn more|release notes|all launches|add credits|buy credits|change plan|update payment|create workspace|new build flow|new project|new api key|add provider key|invite to|account settings|switch account|sign in$|console|instance picker|invoices|app menu|attach examples|upload logo)\b/i
+
+/** Work the page already shows: the product says nothing. */
+const SHOWN = /…$/
 
 watch(
   () => proto.toast,
   (message) => {
     if (!message || document.documentElement.dataset.marUi !== 'on') return
+    if (STAND_IN.test(message)) return
     proto.toast = ''
-    if (!ELSEWHERE.test(message)) notify(message)
+    if (!SHOWN.test(message)) notify(message)
   },
   { flush: 'sync' }
 )

@@ -39,7 +39,7 @@ const TONES = [
     </Section>
     <Section
       title="Application"
-      note="Top right, under the title bar. One at a time. Only when you stay on the page and something changes."
+      note="Top right, under the title bar. One at a time. Only when you stay on the page and something changes. Notes of the prototype itself, standing in for what isn’t built, stay in a plain white toast and aren’t part of the product."
     >
       <div class="ds-toast-window" :style="{ backgroundImage: `url(${portraitGarden})` }">
         <div class="ds-toast-bar" />
