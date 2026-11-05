@@ -320,38 +320,78 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
 }
-/* Snapshots: the bar, Create's label, then one row per snapshot. */
+/* Snapshots: the bar, Create's label, then the timeline: when, a line with
+   a dot per snapshot, and the snapshot. */
 .mar-sn-bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
 }
 .mar-sn-create {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
   padding: 14px 16px;
   border-radius: var(--radius-card);
   background: var(--color-card-background);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
 }
 .mar-sn-list {
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  background: var(--color-card-background);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.mar-sn + .mar-sn {
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+.mar-sn {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+}
+.mar-sn-when {
+  padding-top: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 20px;
+}
+.mar-sn-item {
+  position: relative;
+  margin-left: 4px;
+  padding: 0 0 12px 16px;
+  border-left: 1px solid color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mar-sn:last-child .mar-sn-item {
+  padding-bottom: 0;
+}
+.mar-sn-dot {
+  position: absolute;
+  top: 13px;
+  left: -5px;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2px solid
+    color-mix(in oklch, var(--color-base-foreground) 28%, var(--color-base-background));
+  border-radius: 50%;
+  background: var(--color-base-background);
+}
+.is-now > .mar-sn-dot,
+.is-latest > .mar-sn-dot {
+  top: 12px;
+  left: -6px;
+  width: 11px;
+  height: 11px;
+  border: 0;
+  background: var(--color-muted-foreground);
+}
+.is-now > .mar-sn-dot {
+  background: var(--color-status-running);
 }
 .mar-sn-row {
   display: flex;
-  min-height: 48px;
   align-items: center;
-  gap: 10px;
-  padding: 0 8px 0 14px;
+  gap: 16px;
+  padding: 8px;
+  border-radius: var(--radius-control);
   cursor: default;
   outline: none;
 }
@@ -361,45 +401,30 @@
 .mar-sn-row:focus-visible {
   box-shadow: inset 0 0 0 2px var(--color-border-focus);
 }
-.mar-sn-chev {
-  flex-shrink: 0;
-  color: var(--color-subtle-foreground);
-  transition: transform 150ms ease;
-}
-.is-open .mar-sn-chev {
-  transform: rotate(90deg);
-}
-.mar-sn-trigger {
-  flex-shrink: 0;
-  padding: 1px 7px;
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
 .mar-sn-name {
+  display: flex;
   min-width: 0;
-  overflow: hidden;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
   color: var(--color-base-foreground);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 20px;
 }
-.mar-sn-delta {
-  flex-shrink: 0;
+.is-now .mar-sn-name,
+.is-latest .mar-sn-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.mar-sn-detail {
+  margin: 2px 0 0;
   color: var(--color-muted-foreground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.mar-sn-when {
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
 .mar-sn-body {
-  padding: 4px 16px 16px 38px;
+  padding: 4px 8px 12px;
 }
 .mar-sn-h {
   margin: 10px 0 6px;
