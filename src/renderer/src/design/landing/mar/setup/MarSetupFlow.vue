@@ -3,21 +3,24 @@ import { computed, ref } from 'vue'
 import {
   ArrowLeft,
   ArrowLeftRight,
-  ArrowRight,
   Check,
   ChevronDown,
+  Cloud,
   Copy,
+  Cpu,
   HardDrive,
   LoaderCircle,
   Package,
-  TriangleAlert
+  TriangleAlert,
+  Users,
+  Zap
 } from 'lucide-vue-next'
 import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
+import SetupSteps from './SetupSteps.vue'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
-import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
 import Checkbox from '../../ui/Checkbox.vue'
 import DialogContent from '../../ui/DialogContent.vue'
@@ -25,7 +28,6 @@ import Input from '../../ui/Input.vue'
 import MediaCard from '../../ui/MediaCard.vue'
 import Select from '../../ui/Select.vue'
 import MarSeg from '../pages/MarSeg.vue'
-import { useShowcaseCarousel } from '../../../../composables/useShowcaseCarousel'
 import en from '@locales/en.json'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, toast } from '../../useProto'
@@ -84,8 +86,11 @@ const terms = ref(false)
 const usage = ref(true)
 const beta = ref(true)
 const express = ref(false)
+// Continue is always on: without the terms it points at them instead.
+const termsAsk = ref(false)
 function continueFirst(): void {
-  if (runOn.value === 'cloud') chooseCloud()
+  if (!terms.value) termsAsk.value = true
+  else if (runOn.value === 'cloud') chooseCloud()
   else if (express.value && !unsupported.value) installWith(null)
   else chooseLocal()
 }
@@ -93,15 +98,16 @@ function continueFirst(): void {
 // Today's estimate: the download, unpacked, takes about 2.25 times its size.
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
-// Set up › Continue: low space asks first, as today, then the template step.
+// Set up › Install: low space asks first, as today, then the install. The
+// starter workflow is no longer a step here: the Home offers them after the
+// install, each marked Local (with its download) or Cloud (StarterShelf.vue).
 function continueSetup(): void {
   if (lowSpace.value) flow.confirmLowDisk = true
   else toTemplates()
 }
 function toTemplates(): void {
   flow.confirmLowDisk = false
-  if (dontShowTemplates.value) installWith(null)
-  else flow.step = 'template'
+  installWith(null)
 }
 const dontShowTemplates = ref(false)
 const TABS = [
@@ -146,10 +152,15 @@ const hardware = ref<'mps' | 'cpu'>('mps')
 // Today's install methods on a Mac (Portable is Windows only). Managed
 // builds need a sign-in; a remote server needs only its address.
 const method = ref<'public' | 'managed' | 'remote'>('public')
-const METHODS = [
-  { value: 'public' as const, label: 'Public Builds' },
-  { value: 'managed' as const, label: 'Managed Builds' },
-  { value: 'remote' as const, label: 'Remote Connection' }
+// Remote Connection isn't a source of ComfyUI, so it's a link under the form.
+const SOURCES = [
+  { value: 'public' as const, label: 'Official release', meta: 'Public builds', icon: Package },
+  {
+    value: 'managed' as const,
+    label: "Your team's builds",
+    meta: 'Managed builds',
+    icon: Users
+  }
 ]
 const serverUrl = ref('')
 const version = ref(DETECTED.version)
@@ -159,7 +170,7 @@ const VERSIONS = [
   { value: 'v0.42.2', label: 'v0.42.2' }
 ]
 
-// Back leaves Change setup as it found it; Done keeps the edits.
+// Discard leaves Change setup as it found it; Save keeps the edits.
 const draft = () => ({
   method: method.value,
   serverUrl: serverUrl.value,
@@ -189,13 +200,11 @@ const CHANNELS = [
   { value: 'latest' as const, label: 'Latest on GitHub' }
 ]
 const HARDWARE = [
-  { value: 'mps' as const, label: DETECTED.build, hint: '' },
-  { value: 'cpu' as const, label: 'CPU', hint: '' }
+  { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
+  { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
 ]
 
-// Today's install wait: the Cloud pitch rotates over the scene, in the
-// product's own strings.
-const showcase = useShowcaseCarousel()
+// The install wait's Cloud pitch, in the product's own strings.
 const say = (key: string): string =>
   key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], en) as string
 
@@ -238,99 +247,104 @@ function rowState(i: number): string {
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyCLogo class="mss-first-mark" />
-          <div class="mss-first-hero">
-            <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
-            <p class="mss-first-lead">
-              Choose the setup that fits how you work. You can switch later.
-            </p>
-            <!-- The Home's media cards (RunOnCards), or Desktop's own
+          <SetupSteps :now="1" />
+          <div class="mss-col">
+            <div class="mss-first-hero">
+              <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
+              <p class="mss-first-lead">
+                Choose the setup that fits how you work. You can switch later.
+              </p>
+              <!-- The Home's media cards (RunOnCards), or Desktop's own
                  ChoiceCard as on today's first screen. -->
-            <RunOnCards
-              v-if="localSetup.cards !== 'today'"
-              v-model="runOn"
-              :variant="localSetup.cards"
-            />
-            <div
-              v-else
-              class="mss-first-cards"
-              role="radiogroup"
-              data-no-pill
-              aria-label="How do you want to run Comfy?"
-            >
-              <ChoiceCard
-                selectable
-                :selected="runOn === 'cloud'"
-                label="Cloud"
-                tagline="Full power. Instant setup."
-                description="Best for **most users** who want powerful GPUs and popular custom nodes, ready anywhere."
-                @click="runOn = 'cloud'"
+              <RunOnCards
+                v-if="localSetup.cards !== 'today'"
+                v-model="runOn"
+                :variant="localSetup.cards"
               />
-              <ChoiceCard
-                selectable
-                :selected="runOn === 'local'"
-                label="Local"
-                tagline="Full control. Your hardware."
-                description="Best for people who want **full manual control** with versions, custom nodes, and offline workflows."
-                @click="runOn = 'local'"
-              />
-            </div>
-            <!-- Migrate and Express are Local options; they keep their room
+              <div
+                v-else
+                class="mss-first-cards"
+                role="radiogroup"
+                data-no-pill
+                aria-label="How do you want to run Comfy?"
+              >
+                <ChoiceCard
+                  selectable
+                  :selected="runOn === 'cloud'"
+                  label="Cloud"
+                  tagline="Full power. Instant setup."
+                  description="Best for **powerful GPUs** and popular custom nodes, ready anywhere."
+                  @click="runOn = 'cloud'"
+                />
+                <ChoiceCard
+                  selectable
+                  :selected="runOn === 'local'"
+                  label="Local"
+                  tagline="Full control. Your hardware."
+                  description="Best for people who want **full manual control** with versions, custom nodes, and offline workflows."
+                  @click="runOn = 'local'"
+                />
+              </div>
+              <!-- Migrate and Express are Local options; they keep their room
                  while Cloud is picked, so switching cards doesn't move the
                  screen. -->
-            <div
-              class="mss-first-mods"
-              :class="runOn !== 'local' && 'is-off'"
-              :aria-hidden="runOn !== 'local'"
-            >
-              <label v-if="localSetup.machine === 'legacy'" class="mss-check">
-                <Checkbox v-model="flow.bringOver" />
-                <span
-                  ><span class="text-base-foreground">Migrate existing instance</span>
-                  <span class="mss-first-hint"
-                    >Bring over <b>workflows, models, and settings</b> from your existing ComfyUI
-                    instance.</span
-                  ></span
-                >
-              </label>
-              <label class="mss-check">
-                <Checkbox v-model="express" />
-                <span
-                  ><span class="text-base-foreground"
-                    >Express Install with recommended settings</span
-                  >
-                  <span class="mss-first-hint" :class="!express && 'is-off'"
-                    >Detected: {{ DETECTED.build }} - if that's not your hardware, uncheck
-                    Express</span
-                  ></span
-                >
-              </label>
-            </div>
-          </div>
-          <div class="mss-first-bottom">
-            <div class="mss-first-consent">
-              <label class="mss-check">
-                <Checkbox v-model="terms" />
-                <span
-                  >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
-                  <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
-                >
-              </label>
-              <label class="mss-check">
-                <Checkbox v-model="usage" />
-                <span
-                  >Help improve Comfy by sharing anonymous usage data.
-                  <a href="#" class="mss-link" @click.prevent>Learn more</a></span
-                >
-              </label>
-              <label class="mss-check">
-                <Checkbox v-model="beta" :disabled="!usage" />
-                <span>Opt in to beta features and help test what ships next</span>
-              </label>
-            </div>
-            <div class="mss-first-actions">
-              <Button variant="primary" size="lg" :disabled="!terms" @click="continueFirst"
-                >Continue</Button
+              <div
+                class="mss-first-mods"
+                :class="runOn !== 'local' && 'is-off'"
+                :aria-hidden="runOn !== 'local'"
               >
+                <label v-if="localSetup.machine === 'legacy'" class="mss-check">
+                  <Checkbox v-model="flow.bringOver" />
+                  <span
+                    ><span class="text-base-foreground">Migrate existing instance</span>
+                    <span class="mss-first-hint"
+                      >Bring over <b>workflows, models, and settings</b> from your existing ComfyUI
+                      instance.</span
+                    ></span
+                  >
+                </label>
+                <label class="mss-check">
+                  <Checkbox v-model="express" />
+                  <span
+                    ><span class="text-base-foreground"
+                      >Express Install with recommended settings</span
+                    >
+                    <span class="mss-first-hint" :class="!express && 'is-off'"
+                      >Detected: {{ DETECTED.build }} - if that's not your hardware, uncheck
+                      Express</span
+                    ></span
+                  >
+                </label>
+              </div>
+              <!-- Usage data and beta: on by default, as today, quiet under
+                 the choice. The terms sit by Continue, the one that gates. -->
+              <div class="mss-first-consent">
+                <label class="mss-check">
+                  <Checkbox v-model="usage" />
+                  <span
+                    >Help improve Comfy by sharing anonymous usage data.
+                    <a href="#" class="mss-link" @click.prevent>Learn more</a></span
+                  >
+                </label>
+                <label class="mss-check">
+                  <Checkbox v-model="beta" :disabled="!usage" />
+                  <span>Opt in to beta features and help test what ships next</span>
+                </label>
+              </div>
+            </div>
+            <div class="mss-first-bottom">
+              <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
+                <Checkbox v-model="terms" />
+                <span class="grid"
+                  ><span
+                    >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                    <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
+                  ><span v-if="termsAsk && !terms" class="mss-terms-ask" role="alert"
+                    >Agree to continue.</span
+                  ></span
+                >
+              </label>
+              <Button variant="primary" size="lg" @click="continueFirst">Continue</Button>
             </div>
           </div>
         </div>
@@ -345,6 +359,7 @@ function rowState(i: number): string {
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyCLogo class="mss-first-mark" />
+        <SetupSteps :now="flow.step === 'setup' || flow.step === 'change' ? 2 : 3" />
       </div>
     </div>
   </Teleport>
@@ -452,7 +467,7 @@ function rowState(i: number): string {
           <template v-else>
             <span class="flex-1"></span>
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
-            <Button v-else variant="primary" size="lg" @click="continueSetup">Continue</Button>
+            <Button v-else variant="primary" size="lg" @click="continueSetup">Install</Button>
           </template>
         </footer>
       </template>
@@ -464,25 +479,52 @@ function rowState(i: number): string {
           <DialogDescription
             >Everything here is already set to what fits this computer.</DialogDescription
           >
-          <div class="mss-fields is-change">
-            <div class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Install method</span>
-              <MarSeg v-model="method" label="Install method" :options="METHODS" />
+          <!-- A settings sheet: label on the left, control on the right,
+               a hairline between rows. Picks are radio cards. -->
+          <div v-if="method !== 'remote'" class="mss-form">
+            <div class="mss-form-row">
+              <span id="mss-from" class="mss-form-label">Get ComfyUI from</span>
+              <RadioGroupRoot v-model="method" class="mss-opts" aria-labelledby="mss-from">
+                <RadioGroupItem
+                  v-for="m in SOURCES"
+                  :key="m.value"
+                  :value="m.value"
+                  class="mss-opt"
+                >
+                  <span class="mss-opt-icon"><component :is="m.icon" :size="16" /></span>
+                  <span class="mss-opt-text">
+                    <span class="mss-opt-name">{{ m.label }}</span>
+                    <span class="mss-opt-meta">{{ m.meta }}</span>
+                  </span>
+                  <span class="mss-opt-dot" aria-hidden="true"></span>
+                </RadioGroupItem>
+              </RadioGroupRoot>
             </div>
-            <div v-if="method === 'remote'" class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Server URL</span>
-              <Input
-                v-model="serverUrl"
-                placeholder="http://192.168.1.20:8188"
-                aria-label="Server URL"
-              />
+            <div v-if="method === 'managed'" class="mss-form-row">
+              <span class="mss-form-label">Release</span>
+              <div class="mss-form-note">
+                <span>Sign in to see your workspace's builds.</span>
+                <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
+              </div>
             </div>
-            <div class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Name</span>
+            <div v-else class="mss-form-row">
+              <span class="mss-form-label">Release</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
+                <Select
+                  v-if="channel === 'stable'"
+                  v-model="version"
+                  label="ComfyUI"
+                  :options="VERSIONS"
+                />
+              </div>
+            </div>
+            <div class="mss-form-row">
+              <span class="mss-form-label">Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
-            <div v-if="method !== 'remote'" class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Location</span>
+            <div class="mss-form-row">
+              <span class="mss-form-label">Location</span>
               <Input :model-value="where" readonly aria-label="Location">
                 <template #trailing>
                   <span class="text-ui whitespace-nowrap text-subtle-foreground"
@@ -498,50 +540,55 @@ function rowState(i: number): string {
                 </template>
               </Input>
             </div>
-            <div v-if="method === 'public'" class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Release</span>
-              <div class="flex flex-wrap items-center gap-3">
-                <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
-                <Select
-                  v-if="channel === 'stable'"
-                  v-model="version"
-                  label="ComfyUI"
-                  :options="VERSIONS"
-                />
-              </div>
-            </div>
-            <div v-if="method === 'managed'" class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Release</span>
-              <div class="flex items-center gap-3">
-                <span class="flex-1 text-ui text-subtle-foreground"
-                  >Sign in to see your workspace's builds.</span
-                >
-                <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
-              </div>
-            </div>
-            <div v-if="method !== 'remote'" class="mss-field">
-              <span class="text-ui font-medium text-base-foreground">Hardware</span>
-              <RadioGroupRoot v-model="hardware" class="grid grid-cols-2 gap-2">
+            <div class="mss-form-row">
+              <span id="mss-hw" class="mss-form-label">Hardware</span>
+              <RadioGroupRoot v-model="hardware" class="mss-opts" aria-labelledby="mss-hw">
                 <RadioGroupItem
                   v-for="h in HARDWARE"
                   :key="h.value"
                   :value="h.value"
-                  class="mss-radio"
+                  class="mss-opt"
                 >
-                  <span class="flex items-center justify-between gap-2">
-                    <span class="text-ui font-medium text-base-foreground">{{ h.label }}</span>
-                    <Badge v-if="h.value === 'mps'">Detected</Badge>
+                  <span class="mss-opt-icon"><component :is="h.icon" :size="16" /></span>
+                  <span class="mss-opt-text">
+                    <span class="mss-opt-name">{{ h.label }}</span>
+                    <span class="mss-opt-meta">{{ h.meta }}</span>
                   </span>
-                  <span v-if="h.hint" class="text-ui text-subtle-foreground">{{ h.hint }}</span>
+                  <span class="mss-opt-dot" aria-hidden="true"></span>
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
+            <p class="mss-form-aside">
+              Already running ComfyUI on another machine?
+              <button type="button" class="mss-link" @click="method = 'remote'">
+                Connect to a server instead
+              </button>
+            </p>
+          </div>
+
+          <!-- Remote Connection: today's third method, behind the link. -->
+          <div v-else class="mss-form">
+            <div class="mss-form-row">
+              <span class="mss-form-label">Server URL</span>
+              <Input
+                v-model="serverUrl"
+                placeholder="http://192.168.1.20:8188"
+                aria-label="Server URL"
+              />
+            </div>
+            <div class="mss-form-row">
+              <span class="mss-form-label">Name</span>
+              <Input v-model="name" aria-label="Name" />
+            </div>
+            <p class="mss-form-aside">
+              <button type="button" class="mss-link" @click="method = 'public'">
+                Install on this Mac instead
+              </button>
+            </p>
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" @click="discardChanges"
-            ><ArrowLeft :size="14" />Back</Button
-          >
+          <Button variant="ghost" size="lg" @click="discardChanges">Discard changes</Button>
           <span class="mr-auto"></span>
           <Button
             v-if="method === 'remote'"
@@ -551,7 +598,9 @@ function rowState(i: number): string {
             @click="toast(`Connecting to ${serverUrl}`)"
             >Connect</Button
           >
-          <Button v-else variant="primary" size="lg" @click="flow.step = 'setup'">Done</Button>
+          <Button v-else variant="primary" size="lg" @click="flow.step = 'setup'"
+            >Save changes</Button
+          >
         </footer>
       </template>
 
@@ -606,46 +655,15 @@ function rowState(i: number): string {
         </footer>
       </template>
 
-      <!-- Installing: today's install wait. The scene of Comfy outputs at its
-           own proportions with nothing over it, the Cloud pitch above it,
-           progress below. Error: today's Operation failed, in place. -->
+      <!-- Installing: the status first, then today's scene of Comfy outputs.
+           The Cloud pitch is one line in the bar. Error: today's Operation
+           failed, in place. -->
       <template v-else>
         <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="sr-only">{{
             failed ? 'Operation failed' : 'Installing ComfyUI'
           }}</DialogTitle>
           <section class="mss-prog" :class="failed ? 'is-err' : 'is-wait'">
-            <div
-              v-if="!failed"
-              class="mss-pitch"
-              role="region"
-              :aria-label="say('installShowcase.label')"
-            >
-              <Transition name="mss-fade" mode="out-in">
-                <p :key="showcase.card.value.id" class="mss-pitch-line">
-                  <span class="text-base-foreground">{{ say(showcase.card.value.title) }}</span
-                  ><span class="mss-pitch-sep" aria-hidden="true"></span
-                  >{{ say(showcase.card.value.body) }}
-                </p>
-              </Transition>
-              <Button size="sm" variant="ghost" @click="toast('Opening Comfy Cloud')"
-                >{{ say('installShowcase.cloudCta') }}<ArrowRight :size="12"
-              /></Button>
-            </div>
-            <div v-if="!failed" class="mss-scene" aria-hidden="true">
-              <video
-                v-for="c in CLIPS"
-                :key="c.id"
-                class="mss-clip"
-                :class="`is-${c.id}`"
-                :src="c.src"
-                :poster="imgUrl(c.poster)"
-                autoplay
-                muted
-                loop
-                playsinline
-              ></video>
-            </div>
             <div class="mss-prog-head">
               <span class="mss-stage-title is-big">{{
                 failed ? 'Operation failed' : 'Installing ComfyUI'
@@ -688,6 +706,20 @@ function rowState(i: number): string {
 [setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)<template v-if="failed">
 <span class="e">ERROR: ConnectionResetError(54, 'Connection reset by peer')</span>
 <span class="e">pip exited with code 2</span></template></pre>
+            <div v-if="!failed" class="mss-scene" aria-hidden="true">
+              <video
+                v-for="c in CLIPS"
+                :key="c.id"
+                class="mss-clip"
+                :class="`is-${c.id}`"
+                :src="c.src"
+                :poster="imgUrl(c.poster)"
+                autoplay
+                muted
+                loop
+                playsinline
+              ></video>
+            </div>
             <Button v-if="failed" size="sm" class="justify-self-start" @click="toast('Copied')"
               ><Copy :size="14" />Copy</Button
             >
@@ -702,7 +734,21 @@ function rowState(i: number): string {
             <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
           </template>
           <template v-else-if="!flow.confirmCancel">
-            <Button variant="ghost" size="lg" @click="flow.confirmCancel = true"
+            <p class="mss-pitch" role="region" :aria-label="say('installShowcase.label')">
+              <Cloud :size="14" class="shrink-0" />
+              <b class="mss-pitch-line">{{ say('installShowcase.cloud.title') }}</b>
+              <button type="button" class="mss-link" @click="toast('Opening Comfy Cloud')">
+                {{ say('installShowcase.cloudCta') }}
+              </button>
+            </p>
+            <Button
+              v-if="flow.takeover"
+              variant="ghost"
+              size="lg"
+              @click="flow.confirmCancel = true"
+              >Cancel install</Button
+            >
+            <Button v-else variant="ghost" size="lg" @click="flow.confirmCancel = true"
               ><ArrowLeft :size="14" />Return to Dashboard</Button
             >
           </template>

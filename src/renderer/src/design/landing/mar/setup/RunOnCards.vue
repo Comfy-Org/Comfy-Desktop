@@ -17,8 +17,7 @@ const WAYS = [
     icon: Cloud,
     label: 'Cloud',
     tagline: 'Full power. Instant setup.',
-    description:
-      'Best for <b>most users</b> who want powerful GPUs and popular custom nodes, ready anywhere.'
+    description: 'Best for <b>powerful GPUs</b> and popular custom nodes, ready anywhere.'
   },
   {
     id: 'local',

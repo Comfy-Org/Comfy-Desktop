@@ -46,7 +46,10 @@ const FIRST_OPTIONS = [
 const STARTER_OPTIONS = [
   ['Row', "Four tall pictures side by side, as the Home's examples."],
   ['Bento', 'The recommended one big, the other three beside it.'],
-  ['Feature', 'Small pictures to pick from, the pick large with what it downloads.']
+  ['Feature', 'Small pictures to pick from, the pick large with what it downloads.'],
+  ['Mixed, no tabs', 'The recommended one of each type, as the Home mixes its examples.'],
+  ['Text filters', "The tabs as the Home's quiet text filters, on the title line."],
+  ['Mixed bento', 'The recommended one of each type, the first one big.']
 ]
 const SETUP_OPTIONS = [
   ['Spec line', 'The machine as one line with its own Change; two rows below.'],

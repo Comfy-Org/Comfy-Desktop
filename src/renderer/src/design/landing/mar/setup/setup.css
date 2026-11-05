@@ -1162,3 +1162,287 @@
 .mss-row.is-change .mss-row-meta {
   font-size: 12px;
 }
+
+/* ── Fixed frame (audit) ─────────────────────────────────────────────
+ * Every takeover screen shares one column: same width, same height, the
+ * same top for the title and the same line for the action bar. The step
+ * indicator sits top centre. */
+:root {
+  --mss-col-w: min(704px, calc(100vw - 48px));
+  --mss-col-h: min(600px, calc(100vh - 120px));
+}
+.mss-steps {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  list-style: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.mss-steps-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.mss-steps-item i {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mss-steps-item.is-now {
+  color: var(--color-base-foreground);
+}
+.mss-steps-item.is-now i {
+  background: var(--color-base-foreground);
+  box-shadow: none;
+  color: var(--color-base-background, #111);
+  font-weight: 600;
+}
+.mss-steps-item.is-done {
+  color: var(--color-muted-foreground);
+}
+.mss-steps-item.is-done i {
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  box-shadow: none;
+  color: var(--color-base-foreground);
+}
+.mss-steps-sep {
+  width: 24px;
+  height: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
+
+/* The first screen in the same column as the dialog screens. */
+.mss-col {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: var(--mss-col-w);
+  height: var(--mss-col-h);
+  flex-direction: column;
+  transform: translate(-50%, -50%);
+}
+.mss-col .mss-first-hero {
+  max-width: none;
+  flex: 1;
+  margin: 0;
+  padding: 8px 32px 0;
+  overflow-y: auto;
+}
+.mss-col .mss-first-bottom {
+  max-width: none;
+  min-height: 64px;
+  margin: 0;
+  padding: 12px 32px 8px;
+  flex-wrap: nowrap;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mss-col .mss-first-consent {
+  margin-top: 20px;
+}
+.mss-terms {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-terms .mss-link {
+  color: var(--color-base-foreground);
+}
+.mss-terms-ask {
+  color: var(--color-status-warning, oklch(0.8 0.15 80));
+  font-size: 12px;
+  line-height: 16px;
+}
+.mss-terms.is-ask [role='checkbox'] {
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-status-warning, oklch(0.8 0.15 80)) 35%, transparent);
+  animation: mss-nudge 360ms cubic-bezier(0.36, 0, 0.66, 1);
+}
+@keyframes mss-nudge {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+:root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
+  width: var(--mss-col-w);
+  height: var(--mss-col-h);
+  max-height: none;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
+  min-height: 64px;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mss-in-takeover .mar-wizard-foot > button:first-child {
+  margin-left: 0;
+}
+
+/* ── Change setup: a settings sheet ──────────────────────────────── */
+.mss-form {
+  display: grid;
+}
+.mss-form-row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding-block: 14px;
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mss-form-row:first-child {
+  padding-top: 0;
+}
+.mss-form-row:has(.mss-opts) {
+  align-items: start;
+}
+.mss-form-row:has(.mss-opts) .mss-form-label {
+  padding-top: 14px;
+}
+.mss-form-label {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.mss-form-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+}
+.mss-form-aside {
+  margin: 16px 0 0;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+}
+.mss-form-aside .mss-link {
+  color: var(--color-base-foreground);
+}
+.mss-opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 12px;
+  border-radius: 12px;
+  background: oklch(0.6 0 0 / 0.05);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:hover {
+  background: oklch(0.6 0 0 / 0.09);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt[data-state='checked'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mss-opt-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  transition: color 160ms ease;
+}
+.mss-opt[data-state='checked'] .mss-opt-icon {
+  color: var(--color-base-foreground);
+}
+.mss-opt-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.mss-opt-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.mss-opt-meta {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-opt-dot {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 28%, transparent);
+  transition: box-shadow 160ms ease;
+}
+.mss-opt[data-state='checked'] .mss-opt-dot {
+  box-shadow: inset 0 0 0 5px var(--color-base-foreground);
+}
+
+/* ── Install: one-line Cloud pitch in the bar ───────────────────── */
+.mss-foot .mss-pitch {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
+.mss-foot .mss-pitch b {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mss-foot .mss-pitch .mss-link {
+  flex-shrink: 0;
+  color: var(--color-base-foreground);
+}
