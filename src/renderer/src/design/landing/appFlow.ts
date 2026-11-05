@@ -537,6 +537,8 @@ export const STARTER_APPS: LibApp[] = [
   }
 ]
 
+export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
+
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))

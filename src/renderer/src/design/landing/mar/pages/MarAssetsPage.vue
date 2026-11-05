@@ -29,7 +29,7 @@ import MarSelectBar from './MarSelectBar.vue'
 import { assets, type MarAsset } from './assetsStore'
 import { useLibrary } from './library'
 import { projectNames } from './projectsStore'
-import { shownState } from './pageState'
+import { pageState } from './pageState'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 
@@ -173,7 +173,7 @@ function lines(a: MarAsset): MenuLine[] {
     :no-results="shown.length === 0 && filtered"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
-    :state="shownState === 'live' && base.length === 0 ? 'empty' : undefined"
+    :state="pageState.id === 'live' ? (base.length ? 'live' : 'empty') : undefined"
     :empty="{
       icon: ComfyAssets,
       title: fixedProject ? 'No assets in this project yet' : 'Nothing made yet',

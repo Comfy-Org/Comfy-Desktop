@@ -26,6 +26,7 @@ const {
   layout,
   theme,
   gate,
+  output,
   compact = false
 } = defineProps<{
   name: string
@@ -38,6 +39,7 @@ const {
   layout: AppLayout
   theme: AppTheme
   gate?: () => boolean
+  output?: string
   /** Smaller paddings and type (previews inside the agent's thread). */
   compact?: boolean
 }>()
@@ -120,9 +122,12 @@ const MAR_STYLE = { '--app-title-weight': '600', '--app-title-spacing': '-0.02em
           :payer
           :gate
           :compact
+          :output
           run-label="Run"
           @done="emit('done')"
-        />
+        >
+          <template #saved><slot name="saved" /></template>
+        </AppRunPanel>
       </div>
       <slot name="below" />
 

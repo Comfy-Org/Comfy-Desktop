@@ -7,12 +7,14 @@ import { thumb } from '../mock'
 import { go } from '../useProto'
 
 /** Home's apps (UI Playground › Apps on Home): the starter set, named by
- *  what you get, never by a model. A click opens the app, no graph. */
+ *  what you get, never by a model. A click opens the app, no graph. First
+ *  run titles it as the way to start. */
+const { title = 'Apps' } = defineProps<{ title?: string }>()
 </script>
 
 <template>
   <section class="mt-10">
-    <SectionHeader title="Apps" :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
+    <SectionHeader :title :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
     <div class="grid grid-cols-3 gap-3.5">
       <Card
         v-for="a in STARTER_APPS"

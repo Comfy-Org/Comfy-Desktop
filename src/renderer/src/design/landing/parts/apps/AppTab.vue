@@ -16,10 +16,12 @@ import Input from '../../ui/Input.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
-import { toast } from '../../useProto'
+import { assets } from '../../mar/pages/assetsStore'
+import { go, isNewUser, proto, toast } from '../../useProto'
 import {
   appsProto,
   exitPreview,
+  isStarter,
   libApp,
   previewAs,
   previewLabel,
@@ -38,10 +40,14 @@ import {
  *   no access      - Request access, or switch account
  *   link gone      - revoked, expired or over its cap
  * The creator checks this with "Preview as" (a thin bar on top says so).
+ * A starter app is for a new Desktop user: it runs on their own account, so
+ * Run asks them to sign in and add credits, and the result lands in Assets.
  */
 const { id } = defineProps<{ id: string }>()
 const app = computed(() => libApp(id)!)
 const as = computed<PreviewAs | undefined>(() => appsProto.preview[id])
+const starter = computed(() => isStarter(id))
+const output = computed(() => (id === 's-video' ? 'video' : 'image'))
 const owner = computed(() => (app.value.owner === 'You' ? 'Pablo' : app.value.owner))
 const author = computed(() => (app.value.owner === 'You' ? 'Pablo · Silverside' : app.value.owner))
 
@@ -71,11 +77,19 @@ const access = computed<Access>(() => {
   return a.link ? 'signin' : 'none'
 })
 /** Inside the team: team credits pay. Outside: free runs, then their own. */
-const inTeam = computed(() => !as.value || (as.value === 'teammate' && app.value.team))
+const inTeam = computed(
+  () => (!as.value && !starter.value) || (as.value === 'teammate' && app.value.team)
+)
 
 const me = reactive({ signedIn: true, guest: false, credits: 0, used: 0 })
 function reset(): void {
-  Object.assign(me, { signedIn: as.value !== 'link', guest: false, credits: 0, used: 0 })
+  Object.assign(me, {
+    signedIn: starter.value ? proto.signedIn : as.value !== 'link',
+    guest: false,
+    // A returning user already has credits; a new one adds them at Run.
+    credits: starter.value && proto.signedIn && !isNewUser.value ? 10 : 0,
+    used: 0
+  })
 }
 reset()
 watch(() => [id, as.value], reset)
@@ -114,6 +128,7 @@ function gate(): boolean {
 }
 function signIn(how: string): void {
   me.signedIn = true
+  if (starter.value) proto.signedIn = true
   toast(`Signed in with ${how}. Your inputs are still here.`)
   continueRun()
 }
@@ -134,7 +149,28 @@ function continueRun(): void {
   }
   setTimeout(() => panel.value?.run(), 250)
 }
+function saveResult(): void {
+  const made = assets.items.filter((a) => a.id.startsWith(`${id}-`)).length
+  const stamp = String(made + 1).padStart(5, '0')
+  const video = output.value === 'video'
+  assets.items.unshift({
+    id: `${id}-${stamp}`,
+    name: `${app.value.slug}_${stamp}.${video ? 'mp4' : 'png'}`,
+    type: video ? 'video' : 'image',
+    source: 'cloud',
+    thumbId: app.value.thumbId,
+    size: video ? '18 MB' : '2.4 MB',
+    sizeMb: video ? 18 : 2.4,
+    age: 0,
+    when: 'Just now'
+  })
+}
+function viewAssets(): void {
+  appsProto.front = ''
+  go('assets')
+}
 function done(): void {
+  if (starter.value) saveResult()
   if (inTeam.value) return
   if (sponsored.value) me.used++
   else me.credits = Math.max(0, me.credits - app.value.cost)
@@ -234,8 +270,12 @@ function done(): void {
         :layout="app.layout"
         :theme="app.theme"
         :gate
+        :output
         @done="done"
       >
+        <template v-if="starter" #saved>
+          <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>
+        </template>
         <template #account>
           <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
             ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span

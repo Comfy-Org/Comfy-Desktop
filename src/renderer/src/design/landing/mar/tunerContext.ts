@@ -56,7 +56,7 @@ const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces',
 export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
-  homeApps: computed(() => onHome.value && !onFirstRun.value && can.value.exploreApps),
+  homeApps: computed(() => onHome.value && can.value.exploreApps),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
