@@ -105,8 +105,6 @@ watch(
     proto.activeTab = 'home'
     proto.mode = 'create'
     proto.page = landingPage()
-    // A first-run Home only exists from Milestone 4.
-    if (!can.value.home) proto.fresh = false
   }
 )
 

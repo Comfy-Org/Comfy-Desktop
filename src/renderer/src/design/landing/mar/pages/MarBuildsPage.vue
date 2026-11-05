@@ -85,13 +85,14 @@ type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 // The Builds milestone also lists the states today's Desktop has
 // (m1Builds.ts): a remote build, one to migrate, three a problem stopped.
 const seed = (): Build[] =>
-  [...instances.value, ...(proto.milestone < 3 && !proto.oneLocal ? M1_BUILDS : [])].map((i) =>
-    errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }
-  )
+  [
+    ...instances.value,
+    ...(proto.milestone < 3 && !proto.oneLocal && !proto.fresh ? M1_BUILDS : [])
+  ].map((i) => (errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }))
 const builds = collection<Build>(seed(), 'build')
 // The local setup finishes with this page already open behind it.
 watch(
-  () => proto.oneLocal,
+  () => [proto.oneLocal, proto.fresh],
   () => builds.items.splice(0, builds.items.length, ...seed())
 )
 if (leaving.value) {
