@@ -408,7 +408,10 @@ function m1Lines(b: Build): MenuLine[] {
 const refreshing = ref(false)
 function refresh(): void {
   refreshing.value = true
-  setTimeout(() => (refreshing.value = false), 1100)
+  setTimeout(() => {
+    refreshing.value = false
+    toast('Builds updated')
+  }, 1100)
 }
 
 // A click opens the build's page; Open and Start are the button's.
