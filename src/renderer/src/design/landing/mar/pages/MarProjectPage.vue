@@ -165,7 +165,6 @@ const lines = computed<MenuLine[]>(() =>
           icon: Archive,
           run: () => {
             p.value!.archived = true
-            notify(`Archived “${p.value!.name}”`, () => (p.value!.archived = false))
             go('projects')
           }
         },

@@ -28,12 +28,13 @@ export function collection<T extends Base>(seed: T[], noun: string) {
     notify(`Renamed to “${next}”`, () => (it.name = before))
   }
 
-  function remove(ids: string[]): void {
+  function remove(ids: string[], quiet = false): void {
     const gone = ids
       .map((id) => ({ i: at(id), item: items[at(id)]! }))
       .filter((g) => g.i >= 0)
       .sort((a, b) => b.i - a.i)
     for (const g of gone) items.splice(g.i, 1)
+    if (quiet) return
     const label =
       gone.length === 1 ? `Deleted “${gone[0]!.item.name}”` : `Deleted ${count(gone.length, noun)}`
     notify(label, () => {

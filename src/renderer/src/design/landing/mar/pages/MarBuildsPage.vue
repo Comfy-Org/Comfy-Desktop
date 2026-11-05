@@ -91,7 +91,7 @@ const builds = collection<Build>(
   'build'
 )
 if (leaving.value) {
-  builds.remove([leaving.value])
+  builds.remove([leaving.value], true)
   leaving.value = undefined
 }
 

@@ -265,7 +265,7 @@ function duplicateHere(): void {
   toast(`Duplicating ${env.name}…`)
   setTimeout(() => notify(`Duplicated ${env.name}`), 1600)
 }
-// The Builds list removes it on arrival, with its Undo.
+// The Builds list removes it on arrival; leaving says it all, no toast.
 function leaveHere(): void {
   leaving.value = env.id
   go('environments' as Page)
