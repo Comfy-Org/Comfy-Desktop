@@ -88,10 +88,14 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
   height: 28px;
   padding: 0 10px;
   border-radius: 8px;
+  background: color-mix(in oklab, var(--color-base-foreground) 14%, transparent);
   color: var(--color-base-foreground);
   font-weight: 600;
+  transition: background-color 140ms ease;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-undo-btn:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-undo-btn:hover {
+  background: color-mix(in oklab, var(--color-base-foreground) 22%, transparent);
+}
 :root .proto-ui.proto-ui.proto-ui .mar-undo-x:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
 }

@@ -12,10 +12,10 @@ const TONES = [
     id: 'success',
     label: 'Success',
     icon: CircleCheck,
-    text: 'Snapshot restored',
+    text: 'Restored',
     undo: true
   },
-  { id: 'info', label: 'Info', icon: Info, text: 'Stopped Video Lab', undo: true },
+  { id: 'info', label: 'Info', icon: Info, text: 'Stopped', undo: true },
   { id: 'warning', label: 'Warning', icon: TriangleAlert, text: 'Not enough space', undo: false },
   { id: 'error', label: 'Error', icon: CircleX, text: 'Couldn’t log in', undo: false }
 ]
@@ -30,7 +30,7 @@ const TONES = [
             <div class="mar-undo is-still" :class="`is-${t.id}`">
               <component :is="t.icon" :size="16" class="mar-undo-icon" />
               <span class="mar-undo-text">{{ t.text }}</span>
-              <span v-if="t.undo" class="ds-toast-undo">Undo</span>
+              <button v-if="t.undo" type="button" class="mar-undo-btn">Undo</button>
               <X :size="13" class="ds-toast-x" />
             </div>
           </div>
@@ -46,7 +46,7 @@ const TONES = [
         <div class="mar-undo is-still is-success ds-toast-placed">
           <CircleCheck :size="16" class="mar-undo-icon" />
           <span class="mar-undo-text">My Local 1 is on ComfyUI v0.37.6</span>
-          <span class="ds-toast-undo">Undo</span>
+          <button type="button" class="mar-undo-btn">Undo</button>
           <X :size="13" class="ds-toast-x" />
         </div>
       </div>
@@ -58,7 +58,7 @@ const TONES = [
             <div class="mar-undo is-still" :class="`is-${t.id}`">
               <component :is="t.icon" :size="16" class="mar-undo-icon" />
               <span class="mar-undo-text">{{ t.text }}</span>
-              <span v-if="t.undo" class="ds-toast-undo">Undo</span>
+              <button v-if="t.undo" type="button" class="mar-undo-btn">Undo</button>
               <X :size="13" class="ds-toast-x" />
             </div>
           </div>
@@ -86,13 +86,9 @@ const TONES = [
 .ds-toast-plain {
   background-color: var(--color-content-background);
 }
-.ds-toast-undo {
-  flex: none;
-  padding: 0 4px;
-  font-weight: 600;
-}
 .ds-toast-x {
   flex: none;
+  margin: 0 7px 0 2px;
   color: var(--color-muted-foreground);
 }
 .ds-toast-window {
