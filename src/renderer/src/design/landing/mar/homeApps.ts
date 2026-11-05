@@ -1,12 +1,14 @@
 import { reactive, watch } from 'vue'
 
-/** Apps on Mar's Home (UI Playground › Apps on Home): On by default, the
- *  starter apps named by what they make, or Off. */
-export type HomeApps = 'off' | 'on'
+/** Apps on Mar's Home (UI Playground › Apps on Home): the starter apps
+ *  named by what they make, on the arc carousel by default, as a grid, or
+ *  Off. */
+export type HomeApps = 'off' | 'on' | 'grid'
 
 export const HOME_APPS: { value: HomeApps; label: string }[] = [
   { value: 'off', label: 'Off' },
-  { value: 'on', label: 'On' }
+  { value: 'on', label: 'Carousel' },
+  { value: 'grid', label: 'Grid' }
 ]
 
 const KEY = 'comfy.design.mar.homeApps'
@@ -14,7 +16,8 @@ const KEY = 'comfy.design.mar.homeApps'
 export const homeApps = reactive<{ id: HomeApps }>({
   id: (() => {
     try {
-      return localStorage.getItem(KEY) === 'off' ? 'off' : 'on'
+      const v = localStorage.getItem(KEY) as HomeApps | null
+      return v && HOME_APPS.some((a) => a.value === v) ? v : 'on'
     } catch {
       return 'on'
     }

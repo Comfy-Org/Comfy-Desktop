@@ -120,11 +120,16 @@ const recent = computed(() =>
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
     <MarAppsRow
-      v-if="firstRun && homeApps.id === 'on' && can.exploreApps"
+      v-if="firstRun && homeApps.id !== 'off' && can.exploreApps"
       title="Start with an app"
     />
     <MarStart v-if="firstRun" />
     <div v-else>
+      <MarAppsRow
+        v-if="homeApps.id !== 'off' && can.exploreApps"
+        :grid="firstTime && !recent.length"
+      />
+      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). -->
@@ -179,8 +184,6 @@ const recent = computed(() =>
           />
         </ScrollRow>
       </section>
-      <MarAppsRow v-if="homeApps.id === 'on' && can.exploreApps" />
-      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader

@@ -4,23 +4,44 @@ import SectionHeader from '../ui/SectionHeader.vue'
 import { computed } from 'vue'
 import { MORE_APPS, STARTER_APPS, openApp } from '../appFlow'
 import { appsStage } from './apps/appsStage'
+import { homeApps } from './homeApps'
+import ExampleArc from './userStates/ExampleArc.vue'
 import { can } from '../milestones'
 import { thumb } from '../mock'
 import { go } from '../useProto'
 
-/** Home's apps (UI Playground › Apps on Home): the starter set, four per
- *  row, cover on top with name and blurb below. A click opens the app, no
- *  graph. First run titles it as the way to start. */
-const { title = 'Apps' } = defineProps<{ title?: string }>()
+/** Home's apps (UI Playground › Apps on Home): the starter set on the arc
+ *  carousel, or four per row with cover on top and name and blurb below
+ *  (`grid` forces it where examples already take the arc). A click opens
+ *  the app, no graph. First run titles it as the way to start. */
+const { title = 'Apps', grid = false } = defineProps<{ title?: string; grid?: boolean }>()
 const apps = computed(() =>
   appsStage.id === 'm3' ? [...STARTER_APPS, ...MORE_APPS] : STARTER_APPS
 )
+// The arc needs eight cards to wrap around; a shorter set goes round twice.
+const arc = computed(() => {
+  const items = apps.value.map((a) => ({
+    label: a.name,
+    meta: a.blurb,
+    src: thumb(a.thumbId),
+    run: () => openApp(a.id)
+  }))
+  return items.length < 8 ? [...items, ...items] : items
+})
 </script>
 
 <template>
   <section class="mt-10">
     <SectionHeader :title :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
-    <div class="grid grid-cols-4 gap-3.5">
+    <ExampleArc
+      v-if="!grid && homeApps.id === 'on'"
+      :key="arc.length"
+      :items="arc"
+      label="Apps"
+      action="Open"
+      headed
+    />
+    <div v-else class="grid grid-cols-4 gap-3.5">
       <Card
         v-for="a in apps"
         :key="a.id"

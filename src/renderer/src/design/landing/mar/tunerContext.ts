@@ -197,7 +197,7 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
-  cover: one(cover, 'canvas'),
+  cover: one(cover, 'gradient'),
   buildCard: one(buildCard, 'photos'),
   buildPage: one(buildPage, 'production'),
   torchPick: one(torchPick, 'outline'),

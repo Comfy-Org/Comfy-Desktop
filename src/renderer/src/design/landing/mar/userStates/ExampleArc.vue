@@ -14,8 +14,34 @@ import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
  * on a side card, a drag or a sideways scroll. Pointing at a card (or
  * focusing it) shows its Run button at the bottom; Enter runs the front one.
  * Run never says where: on Desktop it runs on Desktop, on Cloud on Cloud.
+ * Home's apps ride the same arc: pass `items`, `label` and `action`, and
+ * `headed` keeps the section's title.
  */
-const N = EXAMPLES.length
+interface ArcItem {
+  label: string
+  meta: string
+  src: string
+  video?: string
+  run: () => void
+}
+const {
+  items,
+  label = 'Examples',
+  action = 'Run',
+  headed = false
+} = defineProps<{ items?: ArcItem[]; label?: string; action?: string; headed?: boolean }>()
+const list = computed<ArcItem[]>(
+  () =>
+    items ??
+    EXAMPLES.map((x) => ({
+      label: x.label,
+      meta: `${x.kind} · ${x.runs}`,
+      src: x.src,
+      video: x.video,
+      run: () => runExample(x)
+    }))
+)
+const N = list.value.length
 const ANGLE = 24 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
@@ -93,13 +119,13 @@ async function turn(by: number, focus = false): Promise<void> {
 }
 function pick(i: number): void {
   if (moved) return
-  if (i === active.value) runExample(EXAMPLES[i]!)
+  if (i === active.value) list.value[i]!.run()
   else void turn(Math.round(offset(i) + pos.value - target.value))
 }
 /** The Run button on a cover runs that one, front or side; anywhere else on a
  *  side cover only brings it to the front. */
 function runFrom(i: number): void {
-  if (!moved) runExample(EXAMPLES[i]!)
+  if (!moved) list.value[i]!.run()
 }
 function key(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') void turn(-1, true)
@@ -170,9 +196,10 @@ function wheel(e: WheelEvent): void {
 <template>
   <div
     class="mar-arc"
+    :class="headed && 'is-headed'"
     role="region"
     aria-roledescription="carousel"
-    aria-label="Examples"
+    :aria-label="label"
     @keydown="key"
   >
     <div
@@ -185,8 +212,8 @@ function wheel(e: WheelEvent): void {
       @wheel="wheel"
     >
       <button
-        v-for="(x, i) in EXAMPLES"
-        :key="x.label"
+        v-for="(x, i) in list"
+        :key="i"
         ref="cards"
         type="button"
         class="mar-arc-card"
@@ -194,9 +221,7 @@ function wheel(e: WheelEvent): void {
         :style="pose(i)"
         :tabindex="i === active ? 0 : -1"
         :aria-current="i === active ? 'true' : undefined"
-        :aria-label="
-          i === active ? `Run ${x.label}, ${x.kind}, ${x.runs}` : `${x.label}, ${x.kind}, ${x.runs}`
-        "
+        :aria-label="i === active ? `${action} ${x.label}, ${x.meta}` : `${x.label}, ${x.meta}`"
         @mouseenter="i === active && playLoop($event.currentTarget as Element, true)"
         @mouseleave="playLoop($event.currentTarget as Element, false)"
         @click="pick(i)"
@@ -207,14 +232,14 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
           <span class="mar-arc-title">{{ x.label }}</span>
-          <span class="mar-arc-meta">{{ x.kind }} · {{ x.runs }}</span>
+          <span class="mar-arc-meta">{{ x.meta }}</span>
         </span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true" @click.stop="runFrom(i)">Run</span>
+        <span class="mar-arc-go" aria-hidden="true" @click.stop="runFrom(i)">{{ action }}</span>
       </button>
     </div>
 
-    <div class="mar-arc-actions">
+    <div v-if="!items" class="mar-arc-actions">
       <button v-if="can.explore" type="button" class="mar-arc-all" @click="go('explore')">
         See all examples<ArrowRight :size="14" />
       </button>
@@ -366,7 +391,7 @@ function wheel(e: WheelEvent): void {
 <style>
 /* The arc carries its own title on each card, so the section's
    left-aligned header steps aside. */
-:root .proto-ui section:has(> .mar-arc) > :first-child:not(.mar-arc) {
+:root .proto-ui section:has(> .mar-arc:not(.is-headed)) > :first-child:not(.mar-arc) {
   display: none;
 }
 /* Global: these are buttons, past the prototype's button reset. */
