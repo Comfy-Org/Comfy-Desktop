@@ -13,8 +13,8 @@ import { go } from '../useProto'
 /** Home's apps (UI Playground › Apps on Home): the starter set on the arc
  *  carousel, or four per row with cover on top and name and blurb below
  *  (`grid` forces it where examples already take the arc). A click opens
- *  the app, no graph. First run titles it as the way to start. */
-const { title = 'Apps', grid = false } = defineProps<{ title?: string; grid?: boolean }>()
+ *  the app, no graph. */
+const { grid = false } = defineProps<{ grid?: boolean }>()
 const apps = computed(() =>
   appsStage.id === 'm3' ? [...STARTER_APPS, ...MORE_APPS] : STARTER_APPS
 )
@@ -32,7 +32,7 @@ const arc = computed(() => {
 
 <template>
   <section class="mt-10">
-    <SectionHeader :title :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
+    <SectionHeader title="Apps" :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
     <ExampleArc
       v-if="!grid && homeApps.id === 'on'"
       :key="arc.length"

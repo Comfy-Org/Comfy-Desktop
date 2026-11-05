@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
+import { EXAMPLES, playLoop, reducedMotion, runExample, seeAllLabel } from './examples'
 
 /**
  * First-time examples · Arc carousel: the examples stand on a wide 3D
@@ -240,8 +240,8 @@ function wheel(e: WheelEvent): void {
     </div>
 
     <div v-if="!items" class="mar-arc-actions">
-      <button v-if="can.explore" type="button" class="mar-arc-all" @click="go('explore')">
-        See all examples<ArrowRight :size="14" />
+      <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
+        {{ seeAllLabel }}<ArrowRight :size="14" />
       </button>
     </div>
   </div>

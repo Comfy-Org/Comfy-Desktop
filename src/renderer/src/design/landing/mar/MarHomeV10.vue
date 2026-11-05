@@ -119,10 +119,6 @@ const recent = computed(() =>
 
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
-    <MarAppsRow
-      v-if="firstRun && homeApps.id !== 'off' && can.exploreApps"
-      title="Start with an app"
-    />
     <MarStart v-if="firstRun" />
     <div v-else>
       <MarAppsRow
