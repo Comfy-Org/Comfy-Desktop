@@ -445,15 +445,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
-  // Both update paths: the Update action checks for conflicts first (dryRunConflictCheck), the
-  // update after a fresh install doesn't.
   describe.each([false, true])('an agent the user forces on by hand (dry run %s)', (dryRun) => {
     const NEWER = 'comfyui-frontend-package==1.59.0.dev2'
     const PLACEHOLDER = 'comfy-agent==0.0.0.dev0\n'
-    /** The `--override` file each uv install was given, read from uv's own cwd when it ran. */
     let overrides: { dryRun: boolean; relative: boolean; text: string }[] = []
 
-    /** Move v0.2.0 to a commit whose requirements pin core's older frontend and `agentFile`. */
     const pinCoreFrontend = (agentFile: string): string => {
       const git = (...args: string[]): string =>
         execFileSync('git', args, { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' })

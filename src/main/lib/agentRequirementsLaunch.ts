@@ -665,13 +665,7 @@ export async function installedWorkingAgent(
   }
 }
 
-/**
- * The frontend an update keeps under an agent the user forces on by hand, as `name==version` for
- * uv's `--override`: their own launch args carry `--enable-agent` and the installed frontend is
- * newer than the one `requirementsText` pins, which may have no Agent button. Only beside an agent
- * the launch would keep: core's agent file pins the placeholder and a working real agent is
- * installed. Null otherwise, or when anything can't be read. Never throws.
- */
+/** The newer frontend to hold with `--override`, only beside an agent the launch would keep. */
 export async function handForcedFrontend(
   installation: InstallationRecord,
   requirementsText: string,

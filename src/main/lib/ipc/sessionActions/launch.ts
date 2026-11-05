@@ -1033,7 +1033,6 @@ async function runLaunch(
   let desktopAddedAssets = false
   /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
   let agentUnanswered = false
-  /** The user typed `--enable-agent` in their own launch args. */
   let agentHandTyped = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the

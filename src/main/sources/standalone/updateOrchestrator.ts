@@ -368,7 +368,6 @@ export async function runComfyUIUpdate(
     if (!fs.existsSync(uvPath) || !activeEnvPython) {
       depFailure = 'Python environment or uv not found while installing updated dependencies'
     } else if (!signal?.aborted) {
-      // A hand-forced agent keeps its newer frontend: core's pin may have no Agent button.
       const held = await handForcedFrontend(installation, postReqs, uvPath, activeEnvPython, signal)
       const overridePath = path.join(installPath, '.update-frontend-override.txt')
       const kept =
