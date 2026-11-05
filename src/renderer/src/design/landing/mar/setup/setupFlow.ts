@@ -80,6 +80,8 @@ if (linkFirst) localSetup.mode = 'on'
 // A link can pick the scope: `&scope=m1` or `&scope=next`.
 const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
+// Without one, the shared link shows the first release: the install lands on Builds.
+else if (linkFirst) localSetup.scope = 'm1'
 
 watch(
   () => ({ ...localSetup }),

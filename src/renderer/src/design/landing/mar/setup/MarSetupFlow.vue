@@ -223,7 +223,7 @@ const stepDetail = computed(() => {
   if (failed.value || nowIndex.value !== 0) return ''
   const mb = Math.round((flow.percent / phases[0].until) * DOWNLOAD_MB)
   const left = Math.max(1, Math.round((DOWNLOAD_MB - mb) / DOWNLOAD_SPEED))
-  return `${mb} of ${DOWNLOAD_MB} MB · ${DOWNLOAD_SPEED} MB/s · about ${left}s left`
+  return `${mb} of ${DOWNLOAD_MB} MB · about ${left}s left`
 })
 const downloadPct = computed(() => Math.min(100, (flow.percent / phases[0].until) * 100))
 function rowState(i: number): string {
@@ -704,14 +704,19 @@ function rowState(i: number): string {
                     <LoaderCircle v-else-if="i === nowIndex" :size="14" class="mss-spin" />
                   </span>
                   <span class="mss-inst-text">
-                    <span class="mss-inst-label">{{ p.label }}</span>
-                    <!-- Only the download knows its size: it gets the bar. -->
-                    <template v-if="i === nowIndex && stepDetail">
-                      <span class="mss-inst-bar" aria-hidden="true"
-                        ><i :style="{ width: `${downloadPct}%` }"></i
-                      ></span>
-                      <span class="mss-inst-detail tabular-nums">{{ stepDetail }}</span>
-                    </template>
+                    <!-- Only the download knows its size: it gets a percent
+                         by its name and one quiet line of detail. -->
+                    <span class="mss-inst-label"
+                      >{{ p.label
+                      }}<span v-if="i === nowIndex && stepDetail" class="mss-inst-pct tabular-nums"
+                        >{{ Math.round(downloadPct) }}%</span
+                      ></span
+                    >
+                    <span
+                      v-if="i === nowIndex && stepDetail"
+                      class="mss-inst-detail tabular-nums"
+                      >{{ stepDetail }}</span
+                    >
                   </span>
                 </li>
               </ol>

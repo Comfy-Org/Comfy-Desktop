@@ -1536,21 +1536,13 @@
   display: grid;
   min-width: 0;
 }
-.mss-inst-bar {
-  height: 3px;
-  margin: 8px 0 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-}
-.mss-inst-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-base-foreground);
-  transition: width 200ms linear;
+.mss-inst-pct {
+  margin-left: 8px;
+  color: var(--color-muted-foreground);
+  font-weight: 400;
 }
 .mss-inst-detail {
+  margin-top: 2px;
   color: var(--color-subtle-foreground);
   font-size: 12px;
   font-weight: 400;
