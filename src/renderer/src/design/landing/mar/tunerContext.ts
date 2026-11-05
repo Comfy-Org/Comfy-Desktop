@@ -59,7 +59,8 @@ export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
   homeApps: computed(() => onHome.value && can.value.exploreApps),
-  appsStage: computed(() => can.value.exploreApps),
+  // What an app can do by stage: only on the app's own screen.
+  appsStage: computed(() => can.value.exploreApps && !!appsProto.front),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
