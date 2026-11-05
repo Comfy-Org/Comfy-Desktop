@@ -25,7 +25,7 @@ const WAYS = [
     label: 'Local',
     tagline: 'Full control. Your hardware.',
     description:
-      'Best for people who want <b>full manual control</b> with versions, custom nodes, and offline workflows.'
+      'Best for <b>full manual control</b> of versions, custom nodes, and offline workflows.'
   }
 ] as const
 </script>

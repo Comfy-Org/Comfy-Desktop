@@ -1660,6 +1660,19 @@
 .mss-foot .mss-pitch .mss-pitch-line {
   flex: 0 1 auto;
 }
+/* Two lines, title over body: production's cards are too long for one. */
+.mss-foot .mss-pitch .mss-pitch-line {
+  display: flex;
+  flex-direction: column;
+  line-height: 18px;
+}
+.mss-foot .mss-pitch .mss-pitch-sep {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mss-foot .mss-pitch .mss-pitch-sep::before {
+  content: none;
+}
 
 /* The first screen's title, at the Home greeting's scale and tracking. */
 .mss-col .mss-first-title {

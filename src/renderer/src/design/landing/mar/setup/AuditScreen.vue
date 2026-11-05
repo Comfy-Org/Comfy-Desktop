@@ -76,8 +76,8 @@ const stepState = (i: number, now: number): string =>
         <span class="fo-text">
           <span class="fo-name">Local</span><span class="fo-tag">Full control. Your hardware.</span>
           <span class="fo-desc"
-            >Best for people who want <b>full manual control</b> with versions, custom nodes, and
-            offline workflows.</span
+            >Best for <b>full manual control</b> of versions, custom nodes, and offline
+            workflows.</span
           >
         </span>
       </div>

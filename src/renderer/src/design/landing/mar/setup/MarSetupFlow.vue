@@ -297,7 +297,7 @@ function rowState(i: number): string {
                   :selected="runOn === 'local'"
                   label="Local"
                   tagline="Full control. Your hardware."
-                  description="Best for people who want **full manual control** with versions, custom nodes, and offline workflows."
+                  description="Best for **full manual control** of versions, custom nodes, and offline workflows."
                   @click="runOn = 'local'"
                 />
               </div>
