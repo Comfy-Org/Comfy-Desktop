@@ -2,15 +2,30 @@
 // Brand-refresh backdrop (frame + angled SVG beams), extracted from
 // BrandTakeoverLayout so non-takeover surfaces can reuse the visuals
 // without the takeover chrome. Forces dark; the brand palette is dark-only.
+import { ref, watch } from 'vue'
 import beamSvg from '../assets/lighting/beam.svg?raw'
 import beam2Svg from '../assets/lighting/beam_2.svg?raw'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     vignette?: boolean
     scrollContent?: boolean
   }>(),
   { vignette: false, scrollContent: false }
+)
+
+const innerFrameRef = ref<HTMLElement | null>(null)
+
+// The non-scrolling frame is still a scroll container (overflow: hidden), and
+// the beams give it a scroll range. Without this, a step that scrolled (the
+// wizard's Configure) hands its offset to the next, non-scrolling step, which
+// then sits shifted up with no way to scroll back.
+watch(
+  () => props.scrollContent,
+  (scrolls) => {
+    if (!scrolls && innerFrameRef.value) innerFrameRef.value.scrollTop = 0
+  },
+  { flush: 'post' }
 )
 </script>
 
@@ -18,6 +33,7 @@ withDefaults(
   <div class="brand-background" data-theme="dark">
     <div class="brand-outer-frame">
       <div
+        ref="innerFrameRef"
         class="brand-inner-frame"
         :class="{
           'brand-inner-frame--vignette': vignette,
