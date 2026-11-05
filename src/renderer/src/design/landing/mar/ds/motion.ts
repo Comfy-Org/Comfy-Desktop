@@ -82,15 +82,12 @@ export const MOTIONS: Motion[] = [
   {
     id: 'toast',
     name: 'Toast',
-    trigger: 'A confirmation (“Saved to Assets”). Leaves after 2.2s.',
-    duration: '160ms in; out: none',
-    easing: 'var(--ease-out-expo)',
-    props: 'opacity, transform: translateY(4px) scale(0.98) → none',
-    reduced: 'Not handled: it still pops in.',
-    src: [
-      ['ui/Toaster.vue', 'animate-pop-in'],
-      ['ui/tokens.css', '--animate-pop-in']
-    ]
+    trigger: 'A confirmation (“Saved to Assets”). Leaves after 2.6s.',
+    duration: '200ms opacity, 260ms transform (in and out)',
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    props: 'opacity, transform: translateX(12px) → none',
+    reduced: 'Fades, no movement.',
+    src: [['mar/pages/MarUndoToast.vue', '.mar-undo-enter-active,']]
   },
   {
     id: 'undo',
@@ -98,8 +95,8 @@ export const MOTIONS: Motion[] = [
     trigger: 'Delete, move or archive on a library page. Stays 6s with Undo, 2.6s without.',
     duration: '200ms opacity, 260ms transform (in and out)',
     easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
-    props: 'opacity, transform: translate(-50%, 8px) → translate(-50%, 0)',
-    reduced: 'Not handled.',
+    props: 'opacity, transform: translateX(12px) → none',
+    reduced: 'Fades, no movement.',
     src: [['mar/pages/MarUndoToast.vue', '.mar-undo-enter-active,']]
   },
   {

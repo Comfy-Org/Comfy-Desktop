@@ -13,7 +13,6 @@ import MarSeg from './MarSeg.vue'
 import MarEntityHeader from './MarEntityHeader.vue'
 import MarEmpty from './MarEmpty.vue'
 import { EMPTY_PICS } from './emptyArt'
-import MarUndoToast from './MarUndoToast.vue'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
 import { projects } from './projectsStore'
@@ -432,8 +431,6 @@ function removePerson(m: string): void {
         />
       </div>
     </MarPage>
-
-    <MarUndoToast />
   </div>
 </template>
 

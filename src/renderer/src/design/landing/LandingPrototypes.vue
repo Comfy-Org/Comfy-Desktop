@@ -10,6 +10,7 @@ import ClassicDashboard from './parts/milestones/ClassicDashboard.vue'
 import ClientPortal from './portal/ClientPortal.vue'
 import ViewToggle from './parts/space/ViewToggle.vue'
 import AppTab from './parts/apps/AppTab.vue'
+import MarUndoToast from './mar/pages/MarUndoToast.vue'
 import UiTuner from './mar/UiTuner.vue'
 import { appsProto } from './appFlow'
 import { hostActions, proto, toast } from './useProto'
@@ -176,6 +177,7 @@ watch(
       <!-- The breadcrumb's build switcher, just under the stand-in bar. -->
       <SwitcherMenu v-if="standalone && can.breadcrumb" :top="44" />
       <Toaster />
+      <MarUndoToast />
     </div>
   </TooltipProvider>
 </template>

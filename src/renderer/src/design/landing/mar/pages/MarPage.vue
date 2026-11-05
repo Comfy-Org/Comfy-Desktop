@@ -3,7 +3,6 @@ import { computed, type Component } from 'vue'
 import { CloudOff, RotateCw, SearchX } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { retry, shownState, type PageState } from './pageState'
-import MarUndoToast from './MarUndoToast.vue'
 import MarEmpty from './MarEmpty.vue'
 import '../table/table.css'
 
@@ -182,8 +181,6 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
     />
 
     <slot v-else />
-
-    <MarUndoToast v-if="!embedded" />
   </div>
 </template>
 
@@ -193,7 +190,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding: 36px 0 24px;
+  padding: 8px 0 24px;
 }
 .mar-page-title {
   margin: 0;

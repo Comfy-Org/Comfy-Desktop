@@ -63,7 +63,6 @@ import MarItemMenu from '../pages/MarItemMenu.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSplitButton from '../pages/MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from '../pages/MarStatus.vue'
-import MarUndoToast from '../pages/MarUndoToast.vue'
 import { notify } from '../pages/undo'
 import type { MenuLine } from '../pages/menu'
 import { marTabsOn } from '../shell/titleTabs'
@@ -652,7 +651,6 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
     <ProjectWorkflows v-else-if="tab === 'workflows'" :scope="env" />
     <AssetsPage v-else-if="tab === 'assets'" :scope="env" embedded />
     <EnvModels v-else :env />
-    <MarUndoToast />
   </div>
 </template>
 

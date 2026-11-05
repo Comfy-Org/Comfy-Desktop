@@ -51,7 +51,7 @@ const SNIPPETS: Record<string, Ref[]> = {
     ['mar/shell/marShell.css', 'backdrop-filter: none;', 0],
     ['mar/shell/marShell.css', '> .glass-titlebar {']
   ],
-  toast: [['ui/Toaster.vue', 'bg-inverted-background', 0, false]]
+  toast: [['mar/pages/MarUndoToast.vue', 'backdrop-filter', 0, false]]
 }
 /** Details: who uses what, rules, performance. Code: the CSS. */
 const { part = 'details' } = defineProps<{ part?: 'details' | 'code' }>()

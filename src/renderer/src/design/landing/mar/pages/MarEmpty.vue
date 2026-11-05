@@ -50,7 +50,9 @@ const emit = defineEmits<{ action: []; second: [] }>()
         class="mar-empty-pic"
         :class="`is-${i}`"
       />
-      <span class="mar-empty-badge"><component :is="icon" :size="compact ? 14 : 16" /></span>
+      <span class="mar-empty-badge"
+        ><component :is="icon" :size="compact ? 14 : 16" :stroke-width="2.25"
+      /></span>
     </div>
     <div class="flex flex-col gap-1.5">
       <h2 class="mar-empty-h">{{ title }}</h2>
@@ -134,19 +136,18 @@ const emit = defineEmits<{ action: []; second: [] }>()
 }
 .mar-empty-badge {
   position: absolute;
-  bottom: -4px;
+  bottom: -14px;
   left: 50%;
   z-index: 2;
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border-radius: 999px;
-  background: var(--color-card-background);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
-    0 8px 20px rgb(0 0 0 / 0.3);
-  color: var(--color-base-foreground);
+  background: var(--color-inverted-background);
+  /* The page's colour as a ring: the badge is cut out of the fan. */
+  box-shadow: 0 0 0 4px var(--color-content-background);
+  color: var(--color-inverted-foreground);
   transform: translateX(-50%);
 }
 .mar-empty-art.is-bare .mar-empty-badge {
@@ -155,6 +156,7 @@ const emit = defineEmits<{ action: []; second: [] }>()
   height: 48px;
 }
 .mar-empty.is-error .mar-empty-badge {
+  background: var(--color-card-background);
   color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-empty-h {

@@ -3,9 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bell } from 'lucide-vue-next'
 import portraitSun from '../../assets/portrait-sun.jpg'
 import Button from '../../../ui/Button.vue'
-import Toaster from '../../../ui/Toaster.vue'
 import Tooltip from '../../../ui/Tooltip.vue'
-import { proto } from '../../../useProto'
 import VariantModes from '../../../variants/VariantModes.vue'
 import LaunchBanner from '../../LaunchBanner.vue'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
@@ -71,10 +69,7 @@ const root = ref<HTMLElement>()
 function replay(): void {
   run.value++
   on.value = true
-  if (id === 'toast') {
-    proto.toast = ''
-    setTimeout(() => (proto.toast = 'Saved to Assets'), 50)
-  }
+  if (id === 'toast') notify('Saved to Assets')
   if (id === 'undo') notify('Moved 1 workflow to Hero shots', () => {})
   if (id === 'tooltip') {
     const t = root.value?.querySelector<HTMLElement>('button')
@@ -154,8 +149,7 @@ const sideScope = { [(VariantModes as { __scopeId?: string }).__scopeId ?? 'data
     </Tooltip>
 
     <div v-else-if="id === 'toast' || id === 'undo'" class="ds-mo-box proto-ui">
-      <Toaster v-if="id === 'toast'" />
-      <MarUndoToast v-else />
+      <MarUndoToast />
     </div>
 
     <div v-else-if="id === 'modal'" class="ds-mo-box">

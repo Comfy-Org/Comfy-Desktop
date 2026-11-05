@@ -39,7 +39,7 @@ function tick(id: string): void {
       clearInterval(op.timer)
       op.status = 'failed'
       op.failAt = undefined
-      if (op.error) notify(op.error)
+      if (op.error) notify(op.error, undefined, 'error')
       return
     }
     if (op.pct >= 100) {
