@@ -164,6 +164,7 @@ const HERO: Record<string, string> = {
   tutorials: mock('hero-tutorials'),
   workflows: mock('hero-workflows'),
   apps: mock('hero-apps'),
+  environments: mock('hero-overview'),
   assets: mock('hero-assets'),
   projects: mock('hero-projects'),
   spaces: mock('hero-spaces')
@@ -173,6 +174,7 @@ const HERO: Record<string, string> = {
 export const heroImage = computed<string | undefined>(() => {
   const page = proto.page
   if (page.startsWith('project:')) return HERO.projects
+  if (page.startsWith('tool:')) return HERO.environments
   // A space gets its brand's colour instead of a photo (spaceCover).
   if (page.startsWith('space:')) return undefined
   return HERO[page]
