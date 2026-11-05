@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { Check, CopyPlus } from 'lucide-vue-next'
+import { CopyPlus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import type { ProtoInstance } from '../../mock'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { factsOf } from './buildFacts'
 import { runOp } from './buildOps'
-import { torchPick } from './torchPick'
 import './buildTabs.css'
 
 /**
@@ -46,25 +45,13 @@ function changeTorch(v: string, copy: boolean): void {
       torchaudio; the rest of the environment is kept.
     </p>
     <div class="flex flex-col gap-2">
-      <Card
-        v-for="t in TORCH"
-        :key="t.v"
-        class="mar-bt-row"
-        :class="[t.on && 'is-on', `is-${torchPick.id}`]"
-      >
-        <span v-if="torchPick.id === 'radio'" class="mar-bt-radio" />
+      <Card v-for="t in TORCH" :key="t.v" class="mar-bt-row" :class="t.on && 'is-on'">
         <div class="min-w-0 flex-1">
           <p class="mar-bt-title flex items-center gap-2">
-            PyTorch {{ t.v
-            }}<span v-if="t.on && ['outline', 'filled'].includes(torchPick.id)" class="mar-tag"
-              >Selected</span
-            >
+            PyTorch {{ t.v }}<span v-if="t.on" class="mar-tag">Selected</span>
           </p>
           <p class="mar-bt-sub">{{ t.on ? facts.torch : t.note }}</p>
         </div>
-        <span v-if="t.on && torchPick.id === 'check'" class="mar-bt-picked"
-          ><Check :size="14" />Selected</span
-        >
         <template v-if="!t.on">
           <Button variant="ghost" size="sm" @click="changeTorch(t.v, true)"
             ><CopyPlus :size="13" />Copy & Change</Button

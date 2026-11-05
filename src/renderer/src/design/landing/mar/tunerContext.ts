@@ -11,7 +11,6 @@ import { palette } from './palette'
 import { cover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
-import { torchPick } from './build/torchPick'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
 import { homeApps } from './homeApps'
@@ -80,8 +79,6 @@ export const when = {
   buildPage: computed(
     () => inShell.value && proto.page.startsWith('environment:') && !can.value.breadcrumb
   ),
-  // The PyTorch list, in a build's Update tab.
-  torchPick: computed(() => inShell.value && proto.page.startsWith('environment:')),
   // Workflow cards with a cover: a build's page, Workflows and Home's recents.
   cover: computed(
     () =>
@@ -201,7 +198,6 @@ export const TWEAKS = {
   cover: one(cover, 'gradient'),
   buildCard: one(buildCard, 'photos'),
   buildPage: one(buildPage, 'production'),
-  torchPick: one(torchPick, 'outline'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
