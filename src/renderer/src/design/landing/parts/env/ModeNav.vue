@@ -48,7 +48,15 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   create: [
     { page: 'overview', label: 'Home', icon: Home },
     ...(can.value.exploreApps
-      ? [{ page: 'explore' as Page, label: 'Explore', icon: Compass }]
+      ? [
+          {
+            page: 'explore' as Page,
+            label: 'Explore',
+            icon: Compass,
+            // An app's page sits under Explore until the Apps library comes.
+            ...(can.value.explore ? {} : { prefix: 'app:' })
+          }
+        ]
       : []),
     // The library of added apps, before Projects brings the Libraries group.
     ...(can.value.explore && !can.value.projects && proto.signedIn

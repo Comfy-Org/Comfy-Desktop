@@ -1178,6 +1178,10 @@ export function suggestions(): string[] {
 export function openApp(id: string): void {
   // An app's own page comes with the Agent; before that it opens as the app.
   if (proto.milestone < 10) return openAppUrl(id)
+  openAppPage(id)
+}
+/** An app's page: what it does and Run, with Open app for its own tab. */
+export function openAppPage(id: string): void {
   goIn('create', `app:${id}`)
 }
 

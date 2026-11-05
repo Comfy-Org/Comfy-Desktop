@@ -38,7 +38,7 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
 <template>
   <MarPages v-if="marOwns(proto.page)" />
   <MarHomeV10 v-else-if="proto.page === 'overview' && can.home" />
-  <AppDetail v-else-if="app && can.agent" :id="app.id" :key="app.id" />
+  <AppDetail v-else-if="app && can.exploreApps" :id="app.id" :key="app.id" />
   <MarAgent v-else-if="proto.page === 'agent'" />
   <MarBuildPage v-else-if="env" :key="env.id" :env />
   <MarExplore v-else-if="proto.page === 'explore'" />

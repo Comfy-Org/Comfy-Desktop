@@ -6,7 +6,7 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import Select from '../../ui/Select.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
-import { EXPLORE, STARTER_APPS, isAdded, openAppUrl, toggleAdded } from '../../appFlow'
+import { EXPLORE, STARTER_APPS, isAdded, openAppPage, toggleAdded } from '../../appFlow'
 import { go, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -138,8 +138,8 @@ const empty = computed(
             tabindex="0"
             class="mar-ex-card group"
             :aria-label="`Open ${a.name}`"
-            @click="openAppUrl(a.id)"
-            @keydown.enter="openAppUrl(a.id)"
+            @click="openAppPage(a.id)"
+            @keydown.enter="openAppPage(a.id)"
           >
             <span class="mar-ex-media"
               ><img :src="thumb(a.thumbId)" alt="" loading="lazy" />
