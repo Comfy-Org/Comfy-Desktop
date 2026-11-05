@@ -13,6 +13,7 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
+import { homeApps } from './homeApps'
 import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
@@ -55,6 +56,7 @@ const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces',
 export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
+  homeApps: computed(() => onHome.value && !onFirstRun.value && can.value.exploreApps),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -184,6 +186,7 @@ export const TWEAKS = {
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
+  homeApps: one(homeApps, 'on'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),

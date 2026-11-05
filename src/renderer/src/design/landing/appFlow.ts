@@ -485,6 +485,58 @@ function hub(
 }
 const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
 
+const describeField = (placeholder: string): Field => ({
+  id: 'scene',
+  label: 'Describe it',
+  kind: 'text',
+  node: 'Prompt #2',
+  on: true,
+  placeholder
+})
+/** The starter apps on Home: named by what they make, never by a model,
+ *  three inputs at most. */
+export const STARTER_APPS: LibApp[] = [
+  {
+    ...hub(
+      's-image',
+      'Image Generator',
+      'Describe it, get an image.',
+      'image_z_image_turbo',
+      'Comfy',
+      0.04
+    ),
+    fields: [describeField('A ceramic lamp on a linen table')]
+  },
+  {
+    ...hub(
+      's-edit',
+      'Image Edit',
+      'Change or restyle a picture.',
+      'api_google_nano_banana2_image_edit',
+      'Comfy',
+      0.05
+    ),
+    fields: [
+      { id: 'photo', label: 'Image', kind: 'image', node: 'Load Image #1', on: true },
+      describeField('Make it golden hour')
+    ]
+  },
+  {
+    ...hub(
+      's-video',
+      'Video Generator',
+      'From words or a picture.',
+      'video_ltx2_5_i2v',
+      'Comfy',
+      0.31
+    ),
+    fields: [
+      describeField('Slow push in on the product'),
+      { id: 'photo', label: 'Image', kind: 'image', node: 'Load Image #1', on: true }
+    ]
+  }
+]
+
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
@@ -523,7 +575,9 @@ function syncAdded(a: LibApp): void {
 EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
 
 export const libApp = (id: string): LibApp | undefined =>
-  LIB.find((a) => a.id === id) ?? EXPLORE_APPS.find((a) => a.id === id)
+  LIB.find((a) => a.id === id) ??
+  EXPLORE_APPS.find((a) => a.id === id) ??
+  STARTER_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {

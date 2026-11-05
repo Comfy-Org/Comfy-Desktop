@@ -9,6 +9,8 @@ import MarStart from './MarStart.vue'
 import StarterCards from '../parts/StarterCards.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
+import MarAppsRow from './MarAppsRow.vue'
+import { homeApps } from './homeApps'
 import { homeBuilds } from './homeBuilds'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
@@ -173,6 +175,7 @@ const recent = computed(() =>
           />
         </ScrollRow>
       </section>
+      <MarAppsRow v-if="homeApps.id === 'on' && can.exploreApps" />
       <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
