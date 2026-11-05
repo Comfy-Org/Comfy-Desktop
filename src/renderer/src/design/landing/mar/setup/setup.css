@@ -1428,7 +1428,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The pick is a check, as on the workflow cards; it switches at once. */
+/* The pick is a bare check: the card's fill already says it's picked. It
+ * switches at once. */
 .mss-opt-check {
   display: inline-flex;
   width: 18px;
@@ -1437,9 +1438,7 @@
   align-items: center;
   justify-content: center;
   align-self: flex-start;
-  border-radius: 6px;
-  background-color: var(--color-inverted-background);
-  color: var(--color-inverted-foreground);
+  color: var(--color-base-foreground);
   visibility: hidden;
 }
 .mss-opt[data-state='checked'] .mss-opt-check {

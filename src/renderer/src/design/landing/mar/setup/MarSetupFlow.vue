@@ -542,7 +542,7 @@ function rowState(i: number): string {
                     <span class="mss-opt-meta">{{ m.meta }}</span>
                   </span>
                   <span class="mss-opt-check" aria-hidden="true"
-                    ><Check :size="11" :stroke-width="3"
+                    ><Check :size="15" :stroke-width="2.5"
                   /></span>
                 </RadioGroupItem>
               </RadioGroupRoot>
@@ -602,7 +602,7 @@ function rowState(i: number): string {
                     <span class="mss-opt-meta">{{ h.meta }}</span>
                   </span>
                   <span class="mss-opt-check" aria-hidden="true"
-                    ><Check :size="11" :stroke-width="3"
+                    ><Check :size="15" :stroke-width="2.5"
                   /></span>
                 </RadioGroupItem>
               </RadioGroupRoot>
