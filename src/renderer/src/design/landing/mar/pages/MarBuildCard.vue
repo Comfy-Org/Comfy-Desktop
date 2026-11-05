@@ -37,8 +37,6 @@ const {
   second,
   busy = false,
   lines,
-  selected = false,
-  selecting = false,
   renaming = false,
   fav
 } = defineProps<{
@@ -66,8 +64,6 @@ const {
   second?: { label: string; hint?: string; icon: unknown; run: () => void }
   busy?: boolean
   lines: MenuLine[]
-  selected?: boolean
-  selecting?: boolean
   renaming?: boolean
   fav?: boolean
 }>()
@@ -81,7 +77,6 @@ const splitSuffix = computed(() =>
 )
 const emit = defineEmits<{
   open: []
-  select: [range: boolean]
   'start-rename': []
   rename: [name: string]
   'cancel-rename': []
@@ -95,14 +90,12 @@ const emit = defineEmits<{
     :meta="error ? undefined : look === 'mark' ? `${where} · ${meta}` : meta"
     :fav
     :lines
-    :selected
-    :selecting
+    :selectable="false"
     :renaming
     ratio="auto"
     class="mar-bc"
     :class="`is-${look}`"
     @open="emit('open')"
-    @select="emit('select', $event)"
     @start-rename="emit('start-rename')"
     @rename="emit('rename', $event)"
     @cancel-rename="emit('cancel-rename')"
@@ -243,20 +236,6 @@ const emit = defineEmits<{
   background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-bc .mar-item-check {
-  top: 16px;
-  right: 44px;
-  left: auto;
-  background: transparent;
-  backdrop-filter: none;
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bc.is-selected .mar-item-check {
-  background: var(--color-base-foreground);
-  box-shadow: none;
-  color: var(--color-inverted-foreground);
-}
 .mar-bc-where {
   display: flex;
   height: 20px;
@@ -331,32 +310,10 @@ const emit = defineEmits<{
 .mar-bc-strip > svg {
   color: var(--color-muted-foreground);
 }
-/* ⋯ sits at the strip's end. The check takes the place icon's spot on
-   hover or while selecting, and the icon steps aside for it. */
+/* ⋯ sits at the strip's end. */
 .mar-bc.is-strip .mar-item-tools {
   top: 4px;
   right: 8px;
-}
-/* Sized to the icon it replaces, so it keeps the label's gap. */
-:root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check {
-  top: 10px;
-  right: auto;
-  left: 15px;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bc.is-strip .mar-item-check > svg {
-  width: 11px;
-  height: 11px;
-}
-.mar-bc-strip > svg {
-  transition: opacity 120ms ease;
-}
-.mar-item.mar-bc.is-strip:is(:hover, :focus-within, .is-selecting, .is-selected)
-  .mar-bc-strip
-  > svg {
-  opacity: 0;
 }
 /* The state's other action (Stop, Update) is outlined, so the main button
    stays the one with a fill, and a fill that reads on the card. */
@@ -541,9 +498,7 @@ const emit = defineEmits<{
 }
 /* Light: white on white needs a faint ring to read as a card, and the
    amber needs more weight on it (the same pair as the Photos card). */
-:root[data-ds-theme='light']
-  .proto-ui.proto-ui.proto-ui
-  .mar-item.is-grid.mar-bc:not(.is-selected) {
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-bc {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 :root[data-ds-theme='light'] .mar-bc .mar-status.is-warn {

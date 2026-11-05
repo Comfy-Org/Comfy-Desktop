@@ -36,7 +36,6 @@ import MarSplitButton from './MarSplitButton.vue'
 import MarSeg from './MarSeg.vue'
 import MarSearchField from './MarSearchField.vue'
 import MarViewToggle from './MarViewToggle.vue'
-import MarSelectBar from './MarSelectBar.vue'
 import { collection } from './collection'
 import { useLibrary } from './library'
 import { shownState } from './pageState'
@@ -116,7 +115,7 @@ function clear(): void {
   where.value = 'all'
   query.value = ''
 }
-const lib = useLibrary(builds, shown)
+const lib = useLibrary(builds, shown, { select: false })
 
 /* ---- The cover: last outputs, and the live panel ---- */
 // The last three things made on each build; builds that made fewer get
@@ -353,15 +352,12 @@ function card(b: Build) {
     second: second(b),
     busy: b.state === 'launching',
     lines: lines(b),
-    selected: lib.sel.has(b.id),
-    selecting: lib.sel.ids.value.size > 0,
     renaming: lib.renaming.value === b.id,
     fav: b.fav
   }
 }
 const cardOn = (b: Build) => ({
   open: () => open(b),
-  select: (range: boolean) => lib.pick(b.id, range),
   'start-rename': () => (lib.renaming.value = b.id),
   rename: (name: string) => lib.rename(b.id, name),
   'cancel-rename': () => (lib.renaming.value = ''),
@@ -436,12 +432,10 @@ const newLabel = computed(() =>
         layout="list"
         :name="b.name"
         :lines="lines(b)"
-        :selected="lib.sel.has(b.id)"
-        :selecting="lib.sel.ids.value.size > 0"
+        :selectable="false"
         :renaming="lib.renaming.value === b.id"
         class="mar-bc-row"
         @open="open(b)"
-        @select="lib.pick(b.id, $event)"
         @start-rename="lib.renaming.value = b.id"
         @rename="lib.rename(b.id, $event)"
         @cancel-rename="lib.renaming.value = ''"
@@ -534,13 +528,11 @@ const newLabel = computed(() =>
         :name="b.name"
         :fav="b.fav"
         :lines="lines(b)"
-        :selected="lib.sel.has(b.id)"
-        :selecting="lib.sel.ids.value.size > 0"
+        :selectable="false"
         :renaming="lib.renaming.value === b.id"
         ratio="2 / 1"
         class="mar-build"
         @open="open(b)"
-        @select="lib.pick(b.id, $event)"
         @start-rename="lib.renaming.value = b.id"
         @rename="lib.rename(b.id, $event)"
         @cancel-rename="lib.renaming.value = ''"
@@ -620,11 +612,9 @@ const newLabel = computed(() =>
         :status-label="statusLabel(b)"
         :fav="b.fav"
         :lines="lines(b)"
-        :selected="lib.sel.has(b.id)"
-        :selecting="lib.sel.ids.value.size > 0"
+        :selectable="false"
         :renaming="lib.renaming.value === b.id"
         @open="open(b)"
-        @select="lib.pick(b.id, $event)"
         @start-rename="lib.renaming.value = b.id"
         @rename="lib.rename(b.id, $event)"
         @cancel-rename="lib.renaming.value = ''"
@@ -670,26 +660,6 @@ const newLabel = computed(() =>
         </template>
       </MarItem>
     </div>
-
-    <MarSelectBar
-      :n="lib.sel.ids.value.size"
-      noun="build"
-      :actions="[
-        {
-          label: 'Stop',
-          icon: Square,
-          run: () => (
-            builds.items
-              .filter((b) => lib.sel.has(b.id) && b.state === 'running')
-              .forEach((b) => (b.state = 'stopped')),
-            lib.sel.clear()
-          )
-        },
-        { label: 'Remove', icon: Trash2, danger: true, run: lib.removeSelected }
-      ]"
-      @clear="lib.sel.clear()"
-      @all="lib.sel.all(lib.order.value)"
-    />
   </MarPage>
 </template>
 
@@ -709,9 +679,6 @@ const newLabel = computed(() =>
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build:is(:hover, .is-menu) {
   background: var(--color-card-background-hover);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build.is-selected {
-  box-shadow: 0 0 0 2px var(--color-base-foreground);
-}
 /* Nested radius: the card's corner minus its padding. */
 .mar-build > .mar-item-media {
   border-radius: max(calc(var(--radius-card) - 6px), 4px);
@@ -723,7 +690,7 @@ const newLabel = computed(() =>
   font-size: 14px;
   font-weight: 600;
 }
-/* The chip and the check share one inset on the strip. */
+/* The chip's inset on the strip. */
 .mar-build .mar-item-status {
   top: 10px;
   left: 10px;
@@ -832,9 +799,6 @@ const newLabel = computed(() =>
     0 1px 2px color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
     0 8px 24px -12px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
 }
-:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-grid.mar-build.is-selected {
-  box-shadow: 0 0 0 2px var(--color-base-foreground);
-}
 /* The strip's seams take the card's colour, not a dark gap. */
 :root[data-ds-theme='light'] .mar-build-made {
   background: var(--color-card-background);
@@ -914,9 +878,6 @@ const newLabel = computed(() =>
 :root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row:is(:hover, .is-menu) {
   background: var(--color-card-background-hover);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-selected {
-  box-shadow: 0 0 0 2px var(--color-base-foreground);
-}
 /* Where: a small mark, no tile. */
 .mar-bc-row > .mar-item-media {
   display: flex;
@@ -927,14 +888,6 @@ const newLabel = computed(() =>
   overflow: visible;
   background: none;
   color: var(--color-muted-foreground);
-}
-/* The check takes the mark's place, centred on it, clear of the name. */
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row .mar-item-check {
-  top: 18px !important;
-  left: 14px !important;
-}
-.mar-bc-row:is(:hover, :focus-within, .is-selecting, .is-selected) > .mar-item-media {
-  opacity: 0;
 }
 /* The name and its specs on one line. */
 .mar-bc-row > .mar-item-text {

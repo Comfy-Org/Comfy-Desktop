@@ -8,10 +8,12 @@ import type { MenuAction, MenuLine } from './menu'
 /**
  * The wiring every library page in Mar's proposal shares: selection
  * (with ⌘A, Delete and Esc), rename in place, and Move to project.
+ * `select: false` (Builds) leaves selection and its keys out.
  */
 export function useLibrary<T extends Base>(
   col: ReturnType<typeof collection<T>>,
-  shown: ComputedRef<T[]>
+  shown: ComputedRef<T[]>,
+  { select = true }: { select?: boolean } = {}
 ) {
   const sel = selection()
   const renaming = ref('')
@@ -71,8 +73,10 @@ export function useLibrary<T extends Base>(
       removeSelected()
     }
   }
-  onMounted(() => window.addEventListener('keydown', key))
-  onBeforeUnmount(() => window.removeEventListener('keydown', key))
+  if (select) {
+    onMounted(() => window.addEventListener('keydown', key))
+    onBeforeUnmount(() => window.removeEventListener('keydown', key))
+  }
 
   return { sel, renaming, order, selected, pick, rename, removeSelected, moveLine }
 }
