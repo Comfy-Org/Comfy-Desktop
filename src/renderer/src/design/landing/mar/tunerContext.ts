@@ -13,7 +13,6 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
-import { homeApps } from './homeApps'
 import { appsStage } from './apps/appsStage'
 import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
@@ -57,7 +56,6 @@ const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces',
 export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
-  homeApps: computed(() => onHome.value && can.value.exploreApps),
   // What an app can do by stage: only on the app's own screen.
   appsStage: computed(() => can.value.exploreApps && !!appsProto.front),
   firstRun: onFirstRun,
@@ -189,7 +187,6 @@ export const TWEAKS = {
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
-  homeApps: one(homeApps, 'on'),
   appsStage: one(appsStage, 'm1'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),

@@ -14,7 +14,6 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
-import { HOME_APPS, homeApps } from './homeApps'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
@@ -118,7 +117,6 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   // First run lives on Home.
   { id: 'user', show: () => can.value.home },
   { id: 'homeBuilds', show: () => when.homeBuilds.value },
-  { id: 'homeApps', show: () => when.homeApps.value },
   { id: 'appsStage', show: () => when.appsStage.value },
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
@@ -245,9 +243,6 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('homeBuilds')" label="Builds row on Home">
             <Seg v-model="homeBuilds.id" label="Builds row on Home" :options="HOME_BUILD_OPTIONS" />
-          </Row>
-          <Row :show="shows('homeApps')" label="Apps on Home">
-            <Seg v-model="homeApps.id" label="Apps on Home" :options="HOME_APPS" />
           </Row>
           <Row :show="shows('appsStage')" label="Apps stage">
             <Seg v-model="appsStage.id" label="Apps stage" :options="APPS_STAGES" />
