@@ -712,7 +712,7 @@ const newLabel = computed(() =>
           <Button
             v-if="problemOf(b)"
             variant="secondary"
-            size="sm"
+            size="md"
             class="mar-bc-main"
             @click.stop="fixProblem(b)"
             >{{ PROBLEM_ACTION[problemOf(b)!] }}</Button
@@ -1266,6 +1266,11 @@ const newLabel = computed(() =>
   width: 150px;
   overflow: visible;
   padding-left: 3px;
+}
+/* The ⋯ stands as tall as the action beside it. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-row .mar-kebab {
+  width: 32px;
+  height: 32px;
 }
 .mar-bc-row .mar-item-tools.is-row {
   width: 240px;
