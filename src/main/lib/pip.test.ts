@@ -51,22 +51,14 @@ describe('getPipIndexArgs', () => {
     expect(getExtras(args)).toHaveLength(0)
   })
 
-  it('uses first Chinese mirror as --index-url when useChineseMirrors is true', () => {
+  // uv consults --extra-index-url entries before the default --index-url and
+  // stops at the first index carrying the package (#1660), so a mirror only
+  // actually wins when it occupies an EXTRA slot while pypi.org stays the
+  // --index-url fallback.
+  it('puts every Chinese mirror ahead of pypi.org in --extra-index-url when useChineseMirrors is true', () => {
     const args = getPipIndexArgs(undefined, true)
-    expect(getIndexUrl(args)).toBe(PYPI_MIRROR_URLS[0])
-  })
-
-  it('demotes pypi.org to --extra-index-url when useChineseMirrors is true', () => {
-    const args = getPipIndexArgs(undefined, true)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-  })
-
-  it('includes remaining Chinese mirrors as --extra-index-url when useChineseMirrors is true', () => {
-    const args = getPipIndexArgs(undefined, true)
-    const extras = getExtras(args)
-    const expectedExtras = [PYPI_INDEX_URL, ...PYPI_MIRROR_URLS.slice(1)]
-    expect(extras).toEqual(expectedExtras)
+    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getExtras(args)).toEqual(PYPI_MIRROR_URLS)
   })
 
   it('does not include --index-strategy', () => {
@@ -77,37 +69,25 @@ describe('getPipIndexArgs', () => {
     expect(withMirror).not.toContain('--index-strategy')
   })
 
-  it('uses user mirror as --index-url when provided', () => {
+  it('puts the user mirror ahead of pypi.org in --extra-index-url when provided', () => {
     const mirror = 'https://custom.mirror.example/simple/'
     const args = getPipIndexArgs(mirror)
-    expect(getIndexUrl(args)).toBe(mirror)
+    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getExtras(args)).toEqual([mirror])
   })
 
-  it('demotes pypi.org to --extra-index-url when user mirror is provided', () => {
-    const mirror = 'https://custom.mirror.example/simple/'
-    const args = getPipIndexArgs(mirror)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-  })
-
-  it('adds user mirror without Chinese mirrors when useChineseMirrors is false', () => {
+  it('keeps pypi.org as the --index-url fallback for a user mirror', () => {
     const mirror = 'https://custom.mirror.example/simple/'
     const args = getPipIndexArgs(mirror, false)
-    expect(getIndexUrl(args)).toBe(mirror)
-    const extras = getExtras(args)
-    expect(extras).toEqual([PYPI_INDEX_URL])
+    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getExtras(args)).toEqual([mirror])
   })
 
-  it('uses user mirror as --index-url with Chinese mirrors and pypi.org as extras', () => {
+  it('orders extras user mirror first, then Chinese mirrors', () => {
     const mirror = 'https://custom.mirror.example/simple/'
     const args = getPipIndexArgs(mirror, true)
-    expect(getIndexUrl(args)).toBe(mirror)
-    const extras = getExtras(args)
-    expect(extras).toContain(PYPI_INDEX_URL)
-    for (const url of PYPI_MIRROR_URLS) {
-      expect(extras).toContain(url)
-    }
-    expect(extras).toHaveLength(1 + PYPI_MIRROR_URLS.length)
+    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    expect(getExtras(args)).toEqual([mirror, ...PYPI_MIRROR_URLS])
   })
 
   it('deduplicates when user mirror matches pypi.org', () => {
@@ -115,22 +95,24 @@ describe('getPipIndexArgs', () => {
     expect(getIndexUrl(args)).toBe('https://pypi.org/simple/')
     const extras = getExtras(args)
     expect(extras).not.toContain('https://pypi.org/simple/')
-    expect(extras).toHaveLength(PYPI_MIRROR_URLS.length)
+    expect(extras).toEqual(PYPI_MIRROR_URLS)
   })
 
   it('deduplicates when user mirror matches pypi.org without trailing slash', () => {
     const args = getPipIndexArgs('https://pypi.org/simple', true)
     const extras = getExtras(args)
-    expect(extras).toHaveLength(PYPI_MIRROR_URLS.length)
+    expect(extras).toEqual(PYPI_MIRROR_URLS)
   })
 
   it('deduplicates when user mirror is one of the Chinese mirrors', () => {
     const mirror = PYPI_MIRROR_URLS[0]!
     const args = getPipIndexArgs(mirror, true)
-    expect(getIndexUrl(args)).toBe(mirror)
+    expect(getIndexUrl(args)).toBe(PYPI_INDEX_URL)
+    // The mirror enters once (as the user mirror) and the loop does not add
+    // it a second time.
     const extras = getExtras(args)
-    expect(extras.filter((u) => u === mirror)).toHaveLength(0)
-    expect(extras).toHaveLength(1 + PYPI_MIRROR_URLS.length - 1)
+    expect(extras.filter((u) => u === mirror)).toHaveLength(1)
+    expect(extras).toEqual([mirror, ...PYPI_MIRROR_URLS.slice(1)])
   })
 
   it('treats empty string as no mirror', () => {
@@ -146,7 +128,7 @@ describe('getPipIndexArgs', () => {
   it('trims whitespace from mirror URL', () => {
     const mirror = '  https://custom.mirror.example/simple/  '
     const args = getPipIndexArgs(mirror)
-    expect(getIndexUrl(args)).toBe('https://custom.mirror.example/simple/')
+    expect(getExtras(args)).toEqual(['https://custom.mirror.example/simple/'])
   })
 
   it('passes undefined the same as no argument', () => {

@@ -218,26 +218,22 @@ function normalizeIndexUrl(url: string): string {
 export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
   const mirror = pypiMirror?.trim() || undefined
 
-  // Primary --index-url priority: user mirror, then first Chinese mirror, then pypi.org.
-  // The Chinese mirror goes first (not pypi.org as a fallback extra) to avoid uv's first-match
-  // strategy stalling on the unreachable pypi.org before falling back.
-  let primary: string
-  if (mirror) {
-    primary = mirror
-  } else if (useChineseMirrors && PYPI_MIRROR_URLS.length > 0) {
-    primary = PYPI_MIRROR_URLS[0]!
-  } else {
-    primary = PYPI_INDEX_URL
-  }
-
-  const args: string[] = ['--index-url', primary]
-  const seen = new Set<string>([normalizeIndexUrl(primary)])
+  // uv consults `--extra-index-url` entries BEFORE the default index
+  // (`--index-url`, i.e. `--default-index`) and stops at the first index
+  // that has the package, so a mirror only wins when it sits in an EXTRA
+  // slot. Keeping pypi.org as `--index-url` leaves it the implicit
+  // low-priority fallback for packages a mirror does not carry (#1660).
+  const args: string[] = ['--index-url', PYPI_INDEX_URL]
+  const seen = new Set<string>([normalizeIndexUrl(PYPI_INDEX_URL)])
   const extras: string[] = []
 
-  const pypiNorm = normalizeIndexUrl(PYPI_INDEX_URL)
-  if (!seen.has(pypiNorm)) {
-    extras.push(PYPI_INDEX_URL)
-    seen.add(pypiNorm)
+  // Extra-slot priority: user mirror, then the Chinese mirrors.
+  if (mirror) {
+    const norm = normalizeIndexUrl(mirror)
+    if (!seen.has(norm)) {
+      extras.push(mirror)
+      seen.add(norm)
+    }
   }
 
   if (useChineseMirrors) {
