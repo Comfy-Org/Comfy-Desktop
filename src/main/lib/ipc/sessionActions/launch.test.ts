@@ -4715,6 +4715,15 @@ describe('agent requirements at launch', () => {
         )
       })
 
+      it("puts core's frontend back when the campaign drops its override", async () => {
+        serveCampaign(undefined)
+
+        await launchAndPrint()
+
+        expect(frontendRestores(), 'dropping the override rolls the frontend back').toHaveLength(1)
+        expect(recordedFrontend()).toBeUndefined()
+      })
+
       it("keeps it even when it is older than core's own pin", async () => {
         launchHarness.records!.set(ID, { id: ID, frontendVersionOverride: { version: '1.55.0' } })
         pipHarness.installed = JSON.stringify([
