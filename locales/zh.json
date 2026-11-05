@@ -1484,7 +1484,6 @@
     "newInstall": "新建实例",
     "addExistingInstall": "添加现有实例",
     "loadSnapshot": "加载快照",
-    "signIn": "登录",
     "performanceTest": "性能测试",
     "benchmarks": "基准比较",
     "globalSettings": "桌面端设置",
