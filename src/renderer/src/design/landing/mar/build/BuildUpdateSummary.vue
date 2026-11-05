@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowUpCircle, CircleCheck, Loader2, RefreshCw } from 'lucide-vue-next'
+import { ArrowUpCircle, Check, ChevronDown, CircleCheck, Loader2, RefreshCw } from 'lucide-vue-next'
+import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
-import Select from '../../ui/Select.vue'
+import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
+import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import { toast } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
 import { CHANNELS, factsOf, pendingOf, stateOf, updateBuild } from './buildFacts'
@@ -11,8 +13,8 @@ import './buildTabs.css'
 
 /**
  * Up to date or not, first thing on the page (UI Playground › Build page ›
- * Overview first): an icon, one line and the action, then the channel
- * under a hairline.
+ * Overview first): an icon, one line and the action. The channel sits in
+ * that line, once, as a menu that says what each channel means.
  */
 const { env } = defineProps<{ env: ProtoInstance }>()
 const facts = factsOf(env)
@@ -34,13 +36,32 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
         <template v-else-if="pending">ComfyUI {{ pending }} is available</template>
         <template v-else>Up to date</template>
       </p>
-      <p class="mar-bt-sub">
-        <template v-if="pending"
-          >You’re on {{ state.version }}. A snapshot is saved first, so you can go back.</template
-        >
-        <template v-else
-          >ComfyUI {{ state.version }} · {{ channel.label }} · checked {{ facts.checked }}</template
-        >
+      <p class="mar-bt-sub bus-line">
+        <template v-if="pending">You’re on {{ state.version }}</template>
+        <template v-else>ComfyUI {{ state.version }}</template>
+        <span aria-hidden="true">·</span>
+        <DropdownMenuRoot :modal="false">
+          <DropdownMenuTrigger class="bus-channel" aria-label="Update Channel"
+            >{{ channel.label }}<ChevronDown :size="13"
+          /></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="6" class="w-60">
+            <p class="bus-menu-head">Update Channel</p>
+            <DropdownMenuItem
+              v-for="c in CHANNELS"
+              :key="c.value"
+              class="bus-option"
+              @select="state.channel = c.value"
+            >
+              <span class="bus-check"><Check v-if="c.value === state.channel" :size="14" /></span>
+              <span class="flex min-w-0 flex-col">
+                <span>{{ c.label }}</span>
+                <span class="bus-hint">{{ c.hint }}</span>
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuRoot>
+        <span aria-hidden="true">·</span>
+        <span>checked {{ facts.checked }}</span>
       </p>
     </div>
     <Button v-if="pending" variant="primary" :disabled="state.updating" @click="updateBuild(env)"
@@ -49,10 +70,61 @@ const channel = computed(() => CHANNELS.find((c) => c.value === state.channel)!)
     <Button v-else variant="ghost" @click="toast(`${env.name} is up to date`)"
       ><RefreshCw :size="13" />Check for updates</Button
     >
-    <div class="mar-bt-update-foot">
-      <span class="mar-bt-label">Update Channel</span>
-      <Select v-model="state.channel" :options="CHANNELS" variant="ghost" size="sm" class="w-44" />
-      <span class="mar-bt-hint ml-auto">{{ channel.hint }}</span>
-    </div>
+    <p v-if="pending" class="bus-foot">A snapshot is saved first, so you can go back.</p>
   </Card>
 </template>
+
+<style>
+.bus-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .bus-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 -5px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  color: var(--color-base-foreground);
+  font-weight: 500;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .bus-channel:is(:hover, [data-state='open']) {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+.bus-menu-head {
+  margin: 0;
+  padding: 6px 8px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+:root .proto-ui.proto-ui.proto-ui .bus-option {
+  align-items: flex-start;
+  height: auto;
+  padding-block: 6px;
+}
+.bus-check {
+  display: inline-flex;
+  width: 14px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.bus-hint {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.bus-foot {
+  width: 100%;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+</style>
