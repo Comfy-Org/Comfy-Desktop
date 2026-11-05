@@ -50,7 +50,6 @@ import {
 } from '../build/m1Builds'
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
-import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
 import MarBuildCard from './MarBuildCard.vue'
 import { buildCard } from './buildCard'
@@ -583,10 +582,9 @@ const newLabel = computed(() =>
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && builds.items.length === 0 ? 'empty' : undefined"
     :empty="{
-      icon: Plus,
+      icon: Server,
       title: 'Set up where your work runs',
       text: 'A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.',
-      pics: EMPTY_PICS.builds,
       action: newLabel,
       second: surface.id === 'desktop' && !rowsOnly ? 'Use Comfy Cloud' : undefined
     }"
