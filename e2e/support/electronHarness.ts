@@ -2,9 +2,11 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { test } from '@playwright/test'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
 import { evalWithRetry } from './evalRetry'
+import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 
 export interface LauncherAppHandle {
   application: ElectronApplication
@@ -228,6 +230,17 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
 
   // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
   const args = ['.']
+  if (isBackgroundRun() && !FOREGROUND_PROJECTS.includes(test.info().project.name)) {
+    args.unshift(
+      '-r',
+      // Relative to the repo root, like the '.' app argument.
+      path.resolve('e2e/support/backgroundWindowsShim.cjs'),
+      // Windows covered by the developer's own must keep painting: `capturePage()` and
+      // first-paint reveals wait on the compositor.
+      '--disable-features=CalculateNativeWinOcclusion',
+      '--disable-backgrounding-occluded-windows'
+    )
+  }
   if (process.platform === 'linux') {
     args.push('--no-sandbox')
     // Ozone picks its backend from the session, and on a Wayland desktop it picks Wayland

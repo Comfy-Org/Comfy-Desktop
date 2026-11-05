@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test'
+import { isBackgroundRun } from './e2e/support/focusMode'
+
+const backgroundRun = isBackgroundRun()
 
 export default defineConfig({
   testDir: './e2e',
@@ -14,7 +17,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'macos', grep: /@macos/ },
-    { name: 'windows', grep: /@windows/ },
+    // A background run moves `@needs-focus` tests out of `windows` into `windows-focus`, so
+    // CI and `E2E_FOREGROUND=1` still run the whole suite in the `windows` project.
+    { name: 'windows', grep: /@windows/, ...(backgroundRun ? { grepInvert: /@needs-focus/ } : {}) },
+    ...(backgroundRun
+      ? [{ name: 'windows-focus', grep: /^(?=.*@windows)(?=.*@needs-focus)/ }]
+      : []),
     { name: 'linux', grep: /@linux/ },
     { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 }
   ]
