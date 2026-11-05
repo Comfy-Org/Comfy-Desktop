@@ -445,7 +445,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
-  describe.each([false, true])('an agent the user forces on by hand (dry run %s)', (dryRun) => {
+  describe.each([false, true])('a hand-forced agent (Update action dry run %s)', (dryRun) => {
     const NEWER = 'comfyui-frontend-package==1.59.0.dev2'
     const PLACEHOLDER = 'comfy-agent==0.0.0.dev0\n'
     let overrides: { dryRun: boolean; relative: boolean; text: string }[] = []
