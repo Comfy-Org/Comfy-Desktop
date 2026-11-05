@@ -4,10 +4,9 @@ import { Check, Clock, Play, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import Select from '../../ui/Select.vue'
-import MemberAvatar from '../../parts/MemberAvatar.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
-import { EXPLORE, STARTER_APPS, isAdded, openAppUrl, toggleAdded, usd } from '../../appFlow'
+import { EXPLORE, STARTER_APPS, isAdded, openAppUrl, toggleAdded } from '../../appFlow'
 import { go, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -160,14 +159,11 @@ const empty = computed(
                 </Button>
               </span></span
             >
-            <span class="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1 text-left">
-              <span class="truncate text-ui font-medium text-base-foreground">{{ a.name }}</span>
-              <span class="truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
-              <span class="mt-2 flex items-center gap-2 text-ui text-subtle-foreground">
-                <MemberAvatar :name="a.owner" size="sm" />
-                <span class="min-w-0 flex-1 truncate">{{ a.owner }}</span>
-                <span class="tabular-nums">{{ usd(a.cost) }} a run</span>
-              </span>
+            <span class="block min-w-0 px-1.5 pt-2.5 pb-1.5 text-left">
+              <span class="block truncate text-ui font-medium text-base-foreground">{{
+                a.name
+              }}</span>
+              <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
             </span>
           </div>
         </div>
@@ -235,13 +231,10 @@ const empty = computed(
   gap: 10px;
 }
 .mar-ex-grid.is-apps {
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .mar-ex-grid.is-apps .mar-ex-media {
-  position: static;
-  width: 96px;
-  flex-shrink: 0;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 10;
 }
 .mar-ex-grid.is-apps .mar-ex-media img {
   border-radius: var(--radius-control);
@@ -316,13 +309,6 @@ const empty = computed(
   display: flex;
   flex-direction: column;
   padding: 4px;
-}
-/* An app: the picture beside its name, like Home's Apps row. */
-:root .proto-ui.proto-ui.proto-ui .mar-ex-grid.is-apps .mar-ex-card {
-  position: relative;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-ex-model {
   display: flex;

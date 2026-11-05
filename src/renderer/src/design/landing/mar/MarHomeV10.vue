@@ -87,7 +87,7 @@ const recent = computed(() =>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
     <CreateMenu />
   </div>
-  <div class="mar-home mx-auto w-full max-w-300 px-10 pb-16">
+  <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
