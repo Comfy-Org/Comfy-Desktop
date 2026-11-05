@@ -48,7 +48,7 @@ const messages = {
     running: { dismiss: 'Dismiss' },
     chooser: {
       newInstall: 'New Instance',
-      newInstallDesc: 'Set up a fresh ComfyUI environment.',
+      newInstallDesc: 'Set up a fresh ComfyUI install.',
       filterAll: 'All',
       filterLocal: 'Local',
       filterCloud: 'Cloud',
