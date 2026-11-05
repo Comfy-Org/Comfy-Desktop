@@ -316,9 +316,23 @@ function rowState(i: number): string {
                   >
                 </label>
               </div>
-              <!-- Usage data and beta: on by default, as today, quiet under
-                 the choice. The terms sit by Continue, the one that gates. -->
+            </div>
+            <div class="mss-first-bottom">
+              <!-- Consent, one group at the foot of the screen: the terms
+                 first, the one that gates, then usage data and beta, on by
+                 default as today. -->
               <div class="mss-first-consent">
+                <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
+                  <Checkbox v-model="terms" />
+                  <span class="grid"
+                    ><span
+                      >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                      <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
+                    ><span v-if="termsAsk && !terms" class="mss-terms-ask" role="alert"
+                      >Agree to continue.</span
+                    ></span
+                  >
+                </label>
                 <label class="mss-check">
                   <Checkbox v-model="usage" />
                   <span
@@ -331,19 +345,6 @@ function rowState(i: number): string {
                   <span>Opt in to beta features and help test what ships next</span>
                 </label>
               </div>
-            </div>
-            <div class="mss-first-bottom">
-              <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
-                <Checkbox v-model="terms" />
-                <span class="grid"
-                  ><span
-                    >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
-                    <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
-                  ><span v-if="termsAsk && !terms" class="mss-terms-ask" role="alert"
-                    >Agree to continue.</span
-                  ></span
-                >
-              </label>
               <Button variant="primary" size="lg" @click="continueFirst">Continue</Button>
             </div>
           </div>

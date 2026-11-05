@@ -1091,10 +1091,6 @@
   border-color: color-mix(in oklch, var(--color-base-foreground) 28%, transparent);
   background: transparent;
 }
-.mss-first-consent .mss-check [role='checkbox'] {
-  width: 16px;
-  height: 16px;
-}
 
 /* Set up's machine: a compact card with a drawn laptop (Set up option 4 in
  * the canvas), in place of the bloom stage. */
@@ -1253,8 +1249,25 @@
   flex-wrap: nowrap;
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
+/* Consent sits in the action bar, one compact group facing Continue. */
 .mss-col .mss-first-consent {
-  margin-top: 20px;
+  gap: 8px;
+  padding: 10px 0 6px;
+}
+.mss-col .mss-first-consent .mss-check {
+  gap: 10px;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-col .mss-first-consent .mss-check [role='checkbox'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  flex: none;
+}
+.mss-col .mss-first-consent .mss-check [role='checkbox'] svg {
+  width: 12px;
+  height: 12px;
 }
 .mss-terms {
   color: var(--color-muted-foreground);
