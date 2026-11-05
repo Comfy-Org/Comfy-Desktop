@@ -94,7 +94,7 @@ for a future implementation.
   cloud) / new-window (stopped).
 - `e2e/nav-matrix-{dashboard,instance,cloud}.test.ts` — same-window launch,
   focus-existing, new-window spawn, `allowDuplicate` primitive (via recorded IPC
-  + live `BrowserWindow` counts). Rebuild (`pnpm run build`) before running — e2e
+  and live `BrowserWindow` counts). Rebuild (`pnpm run build`) before running — e2e
   uses the built bundle.
 
 ## Manual check
