@@ -21,7 +21,7 @@ import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
 import SetupSteps from './SetupSteps.vue'
-import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
+import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import Button from '../../ui/Button.vue'
 import Checkbox from '../../ui/Checkbox.vue'
 import DialogContent from '../../ui/DialogContent.vue'
@@ -293,7 +293,7 @@ function rowState(i: number): string {
       >
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
-          <ComfyCLogo class="mss-first-mark" />
+          <ComfyWordmark class="mss-first-mark" />
           <SetupSteps :now="1" :workflow="workflowStep" />
           <div class="mss-col">
             <div class="mss-first-hero">
@@ -406,7 +406,7 @@ function rowState(i: number): string {
     <div v-if="open && flow.takeover" class="proto-ui mss-first is-backdrop" aria-hidden="true">
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
-        <ComfyCLogo class="mss-first-mark" />
+        <ComfyWordmark class="mss-first-mark" />
         <SetupSteps :now="stepNow" :workflow="workflowStep" />
       </div>
     </div>
@@ -442,20 +442,24 @@ function rowState(i: number): string {
                 <span class="mss-machine-title">{{ DETECTED.chip }}</span>
                 <span class="mss-row-meta">{{ DETECTED.memGb }} GB memory</span>
               </span>
+              <!-- One Change: every setting opens the same sheet. -->
+              <Button variant="secondary" class="mss-machine-change" @click="changeSetup"
+                >Change</Button
+              >
             </div>
 
             <!-- What gets installed: one grouped list, as the Home's settings,
-                 each row with its own Change. Only a problem gets a mark. -->
+                 a line each: what it is, its value, its detail. Only a problem
+                 gets a mark. -->
             <dl class="mss-summary" aria-label="Install summary">
-              <div class="mss-row is-change">
+              <div class="mss-row">
                 <dt><Zap :size="15" />Hardware</dt>
                 <dd>
                   <span class="text-base-foreground">{{ pickedHardware.label }}</span>
                   <span class="mss-row-meta">{{ pickedHardware.meta }}</span>
                 </dd>
-                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
-              <div class="mss-row is-change" :class="lowSpace && 'is-bad'">
+              <div class="mss-row" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
                 <dd>
                   <span class="truncate text-base-foreground">{{ where }}</span>
@@ -466,27 +470,21 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
-                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
-              <div class="mss-row is-change">
+              <div class="mss-row">
                 <dt><Package :size="15" />Version</dt>
                 <dd>
                   <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
                   <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
                 </dd>
-                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
-              <div
-                v-if="localSetup.machine === 'legacy' && flow.bringOver"
-                class="mss-row is-change"
-              >
+              <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
                 <dt><ArrowLeftRight :size="15" />Migrate</dt>
                 <dd>
                   <span class="text-base-foreground">Workflows, models, and settings</span>
                   <span class="mss-row-meta">From your existing ComfyUI instance</span>
                 </dd>
-                <span></span>
               </div>
             </dl>
           </template>
@@ -601,7 +599,7 @@ function rowState(i: number): string {
                     variant="subtle"
                     class="mr-1.5"
                     @click.prevent="flow.movedDisk = true"
-                    >Browse…</Button
+                    >Browse</Button
                   >
                 </template>
               </Input>
@@ -703,7 +701,7 @@ function rowState(i: number): string {
                 <span class="mss-wf-media">
                   <img :src="starterImg(s)" alt="" loading="lazy" />
                   <span v-if="s.tag === 'Recommended'" class="mss-wf-badge">Recommended</span>
-                  <span v-else-if="s.credits" class="mss-wf-badge"
+                  <span v-else-if="s.credits" class="mss-wf-badge is-credits"
                     ><Crown :size="11" :stroke-width="2.5" />Requires credits</span
                   >
                   <span v-if="!s.credits" class="mss-wf-badge is-size tabular-nums"
@@ -713,6 +711,8 @@ function rowState(i: number): string {
                 <span class="mss-wf-text">
                   <span class="mss-wf-name">{{ starterName(s) }}</span>
                   <span class="mss-wf-task">{{ starterTask(s) }}</span>
+                  <!-- Today's crown where a size would be: nothing to download. -->
+                  <Crown v-if="s.credits" class="mss-wf-crown" :size="14" :stroke-width="2.5" />
                   <span class="mss-wf-check" aria-hidden="true"
                     ><Check :size="15" :stroke-width="2.5"
                   /></span>

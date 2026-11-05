@@ -835,13 +835,18 @@
       ),
       oklch(0.16 0.003 285);
   }
+  /* The full wordmark, as the app's sidebar; the steps are centred on the
+   * frame, so its width doesn't move them. */
   .mss-first-mark {
     position: absolute;
-    top: 16px;
-    left: 16px;
-    width: 28px;
-    height: 28px;
+    top: 18px;
+    left: 20px;
+    width: auto;
+    height: 22px;
     color: var(--color-base-foreground);
+  }
+  .mss-first-mark path {
+    fill: currentColor;
   }
   .mss-first-hero {
     display: flex;
@@ -1628,6 +1633,12 @@
   font-size: 22px;
   line-height: 28px;
 }
+/* The one Change, on the computer it changes. */
+:root .proto-ui.proto-ui.proto-ui .mss-machine.is-hero .mss-machine-change {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+}
 .mss-machine-kicker {
   display: inline-flex;
   align-items: center;
@@ -1760,6 +1771,18 @@
   font-size: 11px;
   font-weight: 500;
   line-height: 1;
+}
+/* Requires credits: production's gold on a dark chip, with its crown. */
+.mss-wf-badge.is-credits {
+  background: oklch(0.2 0 0 / 0.86);
+  color: #e9c422;
+  font-weight: 600;
+}
+.mss-wf-crown {
+  position: absolute;
+  right: 11px;
+  bottom: 11px;
+  color: #e9c422;
 }
 /* Picked: the flow's bare check, beside the name. */
 .mss-wf-check {
