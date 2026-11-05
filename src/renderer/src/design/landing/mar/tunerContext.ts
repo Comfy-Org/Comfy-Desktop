@@ -214,14 +214,16 @@ export const TWEAKS = {
       localSetup.machine === 'ready' &&
       localSetup.cards === 'glow' &&
       localSetup.scope === 'm1' &&
-      localSetup.os === 'mac',
+      localSetup.os === 'mac' &&
+      localSetup.gpu === 'nvidia',
     reset: () =>
       Object.assign(localSetup, {
         mode: 'off',
         machine: 'ready',
         cards: 'glow',
         scope: 'm1',
-        os: 'mac'
+        os: 'mac',
+        gpu: 'nvidia'
       })
   },
   look: one(marLook, 'current'),

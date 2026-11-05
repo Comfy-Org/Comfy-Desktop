@@ -26,6 +26,8 @@ export type LocalSetup = 'off' | 'on'
 export type Machine = 'ready' | 'legacy' | 'lowdisk' | 'intel' | 'fails'
 /** The computer the checks run on: its drawing, hardware and paths follow. */
 export type SetupOs = 'mac' | 'windows' | 'linux'
+/** The graphics a Windows or Linux computer has (a Mac's is its own chip). */
+export type SetupGpu = 'nvidia' | 'amd' | 'intel' | 'cpu'
 export type RunOnCards = 'glow' | 'row' | 'today'
 export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
   { value: 'glow', label: 'Cards' },
@@ -60,6 +62,12 @@ export const SETUP_OSES: { value: SetupOs; label: string }[] = [
   { value: 'windows', label: 'Windows' },
   { value: 'linux', label: 'Linux' }
 ]
+export const SETUP_GPUS: { value: SetupGpu; label: string }[] = [
+  { value: 'nvidia', label: 'NVIDIA' },
+  { value: 'amd', label: 'AMD' },
+  { value: 'intel', label: 'Intel Arc' },
+  { value: 'cpu', label: 'No GPU (CPU)' }
+]
 
 const KEY = 'comfy.design.mar.localSetup'
 
@@ -69,6 +77,7 @@ function load(): {
   cards: RunOnCards
   scope: SetupScope
   os: SetupOs
+  gpu: SetupGpu
 } {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
@@ -77,10 +86,11 @@ function load(): {
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
       cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
       scope: v.scope === 'next' ? 'next' : 'm1',
-      os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac'
+      os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
+      gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia'
     }
   } catch {
-    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1', os: 'mac' }
+    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1', os: 'mac', gpu: 'nvidia' }
   }
 }
 
@@ -101,6 +111,9 @@ else if (linkFirst) localSetup.scope = 'm1'
 // And the computer: `&os=windows` or `&os=linux`.
 const linkOs = new URLSearchParams(location.search).get('os')
 if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.os = linkOs
+// And its graphics: `&gpu=amd`, `&gpu=intel` or `&gpu=cpu`.
+const linkGpu = new URLSearchParams(location.search).get('gpu')
+if (SETUP_GPUS.some((g) => g.value === linkGpu)) localSetup.gpu = linkGpu as SetupGpu
 
 watch(
   () => ({ ...localSetup }),
@@ -141,7 +154,7 @@ const COMPUTERS: Record<
   windows: {
     chip: 'NVIDIA GeForce RTX 4070',
     memGb: 32,
-    build: 'NVIDIA (CUDA)',
+    build: 'NVIDIA',
     noun: 'this PC',
     path: 'C:\\Users\\You\\ComfyUI-Installs\\ComfyUI',
     otherPath: 'D:\\ComfyUI'
@@ -149,16 +162,31 @@ const COMPUTERS: Record<
   linux: {
     chip: 'NVIDIA GeForce RTX 4090',
     memGb: 64,
-    build: 'NVIDIA (CUDA)',
+    build: 'NVIDIA',
     noun: 'this computer',
     path: '~/ComfyUI-Installs/ComfyUI',
     otherPath: '/mnt/studio-ssd/ComfyUI'
   }
 }
 
-/** What the checks found on this computer (mock, follows `machine` and `os`). */
+// Today's hardware options off a Mac, as Configure names them.
+const GRAPHICS: Record<SetupGpu, { chip?: string; build: string }> = {
+  nvidia: { build: 'NVIDIA' },
+  amd: { chip: 'AMD Radeon RX 7900 XTX', build: 'AMD' },
+  intel: { chip: 'Intel Arc A770', build: 'Intel Arc (XPU)' },
+  cpu: { chip: 'Intel Core i7-13700K', build: 'CPU' }
+}
+const computer = (): (typeof COMPUTERS)[SetupOs] => {
+  const c = COMPUTERS[localSetup.os]
+  if (localSetup.os === 'mac') return c
+  const g = GRAPHICS[localSetup.gpu]
+  return { ...c, chip: g.chip ?? c.chip, build: g.build }
+}
+
+/** What the checks found on this computer (mock, follows `machine`, `os` and
+ *  `gpu`). */
 export const DETECTED = reactive({
-  ...COMPUTERS[localSetup.os],
+  ...computer(),
   version: 'v0.42.4',
   downloadGb: 1.2,
   freeGb: 412,
@@ -166,8 +194,8 @@ export const DETECTED = reactive({
   otherDisk: { name: 'Studio SSD', freeGb: 1600 }
 })
 watch(
-  () => localSetup.os,
-  (os) => Object.assign(DETECTED, COMPUTERS[os])
+  () => [localSetup.os, localSetup.gpu],
+  () => Object.assign(DETECTED, computer())
 )
 
 export interface Starter {

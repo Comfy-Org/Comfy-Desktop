@@ -225,11 +225,18 @@ const CHANNELS = [
   { value: 'stable' as const, label: 'Stable' },
   { value: 'latest' as const, label: 'Latest on GitHub' }
 ]
-const HARDWARE = computed(() => [
-  { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
-  { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
-])
-const pickedHardware = computed(() => HARDWARE.value[hardware.value === 'cpu' ? 1 : 0]!)
+// A computer with no GPU has one choice: the CPU it found.
+const HARDWARE = computed(() =>
+  DETECTED.build === 'CPU'
+    ? [{ value: 'mps' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }]
+    : [
+        { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
+        { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
+      ]
+)
+const pickedHardware = computed(
+  () => HARDWARE.value.find((h) => h.value === hardware.value) ?? HARDWARE.value[0]!
+)
 
 // The install wait's Cloud pitch, in the product's own strings.
 const say = (key: string): string =>
