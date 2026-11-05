@@ -1446,3 +1446,222 @@
   flex-shrink: 0;
   color: var(--color-base-foreground);
 }
+
+/* ── Install: steps on the left, one showcase panel on the right ──── */
+.mss-inst {
+  display: grid;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  align-items: center;
+  gap: 40px;
+}
+.mss-inst.is-err {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.mss-inst-main {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+}
+.mss-inst-count {
+  margin-bottom: 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mss-inst-steps {
+  display: grid;
+  margin: 20px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.mss-inst-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 14px;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+  line-height: 22px;
+  transition: color 300ms ease;
+}
+/* The rail between one step's mark and the next. */
+.mss-inst-step:not(:last-child)::before {
+  position: absolute;
+  top: 24px;
+  bottom: 2px;
+  left: 10.5px;
+  width: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  content: '';
+}
+.mss-inst-step.is-done::before {
+  background: color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
+}
+.mss-inst-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  transition:
+    background-color 300ms ease,
+    box-shadow 300ms ease;
+}
+.mss-inst-step.is-done {
+  color: var(--color-muted-foreground);
+}
+.mss-inst-step.is-done .mss-inst-icon {
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  box-shadow: none;
+  color: var(--color-base-foreground);
+}
+.mss-inst-step.is-now,
+.mss-inst-step.is-fail {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mss-inst-step.is-now .mss-inst-icon {
+  box-shadow: none;
+}
+.mss-inst-step.is-fail .mss-inst-icon {
+  box-shadow: none;
+  color: var(--color-status-danger);
+}
+.mss-inst-text {
+  display: grid;
+  min-width: 0;
+}
+.mss-inst-bar {
+  height: 3px;
+  margin: 8px 0 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mss-inst-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-base-foreground);
+  transition: width 200ms linear;
+}
+.mss-inst-detail {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+.mss-inst-media {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 18px;
+  background: oklch(0.2 0.006 285);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.08),
+    0 24px 48px -16px oklch(0 0 0 / 0.5);
+}
+.mss-inst-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  animation: mss-inst-show 24s linear infinite;
+}
+@keyframes mss-inst-show {
+  0%,
+  29% {
+    opacity: 0;
+  }
+  4%,
+  25% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mss-inst-media video {
+    animation: none;
+  }
+  .mss-inst-media video:first-child {
+    opacity: 1;
+  }
+}
+
+/* ── Set up: the machine as the screen's subject ─────────────────── */
+.mss-machine.is-hero {
+  position: relative;
+  gap: 28px;
+  margin-top: 0;
+  padding: 28px 32px;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      ellipse 70% 120% at 12% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 9%, transparent),
+      transparent 70%
+    ),
+    oklch(0.6 0 0 / 0.05);
+}
+.mss-machine.is-hero .mss-laptop {
+  width: 148px;
+  height: 96px;
+}
+.mss-machine.is-hero .mss-laptop::before {
+  inset: 0 14px 9px;
+  border-radius: 9px 9px 3px 3px;
+  background:
+    radial-gradient(
+      ellipse 80% 90% at 30% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 26%, transparent),
+      transparent 75%
+    ),
+    color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in oklch, var(--color-base-foreground) 34%, transparent),
+    0 18px 40px -12px color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
+}
+.mss-machine.is-hero .mss-laptop::after {
+  height: 9px;
+  border-radius: 2px 2px 9px 9px;
+}
+.mss-machine.is-hero .mss-machine-title {
+  font-size: 22px;
+  line-height: 28px;
+}
+.mss-machine-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mss-machine.is-hero + .mss-summary {
+  margin-top: 12px;
+}
+.mss-foot-sum {
+  margin-right: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+/* The steps keep the panel's height, so the title doesn't move as the
+ * download's bar comes and goes. */
+.mss-inst:not(.is-err) .mss-inst-main {
+  min-height: 340px;
+}
+.mss-foot .mss-pitch {
+  justify-content: flex-start;
+  gap: 10px;
+}
+.mss-foot .mss-pitch .mss-pitch-line {
+  flex: 0 1 auto;
+}

@@ -124,8 +124,8 @@ function installWith(s: Starter | null): void {
   startInstall()
 }
 const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
-// The install wait's outputs: today's showcase clips, floating on their own
-// instead of inside today's scene box.
+// The install wait's outputs: today's showcase clips, one at a time in a
+// single panel.
 const CLIPS = [
   { id: 'eye', src: './install-showcase-scene/Assets/eye.webm', poster: 'mock/clip-eye.jpg' },
   {
@@ -203,6 +203,9 @@ const HARDWARE = [
   { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
   { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
 ]
+const pickedHardware = computed(
+  () => HARDWARE[hardware.value === 'cpu' ? 1 : 0] as (typeof HARDWARE)[number]
+)
 
 // The install wait's Cloud pitch, in the product's own strings.
 const say = (key: string): string =>
@@ -221,10 +224,7 @@ const stepDetail = computed(() => {
   const left = Math.max(1, Math.round((DOWNLOAD_MB - mb) / DOWNLOAD_SPEED))
   return `${mb} of ${DOWNLOAD_MB} MB · ${DOWNLOAD_SPEED} MB/s · about ${left}s left`
 })
-const REEL_ROW = 40
-const reelStyle = computed(() => ({
-  transform: `translateY(${(1 - nowIndex.value) * REEL_ROW}px)`
-}))
+const downloadPct = computed(() => Math.min(100, (flow.percent / phases[0].until) * 100))
 function rowState(i: number): string {
   if (i < nowIndex.value) return 'is-done'
   if (i > nowIndex.value) return 'is-next'
@@ -383,19 +383,30 @@ function rowState(i: number): string {
               install.</DialogDescription
             >
 
-            <!-- The machine it checked: a drawn laptop, no picture of it. -->
-            <div class="mss-machine">
+            <!-- The machine it checked, drawn large: the subject of the
+                 screen. What it gets is the list below. -->
+            <div class="mss-machine is-hero">
               <span class="mss-laptop" aria-hidden="true"></span>
-              <span class="grid min-w-0 flex-1">
-                <span class="mss-machine-title">{{ DETECTED.chip }} · {{ DETECTED.memGb }} GB</span>
-                <span class="mss-row-meta">Detected. Uses the {{ DETECTED.build }} build.</span>
+              <span class="grid min-w-0">
+                <span class="mss-machine-kicker"
+                  ><Check :size="11" :stroke-width="3" />Detected</span
+                >
+                <span class="mss-machine-title">{{ DETECTED.chip }}</span>
+                <span class="mss-row-meta">{{ DETECTED.memGb }} GB memory</span>
               </span>
-              <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
             </div>
 
             <!-- What gets installed: one grouped list, as the Home's settings,
                  each row with its own Change. Only a problem gets a mark. -->
             <dl class="mss-summary" aria-label="Install summary">
+              <div class="mss-row is-change">
+                <dt><Zap :size="15" />Hardware</dt>
+                <dd>
+                  <span class="text-base-foreground">{{ pickedHardware.label }}</span>
+                  <span class="mss-row-meta">{{ pickedHardware.meta }}</span>
+                </dd>
+                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
+              </div>
               <div class="mss-row is-change" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
                 <dd>
@@ -466,6 +477,9 @@ function rowState(i: number): string {
           </template>
           <template v-else>
             <span class="flex-1"></span>
+            <span v-if="!unsupported" class="mss-foot-sum tabular-nums"
+              >{{ DETECTED.downloadGb }} GB download · ~{{ REQUIRED_GB }} GB required</span
+            >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
             <Button v-else variant="primary" size="lg" @click="continueSetup">Install</Button>
           </template>
@@ -663,55 +677,64 @@ function rowState(i: number): string {
           <DialogTitle as="h3" class="sr-only">{{
             failed ? 'Operation failed' : 'Installing ComfyUI'
           }}</DialogTitle>
-          <section class="mss-prog" :class="failed ? 'is-err' : 'is-wait'">
-            <div class="mss-prog-head">
+          <!-- Status on the left: today's five steps, all in view, the
+               running one open with its detail. On the right one calm panel:
+               today's showcase clips, one at a time, in place of the scene. -->
+          <section class="mss-inst" :class="failed && 'is-err'">
+            <div class="mss-inst-main">
+              <span class="mss-inst-count tabular-nums"
+                >Step {{ nowIndex + 1 }} of {{ phases.length }}</span
+              >
               <span class="mss-stage-title is-big">{{
                 failed ? 'Operation failed' : 'Installing ComfyUI'
               }}</span>
+              <ol class="mss-inst-steps" aria-live="polite">
+                <li
+                  v-for="(p, i) in phases"
+                  :key="p.label"
+                  class="mss-inst-step"
+                  :class="rowState(i)"
+                  :aria-current="i === nowIndex ? 'step' : undefined"
+                >
+                  <span class="mss-inst-icon" aria-hidden="true">
+                    <Check v-if="i < nowIndex" :size="12" stroke-width="3" />
+                    <TriangleAlert v-else-if="i === nowIndex && failed" :size="13" />
+                    <LoaderCircle v-else-if="i === nowIndex" :size="14" class="mss-spin" />
+                  </span>
+                  <span class="mss-inst-text">
+                    <span class="mss-inst-label">{{ p.label }}</span>
+                    <!-- Only the download knows its size: it gets the bar. -->
+                    <template v-if="i === nowIndex && stepDetail">
+                      <span class="mss-inst-bar" aria-hidden="true"
+                        ><i :style="{ width: `${downloadPct}%` }"></i
+                      ></span>
+                      <span class="mss-inst-detail tabular-nums">{{ stepDetail }}</span>
+                    </template>
+                  </span>
+                </li>
+              </ol>
               <button
                 type="button"
-                class="mss-logs-toggle"
+                class="mss-logs-toggle justify-self-start"
                 :aria-expanded="flow.logs"
                 @click="flow.logs = !flow.logs"
               >
                 <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />View logs
               </button>
-            </div>
-            <!-- Today's five install steps as a reel: the running one on the
-                 middle line, done ones above, the next one below. -->
-            <div class="mss-reel" aria-live="polite">
-              <ul class="mss-reel-track" :style="reelStyle">
-                <li
-                  v-for="(p, i) in phases"
-                  :key="p.label"
-                  class="mss-reel-row"
-                  :class="rowState(i)"
-                  :aria-current="i === nowIndex ? 'step' : undefined"
-                >
-                  <span class="mss-reel-icon" aria-hidden="true">
-                    <Check v-if="i < nowIndex" :size="13" stroke-width="2.5" />
-                    <TriangleAlert v-else-if="i === nowIndex && failed" :size="14" />
-                    <LoaderCircle v-else-if="i === nowIndex" :size="15" class="mss-spin" />
-                    <span v-else class="mss-reel-dot"></span>
-                  </span>
-                  <span class="mss-reel-label">{{ p.label }}</span>
-                  <span v-if="i === nowIndex && stepDetail" class="mss-reel-detail tabular-nums">{{
-                    stepDetail
-                  }}</span>
-                </li>
-              </ul>
-            </div>
-            <pre v-if="flow.logs || failed" class="mss-logs">
+              <pre v-if="flow.logs || failed" class="mss-logs">
 [setup] Installing torch==2.7.1 …
 [setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)<template v-if="failed">
 <span class="e">ERROR: ConnectionResetError(54, 'Connection reset by peer')</span>
 <span class="e">pip exited with code 2</span></template></pre>
-            <div v-if="!failed" class="mss-scene" aria-hidden="true">
+              <Button v-if="failed" size="sm" class="justify-self-start" @click="toast('Copied')"
+                ><Copy :size="14" />Copy</Button
+              >
+            </div>
+            <div v-if="!failed" class="mss-inst-media" aria-hidden="true">
               <video
-                v-for="c in CLIPS"
+                v-for="(c, i) in CLIPS"
                 :key="c.id"
-                class="mss-clip"
-                :class="`is-${c.id}`"
+                :style="{ animationDelay: `${i * 6}s` }"
                 :src="c.src"
                 :poster="imgUrl(c.poster)"
                 autoplay
@@ -720,9 +743,6 @@ function rowState(i: number): string {
                 playsinline
               ></video>
             </div>
-            <Button v-if="failed" size="sm" class="justify-self-start" @click="toast('Copied')"
-              ><Copy :size="14" />Copy</Button
-            >
           </section>
         </div>
 
