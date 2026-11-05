@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Check } from 'lucide-vue-next'
 
 /**
  * The takeover's step indicator, top centre on every screen of the first
- * launch: Run on, Set up, Install. `now` is the current one, from 1.
+ * launch: Run on, Set up, Install, with Workflow before Install while the
+ * starter workflow is a step (M1). `now` is the current one, from 1.
  */
-const { now } = defineProps<{ now: number }>()
-const STEPS = ['Run on', 'Set up', 'Install']
+const { now, workflow } = defineProps<{ now: number; workflow?: boolean }>()
+const STEPS = computed(() =>
+  workflow ? ['Run on', 'Set up', 'Workflow', 'Install'] : ['Run on', 'Set up', 'Install']
+)
 </script>
 
 <template>

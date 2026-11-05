@@ -99,17 +99,26 @@ function continueFirst(): void {
 // Today's estimate: the download, unpacked, takes about 2.25 times its size.
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
-// Set up › Install: low space asks first, as today, then the install. The
-// starter workflow is no longer a step here: the Home offers them after the
-// install, each marked Local (with its download) or Cloud (StarterShelf.vue).
+// Set up › Continue: low space asks first, as today. M1 has no Home, so the
+// starter workflow stays a step here, as today. Once the Home exists it
+// offers them after the install instead (StarterShelf.vue).
+const workflowStep = computed(() => localSetup.scope === 'm1')
 function continueSetup(): void {
   if (lowSpace.value) flow.confirmLowDisk = true
   else toTemplates()
 }
 function toTemplates(): void {
   flow.confirmLowDisk = false
-  installWith(null)
+  if (workflowStep.value) flow.step = 'template'
+  else installWith(null)
 }
+const stepNow = computed(() => {
+  if (flow.step === 'setup' || flow.step === 'change') return 2
+  return flow.step === 'template' || !workflowStep.value ? 3 : 4
+})
+const pickedGb = computed(() =>
+  (DETECTED.downloadGb + (flow.picked?.credits ? 0 : (flow.picked?.gb ?? 0))).toFixed(1)
+)
 const dontShowTemplates = ref(false)
 const TABS = [
   { value: 'image' as const, label: 'Image' },
@@ -231,16 +240,17 @@ const failed = computed(() => flow.step === 'error')
 
 // Like today's stepper: no overall percent, since the whole install can't be
 // timed. Only the download knows its size, so only it gets a detail line.
-const nowIndex = computed(() => (phaseIndex.value < 0 ? phases.length - 1 : phaseIndex.value))
+const nowIndex = computed(() => (phaseIndex.value < 0 ? phases.value.length - 1 : phaseIndex.value))
+const DOWNLOAD_UNTIL = computed(() => phases.value[0]?.until ?? 100)
 const DOWNLOAD_MB = Math.round(DETECTED.downloadGb * 1000)
 const DOWNLOAD_SPEED = 18
 const stepDetail = computed(() => {
   if (failed.value || nowIndex.value !== 0) return ''
-  const mb = Math.round((flow.percent / phases[0].until) * DOWNLOAD_MB)
+  const mb = Math.round((flow.percent / DOWNLOAD_UNTIL.value) * DOWNLOAD_MB)
   const left = Math.max(1, Math.round((DOWNLOAD_MB - mb) / DOWNLOAD_SPEED))
   return `${mb} of ${DOWNLOAD_MB} MB · about ${left}s left`
 })
-const downloadPct = computed(() => Math.min(100, (flow.percent / phases[0].until) * 100))
+const downloadPct = computed(() => Math.min(100, (flow.percent / DOWNLOAD_UNTIL.value) * 100))
 function rowState(i: number): string {
   if (i < nowIndex.value) return 'is-done'
   if (i > nowIndex.value) return 'is-next'
@@ -263,7 +273,7 @@ function rowState(i: number): string {
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyCLogo class="mss-first-mark" />
-          <SetupSteps :now="1" />
+          <SetupSteps :now="1" :workflow="workflowStep" />
           <div class="mss-col">
             <div class="mss-first-hero">
               <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
@@ -376,7 +386,7 @@ function rowState(i: number): string {
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyCLogo class="mss-first-mark" />
-        <SetupSteps :now="flow.step === 'setup' || flow.step === 'change' ? 2 : 3" />
+        <SetupSteps :now="stepNow" :workflow="workflowStep" />
       </div>
     </div>
   </Teleport>
@@ -498,7 +508,9 @@ function rowState(i: number): string {
               >{{ DETECTED.downloadGb }} GB download · ~{{ REQUIRED_GB }} GB required</span
             >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
-            <Button v-else variant="primary" size="lg" @click="continueSetup">Install</Button>
+            <Button v-else variant="primary" size="lg" @click="continueSetup">{{
+              workflowStep ? 'Continue' : 'Install'
+            }}</Button>
           </template>
         </footer>
       </template>
@@ -681,6 +693,7 @@ function rowState(i: number): string {
           <Button variant="ghost" size="lg" class="mr-auto" @click="flow.step = 'setup'"
             ><ArrowLeft :size="14" />Back</Button
           >
+          <span class="mss-foot-sum tabular-nums">{{ pickedGb }} GB download</span>
           <Button size="lg" @click="installWith(null)">Skip &amp; Install</Button>
           <Button variant="primary" size="lg" @click="installWith(flow.picked)">Install</Button>
         </footer>

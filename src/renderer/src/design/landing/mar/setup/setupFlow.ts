@@ -31,8 +31,9 @@ export const RUN_ON_CARDS: { value: RunOnCards; label: string }[] = [
   { value: 'today', label: 'Today' }
 ]
 /** What the first release ships. M1: Builds only, so the install lands on
- *  All builds and there are no example workflows. Next: the Home exists and
- *  offers the starter workflows after the install (StarterShelf.vue). */
+ *  All builds and the starter workflow stays a step of the setup, as today.
+ *  Next: the Home exists and offers the starter workflows after the install
+ *  (StarterShelf.vue). */
 export type SetupScope = 'm1' | 'next'
 export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
   { value: 'm1', label: 'M1' },
@@ -240,8 +241,16 @@ const PHASES = [
   { until: 92, label: 'Clean up environment' },
   { until: 100, label: 'Update to latest stable' }
 ] as const
-export const phaseIndex = computed(() => PHASES.findIndex((p) => flow.percent < p.until))
-export const phases = PHASES
+// A picked starter workflow adds its models as a last step, as today.
+export const phases = computed<{ until: number; label: string }[]>(() =>
+  flow.picked && !flow.picked.credits
+    ? [
+        ...PHASES.map((p) => ({ ...p, until: Math.round(p.until * 0.8) })),
+        { until: 100, label: `Download ${flow.picked.title} models` }
+      ]
+    : [...PHASES]
+)
+export const phaseIndex = computed(() => phases.value.findIndex((p) => flow.percent < p.until))
 
 let timer: ReturnType<typeof setInterval> | undefined
 
