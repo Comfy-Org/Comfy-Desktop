@@ -59,6 +59,7 @@ import { can } from '../../milestones'
 import { PROJECTS, type ProtoInstance } from '../../mock'
 import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
+import { EMPTY_PICS } from '../pages/emptyArt'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSplitButton from '../pages/MarSplitButton.vue'
@@ -530,6 +531,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         v-else
         compact
         :icon="Workflow"
+        :pics="EMPTY_PICS.workflows"
         title="No workflows here yet"
         text="Workflows you save while this build runs show up here."
       />
@@ -586,6 +588,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         v-else
         compact
         :icon="Save"
+        :pics="EMPTY_PICS.builds"
         title="No versions yet"
         :text="
           k === 'local'
@@ -641,6 +644,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         v-else
         compact
         :icon="Rocket"
+        :pics="EMPTY_PICS.builds"
         title="Not deployed"
         text="Run a version behind an API endpoint that scales with traffic."
         action="Deploy as API"

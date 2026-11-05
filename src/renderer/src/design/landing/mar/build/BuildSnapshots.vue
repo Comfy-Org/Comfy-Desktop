@@ -6,6 +6,7 @@ import Input from '../../ui/Input.vue'
 import { toast } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
 import MarEmpty from '../pages/MarEmpty.vue'
+import { EMPTY_PICS } from '../pages/emptyArt'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 import {
@@ -219,6 +220,7 @@ const latest = computed(() => snaps[0]?.when)
     v-else
     compact
     :icon="Camera"
+    :pics="EMPTY_PICS.builds"
     title="No snapshots yet"
     text="Snapshots are captured automatically when ComfyUI starts."
     action="Create Snapshot"
