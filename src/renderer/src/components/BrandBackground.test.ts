@@ -80,12 +80,12 @@ describe('BrandBackground — scroll area', () => {
     expect(mounts).toBe(1)
   })
 
-  it('returns the scroll area to the top when a step turns scrolling off', async () => {
-    const wrapper = mount(BrandBackground, { props: { scrollContent: true } })
+  it('opens the scroll area at the top when a step turns scrolling on', async () => {
+    const wrapper = mount(BrandBackground, { props: { scrollContent: false } })
     const area = wrapper.get('.brand-scroll-area').element as HTMLElement
     area.scrollTop = 240
 
-    await wrapper.setProps({ scrollContent: false })
+    await wrapper.setProps({ scrollContent: true })
 
     expect(area.scrollTop).toBe(0)
   })

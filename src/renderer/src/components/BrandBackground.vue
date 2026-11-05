@@ -18,15 +18,18 @@ const innerFrameRef = ref<HTMLElement | null>(null)
 const scrollAreaRef = ref<HTMLElement | null>(null)
 
 // The non-scrolling frame is still a scroll container (overflow: hidden), and
-// the beams give it a scroll range. Without this, a step that scrolled (the
-// wizard's Configure) hands its offset to the next, non-scrolling step, which
-// then sits shifted up with no way to scroll back.
+// the beams give it a scroll range. Without this, a step that scrolled hands
+// its offset to the next, non-scrolling step, which then sits shifted up with
+// no way to scroll back. The scroll area is reset on the way in instead: once
+// scrolling is off it is display: contents and has no box to reset.
 watch(
   () => props.scrollContent,
   (scrolls) => {
-    if (scrolls) return
-    if (innerFrameRef.value) innerFrameRef.value.scrollTop = 0
-    if (scrollAreaRef.value) scrollAreaRef.value.scrollTop = 0
+    if (scrolls) {
+      if (scrollAreaRef.value) scrollAreaRef.value.scrollTop = 0
+    } else if (innerFrameRef.value) {
+      innerFrameRef.value.scrollTop = 0
+    }
   },
   { flush: 'post' }
 )
@@ -136,6 +139,7 @@ watch(
   flex-direction: column;
   align-items: center;
   padding: clamp(2rem, 5vw, 48px);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 </style>
