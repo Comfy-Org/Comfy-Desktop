@@ -14,6 +14,7 @@ import { buildPage } from './build/buildPage'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
 import { homeApps } from './homeApps'
+import { appsStage } from './apps/appsStage'
 import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
@@ -57,6 +58,7 @@ export const when = {
   homeBackground: onHome,
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
   homeApps: computed(() => onHome.value && can.value.exploreApps),
+  appsStage: computed(() => can.value.exploreApps),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -187,6 +189,7 @@ export const TWEAKS = {
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
   homeApps: one(homeApps, 'on'),
+  appsStage: one(appsStage, 'm1'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),

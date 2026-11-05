@@ -15,6 +15,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { PAGE_TRANSITIONS, pageTransition } from './motion/pageTransition'
 import { homeBuilds } from './homeBuilds'
 import { HOME_APPS, homeApps } from './homeApps'
+import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -118,6 +119,7 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'user', show: () => can.value.home },
   { id: 'homeBuilds', show: () => when.homeBuilds.value },
   { id: 'homeApps', show: () => when.homeApps.value },
+  { id: 'appsStage', show: () => when.appsStage.value },
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
   { id: 'credits', show: () => when.credits.value },
@@ -246,6 +248,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('homeApps')" label="Apps on Home">
             <Seg v-model="homeApps.id" label="Apps on Home" :options="HOME_APPS" />
+          </Row>
+          <Row :show="shows('appsStage')" label="Apps stage">
+            <Seg v-model="appsStage.id" label="Apps stage" :options="APPS_STAGES" />
           </Row>
           <Row label="Account">
             <Seg v-model="account" label="Account" :options="ACCOUNTS" />

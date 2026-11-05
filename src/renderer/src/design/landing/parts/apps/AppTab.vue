@@ -16,6 +16,8 @@ import Input from '../../ui/Input.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
+import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
+import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
 import { assets } from '../../mar/pages/assetsStore'
 import { go, isNewUser, proto, toast } from '../../useProto'
 import {
@@ -27,6 +29,7 @@ import {
   previewLabel,
   PREVIEWS,
   usd,
+  type Field,
   type PreviewAs
 } from '../../appFlow'
 
@@ -48,6 +51,37 @@ const app = computed(() => libApp(id)!)
 const as = computed<PreviewAs | undefined>(() => appsProto.preview[id])
 const starter = computed(() => isStarter(id))
 const output = computed(() => (id === 's-video' ? 'video' : 'image'))
+/** The stages of the PRD (UI Playground › Apps stage): M2 says where it
+ *  runs, and a fully local run costs nothing; M3 adds more to tweak. */
+const staged = computed(() => starter.value && appsStage.id !== 'm1')
+const iterate = computed(() => starter.value && appsStage.id === 'm3')
+const local = computed(
+  () => staged.value && APP_RUNS[id]?.kind === 'local' && Boolean(downloaded[id])
+)
+const cost = computed(() => (local.value ? 0 : app.value.cost))
+const fields = computed<Field[]>(() =>
+  iterate.value
+    ? [
+        ...app.value.fields,
+        {
+          id: 'aspect',
+          label: 'Aspect',
+          kind: 'choice',
+          node: 'Size #3',
+          on: true,
+          options: ['1:1', '16:9', '9:16']
+        },
+        {
+          id: 'variations',
+          label: 'Variations',
+          kind: 'count',
+          node: 'Batch #4',
+          on: true,
+          options: ['1', '2', '4']
+        }
+      ]
+    : app.value.fields
+)
 const owner = computed(() => (app.value.owner === 'You' ? 'Pablo' : app.value.owner))
 const author = computed(() => (app.value.owner === 'You' ? 'Pablo · Silverside' : app.value.owner))
 
@@ -102,6 +136,9 @@ const freeLeft = computed(() => Math.max(0, app.value.freeRuns - me.used))
 const sponsored = computed(() => !inTeam.value && app.value.payer === 'you' && freeLeft.value > 0)
 const payer = computed(() => {
   const a = app.value
+  if (local.value) return 'Free · runs on this computer'
+  // Variations change the price, and Run shows it.
+  if (iterate.value) return 'From your credits'
   if (!as.value)
     return a.group === 'shared'
       ? `About ${usd(a.cost)} from your credits`
@@ -115,7 +152,7 @@ const payer = computed(() => {
 })
 
 function gate(): boolean {
-  if (inTeam.value) return true
+  if (inTeam.value || local.value) return true
   if (!me.signedIn && !me.guest) {
     sheet.value = 'signin'
     return false
@@ -171,7 +208,7 @@ function viewAssets(): void {
 }
 function done(): void {
   if (starter.value) saveResult()
-  if (inTeam.value) return
+  if (inTeam.value || local.value) return
   if (sponsored.value) me.used++
   else me.credits = Math.max(0, me.credits - app.value.cost)
 }
@@ -264,8 +301,8 @@ function done(): void {
         :blurb="app.blurb"
         :author
         :thumb-id="app.thumbId"
-        :fields="app.fields"
-        :cost="app.cost"
+        :fields
+        :cost
         :payer
         :layout="app.layout"
         :theme="app.theme"
@@ -273,14 +310,24 @@ function done(): void {
         :output
         @done="done"
       >
+        <template v-if="staged" #place><AppRunPlace :id /></template>
         <template v-if="starter" #saved>
           <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>
         </template>
         <template #account>
-          <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
-            ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span
-          >
-          <Button v-else variant="ghost" size="sm" @click="sheet = 'signin'">Sign in</Button>
+          <span class="flex items-center gap-3">
+            <Button
+              v-if="iterate"
+              variant="ghost"
+              size="sm"
+              @click="toast('Opening the workflow in ComfyUI')"
+              >Open in ComfyUI</Button
+            >
+            <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
+              ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span
+            >
+            <Button v-else variant="ghost" size="sm" @click="sheet = 'signin'">Sign in</Button>
+          </span>
         </template>
         <template #below>
           <p v-if="me.guest" class="mt-6 text-ui text-subtle-foreground">

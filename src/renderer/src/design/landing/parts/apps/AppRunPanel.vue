@@ -254,11 +254,12 @@ defineExpose({ run })
         </div>
       </TransitionGroup>
 
+      <slot name="place" />
       <div class="flex flex-col gap-2 pt-1">
         <Button variant="primary" size="lg" block :disabled="state === 'running'" @click="run">
           <Loader2 v-if="state === 'running'" :size="14" class="animate-spin" />
           {{ state === 'running' ? 'Running' : runLabel }}
-          <span class="font-normal opacity-60">· about {{ usd(cost * count) }}</span>
+          <span v-if="cost" class="font-normal opacity-60">· about {{ usd(cost * count) }}</span>
         </Button>
         <p class="text-center text-ui text-subtle-foreground">{{ payer }}</p>
       </div>

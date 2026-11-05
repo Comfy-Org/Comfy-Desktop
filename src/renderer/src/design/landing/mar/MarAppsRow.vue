@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import Card from '../ui/Card.vue'
 import SectionHeader from '../ui/SectionHeader.vue'
-import { STARTER_APPS, openApp } from '../appFlow'
+import { computed } from 'vue'
+import { MORE_APPS, STARTER_APPS, openApp } from '../appFlow'
+import { appsStage } from './apps/appsStage'
 import { can } from '../milestones'
 import { thumb } from '../mock'
 import { go } from '../useProto'
@@ -10,6 +12,9 @@ import { go } from '../useProto'
  *  what you get, never by a model. A click opens the app, no graph. First
  *  run titles it as the way to start. */
 const { title = 'Apps' } = defineProps<{ title?: string }>()
+const apps = computed(() =>
+  appsStage.id === 'm3' ? [...STARTER_APPS, ...MORE_APPS] : STARTER_APPS
+)
 </script>
 
 <template>
@@ -17,7 +22,7 @@ const { title = 'Apps' } = defineProps<{ title?: string }>()
     <SectionHeader :title :link="can.explore ? 'All apps' : undefined" @link="go('apps')" />
     <div class="grid grid-cols-3 gap-3.5">
       <Card
-        v-for="a in STARTER_APPS"
+        v-for="a in apps"
         :key="a.id"
         as="button"
         interactive

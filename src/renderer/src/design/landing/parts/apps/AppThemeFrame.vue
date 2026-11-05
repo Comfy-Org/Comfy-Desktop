@@ -126,6 +126,7 @@ const MAR_STYLE = { '--app-title-weight': '600', '--app-title-spacing': '-0.02em
           run-label="Run"
           @done="emit('done')"
         >
+          <template #place><slot name="place" /></template>
           <template #saved><slot name="saved" /></template>
         </AppRunPanel>
       </div>
