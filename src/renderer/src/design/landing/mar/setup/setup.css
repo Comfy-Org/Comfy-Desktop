@@ -1290,8 +1290,11 @@
   min-height: 0;
   overflow-y: auto;
 }
+/* The bar's hairline ends where the content does, as on the first screen. */
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
   min-height: 64px;
+  margin-inline: 32px;
+  padding-inline: 0;
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mss-in-takeover .mar-wizard-foot > button:first-child {

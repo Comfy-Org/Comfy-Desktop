@@ -407,7 +407,7 @@ function rowState(i: number): string {
                   <span class="text-base-foreground">{{ pickedHardware.label }}</span>
                   <span class="mss-row-meta">{{ pickedHardware.meta }}</span>
                 </dd>
-                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
+                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
               <div class="mss-row is-change" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
@@ -420,7 +420,7 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
-                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
+                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
               <div class="mss-row is-change">
                 <dt><Package :size="15" />Version</dt>
@@ -428,7 +428,7 @@ function rowState(i: number): string {
                   <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
                   <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
                 </dd>
-                <Button size="sm" variant="ghost" @click="changeSetup">Change</Button>
+                <Button size="sm" variant="secondary" @click="changeSetup">Change</Button>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
               <div
