@@ -2,11 +2,9 @@ import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, params?: { name?: string }) => (params?.name ? `${key}(${params.name})` : key)
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockConfirm = vi.fn()
 vi.mock('./useDialogs', () => ({
@@ -80,7 +78,7 @@ describe('useLocalInstanceGuard', () => {
     await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
-      'launch.instanceRunningPerformanceTest(Test Install)',
+      'Performance Test: Test Install',
       'Other'
     ])
   })
@@ -96,7 +94,7 @@ describe('useLocalInstanceGuard', () => {
     await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
-      'launch.instanceRunningPerformanceTest(Test Install)'
+      'Performance Test: Test Install'
     ])
   })
 
@@ -154,7 +152,7 @@ describe('useLocalInstanceGuard', () => {
     const result = await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm).toHaveBeenCalledWith(
-      expect.objectContaining({ hint: 'launch.instanceRunningPreferencesHint' })
+      expect.objectContaining({ hint: 'You can turn off this warning in Preferences.' })
     )
     expect(result).toBe(true)
   })

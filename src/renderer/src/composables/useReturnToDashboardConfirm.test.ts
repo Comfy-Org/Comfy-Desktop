@@ -2,11 +2,9 @@ import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string) => key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockConfirm = vi.fn()
 vi.mock('./useModal', () => ({
@@ -41,9 +39,9 @@ describe('useReturnToDashboardConfirm', () => {
     const result = await confirmReturnToDashboard(makeInstallation(), 'running')
 
     expect(mockConfirm).toHaveBeenCalledWith({
-      title: 'dashboard.confirmStopLocal.title',
-      message: 'dashboard.confirmStopLocal.message',
-      confirmLabel: 'dashboard.confirmStopLocal.confirmLabel',
+      title: 'Return to Dashboard?',
+      message: 'This will stop the current ComfyUI.',
+      confirmLabel: 'Return to Dashboard',
       confirmStyle: 'danger'
     })
     expect(result).toBe(true)
@@ -65,9 +63,10 @@ describe('useReturnToDashboardConfirm', () => {
     const result = await confirmReturnToDashboard(makeInstallation(), 'in_flight')
 
     expect(mockConfirm).toHaveBeenCalledWith({
-      title: 'overlay.cancelCurrentTitle',
-      message: 'overlay.cancelMessage',
-      confirmLabel: 'overlay.cancelConfirm',
+      title: 'Cancel current operation?',
+      message:
+        'The operation will stop where it is. Anything not yet completed will be rolled back where possible.',
+      confirmLabel: 'Cancel operation',
       confirmStyle: 'danger'
     })
     expect(result).toBe(true)

@@ -3,7 +3,9 @@ import { defineComponent, h, shallowRef, type ShallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useTitleBarMenus } from './useTitleBarMenus'
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k: string) => k }) }))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
 
