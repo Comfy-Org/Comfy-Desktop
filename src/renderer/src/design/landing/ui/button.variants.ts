@@ -19,7 +19,7 @@ export const buttonVariants = cva({
       overlay: 'bg-media-overlay text-base-foreground backdrop-blur-sm hover:bg-black/75',
       link: 'h-auto px-0 text-muted-foreground hover:text-base-foreground',
       /** Irreversible actions only (delete). Muted, never bright. */
-      destructive: 'bg-status-danger text-base-foreground hover:bg-status-danger/85'
+      destructive: 'bg-status-danger text-white hover:bg-status-danger/85'
     },
     size: {
       sm: 'h-7 rounded-control px-2.5 text-ui',
