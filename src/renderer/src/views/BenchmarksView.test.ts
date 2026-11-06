@@ -2,6 +2,7 @@ import { defineComponent, h, KeepAlive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import en from '@locales/en.json'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import BaseSelect from '../components/ui/BaseSelect.vue'
@@ -42,7 +43,7 @@ const messages = {
     refresh: 'Refresh sessions',
     searchPlaceholder: 'Search runs...',
     allWorkspaces: 'All workspaces',
-    allInstances: 'All instances',
+    allInstances: en.benchmarks.allInstances,
     allHardware: 'All hardware',
     allWorkflows: 'All workflows',
     columns: 'Properties',
@@ -52,7 +53,7 @@ const messages = {
     session: 'Session',
     dateTime: 'Date / Time',
     workflow: 'Workflow',
-    instance: 'Instance',
+    instance: en.benchmarks.instance,
     workspace: 'Workspace',
     runs: 'Runs',
     hardware: 'GPU / Hardware',
