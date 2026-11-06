@@ -64,7 +64,7 @@ function copy(text: string, what: string): void {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-300 px-10 pb-16">
+  <div class="mx-auto w-full max-w-440 px-11 pb-16">
     <MarEntityHeader
       back="Deployments"
       :title="dep.name"

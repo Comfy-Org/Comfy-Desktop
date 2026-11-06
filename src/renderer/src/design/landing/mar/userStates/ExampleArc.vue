@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
+import { EXAMPLES, reducedMotion, runExample } from './examples'
 
 /**
  * First-time examples · Arc carousel: the examples stand on a wide 3D
@@ -11,14 +11,18 @@ import { EXAMPLES, playLoop, reducedMotion, runExample } from './examples'
  * page. The one in front faces you, flat, with a thin ring; each card
  * carries its own name and run time at the top, so nothing below it moves
  * when you flip. The arc wraps around and turns on a spring: ← →, a click
- * on a side card, a drag or a sideways scroll. Pointing at a card (or
- * focusing it) shows its Run button at the bottom; Enter runs the front one.
- * Run never says where: on Desktop it runs on Desktop, on Cloud on Cloud.
+ * on a side card, a drag or a sideways scroll. Pointing at the front card
+ * (or focusing it) shows its Run button at the bottom; Enter runs it.
+ * The front card shows what its app does: a soft gradient sweeps it from
+ * what goes in to what comes out and back; the rest stay still until they reach the
+ * front. Run never says where: on Desktop it runs on Desktop, on Cloud on
+ * Cloud.
  */
 const N = EXAMPLES.length
 const ANGLE = 24 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
+const HOLD = 3000 // ms each side of the front card stays up
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
 const pos = ref(Math.floor(N / 2))
@@ -26,6 +30,18 @@ const target = ref(pos.value)
 const dragging = ref(false)
 const cards = ref<HTMLElement[]>([])
 const active = computed(() => mod(Math.round(target.value), N))
+
+// The front card's sweep: each new front card starts from what goes in.
+const after = ref(false)
+let sweep: ReturnType<typeof setInterval> | undefined
+function play(): void {
+  clearInterval(sweep)
+  after.value = false
+  if (!reducedMotion()) sweep = setInterval(() => (after.value = !after.value), HOLD)
+}
+onMounted(play)
+watch(active, play)
+onBeforeUnmount(() => clearInterval(sweep))
 
 function mod(a: number, n: number): number {
   return ((a % n) + n) % n
@@ -95,11 +111,6 @@ function pick(i: number): void {
   if (moved) return
   if (i === active.value) runExample(EXAMPLES[i]!)
   else void turn(Math.round(offset(i) + pos.value - target.value))
-}
-/** The Run button on a cover runs that one, front or side; anywhere else on a
- *  side cover only brings it to the front. */
-function runFrom(i: number): void {
-  if (!moved) runExample(EXAMPLES[i]!)
 }
 function key(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') void turn(-1, true)
@@ -197,12 +208,22 @@ function wheel(e: WheelEvent): void {
         :aria-label="
           i === active ? `Run ${x.label}, ${x.kind}, ${x.runs}` : `${x.label}, ${x.kind}, ${x.runs}`
         "
-        @mouseenter="i === active && playLoop($event.currentTarget as Element, true)"
-        @mouseleave="playLoop($event.currentTarget as Element, false)"
         @click="pick(i)"
       >
-        <img :src="x.src" alt="" draggable="false" />
-        <video v-if="x.video" :src="x.video" muted loop playsinline preload="none" />
+        <img
+          :src="x.src"
+          alt=""
+          draggable="false"
+          :style="x.focus && { objectPosition: `${x.focus[0]} 50%` }"
+        />
+        <img
+          :src="x.after"
+          alt=""
+          draggable="false"
+          class="mar-arc-after"
+          :class="i === active && after && 'is-on'"
+          :style="x.focus && { objectPosition: `${x.focus[1]} 50%` }"
+        />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
@@ -210,22 +231,9 @@ function wheel(e: WheelEvent): void {
           <span class="mar-arc-meta">{{ x.kind }} · {{ x.runs }}</span>
         </span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true" @click.stop="runFrom(i)">Run</span>
+        <span class="mar-arc-go" aria-hidden="true">Run</span>
       </button>
     </div>
-
-    <!-- For a mouse wheel, which can't swipe sideways: shown on hover. -->
-    <button
-      type="button"
-      class="mar-arc-nav is-prev"
-      aria-label="Previous example"
-      @click="turn(-1)"
-    >
-      <ChevronLeft :size="18" />
-    </button>
-    <button type="button" class="mar-arc-nav is-next" aria-label="Next example" @click="turn(1)">
-      <ChevronRight :size="18" />
-    </button>
 
     <div class="mar-arc-actions">
       <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
@@ -238,44 +246,6 @@ function wheel(e: WheelEvent): void {
 <style scoped>
 .mar-arc {
   position: relative;
-}
-/* In the gap between the second card and the one fading out. */
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
-  position: absolute;
-  top: 170px;
-  z-index: 10;
-  display: flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
-  color: var(--color-base-foreground);
-  opacity: 0;
-  backdrop-filter: blur(12px);
-  transform: translateY(-50%);
-  transition:
-    opacity 160ms ease,
-    background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-prev {
-  left: max(0px, calc(50% - 372px));
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav.is-next {
-  right: max(0px, calc(50% - 372px));
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc:hover .mar-arc-nav,
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:focus-visible {
-  opacity: 1;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arc-nav:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
-}
-@media (hover: none) {
-  :root .proto-ui.proto-ui.proto-ui .mar-arc-nav {
-    opacity: 1;
-  }
 }
 .mar-arc-stage {
   position: relative;
@@ -290,8 +260,7 @@ function wheel(e: WheelEvent): void {
 .mar-arc-stage.is-dragging {
   cursor: grabbing;
 }
-.mar-arc-card img,
-.mar-arc-card video {
+.mar-arc-card img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -299,13 +268,23 @@ function wheel(e: WheelEvent): void {
   object-fit: cover;
   pointer-events: none;
 }
-.mar-arc-card video {
-  opacity: 0;
-  transition: opacity 300ms ease;
+/* What comes out sweeps in behind a soft edge: a wide gradient, no line. */
+@property --arc-sweep {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: -40%;
 }
-.mar-arc-card.is-front:hover video,
-.mar-arc-card.is-front:focus-visible video {
-  opacity: 1;
+.mar-arc-card .mar-arc-after {
+  --arc-sweep: -40%;
+  mask-image: linear-gradient(
+    100deg,
+    #000 calc(var(--arc-sweep) - 35%),
+    transparent calc(var(--arc-sweep) + 35%)
+  );
+  transition: --arc-sweep 1500ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+.mar-arc-card .mar-arc-after.is-on {
+  --arc-sweep: 140%;
 }
 .mar-arc-fade {
   position: absolute;
@@ -346,8 +325,8 @@ function wheel(e: WheelEvent): void {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-/* Run at the bottom: a white button over a soft scrim, shown on the card
-   you point at (or focus). */
+/* Run at the bottom: a white button over a soft scrim, shown on the front
+   card when you point at it (or focus it). */
 .mar-arc-scrim {
   position: absolute;
   inset: 0;
@@ -384,8 +363,8 @@ function wheel(e: WheelEvent): void {
     transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
     background-color 160ms ease;
 }
-.mar-arc-card:hover .mar-arc-go,
-.mar-arc-card:focus-visible .mar-arc-go {
+.mar-arc-card.is-front:hover .mar-arc-go,
+.mar-arc-card.is-front:focus-visible .mar-arc-go {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -396,8 +375,8 @@ function wheel(e: WheelEvent): void {
 .mar-arc-card .mar-arc-go:active {
   transform: translateY(0) scale(0.98);
 }
-.mar-arc-card:hover .mar-arc-scrim,
-.mar-arc-card:focus-visible .mar-arc-scrim {
+.mar-arc-card.is-front:hover .mar-arc-scrim,
+.mar-arc-card.is-front:focus-visible .mar-arc-scrim {
   opacity: 1;
 }
 .mar-arc-actions {
@@ -409,7 +388,7 @@ function wheel(e: WheelEvent): void {
   margin-top: 8px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .mar-arc-card video,
+  .mar-arc-card .mar-arc-after,
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;

@@ -9,28 +9,42 @@ import MarStatus, { type ItemStatus } from './MarStatus.vue'
  * ⋯ last), every control at the Corners radius, no pills. No `back` when
  * the title bar's breadcrumb already says where the page sits.
  */
-const { back, title, status, statusLabel } = defineProps<{
+const { back, onTabs, title, status, statusLabel, statusLink } = defineProps<{
   back?: string
+  /** The title sits on the line of the sidebar's Create/Build tabs. */
+  onTabs?: boolean
   title: string
   status?: ItemStatus
   statusLabel?: string
+  /** The state leads somewhere: it's a button, and says where. */
+  statusLink?: string
 }>()
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; status: [] }>()
 </script>
 
 <template>
-  <div class="mar-eh">
+  <div class="mar-eh" :class="onTabs && 'is-on-tabs'">
     <button v-if="back" type="button" class="mar-eh-crumb" @click="emit('back')">
       <ArrowLeft :size="14" />{{ back }}
     </button>
     <section class="mar-eh-head">
-      <span class="mar-eh-cover"><slot name="cover" /></span>
+      <span v-if="$slots.cover" class="mar-eh-cover"><slot name="cover" /></span>
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 items-center gap-2">
           <slot name="title">
             <h1 class="mar-eh-title">{{ title }}</h1>
           </slot>
-          <MarStatus v-if="status" :status :label="statusLabel" />
+          <button
+            v-if="status && statusLink"
+            type="button"
+            class="inline-flex"
+            :aria-label="statusLink"
+            :title="statusLink"
+            @click="emit('status')"
+          >
+            <MarStatus :status :label="statusLabel" />
+          </button>
+          <MarStatus v-else-if="status" :status :label="statusLabel" />
         </div>
         <div v-if="$slots.meta" class="mar-eh-meta"><slot name="meta" /></div>
       </div>
@@ -45,7 +59,7 @@ const emit = defineEmits<{ back: [] }>()
   height: 26px;
   align-items: center;
   gap: 6px;
-  margin: 36px 0 14px -8px;
+  margin: 0 0 14px -8px;
   padding: 0 8px;
   border-radius: var(--radius-control);
   color: var(--color-muted-foreground);
@@ -60,6 +74,16 @@ const emit = defineEmits<{ back: [] }>()
   align-items: center;
   gap: 18px;
   padding-bottom: 28px;
+}
+/* The way back moves up, so the title's centre lands on the tabs' line. */
+:root .proto-ui.proto-ui.proto-ui .mar-eh.is-on-tabs .mar-eh-crumb {
+  margin: -8px 0 -2px -8px;
+}
+.mar-eh.is-on-tabs .mar-eh-head {
+  align-items: flex-start;
+}
+.mar-eh.is-on-tabs .mar-eh-actions {
+  align-self: center;
 }
 .mar-eh-cover {
   display: inline-flex;

@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Moon, Sun, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
 import { onCloud, SURFACES, surface } from './shell/surface'
-import { homeBackground, marNav, type HomeBackground, type MarNav } from './shell/marShell'
+import { homeBackground, type HomeBackground } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
+import Switch from '../ui/Switch.vue'
 import Select from '../ui/Select.vue'
-import { PALETTES, palette } from './palette'
 import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
+import { syncPrevious } from './build/syncPrevious'
 import { homeBuilds } from './homeBuilds'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -50,7 +51,7 @@ import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
 
 /** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Global
- *  (where, navigation, colour), States (the situation being
+ *  (where, the brand motif), States (the situation being
  *  simulated), This page (design options for the screen you're on),
  *  and More, folded (rare and exploratory). States and
  *  This page list only what changes the screen now (tunerContext.ts says
@@ -58,11 +59,6 @@ import GroupHead from './tuner/TunerGroupHead.vue'
 /** Local setup › Jump to: the last screen picked. */
 const setupScreen = ref<Screen | null>(null)
 
-const NAVS: { value: MarNav; label: string }[] = [
-  { value: 'floating', label: 'Floating sidebar' },
-  { value: 'tabs', label: '08 · Tabs · a bar on top' },
-  { value: 'panels', label: 'Floating panels' }
-]
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },
   { value: 'bloom', label: 'Latent bloom · colour out of grain' },
@@ -92,11 +88,6 @@ const deployState = computed({
   get: () => dep.scenario,
   set: (s: Scenario) => (scenarioPick.want = s)
 })
-const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }))
-const THEMES = [
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'light', label: 'Light', icon: Sun }
-] as const
 
 const P20_ROWS: { key: keyof typeof P20; label: string }[] = [
   { key: 'recent', label: 'Recently used' },
@@ -127,7 +118,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'nav', 'palette', 'theme', 'brandMotif']
+const GLOBAL: TweakId[] = ['surface', 'brandMotif']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -148,6 +139,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'buildPage', show: () => when.buildPage.value },
+  { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -202,7 +194,7 @@ function onScroll(e: Event): void {
         class="mar-tuner-body flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
         @scroll.passive="onScroll"
       >
-        <!-- Global: who is looking, where, and the colour. Applies everywhere. -->
+        <!-- Global: where, and the brand motif. Applies everywhere. -->
         <section aria-label="Global" class="flex flex-col">
           <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
           <!-- Cloud's first screen is Home: before it, only the desktop app. -->
@@ -218,15 +210,6 @@ function onScroll(e: Event): void {
               @click="showScreen((setupScreen = 'first'))"
               >Start onboarding</Button
             >
-          </Row>
-          <Row v-if="can.builds" label="Navigation">
-            <Select v-model="marNav.id" :options="NAVS" class="w-full" />
-          </Row>
-          <Row label="Palette and theme">
-            <div class="flex items-center gap-1.5">
-              <Select v-model="palette.id" :options="paletteOptions" class="min-w-0 flex-1" />
-              <Seg v-model="look.theme" compact label="Theme" :options="THEMES" />
-            </div>
           </Row>
           <!-- The trio in empty states, step progress and loaders. -->
           <Row label="Brand motif">
@@ -307,11 +290,24 @@ function onScroll(e: Event): void {
           <Row :show="shows('templates')" label="Template cards">
             <Select v-model="templateStyle.id" :options="TEMPLATE_STYLES" class="w-full" />
           </Row>
-          <Row :show="shows('buildCard')" label="Build card">
-            <Select v-model="buildCard.id" :options="BUILD_CARDS" class="w-full" />
+          <Row :show="shows('buildCard')" label="Builds view">
+            <Seg v-model="buildCard.id" label="Builds view" :options="BUILD_CARDS" />
           </Row>
           <Row :show="shows('buildPage')" label="Build page">
             <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />
+          </Row>
+          <Row :show="shows('syncPrevious')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Sync with previous versions</span>
+              <Switch
+                :model-value="syncPrevious.id === 'on'"
+                aria-label="Sync with previous versions"
+                @update:model-value="syncPrevious.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Adds what Builds already has: Settings, build problems and Remote.</span
+            >
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />

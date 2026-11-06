@@ -52,19 +52,16 @@ watch(
   { immediate: true }
 )
 
-/** Mar's navigation (UI Playground › Navigation): Mar's sidebar attached
- *  to the window or floating (MarSidebar.vue), the dock at the bottom
- *  (MarDock.vue), a bar on top, or Floating panels. Same places in all. */
+/** Mar's navigation: Floating panels. The others (Mar's sidebar, the dock,
+ *  a bar on top) stay in the code; nothing offers them any more. */
 export type MarNav = 'sidebar' | 'floating' | 'dock' | 'tabs' | 'panels'
-// v3: Floating panels (sidebar and page as two cards) is the default
-// (Pablo/Mar, Oct 30). The dock and Original are no longer offered; a
-// stored pick of either falls back to the default.
+// v3: Floating panels (sidebar and page as two cards) is the one navigation.
+// A stored pick of another falls back to it; only collapsed is kept.
 const NAV_KEY = 'comfy.design.mar.nav.v3'
 function loadNav(): { id: MarNav; collapsed: boolean } {
   try {
     const v = JSON.parse(localStorage.getItem(NAV_KEY) ?? '{}')
-    const id: MarNav = ['floating', 'tabs', 'panels'].includes(v.id) ? v.id : 'panels'
-    return { id, collapsed: Boolean(v.collapsed) }
+    return { id: 'panels', collapsed: Boolean(v.collapsed) }
   } catch {
     return { id: 'panels', collapsed: false }
   }
@@ -234,7 +231,11 @@ const lit = computed(() => proto.page === 'overview' || !can.value.builds)
 /** Latent bloom is on screen: Home, bloom picked. */
 export const bloomOn = computed(() => lit.value && homeBackground.id === 'bloom')
 
-/** One of the quieter Home backgrounds (CSS only, MarBackdrop.vue). */
-export const altBackground = computed(() =>
-  lit.value && !['bloom', 'photo'].includes(homeBackground.id) ? homeBackground.id : undefined
-)
+/** One of the quieter Home backgrounds (CSS only, MarBackdrop.vue). Builds
+ *  and their pages always take the neutral light, whatever Home picked. */
+export const altBackground = computed(() => {
+  if (proto.page === 'environments' || proto.page.startsWith('tool:')) return 'spotlight'
+  return lit.value && !['bloom', 'photo'].includes(homeBackground.id)
+    ? homeBackground.id
+    : undefined
+})

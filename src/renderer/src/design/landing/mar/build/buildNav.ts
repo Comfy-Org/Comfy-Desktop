@@ -3,6 +3,7 @@ import { proto } from '../../useProto'
 import { appsProto } from '../../appFlow'
 import { envById } from '../../parts/env/env'
 import { can } from '../../milestones'
+import { syncing } from './syncPrevious'
 
 /**
  * A build's page navigation: the title bar's breadcrumb says where you are
@@ -11,12 +12,21 @@ import { can } from '../../milestones'
  * every other page uses, each with content or an empty state.
  */
 
+const SETTINGS = '/settings'
+
+/** The build a page belongs to: its own page or its Settings page. */
+export const buildIdOf = (page: string): string =>
+  page.startsWith('environment:')
+    ? page.slice('environment:'.length).replace(new RegExp(`${SETTINGS}$`), '')
+    : ''
+
+/** A build's Settings page is on view (syncPrevious.ts). */
+export const onBuildSettings = computed(() => syncing.value && proto.page.endsWith(SETTINGS))
+
 /** The build whose page is on view in the app shell, if any. */
 export const buildOnView = computed(() => {
   if (proto.activeTab !== 'home' || appsProto.front) return undefined
-  return proto.page.startsWith('environment:')
-    ? envById(proto.page.slice('environment:'.length))
-    : undefined
+  return proto.page.startsWith('environment:') ? envById(buildIdOf(proto.page)) : undefined
 })
 
 const onBuilds = computed(
@@ -37,8 +47,11 @@ export const buildTrail = computed<
   if (onBuilds.value) return home ? [{ label: 'Builds' }] : undefined
   const env = buildOnView.value
   if (!env) return undefined
+  const kind = env.kind === 'cloud' ? ('cloud' as const) : ('local' as const)
   return [
     ...(home ? [{ label: 'Builds', page: 'environments' }] : []),
-    { label: env.name, kind: env.kind === 'cloud' ? ('cloud' as const) : ('local' as const) }
+    ...(onBuildSettings.value
+      ? [{ label: env.name, page: `environment:${env.id}` }, { label: 'Settings' }]
+      : [{ label: env.name, kind }])
   ]
 })

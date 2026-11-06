@@ -49,11 +49,11 @@
   }
 }
 
-/* A page under a photo: its title sits low on the photo, larger. Space
-   above follows the window's height and the title its smaller side, so a
-   laptop and a big monitor both read right. */
+/* A page's title, larger, following the window's smaller side. Nothing
+   above it but the panel's own inset, about what it has on the left, on a
+   laptop and a big monitor alike. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
-  padding-top: clamp(16px, calc(9vh - 40px), 88px);
+  padding-top: 0;
 }
 /* Home's greeting sits a quarter higher, so less of the top is empty. */
 :root[data-mar-ui='on'] .mar-home > section:first-child {
@@ -614,11 +614,9 @@
   --mar-chrome: 78px;
 }
 
-/* Borders: None hides the divider inside cards, so it gives back the
+/* No borders: the divider inside cards is hidden, so it gives back the
    padding under it too (no blank band, e.g. "Not in a space"). */
-:root[data-mar-ui='on']:not([data-mar-borders='hairline'])
-  .edge-shine
-  .border-t.border-border-default {
+:root[data-mar-ui='on'] .edge-shine .border-t.border-border-default {
   padding-top: 0;
 }
 

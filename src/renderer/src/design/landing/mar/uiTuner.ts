@@ -17,13 +17,11 @@ export interface Knob {
 export interface Tuning {
   radius: 'default' | 'soft'
   contrast: 'low' | 'default' | 'high'
-  borders: 'none' | 'hairline'
 }
 
 const DEFAULTS: Tuning = {
   radius: 'default',
-  contrast: 'default',
-  borders: 'none'
+  contrast: 'default'
 }
 
 export const KNOBS: Knob[] = [
@@ -42,14 +40,6 @@ export const KNOBS: Knob[] = [
       { value: 'low', label: 'Flat' },
       { value: 'default', label: 'Default' },
       { value: 'high', label: 'Layered' }
-    ]
-  },
-  {
-    key: 'borders',
-    label: 'Borders',
-    options: [
-      { value: 'none', label: 'None' },
-      { value: 'hairline', label: 'Hairline' }
     ]
   }
 ]
@@ -80,26 +70,21 @@ const TOKENS: { [K in keyof Tuning]: Partial<Record<Tuning[K], Record<string, st
       '--color-secondary-background': 'oklch(1 0 0 / 0.09)',
       '--color-content-background': 'oklch(0.125 0.005 285)'
     }
-  },
-  // None: no borders at all. Hairline: a uniform, faint line all round.
-  borders: {
-    none: { '--color-border-default': 'transparent', '--color-border-strong': 'transparent' },
-    hairline: {
-      '--color-border-default': 'color-mix(in oklch, var(--color-base-foreground) 9%, transparent)',
-      '--color-border-strong': 'color-mix(in oklch, var(--color-base-foreground) 14%, transparent)'
-    }
   }
 }
 
-// v5: corners back to Default; borders default to none.
-const KEY = 'comfy.design.uiTuning.v5'
+// Surfaces draw no borders: not a choice any more.
+const NO_BORDERS = {
+  '--color-border-default': 'transparent',
+  '--color-border-strong': 'transparent'
+}
+
+// v6: the Borders option is gone, and earlier picks go with it.
+const KEY = 'comfy.design.uiTuning.v6'
 
 function load(): Tuning {
   try {
-    const t = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
-    // Glass edge (a lit top edge) is gone: a saved pick falls back to None.
-    if (t.borders !== 'hairline') t.borders = 'none'
-    return t
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
   } catch {
     return { ...DEFAULTS }
   }
@@ -155,12 +140,15 @@ watch(
     }
     if (!design) {
       darkSheet().textContent = ''
-      delete document.documentElement.dataset.marBorders
       return
     }
     // Surfaces (contrast) are dark-theme colours: they go in a sheet that
     // only applies outside light mode, so light keeps its own surfaces.
     let dark = ''
+    for (const [name, value] of Object.entries(NO_BORDERS)) {
+      style.setProperty(name, value)
+      applied.add(name)
+    }
     for (const knob of KNOBS) {
       const values = (TOKENS[knob.key] as Record<string, Record<string, string>>)[t[knob.key]]
       for (const [name, value] of Object.entries(values ?? {})) {
@@ -172,7 +160,6 @@ watch(
       }
     }
     darkSheet().textContent = dark ? `:root:not([data-ds-theme='light']) { ${dark} }` : ''
-    document.documentElement.dataset.marBorders = t.borders
   },
   { immediate: true }
 )

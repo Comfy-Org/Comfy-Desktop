@@ -227,9 +227,10 @@ function removePerson(m: string): void {
     }"
     @action="go('projects')"
   />
-  <div v-else class="mar-proj mx-auto w-full max-w-300 px-10 pb-24">
+  <div v-else class="mar-proj mx-auto w-full max-w-440 px-11 pb-24">
     <MarEntityHeader
       back="Projects"
+      on-tabs
       :title="p.name"
       :status="p.archived ? 'paused' : undefined"
       :status-label="p.archived ? 'Archived' : undefined"

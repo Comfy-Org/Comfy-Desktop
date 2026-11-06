@@ -181,6 +181,7 @@ const lines = computed<MenuLine[]>(() => {
         class="mar-space-head"
         :style="{ '--space-accent': space.brand.color }"
         back="Spaces"
+        on-tabs
         :title="space.name"
         :status="view!.status"
         @back="go('spaces')"

@@ -1,5 +1,4 @@
 import { computed } from 'vue'
-import { look } from '../look'
 import { building, appsProto } from '../appFlow'
 import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
@@ -7,10 +6,12 @@ import { resetTuning, tuning } from './uiTuner'
 import { surface, onCloud } from './shell/surface'
 import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
-import { palette } from './palette'
+// Graphite is applied on load.
+import './palette'
 import { cover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
+import { syncPrevious } from './build/syncPrevious'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
 import { appsStage } from './apps/appsStage'
@@ -68,7 +69,7 @@ export const when = {
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
   // Template cards: Explore and Favorites.
   templates: computed(() => inShell.value && ['explore', 'favorites'].includes(proto.page)),
-  // The cards on the Builds page (milestone 1 shows only rows).
+  // Rows or photos on the Builds page (milestone 1 shows only rows).
   buildCard: computed(
     () =>
       inShell.value && proto.milestone >= 3 && ['environments', 'instances'].includes(proto.page)
@@ -76,6 +77,13 @@ export const when = {
   // A build's page, in the Builds milestone (later ones keep their tabs).
   buildPage: computed(
     () => inShell.value && proto.page.startsWith('environment:') && !can.value.breadcrumb
+  ),
+  // Past the Builds milestone: the Builds list and a build's pages.
+  syncPrevious: computed(
+    () =>
+      inShell.value &&
+      can.value.breadcrumb &&
+      (['environments', 'instances'].includes(proto.page) || proto.page.startsWith('environment:'))
   ),
   // Workflow cards with a cover: a build's page, Workflows and Home's recents.
   cover: computed(
@@ -151,8 +159,7 @@ export interface Tweak {
 }
 const TUNING_DEFAULTS = {
   radius: 'default',
-  contrast: 'default',
-  borders: 'none'
+  contrast: 'default'
 }
 const P20_DEFAULTS: Record<string, string> = {
   recent: 'cards',
@@ -179,9 +186,6 @@ export const TWEAKS = {
     reset: () => (proto.signedIn = true)
   },
   surface: one(surface, 'desktop'),
-  nav: one(marNav, 'panels'),
-  palette: one(palette, 'graphite'),
-  theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
@@ -191,8 +195,9 @@ export const TWEAKS = {
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   cover: one(cover, 'gradient'),
-  buildCard: one(buildCard, 'photos'),
+  buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
+  syncPrevious: one(syncPrevious, 'off'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
