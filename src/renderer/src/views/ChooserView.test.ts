@@ -58,7 +58,7 @@ const messages = {
       searchPlaceholder: 'Search instances',
       noMatches: 'No instances match',
       buildsTitle: 'Builds',
-      newBuild: 'Build',
+      newBuild: 'New Build',
       newBuildLabel: 'New build',
       filterThisComputer: 'This computer',
       whereLabel: 'Where it runs',
