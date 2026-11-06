@@ -2519,8 +2519,6 @@ describe('installAgentRequirements with a version override', () => {
       expect(placeholderRuns()).toBe(0)
     })
 
-    /** The real uv helper over a fake uv with a cold cache: every offline run misses until a
-     *  `--target` fetch succeeds, and `online` answers each networked run. */
     async function overColdCacheUv(
       online: (pypiFirst: boolean, args: string[]) => { code: number; output: string }
     ): Promise<void> {
