@@ -45,7 +45,7 @@ watch(TABS, (list) => {
 </script>
 
 <template>
-  <div class="mar-bp mx-auto w-full max-w-300 px-10 pb-24">
+  <div class="mar-bp mx-auto w-full max-w-440 px-11 pb-24">
     <MarEntityHeader
       :back="marTabsOn ? env.name : undefined"
       title="Settings"

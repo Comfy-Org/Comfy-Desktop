@@ -62,7 +62,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
 <template>
   <div
     class="mar-page"
-    :class="embedded ? 'is-embedded' : 'mx-auto w-full max-w-300 px-10 pb-24'"
+    :class="embedded ? 'is-embedded' : 'mx-auto w-full max-w-440 px-11 pb-24'"
     :data-state="shown"
   >
     <!-- A page about one thing (a project, a space) brings its own header. -->
