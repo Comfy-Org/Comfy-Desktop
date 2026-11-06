@@ -200,7 +200,6 @@ export async function installFilteredRequirements(
   return result.code
 }
 
-/** The canonical PyPI index — always used as the primary `--index-url`. */
 export const PYPI_INDEX_URL = 'https://pypi.org/simple/'
 
 /** Additional PyPI mirror URLs for regions with restricted access (e.g. China). */
@@ -218,9 +217,6 @@ function normalizeIndexUrl(url: string): string {
 export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
   const mirror = pypiMirror?.trim() || undefined
 
-  // Primary --index-url priority: user mirror, then first Chinese mirror, then pypi.org.
-  // The Chinese mirror goes first (not pypi.org as a fallback extra) to avoid uv's first-match
-  // strategy stalling on the unreachable pypi.org before falling back.
   let primary: string
   if (mirror) {
     primary = mirror
