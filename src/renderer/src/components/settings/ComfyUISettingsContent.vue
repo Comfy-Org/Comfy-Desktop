@@ -811,7 +811,7 @@ defineExpose({
             class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
           >
             {{
-              t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.')
+              t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI build to view its settings.')
             }}
           </p>
           <p

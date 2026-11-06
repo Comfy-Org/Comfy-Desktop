@@ -486,6 +486,70 @@ describe('buildInstancePickerSnapshot', () => {
     modelsSystemDefault: ''
   }
 
+  beforeEach(() => {
+    vi.spyOn(settings, 'get').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['personal', null, null, ['legacy', 'personal']],
+    ['team-a', null, null, ['team-a']],
+    ['team-b', null, null, ['team-b']],
+    ['empty-team', null, null, []],
+    ['team-a', 'personal', null, ['legacy', 'personal']],
+    ['personal', 'team-a', null, ['team-a']],
+    ['personal', null, 'team-b', ['team-b']]
+  ] as const)(
+    'scopes workspace %s with host %s and preview %s',
+    (workspaceId, hostInstallationId, previewInstallationId, expectedIds) => {
+      vi.mocked(settings.get).mockImplementation(((key: string) =>
+        key === 'dashboardWorkspaceId' ? workspaceId : undefined) as typeof settings.get)
+      const snap = buildInstancePickerSnapshot({
+        installs: [
+          makeInstall({ id: 'legacy', lastLaunchedAt: 900 }),
+          makeInstall({ id: 'personal', workspaceId: 'personal' }),
+          makeInstall({ id: 'team-a', workspaceId: 'team-a' }),
+          makeInstall({ id: 'team-b', workspaceId: 'team-b' })
+        ],
+        hostInstallationId,
+        previewInstallationId,
+        selectedInstallationId: 'legacy',
+        autoAction: 'snapshot-restore',
+        runningInstallationIds: ['team-b'],
+        launchingInstallationIds: [],
+        storage: EMPTY_STORAGE
+      })
+      expect(snap.installs.map((install) => install.id)).toEqual(expectedIds)
+      expect(snap.selectedInstallationId).toBe(expectedIds[0] ?? null)
+      expect(snap.autoAction).toBe(expectedIds[0] === 'legacy' ? 'snapshot-restore' : null)
+      expect(snap.runningInstallationIds).toEqual(['team-b'])
+    }
+  )
+
+  it('applies the cloud visibility preference within the selected workspace', () => {
+    vi.mocked(settings.get).mockImplementation(((key: string) => {
+      if (key === 'dashboardWorkspaceId') return 'team'
+      if (key === 'hideCloudFromPicker') return true
+      return undefined
+    }) as typeof settings.get)
+    const snap = buildInstancePickerSnapshot({
+      installs: [
+        makeInstall({ id: 'cloud', workspaceId: 'team', sourceCategory: 'cloud' }),
+        makeInstall({ id: 'local', workspaceId: 'team' })
+      ],
+      hostInstallationId: null,
+      selectedInstallationId: 'cloud',
+      runningInstallationIds: [],
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    })
+    expect(snap.installs.map((install) => install.id)).toEqual(['local'])
+    expect(snap.selectedInstallationId).toBe('local')
+  })
+
   it('forwards the install array verbatim under `installs`', () => {
     const installs = [makeInstall({ id: 'a', name: 'A' }), makeInstall({ id: 'b', name: 'B' })]
     const snap = buildInstancePickerSnapshot({

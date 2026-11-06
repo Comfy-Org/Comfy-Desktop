@@ -4,7 +4,7 @@ import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
+import { LayoutDashboard, Search, X } from 'lucide-vue-next'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
@@ -130,7 +130,6 @@ interface PickerBridge {
   close?: () => void
   pickInstall: (installationId: string) => void
   openInstallNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
-  openNewInstall: () => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
   setPickerSelectedInstall: (installationId: string | null) => void
   pickerUpdateField: (
@@ -201,7 +200,7 @@ function mostRecentInstallId(installs: PickerInstall[]): string | null {
 
 function resolveInitialSelection(snapshot: PickerSnapshot): string | null {
   const explicit = snapshot.selectedInstallationId ?? snapshot.activeInstallationId
-  if (explicit) return explicit
+  if (explicit && snapshot.installs.some((install) => install.id === explicit)) return explicit
   return mostRecentInstallId(snapshot.installs)
 }
 const selectedId = ref<string | null>(resolveInitialSelection(props.snapshot))
@@ -219,11 +218,8 @@ watch(
 watch(
   () => props.snapshot.installs,
   (installs) => {
-    if (selectedId.value) return
-    const id = mostRecentInstallId(installs)
-    if (id) {
-      selectedId.value = id
-    }
+    if (installs.some((install) => install.id === selectedId.value)) return
+    selectedId.value = resolveInitialSelection(props.snapshot)
   }
 )
 
@@ -290,10 +286,6 @@ function lockLeavingRowSize(el: Element): void {
   node.style.height = `${rect.height}px`
   node.style.left = `${rect.left - listRect.left + list.scrollLeft}px`
   node.style.top = `${rect.top - listRect.top + list.scrollTop}px`
-}
-
-function handleNewInstall(): void {
-  bridge?.openNewInstall()
 }
 
 function handleClose(): void {
@@ -473,8 +465,8 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
       <BaseInput
         v-model="searchQuery"
         class="picker-search-input min-w-0 flex-auto bg-transparent"
-        :placeholder="$t('chooser.searchPlaceholder')"
-        :aria-label="$t('chooser.searchPlaceholder')"
+        :placeholder="$t('instancePicker.searchPlaceholder')"
+        :aria-label="$t('instancePicker.searchPlaceholder')"
       >
         <template #leading><Search :size="16" class="picker-search-icon" /></template>
       </BaseInput>
@@ -576,25 +568,10 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               key="__empty"
               class="picker-list-empty px-[18px] py-2 text-[14px] text-neutral-100"
             >
-              {{ $t('chooser.noMatches') }}
+              {{ $t('instancePicker.noMatches') }}
             </div>
           </TransitionGroup>
         </div>
-
-        <footer
-          class="picker-left-footer flex shrink-0 items-center border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3"
-        >
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            class="picker-new-install w-fit shrink-0"
-            @click="handleNewInstall"
-          >
-            <Plus :size="16" />
-            <span>{{ $t('instancePicker.newInstance') }}</span>
-          </Button>
-        </footer>
       </div>
 
       <div class="picker-detail-wrap is-expanded flex min-h-0 min-w-0 overflow-hidden p-0">

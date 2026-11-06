@@ -190,21 +190,22 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       const input = wrapper.get('.picker-search input')
-      expect(input.attributes('placeholder')).toBe('Search instances')
-      expect(input.attributes('aria-label')).toBe('Search instances')
+      expect(input.attributes('placeholder')).toBe('Search builds')
+      expect(input.attributes('aria-label')).toBe('Search builds')
       expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)
     })
 
-    it('renders the "+ New Instance" CTA in the left footer', async () => {
+    it('labels the list Builds and leaves build creation on the dashboard', async () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      const newInstall = wrapper.find('.picker-new-install')
-      expect(newInstall.exists()).toBe(true)
+      expect(wrapper.get('.picker-list-section-title').text()).toBe('Builds')
+      expect(wrapper.find('.picker-new-install').exists()).toBe(false)
+      expect(wrapper.find('.picker-left-footer').exists()).toBe(false)
     })
   })
 
@@ -374,15 +375,38 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   })
 
   describe('user actions', () => {
-    it('dispatches openNewInstall when the New Instance button is clicked', async () => {
+    it('selects a visible build when the workspace snapshot replaces the list', async () => {
       const wrapper = await mountPicker({
-        installs: [],
+        installs: [makeInstall({ id: 'personal', name: 'Personal build' })],
         activeInstallationId: null,
+        selectedInstallationId: 'personal',
         runningInstallationIds: []
       })
-      const newInstallRow = wrapper.find('.picker-new-install')
-      await newInstallRow.trigger('click')
-      expect(bridge.newInstallCount).toBe(1)
+      await wrapper.setProps({
+        snapshot: {
+          installs: [makeInstall({ id: 'team', name: 'Team build' })],
+          activeInstallationId: null,
+          selectedInstallationId: 'team',
+          runningInstallationIds: [],
+          launchingInstallationIds: []
+        }
+      })
+      await flushPromises()
+      expect(wrapper.findAll('.picker-row-name').map((row) => row.text())).toEqual(['Team build'])
+      expect(bridge.selectedInstallSets.at(-1)).toBe('team')
+
+      await wrapper.setProps({
+        snapshot: {
+          installs: [],
+          activeInstallationId: null,
+          selectedInstallationId: null,
+          runningInstallationIds: [],
+          launchingInstallationIds: []
+        }
+      })
+      await flushPromises()
+      expect(wrapper.get('.picker-detail-empty').text()).toBe('Select a build')
+      expect(bridge.selectedInstallSets.at(-1)).toBeNull()
     })
 
     it('filters install rows by search query', async () => {
@@ -513,7 +537,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const dialogs = useDialogs()
       expect(dialogs.state.open).toBe(true)
       expect(dialogs.state.kind).toBe('confirm')
-      expect(dialogs.state.confirm.title).toBe('Restart instance?')
+      expect(dialogs.state.confirm.title).toBe('Restart build?')
       expect(bridge.restarts).toEqual([])
       dialogs.confirmPrimary()
       await flushPromises()

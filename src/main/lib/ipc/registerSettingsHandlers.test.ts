@@ -94,7 +94,7 @@ describe('buildSettingsSections', () => {
     expect(fields.map((f) => f.id)).not.toContain('managerSecurityLevel')
   })
 
-  it('offers a default-on preference for the multiple-instance warning', () => {
+  it('offers a default-on preference for the multiple-build warning', () => {
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
     )
@@ -102,7 +102,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'warnBeforeRunningMultipleInstances',
-        label: 'Warn before running multiple instances',
+        label: 'Warn before running multiple builds',
         type: 'boolean',
         value: true
       })

@@ -286,7 +286,7 @@ const groups = computed<FactGroup[]>(() => {
   if (details.length > 0) {
     out.push({
       id: 'install-details',
-      title: t('statusFactPanel.installDetails', 'Instance details'),
+      title: t('statusFactPanel.installDetails', 'Build details'),
       rows: details
     })
   }
@@ -332,7 +332,7 @@ const groups = computed<FactGroup[]>(() => {
             ref="nameEl"
             class="status-fact-hero-name peer/name cursor-text hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] min-w-0 truncate rounded-md px-1.5 py-0.5 text-[18px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease]"
             role="textbox"
-            :aria-label="t('statusFactPanel.editName', 'Edit instance name')"
+            :aria-label="t('statusFactPanel.editName', 'Edit build name')"
             contenteditable="plaintext-only"
             spellcheck="false"
             @blur="handleNameBlur"
@@ -353,7 +353,7 @@ const groups = computed<FactGroup[]>(() => {
             size="unset"
             type="button"
             class="status-fact-hero-edit-btn static inline-flex w-0 shrink-0 items-center justify-center -ml-1.5 overflow-hidden rounded-md border-none bg-transparent p-0 appearance-auto transition-[width,margin-left] duration-[120ms] ease-[ease] hover:bg-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:outline-offset-1 focus-visible:ring-0 group-hover/name:w-[17px] group-hover/name:ml-0 peer-focus-visible/name:w-[17px] peer-focus-visible/name:ml-0 focus-visible:w-[17px] focus-visible:ml-0 [&>svg]:opacity-0 group-hover/name:[&>svg]:opacity-60 peer-focus-visible/name:[&>svg]:opacity-60 focus-visible:[&>svg]:opacity-60"
-            :aria-label="t('statusFactPanel.editName', 'Edit instance name')"
+            :aria-label="t('statusFactPanel.editName', 'Edit build name')"
             aria-controls="status-fact-hero-name"
             @click="focusName"
           >
