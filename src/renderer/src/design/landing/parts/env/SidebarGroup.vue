@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, LayoutGrid, Plus } from 'lucide-vue-next'
+import { Folder, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
@@ -9,6 +9,9 @@ import { envById } from './env'
 import { allWorkflows } from '../../gallery'
 import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
 import { PROJECTS } from '../../mock'
+import { can } from '../../milestones'
+import { errorOf } from '../../mar/build/buildErrors'
+import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 
 /**
  * The organising list under Create.
@@ -37,8 +40,12 @@ const rows = computed<Row[]>(() =>
         page: `environment:${i.id}` as Page,
         label: i.name,
         envId: i.id,
-        count: allWorkflows.value.filter((w) => w.envId === i.id).length,
-        live: i.state === 'running'
+        // Nothing links a workflow to its build before the breadcrumb milestone.
+        count: can.value.breadcrumb
+          ? allWorkflows.value.filter((w) => w.envId === i.id).length
+          : undefined,
+        live: i.state === 'running',
+        failed: errorOf(i.id)
       }))
 )
 const show = computed(() => proto.signedIn || instances.value.some((i) => i.kind === 'local'))
@@ -55,9 +62,7 @@ const itemClass = (page: Page): string =>
 <template>
   <div v-if="show" class="mt-5.5 flex shrink-0 flex-col">
     <div class="flex h-6.5 items-center justify-between pr-1 pl-3">
-      <span class="text-ui font-medium tracking-wider text-subtle-foreground uppercase">{{
-        title
-      }}</span>
+      <MarGroupTitle :title="title" :active="overviewActive" @click="go(overviewPage)" />
       <Tooltip :content="proto.projects ? 'New project' : 'New build'">
         <Button
           variant="ghost"
@@ -71,22 +76,13 @@ const itemClass = (page: Page): string =>
         </Button>
       </Tooltip>
     </div>
-    <!-- Overview of the whole group -->
-    <Button
-      variant="ghost"
-      :aria-current="overviewActive ? 'page' : undefined"
-      :class="
-        cn(itemClass(overviewPage), !overviewActive && 'bg-transparent text-muted-foreground')
-      "
-      @click="go(overviewPage)"
+    <!-- None yet (a first-time user): say what goes here. -->
+    <p
+      v-if="!rows.length"
+      class="flex h-8 items-center gap-2.5 px-3 text-ui text-subtle-foreground"
     >
-      <LayoutGrid :size="15" />
-      <span class="sidebar-label text-left">{{
-        proto.projects ? 'All projects' : 'All builds'
-      }}</span>
-      <span class="text-ui text-subtle-foreground tabular-nums">{{ rows.length }}</span>
-    </Button>
-
+      <Folder :size="15" />{{ proto.projects ? 'Group work by client' : 'No builds yet' }}
+    </p>
     <Button
       v-for="r in rows"
       :key="r.page"
@@ -96,9 +92,17 @@ const itemClass = (page: Page): string =>
       @click="go(r.page)"
     >
       <Folder v-if="proto.projects" :size="15" />
-      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" />
+      <!-- Running or didn't start: a dot on the build's mark; the reason on hover. -->
+      <Tooltip
+        v-else-if="envById(r.envId!) && 'failed' in r && r.failed"
+        :content="`Failed to start · ${r.failed}`"
+      >
+        <span class="inline-flex" aria-label="Failed to start"
+          ><InstanceGlyph :inst="envById(r.envId!)!" size="xs" dot failed
+        /></span>
+      </Tooltip>
+      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" dot />
       <span class="sidebar-label text-left">{{ r.label }}</span>
-      <span v-if="r.live" class="size-1.5 rounded-full bg-status-running" />
       <!-- Projects: the environment the project runs on -->
       <Tooltip
         v-if="proto.projects && envById(r.envId!)"

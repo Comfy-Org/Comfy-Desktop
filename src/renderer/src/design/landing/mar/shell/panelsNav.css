@@ -1,0 +1,109 @@
+/*
+ * Navigation › Panels (marShell.ts): Pablo's sidebar and page framed as
+ * two rounded cards on a darker window, after Magnific (14px corners). 8px around and
+ * between them, no hairline. Only the framing changes; the items are
+ * Pablo's.
+ */
+:root[data-mar-nav='panels'] {
+  --mar-panels-window: color-mix(in oklch, var(--color-titlebar-background) 82%, black);
+  --mar-panels-side: color-mix(in oklch, var(--color-titlebar-background) 94%, white);
+  /* Magnific's corner: 14px on the cards. */
+  --mar-panels-radius: 14px;
+}
+:root[data-mar-nav='panels'][data-ds-theme='light'] {
+  --mar-panels-window: color-mix(in oklch, var(--color-titlebar-background) 92%, black);
+  --mar-panels-side: color-mix(in oklch, var(--color-titlebar-background) 60%, white);
+}
+
+/* The window: one darker colour, title bar included. */
+:root[data-mar-nav='panels'][data-mar-ui='on'] .proto-shell,
+:root[data-mar-nav='panels'][data-mar-ui='on'] .proto-ui > .glass-titlebar.glass-titlebar {
+  background: var(--mar-panels-window);
+}
+
+/* Keep the title bar solid and in the flow, like Classic (the floating,
+   translucent bar in marShell.css skips Classic only). */
+:root[data-mar-nav='panels'][data-mar-ui='on'] .proto-ui > .glass-titlebar.glass-titlebar {
+  position: relative;
+  inset: auto;
+  backdrop-filter: none;
+}
+:root[data-mar-nav='panels'][data-mar-ui='on'] .proto-ui .proto-main.proto-main {
+  padding-top: 0;
+}
+:root[data-mar-nav='panels'][data-mar-ui='on'] .proto-ui .mar-top-actions.mar-top-actions {
+  top: 14px;
+}
+
+/* The sidebar card: a shade lighter than the window. */
+:root[data-mar-nav='panels'] .proto-ui .proto-sidebar {
+  border-radius: var(--mar-panels-radius);
+  background: var(--mar-panels-side);
+  --glyph-ring: var(--mar-panels-side);
+}
+/* 12px inside on the sides (Pablo's 8 felt tight on a card). */
+:root[data-mar-nav='panels'] .proto-ui aside.proto-sidebar:not(.w-0) {
+  width: 244px;
+  padding-inline: 12px;
+}
+
+/* The content card: its own surface, same radius, 8px from everything. */
+:root[data-mar-nav='panels'] .proto-ui .proto-main.proto-main {
+  margin: 8px;
+  border-radius: var(--mar-panels-radius);
+  box-shadow: none;
+  outline: none;
+}
+
+/* Collapsed (Sidebar head › Logo + collapse): the card narrows to a rail
+   of icons, like Magnific. Labels, group titles and the lists under them
+   hide; the main links, the Create / Build switch and the foot stay as
+   icons, with their names as tooltips. */
+:root[data-mar-rail] .proto-ui aside.proto-sidebar.proto-sidebar {
+  width: 72px;
+  transition: width 240ms var(--mar-ease-io, ease);
+}
+:root[data-mar-rail] .proto-ui aside.proto-sidebar > div {
+  width: 48px;
+}
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .sidebar-label,
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .tabular-nums,
+:root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mt-5\.5 {
+  display: none;
+}
+:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > button,
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .mt-auto button {
+  justify-content: center;
+  padding-inline: 0;
+}
+/* The workspace chevron. */
+:root[data-mar-rail]
+  .proto-ui
+  aside.proto-sidebar
+  .mt-auto
+  button
+  > svg:last-child:not(:first-child) {
+  display: none;
+}
+/* "Libraries" becomes a hairline between the two groups of links. */
+:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > div {
+  height: 1px;
+  margin: 12px 10px;
+  padding: 0;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > div > * {
+  display: none;
+}
+/* Create / Build (and the agent) stack as icons. */
+:root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mb-3:has(.mms-split) {
+  height: auto;
+}
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-split {
+  flex-direction: column;
+  width: 100%;
+}
+/* The pair itself stacks (MarModeSwitch passes `vertical`). */
+:root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-agent {
+  width: 100%;
+}

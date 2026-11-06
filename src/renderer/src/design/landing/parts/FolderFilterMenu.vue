@@ -11,6 +11,7 @@ import { cn } from '../ui/cn'
 import { fieldVariants } from '../ui/field.variants'
 import AddFolderDialog from './AddFolderDialog.vue'
 import { instanceById } from '../useProto'
+import { shortPath } from '../mar/menus'
 import type { LocalFolder } from '../mock'
 
 /** "Folders" filter: which local folders feed the view, plus Add a folder.
@@ -61,7 +62,9 @@ const folderName = (f: LocalFolder): string =>
       >
         <span class="flex min-w-0 flex-col">
           <span>{{ folderName(f) }}</span>
-          <span class="truncate font-mono text-ui text-subtle-foreground">{{ f.path }}</span>
+          <span class="truncate font-mono text-ui text-subtle-foreground" :title="f.path">{{
+            shortPath(f.path)
+          }}</span>
         </span>
       </DropdownMenuCheckboxItem>
       <DropdownMenuSeparator />

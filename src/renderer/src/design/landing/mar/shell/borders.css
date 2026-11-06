@@ -1,0 +1,15 @@
+/* New UI surfaces draw no borders, and never a lighter top edge. The shared
+   tokens below drop the lit inset the base theme puts in its shadows. */
+:root[data-mar-ui='on'] {
+  --shadow-highlight: 0 0 #0000;
+  --shadow-popover: 0 12px 32px oklch(0 0 0 / 0.45);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  --shadow-highlight: 0 0 #0000;
+  --shadow-popover: 0 0 0 1px oklch(0 0 0 / 0.06), 0 12px 32px oklch(0 0 0 / 0.14);
+}
+
+/* A card's own border stays hidden too. */
+:root[data-mar-ui='on'] :is(.rounded-card, [role='dialog']).border-border-default {
+  border-color: transparent;
+}

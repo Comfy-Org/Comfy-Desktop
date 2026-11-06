@@ -105,7 +105,7 @@ function addFolder(path: string): void {
         size: '27 KB',
         modified: 'Last month',
         kind: 'workflow',
-        thumbId: 'utility_seedvr2_image_upscale'
+        thumbId: 'utility_seedvr2_image_upscale~team-upscaler'
       }
     ]
   })

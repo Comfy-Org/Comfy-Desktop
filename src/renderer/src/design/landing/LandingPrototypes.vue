@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { TooltipProvider } from 'reka-ui'
-import DevBar from './DevBar.vue'
 import DesktopTitleBar from './parts/DesktopTitleBar.vue'
 import ComfyTab from './parts/ComfyTab.vue'
 import SwitcherMenu from './parts/nav/SwitcherMenu.vue'
@@ -11,9 +10,12 @@ import ClassicDashboard from './parts/milestones/ClassicDashboard.vue'
 import ClientPortal from './portal/ClientPortal.vue'
 import ViewToggle from './parts/space/ViewToggle.vue'
 import AppTab from './parts/apps/AppTab.vue'
+import MarUndoToast from './mar/pages/MarUndoToast.vue'
+import UiTuner from './mar/UiTuner.vue'
 import { appsProto } from './appFlow'
 import { hostActions, proto, toast } from './useProto'
 import { can } from './milestones'
+import { usePrototypeShortcuts } from './prototypeShortcuts'
 import { connectAccount, realAccount, realSignIn } from './account'
 import { connectTitleBar } from './titleBar'
 import { connectBuildTabs, openInNewWindow } from './buildTabs'
@@ -49,6 +51,8 @@ const toggleSpace = computed(() => {
   if (proto.viewAs === 'client') return proto.previewing ? proto.spaceId : ''
   return proto.page.startsWith('space:') ? proto.page.slice(6) : ''
 })
+
+usePrototypeShortcuts()
 
 // Unit tests drive the shipping chooser; in the app it is Milestone 0.
 const showToday = computed(
@@ -168,10 +172,12 @@ watch(
         :space-id="toggleSpace"
         class="fixed top-1.5 left-1/2 z-40 -translate-x-1/2 shadow-popover"
       />
+      <!-- UI tuner (mar/): knobs on top of the UI. -->
+      <UiTuner />
       <!-- The breadcrumb's build switcher, just under the stand-in bar. -->
       <SwitcherMenu v-if="standalone && can.breadcrumb" :top="44" />
       <Toaster />
-      <DevBar :in-title-bar="!standalone" />
+      <MarUndoToast />
     </div>
   </TooltipProvider>
 </template>

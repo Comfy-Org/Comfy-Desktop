@@ -443,19 +443,22 @@ bridge?.onPopupHover?.((inside) => {
 bridge?.onMenuClosed(({ menu }) => {
   if (menu === 'menu') infoOpen = onCard = false
 })
-/** The Prototype menu: the milestones, then the scenario switches; current
- *  values checked. */
+/** The Prototype menu: the proposal and UI row first (it opens the tuner),
+ *  then the milestones and the scenario switches, each under its own
+ *  heading; current values checked. */
 function openPrototypeMenu(e: MouseEvent): void {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const groups = launcherTabs.value?.options ?? []
+  const all = launcherTabs.value?.options ?? []
+  const groups = [...all.filter((g) => g.key === 'tune'), ...all.filter((g) => g.key !== 'tune')]
   handleDesignMenu(
     { x: Math.round(r.left), y: Math.round(r.bottom) },
     groups.flatMap((g, i) => [
       ...(i ? [SEPARATOR] : []),
+      ...(g.options.length > 1 ? [{ kind: 'heading' as const, label: g.label }] : []),
       ...g.options.map((o) => ({
         id: `design:proto:${g.key}:${o.value}`,
-        label: g.key === 'milestone' ? o.label : `${g.label}: ${o.label}`,
-        checked: o.value === g.value
+        label: o.label,
+        checked: g.options.length > 1 && o.value === g.value
       }))
     ])
   )

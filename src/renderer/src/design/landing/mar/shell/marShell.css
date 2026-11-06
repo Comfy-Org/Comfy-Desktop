@@ -1,0 +1,1618 @@
+/*
+ * Mar's UI and shell (see marShell.ts). `data-mar-ui` scopes the look
+ * (transparencies, page photos) to every milestone from 1 on;
+ * `data-mar-shell` adds the earlier floating sidebar. Milestone 0, Desktop
+ * as it ships, has neither.
+ */
+
+/* One flat, dark page: no glass mesh behind the content. The title bar
+   and the area around the content share one colour, so the top of the
+   window never reads as a separate band. */
+:root[data-mar-ui='on'] .proto-shell,
+:root[data-mar-ui='on'] .glass-titlebar {
+  background: var(--color-titlebar-background);
+}
+:root[data-mar-ui='on'] .glass-titlebar {
+  border-bottom-color: transparent;
+  backdrop-filter: none;
+}
+:root[data-mar-ui='on'] .proto-main::before {
+  display: none;
+}
+
+/* The sidebar floats over the page: smoked, blurred, no border. */
+:root[data-mar-shell='on'] .proto-sidebar {
+  position: absolute;
+  inset: 8px auto 8px 8px;
+  margin: 0;
+  z-index: 20;
+  border-radius: 18px;
+  background: color-mix(in oklch, var(--color-content-background) 62%, transparent);
+  backdrop-filter: blur(40px) saturate(1.2);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
+}
+
+/* The content runs edge to edge, under the sidebar's blur. */
+:root[data-mar-shell='on'] .proto-main.proto-main {
+  margin: 0;
+  border-radius: 0;
+  background: var(--color-content-background);
+  padding-left: 252px;
+  transition: padding-left 320ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+:root[data-mar-shell='on'] .mar-closed .proto-main.proto-main {
+  padding-left: 56px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-shell='on'] .proto-main.proto-main {
+    transition: none;
+  }
+}
+
+/* A page's title, larger, following the window's smaller side. Nothing
+   above it but the panel's own inset, about what it has on the left, on a
+   laptop and a big monitor alike. */
+:root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
+  padding-top: 0;
+}
+/* Home's greeting sits a quarter higher, so less of the top is empty. */
+:root[data-mar-ui='on'] .mar-home > section:first-child {
+  padding-top: 12px;
+}
+:root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child h1 {
+  font-size: clamp(32px, min(3.6vw, 6vh), 52px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+/* Mariana: no sparkles icon anywhere in her proposal. */
+:root[data-mar-ui='on'] [class*='lucide-sparkles'] {
+  display: none;
+}
+
+/* Credits and the workspace switcher stay pinned at the foot of the
+   sidebar; the rows above scroll if the window is short. */
+:root[data-mar-shell='on'] .proto-sidebar .mt-auto {
+  position: sticky;
+  bottom: -8px;
+  z-index: 1;
+  margin-inline: -8px;
+  margin-bottom: -8px;
+  padding: 12px 8px 8px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in oklch, var(--color-content-background) 92%, transparent) 14px
+  );
+}
+
+/* Short windows (laptops, low-resolution screens): tighter rows so the
+   whole sidebar fits. */
+@media (max-height: 900px) {
+  :root[data-mar-shell='on'] .proto-sidebar button.h-8:has(.sidebar-label) {
+    height: 28px;
+  }
+  :root[data-mar-shell='on'] .proto-sidebar .mt-5\.5 {
+    margin-top: 12px;
+  }
+}
+
+/* Surfaces are translucent over the page and its photos: cards and
+   tiles show what is behind them, with a blur, and stay translucent on
+   hover instead of turning into a flat grey. */
+:root[data-mar-ui='on'] .proto-main .bg-card-background {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) calc(var(--mar-surface-a, 0.05) * 100%),
+    transparent
+  );
+  backdrop-filter: blur(24px);
+}
+:root[data-mar-ui='on'] .proto-main .hover\:bg-card-background-hover:hover {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) calc(var(--mar-surface-hover-a, 0.08) * 100%),
+    transparent
+  );
+}
+:root[data-mar-ui='on'] .proto-main .bg-card-background\/60 {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) calc(var(--mar-surface-a, 0.04) * 100%),
+    transparent
+  );
+  backdrop-filter: blur(24px);
+}
+:root[data-mar-ui='on'] .proto-main .hover\:bg-card-background:hover {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) calc(var(--mar-surface-hover-a, 0.08) * 100%),
+    transparent
+  );
+}
+
+/* Focus and progress colour (Tune the UI): the prompt box being typed in
+   and anything in progress pick it up. */
+:root[data-mar-ui='on'] .proto-main :is(textarea, input):focus-visible {
+  outline: none;
+}
+:root[data-mar-ui='on'] .proto-main div:has(> div > textarea:focus),
+:root[data-mar-ui='on'] .proto-main form:has(textarea:focus) {
+  box-shadow:
+    0 0 0 1px var(--color-border-focus),
+    0 18px 48px -20px rgb(0 0 0 / 0.7);
+}
+
+/* Mar's own surfaces (build pills, wells): the page colour's foreground
+   at low opacity, so they work in dark and light, plus a blur. */
+:root[data-mar-ui='on'] .mar-surface {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  backdrop-filter: blur(24px);
+}
+:root[data-mar-ui='on'] .mar-surface:hover {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root[data-mar-ui='on'] .mar-well {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+
+/* Chips on images: always dark grey at 60% over a blur (DS · Mar). */
+:root[data-mar-ui='on'] {
+  --color-media-overlay: oklch(0.22 0.004 285 / 0.6);
+}
+
+/* Borders (Tune the UI): None hides every line; Hairline draws a faint
+   uniform line. Neither keeps edge-shine's lit top edge. */
+:root[data-mar-ui='on'] .edge-shine::after {
+  display: none;
+}
+/* Hairline on every surface: shell/borders.css. */
+
+/* Tabs and switches: a track behind every option, the picked one lighter. */
+:root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background-color: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+
+/* The prompt box is mostly opaque: it is where you type, so what is
+   behind it only shows faintly, through a blur. */
+:root[data-mar-ui='on'] .proto-main .mar-prompt.bg-card-background,
+:root[data-mar-ui='on'] .proto-main .mar-composer {
+  background-color: color-mix(in oklch, var(--color-card-background) 78%, transparent);
+  backdrop-filter: blur(28px) saturate(1.2);
+}
+
+/* Ambient dock (MarDock.vue): no sidebar; the content takes the whole
+   window and leaves room at the bottom for the dock. */
+:root[data-mar-dock='on'] .proto-sidebar {
+  display: none;
+}
+:root[data-mar-dock='on'] .proto-main.proto-main {
+  margin: 0;
+  border-radius: 0;
+  padding-bottom: 88px;
+}
+
+/* Home under the dock (Exploration 17): a tall photo, a large greeting
+   centred on it, recent work rising over its lower edge. */
+:root:is([data-mar-dock='on'], [data-mar-side]) .mar-backdrop.mar-backdrop {
+  height: 640px;
+}
+:root:is([data-mar-dock='on'], [data-mar-side]) .mar-home > section:first-child {
+  padding-top: 64px;
+}
+:root:is([data-mar-dock='on'], [data-mar-side]) .mar-home h1 {
+  margin-bottom: 28px;
+  font-size: 64px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+/* Pablo's prototype resets buttons inside .proto-ui with a high-specificity
+   rule; the dock's buttons keep their own size and padding. */
+:root .proto-ui.proto-ui.proto-ui .mar-dock-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-flyout-row {
+  padding: 6px 8px;
+}
+
+/* Surface: Comfy Cloud (surface.ts). The app's title bar gives way to the
+   browser's tab and address bar (MarCloudBar.vue); the page starts below. */
+:root[data-mar-surface='cloud'] .glass-titlebar {
+  display: none;
+}
+:root[data-mar-surface='cloud'] .proto-shell {
+  padding-top: 78px;
+}
+
+/* Pages under a photo: text and controls keep their contrast. The
+   subtitle reads at muted strength, and filters, search and sort get a
+   smoked, blurred fill of their own instead of a thin tint. */
+:root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child p {
+  color: var(--color-muted-foreground);
+}
+:root[data-mar-ui='on'] .mar-backdrop ~ div :is(.bg-secondary-background, [role='group']) {
+  /* Filters and fields read as controls: a lifted, light-tinted surface
+     with a faint edge, not a dark hole in the page. */
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background)) 82%,
+    transparent
+  );
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+:root[data-mar-ui='on'] .mar-backdrop ~ div :is(.text-subtle-foreground, .text-muted-foreground) {
+  text-shadow: 0 1px 12px color-mix(in oklch, var(--color-content-background) 70%, transparent);
+}
+
+:root[data-mar-ui='on'] .mar-backdrop ~ div .bg-secondary-background input {
+  background-color: transparent;
+}
+
+/* The title bar flows into the page: the photo behind a page starts in
+   the title bar's colour and opens up below it, instead of a hard band. */
+:root[data-mar-ui='on'] .mar-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 140px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--color-titlebar-background) 55%, transparent),
+    transparent
+  );
+}
+
+/* Latent bloom needs no veil: only a fade into the page at the bottom,
+   and a softer top so it still meets the title bar. */
+:root[data-mar-ui='on'] .mar-backdrop.is-bloom::after {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 55%,
+    var(--color-content-background) 100%
+  );
+}
+:root[data-mar-ui='on'] .mar-backdrop.is-bloom::before {
+  height: 90px;
+}
+
+/* Mar's greeting: solid text in the page's foreground, Semi Bold and a
+   touch smaller, instead of the grey gradient that muddied over the
+   background. */
+:root[data-mar-ui='on'] .mar-greeting.mar-greeting {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--color-base-foreground);
+  font-weight: 600;
+  text-shadow: 0 2px 24px color-mix(in oklch, var(--color-content-background) 55%, transparent);
+}
+:root:is([data-mar-dock='on'], [data-mar-side]) .mar-home h1.mar-greeting {
+  font-size: 40px;
+  letter-spacing: -0.035em;
+}
+
+/* Menus, popovers and selects (audited together): one family. A smoked,
+   blurred surface a step lighter than the page with a hairline edge;
+   radius 14 around 6 of padding, so items nest at 8. Group labels are
+   small and quiet, separators are a visible hairline inset from the
+   edges, paths read in the UI font, and every menu grows from its
+   trigger. */
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  border-color: transparent;
+  border-radius: 14px;
+  padding: 6px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 88%,
+    transparent
+  );
+  backdrop-filter: blur(28px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 18px 48px -16px rgb(0 0 0 / 0.65);
+  transform-origin: var(
+    --reka-dropdown-menu-content-transform-origin,
+    var(--reka-popover-content-transform-origin, var(--reka-select-content-transform-origin))
+  );
+}
+:root[data-mar-ui='on']
+  :is(
+    [role='menu'],
+    [role='listbox'],
+    [data-reka-popper-content-wrapper] > [role='dialog']
+  )[data-state='open'] {
+  animation: mar-menu-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes mar-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+:root[data-mar-ui='on'][data-ds-theme='light']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  background-color: color-mix(in oklch, var(--color-card-background) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 16px 40px -14px rgb(0 0 0 / 0.2);
+}
+:root[data-mar-ui='on']
+  :is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option']) {
+  min-height: 34px;
+  gap: 10px;
+  border-radius: 8px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  white-space: nowrap;
+  transition: background-color 120ms ease;
+}
+:root[data-mar-ui='on']
+  :is(
+    [role='menuitem'],
+    [role='menuitemradio'],
+    [role='menuitemcheckbox'],
+    [role='option']
+  )[data-highlighted] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root[data-mar-ui='on']
+  :is(
+    [role='menuitem'],
+    [role='menuitemradio'],
+    [role='menuitemcheckbox'],
+    [role='option']
+  )[data-highlighted]
+  > svg {
+  color: var(--color-base-foreground);
+}
+/* Two-line items: the second line a step smaller and quieter. */
+:root[data-mar-ui='on']
+  :is([role='menuitem'], [role='menuitemcheckbox'], [role='option'])
+  .flex-col
+  > span
+  + span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+:root[data-mar-ui='on'] :is([role='menu'], [role='listbox']) .font-mono {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+:root[data-mar-ui='on'] [role='listbox'] {
+  min-width: max(var(--reka-select-trigger-width, 0px), 180px);
+}
+:root[data-mar-ui='on'] .mar-menu-label {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+:root[data-mar-ui='on'] .mar-menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] :is([role='menu'], [role='listbox'])[data-state='open'] {
+    animation-name: fade-in;
+  }
+}
+
+/* Avatar stacks: solid avatars with a ring in the page colour, so the
+   overlap stays clean on translucent cards. Offline people are a darker
+   avatar with quieter initials instead of a see-through one. */
+:root[data-mar-ui='on'] .proto-main .ring-card-background {
+  --tw-ring-color: var(--color-content-background);
+}
+:root[data-mar-ui='on'] .proto-main .rounded-full.opacity-35 {
+  opacity: 1;
+}
+:root[data-mar-ui='on'] .proto-main .rounded-full.opacity-35 > * {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-content-background)
+  );
+  color: var(--color-subtle-foreground);
+}
+
+/* Under the dock, Home's own fade goes: it floated above the dock's room.
+   The dock draws the fade at the window's edge (MarDock.vue). */
+:root[data-mar-dock='on'] .mar-home + [aria-hidden='true'] {
+  display: none;
+}
+
+/* Mar's sidebar (MarSidebar.vue): Pablo's sidebar goes; the content takes
+   the window and leaves room for the panel or its rail. */
+:root[data-mar-side] .proto-sidebar {
+  display: none;
+}
+:root[data-mar-side] .proto-main.proto-main {
+  margin: 0;
+  border-radius: 0;
+  padding-left: 276px;
+  transition: padding-left 320ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+:root[data-mar-side='rail'] .proto-main.proto-main {
+  padding-left: 80px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-side] .proto-main.proto-main {
+    transition: none;
+  }
+}
+:root .proto-ui.proto-ui.proto-ui :is(.mar-side-row, .mar-side-credits, .mar-side-ws) {
+  margin: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-row {
+  height: 34px;
+  padding: 0 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-row {
+  width: 40px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-credits {
+  height: 38px;
+  padding: 0 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-credits {
+  width: 40px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-ws {
+  padding: 4px;
+}
+
+/* Browser preview: the title bar is translucent and floats over the page,
+   so the page's photo or bloom runs under it. (In the app the title bar is
+   its own window and can't show the page behind it.) */
+:root[data-mar-ui='on']:not([data-mar-surface='cloud'], [data-mar-nav='classic'])
+  .proto-ui
+  > .glass-titlebar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 45;
+  background: color-mix(in oklch, var(--color-titlebar-background) 45%, transparent);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+:root[data-mar-ui='on']:not([data-mar-surface='cloud'], [data-mar-nav='classic'])
+  .proto-ui:has(> .glass-titlebar)
+  .proto-main.proto-main {
+  padding-top: 44px;
+}
+
+:root[data-mar-ui='on']:not([data-mar-surface='cloud'], [data-mar-nav='classic'])
+  .proto-ui:has(> .glass-titlebar)
+  .mar-top-actions {
+  top: 58px;
+}
+
+/* Integrated sidebar (like Pablo's, attached to the window): no floating
+   card. It runs from the title bar to the bottom edge, translucent with a
+   blur so the page's background passes behind it, and a faint line sets
+   it apart from the content. */
+:root[data-mar-side-style='integrated'][data-mar-side] .mar-side.mar-side {
+  top: var(--mar-chrome, 0px);
+  bottom: 0;
+  left: 0;
+  width: 248px;
+  border-radius: 0;
+  padding: 12px 12px 14px;
+  background: color-mix(in oklch, var(--color-content-background) 38%, transparent);
+  backdrop-filter: blur(28px) saturate(1.2);
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+:root[data-mar-side-style='integrated'][data-mar-side] .mar-side.mar-side.is-rail {
+  width: 60px;
+  padding: 12px 8px 14px;
+}
+:root[data-mar-side-style='integrated'][data-mar-side='open'] .proto-main.proto-main {
+  padding-left: 248px;
+}
+:root[data-mar-side-style='integrated'][data-mar-side='rail'] .proto-main.proto-main {
+  padding-left: 60px;
+}
+/* The page's background runs behind the sidebar too. */
+:root[data-mar-side-style='integrated'][data-mar-side] .mar-backdrop.mar-backdrop {
+  left: 0;
+}
+
+/* Space cards: the who's-in line fits on one line, a size down. */
+:root[data-mar-ui='on'] .mar-space-meta {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Sidebar items: Pablo's sizes (13px rows of 32, 15px icons, 12px corners,
+   28px lens tabs), so both proposals read the same. */
+:root .proto-ui.proto-ui.proto-ui .mar-side-row {
+  height: 32px;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-row {
+  width: 40px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-row > :is(svg, img) {
+  width: 15px;
+  height: 15px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-credits {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-credits.is-rail,
+:root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-credits {
+  width: 40px;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-label {
+  padding: 14px 12px 6px;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-icon {
+  width: 28px;
+  height: 28px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-ws {
+  height: 52px;
+  padding: 6px;
+  gap: 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-ws {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* No lit top edge on cards (it lives in the elevation shadow, not only in
+   edge-shine). */
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.35),
+    0 6px 18px oklch(0 0 0 / 0.28);
+}
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
+  box-shadow:
+    0 2px 4px oklch(0 0 0 / 0.35),
+    0 10px 26px oklch(0 0 0 / 0.34);
+}
+
+/* What sits above the page: the title bar when it is part of the page
+   (browser preview; in the app it is its own window, so nothing), or the
+   browser's tab and address bar on Comfy Cloud. The sidebar starts below. */
+:root:has(.proto-ui > .glass-titlebar) {
+  --mar-chrome: 44px;
+}
+:root[data-mar-surface='cloud']:has(.proto-ui) {
+  --mar-chrome: 78px;
+}
+
+/* No borders: the divider inside cards is hidden, so it gives back the
+   padding under it too (no blank band, e.g. "Not in a space"). */
+:root[data-mar-ui='on'] .edge-shine .border-t.border-border-default {
+  padding-top: 0;
+}
+
+/* Screen simulator (screen.ts): the prototype laid out at the picked
+   size, then scaled to fit this window, on a dark surround with its name
+   on top. The tuner sits outside it, unscaled. */
+:root[data-mar-screen] #app {
+  background: #050506;
+}
+:root[data-mar-screen] div.proto-ui.relative {
+  position: fixed;
+  top: var(--scr-y);
+  left: var(--scr-x);
+  width: var(--scr-w);
+  height: var(--scr-h);
+  flex: none;
+  overflow: hidden;
+  transform: scale(var(--scr-s));
+  transform-origin: 0 0;
+}
+:root[data-mar-screen='framed'] div.proto-ui.relative {
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 30px 80px rgb(0 0 0 / 0.6);
+}
+:root[data-mar-screen='framed'] #app::before {
+  content: var(--scr-label);
+  position: fixed;
+  top: 22px;
+  right: 0;
+  left: 0;
+  color: rgb(255 255 255 / 0.55);
+  font:
+    500 12px / 1 Inter,
+    system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+/* Screen simulator › colour: the picked panel's look over the whole app. */
+:root div.proto-ui.relative {
+  filter: var(--scr-filter, none);
+}
+
+/* Sidebar rows read like Pablo's: grey at rest, white with a soft fill
+   when picked or hovered; Credits stays white and medium. */
+:root .proto-ui.proto-ui.proto-ui .mar-side-row {
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-row:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-row.is-on {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-credits {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+
+/* Credits as a row (Pablo's): a soft tile so it reads apart from the
+   navigation above and the workspace below. */
+:root .proto-ui.proto-ui.proto-ui .mar-credits-row {
+  height: 36px;
+  margin-bottom: 2px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* Light: on the pale sidebar the 5% tint reads as dirt and the gold coin
+   washes out. A white tile with a barely-there hairline (4%), and the
+   credit gold a step deeper (production's #ddbd31 is tuned for dark). */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row {
+  background: var(--color-card-background, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-credits-row:hover {
+  background: var(--color-card-background-hover, #fafafa);
+}
+:root[data-ds-theme='light'] .mar-credits-row .lucide-coins {
+  color: oklch(0.66 0.13 85);
+}
+
+/* Credits (UI Playground › Credits): the workspace and the meter fill
+   the foot; the chip is small, next to the tabs. */
+:root .proto-ui.proto-ui.proto-ui :is(.mar-side-ws, .mar-side-meter) {
+  width: 100%;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-meter > span:first-child {
+  width: 100%;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-chip {
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-meter {
+  padding: 4px 8px 0;
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) {
+  gap: 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-head:has(.mar-side-chip) .mar-mode-btn.is-icon {
+  width: 28px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-chip {
+  padding: 0 8px 0 7px;
+  gap: 4px;
+}
+
+/* Home backgrounds, the quieter alternatives to Latent bloom. */
+:root[data-mar-ui='on'] .mar-backdrop.is-alt .mar-bg,
+:root[data-mar-ui='on'] .mar-backdrop.is-alt .mar-bg-output {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* Mesh: the bloom's colours, still and smooth, no grain. */
+:root[data-mar-ui='on'] .mar-backdrop.is-mesh .mar-bg {
+  background:
+    radial-gradient(ellipse 45% 70% at 25% 35%, oklch(0.42 0.06 310 / 0.55), transparent 70%),
+    radial-gradient(ellipse 40% 60% at 75% 45%, oklch(0.5 0.05 60 / 0.4), transparent 70%),
+    radial-gradient(ellipse 25% 40% at 55% 15%, oklch(0.75 0.08 110 / 0.18), transparent 70%);
+}
+/* Spotlight: one soft light from above, like a stage, with a fine film
+   grain over it. Fully neutral. */
+:root[data-mar-ui='on'] .mar-backdrop.is-spotlight .mar-bg {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(
+      ellipse 55% 85% at 50% -15%,
+      color-mix(in oklch, var(--color-base-foreground) 16%, transparent),
+      transparent 70%
+    );
+}
+/* The spotlight carries on down the whole page: the same light, weaker
+   the further down you go, so the content never sits on a flat band.
+   Painted on the page itself (scrolling with it), so it spans the full
+   height with no edge; kept to the middle so the panel's sides stay as
+   dark as the page and the edge never washes into the sidebar. */
+:root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+      color-mix(in oklch, var(--color-base-foreground) 2.5%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
+/* In light mode a grey light reads as dirt: the same light is a faint
+   lavender instead (the palette's hue), both at the top and down the page. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-spotlight .mar-bg {
+  background: radial-gradient(
+    ellipse 55% 85% at 50% -15%,
+    oklch(0.84 0.06 290 / 0.45),
+    transparent 70%
+  );
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main:has(> .mar-backdrop.is-spotlight) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      oklch(0.9 0.04 290 / 0.3),
+      oklch(0.92 0.03 290 / 0.14) 40%,
+      oklch(0.94 0.02 290 / 0.05) 70%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
+/* Aurora: slow, wide bands of muted light drifting sideways. */
+:root[data-mar-ui='on'] .mar-backdrop.is-aurora .mar-bg {
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  background: linear-gradient(
+    100deg,
+    transparent 10%,
+    oklch(0.45 0.07 300 / 0.45) 25%,
+    transparent 40%,
+    oklch(0.55 0.05 70 / 0.35) 55%,
+    transparent 70%,
+    oklch(0.5 0.06 200 / 0.3) 85%,
+    transparent 95%
+  );
+  background-size: 200% 100%;
+  filter: blur(60px);
+  animation: mar-aurora 40s linear infinite alternate;
+}
+@keyframes mar-aurora {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+/* Grain: neutral dark with a film texture and a soft vignette. */
+:root[data-mar-ui='on'] .mar-backdrop.is-grain .mar-bg {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(
+      ellipse 70% 90% at 50% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+      transparent 75%
+    );
+}
+/* Your latest: the last output, blurred into colour. Personal, and it
+   changes as you work. */
+:root[data-mar-ui='on'] .mar-backdrop.is-output .mar-bg-output {
+  object-fit: cover;
+  opacity: 0.22;
+  filter: blur(90px) saturate(0.75);
+  transform: scale(1.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] .mar-backdrop.is-aurora .mar-bg {
+    animation: none;
+  }
+}
+
+/* Who's in a space: the faces overlap, each cut out by a ring in the
+   card's own colour (a translucent card over the page), so the ring
+   doesn't read as a dark line. */
+:root[data-mar-ui='on'] .proto-main .-space-x-1:has(> .rounded-full) > * {
+  --tw-ring-color: color-mix(
+    in oklch,
+    var(--color-card-background) 72%,
+    var(--color-content-background)
+  );
+}
+
+/* The page's photo or background melts into the page instead of ending
+   on a line: the whole layer fades out towards its bottom. */
+:root[data-mar-ui='on'] .mar-backdrop.mar-backdrop {
+  height: 560px;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+}
+
+/* Page photos stay a hint of colour behind the header, not a picture
+   competing with the UI: fainter, more blurred, and gone sooner. */
+:root[data-mar-ui='on'] .mar-backdrop:not(.is-bloom) img {
+  opacity: 0.3;
+  filter: blur(48px) saturate(0.7);
+  transform: scale(1.2);
+}
+:root[data-mar-ui='on'] .mar-backdrop.mar-backdrop:not(.is-bloom) {
+  height: 460px;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%);
+}
+
+/* The prompt box (Home and first run): one line, the build picker, the mic and send on the
+   same line. Focused, it opens to three lines (up to six as you type) over
+   the content below, which never moves. */
+.mar-prompt-slot {
+  position: relative;
+  z-index: 5;
+  height: 54px;
+}
+.mar-prompt-slot > .mar-prompt {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.mar-prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 10px;
+  padding: 8px 8px 8px 20px;
+  border-radius: 24px;
+}
+.mar-prompt > :first-child:not(.relative) {
+  grid-column: 1 / -1;
+}
+.mar-prompt > .relative {
+  align-self: center;
+  padding-top: 0;
+}
+.mar-prompt .relative > div[aria-hidden] {
+  padding-top: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mar-prompt textarea {
+  height: 1lh;
+  min-height: 1lh;
+  field-sizing: content;
+  max-height: 6lh;
+  transition: min-height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-prompt textarea:focus {
+  min-height: 3lh;
+}
+.mar-prompt > .mt-1\.5 {
+  margin-top: 0;
+  gap: 6px;
+}
+/* The build picker: the build itself, no "Run on" label. */
+.mar-prompt .mt-1\.5 button > .text-subtle-foreground:not(:last-child) {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-prompt textarea {
+    transition: none;
+  }
+}
+
+/* The prompt is the one place you type: a very faint edge keeps it from
+   melting into the page, whatever the Borders pick. */
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 12px 32px -16px rgb(0 0 0 / 0.5);
+}
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt:focus-within {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
+    0 12px 32px -16px rgb(0 0 0 / 0.5);
+}
+
+/* Faces inside a button (Share): cut out in the button's own colour. */
+:root[data-mar-ui='on'] .proto-main button :is(.-space-x-1, .-space-x-1\.5) > * {
+  --tw-ring-color: color-mix(
+    in oklch,
+    var(--color-secondary-background) 80%,
+    var(--color-content-background)
+  );
+}
+
+/* ── Filter system (every page in Mar's proposal) ─────────────────────
+   One look for everything that narrows a page, so a new filter is just
+   one more of the same:
+   - Scope tabs (All / This computer / Cloud): a soft track, no border;
+     the picked one is lighter. Squared (10 / 7) to match buttons.
+   - Filters (selects) and Sort: pills. Muted label, white value, no edge;
+     a little lighter on hover and while open.
+   - Search: the same pill, with its icon.
+   - Other filter buttons (Folders): the same pill. */
+:root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) {
+  border-color: transparent;
+  border-radius: var(--mar-tab-radius);
+  padding: 3px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .proto-main [role='group']:has(> button[data-state]) > button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--mar-tab-item-radius);
+}
+:root[data-mar-ui='on'] .proto-main [role='group'] > button[data-state='on'] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+}
+:root[data-mar-ui='on']
+  .proto-main
+  :is(
+    button[role='combobox'],
+    label:has(> input[type='search'], > input:not([type])),
+    .h-8.border-border-default
+  ) {
+  height: 34px;
+  border-color: transparent;
+  /* Same corner as the tab tracks (follows UI Playground › Corners). */
+  border-radius: var(--mar-tab-radius);
+  padding-inline: 14px 12px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+:root[data-mar-ui='on'] .proto-main button[role='combobox']:hover,
+:root[data-mar-ui='on'] .proto-main button[role='combobox'][data-state='open'] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+}
+:root[data-mar-ui='on'] .proto-main label:has(> input):focus-within {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+
+/* Assets (View menu, mar/assets): size, layout and details. */
+:root[data-mar-ui='on'] .proto-main .mar-asset-grid.mar-asset-grid {
+  grid-template-columns: repeat(auto-fill, minmax(var(--mar-tile, 232px), 1fr));
+  gap: 18px;
+}
+:root[data-mar-asset-size='s'] {
+  --mar-tile: 168px;
+}
+:root[data-mar-asset-size='l'] {
+  --mar-tile: 320px;
+}
+/* Grid: each picture in its own shape (no square crop). */
+:root[data-mar-ui='on'][data-mar-asset-layout='grid'] .mar-asset-grid [style*='aspect-ratio'] {
+  aspect-ratio: 4 / 5 !important;
+}
+:root[data-mar-ui='on'][data-mar-asset-details='off']
+  .mar-asset-grid
+  [role='button']
+  > div:last-child {
+  display: none;
+}
+/* List: one row each, thumbnail, name and details side by side. */
+:root[data-mar-ui='on'][data-mar-asset-layout='list'] .proto-main .mar-asset-grid.mar-asset-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+:root[data-mar-ui='on'][data-mar-asset-layout='list'] .mar-asset-grid [role='button'] {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 6px;
+}
+:root[data-mar-ui='on'][data-mar-asset-layout='list']
+  .mar-asset-grid
+  [role='button']
+  > div:first-child {
+  width: 56px;
+  flex-shrink: 0;
+}
+:root[data-mar-ui='on'][data-mar-asset-layout='list']
+  .mar-asset-grid
+  [role='button']
+  > div:last-child {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+:root[data-mar-ui='on'][data-mar-asset-layout='list']
+  .mar-asset-grid
+  [role='button']
+  > div:first-child
+  > div:not(:first-child) {
+  display: none;
+}
+/* When a page has many filters, the search gives way first. */
+:root[data-mar-ui='on'] .proto-main label:has(> input[type='search'], > input:not([type])) {
+  min-width: 150px;
+  flex: 0 1 220px;
+}
+:root[data-mar-ui='on'] .proto-main :is(.ml-auto, .flex):has(> label > input) {
+  min-width: 0;
+}
+
+/* Hover never makes a card or its picture bigger (no lift, no zoom). A
+   card answers with its surface, a shade lighter. */
+:root[data-mar-ui='on'] :is(.group, [class*='-card'], [role='button']):hover img,
+:root[data-mar-ui='on']
+  .group:hover
+  :is(.group-hover\:scale-\[1\.04\], .group-hover\:scale-\[1\.03\]) {
+  transform: none !important;
+}
+
+/* Search fields: the text is the UI's 13px, not the browser's 16px. */
+:root .proto-ui.proto-ui.proto-ui label:has(> input) > input,
+:root .proto-ui.proto-ui.proto-ui label:has(> input) > input::placeholder {
+  font-size: 13px;
+}
+
+/* The tuner paints its own surface, so no app-level aside style can turn
+   it dark in light mode. */
+:root .proto-ui.proto-ui.proto-ui[aria-label='UI tuner'] {
+  background-color: var(--color-card-background);
+  color: var(--color-base-foreground);
+}
+
+/* The sliding pill behind scope tabs takes the tabs' shape. */
+:root[data-mar-ui='on'] .proto-main [role='group']:has(> button[data-state]) > .mar-tab-pill {
+  border-radius: var(--mar-tab-item-radius);
+}
+
+/* Form fields (inside cards: settings, dialogs) are not filters: a soft
+   rounded field, 40 tall, the same lifted surface, no edge. The pill shape
+   stays for filter bars. */
+:root[data-mar-ui='on']
+  .proto-main
+  :is(.rounded-card, [class*='rounded-card'])
+  :is(button[role='combobox'], label:has(> input), .h-8.border-border-default) {
+  height: 40px;
+  border-radius: 12px;
+  padding-inline: 14px 12px;
+}
+:root[data-mar-ui='on'] .proto-main :is(.rounded-card, [class*='rounded-card']) textarea {
+  border-color: transparent;
+  border-radius: 12px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+
+/* Secondary buttons (Invite, Connect, Docs…): the same lifted surface as
+   fields, no border, no lit edge; a shade lighter on hover. */
+:root[data-mar-ui='on'] .proto-ui button.border-border-strong.bg-card-background-hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+:root[data-mar-ui='on'] .proto-ui button.border-border-strong.bg-card-background-hover:hover {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 13%, transparent);
+}
+:root[data-mar-ui='on']
+  .proto-main
+  :is(.rounded-card, [class*='rounded-card'])
+  button.border-border-strong.bg-card-background-hover {
+  height: 40px;
+  border-radius: 12px;
+}
+
+/* The prompt's faint edge is an outline, not a shadow, so it stays with
+   Shadows: Off and in every theme. */
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt {
+  outline: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  outline-offset: -1px;
+}
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt:focus-within {
+  outline-color: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
+
+/* Shadows: On is a soft, short lift, never a dark pool under a card. */
+:root[data-mar-ui='on'] {
+  --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.12), 0 6px 16px -6px oklch(0 0 0 / 0.18);
+  --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.14), 0 10px 22px -8px oklch(0 0 0 / 0.22);
+}
+:root[data-mar-ui='on'] .edge-shine.shadow-elev {
+  box-shadow: var(--shadow-elev);
+}
+:root[data-mar-ui='on'] .edge-shine.shadow-elev:hover {
+  box-shadow: var(--shadow-elev-hover);
+}
+/* Tailwind bakes the shadow's value into its utility, so the New UI tokens
+   only reach it through the variable. Without this any surface off
+   edge-shine keeps the base theme's lit top edge. */
+:where(:root[data-mar-ui='on']) .shadow-elev {
+  box-shadow: var(--shadow-elev);
+}
+:where(:root[data-mar-ui='on']) .shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+:where(:root[data-mar-ui='on']) .shadow-highlight {
+  box-shadow: var(--shadow-highlight);
+}
+/* Avatar's default tone keeps its even ring, without the lit top. */
+:where(:root[data-mar-ui='on']) [class*='inset_0_1px_0_rgb'] {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  --shadow-elev: 0 1px 2px oklch(0 0 0 / 0.05), 0 6px 16px -6px oklch(0 0 0 / 0.08);
+  --shadow-elev-hover: 0 2px 4px oklch(0 0 0 / 0.06), 0 10px 22px -8px oklch(0 0 0 / 0.1);
+}
+
+/* Light mode in Mar's proposal: the window and sidebar sit just off white,
+   not grey; the content is white; the title bar matches the window. */
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  --color-app-background: oklch(0.982 0.002 285);
+  --color-titlebar-background: oklch(0.975 0.002 285);
+  --color-content-background: oklch(1 0 0);
+  --color-card-background-hover: oklch(0.985 0.002 285);
+  --color-secondary-background: oklch(0 0 0 / 0.04);
+  --color-secondary-background-hover: oklch(0 0 0 / 0.065);
+}
+/* Workflow graph thumbnails are drawn dark; in light they sit on a light
+   board instead of a black hole. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main [class*='graph-preview'],
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .gp {
+  filter: invert(0.92) hue-rotate(180deg);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main :is([class*='graph-preview'], .gp) img {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Typing: the box opens smoothly (its corners ease from pill to card) and
+   the actions stay pinned to the bottom right. */
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt {
+  transition:
+    border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    outline-color 200ms ease,
+    background-color 200ms ease;
+}
+:root[data-mar-ui='on'] .proto-main .mar-prompt.mar-prompt:has(textarea:focus) {
+  border-radius: 20px;
+}
+
+/* Nested corners: an option inside a track is the track's radius minus
+   the track's padding, so the curves run parallel. UI Playground tracks:
+   10px outside, 8px inside. */
+:root .proto-ui.proto-ui.proto-ui[aria-label='UI tuner'] .mar-seg {
+  border-radius: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui[aria-label='UI tuner'] .mar-seg > :is(button, .mar-tab-pill) {
+  border-radius: 8px !important;
+}
+
+/* Tooltip (ui/Tooltip.vue): a small dark glass label, like the menus. */
+:root[data-mar-ui='on'] .mar-tip {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-card-background)) 94%,
+    transparent
+  );
+  backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 8px 24px -8px rgb(0 0 0 / 0.5);
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-tip {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 8px 24px -10px rgb(0 0 0 / 0.18);
+}
+
+/* Draft: a quiet chip where Pablo says "Not in a space". */
+.mar-draft-chip {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  cursor: default;
+}
+
+/* Stat strips (e.g. a space's overview): a soft rule between tiles, inset
+   from the card's edges, so the numbers don't run together. */
+:root[data-mar-ui='on'] .proto-main .grid.divide-x > :not(:first-child) {
+  position: relative;
+  border-left-color: transparent;
+}
+:root[data-mar-ui='on'] .proto-main .grid.divide-x > :not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: -1px;
+  width: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+
+/* ── App page (an app's published page) ──────────────────────────────
+   The app page is the product's own page: its segmented choices use the
+   same squared track as the filters (10 / 7), and the "Example" tag
+   stays legible on the photo in both themes. */
+:root[data-mar-ui='on'] .mar-app-page [role='group']:has(> button[data-state]) {
+  border-color: transparent;
+  border-radius: 10px;
+  padding: 3px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-page [role='group']:has(> button[data-state]) > button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+}
+:root[data-mar-ui='on'] .mar-app-page [role='group'] > button[data-state='on'] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+}
+:root[data-mar-ui='on'] .mar-app-page .bg-media-overlay {
+  color: oklch(1 0 0 / 0.86);
+  background-color: oklch(0 0 0 / 0.5);
+}
+
+/* Step modals (New space): the steps rail and the content are two
+   surfaces. The modal is the smoked-glass family (menus, tooltips) at a
+   larger radius; the rail sits a step darker behind a hairline and reads
+   as progress (done: check, current: lit, later: quiet); the content
+   ends in a footer bar with the actions. */
+:root[data-mar-ui='on'] .proto-ui.mar-wizard {
+  --wiz-ink: var(--color-base-foreground);
+  border-color: transparent;
+  border-radius: 20px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--wiz-ink) 5%, var(--color-card-background)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 32px 80px -24px rgb(0 0 0 / 0.7);
+}
+:root[data-mar-ui='on'] .proto-ui.fixed.inset-0:has(+ .mar-wizard) {
+  background-color: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(6px);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-ui.mar-wizard {
+  background-color: color-mix(in oklch, var(--color-card-background) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 9%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 64px -20px rgb(0 0 0 / 0.28);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-ui.fixed.inset-0:has(+ .mar-wizard) {
+  background-color: rgb(20 20 30 / 0.22);
+}
+
+/* Rail */
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-rail {
+  gap: 2px;
+  border-right-color: transparent;
+  padding: 22px 14px 14px;
+  background-color: rgb(0 0 0 / 0.22);
+  box-shadow: inset -1px 0 0 color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-wizard .mar-wizard-rail {
+  background-color: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-rail > h2 {
+  padding-inline: 8px;
+  font-size: 15px;
+  line-height: 20px;
+}
+:root[data-mar-ui='on'] .mar-wizard-count {
+  margin: 2px 0 18px;
+  padding-inline: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step {
+  position: relative;
+  height: 36px;
+  gap: 10px;
+  border-radius: 10px;
+  padding-inline: 8px;
+  color: color-mix(in oklch, var(--wiz-ink) 45%, transparent);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step:disabled {
+  opacity: 1;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step > span {
+  size: 20px;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 18%, transparent);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+/* The line that joins one step to the next */
+:root[data-mar-ui='on'] .mar-wizard .mar-step:not(:last-of-type)::after {
+  content: '';
+  position: absolute;
+  top: 29px;
+  left: 17.5px;
+  width: 1px;
+  height: 16px;
+  background: color-mix(in oklch, var(--wiz-ink) 12%, transparent);
+  pointer-events: none;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='done']::after {
+  background: color-mix(in oklch, var(--wiz-ink) 32%, transparent);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='done'] {
+  color: var(--color-muted-foreground);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='done'] > span {
+  background-color: color-mix(in oklch, var(--wiz-ink) 14%, transparent);
+  color: var(--wiz-ink);
+  box-shadow: none;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='done']:hover {
+  background-color: color-mix(in oklch, var(--wiz-ink) 5%, transparent);
+  color: var(--wiz-ink);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='current'] {
+  background-color: color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+  color: var(--wiz-ink);
+  font-weight: 500;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='current'] > span {
+  background-color: var(--wiz-ink);
+  color: var(--color-inverted-foreground);
+  box-shadow: none;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-step[data-step='todo']:not(:disabled):hover {
+  background-color: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+}
+/* Content */
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body {
+  padding: 28px 32px 24px;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > h3 {
+  padding-right: 32px;
+  font-size: 18px;
+  line-height: 24px;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > h3 + :is(p, [id]) {
+  margin-top: 4px;
+  color: var(--color-muted-foreground);
+  text-wrap: pretty;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > label.block {
+  margin-top: 22px;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > label.block + label {
+  margin-top: 8px;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body label:has(> input) {
+  height: 40px;
+  overflow: hidden;
+  border-color: transparent;
+  border-radius: 12px;
+  padding-inline: 14px 0;
+  background-color: color-mix(in oklch, var(--wiz-ink) 6%, transparent);
+  box-shadow: none;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body label:has(> input):hover {
+  background-color: color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body label:has(> input):focus-within {
+  background-color: color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 22%, transparent);
+  --tw-ring-shadow: 0 0 #0000;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body label:has(> input) > input {
+  padding-right: 14px;
+}
+/* The address suffix is a fixed segment of the field, not loose text. */
+:root[data-mar-ui='on'] .mar-wizard .mar-suffix {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  margin-left: -8px;
+  padding-inline: 12px 14px;
+  background-color: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+  color: var(--color-muted-foreground);
+}
+
+/* Footer bar */
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-foot {
+  min-height: 64px;
+  border-top-color: transparent;
+  padding: 12px 16px;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .mar-wizard-foot > button {
+  height: 36px;
+  border-radius: 10px;
+  padding-inline: 16px;
+}
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .mar-wizard-foot > button:disabled {
+  opacity: 1;
+  background-color: color-mix(in oklch, var(--wiz-ink) 10%, transparent);
+  color: color-mix(in oklch, var(--wiz-ink) 38%, transparent);
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+/* Brand preview and the Review summary sit on soft panels, not boxes. */
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body .rounded-card {
+  border-color: transparent;
+  border-radius: 16px;
+  background-color: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 6%, transparent);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > dl {
+  row-gap: 0;
+  border-radius: 14px;
+  padding: 4px 16px;
+  background-color: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > dl > :is(dt, dd) {
+  padding-block: 11px;
+}
+:root[data-mar-ui='on'] .mar-wizard .mar-wizard-body > dl > :is(dt, dd):nth-child(n + 3) {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--wiz-ink) 7%, transparent);
+}
+
+/* Row cards (Home: Builds; first run: Where should Comfy run?): one card,
+   so both rows line up. 72 tall, radius 16, a 40 icon tile at radius 10,
+   title and one line under it, the action at the end. */
+:root .proto-ui.proto-ui.proto-ui .mar-row-card {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  height: 72px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  border-radius: 16px;
+  text-align: left;
+}
+.mar-row-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+}
+
+/* Search fields are squarer than the filter pills (radius 10, like the
+   tab tracks), so a search reads as a field, not a chip. */
+:root[data-mar-ui='on'] .proto-main label:has(> input[type='search'], > input:not([type])) {
+  border-radius: 10px;
+}
+
+/* Tab tracks and search fields follow UI Playground › Corners: Default
+   gives 10 / 7, Soft 14 / 11. Every tab group (the Create / Build switch
+   included) uses these, so all tabs share one corner. The item nests
+   inside the track's 3px padding (inner = outer - padding). */
+:root[data-mar-ui='on'] {
+  --mar-tab-radius: calc(var(--radius-control) + 2px);
+  --mar-tab-item-radius: calc(var(--mar-tab-radius) - 3px);
+}
+
+/* Tab counts are off for now (Mar): segmented tabs show only their names.
+   Covers Pablo's segmented control and every Mar tab row. */
+:root[data-mar-ui='on']
+  :is(
+    .mar-pseg-count,
+    .mar-proj-count,
+    .mar-eh-count,
+    [role='group'] > button[data-state] > .tabular-nums
+  ) {
+  display: none;
+}
+
+/* Text links (See all, All builds, All spaces, Learn more): the focus
+   ring sits around the label with room, not on its letters, at the
+   controls' corner; the arrow nudges right on hover. The padding is taken
+   back with negative margins, so the link doesn't move. */
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control {
+  margin-block: -2px;
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: var(--mar-tab-item-radius, 7px);
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:not(.ml-auto) {
+  margin-left: -6px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control > svg {
+  transition: translate 160ms ease;
+}
+:root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+  translate: 2px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] .proto-ui button.h-auto.px-0.rounded-control:hover > svg {
+    translate: none;
+  }
+}
+
+/* Sidebar foot (Classic, Panels): credits and the workspace stay in view;
+   everything above scrolls under them. */
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child {
+  position: sticky;
+  bottom: -8px;
+  z-index: 2;
+  margin-bottom: -8px;
+  padding-bottom: 8px;
+  background: var(--mar-side-bg, var(--color-app-background));
+}
+:root[data-mar-ui='on'] .proto-ui aside.proto-sidebar > div > .mt-auto:last-child::before {
+  content: '';
+  position: absolute;
+  inset: -20px 0 100%;
+  background: linear-gradient(to top, var(--mar-side-bg, var(--color-app-background)), transparent);
+  pointer-events: none;
+}
+:root[data-mar-nav='panels'] {
+  --mar-side-bg: var(--mar-panels-side);
+}

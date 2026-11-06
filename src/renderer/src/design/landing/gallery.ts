@@ -87,7 +87,11 @@ export const localFolders = computed<LocalFolder[]>(() => [
   ...proto.extraAssetFolders
 ])
 
-export const allAssets = computed<GalleryAsset[]>(() => [
+// A new user (Mar's proposal: UI Playground › User) has made nothing yet:
+// no outputs, no saved workflows, local or in the cloud.
+export const allAssets = computed<GalleryAsset[]>(() => (proto.newUser ? [] : mockAssets.value))
+
+const mockAssets = computed<GalleryAsset[]>(() => [
   ...localFolders.value.flatMap(fromFolder),
   ...(proto.signedIn
     ? CLOUD_ASSETS.map((a) => ({
@@ -173,7 +177,9 @@ export const allWorkflows = computed<ProjectWorkflow[]>(() =>
   realDataOn.value ? realProjectWorkflows.value : mockWorkflows.value
 )
 
-const mockWorkflows = computed<ProjectWorkflow[]>(() => [
+const mockWorkflows = computed<ProjectWorkflow[]>(() => (proto.newUser ? [] : savedWorkflows.value))
+
+const savedWorkflows = computed<ProjectWorkflow[]>(() => [
   ...workflowFolders.value.flatMap((f) =>
     f.files
       .filter((file) => file.kind === 'workflow')

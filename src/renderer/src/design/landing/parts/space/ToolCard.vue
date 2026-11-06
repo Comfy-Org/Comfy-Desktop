@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { LayoutGrid, Waypoints } from 'lucide-vue-next'
+import {} from 'lucide-vue-next'
+import { GraphIcon, AppIcon } from '../../mar/icons/kindIcons'
 import Badge from '../../ui/Badge.vue'
 import MediaCard from '../../ui/MediaCard.vue'
 import { FLAVOR_LABEL, type CatalogItem } from '../../spaces'
@@ -14,7 +15,7 @@ const emit = defineEmits<{ open: [] }>()
   <MediaCard :src="thumb(item.thumbId)" @click="emit('open')" @keydown.enter="emit('open')">
     <template #top-left>
       <Badge variant="overlay" size="md">
-        <LayoutGrid v-if="item.flavor === 'app'" :size="12" /><Waypoints v-else :size="12" />
+        <AppIcon v-if="item.flavor === 'app'" :size="12" /><GraphIcon v-else :size="12" />
         {{ FLAVOR_LABEL[item.flavor] }}
       </Badge>
     </template>

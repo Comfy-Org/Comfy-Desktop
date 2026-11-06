@@ -1,0 +1,163 @@
+/*
+ * Mar's micro-animations. Scoped to her proposal (`data-mar-ui`); only
+ * transform and opacity move; short, out-expo easing; everything is off
+ * under reduced motion.
+ */
+:root[data-mar-ui='on'] {
+  --mar-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --mar-ease-io: cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* Page transition (pageTransition.ts): in only, never out. */
+  --mar-ease-page: cubic-bezier(0.22, 1, 0.36, 1);
+  --mar-page-in: 240ms;
+  --mar-page-fade: 160ms;
+  --mar-page-rise: 6px;
+  --mar-page-step: 40ms;
+}
+
+/* Tabs: one pill slides behind the picked option (tabSlide.ts). Keyed on
+   `data-mar-tabs`, which only the script sets, so the DS site's own
+   chrome slides too. A track that floats (the space's Admin | Member
+   view) keeps its `fixed`. */
+:root [data-mar-tabs]:not(.fixed) {
+  position: relative;
+}
+:root [data-mar-tabs] {
+  isolation: isolate;
+}
+:root [data-mar-tabs] > button {
+  position: relative;
+  z-index: 1;
+  background-color: transparent !important;
+  transition: color 200ms ease;
+}
+:root .mar-tab-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 7px;
+  background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+  pointer-events: none;
+  transition:
+    transform 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    width 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* Page entry: Home's blocks rise in, one after another. A Page
+   transition (pageTransition.ts) plays on Home too, so this one steps
+   aside while it's on. */
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > section,
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > div > section,
+:root[data-mar-ui='on']:not([data-mar-page-tx]) .mar-home > div > * {
+  animation: mar-rise 520ms var(--mar-ease) both;
+}
+:root[data-mar-ui='on'] .mar-home > div > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+:root[data-mar-ui='on'] .mar-home > div > *:nth-child(3) {
+  animation-delay: 120ms;
+}
+:root[data-mar-ui='on'] .mar-home > div > *:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+/* Images fade in as they load instead of popping. */
+:root[data-mar-ui='on'] .proto-main img {
+  animation: mar-fade 420ms ease-out both;
+}
+
+/* Surfaces never move under the pointer (Mar: cards never grow or lift);
+   hover only lightens them. A press still answers with a slight scale. */
+@media (hover: hover) and (pointer: fine) {
+  :root[data-mar-ui='on'] .proto-main .mar-surface {
+    transition:
+      transform 240ms var(--mar-ease),
+      background-color 200ms ease;
+  }
+  :root[data-mar-ui='on'] .proto-main .mar-surface:active {
+    transform: scale(0.99);
+  }
+}
+
+/* Running: the green dot breathes, slowly. */
+:root[data-mar-ui='on'] .proto-main .bg-status-running.size-1\.5 {
+  position: relative;
+}
+:root[data-mar-ui='on'] .proto-main .bg-status-running.size-1\.5::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: var(--color-status-running);
+  opacity: 0;
+  animation: mar-breathe 2.4s var(--mar-ease-io) infinite;
+}
+
+/* The send button pops in once there is something to send. */
+:root[data-mar-ui='on'] .mar-send:not(:disabled) {
+  animation: mar-pop 260ms var(--mar-ease);
+}
+
+/* Floating panels (UI Playground) slide in from the right. */
+:root[data-mar-ui='on'] aside[aria-label='UI tuner'] {
+  animation: mar-slide-in 320ms var(--mar-ease);
+}
+
+/* Menus and popovers: a short scale-in from their anchor. */
+:root[data-mar-ui='on'] [role='menu'] {
+  transform-origin: var(--reka-dropdown-menu-content-transform-origin, top right);
+  animation: mar-menu-in 180ms var(--mar-ease);
+}
+
+@keyframes mar-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes mar-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mar-breathe {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.45;
+  }
+  70%,
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+@keyframes mar-pop {
+  0% {
+    transform: scale(0.8);
+  }
+}
+@keyframes mar-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@keyframes mar-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .mar-tab-pill {
+    transition: none;
+  }
+  :root[data-mar-ui='on'] :is(.mar-home *, .proto-main img, .mar-send, aside, [role='menu']),
+  :root[data-mar-ui='on'] .proto-main .bg-status-running.size-1\.5::after {
+    animation: none !important;
+  }
+  :root[data-mar-ui='on'] .proto-main .mar-surface:hover {
+    transform: none;
+  }
+}

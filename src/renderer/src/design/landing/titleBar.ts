@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { closeTab, go, hostActions, instanceById, instances, proto, toast } from './useProto'
+import { closeTab, go, goIn, hostActions, instanceById, instances, proto, toast } from './useProto'
 import type { ProtoInstance } from './mock'
 import {
   TITLEBAR_COMMAND_KEY,
@@ -12,6 +12,9 @@ import { buildState, openInNewWindow } from './buildTabs'
 import { can, landingPage } from './milestones'
 import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
+import { marTabsOn } from './mar/shell/titleTabs'
+import { buildTrail } from './mar/build/buildNav'
+import { onCloud } from './mar/shell/surface'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -100,6 +103,11 @@ export const titleBarState = computed<TitleBarState>(() => ({
     return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),
   appFront: appsProto.front || null,
+  // Mar's tabs title bar (mar/shell/titleTabs.ts): only while it's on.
+  ...(marTabsOn.value ? marTabs() : {}),
+  // Mar's page trail (mar/build/buildNav.ts): only while it's on.
+  ...(buildTrail.value ? { trail: buildTrail.value } : {}),
+  ...(onCloud.value ? { noSwitcher: true } : {}),
   options: prototypeGroups.value.map((g) => ({
     key: g.key,
     label: g.label,
@@ -107,6 +115,28 @@ export const titleBarState = computed<TitleBarState>(() => ({
     options: g.options
   }))
 }))
+
+const kindOf = (id: string): 'local' | 'cloud' =>
+  instanceById(id)?.kind === 'cloud' ? 'cloud' : 'local'
+
+/** What Mar's tabs title bar adds: each open workflow as a tab (named
+ *  after the workflow - or its build while it is untitled, so two new tabs
+ *  aren't both "Untitled workflow" - its build in the tooltip), where Home
+ *  runs next, and whether the agent is open. */
+function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'> {
+  const runs = instanceById(proto.activeInstanceId)
+  return {
+    tabs: proto.tabs.map((t) => ({
+      id: t.id,
+      name: t.workflow === 'Untitled workflow' ? t.title : t.workflow,
+      build: t.title,
+      kind: kindOf(t.instanceId)
+    })),
+    tabFront: appsProto.front ? null : proto.activeTab === 'home' ? null : proto.activeTab,
+    runsOn: runs ? { name: runs.name, kind: kindOf(runs.id) } : undefined,
+    agent: can.value.agent ? proto.mode === 'agent' && proto.activeTab === 'home' : undefined
+  }
+}
 
 /** A pick in a title-bar menu (or ⌘⇧H inside ComfyUI): `home`,
  *  `manage`, `proto:<switch>:<value>`, `window:<build id>` (open it in its
@@ -155,6 +185,23 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
       break
     case 'closeApp':
       closeAppTab(cmd.id)
+      break
+    case 'tab':
+      appsProto.front = ''
+      proto.activeTab = cmd.id
+      break
+    case 'closeTab':
+      closeTab(cmd.id)
+      break
+    case 'agent':
+      appsProto.front = ''
+      if (proto.mode === 'agent' && proto.activeTab === 'home') goIn('create', landingPage())
+      else goIn('agent', 'agent')
+      proto.activeTab = 'home'
+      break
+    case 'page':
+      appsProto.front = ''
+      go(cmd.page as Parameters<typeof go>[0])
       break
     case 'info':
       // The browser preview has no popup to show it in.

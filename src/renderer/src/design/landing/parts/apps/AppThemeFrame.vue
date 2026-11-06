@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Flag } from 'lucide-vue-next'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import SpaceMark from '../space/SpaceMark.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppRunPanel from './AppRunPanel.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
-import { toast } from '../../useProto'
-import { kitById, themeStyle, type AppTheme } from '../../appTheme'
+import { kitById, type AppTheme } from '../../appTheme'
 import type { AppLayout, Field } from '../../appFlow'
 
 /**
@@ -28,6 +26,7 @@ const {
   layout,
   theme,
   gate,
+  output,
   compact = false
 } = defineProps<{
   name: string
@@ -40,6 +39,7 @@ const {
   layout: AppLayout
   theme: AppTheme
   gate?: () => boolean
+  output?: string
   /** Smaller paddings and type (previews inside the agent's thread). */
   compact?: boolean
 }>()
@@ -48,17 +48,18 @@ const emit = defineEmits<{ done: [] }>()
 const kit = computed(() => kitById(theme.kit))
 const panel = ref<InstanceType<typeof AppRunPanel>>()
 defineExpose({ run: () => panel.value?.run() })
-const PRESETS = ['Softbox studio', 'Golden hour', 'Marble counter']
 const titleStyle = computed(() => ({
   fontWeight: 'var(--app-title-weight)',
-  letterSpacing: 'var(--app-title-spacing)',
-  textTransform: theme.font === 'condensed' ? ('uppercase' as const) : undefined
+  letterSpacing: 'var(--app-title-spacing)'
 }))
 const pad = computed(() => (compact ? 'px-6' : 'px-10'))
+// The app page is the product's own page - its font, corners and colours.
+// A brand kit only puts its logo in the header.
+const MAR_STYLE = { '--app-title-weight': '600', '--app-title-spacing': '-0.02em' }
 </script>
 
 <template>
-  <div :style="themeStyle(theme)" class="bg-app-background text-base-foreground">
+  <div :style="MAR_STYLE" class="mar-app-page bg-app-background text-base-foreground">
     <header
       :class="
         cn(
@@ -111,20 +112,6 @@ const pad = computed(() => (compact ? 'px-6' : 'px-10'))
         <MemberAvatar :name="author" size="sm" />by {{ author }}
       </p>
 
-      <!-- Quick-start presets -->
-      <div v-if="theme.presets" class="mt-6 flex flex-wrap items-center gap-2">
-        <span class="text-ui text-subtle-foreground">Start from</span>
-        <button
-          v-for="p in PRESETS"
-          :key="p"
-          type="button"
-          class="h-8 rounded-control border border-border-default px-3 text-ui text-muted-foreground outline-none hover:bg-secondary-background hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus"
-          @click="toast(`Preset: ${p}`)"
-        >
-          {{ p }}
-        </button>
-      </div>
-
       <div :class="compact ? 'mt-6' : 'mt-12'">
         <AppRunPanel
           ref="panel"
@@ -135,9 +122,13 @@ const pad = computed(() => (compact ? 'px-6' : 'px-10'))
           :payer
           :gate
           :compact
-          :run-label="theme.runLabel"
+          :output
+          run-label="Run"
           @done="emit('done')"
-        />
+        >
+          <template #place><slot name="place" /></template>
+          <template #saved><slot name="saved" /></template>
+        </AppRunPanel>
       </div>
       <slot name="below" />
 
@@ -150,9 +141,6 @@ const pad = computed(() => (compact ? 'px-6' : 'px-10'))
         "
       >
         <span class="flex items-center gap-1.5"><ComfyCLogo :size="12" />Made with Comfy</span>
-        <button type="button" class="flex items-center gap-1.5" @click="toast('Report sent')">
-          <Flag :size="12" />Report this app
-        </button>
       </footer>
     </div>
   </div>

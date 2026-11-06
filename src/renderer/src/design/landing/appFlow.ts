@@ -15,14 +15,8 @@ import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './a
  * Agents prepare. People publish: access and money always need a click.
  */
 
-/** How the creator customizes the app's look (the Prototype menu's
- *  "Customize" switch): an inspector panel, curated themes, brand kits
- *  first, or describing it to the agent. */
-export type LookVariant = 'panel' | 'themes' | 'brand' | 'describe'
-
 const KEY = 'comfy.design.apps'
 const saved = ((): {
-  look?: LookVariant
   tabs?: string[]
   front?: string
   added?: string[]
@@ -36,7 +30,6 @@ const saved = ((): {
 })()
 
 export const appsProto = reactive({
-  look: (saved.look ?? 'panel') as LookVariant,
   /** Apps open in tabs in the title bar (app ids), and the one in front
    *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
@@ -66,7 +59,7 @@ export interface SourceWorkflow {
 export const SOURCES: SourceWorkflow[] = [
   {
     name: 'product-relight-studio',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-relight-studio',
     nodes: 9,
     settings: 31,
     model: 'Flux 2 dev',
@@ -74,7 +67,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'packshot-clean',
-    thumbId: 'api_google_nano_banana2_image_edit',
+    thumbId: 'api_google_nano_banana2_image_edit~packshot-clean',
     nodes: 6,
     settings: 18,
     model: 'Nano Banana 2',
@@ -82,7 +75,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'seasonal-scenes',
-    thumbId: 'image_flux2',
+    thumbId: 'image_flux2~seasonal-scenes',
     nodes: 11,
     settings: 40,
     model: 'Flux 2 dev',
@@ -90,7 +83,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'spin-video',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~spin-video',
     nodes: 8,
     settings: 27,
     model: 'LTX 2.5',
@@ -287,7 +280,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'relight',
     name: 'Product relight',
     blurb: 'Drop a product photo, pick a light. Get studio shots.',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~app-product-relight',
     team: true,
     link: true,
     people: [{ name: 'Sam Ortiz', email: 'sam@northwind.co', role: 'Can run' }],
@@ -312,7 +305,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'angles',
     name: 'Character angles',
     blurb: 'One character, eight angles.',
-    thumbId: 'image_qwen_image_edit_2511',
+    thumbId: 'image_qwen_image_edit_2511~app-character-angles',
     state: 'draft',
     updated: 'Sep 4',
     fields: simpleFields('Character')
@@ -321,7 +314,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'upscale',
     name: '4K upscaler',
     blurb: 'Any render to clean 4K.',
-    thumbId: 'utility_seedvr2_image_upscale',
+    thumbId: 'utility_seedvr2_image_upscale~app-4k-upscaler',
     team: true,
     runs: 2210,
     cost: 0.02,
@@ -335,7 +328,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'poster',
     name: 'Poster resizer',
     blurb: 'One poster, every format.',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~app-poster-resizer',
     owner: 'Jane Park',
     group: 'team',
     team: true,
@@ -347,7 +340,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'i2v',
     name: 'Photo to video',
     blurb: 'A still becomes a 5 s clip.',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~app-photo-to-video',
     owner: 'Marcus Lin',
     group: 'team',
     team: true,
@@ -362,7 +355,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'prop3d',
     name: 'Image to 3D prop',
     blurb: 'A photo of a prop, as a 3D model.',
-    thumbId: '3d_pixal3d_trellis2_image_to_model',
+    thumbId: '3d_pixal3d_trellis2_image_to_model~app-image-to-3d-prop',
     owner: 'Alex Carmoid · Studio Atlas',
     group: 'shared',
     link: true,
@@ -492,6 +485,115 @@ function hub(
 }
 const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
 
+const describeField = (placeholder: string): Field => ({
+  id: 'scene',
+  label: 'Describe it',
+  kind: 'text',
+  node: 'Prompt #2',
+  on: true,
+  placeholder
+})
+/** What Home's examples open once apps are in (mar/userStates/examples.ts):
+ *  each example as the app, under the name the card gave it. Not listed in
+ *  Explore. Costs are samples. */
+export const EXAMPLE_APPS: LibApp[] = [
+  hub(
+    'e-background',
+    'Remove a background',
+    'A clean cutout in one run.',
+    'template_product_placement~start-remove-a-background',
+    'Comfy',
+    0.02
+  ),
+  hub(
+    'e-video',
+    'Turn a photo into video',
+    'A still becomes a 5 s clip.',
+    'video_ltx2_5_i2v~clip-eye',
+    'Comfy',
+    0.31
+  ),
+  hub(
+    'e-reshoot',
+    'Reshoot your product',
+    'Put your product in a new scene.',
+    'api_google_nano_banana2_image_edit~app-reshoot-your-product',
+    'Comfy',
+    0.06
+  ),
+  hub(
+    'e-upscale',
+    'Upscale to 4K',
+    'Any render to clean 4K.',
+    'utility_seedvr2_image_upscale~start-upscale-to-4k',
+    'Comfy',
+    0.04
+  ),
+  hub(
+    'e-relight',
+    'Relight a scene',
+    'New light on any scene.',
+    'image_z_image_turbo~app-relight-a-scene',
+    'Comfy',
+    0.04
+  )
+]
+
+/** The starter apps, first in Explore: the apps on comfy.org, plus Image
+ *  Generator as the fourth. Costs are samples. */
+export const STARTER_APPS: LibApp[] = [
+  {
+    ...hub(
+      's-cine',
+      'Cinematic Studio',
+      'Direct your shot like a film set',
+      'app~app-cinematic-studio',
+      'Comfy',
+      0.31
+    ),
+    fields: [describeField('A woman on a rooftop at golden hour, slow push in')]
+  },
+  {
+    ...hub(
+      's-reshoot',
+      'Re-shoot a video',
+      'Re-shoot from any angle',
+      'app~app-reshoot-a-video',
+      'Comfy',
+      0.31
+    ),
+    fields: [{ id: 'clip', label: 'Your clip', kind: 'image', node: 'Load Video #1', on: true }]
+  },
+  {
+    ...hub(
+      's-jutsu',
+      'Openjutsu',
+      'Swap a character in a video',
+      'app~app-openjutsu',
+      'Comfy',
+      0.31
+    ),
+    fields: [
+      { id: 'clip', label: 'Video', kind: 'image', node: 'Load Video #1', on: true },
+      { id: 'photo', label: 'Character image', kind: 'image', node: 'Load Image #2', on: true },
+      describeField('Optional: add character details')
+    ]
+  },
+  {
+    ...hub(
+      's-image',
+      'Image Generator',
+      'Describe it, get an image',
+      'image_z_image_turbo',
+      'Comfy',
+      0.04
+    ),
+    fields: [describeField('A ceramic lamp on a linen table')]
+  }
+]
+
+export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
+
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
@@ -530,7 +632,10 @@ function syncAdded(a: LibApp): void {
 EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
 
 export const libApp = (id: string): LibApp | undefined =>
-  LIB.find((a) => a.id === id) ?? EXPLORE_APPS.find((a) => a.id === id)
+  LIB.find((a) => a.id === id) ??
+  EXPLORE_APPS.find((a) => a.id === id) ??
+  STARTER_APPS.find((a) => a.id === id) ??
+  EXAMPLE_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {
@@ -1071,6 +1176,12 @@ export function suggestions(): string[] {
 
 /** The live app's page, in Create. */
 export function openApp(id: string): void {
+  // An app's own page comes with the Agent; before that it opens as the app.
+  if (proto.milestone < 10) return openAppUrl(id)
+  openAppPage(id)
+}
+/** An app's page: what it does and Run, with Open app for its own tab. */
+export function openAppPage(id: string): void {
   goIn('create', `app:${id}`)
 }
 

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Bell, ChevronDown, Download, Menu, MessageSquarePlus } from 'lucide-vue-next'
+import { ArrowDownToLine, Bell, ChevronDown, Menu, MessageSquarePlus } from 'lucide-vue-next'
 import TitleBarBreadcrumb from './nav/TitleBarBreadcrumb.vue'
 import ComfyCLogo from '../../../components/icons/ComfyCLogo.vue'
 import { toast } from '../useProto'
 import { can } from '../milestones'
 import { runTitleBarCommand, titleBarState } from '../titleBar'
+import MarProtoMenu from '../mar/MarProtoMenu.vue'
 
 /**
  * Browser preview only: a stand-in for the desktop app's title bar, laid
@@ -51,7 +52,9 @@ import { runTitleBarCommand, titleBarState } from '../titleBar'
     <span class="ml-auto flex items-center gap-3.5 text-muted-foreground">
       <Bell :size="15" />
       <MessageSquarePlus :size="15" />
-      <Download :size="15" />
+      <ArrowDownToLine :size="15" />
+      <!-- The prototype controls, left of the app menu. -->
+      <MarProtoMenu />
       <button
         v-if="can.breadcrumb"
         type="button"

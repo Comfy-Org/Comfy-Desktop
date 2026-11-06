@@ -37,6 +37,10 @@ export type Page =
   | `project:${string}`
   // Apps (Milestone 10): one app's page
   | `app:${string}`
+  // Tools before Home: Benchmarks, Performance Tests
+  | `tool:${string}`
+  // Mar's proposal: everything starred
+  | 'favorites'
 
 /** Create: make things. Build: ship them as an API. Two lenses on the
  *  same workspace; admin lives in the workspace menu, outside both. */
@@ -86,6 +90,12 @@ export const proto = reactive({
   signedIn: urlSignedOut ? false : saved.signedIn,
   /** "Fresh install" scenario - no local instances yet. */
   fresh: saved.fresh,
+  /** First-time user: nothing made, run or shared yet. Set on its own
+   *  (mar/userStates/userState.ts), since a returning Cloud user may have no
+   *  local install. Null: follow `fresh`. */
+  newUser: null as boolean | null,
+  /** Mar's proposal: a single local build, the one just set up. */
+  oneLocal: false,
   /** Projects (Milestone 8, set from milestones.ts). */
   projects: false,
   live: saved.live,
@@ -184,18 +194,34 @@ export const workspace = computed(
   () => WORKSPACES.find((w) => w.id === proto.workspaceId) ?? WORKSPACES[0]!
 )
 
+/** New user: nothing made yet. */
+export const isNewUser = computed(() => proto.newUser ?? proto.fresh)
+
 /** All instances visible in the current scenario + workspace, cloud first. */
 export const instances = computed<ProtoInstance[]>(() => {
   const all = proto.live && proto.liveInstances.length ? proto.liveInstances : INSTANCES
-  return all.filter((i) => {
-    if (proto.fresh && i.kind === 'local') return false
-    // Deployments live in a workspace on the server: logged in only.
-    // Deployments come with the Builder (Milestone 6, milestones.ts).
-    if (i.deployment)
-      return proto.milestone >= 6 && proto.signedIn && i.workspace === proto.workspaceId
-    if (i.kind === 'cloud') return true
-    return i.workspace === proto.workspaceId
-  })
+  return all
+    .filter((i) => {
+      if (proto.fresh && i.kind === 'local') return false
+      if (proto.oneLocal && i.kind === 'local' && i.id !== all.find((x) => x.kind === 'local')?.id)
+        return false
+      // Deployments live in a workspace on the server: logged in only.
+      // Deployments come with the Builder (Milestone 6, milestones.ts).
+      // A new user (Mar's proposal) hasn't deployed anything yet.
+      if (i.deployment)
+        return (
+          !proto.newUser &&
+          proto.milestone >= 6 &&
+          proto.signedIn &&
+          i.workspace === proto.workspaceId
+        )
+      if (i.kind === 'cloud') return true
+      return i.workspace === proto.workspaceId
+    })
+    .map((i) =>
+      // A build a new user just set up is ready, with nothing to update.
+      proto.newUser && i.kind === 'local' ? { ...i, state: 'stopped' as const } : i
+    )
 })
 
 export const recentInstances = computed(() =>
