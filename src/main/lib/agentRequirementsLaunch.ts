@@ -498,12 +498,11 @@ function uvErrorSection(output: string): string | null {
  * or failed on something it names that is not a download (a permission error, a locked file). A
  * cache-only try proves nothing, since a cache miss reads as no solution.
  */
-function cannotDownload(result: CachedResult): boolean {
+function cannotDownload(result: CachedResult): 'no_solution' | 'other' | false {
   if (!result.online || result.report.outcome !== 'exited') return false
+  if (NO_SOLUTION.test(stripAnsi(result.output))) return 'no_solution'
   const error = uvErrorSection(result.output)
-  return (
-    NO_SOLUTION.test(stripAnsi(result.output)) || (error !== null && !DOWNLOAD_FAILED.test(error))
-  )
+  return error !== null && !DOWNLOAD_FAILED.test(error) ? 'other' : false
 }
 
 export type Deferral = 'agent' | 'update'
@@ -729,8 +728,9 @@ async function tryOverride(
     })
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
-      if (!cannotDownload(installed)) return deferOverride(sendOutput, pins, installed.report)
-      return NO_SOLUTION.test(stripAnsi(installed.output))
+      const cause = cannotDownload(installed)
+      if (!cause) return deferOverride(sendOutput, pins, installed.report)
+      return cause === 'no_solution'
         ? unresolved(sendOutput, pins, installed.report)
         : revertOnInstall(sendOutput, pins, installed.report)
     }

@@ -51,7 +51,10 @@ describe('standalone postInstall ComfyUI update', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'standalone-post-'))
-    const site = path.join('lib', 'python3.12', 'site-packages')
+    const site =
+      process.platform === 'win32'
+        ? path.join('Lib', 'site-packages')
+        : path.join('lib', 'python3.12', 'site-packages')
     fs.mkdirSync(path.join(root, 'standalone-env', site), { recursive: true })
     fs.mkdirSync(path.join(root, 'ComfyUI', '.venv', site), { recursive: true })
     fs.mkdirSync(path.join(root, 'ComfyUI', '.git'), { recursive: true })
@@ -90,15 +93,44 @@ describe('standalone postInstall ComfyUI update', () => {
 
     expect(progress.at(-1)).toEqual([
       'update',
-      {
-        percent: 100,
-        status:
-          'Update failed, staying on the bundled version: requirements install exited with code 1'
-      }
+      { percent: 100, status: 'Update failed: requirements install exited with code 1' }
     ])
     expect(depsSyncEnd(), 'counted, without failing the phase').toMatchObject({
       update_aborted: 1
     })
+  })
+
+  it('points at the app log when the failed update carries no message', async () => {
+    vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: false, installation })
+    const progress: Array<[string, Record<string, unknown>]> = []
+
+    await postInstall(installation, {
+      sendProgress: (step, data) => progress.push([step, data]),
+      update: async () => {}
+    })
+
+    expect(progress.at(-1)).toEqual([
+      'update',
+      { percent: 100, status: 'Update failed: see the app log' }
+    ])
+  })
+
+  it('counts no failed update when the user cancels it', async () => {
+    const abort = new AbortController()
+    vi.mocked(runComfyUIUpdate).mockImplementation(async () => {
+      abort.abort()
+      return { ok: false, message: 'Cancelled', installation }
+    })
+    const progress: Array<[string, Record<string, unknown>]> = []
+
+    await postInstall(installation, {
+      sendProgress: (step, data) => progress.push([step, data]),
+      update: async () => {},
+      signal: abort.signal
+    })
+
+    expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'Cancelled' }])
+    expect(depsSyncEnd()).not.toHaveProperty('update_aborted')
   })
 
   it('leaves the phase untagged when the update applies', async () => {

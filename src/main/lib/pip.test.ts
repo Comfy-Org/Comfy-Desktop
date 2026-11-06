@@ -525,7 +525,7 @@ describe('runUvPipDetailed mirror fallback', () => {
     expect(output.join('')).toContain('Retrying with the mirrors ahead of pypi.org')
   })
 
-  it('returns the rerun failure when both orders fail', async () => {
+  it("returns the pypi.org-first failure when both orders fail: the mirror's reflects the mirror", async () => {
     uvExiting(1, 2)
     const result = await runUvPipDetailed(
       'uv',
@@ -538,7 +538,7 @@ describe('runUvPipDetailed mirror fallback', () => {
       { useChineseMirrors: true }
     )
     expect(spawnMock).toHaveBeenCalledTimes(2)
-    expect(result).toEqual({ code: 2, output: 'out1\n' })
+    expect(result).toEqual({ code: 1, output: 'out0\n' })
   })
 
   it('runs once when the pypi.org-first install succeeds', async () => {
@@ -596,6 +596,23 @@ describe('runUvPipDetailed mirror fallback', () => {
     uvExiting(1)
     await runUvPipDetailed('uv', ['pip', 'list'], '/inst', () => {})
     expect(spawnMock.mock.calls[0]![1]).toEqual(['pip', 'list'])
+  })
+
+  it('pins pypi.org alone for a filtered requirements install with no mirror config', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pip-nomirror-'))
+    try {
+      const reqPath = path.join(dir, 'reqs.txt')
+      fs.writeFileSync(reqPath, 'comfy-agent==0.2.0\n')
+      uvExiting(1)
+      await installFilteredRequirementsDetailed(reqPath, 'uv', '/py', dir, 'filtered.txt', () => {})
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+      expect((spawnMock.mock.calls[0]![1] as string[]).slice(-2)).toEqual([
+        '--index-url',
+        PYPI_INDEX_URL
+      ])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('falls back for a filtered requirements install, compile included', async () => {

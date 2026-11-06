@@ -72,7 +72,9 @@ export async function runUvPipDetailed(
   const fallback = getPipFallbackIndexArgs(pypiMirror, useChineseMirrors)
   if (result.code === 0 || !fallback || signal?.aborted) return result
   sendOutput('\nRetrying with the mirrors ahead of pypi.org…\n')
-  return run(fallback)
+  const retried = await run(fallback)
+  // The pypi.org-first error is the one to act on: the mirror-first one reflects the mirror's state.
+  return retried.code === 0 ? retried : result
 }
 
 function spawnUvPip(

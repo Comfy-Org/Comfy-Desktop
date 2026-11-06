@@ -336,17 +336,16 @@ export async function postInstall(
               // ends up in sync with ComfyUI's pins before the user runs anything.
               forceDepsSync: true
             }),
-          (r) => !r.ok
+          (r) => !r.ok && !signal?.aborted
         )
         installation = result.installation
         if (result.ok) {
           sendProgress('update', { percent: 100, status: 'Up to date' })
+        } else if (signal?.aborted) {
+          sendProgress('update', { percent: 100, status: 'Cancelled' })
         } else {
-          const reason = result.message?.split('\n')[0] ?? 'unknown error'
-          sendProgress('update', {
-            percent: 100,
-            status: `Update failed, staying on the bundled version: ${reason}`
-          })
+          const reason = result.message?.split('\n')[0] ?? 'see the app log'
+          sendProgress('update', { percent: 100, status: `Update failed: ${reason}` })
         }
       }
     } catch (err) {

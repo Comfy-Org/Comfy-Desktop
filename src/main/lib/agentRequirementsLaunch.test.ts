@@ -2519,10 +2519,13 @@ describe('installAgentRequirements with a version override', () => {
       expect(placeholderRuns()).toBe(0)
     })
 
-    it('applies it, counting no failure, when pypi.org is unreachable and the mirror-first retry installs it', async () => {
+    /** The real uv helper over a fake uv with a cold cache: every offline run misses until a
+     *  `--target` fetch succeeds, and `online` answers each networked run. */
+    async function overColdCacheUv(
+      online: (pypiFirst: boolean, args: string[]) => { code: number; output: string }
+    ): Promise<void> {
       const real = await vi.importActual<typeof pip>('./pip')
-      const pypiFirst = (args: string[]): boolean =>
-        args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
+      let fetched = false
       vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
         const proc = Object.assign(new EventEmitter(), {
           stdout: new EventEmitter(),
@@ -2530,20 +2533,49 @@ describe('installAgentRequirements with a version override', () => {
           pid: undefined,
           kill: () => true
         })
-        const code = pypiFirst(args) ? 1 : 0
-        setImmediate(() => proc.emit('close', code))
+        const answer = args.includes('--offline')
+          ? fetched
+            ? { code: 0, output: '' }
+            : { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+          : online(pypiFirstArgs(args), args)
+        if (answer.code === 0 && args.includes('--target')) fetched = true
+        setImmediate(() => {
+          proc.stdout.emit('data', Buffer.from(answer.output))
+          proc.emit('close', answer.code)
+        })
         return proc
       }) as never)
       mockInstall.mockImplementation(real.installFilteredRequirementsDetailed)
+    }
+    const pypiFirstArgs = (args: string[]): boolean =>
+      args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
+    const UNREACHABLE = {
+      code: 2,
+      output: 'error: Request failed after 3 retries\n  Caused by: error sending request\n'
+    }
+    const NO_SOLUTION_OUT = {
+      code: 1,
+      output: 'error: No solution found when resolving dependencies\n'
+    }
+
+    it('applies it, counting no failure, when pypi.org is unreachable and the mirror-first retry installs it', async () => {
+      await overColdCacheUv((pypiFirst, args) =>
+        pypiFirst
+          ? UNREACHABLE
+          : { code: 0, output: args.includes('--dry-run') ? ' + comfy-agent==0.2.3\n' : '' }
+      )
 
       try {
         const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
         expect(decision).toMatchObject({ decision: 'applied' })
-        const runs = vi.mocked(spawn).mock.calls.map(([, args]) => args as string[])
+        const online = vi
+          .mocked(spawn)
+          .mock.calls.map(([, args]) => args as string[])
+          .filter((args) => !args.includes('--offline'))
         expect(
-          runs.map((args) => [args.includes('--dry-run'), pypiFirst(args)]),
-          'the cache check and the install each ran pypi.org first, then retried mirror first'
+          online.map((args) => [args.includes('--dry-run'), pypiFirstArgs(args)]),
+          'the online resolve and the fetch each ran pypi.org first, then retried mirror first'
         ).toEqual([
           [true, true],
           [true, false],
@@ -2554,6 +2586,33 @@ describe('installAgentRequirements with a version override', () => {
         vi.mocked(spawn).mockReset()
       }
     })
+
+    it.each([
+      ['pypi.org is unreachable and the mirror lags', UNREACHABLE, NO_SOLUTION_OUT, 'deferred'],
+      [
+        'pypi.org finds no solution and the mirror is dead',
+        NO_SOLUTION_OUT,
+        UNREACHABLE,
+        'reverted'
+      ]
+    ])(
+      "decides on pypi.org's error when both orders fail: %s",
+      async (_label, pypiAnswer, mirrorAnswer, expected) => {
+        await overColdCacheUv((pypiFirst) => (pypiFirst ? pypiAnswer : mirrorAnswer))
+
+        try {
+          const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+          expect(decision).toMatchObject(
+            expected === 'deferred'
+              ? { decision: 'deferred', reason: 'not_cached' }
+              : { decision: 'reverted', reason: 'resolve_failed' }
+          )
+        } finally {
+          vi.mocked(spawn).mockReset()
+        }
+      }
+    )
 
     it('keeps it while a not-yet-downloaded override fetches for the next launch', async () => {
       respond = ({ constraints }) =>

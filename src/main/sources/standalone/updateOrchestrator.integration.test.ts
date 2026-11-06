@@ -101,7 +101,7 @@ import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
 import type { InstallationRecord } from '../../installations'
-import { getMirrorConfig } from '../../settings'
+import { get as getSetting, getMirrorConfig } from '../../settings'
 import { PYPI_INDEX_URL } from '../../lib/pip'
 
 function isGitAvailable(): boolean {
@@ -437,10 +437,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     ])(
       'installs the requirements %s the dry run when pypi.org is unreachable and the mirror-first retry succeeds',
       async (_label, dryRunConflictCheck) => {
-        vi.mocked(getMirrorConfig).mockReturnValue({
-          pypiMirror: 'https://mirror.example/simple/',
-          useChineseMirrors: false
-        })
+        const MIRROR = 'https://mirror.example/simple/'
+        vi.mocked(getMirrorConfig).mockReturnValue({ pypiMirror: MIRROR, useChineseMirrors: false })
+        vi.mocked(getSetting).mockImplementation((key: string) =>
+          key === 'pypiMirror' ? MIRROR : key === 'useChineseMirrors' ? false : undefined
+        )
         spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
         const pypiFirst = (args: string[]): boolean =>
           args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
@@ -459,6 +460,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
             false
           ])
         } finally {
+          vi.mocked(getSetting).mockImplementation((key: string) =>
+            key === 'useChineseMirrors' ? false : undefined
+          )
           vi.mocked(getMirrorConfig).mockReturnValue({
             pypiMirror: undefined,
             useChineseMirrors: false
