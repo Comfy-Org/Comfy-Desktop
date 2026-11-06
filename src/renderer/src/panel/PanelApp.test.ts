@@ -58,7 +58,7 @@ vi.mock('../views/ChooserView.vue', () => ({
   default: {
     name: 'ChooserView',
     props: ['visible'],
-    emits: ['pick', 'open-details', 'show-new-install'],
+    emits: ['pick', 'open-details', 'show-new-install', 'show-build-import'],
     template:
       '<div data-testid="chooser-view" :data-visible="visible"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
   }
@@ -1284,6 +1284,21 @@ describe('PanelApp', () => {
       workspaceId: 'personal'
     })
     expect(mockState.getSetting).toHaveBeenCalledWith('dashboardWorkspaceId')
+  })
+
+  it.each([
+    ['track', 'track-modal'],
+    ['load-snapshot', 'load-snapshot-modal']
+  ] as const)('opens the %s takeover from the Builds page', async (flow, testId) => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('show-build-import', flow)
+    await flushPromises()
+
+    expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
   })
 
   it('opens menu-driven New Instance in the persisted dashboard workspace', async () => {

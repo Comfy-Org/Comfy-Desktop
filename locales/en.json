@@ -70,6 +70,8 @@
     "buildsTitle": "Builds",
     "newBuild": "New Build",
     "newBuildLabel": "New build",
+    "moreBuildOptions": "More build options",
+    "addExistingBuild": "Add Existing Build",
     "filterThisComputer": "This computer",
     "whereLabel": "Where it runs",
     "sortLabel": "Sort",
