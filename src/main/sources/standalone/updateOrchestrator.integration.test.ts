@@ -435,7 +435,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       ['with', true],
       ['without', false]
     ])(
-      'installs the requirements %s the dry run when a lagging mirror fails and the pypi.org-first retry succeeds',
+      'installs the requirements %s the dry run when pypi.org is unreachable and the mirror-first retry succeeds',
       async (_label, dryRunConflictCheck) => {
         vi.mocked(getMirrorConfig).mockReturnValue({
           pypiMirror: 'https://mirror.example/simple/',
@@ -444,7 +444,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
         const pypiFirst = (args: string[]): boolean =>
           args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
-        spawnState.uvHandler = (args) => fakeProc({ exitCode: pypiFirst(args) ? 0 : 1 })
+        spawnState.uvHandler = (args) => fakeProc({ exitCode: pypiFirst(args) ? 1 : 0 })
 
         try {
           const result = await runComfyUIUpdate(makeBaseOpts(installPath, { dryRunConflictCheck }))
@@ -454,9 +454,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           const installs = spawnState.uvCalls.filter(
             (a) => a.includes('-r') && !a.includes('--dry-run')
           )
-          expect(installs.map(pypiFirst).slice(0, 2), 'mirror first, then pypi.org first').toEqual([
-            false,
-            true
+          expect(installs.map(pypiFirst).slice(0, 2), 'pypi.org first, then mirror first').toEqual([
+            true,
+            false
           ])
         } finally {
           vi.mocked(getMirrorConfig).mockReturnValue({
