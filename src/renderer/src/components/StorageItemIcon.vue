@@ -14,9 +14,7 @@ const props = defineProps<Props>()
 const { t } = useI18n()
 
 const resolvedIcon = computed(() => (props.shared ? FolderSymlink : props.icon))
-const resolvedTitle = computed(() =>
-  props.shared ? t('tooltips.sharedDir', 'Shared across all your ComfyUI instances.') : props.title
-)
+const resolvedTitle = computed(() => (props.shared ? t('tooltips.sharedDir') : props.title))
 </script>
 
 <template>

@@ -86,7 +86,7 @@ function onKeydown(e: KeyboardEvent): void {
       mono
       :spellcheck="false"
       :model-value="localValue"
-      :placeholder="placeholder || t('comfyUISettings.argsPlaceholder', 'No arguments set')"
+      :placeholder="placeholder || t('comfyUISettings.argsPlaceholder')"
       :aria-label="ariaLabel"
       :invalid="hasIssues"
       @update:model-value="handleInput"
@@ -100,7 +100,7 @@ function onKeydown(e: KeyboardEvent): void {
       v-if="autocomplete.visible.value"
       class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-lg border border-solid border-[var(--border)] bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
       role="listbox"
-      :aria-label="t('comfyUISettings.argsAutocompleteLabel', 'Argument suggestions')"
+      :aria-label="t('comfyUISettings.argsAutocompleteLabel')"
     >
       <li
         v-for="(m, i) in autocomplete.matches.value"
@@ -133,9 +133,7 @@ function onKeydown(e: KeyboardEvent): void {
         class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-[var(--border)] px-2 pt-1 pb-0.5 text-right text-[10px] text-[color:color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
         aria-hidden="true"
       >
-        {{
-          t('comfyUISettings.argsAutocompleteHint', '↑↓ navigate · Tab/Enter select · Esc dismiss')
-        }}
+        {{ t('comfyUISettings.argsAutocompleteHint') }}
       </li>
     </ul>
 
@@ -170,7 +168,7 @@ function onKeydown(e: KeyboardEvent): void {
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
           {{ validation.awaiting.text }}
-          {{ t('comfyUISettings.argsAwaitingValue', 'expects a value') }}
+          {{ t('comfyUISettings.argsAwaitingValue') }}
         </span>
       </p>
       <p
@@ -180,7 +178,7 @@ function onKeydown(e: KeyboardEvent): void {
       >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
-          {{ t('comfyUISettings.argsUnsupported', 'Unsupported:') }}
+          {{ t('comfyUISettings.argsUnsupported') }}
           <code
             v-for="flag in validation.unsupportedFlags"
             :key="flag"
@@ -196,7 +194,7 @@ function onKeydown(e: KeyboardEvent): void {
       >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
-          {{ t('comfyUISettings.argsMissingValue', 'Missing value for:') }}
+          {{ t('comfyUISettings.argsMissingValue') }}
           <code
             v-for="flag in validation.missingValueFlags"
             :key="flag"
@@ -212,7 +210,7 @@ function onKeydown(e: KeyboardEvent): void {
       >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
-          {{ t('comfyUISettings.argsUnexpected', 'Unexpected:') }}
+          {{ t('comfyUISettings.argsUnexpected') }}
           <code
             v-for="tok in validation.orphanedTokens"
             :key="tok"

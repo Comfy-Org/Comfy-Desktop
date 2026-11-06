@@ -248,42 +248,42 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'update',
     sectionTab: 'update',
-    label: t('comfyUISettings.tabUpdate', 'Update'),
+    label: t('comfyUISettings.tabUpdate'),
     icon: RefreshCw,
     tooltip: t('tooltips.tabUpdate')
   },
   {
     key: 'config',
     sectionTab: 'settings',
-    label: t('comfyUISettings.tabConfig', 'Startup Args'),
+    label: t('comfyUISettings.tabConfig'),
     icon: SlidersHorizontal,
     tooltip: t('tooltips.tabConfig')
   },
   {
     key: 'snapshots',
     sectionTab: 'snapshots',
-    label: t('comfyUISettings.tabSnapshots', 'Snapshots'),
+    label: t('comfyUISettings.tabSnapshots'),
     icon: History,
     tooltip: t('tooltips.snapshots')
   },
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage', 'Storage'),
+    label: t('comfyUISettings.tabStorage'),
     icon: HardDrive,
     tooltip: t('tooltips.tabStorage')
   },
   {
     key: 'console',
     sectionTab: 'console',
-    label: t('comfyUISettings.tabTerminal', 'Terminal'),
+    label: t('comfyUISettings.tabTerminal'),
     icon: SquareTerminal,
     tooltip: t('tooltips.console')
   },
   {
     key: 'status',
     sectionTab: 'status',
-    label: t('comfyUISettings.tabStatus', 'About'),
+    label: t('comfyUISettings.tabStatus'),
     icon: Info,
     tooltip: t('tooltips.tabStatus')
   }
@@ -301,7 +301,7 @@ const tabs = computed<TabDef[]>(() => {
     tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
   ).map((tab) =>
     isCloud && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage', 'Storage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
       : tab
   )
 })
@@ -465,7 +465,7 @@ const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.na
 
 function resolveNavLabel(key: string): string {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
-    return t('instancePicker.openRemote', 'Open Remote')
+    return t('instancePicker.openRemote')
   }
   return t(key)
 }
@@ -750,7 +750,7 @@ defineExpose({
               : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
             { 'is-subpage-active opacity-60': subPage !== null }
           ]"
-          :aria-label="t('comfyUISettings.title', 'Settings')"
+          :aria-label="t('comfyUISettings.title')"
         >
           <Tooltip
             v-for="tab in tabs"
@@ -810,16 +810,14 @@ defineExpose({
             v-if="!installation"
             class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
           >
-            {{
-              t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.')
-            }}
+            {{ t('comfyUISettings.emptyInstallLess') }}
           </p>
           <p
             v-else-if="loading && !visibleSections.length && activeTab !== 'console'"
             class="empty m-0 text-[length:var(--takeover-fs-body)] text-text-muted [&.error]:text-danger"
             :data-testid="TID.pickerSettingsLoading"
           >
-            {{ t('common.loading', 'Loading…') }}
+            {{ t('common.loading') }}
           </p>
           <p
             v-else-if="error && activeTab !== 'console'"
@@ -1161,7 +1159,7 @@ defineExpose({
                 :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
                 aria-haspopup="menu"
                 :aria-expanded="caretMenuOpen"
-                :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
+                :aria-label="t('instancePicker.moreWindowOptions')"
                 :disabled="!installation || opBlocksFooter"
                 :data-testid="TID.pickerNewWindow"
                 @click="toggleCaretMenu"
@@ -1172,7 +1170,7 @@ defineExpose({
                 :open="caretMenuOpen"
                 :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
                 :actions="caretActions"
-                :heading="t('instancePicker.windowOptions', 'Window options')"
+                :heading="t('instancePicker.windowOptions')"
                 @close="closeCaretMenu"
                 @pick="handleCaretPick"
               />
@@ -1189,14 +1187,14 @@ defineExpose({
               :class="{ 'is-active': moreMenuOpen }"
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
-              :aria-label="t('comfyUISettings.more', 'More')"
+              :aria-label="t('comfyUISettings.more')"
               :disabled="
                 !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
               "
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              {{ t('comfyUISettings.more', 'More') }}
+              {{ t('comfyUISettings.more') }}
               <component :is="menuChevron" :size="14" />
             </Button>
             <MoreMenu

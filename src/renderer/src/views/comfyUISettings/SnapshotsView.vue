@@ -382,17 +382,17 @@ async function handleRestore(filename: string): Promise<void> {
 
   emit('run-action', {
     id: 'snapshot-restore',
-    label: t('standalone.snapshotRestore', 'Restore'),
+    label: t('standalone.snapshotRestore'),
     data: { file: filename },
     showProgress: true,
-    progressTitle: t('standalone.snapshotRestoringTitle', 'Restoring snapshot'),
+    progressTitle: t('standalone.snapshotRestoringTitle'),
     cancellable: true,
     style: 'primary',
     confirm: {
       title: t('snapshots.restoreConfirmTitle'),
       message: t('snapshots.restoreConfirmMessage'),
       restoreDiff: diff?.diff ?? null,
-      confirmLabel: t('standalone.snapshotRestore', 'Restore')
+      confirmLabel: t('standalone.snapshotRestore')
     }
   })
 }
@@ -488,12 +488,7 @@ async function handleImport(): Promise<void> {
     return
   }
 
-  if (
-    !(await actionGuard.checkBeforeAction(
-      props.installationId,
-      t('snapshots.importSnapshots', 'Import Snapshots')
-    ))
-  )
+  if (!(await actionGuard.checkBeforeAction(props.installationId, t('snapshots.importSnapshots'))))
     return
   const importResult = await window.api.importSnapshotsConfirm(props.installationId)
   if (!importResult.ok) {
@@ -508,9 +503,9 @@ async function handleImport(): Promise<void> {
   }
   if (importResult.torchStackNotice) {
     const noticeChoice = await dialogs.confirm({
-      title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
+      title: t('snapshots.importTorchNoticeTitle'),
       message: importResult.torchStackNotice,
-      confirmLabel: t('standalone.snapshotRestore', 'Restore'),
+      confirmLabel: t('standalone.snapshotRestore'),
       tone: 'primary'
     })
     if (noticeChoice !== 'primary') return
@@ -525,10 +520,10 @@ async function handleImport(): Promise<void> {
   if (importResult.restoreToken) {
     emit('run-action', {
       id: 'snapshot-restore',
-      label: t('standalone.snapshotRestore', 'Restore'),
+      label: t('standalone.snapshotRestore'),
       data: { restoreToken: importResult.restoreToken },
       showProgress: true,
-      progressTitle: t('standalone.snapshotRestoringTitle', 'Restoring snapshot'),
+      progressTitle: t('standalone.snapshotRestoringTitle'),
       cancellable: true,
       style: 'primary'
     })
@@ -554,12 +549,12 @@ async function handleImport(): Promise<void> {
           variant="textonly"
           size="unset"
           :class="toolButtonClass"
-          :aria-label="t('snapshots.importSnapshots', 'Import')"
+          :aria-label="t('snapshots.importSnapshots')"
           :data-testid="TID.snapshotsImport"
           @click="handleImport"
         >
           <Upload :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.importSnapshots', 'Import') }}</span>
+          <span>{{ t('snapshots.importSnapshots') }}</span>
         </Button>
         <Button
           type="button"
@@ -581,7 +576,7 @@ async function handleImport(): Promise<void> {
       v-if="loading"
       class="snapshots-view-status m-0 text-[length:var(--takeover-fs-body)] text-text-muted"
     >
-      {{ t('common.loading', 'Loading…') }}
+      {{ t('common.loading') }}
     </p>
     <div
       v-else-if="loadError"
@@ -632,19 +627,15 @@ async function handleImport(): Promise<void> {
         ></span>
         <div class="snapshots-rail-content flex flex-col gap-1.5">
           <span class="snapshots-rail-label text-[12px] text-neutral-100">
-            <template v-if="restoreInFlight">{{
-              t('snapshots.restoringStatus', 'Restoring snapshot')
-            }}</template>
-            <template v-else-if="restoreTerminal === 'ok'">{{
-              t('snapshots.restored', 'Snapshot restored')
-            }}</template>
+            <template v-if="restoreInFlight">{{ t('snapshots.restoringStatus') }}</template>
+            <template v-else-if="restoreTerminal === 'ok'">{{ t('snapshots.restored') }}</template>
             <template v-else-if="restoreTerminal === 'error'">{{
-              t('snapshots.restoreFailed', 'Restore failed')
+              t('snapshots.restoreFailed')
             }}</template>
             <template v-else-if="restoreTerminal === 'cancelled'">{{
               t('snapshots.restoreCancelled')
             }}</template>
-            <template v-else>{{ t('snapshots.createLabel', 'Create Snapshot') }}</template>
+            <template v-else>{{ t('snapshots.createLabel') }}</template>
           </span>
           <div
             class="snapshots-rail-save-box flex flex-col rounded-lg border"
@@ -713,7 +704,7 @@ async function handleImport(): Promise<void> {
                 :data-testid="TID.snapshotsOpCardCancel"
                 @click="cancelRestore"
               >
-                {{ t('common.cancel', 'Cancel') }}
+                {{ t('common.cancel') }}
               </Button>
             </div>
 
@@ -727,7 +718,7 @@ async function handleImport(): Promise<void> {
                 v-if="restoreOpIsImport"
                 class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
               >
-                {{ t('snapshots.restoredImported', 'Applied imported snapshot') }}
+                {{ t('snapshots.restoredImported') }}
               </p>
               <p
                 v-else-if="restoreFromLabel"
@@ -763,7 +754,7 @@ async function handleImport(): Promise<void> {
                   :data-testid="TID.snapshotsOpCardRetry"
                   @click="retryRestore"
                 >
-                  {{ t('snapshots.tryAgain', 'Try again') }}
+                  {{ t('snapshots.tryAgain') }}
                 </Button>
                 <Button
                   type="button"
@@ -773,7 +764,7 @@ async function handleImport(): Promise<void> {
                   :data-testid="TID.snapshotsOpCardDismiss"
                   @click="dismissRestoreCard"
                 >
-                  {{ t('common.dismiss', 'Dismiss') }}
+                  {{ t('common.dismiss') }}
                 </Button>
               </div>
             </div>
@@ -784,11 +775,11 @@ async function handleImport(): Promise<void> {
               variant="textonly"
               size="unset"
               class="snapshots-rail-cta static inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 text-[length:var(--takeover-fs-body)] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
-              :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
+              :aria-label="t('snapshots.createSnapshot')"
               :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
-              <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>
+              <span>{{ t('snapshots.createNew') }}</span>
             </Button>
           </div>
         </div>
@@ -855,9 +846,7 @@ async function handleImport(): Promise<void> {
                         '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'previous')
                       }"
                     />
-                    <span>{{
-                      t('snapshots.changesInSnapshot', 'What changed in this snapshot')
-                    }}</span>
+                    <span>{{ t('snapshots.changesInSnapshot') }}</span>
                   </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'previous')">
                     <div
@@ -867,7 +856,7 @@ async function handleImport(): Promise<void> {
                         v-if="isDiffLoading(item.snapshot.filename, 'previous')"
                         class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
-                        {{ t('common.loading', 'Loading…') }}
+                        {{ t('common.loading') }}
                       </div>
                       <template
                         v-else-if="diffFor(item.snapshot.filename, 'previous') !== undefined"
@@ -879,9 +868,7 @@ async function handleImport(): Promise<void> {
                           "
                           class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
-                          {{
-                            t('snapshots.diffNoChanges', 'No changes from the previous snapshot.')
-                          }}
+                          {{ t('snapshots.diffNoChanges') }}
                         </div>
                         <SnapshotDiffView
                           v-else
@@ -909,9 +896,7 @@ async function handleImport(): Promise<void> {
                         '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'current')
                       }"
                     />
-                    <span>{{
-                      t('snapshots.ifYouRestore', 'What restoring this would change')
-                    }}</span>
+                    <span>{{ t('snapshots.ifYouRestore') }}</span>
                   </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'current')">
                     <div
@@ -921,7 +906,7 @@ async function handleImport(): Promise<void> {
                         v-if="isDiffLoading(item.snapshot.filename, 'current')"
                         class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
-                        {{ t('common.loading', 'Loading…') }}
+                        {{ t('common.loading') }}
                       </div>
                       <template
                         v-else-if="diffFor(item.snapshot.filename, 'current') !== undefined"
@@ -933,12 +918,7 @@ async function handleImport(): Promise<void> {
                           "
                           class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
-                          {{
-                            t(
-                              'snapshots.restoreNoChanges',
-                              'Restoring this would make no changes — it matches your current state.'
-                            )
-                          }}
+                          {{ t('snapshots.restoreNoChanges') }}
                         </div>
                         <SnapshotDiffView
                           v-else
@@ -958,26 +938,26 @@ async function handleImport(): Promise<void> {
                     variant="textonly"
                     size="unset"
                     :class="[detailButtonClass, 'text-neutral-100']"
-                    :aria-label="t('snapshots.restore', 'Restore')"
+                    :aria-label="t('snapshots.restore')"
                     :data-testid="TID.snapshotRowRestore(item.snapshot.filename)"
                     :disabled="restoreInFlight"
                     @click="handleRestore(item.snapshot.filename)"
                   >
                     <RotateCcw :size="13" />
-                    <span>{{ t('snapshots.restore', 'Restore') }}</span>
+                    <span>{{ t('snapshots.restore') }}</span>
                   </Button>
                   <Button
                     type="button"
                     variant="textonly"
                     size="unset"
                     :class="[detailButtonClass, 'text-neutral-100']"
-                    :aria-label="t('snapshots.exportSnapshot', 'Export')"
+                    :aria-label="t('snapshots.exportSnapshot')"
                     :data-testid="TID.snapshotRowExport(item.snapshot.filename)"
                     :disabled="restoreInFlight"
                     @click="handleExport(item.snapshot.filename)"
                   >
                     <Download :size="13" />
-                    <span>{{ t('snapshots.exportSnapshot', 'Export') }}</span>
+                    <span>{{ t('snapshots.exportSnapshot') }}</span>
                   </Button>
                   <Button
                     type="button"
@@ -987,12 +967,12 @@ async function handleImport(): Promise<void> {
                       detailButtonClass,
                       'snapshots-view-detail-btn-danger text-danger hover:text-danger hover:border-[var(--danger)] focus-visible:text-danger focus-visible:border-[var(--danger)]'
                     ]"
-                    :aria-label="t('snapshots.delete', 'Delete')"
+                    :aria-label="t('snapshots.delete')"
                     :disabled="restoreInFlight"
                     @click="handleDelete(item.snapshot.filename)"
                   >
                     <Trash2 :size="13" />
-                    <span>{{ t('snapshots.delete', 'Delete') }}</span>
+                    <span>{{ t('snapshots.delete') }}</span>
                   </Button>
                 </div>
               </template>

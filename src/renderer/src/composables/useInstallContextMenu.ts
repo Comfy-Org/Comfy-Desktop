@@ -143,7 +143,7 @@ export function useInstallContextMenu(
     if (supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'share',
-        label: t('chooser.menuExportSnapshot', 'Export Snapshot')
+        label: t('chooser.menuExportSnapshot')
       })
     }
 
@@ -161,14 +161,11 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'promote-to-workspace',
         label: promoting
-          ? t('devPlatform.workspace.promoting', 'Creating...')
-          : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
-        hint: t(
-          'devPlatform.workspace.promoteToWorkspaceHint',
-          'Create a Build from this instance in Comfy Developer Platform.'
-        ),
+          ? t('devPlatform.workspace.promoting')
+          : t('devPlatform.workspace.promoteToWorkspace'),
+        hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
-        hintLinkLabel: t('devPlatform.workspace.readMore', 'Read more'),
+        hintLinkLabel: t('devPlatform.workspace.readMore'),
         disabled: promoting
       })
     }
@@ -181,7 +178,7 @@ export function useInstallContextMenu(
 
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), style: 'danger' })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
@@ -259,7 +256,7 @@ export function useInstallContextMenu(
         revealInFolderLabel(window.api?.platform)
       )
     } else if (id === 'share') {
-      const label = t('chooser.menuExportSnapshot', 'Export Snapshot')
+      const label = t('chooser.menuExportSnapshot')
       try {
         const result = await shareLatestSnapshot(inst.id)
         if (!result.ok) {
@@ -267,8 +264,8 @@ export function useInstallContextMenu(
             title: label,
             message:
               result.reason === 'none'
-                ? t('snapshots.noSnapshotsToShare', 'There are no snapshots to share yet.')
-                : (result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'))
+                ? t('snapshots.noSnapshotsToShare')
+                : (result.message ?? t('snapshots.shareFailed'))
           })
         }
       } catch (err) {
@@ -276,18 +273,13 @@ export function useInstallContextMenu(
       }
     } else if (id === 'promote-to-workspace') {
       if (isPromotingToWorkspace(inst)) return
-      const title = t('devPlatform.workspace.promoteFailedTitle', 'Could not create build')
+      const title = t('devPlatform.workspace.promoteFailedTitle')
       let failureMessage: string | null = null
       setPromotingToWorkspace(inst.id, true)
       try {
         const result = await window.api.comfybuilder.promoteLocalInstance(inst.id)
         if (!result.ok) {
-          failureMessage =
-            result.message ||
-            t(
-              'devPlatform.workspace.promoteFailedMessage',
-              'Could not create a draft in Comfy Developer Platform.'
-            )
+          failureMessage = result.message || t('devPlatform.workspace.promoteFailedMessage')
         }
       } catch (err) {
         failureMessage = (err as Error)?.message || String(err)
@@ -299,13 +291,12 @@ export function useInstallContextMenu(
       opts.onManage?.(inst, { autoAction: 'copy' })
     } else if (id === 'delete') {
       if (opts.onShowProgress) {
-        const deleteLabel = t('actions.delete', 'Delete')
+        const deleteLabel = t('actions.delete')
         const confirmed = await modal.confirm({
-          title: t('actions.deleteConfirmTitle', 'Delete Install'),
+          title: t('actions.deleteConfirmTitle'),
           message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-            'actions.deleteConfirmMessage',
-            'This permanently removes this ComfyUI installation and all its files. This cannot be undone.'
-          )}\n\n${t('actions.deleteConfirmDetail', 'Other installs are not affected.')}`,
+            'actions.deleteConfirmMessage'
+          )}\n\n${t('actions.deleteConfirmDetail')}`,
           confirmLabel: deleteLabel,
           confirmStyle: 'danger'
         })

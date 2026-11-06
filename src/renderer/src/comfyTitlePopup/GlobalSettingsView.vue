@@ -286,14 +286,14 @@ onMounted(() => {
       class="gs-header flex flex-none items-center justify-between border-b border-solid border-border py-2.5 pr-3 pl-5"
     >
       <h2 class="gs-title m-0 font-sans text-[length:var(--text-heading)] font-semibold text-text">
-        {{ t('settingsModal.tabGlobal', 'Desktop Settings') }}
+        {{ t('settingsModal.tabGlobal') }}
       </h2>
       <Button
         type="button"
         variant="textonly"
         size="icon"
         class="gs-close shrink-0"
-        :aria-label="t('common.close', 'Close')"
+        :aria-label="t('common.close')"
         @click="bridge?.close()"
       >
         <X :size="16" aria-hidden="true" />
@@ -308,7 +308,7 @@ onMounted(() => {
       <TabsList
         :key="requestedTabCount"
         class="gs-tabs w-40 flex-[0_0_160px] flex-col items-stretch gap-px overflow-y-auto border-r border-solid border-border p-2"
-        :aria-label="t('settingsModal.tabGlobal', 'Desktop Settings')"
+        :aria-label="t('settingsModal.tabGlobal')"
       >
         <TabsTrigger
           v-for="tab in tabs"
@@ -334,7 +334,7 @@ onMounted(() => {
             @open-path="handleOpenPath"
           />
 
-          <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
+          <GlobalSettingsMicroSection :title="t('settings.appBehavior')">
             <SettingsSectionList
               :sections="generalSections"
               @update-field="handleUpdateField"
@@ -342,7 +342,7 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.privacy', 'Privacy')">
+          <GlobalSettingsMicroSection :title="t('settings.privacy')">
             <SettingsSectionList
               :sections="telemetrySections"
               @update-field="handleUpdateField"
@@ -350,7 +350,7 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.community', 'Community')">
+          <GlobalSettingsMicroSection :title="t('settings.community')">
             <GitHubLinkCard
               :url="snapshot.githubUrl"
               :stars="snapshot.githubStars"
@@ -383,7 +383,7 @@ onMounted(() => {
 
         <template v-else-if="activeTab === 'advanced'">
           <GlobalSettingsMicroSection
-            :title="t('settings.installLocation', 'Default Install Location')"
+            :title="t('settings.installLocation')"
             :tooltip="t('tooltips.installDir')"
           >
             <StorageDirRow
@@ -403,10 +403,10 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">
+          <GlobalSettingsMicroSection :title="t('settings.cache')">
             <StorageDirRow
               v-if="cacheDirField"
-              :label="cacheDirField.label || t('settings.cacheDir', 'Cache Directory')"
+              :label="cacheDirField.label || t('settings.cacheDir')"
               :path="fieldPath(cacheDirField)"
               @open="handleOpenCacheDir"
               @browse="handleBrowseCacheDir"

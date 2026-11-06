@@ -237,8 +237,8 @@ defineExpose({ open })
                   size="unset"
                   type="button"
                   class="track-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer overflow-hidden rounded-lg border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-inherit [font:inherit] appearance-auto touch-auto [&]:[appearance:button] transition-none hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:[box-shadow:none] focus-visible:outline-none"
-                  :title="$t('actions.openDirectory', 'Open Directory')"
-                  :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
+                  :title="$t('actions.openDirectory')"
+                  :aria-label="`${$t('actions.openDirectory')}: ${trackPath}`"
                   @click="handleOpenTrackPath"
                 >
                   {{ trackPath }}

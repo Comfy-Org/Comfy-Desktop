@@ -51,11 +51,7 @@ function handleOpen(): void {
     @change="handleChange"
   >
     <template #trailing>
-      <InputGroupButton
-        size="icon-sm"
-        :aria-label="t('common.browse', 'Browse')"
-        @click="handleBrowse"
-      >
+      <InputGroupButton size="icon-sm" :aria-label="t('common.browse')" @click="handleBrowse">
         <FolderOpen :size="14" />
       </InputGroupButton>
     </template>

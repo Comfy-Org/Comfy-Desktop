@@ -253,7 +253,7 @@ const placeholderTitle = computed<string>(() => {
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
-          {{ $t('dashboard.confirmStopLocal.confirmLabel', 'Return to Dashboard') }}
+          {{ $t('dashboard.confirmStopLocal.confirmLabel') }}
         </Button>
         <Button
           size="unset"

@@ -60,10 +60,7 @@ async function fetchSchema(): Promise<void> {
     } else if (result?.error) {
       loadError.value = result.error
     } else {
-      loadError.value = t(
-        'comfyUISettings.argsSchemaUnavailable',
-        'Argument schema unavailable for this install.'
-      )
+      loadError.value = t('comfyUISettings.argsSchemaUnavailable')
     }
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
@@ -193,8 +190,8 @@ function clusterOptions(args: ComfyArgDef[]): BaseSelectOption[] {
   return [
     {
       value: '',
-      label: t('comfyUISettings.argsExclusiveNone', 'None (default)'),
-      description: t('comfyUISettings.argsExclusiveNoneHint', 'No flag from this group is set.')
+      label: t('comfyUISettings.argsExclusiveNone'),
+      description: t('comfyUISettings.argsExclusiveNoneHint')
     },
     ...args.map((a) => ({ value: a.name, label: `--${a.name}`, description: a.help }))
   ]
@@ -338,24 +335,24 @@ function onRawChange(value: string): void {
         size="unset"
         type="button"
         class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-[1.5] font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:[transform:scale(0.97)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
-        :aria-label="t('common.back', 'Back')"
+        :aria-label="t('common.back')"
         @click="emit('back')"
       >
         <ArrowLeft :size="16" />
-        <span>{{ t('common.back', 'Back') }}</span>
+        <span>{{ t('common.back') }}</span>
       </Button>
       <div class="args-page-title-row flex flex-wrap items-center gap-2">
         <h2
           class="args-page-title m-0 text-[18px] leading-[1.2] font-semibold tracking-[-0.01em] text-text"
         >
-          {{ t('comfyUISettings.argsTitle', 'Startup Arguments') }}
+          {{ t('comfyUISettings.argsTitle') }}
         </h2>
         <span
           v-if="pendingRestart"
           class="args-page-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
           role="status"
         >
-          {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+          {{ t('comfyUISettings.restartRequired') }}
         </span>
       </div>
     </header>
@@ -364,20 +361,20 @@ function onRawChange(value: string): void {
       class="args-page-raw flex flex-col gap-1.5 [&_.ui-input-control]:text-[13px] [&_.ui-input-control]:tracking-[-0.01em]"
     >
       <label class="args-page-raw-label text-[12px] font-medium text-text-muted">{{
-        t('comfyUISettings.argsRawLabel', 'Raw arguments')
+        t('comfyUISettings.argsRawLabel')
       }}</label>
       <ArgsRawInput
         :model-value="localValue"
         :schema="schema"
-        :placeholder="t('comfyUISettings.argsPlaceholder', 'No arguments set')"
-        :aria-label="t('comfyUISettings.argsRawLabel', 'Raw arguments')"
+        :placeholder="t('comfyUISettings.argsPlaceholder')"
+        :aria-label="t('comfyUISettings.argsRawLabel')"
         @update:model-value="onRawInput"
         @change="onRawChange"
       />
       <p
         class="args-page-raw-hint mt-0.5 mr-0 mb-0 ml-0 text-[11px] leading-[1.4] text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]"
       >
-        {{ t('comfyUISettings.argsRawHint', 'Edit directly, or toggle individual flags below.') }}
+        {{ t('comfyUISettings.argsRawHint') }}
       </p>
     </div>
 
@@ -385,8 +382,8 @@ function onRawChange(value: string): void {
       class="args-page-search [&_.ui-input-leading]:text-[color-mix(in_srgb,var(--text-muted)_75%,transparent)]"
       :class="searchClearClass"
       :model-value="search"
-      :placeholder="t('comfyUISettings.argsSearchPlaceholder', 'Search arguments…')"
-      :aria-label="t('comfyUISettings.argsSearchPlaceholder', 'Search arguments')"
+      :placeholder="t('comfyUISettings.argsSearchPlaceholder')"
+      :aria-label="t('comfyUISettings.argsSearchPlaceholder')"
       @update:model-value="search = $event"
     >
       <template #leading>
@@ -396,7 +393,7 @@ function onRawChange(value: string): void {
         <InputGroupButton
           size="icon-sm"
           class="args-page-search-clear"
-          :aria-label="t('common.clear', 'Clear')"
+          :aria-label="t('common.clear')"
           @click="search = ''"
         >
           <X :size="14" />
@@ -414,7 +411,7 @@ function onRawChange(value: string): void {
         aria-hidden="true"
       />
       <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
-        {{ t('common.loading', 'Loading…') }}
+        {{ t('common.loading') }}
       </p>
     </div>
     <div
@@ -430,7 +427,7 @@ function onRawChange(value: string): void {
     >
       <SearchX :size="18" aria-hidden="true" />
       <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
-        {{ t('comfyUISettings.argsNoMatches', 'No arguments match your search.') }}
+        {{ t('comfyUISettings.argsNoMatches') }}
       </p>
     </div>
 
@@ -456,7 +453,7 @@ function onRawChange(value: string): void {
               <span
                 class="args-page-cluster-label my-0.5 mx-0 px-0.5 text-[11px] font-medium tracking-[0.06em] text-text-muted uppercase"
               >
-                {{ t('comfyUISettings.argsExclusiveLabel', 'Choose one') }}:
+                {{ t('comfyUISettings.argsExclusiveLabel') }}:
                 <span
                   class="args-page-cluster-options [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] normal-case tracking-normal text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]"
                   >{{ clusterSummary(item.args) }}</span
@@ -465,8 +462,8 @@ function onRawChange(value: string): void {
               <BaseSelect
                 :model-value="activeInGroup(item.group)"
                 :options="clusterOptions(item.args)"
-                :aria-label="`${t('comfyUISettings.argsExclusiveLabel', 'Choose one')}: ${clusterSummary(item.args)}`"
-                :placeholder="t('comfyUISettings.argsExclusiveNone', 'None (default)')"
+                :aria-label="`${t('comfyUISettings.argsExclusiveLabel')}: ${clusterSummary(item.args)}`"
+                :placeholder="t('comfyUISettings.argsExclusiveNone')"
                 @update:model-value="(v) => onExclusivePick(item.group!, v)"
               />
               <BaseInput
@@ -475,9 +472,9 @@ function onRawChange(value: string): void {
                 :model-value="getValue(activeValueDefInGroup(item.group)!.name)"
                 :placeholder="
                   activeValueDefInGroup(item.group)!.type === 'multi-value'
-                    ? t('comfyUISettings.argsMultiPlaceholder', 'space-separated values')
+                    ? t('comfyUISettings.argsMultiPlaceholder')
                     : (activeValueDefInGroup(item.group)!.metavar ??
-                      t('comfyUISettings.argsValuePlaceholder', 'value'))
+                      t('comfyUISettings.argsValuePlaceholder'))
                 "
                 @change="(v) => setValue(activeValueDefInGroup(item.group!)!, v)"
               />
@@ -539,11 +536,11 @@ function onRawChange(value: string): void {
                   :model-value="getValue(item.arg.name)"
                   :placeholder="
                     item.arg.type === 'multi-value'
-                      ? t('comfyUISettings.argsMultiPlaceholder', 'space-separated values')
+                      ? t('comfyUISettings.argsMultiPlaceholder')
                       : (item.arg.metavar ??
                         (item.arg.type === 'optional-value'
-                          ? t('comfyUISettings.argsOptionalPlaceholder', 'optional')
-                          : t('comfyUISettings.argsValuePlaceholder', 'value')))
+                          ? t('comfyUISettings.argsOptionalPlaceholder')
+                          : t('comfyUISettings.argsValuePlaceholder')))
                   "
                   @change="(v) => setValue(item.arg!, v)"
                 />

@@ -334,7 +334,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
                   role="status"
                 >
-                  {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+                  {{ t('comfyUISettings.restartRequired') }}
                 </span>
                 <span
                   v-if="fieldErrorMessage(field)"
@@ -378,7 +378,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
                 role="status"
               >
-                {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+                {{ t('comfyUISettings.restartRequired') }}
               </span>
             </label>
             <BooleanToggle
@@ -403,7 +403,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
                 role="status"
               >
-                {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+                {{ t('comfyUISettings.restartRequired') }}
               </span>
             </label>
 
@@ -423,8 +423,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 size="unset"
                 type="button"
                 class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                :title="t('models.openDir', 'Open folder')"
-                :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
+                :title="t('models.openDir')"
+                :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
                 @click="emit('open-path', readonlyDisplayValue(field))"
               >
                 {{ readonlyDisplayValue(field) }}
