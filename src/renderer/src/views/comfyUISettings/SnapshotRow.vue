@@ -105,7 +105,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             v-if="isLatest"
             class="snapshot-row-latest shrink-0 rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-px text-[11px] leading-[16.5px] font-medium text-text-muted"
           >
-            {{ t('snapshots.latestBadge', 'Latest') }}
+            {{ t('snapshots.latestBadge') }}
           </span>
         </div>
         <div class="snapshot-row-head-right flex min-w-0 items-center gap-2">

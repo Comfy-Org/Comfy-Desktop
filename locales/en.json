@@ -84,7 +84,8 @@
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
     "noBuildsTitle": "Set up where your work runs",
-    "noBuildsBody": "A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install."
+    "noBuildsBody": "A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.",
+    "filterLabel": "Source filter"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
@@ -196,7 +197,10 @@
     "argsAwaitingValue": "expects a value",
     "argsUnsupported": "Unsupported:",
     "argsMissingValue": "Missing value for:",
-    "argsUnexpected": "Unexpected:"
+    "argsUnexpected": "Unexpected:",
+    "updateFieldTimeout": "Couldn't reach app — try again",
+    "useSharedInput": "Use Shared Input",
+    "useSharedOutput": "Use Shared Output"
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",
@@ -246,7 +250,8 @@
     "removeInstanceDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
     "removeDirTitle": "Remove shared models directory?",
     "removeDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "addInstanceDir": "Add Directory"
   },
   "common": {
     "back": "Back",
@@ -320,7 +325,10 @@
     "managerNetworkMode_personal_cloud": "Personal cloud",
     "managerNetworkMode_personal_cloud_desc": "Treats this machine as your own trusted remote box: lifts the --listen block on node pack installs (the chosen security level still applies). Only use on a personal machine you control - it relaxes protections meant for shared or public hosts.",
     "copyError": "Copy error details",
-    "clear": "Clear"
+    "clear": "Clear",
+    "active": "active",
+    "error": "Error",
+    "retry": "Retry"
   },
   "comfybuilder": {
     "build": "Build",
@@ -620,7 +628,9 @@
     "storageTab": "Storage",
     "sharedDirectories": "Shared Directories",
     "installLocation": "Default Install Location",
-    "updatesTab": "Updates"
+    "updatesTab": "Updates",
+    "diagnostics": "Diagnostics",
+    "openLogsFolder": "Open logs folder"
   },
   "zoom": {
     "changed": "Zoom level has been changed",
@@ -1231,7 +1241,14 @@
     "importSuccess": "Imported {imported} snapshot(s).",
     "importAlreadyCurrent": "This snapshot already matches the current state.",
     "importInvalidFile": "Invalid snapshot file.",
-    "exportSuccess": "Snapshot exported."
+    "exportSuccess": "Snapshot exported.",
+    "importPreviewLabel": "Snapshots",
+    "importedSnapshot": "Imported snapshot",
+    "latestBadge": "Latest",
+    "latestLabel": "Latest:",
+    "noneYet": "No snapshots yet",
+    "restoreCancelled": "Restore cancelled",
+    "restoreCancelledBody": "The imported snapshot was not applied."
   },
   "portable": {
     "label": "Portable",
@@ -1463,7 +1480,11 @@
     "remove": "Remove variable",
     "namePlaceholder": "VARIABLE_NAME",
     "valuePlaceholder": "value",
-    "securityWarning": "Environment variable values are stored unencrypted on disk. Do not add API keys, tokens, passwords, or other secrets."
+    "securityWarning": "Environment variable values are stored unencrypted on disk. Do not add API keys, tokens, passwords, or other secrets.",
+    "duplicateKey": "Duplicate key",
+    "hideValue": "Hide value",
+    "revealValue": "Reveal value",
+    "securityWarningShort": "Environment variables may contain secrets"
   },
   "contextMenu": {
     "openLinkInBrowser": "Open Link in Browser",
@@ -1479,7 +1500,11 @@
   "statusFactPanel": {
     "editName": "Edit instance name",
     "editUrl": "Edit connection URL",
-    "restartToApply": "Restart to apply"
+    "restartToApply": "Restart to apply",
+    "installDetails": "Instance details",
+    "runningDetails": "Running details",
+    "locationStorage": "Location & storage",
+    "lineage": "Lineage"
   },
   "fileMenu": {
     "newWindow": "Open Dashboard",
@@ -1495,6 +1520,10 @@
     "exitWindow": "Close Window",
     "exitAllWindows": "Quit Desktop",
     "skipOnboarding": "Skip Onboarding"
+  },
+  "feedback": {
+    "modalLabel": "Send Feedback",
+    "loading": "Loading feedback form…"
   },
   "performanceTest": {
     "title": "Performance Tests",
@@ -1730,7 +1759,8 @@
     "progressMigrated": "Migration complete",
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
-    "progressCancelled": "Cancelled"
+    "progressCancelled": "Cancelled",
+    "restartToApply": "Restart to apply changes"
   },
   "installShowcase": {
     "cloud": {

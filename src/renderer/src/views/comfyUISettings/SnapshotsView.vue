@@ -101,8 +101,7 @@ const restoreCancellable = computed<boolean>(
 
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
-  if (!file)
-    return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
+  if (!file) return restoreOpIsImport.value ? t('snapshots.importedSnapshot') : ''
   const target = snapshots.value.find((s) => s.filename === file)
   if (target) {
     const trigger = triggerLabel(target.trigger, t)
@@ -470,7 +469,7 @@ async function handleImport(): Promise<void> {
     message: t('snapshots.importConfirmMessage'),
     messageDetails:
       previewLines.length > 0
-        ? [{ label: t('snapshots.importPreviewLabel', 'Snapshots'), items: previewLines }]
+        ? [{ label: t('snapshots.importPreviewLabel'), items: previewLines }]
         : undefined,
     confirmLabel: t('snapshots.importConfirmLabel'),
     tone: 'primary'
@@ -542,11 +541,11 @@ async function handleImport(): Promise<void> {
     <header class="snapshots-view-header flex items-center justify-between gap-3">
       <span class="snapshots-view-latest text-[12px] leading-4 text-text-muted">
         <template v-if="latestRelative">
-          {{ t('snapshots.latestLabel', 'Latest:') }}
+          {{ t('snapshots.latestLabel') }}
           {{ latestRelative }}
         </template>
         <template v-else>
-          {{ t('snapshots.noneYet', 'No snapshots yet') }}
+          {{ t('snapshots.noneYet') }}
         </template>
       </span>
       <div class="snapshots-view-toolbar inline-flex flex-wrap gap-2">
@@ -568,12 +567,12 @@ async function handleImport(): Promise<void> {
           size="unset"
           :class="toolButtonClass"
           :disabled="snapshots.length === 0"
-          :aria-label="t('snapshots.exportAll', 'Export All')"
+          :aria-label="t('snapshots.exportAllSnapshots')"
           :data-testid="TID.snapshotsExportAll"
           @click="handleExportAll"
         >
           <Download :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.exportAll', 'Export All') }}</span>
+          <span>{{ t('snapshots.exportAllSnapshots') }}</span>
         </Button>
       </div>
     </header>
@@ -596,7 +595,7 @@ async function handleImport(): Promise<void> {
         :class="toolButtonClass"
         @click="load()"
       >
-        {{ t('common.retry', 'Retry') }}
+        {{ t('common.retry') }}
       </Button>
     </div>
 
@@ -643,7 +642,7 @@ async function handleImport(): Promise<void> {
               t('snapshots.restoreFailed', 'Restore failed')
             }}</template>
             <template v-else-if="restoreTerminal === 'cancelled'">{{
-              t('snapshots.restoreCancelled', 'Restore cancelled')
+              t('snapshots.restoreCancelled')
             }}</template>
             <template v-else>{{ t('snapshots.createLabel', 'Create Snapshot') }}</template>
           </span>
@@ -753,7 +752,7 @@ async function handleImport(): Promise<void> {
                 v-else-if="restoreTerminal === 'cancelled'"
                 class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
               >
-                {{ t('snapshots.restoreCancelledBody', 'The imported snapshot was not applied.') }}
+                {{ t('snapshots.restoreCancelledBody') }}
               </p>
               <div class="snapshots-op-actions flex gap-2">
                 <Button

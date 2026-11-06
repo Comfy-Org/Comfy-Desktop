@@ -373,7 +373,7 @@ function handleRevealPath(path: string): void {
 
       <ModelsDirList
         :dirs="modelDirRows"
-        :add-label="t('models.addInstanceDir', 'Add Directory')"
+        :add-label="t('models.addInstanceDir')"
         @change="handleChangeModelDir"
         @remove="handleRemoveModelDir"
         @make-primary="handleMakeModelPrimary"
@@ -399,7 +399,7 @@ function handleRevealPath(path: string): void {
         <label
           class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
         >
-          <span>{{ t('comfyUISettings.useSharedInput', 'Use Shared Input') }}</span>
+          <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
           <BooleanToggle
             :field="useSharedInputField"
@@ -434,7 +434,7 @@ function handleRevealPath(path: string): void {
         <label
           class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
         >
-          <span>{{ t('comfyUISettings.useSharedOutput', 'Use Shared Output') }}</span>
+          <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
           <BooleanToggle
             :field="useSharedOutputField"

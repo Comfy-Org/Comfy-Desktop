@@ -415,7 +415,7 @@ onMounted(() => {
         </template>
 
         <template v-else-if="activeTab === 'logs'">
-          <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
+          <GlobalSettingsMicroSection :title="t('settings.diagnostics')">
             <Button
               type="button"
               variant="secondary"
@@ -424,7 +424,7 @@ onMounted(() => {
               @click="handleOpenLogsFolder"
             >
               <FileText :size="14" aria-hidden="true" />
-              <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
+              <span>{{ t('settings.openLogsFolder') }}</span>
             </Button>
           </GlobalSettingsMicroSection>
         </template>

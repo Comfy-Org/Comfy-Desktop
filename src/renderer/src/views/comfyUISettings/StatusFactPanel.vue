@@ -286,7 +286,7 @@ const groups = computed<FactGroup[]>(() => {
   if (details.length > 0) {
     out.push({
       id: 'install-details',
-      title: t('statusFactPanel.installDetails', 'Instance details'),
+      title: t('statusFactPanel.installDetails'),
       rows: details
     })
   }
@@ -294,7 +294,7 @@ const groups = computed<FactGroup[]>(() => {
   if (running.length > 0) {
     out.push({
       id: 'running-details',
-      title: t('statusFactPanel.runningDetails', 'Running details'),
+      title: t('statusFactPanel.runningDetails'),
       rows: running
     })
   }
@@ -303,7 +303,7 @@ const groups = computed<FactGroup[]>(() => {
   if (isLocalInstall && location.length > 0) {
     out.push({
       id: 'location-storage',
-      title: t('statusFactPanel.locationStorage', 'Location & storage'),
+      title: t('statusFactPanel.locationStorage'),
       rows: location
     })
   }
@@ -311,7 +311,7 @@ const groups = computed<FactGroup[]>(() => {
   if (lineage.length > 0) {
     out.push({
       id: 'lineage',
-      title: t('statusFactPanel.lineage', 'Lineage'),
+      title: t('statusFactPanel.lineage'),
       rows: lineage
     })
   }

@@ -327,7 +327,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       clearRestartDirty(installId, field.id)
       const isTimeout = (err as { isTimeout?: boolean })?.isTimeout === true
       const message = isTimeout
-        ? t('comfyUISettings.updateFieldTimeout', "Couldn't reach app — try again")
+        ? t('comfyUISettings.updateFieldTimeout')
         : err instanceof Error
           ? err.message
           : String(err)
@@ -355,7 +355,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         await window.api.runAction(inst.id, field.onChangeAction)
       } catch (err: unknown) {
         await dialogs.alert({
-          title: t('common.error', 'Error'),
+          title: t('common.error'),
           message: err instanceof Error ? err.message : String(err)
         })
       }
