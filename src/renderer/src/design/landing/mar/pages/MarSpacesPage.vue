@@ -90,7 +90,7 @@ const STATUS: Record<Space['status'], ItemStatus> = {
 }
 const credits = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const meta = (s: Space): string =>
-  `${s.domain} · ${count(s.members.length, 'member')} · ${credits(s.used)} of ${credits(s.budget)} credits`
+  `${count(s.members.length, 'member')} · ${credits(s.used)} of ${credits(s.budget)} credits`
 
 function open(s: Space): void {
   go(`space:${s.id}` as Page)
@@ -295,10 +295,20 @@ function lines(s: Space): MenuLine[] {
   border-radius: inherit;
   background: rgb(255 255 255 / 0.85);
 }
+/* The state holds the corner, level with the logo; it steps aside for the
+   star and menu that show on hover. */
 .mar-space-face ~ .mar-item-status {
-  top: 14px;
-  right: 76px;
+  top: 16px;
+  right: 16px;
   bottom: auto;
   left: auto;
+  transition: right 0.16s ease;
+}
+.mar-item:is(:hover, :focus-within, .is-menu) .mar-space-face ~ .mar-item-status {
+  right: 76px;
+}
+/* The name lines up with the logo and the line above it. */
+.mar-item.is-grid:has(.mar-space-face) .mar-item-text {
+  padding-inline: 16px;
 }
 </style>
