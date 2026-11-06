@@ -6,6 +6,7 @@ import { computed, ref, nextTick } from 'vue'
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { TID } from '../../../../shared/testIds'
+import ComfyUISettingsContent from './ComfyUISettingsContent.vue'
 
 const useComfyUISettingsState = {
   pinBottomActions: ref<{ id: string; label: string }[]>([{ id: 'untrack', label: 'Forget' }]),
@@ -83,7 +84,6 @@ const SAMPLE_INSTALL: Installation = {
 } as unknown as Installation
 
 async function mountContent(props: Record<string, unknown> = {}): Promise<VueWrapper> {
-  const { default: ComfyUISettingsContent } = await import('./ComfyUISettingsContent.vue')
   const pinia = getActivePinia() ?? createPinia()
   const wrapper = mount(ComfyUISettingsContent, {
     props: {

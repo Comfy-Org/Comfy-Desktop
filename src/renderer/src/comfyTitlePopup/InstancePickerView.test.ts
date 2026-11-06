@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '../stores/sessionStore'
 
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
+import InstancePickerView from './InstancePickerView.vue'
 
 const SWITCH_DECISION: NavDecision = {
   window: 'same',
@@ -150,7 +151,6 @@ function makeInstall(overrides: Partial<MockInstall>): MockInstall {
 
 async function mountPicker(snapshot: MockSnapshot) {
   const pinia = createPinia()
-  const { default: InstancePickerView } = await import('./InstancePickerView.vue')
   const enriched = {
     selectedInstallationId: snapshot.activeInstallationId,
     selectedSettings: null,
