@@ -7,11 +7,13 @@ import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
 import { onCloud, SURFACES, surface } from './shell/surface'
 import { homeBackground, marNav, type HomeBackground, type MarNav } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
+import Switch from '../ui/Switch.vue'
 import Select from '../ui/Select.vue'
 import { PALETTES, palette } from './palette'
 import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
+import { syncPrevious } from './build/syncPrevious'
 import { homeBuilds } from './homeBuilds'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -130,6 +132,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'buildPage', show: () => when.buildPage.value },
+  { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -284,6 +287,19 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('buildPage')" label="Build page">
             <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />
+          </Row>
+          <Row :show="shows('syncPrevious')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Sync with previous versions</span>
+              <Switch
+                :model-value="syncPrevious.id === 'on'"
+                aria-label="Sync with previous versions"
+                @update:model-value="syncPrevious.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Adds what Builds already has: Settings, build problems and Remote.</span
+            >
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />

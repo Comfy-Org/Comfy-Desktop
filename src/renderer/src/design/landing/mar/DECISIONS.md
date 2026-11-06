@@ -56,3 +56,8 @@ different choice, it is a design ask:
 | B4  | A problem's way out on the row: Locate, Retry install, Finish uninstall  | Desktop shows the red label only; the fix lives in the menu or the build page.                               |
 | B5  | Greyed menu items explain themselves in a line at the menu's foot        | Desktop puts "Stop the running instance first." in a tooltip on each greyed item.                            |
 | B6  | Startup Args opens on the flag builder, raw arguments on top             | Desktop shows a raw text field and the builder one click away.                                               |
+
+Past the Builds milestone, UI Playground › Sync with previous versions (Off by
+default) keeps what Builds can do without changing the later design: a Settings
+page per build with Desktop's tabs, opened from More and the Update chip; the
+list's problem states on the cards; Remote builds. Migrate stays in Builds.

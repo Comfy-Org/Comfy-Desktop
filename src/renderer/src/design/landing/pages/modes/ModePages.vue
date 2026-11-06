@@ -6,6 +6,7 @@ import AdminPages from './AdminPages.vue'
 import MarAgent from '../../mar/agent/MarAgent.vue'
 import MarBuildOverview from '../../mar/build/MarBuildOverview.vue'
 import MarBuildPage from '../../mar/build/MarBuildPage.vue'
+import MarBuildSettingsPage from '../../mar/build/MarBuildSettingsPage.vue'
 import MarBuildStart from '../../mar/build/MarBuildStart.vue'
 import MarModelsPage from '../../mar/build/MarModelsPage.vue'
 import MarDeploymentDetail from '../../mar/deploy/MarDeploymentDetail.vue'
@@ -16,16 +17,19 @@ import MarBuildsPage from '../../mar/pages/MarBuildsPage.vue'
 import MarPages from '../../mar/pages/MarPages.vue'
 import { marOwns } from '../../mar/pages/owns'
 import { deploymentById, envById } from '../../parts/env/env'
+import { buildIdOf, onBuildSettings } from '../../mar/build/buildNav'
 import { m1BuildById } from '../../mar/build/m1Builds'
+import { syncing } from '../../mar/build/syncPrevious'
 import { isNewUser, proto } from '../../useProto'
 import { can } from '../../milestones'
 
 /** Router for the Create / Build IA. */
-const envId = computed(() => (proto.page.startsWith('environment:') ? proto.page.slice(12) : ''))
+const envId = computed(() => buildIdOf(proto.page))
 const depId = computed(() => (proto.page.startsWith('deployment:') ? proto.page.slice(11) : ''))
 const env = computed(() =>
   envId.value
-    ? (envById(envId.value) ?? (!can.value.home ? m1BuildById(envId.value) : undefined))
+    ? (envById(envId.value) ??
+      (!can.value.home || syncing.value ? m1BuildById(envId.value) : undefined))
     : undefined
 )
 const dep = computed(() => (depId.value ? deploymentById(depId.value) : undefined))
@@ -40,6 +44,7 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
   <MarHomeV10 v-else-if="proto.page === 'overview' && can.home" />
   <AppDetail v-else-if="app && can.exploreApps" :id="app.id" :key="app.id" />
   <MarAgent v-else-if="proto.page === 'agent'" />
+  <MarBuildSettingsPage v-else-if="env && onBuildSettings" :key="`${env.id}-settings`" :env />
   <MarBuildPage v-else-if="env" :key="env.id" :env />
   <MarExplore v-else-if="proto.page === 'explore'" />
   <MarLearn v-else-if="proto.page === 'tutorials'" />

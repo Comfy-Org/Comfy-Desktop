@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, type Component } from 'vue'
+import { computed, reactive, ref, watch, type Component } from 'vue'
 import {
   ArrowRightLeft,
   ArrowUpCircle,
@@ -38,6 +38,7 @@ import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
 import { leaving } from '../build/buildFacts'
 import { openBuild } from '../build/buildTab'
+import { syncing } from '../build/syncPrevious'
 import { clearError, errorOf } from '../build/buildErrors'
 import BuildCrashDialog from '../build/BuildCrashDialog.vue'
 import {
@@ -83,9 +84,12 @@ type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 
 // The Builds milestone also lists the states today's Desktop has
 // (m1Builds.ts): a remote build, one to migrate, three a problem stopped.
+// Later versions take them with Sync with previous versions, all but the
+// one to migrate.
+const SYNCED = (): ProtoInstance[] => M1_BUILDS.filter((b) => !extraOf(b.id).migrate)
 const builds = collection<Build>(
-  [...instances.value, ...(proto.milestone < 3 ? M1_BUILDS : [])].map((i) =>
-    errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }
+  [...instances.value, ...(proto.milestone < 3 ? M1_BUILDS : syncing.value ? SYNCED() : [])].map(
+    (i) => (errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i })
   ),
   'build'
 )
@@ -96,6 +100,12 @@ if (leaving.value) {
 
 type Where = 'all' | BuildWhere
 const where = ref<Where>('all')
+watch(syncing, (on) => {
+  if (on) return void builds.items.push(...SYNCED().map((b) => ({ ...b })))
+  const gone = new Set(M1_BUILDS.map((b) => b.id))
+  builds.items.splice(0, builds.items.length, ...builds.items.filter((b) => !gone.has(b.id)))
+  if (where.value === 'remote') where.value = 'all'
+})
 const sort = ref('used')
 const query = ref('')
 // One Builds page for both modes. Build looks at what ships (versions,
@@ -166,7 +176,11 @@ const outputs = computed(() => {
   const spare = TEMPLATES.map((t) => t.id).filter((id) => !used.has(id))
   for (const b of builds.items) {
     const own = made.get(b.id)!
-    while (own.length < 3 && spare.length) own.push(spare.shift()!)
+    while (own.length < 3) {
+      // More builds than pictures: start over rather than leave a cover empty.
+      if (!spare.length) spare.push(...TEMPLATES.map((t) => t.id))
+      own.push(spare.shift()!)
+    }
   }
   return made
 })
@@ -252,6 +266,10 @@ function retry(b: Build): void {
   start(b)
 }
 function primary(b: Build): { label: string; icon: unknown; run: () => void } {
+  const stopped = syncedProblem(b)
+  if (stopped) return { label: PROBLEM_ACTION[stopped], icon: RotateCw, run: () => fixProblem(b) }
+  if (syncing.value && isRemote(b) && b.state !== 'running')
+    return { label: 'Open', icon: ExternalLink, run: () => start(b) }
   if (b.state === 'running')
     return { label: 'Open', icon: ExternalLink, run: () => hostActions.launch(original(b)) }
   if (b.state === 'error') return { label: 'Try again', icon: RotateCw, run: () => retry(b) }
@@ -278,6 +296,8 @@ const creating = reactive(new Set<string>())
 // The build whose error details are open.
 const crashOf = ref<Build>()
 const problemOf = (b: Build) => extraOf(b.id).problem
+// Past the Builds milestone the rows go, so the card and the table say it.
+const syncedProblem = (b: Build) => (syncing.value ? problemOf(b) : undefined)
 const isRemote = (b: Build): boolean => whereOf(b) === 'remote'
 // Busy: nothing to start or change until it settles.
 const busy = (b: Build): boolean =>
@@ -499,13 +519,23 @@ const specs = (b: Build): string =>
     .join(' · ')
 // Open and Start say where; Try again stays short.
 const runsOn = (b: Build): string | undefined =>
-  b.state === 'error' ? undefined : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
+  b.state === 'error' || syncedProblem(b)
+    ? undefined
+    : syncing.value && isRemote(b)
+      ? 'on Remote'
+      : b.kind === 'cloud'
+        ? 'on Cloud'
+        : 'on this computer'
 // The state says only whether it runs: an update is a badge by the version,
 // so a build can run and have one.
-const rowState = (b: Build): string =>
-  updating.has(b.id) || b.state === 'update' ? 'Stopped' : splitState(b)
+const rowState = (b: Build): string => {
+  const stopped = syncedProblem(b)
+  if (stopped) return PROBLEM_LABEL[stopped]
+  if (syncing.value && isRemote(b) && b.state === 'stopped') return 'Stopped'
+  return updating.has(b.id) || b.state === 'update' ? 'Stopped' : splitState(b)
+}
 const rowTone = (b: Build): 'ok' | 'warn' | 'bad' | 'idle' =>
-  updating.has(b.id) || b.state === 'update' ? 'idle' : TONE[b.state]
+  syncedProblem(b) ? 'bad' : updating.has(b.id) || b.state === 'update' ? 'idle' : TONE[b.state]
 function card(b: Build) {
   // Where is said elsewhere on the card, so no "Cloud build" here.
   const release = [b.deployment ? undefined : b.channel, b.version].filter(Boolean)
@@ -791,7 +821,11 @@ const newLabel = computed(() =>
         @star="builds.star(b.id)"
       >
         <template #media>
-          <span class="mar-build-made" :class="`is-${b.state}`" aria-hidden="true">
+          <span
+            class="mar-build-made"
+            :class="`is-${syncedProblem(b) ? 'error' : b.state}`"
+            aria-hidden="true"
+          >
             <img v-for="id in outputs.get(b.id)" :key="id" :src="thumb(id)" alt="" loading="lazy" />
           </span>
         </template>
@@ -860,8 +894,8 @@ const newLabel = computed(() =>
           b.error ??
           [b.deployment ? 'Cloud build' : b.channel, b.version].filter(Boolean).join(' · ')
         "
-        :status="STATUS[b.state]"
-        :status-label="statusLabel(b)"
+        :status="syncedProblem(b) ? 'failed' : STATUS[b.state]"
+        :status-label="syncedProblem(b) ? PROBLEM_LABEL[syncedProblem(b)!] : statusLabel(b)"
         :fav="b.fav"
         :lines="lines(b)"
         :selectable="false"

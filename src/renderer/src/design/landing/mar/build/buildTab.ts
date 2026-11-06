@@ -14,6 +14,29 @@ export type BuildTab =
   | 'settings'
   | 'deployments'
 
+/** Desktop's tabs: all of them for a build on this computer, Storage and
+ *  About for Cloud, About for Remote. */
+export function desktopTabs(
+  own: boolean,
+  remote: boolean,
+  dot = false
+): { value: BuildTab; label: string; dot?: boolean }[] {
+  if (remote) return [{ value: 'about', label: 'About' }]
+  if (!own)
+    return [
+      { value: 'storage', label: 'Storage' },
+      { value: 'about', label: 'About' }
+    ]
+  return [
+    { value: 'update', label: 'Update', dot },
+    { value: 'args', label: 'Startup Args' },
+    { value: 'snapshots', label: 'Snapshots' },
+    { value: 'storage', label: 'Storage' },
+    { value: 'terminal', label: 'Terminal' },
+    { value: 'about', label: 'About' }
+  ]
+}
+
 /** The tab the next build page opens on; it reads it once and clears it. */
 export const nextBuildTab = ref<BuildTab | ''>('')
 
@@ -21,4 +44,10 @@ export const nextBuildTab = ref<BuildTab | ''>('')
 export function openBuild(id: string, tab?: BuildTab): void {
   nextBuildTab.value = tab ?? ''
   go(`environment:${id}` as Page)
+}
+
+/** Open a build's Settings page (MarBuildSettingsPage), on one of its tabs. */
+export function openBuildSettings(id: string, tab?: BuildTab): void {
+  nextBuildTab.value = tab ?? ''
+  go(`environment:${id}/settings` as Page)
 }

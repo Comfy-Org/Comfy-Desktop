@@ -11,6 +11,7 @@ import { palette } from './palette'
 import { cover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
+import { syncPrevious } from './build/syncPrevious'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
 import { appsStage } from './apps/appsStage'
@@ -75,6 +76,13 @@ export const when = {
   // A build's page, in the Builds milestone (later ones keep their tabs).
   buildPage: computed(
     () => inShell.value && proto.page.startsWith('environment:') && !can.value.breadcrumb
+  ),
+  // Past the Builds milestone: the Builds list and a build's pages.
+  syncPrevious: computed(
+    () =>
+      inShell.value &&
+      can.value.breadcrumb &&
+      (['environments', 'instances'].includes(proto.page) || proto.page.startsWith('environment:'))
   ),
   // Workflow cards with a cover: a build's page, Workflows and Home's recents.
   cover: computed(
@@ -192,6 +200,7 @@ export const TWEAKS = {
   cover: one(cover, 'gradient'),
   buildCard: one(buildCard, 'photos'),
   buildPage: one(buildPage, 'production'),
+  syncPrevious: one(syncPrevious, 'off'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).

@@ -80,7 +80,8 @@ import BuildUpdate from './BuildUpdate.vue'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { createSnapshot, leaving, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
-import { nextBuildTab } from './buildTab'
+import { desktopTabs, nextBuildTab, openBuildSettings } from './buildTab'
+import { syncing } from './syncPrevious'
 import { clearError, errorOf } from './buildErrors'
 import '../table/table.css'
 
@@ -104,6 +105,10 @@ import '../table/table.css'
  * Remote: About). Update carries a dot while one is waiting. Long work
  * runs inside the tab (buildOps.ts). UI Playground › Build page keeps
  * Overview first as the alternative.
+ *
+ * Past that milestone, UI Playground › Sync with previous versions keeps
+ * Desktop's tabs on a Settings page of their own (MarBuildSettingsPage):
+ * More's Settings opens it, and the Update chip opens it on Update.
  */
 const { env } = defineProps<{ env: ProtoInstance }>()
 
@@ -148,21 +153,7 @@ const own = computed(() => k.value === 'local')
 const remote = isRemote(env)
 const remoteUrl = computed(() => extraOf(env.id).remote?.replace(/^https?:\/\//, ''))
 const DESKTOP_TABS = computed<{ value: Tab; label: string; dot?: boolean }[]>(() =>
-  remote
-    ? [{ value: 'about', label: 'About' }]
-    : own.value
-      ? [
-          { value: 'update', label: 'Update', dot: Boolean(pending.value) },
-          { value: 'args', label: 'Startup Args' },
-          { value: 'snapshots', label: 'Snapshots' },
-          { value: 'storage', label: 'Storage' },
-          { value: 'terminal', label: 'Terminal' },
-          { value: 'about', label: 'About' }
-        ]
-      : [
-          { value: 'storage', label: 'Storage' },
-          { value: 'about', label: 'About' }
-        ]
+  desktopTabs(own.value, remote, Boolean(pending.value))
 )
 const MVP_TABS = computed<{ value: Tab; label: string; count?: number; dot?: boolean }[]>(() =>
   buildPage.id === 'production'
@@ -352,7 +343,12 @@ const lines = computed<MenuLine[]>(() => [
   {
     label: 'Settings',
     icon: Settings2,
-    run: () => (mvp.value && own.value ? (tab.value = 'settings') : toast('Build settings'))
+    run: () =>
+      syncing.value
+        ? openBuildSettings(env.id)
+        : mvp.value && own.value
+          ? (tab.value = 'settings')
+          : toast('Build settings')
   }
 ])
 
@@ -366,7 +362,9 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       :title="mvp ? state.name : env.name"
       :status="status.id"
       :status-label="status.label"
+      :status-link="syncing && status.id === 'update' && !remote ? 'Open Update' : undefined"
       @back="go('environments' as Page)"
+      @status="openBuildSettings(env.id, 'update')"
     >
       <template #cover>
         <span class="mar-bp-glyph"
