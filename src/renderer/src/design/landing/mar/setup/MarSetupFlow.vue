@@ -9,6 +9,7 @@ import {
   Copy,
   Cpu,
   Crown,
+  FolderArchive,
   HardDrive,
   LoaderCircle,
   Package,
@@ -177,19 +178,31 @@ const channel = ref<'stable' | 'latest'>('stable')
 const hardware = ref<'mps' | 'cpu'>('mps')
 // Today's install methods on a Mac (Portable is Windows only). Managed
 // builds need a sign-in; a remote server needs only its address.
-const method = ref<'public' | 'managed' | 'remote'>('public')
+const method = ref<'public' | 'managed' | 'portable' | 'remote'>('public')
 // Remote Connection isn't a source of ComfyUI, so it's a link under the form.
-const SOURCES = [
+const SOURCES = computed(() => [
   { value: 'public' as const, label: 'Official release', meta: 'Public builds', icon: Package },
   {
     value: 'managed' as const,
     label: "Your team's builds",
     meta: 'Managed builds',
     icon: Users
-  }
-]
+  },
+  // Today's Portable, in its own words; Windows only.
+  ...(localSetup.os === 'windows'
+    ? [
+        {
+          value: 'portable' as const,
+          label: say('portable.label'),
+          meta: say('portable.desc'),
+          icon: FolderArchive
+        }
+      ]
+    : [])
+])
 const serverUrl = ref('')
 const version = ref(DETECTED.version)
+const CPU_MB = 480
 const VERSIONS = [
   { value: DETECTED.version, label: DETECTED.version, hint: 'Latest stable' },
   { value: 'v0.42.3', label: 'v0.42.3' },
@@ -226,12 +239,38 @@ const CHANNELS = [
   { value: 'latest' as const, label: 'Latest on GitHub' }
 ]
 // A computer with no GPU has one choice: the CPU it found.
+// Each card says what today's does: ComfyUI, Python and the download, with
+// Recommended on the one that fits. Python and the sizes are mock values.
+const hardwareDetail = (mb: number): string => `ComfyUI ${version.value} · Python 3.12 · ${mb} MB`
 const HARDWARE = computed(() =>
   DETECTED.build === 'CPU'
-    ? [{ value: 'mps' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }]
+    ? [
+        {
+          value: 'mps' as const,
+          label: 'CPU',
+          meta: hardwareDetail(CPU_MB),
+          summary: 'No GPU acceleration',
+          recommended: true,
+          icon: Cpu
+        }
+      ]
     : [
-        { value: 'mps' as const, label: DETECTED.build, meta: 'Detected', icon: Zap },
-        { value: 'cpu' as const, label: 'CPU', meta: 'No GPU acceleration', icon: Cpu }
+        {
+          value: 'mps' as const,
+          label: DETECTED.build,
+          meta: hardwareDetail(Math.round(DETECTED.downloadGb * 1000)),
+          summary: 'Detected',
+          recommended: true,
+          icon: Zap
+        },
+        {
+          value: 'cpu' as const,
+          label: 'CPU',
+          meta: hardwareDetail(CPU_MB),
+          summary: 'No GPU acceleration',
+          recommended: false,
+          icon: Cpu
+        }
       ]
 )
 const pickedHardware = computed(
@@ -456,7 +495,7 @@ function rowState(i: number): string {
                 <dt><Zap :size="15" />Hardware</dt>
                 <dd>
                   <span class="text-base-foreground">{{ pickedHardware.label }}</span>
-                  <span class="mss-row-meta">{{ pickedHardware.meta }}</span>
+                  <span class="mss-row-meta">{{ pickedHardware.summary }}</span>
                 </dd>
               </div>
               <div class="mss-row" :class="lowSpace && 'is-bad'">
@@ -552,6 +591,7 @@ function rowState(i: number): string {
                   :key="m.value"
                   :value="m.value"
                   class="mss-opt"
+                  :class="m.value === 'portable' && 'is-wide'"
                 >
                   <span class="mss-opt-icon"><component :is="m.icon" :size="16" /></span>
                   <span class="mss-opt-text">
@@ -606,7 +646,7 @@ function rowState(i: number): string {
             </div>
             <div class="mss-form-row">
               <span id="mss-hw" class="mss-form-label">Hardware</span>
-              <RadioGroupRoot v-model="hardware" class="mss-opts" aria-labelledby="mss-hw">
+              <RadioGroupRoot v-model="hardware" class="mss-opts is-list" aria-labelledby="mss-hw">
                 <RadioGroupItem
                   v-for="h in HARDWARE"
                   :key="h.value"
@@ -615,7 +655,12 @@ function rowState(i: number): string {
                 >
                   <span class="mss-opt-icon"><component :is="h.icon" :size="16" /></span>
                   <span class="mss-opt-text">
-                    <span class="mss-opt-name">{{ h.label }}</span>
+                    <span class="mss-opt-name"
+                      >{{ h.label
+                      }}<span v-if="h.recommended" class="mss-opt-tag">{{
+                        say('newInstall.recommended')
+                      }}</span></span
+                    >
                     <span class="mss-opt-meta">{{ h.meta }}</span>
                   </span>
                   <span class="mss-opt-check" aria-hidden="true"
@@ -628,6 +673,25 @@ function rowState(i: number): string {
               Already running ComfyUI on another machine?
               <button type="button" class="mss-link" @click="method = 'remote'">
                 Connect to a server instead
+              </button>
+            </p>
+            <!-- Today's other two ways in, from the File menu. -->
+            <p class="mss-form-aside is-more">
+              Already have ComfyUI on {{ DETECTED.noun }}?
+              <button
+                type="button"
+                class="mss-link"
+                @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
+              >
+                {{ say('fileMenu.addExistingInstall') }}
+              </button>
+              or
+              <button
+                type="button"
+                class="mss-link"
+                @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
+              >
+                {{ say('fileMenu.loadSnapshot') }}
               </button>
             </p>
           </div>
@@ -702,7 +766,7 @@ function rowState(i: number): string {
                   <img :src="starterImg(s)" alt="" loading="lazy" />
                   <span v-if="s.tag === 'Recommended'" class="mss-wf-badge">Recommended</span>
                   <span v-else-if="s.credits" class="mss-wf-badge is-credits"
-                    ><Crown :size="11" :stroke-width="2.5" />Requires credits</span
+                    ><Crown :size="12" :stroke-width="2.5" />Requires credits</span
                   >
                   <span v-if="!s.credits" class="mss-wf-badge is-size tabular-nums"
                     >~{{ s.gb }} GB</span
@@ -711,8 +775,6 @@ function rowState(i: number): string {
                 <span class="mss-wf-text">
                   <span class="mss-wf-name">{{ starterName(s) }}</span>
                   <span class="mss-wf-task">{{ starterTask(s) }}</span>
-                  <!-- Today's crown where a size would be: nothing to download. -->
-                  <Crown v-if="s.credits" class="mss-wf-crown" :size="14" :stroke-width="2.5" />
                   <span class="mss-wf-check" aria-hidden="true"
                     ><Check :size="15" :stroke-width="2.5"
                   /></span>
@@ -855,15 +917,14 @@ function rowState(i: number): string {
                   }}</span></span
                 >
               </Transition>
-              <button type="button" class="mss-link" @click="toast('Opening Comfy Cloud')">
-                {{ say('installShowcase.cloudCta') }}
-              </button>
             </p>
+            <Button variant="secondary" size="lg" @click="toast('Opening Comfy Cloud')">{{
+              say('installShowcase.cloudCta')
+            }}</Button>
             <Button
               v-if="flow.takeover"
               variant="ghost"
               size="lg"
-              class="mss-foot-exit"
               @click="flow.confirmCancel = true"
               >Cancel install</Button
             >

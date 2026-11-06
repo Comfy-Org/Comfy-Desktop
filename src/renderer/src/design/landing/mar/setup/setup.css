@@ -1689,13 +1689,6 @@
   align-self: flex-start;
   margin-top: 2px;
 }
-.mss-foot .mss-pitch .mss-link {
-  margin-inline: 8px 4px;
-}
-/* A ghost exit: its label ends on the column's right edge. */
-:root .proto-ui.proto-ui.proto-ui.mss-in-takeover .mar-wizard-foot > .mss-foot-exit {
-  margin-right: -16px;
-}
 /* Two lines, title over body: production's cards are too long for one. */
 .mss-foot .mss-pitch .mss-pitch-line {
   display: flex;
@@ -1778,12 +1771,6 @@
   color: #e9c422;
   font-weight: 600;
 }
-.mss-wf-crown {
-  position: absolute;
-  right: 11px;
-  bottom: 11px;
-  color: #e9c422;
-}
 /* Picked: the flow's bare check, beside the name. */
 .mss-wf-check {
   position: absolute;
@@ -1817,6 +1804,8 @@
 .mss-wf-task {
   overflow: hidden;
   color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1839,4 +1828,28 @@
 .mss-col .mss-ways,
 .mss-col .mss-first-cards {
   margin-top: 28px;
+}
+
+/* Change setup: production's Recommended tag, and its other ways in. */
+.mss-opt-tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: oklch(0.6 0 0 / 0.16);
+  color: var(--color-muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+.mss-opts > .mss-opt.is-wide {
+  grid-column: 1 / -1;
+}
+/* Hardware: a list, as today's, so each line reads whole. */
+.mss-opts.is-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mss-form-aside.is-more {
+  margin-top: -8px;
 }
