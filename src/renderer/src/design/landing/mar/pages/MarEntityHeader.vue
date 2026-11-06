@@ -9,8 +9,10 @@ import MarStatus, { type ItemStatus } from './MarStatus.vue'
  * ⋯ last), every control at the Corners radius, no pills. No `back` when
  * the title bar's breadcrumb already says where the page sits.
  */
-const { back, title, status, statusLabel, statusLink } = defineProps<{
+const { back, onTabs, title, status, statusLabel, statusLink } = defineProps<{
   back?: string
+  /** The title sits on the line of the sidebar's Create/Build tabs. */
+  onTabs?: boolean
   title: string
   status?: ItemStatus
   statusLabel?: string
@@ -21,7 +23,7 @@ const emit = defineEmits<{ back: []; status: [] }>()
 </script>
 
 <template>
-  <div class="mar-eh">
+  <div class="mar-eh" :class="onTabs && 'is-on-tabs'">
     <button v-if="back" type="button" class="mar-eh-crumb" @click="emit('back')">
       <ArrowLeft :size="14" />{{ back }}
     </button>
@@ -72,6 +74,16 @@ const emit = defineEmits<{ back: []; status: [] }>()
   align-items: center;
   gap: 18px;
   padding-bottom: 28px;
+}
+/* The way back moves up, so the title's centre lands on the tabs' line. */
+:root .proto-ui.proto-ui.proto-ui .mar-eh.is-on-tabs .mar-eh-crumb {
+  margin: -8px 0 -2px -8px;
+}
+.mar-eh.is-on-tabs .mar-eh-head {
+  align-items: flex-start;
+}
+.mar-eh.is-on-tabs .mar-eh-actions {
+  align-self: center;
 }
 .mar-eh-cover {
   display: inline-flex;
