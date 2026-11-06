@@ -214,6 +214,7 @@ export const TWEAKS = {
       localSetup.machine === 'ready' &&
       localSetup.cards === 'glow' &&
       localSetup.scope === 'm1' &&
+      localSetup.onboarding === 'install' &&
       localSetup.os === 'mac' &&
       localSetup.gpu === 'nvidia',
     reset: () =>
@@ -222,6 +223,7 @@ export const TWEAKS = {
         machine: 'ready',
         cards: 'glow',
         scope: 'm1',
+        onboarding: 'install',
         os: 'mac',
         gpu: 'nvidia'
       })

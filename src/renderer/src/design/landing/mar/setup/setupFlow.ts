@@ -43,6 +43,20 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
   { value: 'm1', label: 'M1' },
   { value: 'next', label: 'Next iterations' }
 ]
+/** How the first launch goes once the Home exists. Install first: today's
+ *  steps, ending in the install. The two Home first options make Run on the
+ *  only step and land on the Home, where the install waits on a card
+ *  (HomeInstall.vue); they differ in what the Home offers before a build
+ *  exists. Install card: only the card, nothing that needs ComfyUI. Pick to
+ *  install: the Home as it is, and picking something that runs locally
+ *  starts the install with it queued. Off by default, and only where there
+ *  is a Home. */
+export type Onboarding = 'install' | 'home' | 'home-open'
+export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
+  { value: 'install', label: 'Install first' },
+  { value: 'home', label: 'Home first: install card only' },
+  { value: 'home-open', label: 'Home first: pick to install' }
+]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
@@ -76,6 +90,7 @@ function load(): {
   machine: Machine
   cards: RunOnCards
   scope: SetupScope
+  onboarding: Onboarding
   os: SetupOs
   gpu: SetupGpu
 } {
@@ -86,11 +101,20 @@ function load(): {
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
       cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
       scope: v.scope === 'next' ? 'next' : 'm1',
+      onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
       gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia'
     }
   } catch {
-    return { mode: 'off', machine: 'ready', cards: 'glow', scope: 'm1', os: 'mac', gpu: 'nvidia' }
+    return {
+      mode: 'off',
+      machine: 'ready',
+      cards: 'glow',
+      scope: 'm1',
+      onboarding: 'install',
+      os: 'mac',
+      gpu: 'nvidia'
+    }
   }
 }
 
@@ -108,6 +132,13 @@ const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
 // Without one, the shared link shows the first release: the install lands on Builds.
 else if (linkFirst) localSetup.scope = 'm1'
+// And a Home first onboarding, which needs the Home: `&onboarding=home` or
+// `&onboarding=home-open`.
+const linkOnboarding = new URLSearchParams(location.search).get('onboarding')
+if (linkOnboarding === 'home' || linkOnboarding === 'home-open') {
+  localSetup.onboarding = linkOnboarding
+  localSetup.scope = 'next'
+}
 // And the computer: `&os=windows` or `&os=linux`.
 const linkOs = new URLSearchParams(location.search).get('os')
 if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.os = linkOs
@@ -128,6 +159,12 @@ watch(
 
 /** The proposed flow replaces "New build flow" wherever the New UI is drawn. */
 export const setupOn = computed(() => can.value.design && localSetup.mode === 'on')
+/** Home first applies only where the Home exists (the next iterations). */
+export const homeFirst = computed(
+  () => setupOn.value && localSetup.scope === 'next' && localSetup.onboarding !== 'install'
+)
+/** Home first › Pick to install: the Home keeps its ways to start. */
+export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding === 'home-open')
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations are the latest one, with its Home.
@@ -361,7 +398,12 @@ export const flow = reactive({
   bringOver: true,
   /** First launch: Set up and the install stay full-window, before the
    *  Home exists, the way Desktop chains its first install today. */
-  takeover: false
+  takeover: false,
+  /** Home first: the install runs behind the Home, on its card. Closing the
+   *  install modal then only hides it. */
+  background: false,
+  /** Home first: Local was picked, so the Home shows the install card. */
+  homeCard: false
 })
 
 export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow.movedDisk)
@@ -410,6 +452,13 @@ function finish(): void {
   stop()
   marUser.local = 'one'
   flow.open = false
+  // Home first: the person is already on the Home; the build just turns up.
+  if (flow.background) {
+    flow.background = false
+    flow.homeCard = false
+    if (flow.picked) toast(`Opening ComfyUI with ${flow.picked.title}`)
+    return
+  }
   // M1 has no Home: the install lands on All builds, in M1's own shell.
   showScope()
   go(localSetup.scope === 'm1' ? 'environments' : 'overview')
@@ -428,6 +477,7 @@ export function openSetup(): boolean {
   flow.confirmCancel = false
   flow.confirmLowDisk = false
   flow.logs = false
+  flow.background = false
   flow.open = true
   return true
 }
@@ -443,6 +493,51 @@ export function chooseLocal(): void {
 export function chooseCloud(): void {
   flow.open = false
   toast('Opening Comfy Cloud')
+}
+
+/** Home first › Local: the Home, with the install waiting on its card: what
+ *  was detected, Install, and Change for where it goes and on which
+ *  hardware. Nothing installs until Install. */
+export function landHomeLocal(): void {
+  flow.open = false
+  flow.takeover = false
+  flow.picked = null
+  flow.homeCard = true
+  showScope()
+  go('overview')
+  flow.background = false
+}
+
+/** Home first › Cloud: the Home, nothing installs. */
+export function landHomeCloud(): void {
+  flow.takeover = false
+  flow.homeCard = false
+  showScope()
+  go('overview')
+  chooseCloud()
+}
+
+export function installInBackground(): void {
+  flow.open = false
+  flow.takeover = false
+  flow.background = true
+  startInstall()
+}
+
+/** The Home card › View logs: today's install screen, over the Home. */
+export function showInstall(): void {
+  flow.logs = true
+  flow.open = true
+}
+
+/** The Home card › Change: Change setup, straight on its sheet. */
+export function changeFromHome(): void {
+  stop()
+  flow.percent = 0
+  flow.background = false
+  flow.takeover = false
+  flow.step = 'change'
+  flow.open = true
 }
 
 export function startInstall(): void {
@@ -476,12 +571,16 @@ export function cancelInstall(): void {
   stop()
   flow.open = false
   flow.takeover = false
+  flow.background = false
+  flow.confirmCancel = false
   flow.percent = 0
 }
 
 export function closeSetup(): void {
   // Closing while it installs is Return to Dashboard: it asks first.
-  if (flow.running) flow.confirmCancel = true
+  // Home first: the install carries on behind the Home.
+  if (flow.background && (flow.running || flow.step === 'error')) flow.open = false
+  else if (flow.running) flow.confirmCancel = true
   // Before the first install there is no Home yet: back to the first screen.
   else if (flow.takeover) flow.step = 'first'
   else flow.open = false

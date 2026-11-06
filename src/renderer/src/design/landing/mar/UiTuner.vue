@@ -22,6 +22,7 @@ import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   LOCAL_SETUPS,
+  ONBOARDINGS,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
@@ -338,19 +339,17 @@ function onScroll(e: Event): void {
             <Row label="Scope">
               <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
             </Row>
+            <!-- Home first needs the Home, so it is offered past M1 only. -->
+            <Row v-if="localSetup.scope === 'next'" label="Onboarding">
+              <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
+            </Row>
             <Row label="Jump to">
-              <div class="grid grid-cols-2 gap-1" role="group" aria-label="Jump to">
-                <button
-                  v-for="o in SETUP_SCREENS"
-                  :key="o.value"
-                  type="button"
-                  class="mar-jump"
-                  :aria-pressed="setupScreen === o.value"
-                  @click="showScreen((setupScreen = o.value))"
-                >
-                  {{ o.label }}
-                </button>
-              </div>
+              <Select
+                :model-value="setupScreen ?? 'first'"
+                :options="SETUP_SCREENS"
+                class="w-full"
+                @update:model-value="(v) => v && showScreen((setupScreen = v))"
+              />
             </Row>
             <Row label="First screen cards">
               <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -21,6 +21,7 @@ import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupR
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
+import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupSteps from './SetupSteps.vue'
 import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import Button from '../../ui/Button.vue'
@@ -37,11 +38,14 @@ import {
   STARTERS,
   backFromError,
   canvas,
-  cancelInstall,
   chooseCloud,
   chooseLocal,
   closeSetup,
   flow,
+  homeFirst,
+  installInBackground,
+  landHomeCloud,
+  landHomeLocal,
   localSetup,
   lowSpace,
   phaseIndex,
@@ -85,13 +89,13 @@ const runOn = ref<'cloud' | 'local'>('local')
 const terms = ref(false)
 const usage = ref(true)
 const beta = ref(true)
-const express = ref(false)
 // Continue is always on: without the terms it points at them instead.
 const termsAsk = ref(false)
 function continueFirst(): void {
   if (!terms.value) termsAsk.value = true
+  // Home first: Run on is the only step, and Local starts the install.
+  else if (homeFirst.value) (runOn.value === 'cloud' ? landHomeCloud : landHomeLocal)()
   else if (runOn.value === 'cloud') chooseCloud()
-  else if (express.value && !unsupported.value) installWith(null)
   else chooseLocal()
 }
 
@@ -148,7 +152,9 @@ const starterTask = (s: Starter): string => s.title.split(': ')[1] ?? s.task ?? 
 const starterBlocked = computed(() => lowSpace.value && !!flow.picked && !flow.picked.credits)
 function installWith(s: Starter | null): void {
   flow.picked = s
-  startInstall()
+  // Home first: from the Home's card, the install goes back behind the Home.
+  if (homeFirst.value && flow.homeCard && !flow.takeover) installInBackground()
+  else startInstall()
 }
 const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
 // The install wait's outputs: today's showcase clips, one at a time in a
@@ -224,6 +230,20 @@ function changeSetup(): void {
   saved = draft()
   flow.step = 'change'
 }
+// Home first: the Home's card opens Change setup on its own, and on a first
+// install it asks only what can be wrong for this computer: where it goes and
+// which hardware. Source, release and name are New Build's.
+const simple = computed(() => homeFirst.value && flow.homeCard && !flow.takeover)
+watch(
+  () => flow.open && flow.step === 'change',
+  (on) => {
+    if (on) saved = draft()
+  }
+)
+function saveChanges(): void {
+  if (simple.value) flow.open = false
+  else flow.step = 'setup'
+}
 function discardChanges(): void {
   method.value = saved.method
   serverUrl.value = saved.serverUrl
@@ -232,7 +252,7 @@ function discardChanges(): void {
   version.value = saved.version
   hardware.value = saved.hardware
   flow.movedDisk = saved.movedDisk
-  flow.step = 'setup'
+  saveChanges()
 }
 const CHANNELS = [
   { value: 'stable' as const, label: 'Stable' },
@@ -333,7 +353,7 @@ function rowState(i: number): string {
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyWordmark class="mss-first-mark" />
-          <SetupSteps :now="1" :workflow="workflowStep" />
+          <SetupSteps v-if="!homeFirst" :now="1" :workflow="workflowStep" />
           <div class="mss-col">
             <div class="mss-first-hero">
               <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
@@ -371,33 +391,22 @@ function rowState(i: number): string {
                   @click="runOn = 'local'"
                 />
               </div>
-              <!-- Migrate and Express are Local options; they keep their room
-                 while Cloud is picked, so switching cards doesn't move the
-                 screen. -->
+              <!-- Migrate is a Local option; it keeps its room while Cloud is
+                 picked, so switching cards doesn't move the screen. No
+                 Express: the hardware is detected up front, for everyone. -->
               <div
+                v-if="localSetup.machine === 'legacy'"
                 class="mss-first-mods"
                 :class="runOn !== 'local' && 'is-off'"
                 :aria-hidden="runOn !== 'local'"
               >
-                <label v-if="localSetup.machine === 'legacy'" class="mss-check">
+                <label class="mss-check">
                   <Checkbox v-model="flow.bringOver" />
                   <span
                     ><span class="text-base-foreground">Migrate existing instance</span>
                     <span class="mss-first-hint"
                       >Bring over <b>workflows, models, and settings</b> from your existing ComfyUI
                       instance.</span
-                    ></span
-                  >
-                </label>
-                <label class="mss-check">
-                  <Checkbox v-model="express" />
-                  <span
-                    ><span class="text-base-foreground"
-                      >Express Install with recommended settings</span
-                    >
-                    <span class="mss-first-hint" :class="!express && 'is-off'"
-                      >Detected: {{ DETECTED.build }} - if that's not your hardware, uncheck
-                      Express</span
                     ></span
                   >
                 </label>
@@ -583,7 +592,7 @@ function rowState(i: number): string {
           <!-- A settings sheet: label on the left, control on the right,
                a hairline between rows. Picks are radio cards. -->
           <div v-if="method !== 'remote'" class="mss-form">
-            <div class="mss-form-row">
+            <div v-if="!simple" class="mss-form-row">
               <span id="mss-from" class="mss-form-label">Get ComfyUI from</span>
               <RadioGroupRoot v-model="method" class="mss-opts" aria-labelledby="mss-from">
                 <RadioGroupItem
@@ -604,7 +613,8 @@ function rowState(i: number): string {
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
-            <div v-if="method === 'managed'" class="mss-form-row">
+            <template v-if="simple"></template>
+            <div v-else-if="method === 'managed'" class="mss-form-row">
               <span class="mss-form-label">Release</span>
               <div class="mss-form-note">
                 <span>Sign in to see your workspace's builds.</span>
@@ -623,7 +633,7 @@ function rowState(i: number): string {
                 />
               </div>
             </div>
-            <div class="mss-form-row">
+            <div v-if="!simple" class="mss-form-row">
               <span class="mss-form-label">Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
@@ -669,14 +679,14 @@ function rowState(i: number): string {
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
-            <p class="mss-form-aside">
+            <p v-if="!simple" class="mss-form-aside">
               Already running ComfyUI on another machine?
               <button type="button" class="mss-link" @click="method = 'remote'">
                 Connect to a server instead
               </button>
             </p>
             <!-- Today's other two ways in, from the File menu. -->
-            <p class="mss-form-aside is-more">
+            <p v-if="!simple" class="mss-form-aside is-more">
               Already have ComfyUI on {{ DETECTED.noun }}?
               <button
                 type="button"
@@ -728,9 +738,7 @@ function rowState(i: number): string {
             @click="toast(`Connecting to ${serverUrl}`)"
             >Connect</Button
           >
-          <Button v-else variant="primary" size="lg" @click="flow.step = 'setup'"
-            >Save changes</Button
-          >
+          <Button v-else variant="primary" size="lg" @click="saveChanges">Save changes</Button>
         </footer>
       </template>
 
@@ -898,7 +906,7 @@ function rowState(i: number): string {
             >
             <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
           </template>
-          <template v-else-if="!flow.confirmCancel">
+          <template v-else>
             <p
               class="mss-pitch"
               role="region"
@@ -922,7 +930,7 @@ function rowState(i: number): string {
               say('installShowcase.cloudCta')
             }}</Button>
             <Button
-              v-if="flow.takeover"
+              v-if="flow.takeover || flow.background"
               variant="ghost"
               size="lg"
               @click="flow.confirmCancel = true"
@@ -932,19 +940,9 @@ function rowState(i: number): string {
               ><ArrowLeft :size="14" />Return to Dashboard</Button
             >
           </template>
-          <!-- Today's in-flight confirm: returning cancels the install. -->
-          <template v-else>
-            <span class="mr-auto grid text-ui">
-              <span class="font-medium text-base-foreground">Cancel current operation?</span>
-              <span class="text-subtle-foreground"
-                >Unfinished steps are rolled back where possible.</span
-              >
-            </span>
-            <Button variant="ghost" size="lg" @click="flow.confirmCancel = false">Cancel</Button>
-            <Button variant="destructive" size="lg" @click="cancelInstall">Cancel operation</Button>
-          </template>
         </footer>
       </template>
+      <SetupCancelConfirm />
     </DialogContent>
   </DialogRoot>
 </template>

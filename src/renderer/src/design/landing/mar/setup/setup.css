@@ -1853,3 +1853,39 @@
 .mss-form-aside.is-more {
   margin-top: -8px;
 }
+
+/* The cancel confirmation sits over the takeover, which is itself above the
+   usual dialog layer; its scrim is the sibling just before it. */
+.proto-ui.mss-confirm,
+.proto-ui:has(+ .mss-confirm) {
+  z-index: 80;
+}
+/* It has to read as a layer over the setup: a lifted surface with a border
+   and the popover shadow, over the step modal's scrim. This dialog only. */
+:root .proto-ui.mss-confirm {
+  /* Mar's borders setting can blank the border tokens; her edge line stays. */
+  border: 1px solid var(--mar-edge-line, var(--color-border-strong));
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-card-background)
+  );
+  box-shadow: var(--shadow-popover);
+}
+/* The actions sit in a footer band under a hairline, edge to edge. */
+.mss-confirm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--mar-edge-line, var(--color-border-strong));
+}
+:root .proto-ui:has(+ .mss-confirm) {
+  background-color: rgb(0 0 0 / 0.5);
+}
+:root[data-ds-theme='light'] .proto-ui.mss-confirm {
+  background-color: var(--color-card-background);
+}
+:root[data-ds-theme='light'] .proto-ui:has(+ .mss-confirm) {
+  background-color: rgb(20 20 30 / 0.22);
+}

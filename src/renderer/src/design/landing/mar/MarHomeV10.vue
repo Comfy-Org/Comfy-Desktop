@@ -15,7 +15,8 @@ import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import StarterShelf from './setup/StarterShelf.vue'
-import { localSetup, setupOn } from './setup/setupFlow'
+import HomeInstall from './setup/HomeInstall.vue'
+import { flow, homeFirst, homeOpen, localSetup, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -55,6 +56,12 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // Cloud) gets the returning Home; a first-time user with a fresh build
 // gets it too, with examples where their work will go.
 const firstRun = computed(() => firstTime.value && noLocal.value)
+// Home first, Local picked and not installed yet: the install waits on its
+// card. Open ComfyUI never shows before there is one. With the card only,
+// the rest that needs ComfyUI waits too: the prompt, which could only run on
+// Comfy Cloud, and the first-run examples. With pick to install they stay.
+const installPending = computed(() => homeFirst.value && flow.homeCard && noLocal.value)
+const gated = computed(() => installPending.value && !homeOpen.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
 const tight = computed(() => parts.value.top === 'tight')
 
@@ -88,7 +95,7 @@ const recent = computed(() =>
 
 <template>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
-    <CreateMenu />
+    <CreateMenu v-if="!installPending" />
   </div>
   <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
@@ -100,7 +107,7 @@ const recent = computed(() =>
           :class="['mar-greeting', tight ? 'mb-4! pt-0!' : '']"
         />
         <!-- One line tall; while you type it grows over what's below. -->
-        <div v-if="can.agent" class="mar-prompt-slot">
+        <div v-if="can.agent && !gated" class="mar-prompt-slot">
           <PromptBox target class="mar-prompt" />
         </div>
         <template v-if="!firstRun">
@@ -120,7 +127,10 @@ const recent = computed(() =>
 
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
-    <MarStart v-if="firstRun" />
+    <!-- Home first: Local was picked on Run on, so the install waits here. -->
+    <HomeInstall v-if="installPending" />
+    <template v-if="gated"></template>
+    <MarStart v-else-if="firstRun" />
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone. Once Explore
            & Learn arrive, apps live in Explore only. -->

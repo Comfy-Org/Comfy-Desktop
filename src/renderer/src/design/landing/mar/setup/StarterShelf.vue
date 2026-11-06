@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ArrowDownToLine, Play } from 'lucide-vue-next'
 import { toast } from '../../useProto'
-import { STARTERS, type Starter } from './setupFlow'
+import {
+  STARTERS,
+  changeFromHome,
+  flow,
+  homeOpen,
+  installInBackground,
+  lowSpace,
+  type Starter
+} from './setupFlow'
 import { imgUrl } from './canvasData'
 import zitThumb from '../assets/templates/image_z_image_turbo.webp'
 import minimaxThumb from '../assets/templates/video_minimax_h3_i2v.webp'
@@ -26,7 +34,25 @@ const SHELF: Shelf[] = [
   pick('image', 'seedream', 'Image')
 ]
 const where = (s: Starter): string => (s.credits ? 'Cloud' : `Local · ${s.gb} GB`)
+// Home first: while the install runs behind the Home, a pick joins it (its
+// models download as the last step) and ComfyUI opens on it when it ends.
+const waiting = (): boolean => flow.background && flow.running
+// Home first › Pick to install, before the install: a local pick starts it
+// with that workflow queued. Without the space, Change setup comes first.
+const toInstall = (): boolean => homeOpen.value && flow.homeCard && !flow.running
 function open(s: Shelf): void {
+  if (toInstall() && !s.credits) {
+    if (lowSpace.value) return changeFromHome()
+    flow.picked = s
+    installInBackground()
+    toast(`${s.title} opens when ComfyUI is ready.`)
+    return
+  }
+  if (waiting() && !s.credits) {
+    flow.picked = flow.picked?.id === s.id ? null : s
+    if (flow.picked) toast(`${s.title} opens when ComfyUI is ready.`)
+    return
+  }
   toast(
     s.credits
       ? `Opening ${s.title} on Comfy Cloud`
@@ -43,6 +69,8 @@ function open(s: Shelf): void {
       type="button"
       role="listitem"
       class="mss-shelf-card"
+      :class="waiting() && flow.picked?.id === s.id && 'is-picked'"
+      :aria-pressed="waiting() ? flow.picked?.id === s.id : undefined"
       @click="open(s)"
     >
       <img :src="s.src" alt="" loading="lazy" />
@@ -80,6 +108,9 @@ function open(s: Shelf): void {
   inset: 0;
   background: linear-gradient(to top, rgb(0 0 0 / 0.72), transparent 55%);
   content: '';
+}
+.mss-shelf-card.is-picked {
+  box-shadow: 0 0 0 2px var(--color-base-foreground);
 }
 .mss-shelf-chip {
   position: absolute;
