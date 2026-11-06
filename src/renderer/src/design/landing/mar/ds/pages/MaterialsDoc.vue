@@ -207,8 +207,8 @@ const FALLBACK = `/* Not in the app today. Where glass can't blur, or the person
         <li>
           <strong>No top highlight.</strong> No surface gets a lighter top edge: no
           <code>inset 0 1px 0</code> light, no brighter <code>border-top</code>, no sheen on a
-          <code>::before</code>. A surface has an even hairline on all sides (Borders › Hairline) or
-          none. Lines inside a surface, between rows or above a footer, are separators, not edges.
+          <code>::before</code>. A surface has no border. Lines inside a surface, between rows or
+          above a footer, are separators, not edges.
         </li>
         <li>
           <strong>Contrast</strong>: text on glass ≥ 4.5:1 (3:1 for icons and text from 18px),

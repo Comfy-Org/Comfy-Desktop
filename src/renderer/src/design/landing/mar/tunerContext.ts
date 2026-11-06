@@ -158,8 +158,7 @@ export interface Tweak {
 }
 const TUNING_DEFAULTS = {
   radius: 'default',
-  contrast: 'default',
-  borders: 'none'
+  contrast: 'default'
 }
 const P20_DEFAULTS: Record<string, string> = {
   recent: 'cards',

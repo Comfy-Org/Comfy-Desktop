@@ -14,7 +14,7 @@ prototype branch, draft PR #1782.
 
 The menu's **UI** row opens the UI Playground (⌘.): **Graphite** (the main one; Void, the cool grey before it, stays in Palette) or
 the other directions in `ui/looks/`, with live knobs on top of it (corners,
-surfaces, borders, shadows), saved per browser. The knobs live in `uiTuner.ts`.
+surfaces, shadows), saved per browser. The knobs live in `uiTuner.ts`.
 It lists only what changes the screen you're on (`tunerContext.ts`).
 
 ## Title bar tweak

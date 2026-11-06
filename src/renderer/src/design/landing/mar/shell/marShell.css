@@ -614,11 +614,9 @@
   --mar-chrome: 78px;
 }
 
-/* Borders: None hides the divider inside cards, so it gives back the
+/* No borders: the divider inside cards is hidden, so it gives back the
    padding under it too (no blank band, e.g. "Not in a space"). */
-:root[data-mar-ui='on']:not([data-mar-borders='hairline'])
-  .edge-shine
-  .border-t.border-border-default {
+:root[data-mar-ui='on'] .edge-shine .border-t.border-border-default {
   padding-top: 0;
 }
 

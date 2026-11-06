@@ -103,7 +103,7 @@ const groups = computed(() => [
 const swatch = (t: Tok): string => LOOSE_COLOUR[t.name] ?? `var(${t.name})`
 const NOTES: Record<string, string> = {
   Surfaces: 'Grey scale: pictures carry the colour.',
-  Lines: 'Transparent by default (UI Playground › Borders: None); the swatches show the token.',
+  Lines: 'Transparent: surfaces draw no borders. The swatches show the token.',
   'Not tokens yet': 'Written by hand in the code; candidates for tokens.'
 }
 
