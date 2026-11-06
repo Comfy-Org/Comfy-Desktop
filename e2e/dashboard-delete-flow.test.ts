@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -40,9 +39,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -54,7 +53,9 @@ test.afterAll(async () => {
 
 test('chooser shows the seeded tile @lifecycle', async () => {
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(INSTALL_ID)), { timeout: 10_000 })
-  expect(await ctx.panel.textOf(`${byTestId(TID.dashboardTile(INSTALL_ID))} .chooser-tile-name`)).toBe(INSTALL_NAME)
+  expect(
+    await ctx.panel.textOf(`${byTestId(TID.dashboardTile(INSTALL_ID))} .chooser-tile-name`)
+  ).toBe(INSTALL_NAME)
 })
 
 test('Delete from kebab opens confirm without invoking get-detail-sections @lifecycle', async () => {
@@ -79,7 +80,7 @@ test('Confirm removes the install directory and tile @lifecycle', async () => {
 
   await ctx.panel.waitFor(
     async () => !(await ctx.panel.exists(byTestId(TID.dashboardTile(INSTALL_ID)))),
-    { timeout: 30_000, message: 'deleted tile never disappeared from chooser' },
+    { timeout: 30_000, message: 'deleted tile never disappeared from chooser' }
   )
 
   await expect

@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -45,8 +44,8 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 1,
-            },
+              commitsAhead: 1
+            }
           },
           {
             trigger: 'manual',
@@ -58,26 +57,28 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 2,
-            },
-          },
-        ],
-      },
-    ],
+              commitsAhead: 2
+            }
+          }
+        ]
+      }
+    ]
   })
 
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
-    ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-      _win: unknown,
-      opts: { defaultPath?: string },
-    ) => {
-      const raw = opts.defaultPath ?? 'snapshot-export.json'
-      const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-      const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-      const sep = dir.includes('\\') ? '\\' : '/'
-      return { canceled: false, filePath: `${dir}${sep}${base}` }
-    }
-  }, exportDir))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dir) => {
+      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+        _win: unknown,
+        opts: { defaultPath?: string }
+      ) => {
+        const raw = opts.defaultPath ?? 'snapshot-export.json'
+        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+        const sep = dir.includes('\\') ? '\\' : '/'
+        return { canceled: false, filePath: `${dir}${sep}${base}` }
+      }
+    }, exportDir)
+  )
 })
 
 test.afterAll(async () => {
@@ -94,7 +95,7 @@ async function openSnapshotsTab(): Promise<ReturnType<typeof titlePopupPage>> {
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('.snapshot-row', { timeout: 15_000 })
@@ -115,8 +116,7 @@ async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
     if (match) {
       try {
         return JSON.parse(await readFile(match, 'utf-8')) as T
-      } catch {
-      }
+      } catch {}
     }
     if (Date.now() > deadline) {
       throw new Error(`exported ${prefix}*.json did not appear (or never parsed) within 10s`)
@@ -129,7 +129,7 @@ test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () 
   const popup = await openSnapshotsTab()
 
   const filenames = await ctx.panel.evaluate<string[]>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.filename))`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.filename))`
   )
   expect(filenames.length).toBe(2)
   const firstFilename = filenames[0]!

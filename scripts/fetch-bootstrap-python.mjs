@@ -1,4 +1,3 @@
-
 import fs from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
@@ -18,14 +17,14 @@ const PYTHON_BINARY = {
   'win-x64': 'python.exe',
   'win-arm64': 'python.exe',
   'mac-arm64': path.join('bin', 'python3'),
-  'linux-x64': path.join('bin', 'python3'),
+  'linux-x64': path.join('bin', 'python3')
 }
 
 const UV_BINARY = {
   'win-x64': 'uv.exe',
   'win-arm64': 'uv.exe',
   'mac-arm64': path.join('bin', 'uv'),
-  'linux-x64': path.join('bin', 'uv'),
+  'linux-x64': path.join('bin', 'uv')
 }
 
 function parseArgs() {
@@ -79,16 +78,16 @@ function verifyPlatform(outBase, platform) {
   if (!fs.existsSync(pythonPath)) {
     throw new Error(
       `Expected ${pythonPath} after fetch, but it does not exist. The archive may have been partial, ` +
-      `extraction may have failed, or the directory was empty before the fetch ran. This installer ` +
-      `would ship without bootstrap pygit2 — refusing to continue.`
+        `extraction may have failed, or the directory was empty before the fetch ran. This installer ` +
+        `would ship without bootstrap pygit2 — refusing to continue.`
     )
   }
   const uvPath = path.join(destDir, uvRel)
   if (!fs.existsSync(uvPath)) {
     throw new Error(
       `Expected ${uvPath} after fetch, but it does not exist. The bootstrap archive predates ` +
-      `bootstrap-v2 (uv was not bundled), or extraction was partial. Bump --tag or rebuild the ` +
-      `archive with the current build-bootstrap-python.mjs.`
+        `bootstrap-v2 (uv was not bundled), or extraction was partial. Bump --tag or rebuild the ` +
+        `archive with the current build-bootstrap-python.mjs.`
     )
   }
 }
@@ -145,15 +144,17 @@ function exitWithFailures(failures, softFail) {
     console.error(`  - ${platform}: ${message}`)
   }
   if (softFail) {
-    console.error('--soft-fail was set: exiting 0 despite failures. Do not use this flag in production builds.')
+    console.error(
+      '--soft-fail was set: exiting 0 despite failures. Do not use this flag in production builds.'
+    )
     return
   }
   console.error('')
   console.error(
     'Refusing to continue. A build that proceeds without bootstrap-python ships an installer that ' +
-    'cannot resolve "Latest Stable" on first launch (no git backend), and new installs are stranded ' +
-    'on the bundled ComfyUI version with the UI claiming "Already up to date". Fix the fetch (token / ' +
-    'network / asset name) or rerun with --soft-fail for local dev only.'
+      'cannot resolve "Latest Stable" on first launch (no git backend), and new installs are stranded ' +
+      'on the bundled ComfyUI version with the UI claiming "Already up to date". Fix the fetch (token / ' +
+      'network / asset name) or rerun with --soft-fail for local dev only.'
   )
   process.exit(1)
 }

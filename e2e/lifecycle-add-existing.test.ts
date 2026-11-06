@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -33,9 +32,9 @@ function gitIn(cwd: string, args: string[]): void {
       GIT_AUTHOR_NAME: 'Lifecycle Test',
       GIT_AUTHOR_EMAIL: 'lifecycle@example.com',
       GIT_COMMITTER_NAME: 'Lifecycle Test',
-      GIT_COMMITTER_EMAIL: 'lifecycle@example.com',
+      GIT_COMMITTER_EMAIL: 'lifecycle@example.com'
     },
-    stdio: 'pipe',
+    stdio: 'pipe'
   })
 }
 
@@ -53,8 +52,8 @@ test.beforeAll(async () => {
       comfyui_ref: 'main',
       version: 'v0.3.10',
       id: 'win-cpu',
-      python_version: '3.12',
-    }),
+      python_version: '3.12'
+    })
   )
 
   gitIn(comfyuiDir, ['init', '--quiet', '--initial-branch=main'])
@@ -63,16 +62,18 @@ test.beforeAll(async () => {
   gitIn(comfyuiDir, ['commit', '--quiet', '-m', 'staged commit'])
 
   ctx = await launchApp({
-    settings: { firstUseCompleted: true, telemetryEnabled: false },
+    settings: { firstUseCompleted: true, telemetryEnabled: false }
   })
   await expectChooserVisible(ctx.panel)
 
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dirPath) => {
-    ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
-      canceled: false,
-      filePaths: [dirPath],
-    })
-  }, stagedPath))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dirPath) => {
+      ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [dirPath]
+      })
+    }, stagedPath)
+  )
 })
 
 test.afterAll(async () => {
@@ -92,7 +93,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
   expect(await ctx.panel.click(byTestId(TID.trackBrowse))).toBe(true)
   await ctx.panel.waitFor(
     async () => (await ctx.panel.allText('.track-path-open')).some((t) => t.includes(stagedPath)),
-    { timeout: 10_000, message: 'picked directory never appeared in the path field' },
+    { timeout: 10_000, message: 'picked directory never appeared in the path field' }
   )
 
   await ctx.panel.waitFor(
@@ -100,7 +101,7 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
       const values = await ctx.panel.allText('.track-summary-value')
       return values.length > 0 && values.some((v) => v.trim().length > 0)
     },
-    { timeout: 15_000, message: 'probe never populated the detected-install summary' },
+    { timeout: 15_000, message: 'probe never populated the detected-install summary' }
   )
 
   await ctx.panel.evaluate<void>(
@@ -110,22 +111,22 @@ test('waffle menu → Add Existing → Browse probes the staged directory → Tr
       el.value = ${JSON.stringify(TRACKED_NAME)}
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
+    })()`
   )
   expect(await ctx.panel.click('.track-save')).toBe(true)
 
   await expectChooserVisible(ctx.panel)
   await ctx.panel.waitFor(
     async () =>
-      (await ctx.panel.allText(
-        '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name',
-      )).includes(TRACKED_NAME),
-    { timeout: 10_000, message: 'tracked install never appeared in chooser' },
+      (
+        await ctx.panel.allText(
+          '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
+        )
+      ).includes(TRACKED_NAME),
+    { timeout: 10_000, message: 'tracked install never appeared in chooser' }
   )
 
-  const installs = await ctx.panel.evaluate<Installation[]>(
-    `window.api.getInstallations()`,
-  )
+  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
   const tracked = installs.find((i) => i.name === TRACKED_NAME)
   expect(tracked, 'tracked install not present in get-installations result').toBeDefined()
   expect(tracked!.sourceId).toBe('standalone')

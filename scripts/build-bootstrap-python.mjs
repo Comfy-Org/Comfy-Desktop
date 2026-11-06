@@ -19,7 +19,7 @@ const PLATFORM_MAP = {
     uvAsset: 'uv-x86_64-pc-windows-msvc.zip',
     uvBinName: 'uv.exe',
     uvArchiveSubdir: null,
-    uvDestRel: 'uv.exe',
+    uvDestRel: 'uv.exe'
   },
   'win-arm64': {
     archive: `cpython-${PYTHON_VERSION}+${PBS_RELEASE}-aarch64-pc-windows-msvc-install_only_stripped.tar.gz`,
@@ -27,7 +27,7 @@ const PLATFORM_MAP = {
     uvAsset: 'uv-aarch64-pc-windows-msvc.zip',
     uvBinName: 'uv.exe',
     uvArchiveSubdir: null,
-    uvDestRel: 'uv.exe',
+    uvDestRel: 'uv.exe'
   },
   'mac-arm64': {
     archive: `cpython-${PYTHON_VERSION}+${PBS_RELEASE}-aarch64-apple-darwin-install_only_stripped.tar.gz`,
@@ -35,7 +35,7 @@ const PLATFORM_MAP = {
     uvAsset: 'uv-aarch64-apple-darwin.tar.gz',
     uvBinName: 'uv',
     uvArchiveSubdir: 'uv-aarch64-apple-darwin',
-    uvDestRel: path.join('bin', 'uv'),
+    uvDestRel: path.join('bin', 'uv')
   },
   'linux-x64': {
     archive: `cpython-${PYTHON_VERSION}+${PBS_RELEASE}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz`,
@@ -43,34 +43,50 @@ const PLATFORM_MAP = {
     uvAsset: 'uv-x86_64-unknown-linux-gnu.tar.gz',
     uvBinName: 'uv',
     uvArchiveSubdir: 'uv-x86_64-unknown-linux-gnu',
-    uvDestRel: path.join('bin', 'uv'),
-  },
+    uvDestRel: path.join('bin', 'uv')
+  }
 }
 
 const PBS_URL_BASE = `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_RELEASE}`
 const UV_URL_BASE = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`
 
 const STRIP_DIRS = new Set([
-  'test', 'tests', '__pycache__',
-  'idle_test', 'idlelib', 'tkinter', 'turtledemo',
-  'ensurepip', 'venv',
-  'lib2to3', 'pydoc_data',
+  'test',
+  'tests',
+  '__pycache__',
+  'idle_test',
+  'idlelib',
+  'tkinter',
+  'turtledemo',
+  'ensurepip',
+  'venv',
+  'lib2to3',
+  'pydoc_data',
   'unittest',
-  'tcl', 'tk',
-  'libs',
+  'tcl',
+  'tk',
+  'libs'
 ])
 
 const STRIP_TOP_LEVEL = [
-  /^pip$/i, /^pip-.*/i, /^setuptools$/i, /^setuptools-.*/i,
-  /^_distutils_hack$/i, /^distutils$/i,
-  /^pkg_resources$/i,
+  /^pip$/i,
+  /^pip-.*/i,
+  /^setuptools$/i,
+  /^setuptools-.*/i,
+  /^_distutils_hack$/i,
+  /^distutils$/i,
+  /^pkg_resources$/i
 ]
 
 const STRIP_EXTENSIONS = ['.pyc', '.pyo', '.a', '.lib']
 
 const STRIP_FILES = new Set([
-  'tcl86t.dll', 'tk86t.dll', 'sqlite3.dll',
-  '_testcapi.pyd', '_tkinter.pyd', '_sqlite3.pyd',
+  'tcl86t.dll',
+  'tk86t.dll',
+  'sqlite3.dll',
+  '_testcapi.pyd',
+  '_tkinter.pyd',
+  '_sqlite3.pyd'
 ])
 
 function detectPlatform() {
@@ -141,7 +157,11 @@ async function installUv(plat, platInfo, envDir, tmpdir) {
 
   const versionRes = spawnSync(destBin, ['--version'], { stdio: 'pipe', encoding: 'utf8' })
   if (versionRes.status !== 0) {
-    const detail = versionRes.error?.message || versionRes.stderr || versionRes.stdout || `exit status ${versionRes.status}`
+    const detail =
+      versionRes.error?.message ||
+      versionRes.stderr ||
+      versionRes.stdout ||
+      `exit status ${versionRes.status}`
     throw new Error(`uv --version failed: ${detail}`)
   }
   console.log(`  ${versionRes.stdout.trim()} -> ${destBin}`)
@@ -163,11 +183,19 @@ async function findSitePackages(envDir) {
 }
 
 async function isDir(p) {
-  try { return (await fs.stat(p)).isDirectory() } catch { return false }
+  try {
+    return (await fs.stat(p)).isDirectory()
+  } catch {
+    return false
+  }
 }
 
 async function isFile(p) {
-  try { return (await fs.stat(p)).isFile() } catch { return false }
+  try {
+    return (await fs.stat(p)).isFile()
+  } catch {
+    return false
+  }
 }
 
 async function stripEnvironment(envDir) {
@@ -241,7 +269,10 @@ async function getDirSizeMb(p) {
 }
 
 function runPython(pythonPath, args, opts = {}) {
-  const result = spawnSync(pythonPath, args, { stdio: opts.capture ? 'pipe' : 'inherit', encoding: 'utf8' })
+  const result = spawnSync(pythonPath, args, {
+    stdio: opts.capture ? 'pipe' : 'inherit',
+    encoding: 'utf8'
+  })
   if (result.error) throw result.error
   return result
 }
@@ -281,7 +312,11 @@ async function main() {
     const installRes = runPython(pythonPath, ['-m', 'pip', 'install', '--no-cache-dir', 'pygit2'])
     if (installRes.status !== 0) throw new Error('pip install pygit2 failed')
 
-    const verifyRes = runPython(pythonPath, ['-c', "import pygit2; print(f'pygit2 {pygit2.__version__}')"], { capture: true })
+    const verifyRes = runPython(
+      pythonPath,
+      ['-c', "import pygit2; print(f'pygit2 {pygit2.__version__}')"],
+      { capture: true }
+    )
     if (verifyRes.status !== 0) {
       console.error(`ERROR: pygit2 import failed: ${verifyRes.stderr}`)
       process.exit(1)
@@ -294,7 +329,9 @@ async function main() {
     const postSize = await getDirSizeMb(extracted)
     console.log(`  ${preSize.toFixed(1)} MB -> ${postSize.toFixed(1)} MB`)
 
-    const verifyRes2 = runPython(pythonPath, ['-c', "import pygit2; print('OK')"], { capture: true })
+    const verifyRes2 = runPython(pythonPath, ['-c', "import pygit2; print('OK')"], {
+      capture: true
+    })
     if (verifyRes2.status !== 0) {
       console.error(`ERROR: pygit2 broken after stripping: ${verifyRes2.stderr}`)
       process.exit(1)
@@ -311,7 +348,9 @@ async function main() {
       }
     })
 
-    console.log(`\nBootstrap Python ready: ${outputDir} (${(await getDirSizeMb(outputDir)).toFixed(1)} MB)`)
+    console.log(
+      `\nBootstrap Python ready: ${outputDir} (${(await getDirSizeMb(outputDir)).toFixed(1)} MB)`
+    )
   } finally {
     await fs.rm(tmpdir, { recursive: true, force: true })
   }

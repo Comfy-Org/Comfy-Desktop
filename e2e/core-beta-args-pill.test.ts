@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -10,7 +9,7 @@ import {
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents,
-  type WebContentsPage,
+  type WebContentsPage
 } from './support/cdpPages'
 import { clearRunningSessions, seedRunningSession } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
@@ -42,9 +41,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -62,7 +61,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
     `(() => {
       window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })
       return true
-    })()`,
+    })()`
   )
   expect(opened).toBe(true)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
@@ -75,7 +74,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
   const popup = await openStartupArgs()
   expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
-    false,
+    false
   )
 })
 
@@ -85,8 +84,8 @@ test('a running install shows its grants and links to the beta opt-in @windows @
     installationName: INSTALL_NAME,
     coreBetaArgs: [
       { arg: '--enable-agent', name: 'Agent' },
-      { arg: '--enable-asset-hashing', name: null },
-    ],
+      { arg: '--enable-asset-hashing', name: null }
+    ]
   })
   const popup = await openStartupArgs()
 
@@ -95,7 +94,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
     `(() => {
       const el = document.querySelector(${JSON.stringify(PILL)})
       return { text: (el.textContent || '').trim(), expanded: el.getAttribute('aria-expanded') }
-    })()`,
+    })()`
   )
   expect(pill).toEqual({ text: '+2 beta', expanded: 'false' })
 
@@ -105,11 +104,11 @@ test('a running install shows its grants and links to the beta opt-in @windows @
       .map((row) => [
         row.querySelector('.ui-menu-item-label').textContent.trim(),
         row.querySelector('.ui-menu-item-detail').textContent.trim(),
-      ])`,
+      ])`
   )
   expect(rows).toEqual([
     ['--enable-agent', 'Agent'],
-    ['--enable-asset-hashing', 'Beta feature'],
+    ['--enable-asset-hashing', 'Beta feature']
   ])
 
   await popup.evaluate(
@@ -120,15 +119,15 @@ test('a running install shows its grants and links to the beta opt-in @windows @
           window.__betaRowFlashed = true
         }
       }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] })
-    })()`,
+    })()`
   )
   expect(await popup.click(MANAGE)).toBe(true)
 
   await popup.waitForVisible('.global-settings [data-field-id="betaFeaturesEnabled"]', {
-    timeout: 10_000,
+    timeout: 10_000
   })
   await popup.waitFor(
     async () => (await popup.evaluate<boolean>('window.__betaRowFlashed === true')) === true,
-    { timeout: 5_000, message: 'the beta opt-in row was never flashed' },
+    { timeout: 5_000, message: 'the beta opt-in row was never flashed' }
   )
 })

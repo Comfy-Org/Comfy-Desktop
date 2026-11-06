@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -11,10 +10,14 @@ import {
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents,
-  type WebContentsPage,
+  type WebContentsPage
 } from './support/cdpPages'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
-import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import {
+  opsFlagsGrantSeed,
+  reserveFreePort,
+  writeFakeComfyInstall
+} from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
 
 test.describe.configure({ mode: 'serial' })
@@ -54,8 +57,8 @@ function git(...args: string[]): string {
       GIT_COMMITTER_NAME: 't',
       GIT_COMMITTER_EMAIL: 't@example.com',
       GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: os.devNull,
-    },
+      GIT_CONFIG_GLOBAL: os.devNull
+    }
   }).trim()
 }
 
@@ -81,7 +84,7 @@ test.beforeAll(async () => {
       firstUseCompleted: true,
       telemetryEnabled: true,
       betaFeaturesEnabled: true,
-      hasSeenCentralPillHint: true,
+      hasSeenCentralPillHint: true
     },
     installations: [
       {
@@ -93,14 +96,19 @@ test.beforeAll(async () => {
         status: 'installed',
         launchArgs: `--port ${port}`,
         seen: true,
-        comfyVersion: { commit: sha.head, baseTag: 'v0.3.99', commitsAhead: 0, baseTagVerified: true },
-      },
+        comfyVersion: {
+          commit: sha.head,
+          baseTag: 'v0.3.99',
+          commitsAhead: 0,
+          baseTagVerified: true
+        }
+      }
     ],
     opsFlags: opsFlagsGrantSeed({
       arg: '--enable-asset-hashing',
       commitRanges: [[sha.fix!, null]],
-      description: 'Asset hashing',
-    }),
+      description: 'Asset hashing'
+    })
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -116,7 +124,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
   await ctx.panel.evaluate(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -127,7 +135,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
   popup.evaluate<string | null>(
-    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`
   )
 
 async function openCounted(): Promise<WebContentsPage> {
@@ -139,7 +147,7 @@ async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string)
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length, {
       timeout: 15_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(2)
   const deadline = Date.now() + 2_000

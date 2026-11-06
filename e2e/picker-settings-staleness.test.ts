@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -37,16 +36,16 @@ test.beforeAll(async () => {
         name: INSTALL_A_NAME,
         installPath: installAPath,
         sourceId: 'standalone',
-        status: 'installed',
+        status: 'installed'
       },
       {
         id: INSTALL_B_ID,
         name: INSTALL_B_NAME,
         installPath: installBPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -65,7 +64,7 @@ test('right pane clears stale sections when switching install A → B @windows @
         initialTab: 'config',
       })
       return true
-    })()`,
+    })()`
   )
   expect(opened).toBe(true)
 
@@ -74,10 +73,11 @@ test('right pane clears stale sections when switching install A → B @windows @
 
   await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
   await popup.waitFor(
-    async () => (await popup.evaluate<string | null>(
-      `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`,
-    )) === INSTALL_A_ID,
-    { timeout: 10_000, message: 'right pane never settled on Install A' },
+    async () =>
+      (await popup.evaluate<string | null>(
+        `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`
+      )) === INSTALL_A_ID,
+    { timeout: 10_000, message: 'right pane never settled on Install A' }
   )
 
   const clickedB = await popup.click(byTestId(TID.pickerRow(INSTALL_B_ID)))
@@ -91,20 +91,21 @@ test('right pane clears stale sections when switching install A → B @windows @
           const sectionsId = sec ? sec.getAttribute('data-install-id') : null
           const loading = document.querySelector('${byTestId(TID.pickerSettingsLoading)}')
           return { sectionsId, loadingVisible: !!loading }
-        })()`,
+        })()`
       )
       return state.loadingVisible || state.sectionsId === INSTALL_B_ID
     },
     {
       timeout: 5_000,
-      message: 'right pane stayed on Install A after switching to B (stale-data regression)',
-    },
+      message: 'right pane stayed on Install A after switching to B (stale-data regression)'
+    }
   )
 
   await popup.waitFor(
-    async () => (await popup.evaluate<string | null>(
-      `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`,
-    )) === INSTALL_B_ID,
-    { timeout: 15_000, message: 'right pane never settled on Install B after switch' },
+    async () =>
+      (await popup.evaluate<string | null>(
+        `(() => { const el = document.querySelector('${byTestId(TID.pickerSettingsSections)}'); return el ? el.getAttribute('data-install-id') : null })()`
+      )) === INSTALL_B_ID,
+    { timeout: 15_000, message: 'right pane never settled on Install B after switch' }
   )
 })

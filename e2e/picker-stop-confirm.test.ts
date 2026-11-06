@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -9,13 +8,13 @@ import {
   closeTitlePopupIfOpen,
   isPopupVisible,
   titlePopupPage,
-  waitForWebContents,
+  waitForWebContents
 } from './support/cdpPages'
 import {
   clearRunningSessions,
   getIpcInvocations,
   resetIpcInvocations,
-  seedRunningSession,
+  seedRunningSession
 } from './support/devHooks'
 
 let ctx: AppContext
@@ -40,9 +39,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -60,10 +59,11 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
   await expect
     .poll(
-      async () => ctx.panel.evaluate<boolean>(
-        `(() => window.__e2eRenderer?.isRunning(${JSON.stringify(INSTALL_ID)}) ?? true)()`,
-      ),
-      { timeout: 5_000, intervals: [100, 200] },
+      async () =>
+        ctx.panel.evaluate<boolean>(
+          `(() => window.__e2eRenderer?.isRunning(${JSON.stringify(INSTALL_ID)}) ?? true)()`
+        ),
+      { timeout: 5_000, intervals: [100, 200] }
     )
     .toBe(false)
 })
@@ -76,16 +76,17 @@ async function openExpandedPicker(): Promise<void> {
         initialTab: 'update',
       })
       return true
-    })()`,
+    })()`
   )
   expect(opened).toBe(true)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitFor(
-    async () => popup.evaluate<boolean>(
-      'typeof window.__comfyTitlePopup?.pickerForwardShowProgress === "function"',
-    ),
-    { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' },
+    async () =>
+      popup.evaluate<boolean>(
+        'typeof window.__comfyTitlePopup?.pickerForwardShowProgress === "function"'
+      ),
+    { timeout: 10_000, message: 'picker popup bridge never appeared on window.__comfyTitlePopup' }
   )
 }
 
@@ -99,27 +100,32 @@ async function forwardUpdateActionFromPicker(): Promise<void> {
       cancellable: false,
       triggersInstanceStart: false,
       opKind: 'update',
-    })`,
+    })`
   )
 }
 
 async function pollForForwardedUpdateDispatch(): Promise<void> {
   await expect
-    .poll(async () => {
-      const calls = await getIpcInvocations(ctx.app, 'run-action') as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.actionId === 'update-comfyui')
-    }, {
-      timeout: 10_000,
-      intervals: [200, 500],
-    })
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+          actionId?: string
+        }[]
+        return calls.some((c) => c.actionId === 'update-comfyui')
+      },
+      {
+        timeout: 10_000,
+        intervals: [200, 500]
+      }
+    )
     .toBe(true)
 }
 
 test('Self-stops the running session and dispatches the action @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
-    installationName: INSTALL_NAME,
+    installationName: INSTALL_NAME
   })
   await openExpandedPicker()
   await resetIpcInvocations(ctx.app, 'run-action')
@@ -128,20 +134,22 @@ test('Self-stops the running session and dispatches the action @windows @macos @
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'stop-comfyui')).length, {
       timeout: 5_000,
-      intervals: [100, 250],
+      intervals: [100, 250]
     })
     .toBeGreaterThanOrEqual(1)
   await pollForForwardedUpdateDispatch()
 
-  const runCalls = await getIpcInvocations(ctx.app, 'run-action') as
-    { installationId?: string; actionId?: string }[]
+  const runCalls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+    installationId?: string
+    actionId?: string
+  }[]
   const updateCall = runCalls.find((c) => c.actionId === 'update-comfyui')
   expect(updateCall?.installationId).toBe(INSTALL_ID)
 
@@ -157,7 +165,7 @@ test('Skips self-stop when the install is NOT running @windows @macos @linux', a
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBe(false)
 

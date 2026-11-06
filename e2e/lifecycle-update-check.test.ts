@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
@@ -65,7 +64,7 @@ test.beforeAll(async () => {
         comfyVersion: { commit: SEEDED_COMMIT, baseTag: SEEDED_BASE_TAG, commitsAhead: 0 },
         releaseTag: SEEDED_BASE_TAG,
         variant: 'cpu',
-        pythonVersion: '3.12',
+        pythonVersion: '3.12'
       },
       {
         id: INSTALL_ID_B,
@@ -77,9 +76,9 @@ test.beforeAll(async () => {
         comfyVersion: { commit: SEEDED_COMMIT, baseTag: SEEDED_BASE_TAG, commitsAhead: 0 },
         releaseTag: SEEDED_BASE_TAG,
         variant: 'cpu',
-        pythonVersion: '3.12',
-      },
-    ],
+        pythonVersion: '3.12'
+      }
+    ]
   })
 })
 
@@ -91,7 +90,7 @@ test.afterAll(async () => {
 
 async function getChannelField(installationId: string): Promise<DetailField> {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(installationId)})`,
+    `window.api.getDetailSections(${JSON.stringify(installationId)})`
   )
   const updateSection = sections.find((s) => s.tab === 'update')
   expect(updateSection, 'no update section in detail sections').toBeDefined()
@@ -108,36 +107,41 @@ test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer rele
   await popup.waitForVisible(checkButton, { timeout: 15_000 })
   const waitForCheckButtonEnabled = (message: string): Promise<void> =>
     popup.waitFor(
-      () => popup.evaluate<boolean>(
-        `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`,
-      ),
-      { timeout: 30_000, message },
+      () =>
+        popup.evaluate<boolean>(
+          `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`
+        ),
+      { timeout: 30_000, message }
     )
   await waitForCheckButtonEnabled('check-update button never became enabled')
   await resetIpcInvocations(ctx.app, 'run-action')
   expect(await popup.click(checkButton)).toBe(true)
 
   await expect
-    .poll(async () => countAutoCheckUpdateCalls(
-      await getIpcInvocations(ctx.app, 'run-action'),
-      INSTALL_ID,
-    ), { timeout: 10_000, intervals: [200, 500] })
+    .poll(
+      async () =>
+        countAutoCheckUpdateCalls(await getIpcInvocations(ctx.app, 'run-action'), INSTALL_ID),
+      { timeout: 10_000, intervals: [200, 500] }
+    )
     .toBeGreaterThanOrEqual(1)
   await waitForCheckButtonEnabled('check-update button never re-enabled after the manual check')
 
   await expect
-    .poll(async () => {
-      const channelField = await getChannelField(INSTALL_ID)
-      const stableCard = channelField.options!.find((o) => o.value === 'stable')
-      return stableCard?.data?.latestVersion ?? ''
-    }, { timeout: 30_000, intervals: [250, 500, 1_000] })
+    .poll(
+      async () => {
+        const channelField = await getChannelField(INSTALL_ID)
+        const stableCard = channelField.options!.find((o) => o.value === 'stable')
+        return stableCard?.data?.latestVersion ?? ''
+      },
+      { timeout: 30_000, intervals: [250, 500, 1_000] }
+    )
     .toMatch(/v\d+\.\d+/)
 
   const channelField = await getChannelField(INSTALL_ID)
   const stableCard = channelField.options!.find((o) => o.value === 'stable')
   expect(
     stableCard!.data!.updateAvailable,
-    `stable card did not flag update available against seeded baseTag ${SEEDED_BASE_TAG}; got latestVersion=${stableCard!.data!.latestVersion}`,
+    `stable card did not flag update available against seeded baseTag ${SEEDED_BASE_TAG}; got latestVersion=${stableCard!.data!.latestVersion}`
   ).toBe(true)
 
   await closeTitlePopupIfOpen(ctx.app)
@@ -145,15 +149,17 @@ test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer rele
 
 test('cross-channel fetch populates the latest channel card too @lifecycle', async () => {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`
   )
   const updateSection = sections.find((s) => s.tab === 'update')!
   const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
   const latestCard = channelField.options!.find((o) => o.value === 'latest')
-  expect(latestCard?.data, 'latest channel card has no data — cross-channel prefetch did not run').toBeDefined()
+  expect(
+    latestCard?.data,
+    'latest channel card has no data — cross-channel prefetch did not run'
+  ).toBeDefined()
   expect(latestCard!.data!.latestVersion).toMatch(/[a-f0-9]{7,}/)
 })
-
 
 async function openPickerOnUpdateTab(installationId: string): Promise<void> {
   await ctx.panel.evaluate<boolean>(
@@ -163,7 +169,7 @@ async function openPickerOnUpdateTab(installationId: string): Promise<void> {
         initialTab: 'update',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
 }
@@ -176,7 +182,7 @@ async function clickToUpdateTab(installationId: string): Promise<void> {
         initialTab: 'settings',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -186,9 +192,9 @@ async function clickToUpdateTab(installationId: string): Promise<void> {
 }
 
 function countAutoCheckUpdateCalls(calls: unknown[], installationId: string): number {
-  return (calls as { installationId?: string; actionId?: string }[])
-    .filter((c) => c.installationId === installationId && c.actionId === 'check-update')
-    .length
+  return (calls as { installationId?: string; actionId?: string }[]).filter(
+    (c) => c.installationId === installationId && c.actionId === 'check-update'
+  ).length
 }
 
 test('Update tab does NOT auto-refresh when the channel data is fresh @lifecycle', async () => {
@@ -200,11 +206,11 @@ test('Update tab does NOT auto-refresh when the channel data is fresh @lifecycle
 
   const checkUpdates = countAutoCheckUpdateCalls(
     await getIpcInvocations(ctx.app, 'run-action'),
-    INSTALL_ID,
+    INSTALL_ID
   )
   expect(
     checkUpdates,
-    `auto-refresh fired ${checkUpdates}x against fresh cache — expected 0 (dedupe broken)`,
+    `auto-refresh fired ${checkUpdates}x against fresh cache — expected 0 (dedupe broken)`
   ).toBe(0)
 
   await closeTitlePopupIfOpen(ctx.app)
@@ -217,14 +223,14 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
   await ageReleaseCache(ctx.app, stalenessTs)
 
   const staleSections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`,
+    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`
   )
   const staleUpdateSection = staleSections.find((s) => s.tab === 'update')!
   const staleChannelField = staleUpdateSection.fields!.find((f) => f.id === 'updateChannel')!
   const staleCard = staleChannelField.options!.find((o) => o.value === staleChannelField.value)
   expect(
     (staleCard?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt,
-    'ageReleaseCache hook did not mutate the in-memory map main reads from',
+    'ageReleaseCache hook did not mutate the in-memory map main reads from'
   ).toBe(stalenessTs)
 
   await resetIpcInvocations(ctx.app, 'run-action')
@@ -233,25 +239,26 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
 
   await expect
     .poll(
-      async () => countAutoCheckUpdateCalls(
-        await getIpcInvocations(ctx.app, 'run-action'),
-        INSTALL_ID_B,
-      ),
-      { timeout: 15_000, intervals: [250, 500, 1_000] },
+      async () =>
+        countAutoCheckUpdateCalls(await getIpcInvocations(ctx.app, 'run-action'), INSTALL_ID_B),
+      { timeout: 15_000, intervals: [250, 500, 1_000] }
     )
     .toBeGreaterThanOrEqual(1)
 
   await expect
-    .poll(async () => {
-      const sections = await ctx.panel.evaluate<DetailSection[]>(
-        `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`,
-      )
-      const updateSection = sections.find((s) => s.tab === 'update')!
-      const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
-      const card = channelField.options!.find((o) => o.value === channelField.value)
-      const checkedAt = (card?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt
-      return typeof checkedAt === 'number' && checkedAt > stalenessTs
-    }, { timeout: 15_000, intervals: [250, 500, 1_000] })
+    .poll(
+      async () => {
+        const sections = await ctx.panel.evaluate<DetailSection[]>(
+          `window.api.getDetailSections(${JSON.stringify(INSTALL_ID_B)})`
+        )
+        const updateSection = sections.find((s) => s.tab === 'update')!
+        const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
+        const card = channelField.options!.find((o) => o.value === channelField.value)
+        const checkedAt = (card?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt
+        return typeof checkedAt === 'number' && checkedAt > stalenessTs
+      },
+      { timeout: 15_000, intervals: [250, 500, 1_000] }
+    )
     .toBe(true)
 
   await closeTitlePopupIfOpen(ctx.app)

@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
@@ -29,13 +28,12 @@ interface DetailSection {
 
 async function getStableLatestVersion(): Promise<string | undefined> {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`
   )
   return sections
     .find((s) => s.tab === 'update')
     ?.fields?.find((f) => f.id === 'updateChannel')
-    ?.options?.find((o) => o.value === 'stable')
-    ?.data?.latestVersion
+    ?.options?.find((o) => o.value === 'stable')?.data?.latestVersion
 }
 
 async function getCacheCheckedAt(): Promise<number | null> {
@@ -63,9 +61,9 @@ test.beforeAll(async () => {
           comfyVersion: { commit: 'a'.repeat(40), baseTag: 'v0.1.0', commitsAhead: 0 },
           releaseTag: 'v0.1.0',
           variant: 'cpu',
-          pythonVersion: '3.12',
-        },
-      ],
+          pythonVersion: '3.12'
+        }
+      ]
     })
   } finally {
     delete process.env['E2E_PERIODIC_RECHECK_MS']
@@ -81,10 +79,13 @@ test('background timer re-fetches the release cache on its interval @lifecycle',
   test.setTimeout(60_000)
 
   await expect
-    .poll(async () => {
-      const v = await getStableLatestVersion()
-      return typeof v === 'string' && /v\d+\.\d+/.test(v)
-    }, { timeout: 30_000, intervals: [500, 1_000, 2_000] })
+    .poll(
+      async () => {
+        const v = await getStableLatestVersion()
+        return typeof v === 'string' && /v\d+\.\d+/.test(v)
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] }
+    )
     .toBe(true)
 
   const firstCheckedAt = await getCacheCheckedAt()
@@ -95,6 +96,6 @@ test('background timer re-fetches the release cache on its interval @lifecycle',
   const secondCheckedAt = await getCacheCheckedAt()
   expect(
     secondCheckedAt,
-    `periodic timer did not advance checkedAt: initial=${firstCheckedAt}, after one interval+buffer=${secondCheckedAt}`,
+    `periodic timer did not advance checkedAt: initial=${firstCheckedAt}, after one interval+buffer=${secondCheckedAt}`
   ).toBeGreaterThan(firstCheckedAt!)
 })

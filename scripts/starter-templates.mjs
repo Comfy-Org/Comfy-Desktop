@@ -94,7 +94,8 @@ function check(doc) {
       seen.add(t.id)
     }
     if (!ID.test(t.id ?? '') || RESERVED_IDS.has(t.id)) errors.push(`invalid id "${t.id}"`)
-    if ((t.id ?? '').length > MAX_ID_LENGTH) errors.push(`"${t.id}" is longer than ${MAX_ID_LENGTH}`)
+    if ((t.id ?? '').length > MAX_ID_LENGTH)
+      errors.push(`"${t.id}" is longer than ${MAX_ID_LENGTH}`)
     if (!MODALITIES.includes(t.modality)) errors.push(`"${t.id}" has unknown modality`)
     const s = t.snapshot && typeof t.snapshot === 'object' ? t.snapshot : {}
     const text = (v) => (typeof v === 'string' ? v.trim() : '')

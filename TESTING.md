@@ -6,12 +6,12 @@ and a per-spec inventory, see [`e2e/README.md`](e2e/README.md).
 
 ## The four categories
 
-| Category | What it tests | May fake | Speed | Runs in CI |
-| --- | --- | --- | --- | --- |
-| **Unit** | Individual modules/components in isolation ([Vitest](https://vitest.dev/), `happy-dom`) | Anything — mocks encouraged | Seconds | Every PR |
-| **Integration** | Multiple main-process modules against real subprocesses/disk (Vitest, `node`, serial) | External services | Tens of seconds | Every PR |
-| **E2E** | The real built app driven by [Playwright](https://playwright.dev/), per platform | Synthetic state via dev hooks; may assert on IPC dispatch instead of real side effects | Minutes | Every PR (`@windows` / `@macos` / `@linux`) |
-| **Lifecycle** | Full user flows with **zero mocking**: real clicks, real downloads, real git, real disk | Nothing during app execution (staging fixtures and stubbed native OS dialogs only) | Up to hours (~500 MB real install) | Nightly + manual (`lifecycle.yml`) |
+| Category        | What it tests                                                                           | May fake                                                                               | Speed                              | Runs in CI                                  |
+| --------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------- |
+| **Unit**        | Individual modules/components in isolation ([Vitest](https://vitest.dev/), `happy-dom`) | Anything — mocks encouraged                                                            | Seconds                            | Every PR                                    |
+| **Integration** | Multiple main-process modules against real subprocesses/disk (Vitest, `node`, serial)   | External services                                                                      | Tens of seconds                    | Every PR                                    |
+| **E2E**         | The real built app driven by [Playwright](https://playwright.dev/), per platform        | Synthetic state via dev hooks; may assert on IPC dispatch instead of real side effects | Minutes                            | Every PR (`@windows` / `@macos` / `@linux`) |
+| **Lifecycle**   | Full user flows with **zero mocking**: real clicks, real downloads, real git, real disk | Nothing during app execution (staging fixtures and stubbed native OS dialogs only)     | Up to hours (~500 MB real install) | Nightly + manual (`lifecycle.yml`)          |
 
 Where they live:
 
@@ -89,10 +89,10 @@ acceptable — fix them when discovered.
 
 ## CI mapping
 
-| Workflow | Trigger | What runs |
-| --- | --- | --- |
-| `ci.yml` | Every PR | Unit + integration on Linux; E2E per platform (`test:e2e:macos` / `:windows` / `:linux`) |
-| `lifecycle.yml` | Nightly + manual dispatch | The whole `lifecycle` Playwright project |
+| Workflow        | Trigger                   | What runs                                                                                |
+| --------------- | ------------------------- | ---------------------------------------------------------------------------------------- |
+| `ci.yml`        | Every PR                  | Unit + integration on Linux; E2E per platform (`test:e2e:macos` / `:windows` / `:linux`) |
+| `lifecycle.yml` | Nightly + manual dispatch | The whole `lifecycle` Playwright project                                                 |
 
 Playwright traces, videos, and screenshots for failures are uploaded as CI
 artifacts (`playwright-report/`, `test-results/`).

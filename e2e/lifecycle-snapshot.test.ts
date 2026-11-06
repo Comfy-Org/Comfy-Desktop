@@ -1,14 +1,9 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import {
-  closeTitlePopupIfOpen,
-  titlePopupPage,
-  waitForWebContents,
-} from './support/cdpPages'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -45,12 +40,12 @@ test.beforeAll(async () => {
               releaseTag: SEEDED_BASE_TAG,
               variant: 'cpu',
               baseTag: SEEDED_BASE_TAG,
-              commitsAhead: SEEDED_COMMITS_AHEAD,
-            },
-          },
-        ],
-      },
-    ],
+              commitsAhead: SEEDED_COMMITS_AHEAD
+            }
+          }
+        ]
+      }
+    ]
   })
 })
 
@@ -67,7 +62,7 @@ test('seeded snapshot row renders the backend-formatted version @lifecycle', asy
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   expect(opened).toBe(true)
 
@@ -83,7 +78,7 @@ test('seeded snapshot row renders the backend-formatted version @lifecycle', asy
 
 test('captures a new snapshot through the picker UI and shows it at the top @lifecycle', async () => {
   const before = await ctx.panel.evaluate<number>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`
   )
   expect(before).toBe(1)
 
@@ -94,7 +89,7 @@ test('captures a new snapshot through the picker UI and shows it at the top @lif
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -110,17 +105,19 @@ test('captures a new snapshot through the picker UI and shows it at the top @lif
     .poll(
       async () =>
         ctx.panel.evaluate<number>(
-          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`
         ),
-      { timeout: 15_000, intervals: [250, 500] },
+      { timeout: 15_000, intervals: [250, 500] }
     )
     .toBe(2)
 
   const snapshots = await ctx.panel.evaluate<Array<{ filename: string; label: string | null }>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ filename: s.filename, label: s.label })))`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ filename: s.filename, label: s.label })))`
   )
   expect(snapshots[0]?.label).toBe('captured-by-test')
-  await popup.waitForSelector(byTestId(TID.snapshotRow(snapshots[0]!.filename)), { timeout: 15_000 })
+  await popup.waitForSelector(byTestId(TID.snapshotRow(snapshots[0]!.filename)), {
+    timeout: 15_000
+  })
 
   await closeTitlePopupIfOpen(ctx.app)
 })

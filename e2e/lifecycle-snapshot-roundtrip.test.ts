@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
@@ -51,8 +50,8 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 1,
-            },
+              commitsAhead: 1
+            }
           },
           {
             trigger: 'manual',
@@ -63,41 +62,43 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 2,
-            },
-          },
-        ],
+              commitsAhead: 2
+            }
+          }
+        ]
       },
       {
         id: INSTALL_ID_B,
         name: INSTALL_NAME_B,
         installPath: installPathB,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
 
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
-    const g = globalThis as unknown as { __roundtripExportedPath?: string }
-    ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-      _win: unknown,
-      opts: { defaultPath?: string },
-    ) => {
-      const raw = opts.defaultPath ?? 'snapshot-export.json'
-      const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-      const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-      const sep = dir.includes('\\') ? '\\' : '/'
-      const filePath = `${dir}${sep}${base}`
-      g.__roundtripExportedPath = filePath
-      return { canceled: false, filePath }
-    }
-    ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => {
-      const filePath = g.__roundtripExportedPath
-      if (!filePath) return { canceled: true, filePaths: [] }
-      return { canceled: false, filePaths: [filePath] }
-    }
-  }, exportDir))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dir) => {
+      const g = globalThis as unknown as { __roundtripExportedPath?: string }
+      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+        _win: unknown,
+        opts: { defaultPath?: string }
+      ) => {
+        const raw = opts.defaultPath ?? 'snapshot-export.json'
+        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+        const sep = dir.includes('\\') ? '\\' : '/'
+        const filePath = `${dir}${sep}${base}`
+        g.__roundtripExportedPath = filePath
+        return { canceled: false, filePath }
+      }
+      ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => {
+        const filePath = g.__roundtripExportedPath
+        if (!filePath) return { canceled: true, filePaths: [] }
+        return { canceled: false, filePaths: [filePath] }
+      }
+    }, exportDir)
+  )
 })
 
 test.afterAll(async () => {
@@ -109,7 +110,7 @@ test.afterAll(async () => {
 
 async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof titlePopupPage>> {
   const expectedCount = await ctx.panel.evaluate<number>(
-    `window.api.getSnapshots(${JSON.stringify(installId)}).then(d => d.snapshots.length)`,
+    `window.api.getSnapshots(${JSON.stringify(installId)}).then(d => d.snapshots.length)`
   )
   await ctx.panel.evaluate<boolean>(
     `(() => {
@@ -118,13 +119,13 @@ async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof ti
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.snapshotsImport), { timeout: 15_000 })
   await popup.waitFor(() => popup.count('.snapshot-row').then((count) => count === expectedCount), {
     timeout: 15_000,
-    message: `snapshots for ${installId} did not finish loading`,
+    message: `snapshots for ${installId} did not finish loading`
   })
   return popup
 }
@@ -147,7 +148,8 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
     const poll = async (): Promise<void> => {
       const match = await findExportedFile('snapshots-')
       if (match) return resolve(match)
-      if (Date.now() > deadline) return reject(new Error('export-all file did not appear within 10s'))
+      if (Date.now() > deadline)
+        return reject(new Error('export-all file did not appear within 10s'))
       setTimeout(poll, 200)
     }
     void poll()
@@ -172,7 +174,7 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
 
 test('Import into B previews the full envelope and stages it without committing history @lifecycle', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`
   )
   expect(initialCount).toBe(0)
 
@@ -186,17 +188,17 @@ test('Import into B previews the full envelope and stages it without committing 
       const body = (await popup.textOf('body')) ?? ''
       return body.includes(LABEL_FIRST) && body.includes(LABEL_SECOND)
     },
-    { timeout: 10_000, message: 'preview modal did not list both exported labels' },
+    { timeout: 10_000, message: 'preview modal did not list both exported labels' }
   )
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await popup.waitForVisible(
     `.snapshots-rail-save-box.is-op-error ${byTestId(TID.snapshotsOpCardRetry)}`,
-    { timeout: 60_000 },
+    { timeout: 60_000 }
   )
 
   const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`
   )
   expect(snapshots.some((s) => s.label === LABEL_FIRST || s.label === LABEL_SECOND)).toBe(false)
   expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)

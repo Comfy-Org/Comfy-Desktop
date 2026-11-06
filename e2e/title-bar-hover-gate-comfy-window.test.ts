@@ -1,4 +1,3 @@
-
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import type { WebContentsPage } from './support/cdpPages'
@@ -8,7 +7,7 @@ import {
   dispatchWindowBlur,
   dispatchWindowFocus,
   isHoverActive,
-  waitForHoverActive,
+  waitForHoverActive
 } from './support/hoverGate'
 
 let ctx: AppContext
@@ -21,10 +20,12 @@ test.beforeAll(async () => {
   titleBar = ctx.titleBar
 
   await ctx.panel.click('.chooser-tile[data-source-category="cloud"] .chooser-tile-launch')
-  await expect.poll(() => titleBar.exists('.title-install-pill:not(.is-install-less)'), {
-    timeout: 30_000,
-    intervals: [100, 200, 500],
-  }).toBe(true)
+  await expect
+    .poll(() => titleBar.exists('.title-install-pill:not(.is-install-less)'), {
+      timeout: 30_000,
+      intervals: [100, 200, 500]
+    })
+    .toBe(true)
 })
 
 test.afterAll(async () => {

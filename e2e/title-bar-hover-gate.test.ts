@@ -1,4 +1,3 @@
-
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import {
@@ -7,7 +6,7 @@ import {
   dispatchWindowBlur,
   dispatchWindowFocus,
   isHoverActive,
-  waitForHoverActive,
+  waitForHoverActive
 } from './support/hoverGate'
 
 let ctx: AppContext

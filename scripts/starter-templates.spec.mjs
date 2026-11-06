@@ -146,7 +146,10 @@ describe('swapping a card keeps the tab whole', () => {
   })
 
   it('treats an api_ id as paid without the flag', () => {
-    assert.equal(run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit').ok, true)
+    assert.equal(
+      run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit').ok,
+      true
+    )
     const paid = tab('image').filter((c) => c.apiNode)
     assert.equal(paid.length, 1)
     assert.equal(paid[0].id, 'api_google_nano_banana2_image_edit')

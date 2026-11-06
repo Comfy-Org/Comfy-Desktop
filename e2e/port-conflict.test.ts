@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -38,9 +37,9 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -82,7 +81,7 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 10_000 })
 
   const beforeCount = await ctx.panel.evaluate<number>(
-    `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+    `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`
   )
   expect(beforeCount, 'apiCall must have run once for the initial conflict').toBe(1)
 
@@ -92,10 +91,10 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
   expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, 'kill-port-process')).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, 'kill-port-process')).length, {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
     .toBe(1)
   const killCalls = await getIpcInvocations(ctx.app, 'kill-port-process')
   expect(killCalls).toEqual([OCCUPIED_PORT])
@@ -104,16 +103,16 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
     .poll(
       () =>
         ctx.panel.evaluate<number>(
-          `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`,
+          `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`
         ),
-      { timeout: 5_000, intervals: [100, 200] },
+      { timeout: 5_000, intervals: [100, 200] }
     )
     .toBeGreaterThanOrEqual(2)
 
   const runCalls = (await getIpcInvocations(ctx.app, 'run-action')) as RunActionInvocation[]
   expect(
     runCalls.filter((c) => c.installationId === INSTALL_ID && c.actionId === 'launch'),
-    'Kill Process must re-invoke op.apiCall, not the fresh-launch fallback',
+    'Kill Process must re-invoke op.apiCall, not the fresh-launch fallback'
   ).toEqual([])
 })
 
@@ -124,15 +123,15 @@ test('Use Next Port fires runAction(launch) with portOverride @windows @macos @l
   expect(await ctx.panel.click(byTestId(TID.progressPortConflictUsePort))).toBe(true)
 
   await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, 'run-action')).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
+    .poll(async () => (await getIpcInvocations(ctx.app, 'run-action')).length, {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
     .toBeGreaterThanOrEqual(1)
 
   const runCalls = (await getIpcInvocations(ctx.app, 'run-action')) as RunActionInvocation[]
   const launchCall = runCalls.find(
-    (c) => c.installationId === INSTALL_ID && c.actionId === 'launch',
+    (c) => c.installationId === INSTALL_ID && c.actionId === 'launch'
   )
   expect(launchCall, 'Use Next Port must fire runAction("launch") for the install').toBeDefined()
   expect(launchCall!.actionData).toEqual({ portOverride: NEXT_PORT })

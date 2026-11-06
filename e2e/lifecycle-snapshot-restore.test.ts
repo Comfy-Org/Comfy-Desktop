@@ -1,15 +1,10 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import {
-  closeTitlePopupIfOpen,
-  titlePopupPage,
-  waitForWebContents,
-} from './support/cdpPages'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -48,10 +43,10 @@ function gitIn(cwd: string, args: string[]): string {
       GIT_AUTHOR_NAME: 'Lifecycle Test',
       GIT_AUTHOR_EMAIL: 'lifecycle@example.com',
       GIT_COMMITTER_NAME: 'Lifecycle Test',
-      GIT_COMMITTER_EMAIL: 'lifecycle@example.com',
+      GIT_COMMITTER_EMAIL: 'lifecycle@example.com'
     },
     stdio: ['ignore', 'pipe', 'pipe'],
-    encoding: 'utf-8',
+    encoding: 'utf-8'
   }).trim()
 }
 
@@ -59,7 +54,7 @@ async function buildTwoCommitRepo(
   root: string,
   name: string,
   firstFile: { name: string; content: string },
-  secondFile: { name: string; content: string },
+  secondFile: { name: string; content: string }
 ): Promise<{ originPath: string; commitA: string; commitB: string }> {
   const originPath = path.join(root, `${name}.git`)
   await mkdir(originPath, { recursive: true })
@@ -94,7 +89,7 @@ test.beforeAll(async () => {
     workTmpPath,
     'comfyui-origin',
     { name: 'README.md', content: 'comfyui v1\n' },
-    { name: 'README.md', content: 'comfyui v2\n' },
+    { name: 'README.md', content: 'comfyui v2\n' }
   )
   comfyOriginPath = comfy.originPath
   comfyCommitA = comfy.commitA
@@ -104,7 +99,7 @@ test.beforeAll(async () => {
     workTmpPath,
     'restore-node-origin',
     { name: 'node.py', content: '# v1\n' },
-    { name: 'node.py', content: '# v2\n' },
+    { name: 'node.py', content: '# v2\n' }
   )
   nodeOriginPath = node.originPath
   nodeCommitA = node.commitA
@@ -143,7 +138,7 @@ test.beforeAll(async () => {
               releaseTag: SEEDED_BASE_TAG,
               variant: 'cpu',
               baseTag: SEEDED_BASE_TAG,
-              commitsAhead: 0,
+              commitsAhead: 0
             },
             customNodes: [
               {
@@ -152,12 +147,12 @@ test.beforeAll(async () => {
                 dirName: NODE_DIRNAME,
                 enabled: true,
                 commit: nodeCommitA,
-                url: nodeOriginPath,
-              },
+                url: nodeOriginPath
+              }
             ],
             pipPackages: {},
             skipPipSync: true,
-            updateChannel: 'stable',
+            updateChannel: 'stable'
           },
           {
             trigger: 'manual',
@@ -169,7 +164,7 @@ test.beforeAll(async () => {
               releaseTag: SEEDED_BASE_TAG,
               variant: 'cpu',
               baseTag: SEEDED_BASE_TAG,
-              commitsAhead: 1,
+              commitsAhead: 1
             },
             customNodes: [
               {
@@ -178,16 +173,16 @@ test.beforeAll(async () => {
                 dirName: NODE_DIRNAME,
                 enabled: true,
                 commit: nodeCommitB,
-                url: nodeOriginPath,
-              },
+                url: nodeOriginPath
+              }
             ],
             pipPackages: {},
             skipPipSync: true,
-            updateChannel: 'stable',
-          },
-        ],
-      },
-    ],
+            updateChannel: 'stable'
+          }
+        ]
+      }
+    ]
   })
 })
 
@@ -198,17 +193,17 @@ test.afterAll(async () => {
 
 test('seeded HEADs start at commit B (sanity) @lifecycle', async () => {
   const comfyHead = gitIn(path.join(stagedInstallPath, 'ComfyUI'), ['rev-parse', 'HEAD'])
-  const nodeHead = gitIn(
-    path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME),
-    ['rev-parse', 'HEAD'],
-  )
+  const nodeHead = gitIn(path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME), [
+    'rev-parse',
+    'HEAD'
+  ])
   expect(comfyHead).toBe(comfyCommitB)
   expect(nodeHead).toBe(nodeCommitB)
 })
 
 test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', async () => {
   const list = await ctx.panel.evaluate<SnapshotListResult>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
   )
   expect(list.snapshots.length, 'no seeded snapshot found').toBeGreaterThan(0)
   const target = list.snapshots.find((s) => s.trigger === 'manual' && s.label === 'restore-target')
@@ -221,14 +216,16 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', a
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
   await popup.waitForSelector(byTestId(TID.snapshotRow(target!.filename)), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.snapshotRow(target!.filename)))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.snapshotRowRestore(target!.filename)), { timeout: 10_000 })
+  await popup.waitForVisible(byTestId(TID.snapshotRowRestore(target!.filename)), {
+    timeout: 10_000
+  })
   expect(await popup.click(byTestId(TID.snapshotRowRestore(target!.filename)))).toBe(true)
 
   const confirmSelector = '[data-testid="modal-confirm-button"], [data-testid="base-alert-action"]'
@@ -239,19 +236,19 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', a
     .poll(
       async () =>
         popup.evaluate<boolean>(
-          `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`,
+          `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`
         ),
-      { timeout: 60_000, intervals: [500, 1_000] },
+      { timeout: 60_000, intervals: [500, 1_000] }
     )
     .toBe(true)
 
   const comfyHead = gitIn(path.join(stagedInstallPath, 'ComfyUI'), ['rev-parse', 'HEAD'])
   expect(comfyHead, 'ComfyUI HEAD did not move to commit A after restore').toBe(comfyCommitA)
 
-  const nodeHead = gitIn(
-    path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME),
-    ['rev-parse', 'HEAD'],
-  )
+  const nodeHead = gitIn(path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME), [
+    'rev-parse',
+    'HEAD'
+  ])
   expect(nodeHead, 'custom node HEAD did not move to commit A after restore').toBe(nodeCommitA)
 
   await closeTitlePopupIfOpen(ctx.app)
@@ -262,14 +259,14 @@ test('restore captures a post-restore snapshot @lifecycle', async () => {
     .poll(
       async () =>
         ctx.panel.evaluate<SnapshotListResult>(
-          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
         ),
-      { timeout: 10_000, intervals: [200, 500] },
+      { timeout: 10_000, intervals: [200, 500] }
     )
     .toMatchObject({
       snapshots: expect.arrayContaining([
-        expect.objectContaining({ trigger: 'post-restore' }),
-      ]) as unknown,
+        expect.objectContaining({ trigger: 'post-restore' })
+      ]) as unknown
     })
 })
 
@@ -277,7 +274,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   test.setTimeout(120_000)
 
   const list = await ctx.panel.evaluate<SnapshotListResult>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
   )
   const target = list.snapshots.find((s) => s.trigger === 'manual' && s.label === 'current-state')
   expect(target, 'seeded current-state snapshot missing from list').toBeDefined()
@@ -289,14 +286,16 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
   await popup.waitForSelector(byTestId(TID.snapshotRow(target!.filename)), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.snapshotRow(target!.filename)))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.snapshotRowRestore(target!.filename)), { timeout: 10_000 })
+  await popup.waitForVisible(byTestId(TID.snapshotRowRestore(target!.filename)), {
+    timeout: 10_000
+  })
   expect(await popup.click(byTestId(TID.snapshotRowRestore(target!.filename)))).toBe(true)
 
   const confirmSelector = '[data-testid="modal-confirm-button"], [data-testid="base-alert-action"]'
@@ -306,7 +305,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   await popup.waitForVisible(byTestId(TID.snapshotsOpCard), { timeout: 15_000 })
 
   const labelText = await popup.evaluate<string>(
-    `document.querySelector('.snapshots-rail-node.is-save .snapshots-rail-label')?.textContent ?? ''`,
+    `document.querySelector('.snapshots-rail-node.is-save .snapshots-rail-label')?.textContent ?? ''`
   )
   expect(labelText.trim()).toMatch(/Restoring snapshot|Snapshot restored/i)
 
@@ -314,25 +313,20 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
     .poll(
       async () =>
         popup.evaluate<boolean>(
-          `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`,
+          `!!document.querySelector('.snapshots-rail-save-box.is-op-success')`
         ),
-      { timeout: 60_000, intervals: [500, 1_000] },
+      { timeout: 60_000, intervals: [500, 1_000] }
     )
     .toBe(true)
 
   await expect
-    .poll(
-      async () =>
-        popup.evaluate<boolean>(
-          `!!document.querySelector('.snapshots-rail-cta')`,
-        ),
-      { timeout: 8_000, intervals: [200, 400] },
-    )
+    .poll(async () => popup.evaluate<boolean>(`!!document.querySelector('.snapshots-rail-cta')`), {
+      timeout: 8_000,
+      intervals: [200, 400]
+    })
     .toBe(true)
 
   expect(
-    await popup.evaluate<boolean>(
-      `!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`,
-    ),
+    await popup.evaluate<boolean>(`!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`)
   ).toBe(false)
 })

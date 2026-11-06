@@ -8,7 +8,7 @@ import { WebContentsPage } from './support/cdpPages'
 import {
   opsFlagsGrantSeed,
   reserveFreePort,
-  writeFakeComfyInstall,
+  writeFakeComfyInstall
 } from './support/fakeComfyInstall'
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
@@ -19,14 +19,12 @@ let port = 0
 const GRANT_ARG = '--enable-asset-hashing'
 const GRANT_MIN_CORE = '0.3.80'
 
-
 let ctx: AppContext
 let installPath: string
 
 function coachmarkPopup(app: ElectronApplication): WebContentsPage {
   return new WebContentsPage(app, 'comfyTitleTooltip')
 }
-
 
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 let previousPosthogHost: string | undefined
@@ -43,7 +41,7 @@ test.beforeAll(async () => {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: true,
-      betaFeaturesEnabled: true,
+      betaFeaturesEnabled: true
     },
     installations: [
       {
@@ -61,11 +59,11 @@ test.beforeAll(async () => {
           commit: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
           baseTag: 'v0.3.99',
           commitsAhead: 0,
-          baseTagVerified: true,
-        },
-      },
+          baseTagVerified: true
+        }
+      }
     ],
-    opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE }),
+    opsFlags: opsFlagsGrantSeed({ arg: GRANT_ARG, minCoreVersion: GRANT_MIN_CORE })
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -84,9 +82,9 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
       (await ctx.app.evaluate(
         ({ webContents }, p) =>
           webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(p))),
-        port,
+        port
       )) === true,
-    { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' },
+    { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
 
   const popup = coachmarkPopup(ctx.app)
@@ -98,13 +96,14 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
         return false
       }
     },
-    { timeout: 30_000, message: 'no coachmark appeared at all on a first run' },
+    { timeout: 30_000, message: 'no coachmark appeared at all on a first run' }
   )
 
   expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage instances')
 
-  expect(await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`))
-    .not.toBeNull()
+  expect(
+    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
+  ).not.toBeNull()
 
   expect(await popup.click('.coachmark-dismiss')).toBe(true)
 
@@ -116,7 +115,7 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
         return false
       }
     },
-    { timeout: 30_000, message: 'beta notice never drew after the hint was dismissed' },
+    { timeout: 30_000, message: 'beta notice never drew after the hint was dismissed' }
   )
 
   expect(await popup.textOf('.coachmark-text')).not.toContain(GRANT_ARG)

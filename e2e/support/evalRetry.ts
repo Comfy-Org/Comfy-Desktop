@@ -1,10 +1,6 @@
-
 const RETRY_PATTERN = /Execution context was destroyed/i
 
-export async function evalWithRetry<T>(
-  fn: () => Promise<T>,
-  attempts = 3,
-): Promise<T> {
+export async function evalWithRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
     try {

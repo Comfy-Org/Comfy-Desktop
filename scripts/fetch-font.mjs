@@ -1,4 +1,3 @@
-
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -43,7 +42,8 @@ function downloadFile(bucket, file, outputDir) {
 function main() {
   const { bucket, outputDir, softFail } = parseArgs()
   console.log(`Fetching proprietary font(s) from ${bucket}`)
-  if (softFail) console.log('  --soft-fail: a failure will be logged but not exit non-zero (dev only)')
+  if (softFail)
+    console.log('  --soft-fail: a failure will be logged but not exit non-zero (dev only)')
 
   fs.mkdirSync(outputDir, { recursive: true })
 
@@ -77,8 +77,8 @@ function main() {
   console.error('')
   console.error(
     'Refusing to continue. A release build that proceeds without PP Formula ships with the ' +
-    'Inter fallback instead of the brand display face. Fix auth (gcloud / Workload Identity), ' +
-    'network, or the bucket object name, or rerun with --soft-fail for local dev only.'
+      'Inter fallback instead of the brand display face. Fix auth (gcloud / Workload Identity), ' +
+      'network, or the bucket object name, or rerun with --soft-fail for local dev only.'
   )
   process.exit(1)
 }

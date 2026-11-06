@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -43,13 +42,13 @@ test.beforeAll(async () => {
           releaseTag: 'v0.3.10',
           variant: 'cpu',
           baseTag: 'v0.3.10',
-          commitsAhead: 0,
+          commitsAhead: 0
         },
         customNodes: [],
         pipPackages: {},
-        updateChannel: 'stable',
-      },
-    ],
+        updateChannel: 'stable'
+      }
+    ]
   }
   await writeFile(envelopePath, JSON.stringify(envelope, null, 2))
 
@@ -61,17 +60,19 @@ test.beforeAll(async () => {
         name: INSTALL_NAME,
         installPath,
         sourceId: 'standalone',
-        status: 'installed',
-      },
-    ],
+        status: 'installed'
+      }
+    ]
   })
 
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, filePath) => {
-    ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
-      canceled: false,
-      filePaths: [filePath],
-    })
-  }, envelopePath))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, filePath) => {
+      ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      })
+    }, envelopePath)
+  )
 })
 
 test.afterAll(async () => {
@@ -82,7 +83,7 @@ test.afterAll(async () => {
 
 test('Import via the toolbar stages a restore target without touching history @lifecycle', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`
   )
   expect(initialCount).toBe(0)
 
@@ -93,7 +94,7 @@ test('Import via the toolbar stages a restore target without touching history @l
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.snapshotsImport), { timeout: 15_000 })
@@ -101,19 +102,19 @@ test('Import via the toolbar stages a restore target without touching history @l
   expect(await popup.click(byTestId(TID.snapshotsImport))).toBe(true)
 
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  await popup.waitFor(
-    async () => ((await popup.textOf('body')) ?? '').includes(IMPORTED_LABEL),
-    { timeout: 10_000, message: 'preview modal did not list the imported snapshot label' },
-  )
+  await popup.waitFor(async () => ((await popup.textOf('body')) ?? '').includes(IMPORTED_LABEL), {
+    timeout: 10_000,
+    message: 'preview modal did not list the imported snapshot label'
+  })
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await popup.waitForVisible(
     `.snapshots-rail-save-box.is-op-error ${byTestId(TID.snapshotsOpCardRetry)}`,
-    { timeout: 60_000 },
+    { timeout: 60_000 }
   )
 
   const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`
   )
   expect(snapshots.some((s) => s.label === IMPORTED_LABEL)).toBe(false)
   expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)

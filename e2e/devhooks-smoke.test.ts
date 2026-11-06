@@ -1,11 +1,10 @@
-
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import {
   seedDownloads,
   setInstallUpdate,
   setAppUpdateState,
-  getTitlePopupBounds,
+  getTitlePopupBounds
 } from './support/devHooks'
 
 let ctx: AppContext
@@ -27,22 +26,22 @@ test('dev hooks bridge: seedDownloads, setInstallUpdate, setAppUpdateState all r
         url: 'https://example.test/model.safetensors',
         filename: 'model.safetensors',
         progress: 0.42,
-        status: 'downloading',
-      },
+        status: 'downloading'
+      }
     ],
-    recent: [],
+    recent: []
   })
 
   await setInstallUpdate(ctx.app, {
     available: true,
-    version: '99.0.0',
+    version: '99.0.0'
   })
   await setInstallUpdate(ctx.app, { available: false })
 
   await setAppUpdateState(ctx.app, {
     kind: 'available',
     version: '1.2.3',
-    autoUpdate: false,
+    autoUpdate: false
   })
   await setAppUpdateState(ctx.app, { kind: null, version: null, autoUpdate: true })
 })
