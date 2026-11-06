@@ -1,9 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 
-import { en } from '../../lib/i18nMessages.ts'
 import { useModal } from '../../composables/useModal'
 import StoragePane, { type StorageSnapshot } from './StoragePane.vue'
 
@@ -38,10 +36,6 @@ function installMockApi(opts: { platform?: string } = {}): ApiState {
   return state
 }
 
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
-
 function makeSnapshot(): StorageSnapshot {
   return {
     sharedDirectoriesFields: [],
@@ -60,7 +54,6 @@ function mountPane(snapshot: StorageSnapshot = makeSnapshot()) {
       sections: [],
       pendingRestartFieldIds: new Set<string>()
     },
-    global: { plugins: [makeI18n()] },
     attachTo: document.body
   })
 }
@@ -173,7 +166,6 @@ function mountPaneWithSections(
       sections: sections as never,
       pendingRestartFieldIds: new Set<string>()
     },
-    global: { plugins: [makeI18n()] },
     attachTo: document.body
   })
 }
@@ -277,7 +269,6 @@ describe('StoragePane', () => {
         sections: [],
         pendingRestartFieldIds: new Set<string>(['useSharedInput'])
       },
-      global: { plugins: [makeI18n()] },
       attachTo: document.body
     })
     await nextTick()

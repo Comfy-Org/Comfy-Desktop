@@ -1,18 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
-import { createI18n } from 'vue-i18n'
 
 import { useInstallList } from './useInstallList'
+import { createAppI18n } from '../lib/i18nFactory'
 import type { Installation } from '../types/ipc'
-
-const messages = {
-  en: {
-    dashboard: {
-      launchedAgo: 'Launched {time}',
-      neverLaunched: 'Not launched yet'
-    }
-  }
-}
 
 function makeInstall(overrides: Partial<Installation>): Installation {
   return {
@@ -25,10 +16,10 @@ function makeInstall(overrides: Partial<Installation>): Installation {
 }
 
 describe('useInstallList', () => {
-  let i18n: ReturnType<typeof createI18n>
+  let i18n: ReturnType<typeof createAppI18n>
 
   beforeEach(() => {
-    i18n = createI18n({ legacy: false, locale: 'en', messages })
+    i18n = createAppI18n()
   })
 
   afterEach(() => {
@@ -265,7 +256,7 @@ describe('useInstallList', () => {
   })
 })
 
-function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
+function withI18nScope<T>(i18n: ReturnType<typeof createAppI18n>, fn: () => T): T {
   let captured!: T
   const App = defineComponent({
     setup() {

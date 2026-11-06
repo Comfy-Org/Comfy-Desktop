@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 
@@ -24,66 +23,6 @@ vi.mock('../../composables/useDialogs', () => ({
 vi.mock('../../composables/useActionGuard', () => ({
   useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction })
 }))
-
-const messages = {
-  en: {
-    common: {
-      cancel: 'Cancel',
-      dismiss: 'Dismiss',
-      loading: 'Loading…'
-    },
-    snapshots: {
-      createLabel: 'Create Snapshot',
-      createNew: 'Create Snapshot',
-      createSnapshot: 'Create Snapshot',
-      restoringStatus: 'Restoring snapshot',
-      restoringFrom: 'from {label}',
-      restored: 'Snapshot restored',
-      restoredFrom: 'Rolled back to {label}',
-      restoredImported: 'Applied imported snapshot',
-      importTorchNoticeTitle: 'Snapshot uses a different PyTorch',
-      restoreFailed: 'Restore failed',
-      tryAgain: 'Try again',
-      restore: 'Restore',
-      delete: 'Delete',
-      exportSnapshot: 'Export',
-      diffPrevious: 'Changes from previous',
-      noChangesSinceLast: 'No changes since the previous snapshot.',
-      noPrevious: 'First snapshot — no previous to compare',
-      diffNoChanges: 'No changes',
-      empty: 'No snapshots yet.',
-      triggerBoot: 'Boot',
-      triggerRestart: 'Manager',
-      triggerManual: 'Manual',
-      triggerPreUpdate: 'Update',
-      triggerPostUpdate: 'Updated',
-      triggerPostRestore: 'Restored',
-      timeJustNow: 'Just now',
-      timeMinutesAgo: '{count}m ago',
-      timeHoursAgo: '{count}h ago',
-      timeDaysAgo: '{count}d ago',
-      noneYet: 'No snapshots yet.',
-      importSnapshots: 'Import',
-      exportAll: 'Export All',
-      latestLabel: 'Latest:',
-      latestBadge: 'Latest',
-      copyEventLabel: 'Copied as {destination}',
-      copyEventLabelIncoming: 'Copied from {source}',
-      nodesCount: '{count} nodes',
-      packagesCount: '{count} pkgs'
-    },
-    standalone: {
-      snapshotRestore: 'Restore',
-      snapshotCreateTitle: 'Create Snapshot',
-      snapshotCreateMessage: '',
-      snapshotLabelPlaceholder: ''
-    }
-  }
-} as const
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 function makeSnapshot(overrides: Partial<SnapshotSummary> = {}): SnapshotSummary {
   return {
@@ -135,7 +74,7 @@ async function mountView(
       installationId: 'install-A',
       activeOperation: opts.activeOperation ?? null
     },
-    global: { plugins: [createTestI18n(), createPinia()] }
+    global: { plugins: [createPinia()] }
   })
   await flushPromises()
   return wrapper as VueWrapper
@@ -601,7 +540,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     it('keeps the Latest badge on the newest snapshot for an outgoing copy event', async () => {
       const w = await mountWithCopyEvent(makeCopyEvent({ direction: 'out' }))
 
-      expect(w.text()).toContain('Copied as Copy of A')
+      expect(w.text()).toContain('Copied to Copy of A')
       expect(w.findAll('.snapshot-row-latest')).toHaveLength(1)
       expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
         false

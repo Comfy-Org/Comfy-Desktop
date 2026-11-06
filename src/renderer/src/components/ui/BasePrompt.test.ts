@@ -1,20 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import BasePrompt from './BasePrompt.vue'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: {
-    en: {
-      modal: { ok: 'OK' },
-      common: { cancel: 'Cancel', name: 'Name', close: 'Close' }
-    }
-  },
-  missingWarn: false,
-  fallbackWarn: false
-})
 
 const wrappers: VueWrapper[] = []
 
@@ -29,7 +15,6 @@ async function mountPrompt(props: Record<string, unknown> = {}) {
       ...props
     },
     global: {
-      plugins: [i18n],
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     }
   })

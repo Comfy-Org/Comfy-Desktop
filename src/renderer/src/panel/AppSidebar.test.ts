@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import en from '@locales/en.json'
 
 import AppSidebar from './AppSidebar.vue'
 import type { DashboardPage } from '../types/ipc'
@@ -27,8 +25,7 @@ beforeEach(() => {
 
 async function mountSidebar(activePage: DashboardPage = 'chooser') {
   const wrapper = mount(AppSidebar, {
-    props: { activePage },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] }
+    props: { activePage }
   })
   await flushPromises()
   return wrapper

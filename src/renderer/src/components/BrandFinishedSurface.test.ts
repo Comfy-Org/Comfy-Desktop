@@ -1,20 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { h } from 'vue'
 
 import BrandFinishedSurface from './BrandFinishedSurface.vue'
-
-const messages = {
-  en: {
-    common: { copy: 'Copy' },
-    launch: { viewLogs: 'View logs' }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
@@ -27,7 +15,6 @@ function mountSurface(props: Record<string, unknown>, slots: Record<string, unkn
     props,
     slots,
     global: {
-      plugins: [createTestI18n()],
       stubs: { BrandTakeoverLayout: brandTakeoverStub }
     }
   })
@@ -108,7 +95,6 @@ describe('BrandFinishedSurface', () => {
       }
       const wrapper = mount(parent, {
         global: {
-          plugins: [createTestI18n()],
           stubs: { BrandTakeoverLayout: brandTakeoverStub }
         }
       })

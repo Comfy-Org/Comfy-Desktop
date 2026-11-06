@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import { createI18n } from 'vue-i18n'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 
@@ -38,47 +37,6 @@ vi.stubGlobal('window', {
   api: apiMock
 })
 
-const messages = {
-  en: {
-    chooser: {
-      manageInstall: 'Manage',
-      menuUpdate: 'Update',
-      menuMigrate: 'Migrate to Standalone',
-      menuRestoreSnapshot: 'Restore Snapshot',
-      menuExportSnapshot: 'Export Snapshot',
-      menuRevealInFolder: 'Open Folder',
-      menuDelete: 'Uninstall'
-    },
-    actions: {
-      copyInstallation: 'Duplicate Instance',
-      delete: 'Delete',
-      deleteConfirmTitle: 'Delete Install',
-      deleteConfirmMessage:
-        'This permanently removes this ComfyUI installation and all its files. Other installations and ComfyUI itself are unaffected. This cannot be undone.',
-      stop: 'Stop',
-      stopConfirmTitle: 'Stop ComfyUI',
-      stopConfirmMessage:
-        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.'
-    },
-    snapshots: {
-      noSnapshotsToShare: 'There are no snapshots to share yet.',
-      shareFailed: 'Could not share the snapshot.'
-    },
-    devPlatform: {
-      workspace: {
-        promoteToWorkspace: 'Create Build',
-        promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
-        readMore: 'Read more',
-        promoting: 'Creating...',
-        promoteFailedTitle: 'Could not create build',
-        promoteFailedMessage: 'Could not create a draft in Comfy Developer Platform.'
-      }
-    },
-    progress: { working: 'Working...' },
-    running: { dismiss: 'Dismiss' }
-  }
-}
-
 function makeInstall(overrides: Partial<Installation> = {}): Installation {
   return {
     id: 'inst-1',
@@ -114,7 +72,6 @@ function mountHarness(
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const i18n = createI18n({ legacy: false, locale: 'en', messages })
   let handles!: HarnessHandles
   _harnessSetup = () => {
     const menu = useInstallContextMenu({ onManage: () => {}, canPromoteToWorkspace })
@@ -124,7 +81,7 @@ function mountHarness(
     mutate?.(handles)
     menu.openCardMenu(new MouseEvent('contextmenu', { clientX: 0, clientY: 0 }), inst)
   }
-  const wrapper = mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
+  const wrapper = mount(HarnessComponent, { global: { plugins: [pinia] } })
   _harnessSetup = null
   return { wrapper, ...handles }
 }
@@ -278,7 +235,6 @@ function mountHarnessWithProgress(
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const i18n = createI18n({ legacy: false, locale: 'en', messages })
   let menu!: ReturnType<typeof useInstallContextMenu>
   _harnessSetup = () => {
     menu = useInstallContextMenu({
@@ -286,7 +242,7 @@ function mountHarnessWithProgress(
       onShowProgress
     })
   }
-  mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
+  mount(HarnessComponent, { global: { plugins: [pinia] } })
   _harnessSetup = null
   return { menu }
 }
@@ -309,10 +265,10 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(apiMock.getDetailSections).not.toHaveBeenCalled()
     expect(modalMock.confirm).toHaveBeenCalledTimes(1)
     const confirmArgs = modalMock.confirm.mock.calls[0][0]
-    expect(confirmArgs.title).toBe('Delete Install')
+    expect(confirmArgs.title).toBe('Uninstall')
     expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
     expect(confirmArgs.message).toContain('/tmp/my')
-    expect(confirmArgs.confirmLabel).toBe('Delete')
+    expect(confirmArgs.confirmLabel).toBe('Uninstall')
     expect(confirmArgs.confirmStyle).toBe('danger')
   })
 
@@ -327,7 +283,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0][0]
     expect(opts.installationId).toBe(inst.id)
-    expect(opts.title).toBe('Delete - My Install')
+    expect(opts.title).toBe('Uninstall - My Install')
     expect(opts.cancellable).toBe(true)
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
@@ -357,12 +313,11 @@ function mountHarnessWithManage(
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const i18n = createI18n({ legacy: false, locale: 'en', messages })
   let menu!: ReturnType<typeof useInstallContextMenu>
   _harnessSetup = () => {
     menu = useInstallContextMenu({ onManage })
   }
-  mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
+  mount(HarnessComponent, { global: { plugins: [pinia] } })
   _harnessSetup = null
   return { menu }
 }

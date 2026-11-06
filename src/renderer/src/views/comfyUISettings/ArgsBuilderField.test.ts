@@ -1,19 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import type { ComfyArgDef, DetailField } from '../../types/ipc'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: { en: {} },
-  missingWarn: false,
-  fallbackWarn: false
-})
 
 const SCHEMA: ComfyArgDef[] = [
   { name: 'cpu', flag: '--cpu', help: 'Run on CPU only.', type: 'boolean', category: 'gpuVram' },
@@ -67,7 +58,6 @@ async function mountField(
       field: { ...FIELD, ...(props.field ?? {}) },
       ...(installationId == null ? {} : { installationId })
     },
-    global: { plugins: [i18n] },
     attachTo: document.body
   })
   wrappers.push(wrapper)
@@ -187,7 +177,7 @@ describe('ArgsBuilderField — beta args pill', () => {
     const api = stubElectronApi(BETA)
     const wrapper = await mountField()
     expect(api.getCoreBetaArgs).toHaveBeenCalledWith('inst-1', '')
-    expect(wrapper.find('.beta-args').text()).toContain('betaArgsPill')
+    expect(wrapper.find('.beta-args').text()).toContain('+1 beta')
   })
 
   it('asks again once its schema load settles, since the preview reads that cache', async () => {
@@ -218,7 +208,7 @@ describe('ArgsBuilderField — beta args pill', () => {
     const epoch = ref(1)
     const wrapper = mount(ArgsBuilderField, {
       props: { field: FIELD, installationId: 'inst-1' },
-      global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
+      global: { provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
     })
     wrappers.push(wrapper)
     await flushPromises()
@@ -237,7 +227,7 @@ describe('ArgsBuilderField — beta args pill', () => {
     const epoch = ref(1)
     const wrapper = mount(ArgsBuilderField, {
       props: { field: FIELD, installationId: 'inst-1' },
-      global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } },
+      global: { provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } },
       attachTo: document.body
     })
     wrappers.push(wrapper)

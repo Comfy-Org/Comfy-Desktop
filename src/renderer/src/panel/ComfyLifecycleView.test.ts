@@ -1,62 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
 import { TID } from '../../../shared/testIds'
-
-const messages = {
-  en: {
-    common: {
-      copy: 'Copy',
-      back: 'Back'
-    },
-    launch: {
-      viewLogs: 'View logs'
-    },
-    comfyLifecycle: {
-      preparingTitle: 'Preparing…',
-      launchingTitle: 'Starting ComfyUI…',
-      stoppingTitle: 'Stopping ComfyUI…',
-      crashedTitle: 'ComfyUI exited unexpectedly',
-      launchFailedTitle: 'ComfyUI could not start',
-      crashedDesc: 'The ComfyUI process exited. You can restart it below.',
-      crashedDescWithCode:
-        'The ComfyUI process exited (exit code {code}). You can restart it below.',
-      crashedDescWithSignal:
-        'The ComfyUI process was terminated by {signal}. You can restart it below.',
-      crashedDescWithCodeAndSignal:
-        'The ComfyUI process was terminated by {signal} (exit code {code}). You can restart it below.',
-      crashedDescWithCodeHex:
-        'The ComfyUI process exited (exit code {code} / {hex}). You can restart it below.',
-      crashedDescAccessViolation:
-        'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
-      crashedDescVcRuntimeHint:
-        'Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.',
-      crashedDescLogsHint: 'See the logs for details.',
-      restart: 'Restart ComfyUI',
-      stoppedTitle: 'ComfyUI is stopped',
-      stoppedDesc:
-        "The ComfyUI server is stopped. This window stayed open — relaunch it below whenever you're ready.",
-      relaunch: 'Relaunch ComfyUI',
-      launchProgressTitle: 'Starting ComfyUI'
-    },
-    dashboard: {
-      confirmStopLocal: {
-        title: 'Return to Dashboard?',
-        message: 'This will stop the current ComfyUI.',
-        confirmLabel: 'Return to Dashboard'
-      }
-    }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 const SAMPLE_INSTALL: Installation = {
   id: 'inst-1',
@@ -111,7 +60,6 @@ function mountView(installationId = 'inst-1', installation: Installation | null 
   return mount(ComfyLifecycleView, {
     props: { installationId, installation },
     global: {
-      plugins: [createTestI18n()],
       stubs: { BrandTakeoverLayout: brandTakeoverStub }
     }
   })
@@ -444,7 +392,7 @@ describe('ComfyLifecycleView', () => {
     mount(ComfyLifecycleView, {
       props: { installationId: 'inst-1', installation: SAMPLE_INSTALL },
       global: {
-        plugins: [createTestI18n(), pinia],
+        plugins: [pinia],
         stubs: { BrandTakeoverLayout: brandTakeoverStub }
       }
     })

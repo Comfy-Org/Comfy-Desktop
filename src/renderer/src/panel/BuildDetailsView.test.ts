@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import en from '@locales/en.json'
 
 import BuildDetailsView from './BuildDetailsView.vue'
 import { useSessionStore } from '../stores/sessionStore'
@@ -53,8 +51,7 @@ beforeEach(() => {
 
 async function mountDetails(installation: Installation = INSTALL) {
   const wrapper = mount(BuildDetailsView, {
-    props: { installation },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] }
+    props: { installation }
   })
   await flushPromises()
   return { wrapper, content: wrapper.findComponent({ name: 'ComfyUISettingsContent' }) }

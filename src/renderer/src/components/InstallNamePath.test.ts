@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../lib/i18nMessages.ts'
 import InstallNamePath from './InstallNamePath.vue'
-
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
 
 function mountComponent(props: Record<string, unknown> = {}) {
   return mount(InstallNamePath, {
@@ -20,8 +14,7 @@ function mountComponent(props: Record<string, unknown> = {}) {
       diskSpace: null,
       estimatedSize: 0,
       ...props
-    },
-    global: { plugins: [makeI18n()] }
+    }
   })
 }
 
