@@ -9,17 +9,24 @@ import {
   getPipIndexArgs,
   installFilteredRequirementsDetailed,
   parsePipFreeze,
+  runUvPip,
   runUvPipDetailed,
   uvEnv,
   PYPI_INDEX_URL,
   PYPI_MIRROR_URLS
 } from './pip'
+import { killProcTree } from './process'
 import type * as ChildProcessModule from 'child_process'
+import type * as ProcessModule from './process'
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
   const spawn = vi.fn()
   return { ...actual, spawn, default: { ...actual, spawn } }
+})
+vi.mock('./process', async (importOriginal) => {
+  const actual = await importOriginal<typeof ProcessModule>()
+  return { ...actual, killProcTree: vi.fn(actual.killProcTree) }
 })
 
 function getIndexUrl(args: string[]): string | undefined {
@@ -590,6 +597,52 @@ describe('runUvPipDetailed mirror fallback', () => {
     )
     expect(spawnMock).toHaveBeenCalledTimes(1)
     expect(output.join(''), 'no retry is announced for a stopped install').not.toContain('Retrying')
+  })
+
+  it('forwards the mirrors through runUvPip: pypi.org first, then the mirrors first', async () => {
+    uvExiting(1, 0)
+    const code = await runUvPip('uv', ['pip', 'install'], '/inst', () => {}, undefined, {
+      pypiMirror: MIRROR
+    })
+    expect(code).toBe(0)
+    expect(indexArgsOf(0)).toEqual(getPipIndexArgs(MIRROR))
+    expect(indexArgsOf(1)).toEqual(getPipFallbackIndexArgs(MIRROR))
+  })
+
+  it.each([
+    ['the pypi.org-first run', 0],
+    ['the mirror-first retry', 1]
+  ])('stops the running uv when cancelled during %s', async (_label, attempt) => {
+    const abort = new AbortController()
+    const procs: EventEmitter[] = []
+    spawnMock.mockImplementation((() => {
+      const proc = Object.assign(new EventEmitter(), {
+        stdout: new EventEmitter(),
+        stderr: new EventEmitter(),
+        pid: undefined,
+        kill: () => true
+      })
+      const i = procs.push(proc) - 1
+      setImmediate(() => (i < attempt ? proc.emit('close', 1) : abort.abort()))
+      return proc
+    }) as never)
+    vi.mocked(killProcTree).mockImplementationOnce((proc) => {
+      ;(proc as unknown as EventEmitter).emit('close', null)
+    })
+
+    await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      abort.signal,
+      undefined,
+      undefined,
+      { pypiMirror: MIRROR }
+    )
+
+    expect(procs).toHaveLength(attempt + 1)
+    expect(killProcTree).toHaveBeenCalledWith(procs[attempt])
   })
 
   it('adds no index args for a caller that passes no mirror config', async () => {

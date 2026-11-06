@@ -70,13 +70,14 @@ describe('standalone postInstall ComfyUI update', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  const depsSyncEnd = (): Record<string, unknown> | undefined =>
+  const depsSyncRows = (): unknown[] =>
     vi
       .mocked(emit)
       .mock.calls.map(([, props]) => props as Record<string, unknown>)
-      .find((p) => p.phase === 'torch_deps_sync' && p.status === 'end')
+      .filter((p) => p.phase === 'torch_deps_sync')
+      .map((p) => p.status)
 
-  it('finishes the install, says why the update failed, and tags the phase as aborted', async () => {
+  it('finishes the install, says why the update failed, and counts it', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({
       ok: false,
       message: 'requirements install exited with code 1\n\nerror: No solution found',
@@ -95,9 +96,11 @@ describe('standalone postInstall ComfyUI update', () => {
       'update',
       { percent: 100, status: 'Update failed: requirements install exited with code 1' }
     ])
-    expect(depsSyncEnd(), 'counted, without failing the phase').toMatchObject({
-      update_aborted: 1
-    })
+    expect(depsSyncRows(), 'counted, without failing the phase').toEqual([
+      'start',
+      'end',
+      'update_aborted'
+    ])
   })
 
   it('points at the app log when the failed update carries no message', async () => {
@@ -130,10 +133,10 @@ describe('standalone postInstall ComfyUI update', () => {
     })
 
     expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'Cancelled' }])
-    expect(depsSyncEnd()).not.toHaveProperty('update_aborted')
+    expect(depsSyncRows()).toEqual(['start', 'end'])
   })
 
-  it('leaves the phase untagged when the update applies', async () => {
+  it('counts nothing when the update applies', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: true, installation })
     const progress: Array<[string, Record<string, unknown>]> = []
 
@@ -143,7 +146,6 @@ describe('standalone postInstall ComfyUI update', () => {
     })
 
     expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'Up to date' }])
-    expect(depsSyncEnd()).toBeDefined()
-    expect(depsSyncEnd()).not.toHaveProperty('update_aborted')
+    expect(depsSyncRows()).toEqual(['start', 'end'])
   })
 })

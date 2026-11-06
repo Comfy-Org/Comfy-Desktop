@@ -730,9 +730,7 @@ async function tryOverride(
     if (!installed.ok) {
       const cause = cannotDownload(installed)
       if (!cause) return deferOverride(sendOutput, pins, installed.report)
-      return cause === 'no_solution'
-        ? unresolved(sendOutput, pins, installed.report)
-        : revertOnInstall(sendOutput, pins, installed.report)
+      return revertOnInstall(sendOutput, pins, installed.report, cause === 'no_solution')
     }
   } catch {
     return revertOnInstall(sendOutput, pins)
@@ -891,26 +889,17 @@ function deferOverride(
   return { decision: 'deferred', reason: 'not_cached', pins, install }
 }
 
-function unresolved(
-  sendOutput: (text: string) => void,
-  pins: OverridePins,
-  install: InstallReport
-): OverrideDecision {
-  sendOutput(
-    `agent version override ${overrideSignature(pins)} found no solution; using ComfyUI's versions\n`
-  )
-  return { decision: 'reverted', reason: 'resolve_failed', pins, install }
-}
-
 function revertOnInstall(
   sendOutput: (text: string) => void,
   pins: OverridePins,
-  install?: InstallReport
+  install?: InstallReport,
+  noSolution = false
 ): OverrideDecision {
   sendOutput(
-    `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
+    `agent version override ${overrideSignature(pins)} ${noSolution ? 'found no solution' : 'did not install'}; using ComfyUI's versions\n`
   )
-  return { decision: 'reverted', reason: 'install_failed', pins, ...(install ? { install } : {}) }
+  const reason = noSolution ? 'resolve_failed' : 'install_failed'
+  return { decision: 'reverted', reason, pins, ...(install ? { install } : {}) }
 }
 
 /** Its own bound: the wheel is about 25 MB, and a launch that runs out of time tries again next. */

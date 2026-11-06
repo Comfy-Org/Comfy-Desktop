@@ -41,8 +41,7 @@ vi.mock('../../settings', () => ({
 vi.mock('../pip', () => ({
   pipFreeze: vi.fn(),
   runUvPip: vi.fn(async () => 0),
-  installFilteredRequirements: vi.fn(async () => 0),
-  getPipIndexArgs: vi.fn(() => [])
+  installFilteredRequirements: vi.fn(async () => 0)
 }))
 vi.mock('../pythonEnv', () => ({
   getActiveUvPath: vi.fn(() => uvBinPath),
