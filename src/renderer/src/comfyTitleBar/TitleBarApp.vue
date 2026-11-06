@@ -540,9 +540,9 @@ const coachmark = useCentralPillCoachmark({
   // One popup per window: the hint must not hide a card it did not raise.
   ownsPopup: () => coachmark.isShowing.value,
   installPillRef,
-  title: t('titleBar.pillHintTitle'),
-  body: t('titleBar.pillHintBody'),
-  dismissLabel: t('titleBar.pillHintDismiss')
+  title: () => t('titleBar.pillHintTitle'),
+  body: () => t('titleBar.pillHintBody'),
+  dismissLabel: () => t('titleBar.pillHintDismiss')
 })
 
 /**

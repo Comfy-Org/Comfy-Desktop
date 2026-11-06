@@ -283,4 +283,30 @@ describe('useCentralPillCoachmark', () => {
     await expect(cm.maybeShow()).resolves.toBeUndefined()
     await expect(cm.dismiss()).resolves.toBeUndefined()
   })
+
+  it('resolves copy lazily when title, body, and dismissLabel are getter functions', async () => {
+    const bridge = makeBridge()
+    let lang = 'en'
+    const cm = useCentralPillCoachmark({
+      bridge,
+      isInstallLess: ref(false),
+      isFirstUseLockdown: ref(false),
+      installPillRef: makePillRef(),
+      title: () => (lang === 'ja' ? 'インスタンスの切替と管理' : 'Switch & manage instances'),
+      body: () => (lang === 'ja' ? 'ここをクリックして…' : 'Click here to switch...'),
+      dismissLabel: () => (lang === 'ja' ? '了解' : 'Got it')
+    })
+
+    // Suppose locale sync changes language after setup but before maybeShow runs
+    lang = 'ja'
+    await cm.maybeShow()
+
+    expect(bridge.showCoachmark).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'インスタンスの切替と管理',
+        body: 'ここをクリックして…',
+        dismissLabel: '了解'
+      })
+    )
+  })
 })

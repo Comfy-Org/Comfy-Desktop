@@ -106,7 +106,7 @@ function onValueChange(index: number, val: string): void {
         <button
           class="env-var-remove"
           :title="$t('common.cancel')"
-          aria-label="Remove variable"
+          :aria-label="$t('envVars.remove')"
           @click="removeEntry(i)"
         >
           ✕
