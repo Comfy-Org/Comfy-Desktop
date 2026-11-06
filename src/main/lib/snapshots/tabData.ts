@@ -1,15 +1,23 @@
+import { runPool } from '../../sources/standalone/templateDownloadCore'
 import { listSnapshots, loadSnapshot } from './store'
 import { diffSnapshots, resolveSnapshotVersion, resolveDiffVersions, summarizeDiff } from './diff'
 import type { SnapshotSummary, SnapshotDetailData, SnapshotDiffData } from './types'
+
+// Each version resolution is a chain of git queries, and each query spawns a pygit2 process that
+// blocks the main thread in CreateProcess on Windows. Auto snapshots are kept up to 200 and update
+// snapshots are never pruned, so the list routinely holds dozens to hundreds; resolving it all at
+// once put one process per snapshot in flight, froze every window and tripped the pygit2 circuit
+// breaker. Snapshots sharing a commit share one resolution in `resolveLocalVersion`.
+const SNAPSHOT_VERSION_CONCURRENCY = 2
 
 export async function getSnapshotListData(
   installPath: string
 ): Promise<{ snapshots: SnapshotSummary[]; totalCount: number }> {
   const entries = await listSnapshots(installPath)
-  const versionPromises = entries.map((entry) =>
-    resolveSnapshotVersion(installPath, entry.snapshot.comfyui, 'short')
-  )
-  const resolvedVersions = await Promise.all(versionPromises)
+  const resolvedVersions: string[] = new Array(entries.length)
+  await runPool(entries, SNAPSHOT_VERSION_CONCURRENCY, async (entry, i) => {
+    resolvedVersions[i] = await resolveSnapshotVersion(installPath, entry.snapshot.comfyui, 'short')
+  })
   const summaries: SnapshotSummary[] = entries.map((entry, i) => {
     const s = entry.snapshot
     const summary: SnapshotSummary = {
