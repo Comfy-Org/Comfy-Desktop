@@ -31,6 +31,7 @@ import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
 import { createCache } from '../cache'
 import { holdAgentPrefetch } from '../agentRequirementsLaunch'
+import { AGENT_CLIENT_ENV_VARS, type AgentClientContext } from '../agentClientContext'
 import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
@@ -275,7 +276,8 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
   'CM_USE_PYGIT2',
-  '__COMFYUI_DESKTOP_VERSION__'
+  '__COMFYUI_DESKTOP_VERSION__',
+  ...AGENT_CLIENT_ENV_VARS
 ])
 
 /** Sources whose ComfyUI and Manager are installed and updated by this app. Portable and git
@@ -1028,7 +1030,8 @@ export function sanitizeEnvVars(raw: unknown): Record<string, string> {
 
 export function buildLaunchEnv(
   inst: InstallationRecord,
-  sessionPath?: string
+  sessionPath?: string,
+  clientContext?: AgentClientContext
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
   const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
@@ -1060,6 +1063,15 @@ export function buildLaunchEnv(
   // An inherited marker (e.g. the app itself started from a ComfyUI shell) must not tag a
   // user-managed portable or git install as Desktop-managed.
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  // Consent-only and written last; scrubbed in any case, as Windows env names are case-insensitive.
+  for (const key of Object.keys(env)) {
+    if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
+  }
+  if (clientContext) {
+    env.AGENT_CLIENT_CONTEXT = 'desktop'
+    env.AGENT_CLIENT_CHANNEL = clientContext.channel
+    if (clientContext.gpuTier) env.AGENT_CLIENT_GPU_TIER = clientContext.gpuTier
+  }
   return env
 }
 

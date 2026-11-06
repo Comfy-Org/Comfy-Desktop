@@ -42,6 +42,7 @@ import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import { setHardwareProbe } from '../agentClientContext'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 import {
@@ -563,6 +564,7 @@ export function registerAppHandlers(): void {
     })
     return hardwareProbe
   }
+  setHardwareProbe(probeHardwareCached)
 
   async function getSystemInfo(): Promise<SystemInfo> {
     const hardware = await probeHardwareCached()
