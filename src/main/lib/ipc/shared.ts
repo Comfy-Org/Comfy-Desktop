@@ -122,7 +122,7 @@ import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../..
 import { findLockingProcesses } from '../file-lock-info'
 import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
-import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
+import { getComfyArgsSchema, filterUnsupportedArgs, dropValuelessArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
@@ -243,6 +243,7 @@ export {
   findLockingProcesses,
   getComfyArgsSchema,
   filterUnsupportedArgs,
+  dropValuelessArgs,
   getComfyFeatureFlagRegistry
 }
 export type {
