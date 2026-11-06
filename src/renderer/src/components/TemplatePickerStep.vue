@@ -271,7 +271,6 @@ defineExpose({ shownDiskError })
 </template>
 
 <style>
-/* The thumbnail placeholder keeps the original 45%–85% pulse. */
 @keyframes template-preview-pulse {
   0%,
   100% {

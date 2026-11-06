@@ -941,8 +941,6 @@ defineExpose({ open, resetContinue })
 </template>
 
 <style>
-/* The consent nudge follows its original asymmetric shake; Tailwind's stock
- * animations do not express these steps. Reduced motion is handled in markup. */
 @keyframes first-use-consent-shake {
   10%,
   90% {

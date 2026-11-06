@@ -438,7 +438,6 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 </template>
 
 <style>
-/* The pending download fills the entire bar with moving stripes. */
 @keyframes dlm-shimmer {
   to {
     background-position: 32px 0;

@@ -19,8 +19,6 @@ jobs:
         include:
           - platform: win-x64
             os: windows-latest
-          # Native Windows on Arm (NVIDIA RTX Spark). GitHub's arm64 Windows
-          # runners are free for public repositories.
           - platform: win-arm64
             os: windows-11-arm
           - platform: mac-arm64
@@ -42,10 +40,6 @@ jobs:
           node-version: '20'
 
       - name: Build bootstrap Python
-        # The script downloads python-build-standalone, installs pygit2, and
-        # places a pinned uv binary alongside python. No system Python or
-        # uv is required — all Python invocations use the just-extracted
-        # interpreter.
         run: node scripts/build-bootstrap-python.mjs --platform ${{ matrix.platform }} --output bootstrap-python
 
       - name: Package archive

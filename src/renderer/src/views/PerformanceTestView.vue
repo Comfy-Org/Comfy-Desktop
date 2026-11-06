@@ -1213,7 +1213,6 @@ watch(performanceTestLogs, async () => {
 </template>
 
 <style>
-/* The indeterminate bar moves by percentages of its own width. */
 @keyframes performance-test-download-pulse {
   from {
     transform: translateX(-100%);

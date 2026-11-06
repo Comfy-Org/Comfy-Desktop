@@ -2,10 +2,6 @@
 @import '@comfyorg/design-system/components.css';
 @import './design-system-theme.css';
 
-/* @comfyorg/design-system's base.css is not imported: its fonts use root-relative
- * URLs that break under file://, and Desktop declares Inter below. */
-
-/* Inter Font Family — matches ComfyUI frontend design system */
 @font-face {
   font-family: 'Inter';
   src: url('./fonts/inter-latin-normal.woff2') format('woff2');
@@ -22,27 +18,11 @@
   font-display: block;
 }
 
-/* PP Formula — display face for brand-refreshed takeover headings.
- * Single weight (Extrabold 800); body/lead text stays Inter.
- *
- * PP Formula is a proprietary, license-restricted font (Pangram Pangram) and
- * must NOT be committed to this public repo, so it is NOT declared with a CSS
- * @font-face here. Instead it is registered at runtime by
- * src/renderer/src/assets/proprietaryFonts.ts via the FontFace API. That keeps
- * the binary out of the bundle (the build never depends on the file existing,
- * which would break OSS/CI builds), and a relative URL resolves under file://.
- * When the font is absent the --font-display stack falls back to Inter. The
- * file is fetched at build time from a private bucket (scripts/fetch-font.mjs). */
-
-/* Fixed heading and fallback colors still read by migrated views. Keep these
- * separate from the Tailwind aliases, which follow the active theme; the
- * takeover headings intentionally retain their exact white foreground. */
 :root {
   --legacy-color-text: #ffffff;
   --legacy-color-text-muted: #8a8a8a;
 }
 
-/* Theme definitions — matched to ComfyUI frontend design system */
 [data-theme='dark'] {
   --bg: #202020;
   --text: #ffffff;
@@ -64,18 +44,11 @@
   --info: #58a6ff;
   --terminal-bg: #111112;
   --overlay-bg: rgba(0, 0, 0, 0.55);
-  /* Heavier dim used on Comfy-Instance modals. */
+
   --overlay-bg-heavy: rgba(0, 0, 0, 0.75);
-  /* Fully opaque backdrop used on binding modals (install wizards,
-     first-use, update-while-running) — visually differentiates them
-     from non-binding modals and signals the lack of click-outside / ✕
-     dismiss. */
+
   --overlay-bg-opaque: var(--bg);
 
-  /* Comfy brand neutral ramp — single canonical scale. Yellow at 50,
-   * warm grays through deep ink at 950. See @theme block for usage
-   * notes. Mirrored here as raw values so scoped CSS can read them via
-   * var(--neutral-*) without going through Tailwind. */
   --neutral-50: #f2ff59;
   --neutral-100: #c2bfb9;
   --neutral-200: #a6a2a1;
@@ -88,7 +61,6 @@
   --neutral-900: #19131d;
   --neutral-950: #100c13;
 
-  /* Semantic aliases. */
   --comfy-yellow: var(--neutral-50);
   --focus-ring: var(--neutral-100);
   --accent-plum: #afa3db;
@@ -98,50 +70,40 @@
 
   --surface-recessed: var(--neutral-900);
 
-  /* Brand-surface frosted-glass recipe — shared across brand takeover
-   * screens (ChoiceCard, config card, brand form fields). One source of
-   * truth so palette tweaks land in one place. */
   --brand-surface-bg: rgba(137, 137, 137, 0.05);
   --brand-surface-bg-hover: rgba(137, 137, 137, 0.09);
   --brand-surface-border: rgba(255, 255, 255, 0.09);
   --brand-surface-border-hover: rgba(255, 255, 255, 0.18);
   --brand-surface-blur: 75px;
 
-  /* Chooser-surface — neutral white-glass recipe used by the chooser
-   * dashboard tiles + search input. Hover lifts both bg and border one
-   * step so the tile reads as interactive without leaving the white-
-   * glass family. Transition is declared on .chooser-tile. */
   --chooser-surface-bg: rgba(255, 255, 255, 0.04);
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
 
-  /* Modal / alert surface */
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
   --modal-surface-shadow:
     0 20px 24px -4px rgba(10, 13, 18, 0.4), 0 8px 8px -4px rgba(10, 13, 18, 0.25),
     0 3px 3px -1.5px rgba(10, 13, 18, 0.2);
 
-  /* Tooltip primitive */
   --tooltip-bg: #211927;
   --tooltip-border: #38303d;
   --tooltip-fg: #ffffff;
   --z-tooltip: 10001;
 
-  /* Takeover fluid type + spacing — Utopia clamp, anchored 1024px → 1920px. */
-  --takeover-fs-caption: clamp(0.75rem, 0.6071rem + 0.2232vw, 0.875rem); /* 12→14px */
-  --takeover-fs-body: clamp(0.875rem, 0.7321rem + 0.2232vw, 1rem); /* 14→16px */
-  --takeover-fs-lead: clamp(1.0625rem, 0.8482rem + 0.3348vw, 1.25rem); /* 17→20px */
-  --takeover-fs-h3: clamp(1.3125rem, 0.9554rem + 0.558vw, 1.625rem); /* 21→26px */
-  --takeover-fs-h2: clamp(1.375rem, 0.6607rem + 1.1161vw, 2rem); /* 22→32px */
-  --takeover-fs-title: clamp(1.625rem, 0.3393rem + 2.0089vw, 2.75rem); /* 26→44px */
-  --takeover-fs-display: clamp(2rem, 0.2857rem + 2.6786vw, 3.5rem); /* 32→56px */
+  --takeover-fs-caption: clamp(0.75rem, 0.6071rem + 0.2232vw, 0.875rem);
+  --takeover-fs-body: clamp(0.875rem, 0.7321rem + 0.2232vw, 1rem);
+  --takeover-fs-lead: clamp(1.0625rem, 0.8482rem + 0.3348vw, 1.25rem);
+  --takeover-fs-h3: clamp(1.3125rem, 0.9554rem + 0.558vw, 1.625rem);
+  --takeover-fs-h2: clamp(1.375rem, 0.6607rem + 1.1161vw, 2rem);
+  --takeover-fs-title: clamp(1.625rem, 0.3393rem + 2.0089vw, 2.75rem);
+  --takeover-fs-display: clamp(2rem, 0.2857rem + 2.6786vw, 3.5rem);
 
-  --takeover-logo-size: clamp(1.5rem, 0.9286rem + 0.8929vw, 2.5rem); /* 24→32px */
-  --takeover-gap-sm: clamp(0.5rem, 0.1786rem + 0.4464vw, 0.75rem); /* 8→12px */
-  --takeover-gap-md: clamp(0.75rem, 0.1071rem + 0.8929vw, 1.25rem); /* 12→20px */
-  --takeover-gap-lg: clamp(3rem, 1.8571rem + 1.7857vw, 4rem); /* 48→64px */
+  --takeover-logo-size: clamp(1.5rem, 0.9286rem + 0.8929vw, 2.5rem);
+  --takeover-gap-sm: clamp(0.5rem, 0.1786rem + 0.4464vw, 0.75rem);
+  --takeover-gap-md: clamp(0.75rem, 0.1071rem + 0.8929vw, 1.25rem);
+  --takeover-gap-lg: clamp(3rem, 1.8571rem + 1.7857vw, 4rem);
 }
 
 [data-theme='light'] {
@@ -168,8 +130,6 @@
   --overlay-bg-heavy: rgba(0, 0, 0, 0.55);
   --overlay-bg-opaque: var(--bg);
 
-  /* Brand neutral ramp — placeholders mirrored from dark.
-   * TODO(light-brand-parity): remap when light brand lands. */
   --neutral-50: #f2ff59;
   --neutral-100: #c2bfb9;
   --neutral-200: #a6a2a1;
@@ -189,34 +149,25 @@
 
   --surface-recessed: var(--neutral-900);
 
-  /* Brand-surface tokens — mirror of dark-theme block. Light-mode
-   * brand chrome isn't shipping yet; keep the variable surface so
-   * consumers don't have to re-thread later. */
   --brand-surface-bg: rgba(137, 137, 137, 0.05);
   --brand-surface-bg-hover: rgba(137, 137, 137, 0.09);
   --brand-surface-border: rgba(255, 255, 255, 0.09);
   --brand-surface-border-hover: rgba(255, 255, 255, 0.18);
   --brand-surface-blur: 75px;
 
-  /* Chooser-surface — mirror of dark-theme block. Light-mode chooser
-   * chrome isn't shipping yet; placeholder until light brand parity. */
   --chooser-surface-bg: rgba(255, 255, 255, 0.04);
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
 
-  /* Modal / alert surface — light-theme placeholder mirrors dark-theme
-   * value until light brand parity ships. */
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
 
-  /* Tooltip primitive — mirror of dark-theme block until light parity. */
   --tooltip-bg: #211927;
   --tooltip-border: #38303d;
   --tooltip-fg: #ffffff;
   --z-tooltip: 10001;
 
-  /* Takeover fluid type + spacing — mirror of dark-theme block. */
   --takeover-fs-caption: clamp(0.75rem, 0.6071rem + 0.2232vw, 0.875rem);
   --takeover-fs-body: clamp(0.875rem, 0.7321rem + 0.2232vw, 1rem);
   --takeover-fs-lead: clamp(1.0625rem, 0.8482rem + 0.3348vw, 1.25rem);
@@ -231,13 +182,9 @@
   --takeover-gap-lg: clamp(3rem, 1.8571rem + 1.7857vw, 4rem);
 }
 
-/* Desktop runtime colors. Repeat aliases on nested dark surfaces so their
- * references resolve against that surface's tokens. The panel stays dark even
- * while the hosted editor uses its independent light theme. */
 :root[data-theme='dark'],
 :root.desktop-panel,
 :root [data-theme='dark'] {
-  /* Neutral ramp, low to high (the old ramp was plum, hue ~300). */
   --neutral-950: oklch(0.13 0.004 285);
   --neutral-900: oklch(0.165 0.005 285);
   --neutral-800: oklch(0.2 0.006 285);
@@ -248,14 +195,14 @@
   --neutral-300: oklch(0.6 0.008 285);
   --neutral-200: oklch(0.76 0.006 285);
   --neutral-100: oklch(0.9 0.003 285);
-  /* Was brand yellow: the chrome's accent is white now. */
+
   --neutral-50: oklch(0.96 0.002 285);
   --comfy-yellow: var(--neutral-50);
   --surface-recessed: var(--neutral-900);
 
   --bg: var(--color-content-background);
   --overlay-bg-opaque: var(--bg);
-  /* Mirrored in main as TITLEBAR_BG. */
+
   --titlebar-bg: var(--color-window-background);
   --titlebar-icon: var(--color-muted-foreground);
   --surface: var(--color-card);
@@ -267,7 +214,6 @@
   --text-faint: var(--color-subtle-foreground);
   --accent-label: var(--color-subtle-foreground);
 
-  /* White accent: primary actions, selection, progress. */
   --action: var(--color-foreground);
   --accent-hover: oklch(0.995 0 0);
   --accent-primary: var(--color-foreground);
@@ -297,20 +243,14 @@
   --chooser-surface-border: var(--color-border);
   --chooser-surface-border-hover: var(--color-border-strong);
 
-  /* Popup windows are sized to their content, so an outer shadow would be
-   * clipped; only the inset top highlight shows. */
   --modal-surface-bg: var(--neutral-800);
   --modal-surface-border: var(--color-border);
   --modal-surface-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07);
 
-  /* Inverted tooltips. Mirrored in main for the title-bar tooltip. */
   --tooltip-bg: var(--color-foreground);
   --tooltip-border: transparent;
   --tooltip-fg: var(--color-background);
 }
-
-/* Document reset and rendering defaults shared by the five Desktop renderers.
- * Component layouts, controls, and transitions are owned by their templates. */
 
 @layer base {
   * {
@@ -335,8 +275,7 @@
 
   body {
     font-family: 'Inter', system-ui, sans-serif;
-    /* Tailwind `antialiased` — macOS WebKit/Chromium only; ignored on
-     * Windows/Linux where the engine handles ClearType/DirectWrite. */
+
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--bg);
