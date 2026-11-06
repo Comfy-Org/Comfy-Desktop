@@ -68,7 +68,7 @@ export const when = {
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
   // Template cards: Explore and Favorites.
   templates: computed(() => inShell.value && ['explore', 'favorites'].includes(proto.page)),
-  // The cards on the Builds page (milestone 1 shows only rows).
+  // Rows or photos on the Builds page (milestone 1 shows only rows).
   buildCard: computed(
     () =>
       inShell.value && proto.milestone >= 3 && ['environments', 'instances'].includes(proto.page)
@@ -195,7 +195,7 @@ export const TWEAKS = {
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   cover: one(cover, 'gradient'),
-  buildCard: one(buildCard, 'photos'),
+  buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
   pageState: one(pageState, 'live'),

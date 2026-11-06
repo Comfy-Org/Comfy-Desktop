@@ -37,7 +37,7 @@ import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
 import { go } from '../../useProto'
 import { leaving } from '../build/buildFacts'
-import { openBuild } from '../build/buildTab'
+import { openBuild, openBuildSettings } from '../build/buildTab'
 import { syncing } from '../build/syncPrevious'
 import { clearError, errorOf } from '../build/buildErrors'
 import BuildCrashDialog from '../build/BuildCrashDialog.vue'
@@ -52,7 +52,6 @@ import {
 import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import MarItem from './MarItem.vue'
-import MarBuildCard from './MarBuildCard.vue'
 import { buildCard } from './buildCard'
 import MarSplitButton from './MarSplitButton.vue'
 import MarSeg from './MarSeg.vue'
@@ -112,8 +111,9 @@ const query = ref('')
 // deployments), so it opens on the list with those columns.
 const building = computed(() => proto.mode === 'build')
 const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
-// Milestone 1 shows only the one-line rows.
-const rowsOnly = computed(() => proto.milestone < 3 && !building.value)
+// One-line rows: all Milestone 1 has, and the default after it
+// (UI Playground › Builds view).
+const rowsOnly = computed(() => (proto.milestone < 3 || buildCard.id === 'rows') && !building.value)
 
 // Cloud and Remote show only when there are builds there (ChooserView).
 const countWhere = (w: BuildWhere): number => builds.items.filter((b) => whereOf(b) === w).length
@@ -185,34 +185,8 @@ const outputs = computed(() => {
   return made
 })
 
-// Live numbers a build would report (mock): memory in use and uptime
-// while it runs, disk left on this computer, credits an hour in the cloud.
-interface Live {
-  mem?: [number, number]
-  up?: string
-  rate?: number
-}
-const LIVE: Record<string, Live> = {
-  'local-video': { mem: [41, 128], up: '2 h 14 m' },
-  'dep-product': { mem: [52, 80], up: '3 h 05 m', rate: 95 },
-  'dep-brand': { rate: 60 },
-  'dep-upscale': { rate: 48 },
-  cloud: { rate: 42 }
-}
-const DISK_FREE = '412 GB'
-const live = (b: Build): Live => LIVE[b.id] ?? {}
 const gpuName = (b: Build): string =>
   b.gpu?.split(' · ')[0] ?? (b.kind === 'cloud' ? 'Cloud GPU' : 'This computer')
-// Total memory: the GPU's, or this computer's unified memory.
-const memTotal = (b: Build): string => b.gpu?.split(' · ')[1] ?? '128 GB'
-// How the build is right now, in a few words.
-function stateLine(b: Build): string {
-  if (b.state === 'running') return `Up ${live(b).up ?? 'just now'}`
-  if (b.state === 'launching') return b.kind === 'cloud' ? 'Waking up, ~20 s' : 'Starting…'
-  if (b.state === 'error') return 'Didn’t start'
-  if (b.kind === 'cloud') return 'Asleep · wakes in ~20 s'
-  return b.state === 'update' ? 'Stopped · update ready' : 'Stopped'
-}
 
 const STATUS: Record<ProtoInstance['state'], ItemStatus | undefined> = {
   running: 'running',
@@ -389,12 +363,20 @@ function m1Lines(b: Build): MenuLine[] {
     local && !problem
       ? [
           { label: 'Export Snapshot', icon: Download, run: () => toast('Snapshot exported.') },
-          {
-            label: 'Restore Snapshot',
-            icon: History,
-            run: () => openBuild(b.id, 'snapshots'),
-            ...gated
-          },
+          // Snapshots live on the build's page in Builds, on Settings after it.
+          ...(proto.milestone < 3 || syncing.value
+            ? [
+                {
+                  label: 'Restore Snapshot',
+                  icon: History,
+                  run: () =>
+                    syncing.value
+                      ? openBuildSettings(b.id, 'snapshots')
+                      : openBuild(b.id, 'snapshots'),
+                  ...gated
+                }
+              ]
+            : []),
           ...(proto.signedIn
             ? [{ label: 'Create Build', icon: CloudUpload, run: () => createBuild(b) }]
             : [])
@@ -478,18 +460,9 @@ function lines(b: Build): MenuLine[] {
   ]
 }
 
-/* ---- The cards with no picture (UI Playground › Build card) ---- */
 // The page's own words for where: the filter's.
 const whereLabel = (b: Build): string => (b.kind === 'local' ? 'This computer' : 'Cloud')
-// Quiet words for the state: beside the chip while running, on their own
-// when there is no chip (stopped, asleep).
-function note(b: Build): string | undefined {
-  if (b.state === 'running') return stateLine(b)
-  if (STATUS[b.state]) return undefined
-  return b.kind === 'cloud' ? stateLine(b) : `Stopped · ${b.lastUsed}`
-}
-// Split card: the state as a badge with no fill. Where it runs is the tile
-// and the button, so the line keeps the specs (or why it didn't start).
+// The state, on a photo card's foot.
 const SPLIT_STATE: Record<ProtoInstance['state'], string> = {
   running: 'Running',
   launching: 'Starting',
@@ -536,70 +509,6 @@ const rowState = (b: Build): string => {
 }
 const rowTone = (b: Build): 'ok' | 'warn' | 'bad' | 'idle' =>
   syncedProblem(b) ? 'bad' : updating.has(b.id) || b.state === 'update' ? 'idle' : TONE[b.state]
-function card(b: Build) {
-  // Where is said elsewhere on the card, so no "Cloud build" here.
-  const release = [b.deployment ? undefined : b.channel, b.version].filter(Boolean)
-  const mem = b.state === 'running' ? live(b).mem : undefined
-  // Tile, strip and split lead the specs with the hardware. Grouped leaves the
-  // hardware to its heading, unless it's the cloud's own.
-  const specs = (
-    ['tile', 'strip', 'split'].includes(buildCard.id)
-      ? [gpuName(b), ...release]
-      : [
-          ...release,
-          ...(buildCard.id === 'where' || (buildCard.id === 'grouped' && b.kind === 'cloud')
-            ? [gpuName(b)]
-            : [])
-        ]
-  ).join(' · ')
-  return {
-    name: b.name,
-    kind: b.kind === 'cloud' ? ('cloud' as const) : ('local' as const),
-    where: whereLabel(b),
-    meta: specs,
-    error: b.state === 'error' ? b.error : undefined,
-    status: STATUS[b.state],
-    statusLabel: statusLabel(b),
-    note: note(b),
-    line: { state: splitState(b), rest: b.state === 'error' ? (b.error ?? '') : specs },
-    tone: TONE[b.state],
-    gear: gpuName(b),
-    usage: mem && (mem[0] / mem[1]) * 100,
-    usageLabel: mem ? `${mem[0]} / ${mem[1]} GB` : memTotal(b),
-    counts: `${b.models ?? 'All'} models · ${b.nodes ?? 'Core'} node packs`,
-    cta: primary(b),
-    second: second(b),
-    busy: b.state === 'launching',
-    lines: lines(b),
-    renaming: lib.renaming.value === b.id,
-    fav: b.fav
-  }
-}
-const cardOn = (b: Build) => ({
-  open: () => open(b),
-  'start-rename': () => (lib.renaming.value = b.id),
-  rename: (name: string) => lib.rename(b.id, name),
-  'cancel-rename': () => (lib.renaming.value = ''),
-  star: () => builds.star(b.id)
-})
-const groups = computed(() => {
-  const local = shown.value.filter((b) => b.kind === 'local')
-  return [
-    {
-      kind: 'local' as const,
-      label: 'This computer',
-      hint: local[0] && `${gpuName(local[0])} · ${DISK_FREE} free`,
-      items: local
-    },
-    {
-      kind: 'cloud' as const,
-      label: 'Cloud',
-      hint: 'Credits by the hour, only while it runs',
-      items: shown.value.filter((b) => b.kind !== 'local')
-    }
-  ].filter((g) => g.items.length)
-})
-
 const newLabel = computed(() =>
   surface.id === 'desktop' ? 'Install on this computer' : 'Set up a cloud build'
 )
@@ -768,37 +677,6 @@ const newLabel = computed(() =>
         :build="crashOf"
         @close="crashOf = undefined"
         @start="crashOf && retry(crashOf)"
-      />
-    </div>
-    <!-- Grouped: the group says where, with the hardware its builds share. -->
-    <template v-else-if="view === 'grid' && buildCard.id === 'grouped'">
-      <section v-for="g in groups" :key="g.kind" class="mar-bc-group">
-        <h2 class="mar-bc-group-head">
-          <LocationIcon :kind="g.kind" :size="15" />{{ g.label }}
-          <span class="mar-bc-group-hint">{{ g.hint }}</span>
-        </h2>
-        <div class="mar-grid is-wide">
-          <MarBuildCard
-            v-for="b in g.items"
-            :key="b.id"
-            look="grouped"
-            v-bind="card(b)"
-            v-on="cardOn(b)"
-          />
-        </div>
-      </section>
-    </template>
-    <div
-      v-else-if="view === 'grid' && buildCard.id !== 'photos'"
-      class="mar-grid is-wide"
-      :class="buildCard.id === 'split' && 'is-two'"
-    >
-      <MarBuildCard
-        v-for="b in shown"
-        :key="b.id"
-        :look="buildCard.id"
-        v-bind="card(b)"
-        v-on="cardOn(b)"
       />
     </div>
     <!-- Photos: the last things made on it, then what milestone 1 says and
@@ -1143,10 +1021,6 @@ const newLabel = computed(() =>
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-build-go:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 5%, var(--color-card-background));
-}
-/* One-action cards: two to a row, so the button has room to say where. */
-.mar-grid.is-wide.is-two {
-  grid-template-columns: repeat(auto-fill, minmax(max(300px, calc(50% - 7px)), 1fr));
 }
 /* One build to a line, on the card's surface. */
 .mar-bc-rows {

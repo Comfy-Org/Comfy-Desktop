@@ -262,8 +262,8 @@ function onScroll(e: Event): void {
           <Row :show="shows('templates')" label="Template cards">
             <Select v-model="templateStyle.id" :options="TEMPLATE_STYLES" class="w-full" />
           </Row>
-          <Row :show="shows('buildCard')" label="Build card">
-            <Select v-model="buildCard.id" :options="BUILD_CARDS" class="w-full" />
+          <Row :show="shows('buildCard')" label="Builds view">
+            <Seg v-model="buildCard.id" label="Builds view" :options="BUILD_CARDS" />
           </Row>
           <Row :show="shows('buildPage')" label="Build page">
             <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />

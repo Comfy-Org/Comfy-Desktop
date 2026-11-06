@@ -61,3 +61,7 @@ Past the Builds milestone, UI Playground › Sync with previous versions (Off by
 default) keeps what Builds can do without changing the later design: a Settings
 page per build with Desktop's tabs, opened from More and the Update chip; the
 list's problem states on the cards; Remote builds. Migrate stays in Builds.
+
+Builds is one-line rows in every milestone, past Builds too (B1). The other
+card looks are gone; UI Playground › Builds view keeps Photos in case the last
+things made on a build can be shown later.
