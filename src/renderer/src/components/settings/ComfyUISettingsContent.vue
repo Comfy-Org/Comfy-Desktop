@@ -472,7 +472,7 @@ function resolveNavLabel(key: string): string {
 
 const primaryActionLabel = computed(() => {
   if (hasPendingRestart.value) {
-    return t('instancePicker.restartToApply', 'Restart to apply changes')
+    return t('instancePicker.restartToApply')
   }
   return resolveNavLabel(primaryDecision.value.primaryLabel)
 })

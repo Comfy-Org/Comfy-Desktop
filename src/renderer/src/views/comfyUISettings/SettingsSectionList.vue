@@ -257,7 +257,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         class="settings-v2-item flex items-center justify-between gap-2 text-[length:var(--takeover-fs-body)] leading-[1.4] text-text"
       >
         <span class="settings-v2-item-label inline-flex min-w-0 flex-1 items-center gap-1.5">
-          {{ item.label }}{{ item.active ? ` (${t('common.active', 'active')})` : '' }}
+          {{ item.label }}{{ item.active ? ` (${t('common.active')})` : '' }}
           <span
             v-if="item.tag"
             class="settings-v2-item-tag rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-0.5 text-[length:var(--takeover-fs-caption)] font-medium text-text-muted"
@@ -355,9 +355,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   aria-hidden="true"
                 />
                 <span class="settings-v2-env-notice-text min-w-0">
-                  {{
-                    t('envVars.securityWarningShort', 'Environment variables may contain secrets')
-                  }}
+                  {{ t('envVars.securityWarningShort') }}
                 </span>
               </div>
             </div>

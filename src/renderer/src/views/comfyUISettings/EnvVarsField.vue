@@ -155,7 +155,7 @@ function onValueChange(i: number, val: string): void {
             class="env-var-error mt-1 text-[11px] leading-4 text-danger"
             role="alert"
           >
-            {{ t('envVars.duplicateKey', 'Duplicate key') }}
+            {{ t('envVars.duplicateKey') }}
           </p>
         </div>
         <div
@@ -175,11 +175,7 @@ function onValueChange(i: number, val: string): void {
             variant="textonly"
             size="unset"
             class="env-var-reveal absolute top-1/2 right-1 inline-flex size-7 [transform:translateY(-50%)] items-center justify-center rounded-md border-none bg-transparent p-0 text-neutral-100 appearance-auto gap-0 font-normal leading-[1.5] whitespace-normal transition-[color,background-color] duration-[120ms] ease-[ease] hover:bg-border-hover hover:text-text focus-visible:bg-border-hover focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
-            :aria-label="
-              isRevealed(i)
-                ? t('envVars.hideValue', 'Hide value')
-                : t('envVars.revealValue', 'Reveal value')
-            "
+            :aria-label="isRevealed(i) ? t('envVars.hideValue') : t('envVars.revealValue')"
             :aria-pressed="isRevealed(i)"
             @click="toggleReveal(i)"
           >

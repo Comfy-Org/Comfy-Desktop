@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
-import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
+import { Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 const ANNOUNCEMENT_ID = 'comfy_api'
@@ -15,12 +14,6 @@ const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
 const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 
 const emit = defineEmits<{ close: [] }>()
-const { tm } = useI18n()
-
-const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.comfyApi.highlights')
-  return Array.isArray(raw) ? (raw as unknown as string[]) : []
-})
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isMuted = ref(true)
@@ -120,15 +113,6 @@ onMounted(() => {
           >
             {{ $t('announcement.comfyApi.lead') }}
           </p>
-          <ul
-            v-if="highlights.length"
-            class="announce-list mt-1 mr-0 mb-0 ml-0 flex list-none flex-col gap-2.5 p-0 [&>li]:grid [&>li]:grid-cols-[auto_1fr] [&>li]:items-start [&>li]:gap-3 [&>li]:text-[length:var(--takeover-fs-lead)] [&>li]:leading-[normal] [&>li]:text-neutral-100"
-          >
-            <li v-for="h in highlights" :key="h">
-              <Check :size="16" class="announce-check mt-[3px] text-comfy-yellow" />
-              <span>{{ h }}</span>
-            </li>
-          </ul>
         </div>
         <footer
           class="announce-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"

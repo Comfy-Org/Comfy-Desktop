@@ -75,7 +75,7 @@ onBeforeUnmount(() => {
   <BaseModal
     :open="open"
     size="xl"
-    :aria-label="t('feedback.modalLabel', 'Send Feedback')"
+    :aria-label="t('feedback.modalLabel')"
     content-class="feedback-modal-panel [&.base-modal-panel]:min-h-0 [&_.base-modal-body]:overflow-hidden [&_.base-modal-body]:p-0"
     @close="onClose"
   >
@@ -86,13 +86,13 @@ onBeforeUnmount(() => {
         role="status"
         aria-live="polite"
       >
-        {{ t('feedback.loading', 'Loading feedback form…') }}
+        {{ t('feedback.loading') }}
       </div>
       <iframe
         v-if="open && url"
         class="feedback-modal-frame absolute inset-0 size-full border-0 bg-transparent"
         :src="url"
-        :title="t('feedback.modalLabel', 'Send Feedback')"
+        :title="t('feedback.modalLabel')"
         loading="eager"
         allow="camera; microphone; autoplay; encrypted-media; fullscreen"
         @load="onFrameLoad"
