@@ -476,7 +476,6 @@ describe('runUvPipDetailed mirror fallback', () => {
   const MIRROR = 'https://custom.mirror.example/simple/'
   const spawnMock = vi.mocked(spawn)
 
-  /** Each spawn exits with the next code in `codes`, printing `out<n>`. */
   function uvExiting(...codes: number[]): void {
     let n = 0
     spawnMock.mockImplementation((() => {
@@ -488,7 +487,6 @@ describe('runUvPipDetailed mirror fallback', () => {
       }
       proc.stdout = new EventEmitter()
       proc.stderr = new EventEmitter()
-      // No pid: an abort must not signal a real process group.
       proc.pid = undefined
       proc.kill = () => true
       const i = n++

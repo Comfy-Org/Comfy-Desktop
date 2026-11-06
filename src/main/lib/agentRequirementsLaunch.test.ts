@@ -43,7 +43,6 @@ vi.mock('child_process', async (importOriginal) => {
       return {}
     }
   )
-  // A passthrough: only the mirror fallback test below drives it, through the real uv helper.
   const spawn = vi.fn(actual.spawn)
   return { ...actual, execFile, spawn, default: { ...actual, execFile, spawn } }
 })
@@ -2521,8 +2520,6 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it('applies it, counting no failure, when pypi.org is unreachable and the mirror-first retry installs it', async () => {
-      // The real uv helper, over a uv that fails whenever pypi.org is asked first: the override's
-      // outcome must be the retry's, so a mirror the retry rescues never counts toward retiring it.
       const real = await vi.importActual<typeof pip>('./pip')
       const pypiFirst = (args: string[]): boolean =>
         args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
@@ -2533,8 +2530,6 @@ describe('installAgentRequirements with a version override', () => {
           pid: undefined,
           kill: () => true
         })
-        // The cache holds what a mirror-first run fetched, so the offline check misses it too
-        // when pypi.org is asked first.
         const code = pypiFirst(args) ? 1 : 0
         setImmediate(() => proc.emit('close', code))
         return proc

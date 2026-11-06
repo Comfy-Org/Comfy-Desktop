@@ -342,7 +342,6 @@ export async function postInstall(
         if (result.ok) {
           sendProgress('update', { percent: 100, status: 'Up to date' })
         } else {
-          // The install stays usable on the version it shipped with, so this is not an install failure.
           const reason = result.message?.split('\n')[0] ?? 'unknown error'
           sendProgress('update', {
             percent: 100,

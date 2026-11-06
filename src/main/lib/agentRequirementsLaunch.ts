@@ -891,8 +891,6 @@ function deferOverride(
   return { decision: 'deferred', reason: 'not_cached', pins, install }
 }
 
-/** Not counted toward retiring the override: an index that has not synced a pin yet looks the
- *  same as a pin no index will ever serve, and a later launch may resolve it. */
 function unresolved(
   sendOutput: (text: string) => void,
   pins: OverridePins,

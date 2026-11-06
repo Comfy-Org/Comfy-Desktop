@@ -53,13 +53,7 @@ export interface UvPipResult {
  *  depends on it. A caller that keeps the handle owns whatever it does with it. */
 export type OnUvSpawn = (proc: ChildProcess) => void
 
-/**
- * Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output.
- *
- * With `mirrors`, the index args are appended, pypi.org first (see `getPipIndexArgs`). If that run
- * fails and a mirror is set, it runs once more with the mirrors first (`getPipFallbackIndexArgs`), for
- * a network that can't reach pypi.org.
- */
+/** Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output. */
 export async function runUvPipDetailed(
   uvPath: string,
   args: string[],
@@ -250,7 +244,6 @@ function normalizeIndexUrl(url: string): string {
   return trimmed.endsWith('/') ? trimmed : trimmed + '/'
 }
 
-/** The configured mirror, then the Chinese mirrors when they are on, without pypi.org or repeats. */
 function mirrorUrls(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
   const urls: string[] = []
   const seen = new Set([normalizeIndexUrl(PYPI_INDEX_URL)])
