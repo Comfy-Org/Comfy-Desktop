@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockModalConfirm = vi.hoisted(() => vi.fn())
 const mockModalAlert = vi.hoisted(() => vi.fn())
@@ -42,8 +39,8 @@ vi.mock('../lib/telemetry', () => ({
 }))
 
 const mockRunAction = vi.hoisted(() => vi.fn())
-;(globalThis as unknown as { window: { api: { runAction: typeof mockRunAction } } }).window = {
-  api: { runAction: mockRunAction }
+;(window as unknown as { api: { runAction: typeof mockRunAction } }).api = {
+  runAction: mockRunAction
 }
 
 import { useListAction } from './useListAction'
@@ -92,7 +89,7 @@ describe('useListAction — desktop launch interceptor', () => {
 
     expect(mockModalConfirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'desktop.migrateBeforeLaunchTitle'
+        title: 'Migrate before launching?'
       })
     )
     expect(showProgress).toHaveBeenCalledOnce()
