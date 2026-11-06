@@ -158,7 +158,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
             >~{{ nodeDelta.changed }}</span
           >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel', 'nodes') }}</span>
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel') }}</span>
         </span>
         <span
           v-if="hasPipChanges"
@@ -180,7 +180,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
             >~{{ pipDelta.changed }}</span
           >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel', 'pkgs') }}</span>
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel') }}</span>
         </span>
       </div>
     </Button>

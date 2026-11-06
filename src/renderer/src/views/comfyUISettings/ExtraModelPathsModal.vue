@@ -42,21 +42,21 @@ const { t } = useI18n()
   <BaseModal
     :open="open"
     size="md"
-    :aria-label="t('comfyUISettings.extraModelPathsModalTitle', 'Custom model paths')"
+    :aria-label="t('comfyUISettings.extraModelPathsModalTitle')"
     @close="emit('close')"
   >
     <template #header>
       <div class="empm-header flex min-w-0 items-center gap-2">
         <h2 class="empm-title m-0 min-w-0 truncate text-[15px] font-semibold">
-          {{ t('comfyUISettings.extraModelPathsModalTitle', 'Custom model paths') }}
+          {{ t('comfyUISettings.extraModelPathsModalTitle') }}
         </h2>
         <Button
           variant="textonly"
           size="unset"
           type="button"
           class="empm-refresh static ml-auto inline-flex size-7 items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
-          :aria-label="t('comfyUISettings.refreshCustomPaths', 'Refresh status')"
-          :title="t('comfyUISettings.refreshCustomPaths', 'Refresh status')"
+          :aria-label="t('comfyUISettings.refreshCustomPaths')"
+          :title="t('comfyUISettings.refreshCustomPaths')"
           @click="emit('refresh')"
         >
           <RefreshCw :size="14" aria-hidden="true" />
@@ -71,12 +71,7 @@ const { t } = useI18n()
     </template>
 
     <p class="empm-note mt-0 mr-0 mb-3 ml-0 text-[12px] leading-[1.45] opacity-75">
-      {{
-        t(
-          'comfyUISettings.extraModelPathsModalNote',
-          'Read-only — ComfyUI searches these directories, but the launcher does not manage them. Edit extra_model_paths.yaml to change them.'
-        )
-      }}
+      {{ t('comfyUISettings.extraModelPathsModalNote') }}
     </p>
 
     <section
@@ -90,7 +85,7 @@ const { t } = useI18n()
           v-if="section.isDefault"
           class="empm-tag inline-flex flex-none items-center gap-0.5 rounded-[999px] border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-text-muted uppercase"
         >
-          {{ t('common.default', 'default') }}
+          {{ t('common.default') }}
           <InfoTooltip :text="t('tooltips.extraModelPathsDefault')" />
         </span>
       </div>
@@ -107,7 +102,7 @@ const { t } = useI18n()
         "
         :title="
           section.basePathExists
-            ? t('comfyUISettings.openBaseFolder', 'Open base folder')
+            ? t('comfyUISettings.openBaseFolder')
             : t('comfyUISettings.dirMissingTitle', { dir: section.basePath })
         "
         @click="emit('open-path', section.basePath)"
@@ -138,7 +133,7 @@ const { t } = useI18n()
             "
             :title="
               d.dirExists
-                ? t('models.openDir', 'Open folder')
+                ? t('models.openDir')
                 : t('comfyUISettings.dirMissingTitle', { dir: d.dir })
             "
             @click="emit('open-path', d.dir)"
@@ -159,7 +154,7 @@ const { t } = useI18n()
         @click="emit('reveal-path', yamlPath)"
       >
         <FileText :size="14" aria-hidden="true" />
-        <span>{{ t('comfyUISettings.revealYaml', 'Show extra_model_paths.yaml') }}</span>
+        <span>{{ t('comfyUISettings.revealYaml') }}</span>
       </Button>
     </template>
   </BaseModal>

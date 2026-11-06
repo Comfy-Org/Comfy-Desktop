@@ -1498,8 +1498,8 @@ defineExpose({ open })
                     variant="link"
                     type="button"
                     class="config-path-open block min-w-0 flex-[0_1_auto] truncate py-0 text-left text-inherit"
-                    :title="$t('actions.openDirectory', 'Open Directory')"
-                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
+                    :title="$t('actions.openDirectory')"
+                    :aria-label="`${$t('actions.openDirectory')}: ${instPath}`"
                     @click="handleOpenInstPath"
                   >
                     {{ instPath }}

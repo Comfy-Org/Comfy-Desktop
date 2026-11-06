@@ -32,7 +32,7 @@ const { t } = useI18n()
       class="op-error-detail__copy absolute"
       :class="compact ? 'top-1 right-1' : 'top-1.5 right-1.5'"
       :get-value="() => props.error"
-      :aria-label="t('common.copyError', 'Copy error details')"
+      :aria-label="t('common.copyError')"
       :data-testid="TID.pickerOpErrorCopy"
     />
   </div>

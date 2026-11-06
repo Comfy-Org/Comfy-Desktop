@@ -15,6 +15,10 @@ const KEY_REFERENCES = [
   ),
   new RegExp(String.raw`\bkeypath=(["'])${STATIC_KEY}\1`, 'g')
 ]
+const INLINE_DEFAULT_MESSAGE = new RegExp(
+  String.raw`(?<![\w.$])(?:\$t|t|i18n\.global\.t)\(\s*(['"\x60])${STATIC_KEY}\1\s*,\s*['"\x60]`,
+  'g'
+)
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -33,20 +37,20 @@ function hasMessage(tree: Tree, key: string): boolean {
   return node !== undefined
 }
 
-function referencesToMissingKeys(): string[] {
-  const missing: string[] = []
+function sourceMatches(patterns: RegExp[], keep: (key: string) => boolean): string[] {
+  const found: string[] = []
   for (const file of sourceFiles(SOURCE_ROOT)) {
     const source = fs.readFileSync(file, 'utf-8')
-    for (const pattern of KEY_REFERENCES) {
+    for (const pattern of patterns) {
       for (const match of source.matchAll(pattern)) {
         const key = match[2]
-        if (hasMessage(en as Tree, key)) continue
+        if (!keep(key)) continue
         const line = source.slice(0, match.index).split('\n').length
-        missing.push(`${path.relative(SOURCE_ROOT, file).split(path.sep).join('/')}:${line} ${key}`)
+        found.push(`${path.relative(SOURCE_ROOT, file).split(path.sep).join('/')}:${line} ${key}`)
       }
     }
   }
-  return missing
+  return found
 }
 
 function flatten(obj: Tree, prefix = ''): Map<string, string> {
@@ -67,10 +71,18 @@ describe('locale coverage', () => {
   const zhKeys = flatten(zh as Tree)
 
   it('en defines every key the source code references', () => {
-    const missing = referencesToMissingKeys()
+    const missing = sourceMatches(KEY_REFERENCES, (key) => !hasMessage(en as Tree, key))
     expect(
       missing,
       `en.json is missing ${missing.length} referenced keys:\n${missing.join('\n')}`
+    ).toEqual([])
+  })
+
+  it('source code reads copy from the locales instead of passing it inline', () => {
+    const inline = sourceMatches([INLINE_DEFAULT_MESSAGE], () => true)
+    expect(
+      inline,
+      `${inline.length} translation calls pass inline text that duplicates the locales:\n${inline.join('\n')}`
     ).toEqual([])
   })
 

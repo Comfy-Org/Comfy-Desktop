@@ -188,7 +188,7 @@ function onValueChange(i: number, val: string): void {
           variant="textonly"
           size="unset"
           class="env-var-remove static gap-0 font-normal leading-[1.5] whitespace-normal inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-solid border-transparent bg-transparent p-0 text-text-muted appearance-auto transition-[background-color,border-color,color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border)] hover:bg-[var(--brand-surface-bg-hover)] hover:text-danger focus-visible:border-[var(--chooser-surface-border)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-danger focus-visible:outline-none focus-visible:ring-0"
-          :aria-label="t('envVars.remove', 'Remove variable')"
+          :aria-label="t('envVars.remove')"
           @click="removeRow(i)"
         >
           <X :size="14" />

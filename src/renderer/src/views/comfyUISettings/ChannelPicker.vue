@@ -164,14 +164,12 @@ const headlineProduct = computed(() => preview.value?.productName ?? '')
 const headlineVersion = computed(() => {
   if (!preview.value) {
     return draftIsCurrent.value
-      ? t('channelCards.upToDate', 'Up to date')
+      ? t('channelCards.upToDate')
       : t('channelCards.switchTo', { channel: selectedOption.value?.label ?? '' })
   }
   if (preview.value.updateAvailable) {
     const ver = preview.value.latestVersion
-    return ver && ver !== '—'
-      ? formatVersionLabel(ver)
-      : t('channelCards.updateAvailable', 'Update available')
+    return ver && ver !== '—' ? formatVersionLabel(ver) : t('channelCards.updateAvailable')
   }
   return formatVersionLabel(preview.value.installedVersion)
 })
@@ -179,10 +177,10 @@ const headlineVersion = computed(() => {
 const statusBadge = computed(() => {
   if (!preview.value) return null
   if (preview.value.updateAvailable) {
-    return t('channelCards.updateAvailable', 'Update available')
+    return t('channelCards.updateAvailable')
   }
   if (preview.value.hideUpToDateBadge) return null
-  return t('channelCards.upToDate', 'Up to date')
+  return t('channelCards.upToDate')
 })
 
 const statusBadgeTone = computed<'current' | 'update'>(() =>
@@ -217,14 +215,14 @@ const statRows = computed<StatRow[]>(() => {
   if (updateAvailable && preview.value.installedVersion) {
     rows.push({
       id: 'installed',
-      label: t('channelCards.installedVersion', 'Installed'),
+      label: t('channelCards.installedVersion'),
       value: formatVersionLabel(preview.value.installedVersion)
     })
   }
   if (updateAvailable && preview.value.latestVersion && !versionsMatch.value) {
     rows.push({
       id: 'latest',
-      label: preview.value.latestLabel ?? t('channelCards.latestVersion', 'Latest'),
+      label: preview.value.latestLabel ?? t('channelCards.latestVersion'),
       value: formatVersionLabel(preview.value.latestVersion),
       highlight: true
     })
@@ -234,7 +232,7 @@ const statRows = computed<StatRow[]>(() => {
   if (lastChecked) {
     rows.push({
       id: 'last-checked',
-      label: t('channelCards.lastChecked', 'Last checked'),
+      label: t('channelCards.lastChecked'),
       value: lastChecked.value,
       title: lastChecked.title
     })
@@ -333,10 +331,10 @@ const footerActions = computed<
 
 function optionLabel(opt: DetailFieldOption): string {
   if (opt.value === currentValue.value) {
-    return `${opt.label} — ${t('channelCards.current', 'Current')}`
+    return `${opt.label} — ${t('channelCards.current')}`
   }
   if (opt.recommended) {
-    return `${opt.label} — ${t('newInstall.recommended', 'Recommended')}`
+    return `${opt.label} — ${t('newInstall.recommended')}`
   }
   return opt.label
 }
@@ -444,7 +442,7 @@ function actionClass(
         class="channel-picker-enriching-spinner flex-none animate-spin [animation-duration:0.9s] motion-reduce:animate-none"
         aria-hidden="true"
       />
-      {{ t('channelCards.computingCommitsAhead', 'Computing commits ahead…') }}
+      {{ t('channelCards.computingCommitsAhead') }}
     </p>
 
     <div
@@ -515,7 +513,7 @@ function actionClass(
         v-if="!draftIsCurrent && !preview"
         class="channel-picker-empty m-0 rounded-md border border-dashed border-[var(--chooser-surface-border)] px-2.5 py-2 text-[12px] leading-4 text-text-muted"
       >
-        {{ t('channelCards.noInfo', 'No information available for this channel.') }}
+        {{ t('channelCards.noInfo') }}
       </p>
       <p
         v-else-if="!draftIsCurrent && preview"

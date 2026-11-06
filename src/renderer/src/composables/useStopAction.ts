@@ -13,13 +13,10 @@ export function useStopAction(dialogs: StopActionDialogs) {
   const { t } = useI18n()
 
   async function confirmAndStop(installationId: string): Promise<boolean> {
-    const stopLabel = t('actions.stop', 'Stop')
+    const stopLabel = t('actions.stop')
     const confirmed = await dialogs.confirm({
-      title: t('actions.stopConfirmTitle', 'Stop ComfyUI'),
-      message: t(
-        'actions.stopConfirmMessage',
-        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.'
-      ),
+      title: t('actions.stopConfirmTitle'),
+      message: t('actions.stopConfirmMessage'),
       confirmLabel: stopLabel
     })
     if (!confirmed) return false
