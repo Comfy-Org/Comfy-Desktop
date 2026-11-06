@@ -432,27 +432,11 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   const items: TitlePopupMenuItem[] = [
     { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
-    { id: 'new-install', label: 'New Instance', labelKey: 'fileMenu.newInstall' },
-    {
-      id: 'track',
-      label: 'Add Existing Instance',
-      labelKey: 'fileMenu.addExistingInstall'
-    },
-    { id: 'load-snapshot', label: 'Load Snapshot', labelKey: 'fileMenu.loadSnapshot' },
-    { kind: 'separator' },
-    {
-      id: 'performance-test',
-      label: 'Performance Tests',
-      labelKey: 'fileMenu.performanceTest'
-    },
-    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
-    { kind: 'separator' },
     {
       id: 'settings',
       label: 'Desktop Settings',
       labelKey: 'fileMenu.globalSettings'
-    },
-    { id: 'feedback', label: 'Send Beta Feedback', labelKey: 'fileMenu.sendFeedback' }
+    }
   ]
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()

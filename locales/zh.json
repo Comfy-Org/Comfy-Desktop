@@ -70,6 +70,8 @@
     "buildsTitle": "构建",
     "newBuild": "新建构建",
     "newBuildLabel": "新建构建",
+    "moreBuildOptions": "更多构建选项",
+    "addExistingBuild": "添加现有构建",
     "filterThisComputer": "此电脑",
     "whereLabel": "运行位置",
     "sortLabel": "排序",

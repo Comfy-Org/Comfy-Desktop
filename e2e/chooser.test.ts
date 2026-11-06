@@ -4,8 +4,7 @@ import {
   clickNewInstallTile,
   openTitleMenu,
   expectChooserVisible,
-  expectTakeoverOpen,
-  dismissOverlay
+  expectTakeoverOpen
 } from './support/chooserHelpers'
 import {
   findWebContentsId,
@@ -43,8 +42,35 @@ test('clicking New Install tile opens the new-install takeover @windows @macos @
   await clickNewInstallTile(ctx.panel)
   await expectTakeoverOpen(ctx.panel)
   expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
-  await dismissOverlay(ctx.panel)
+  expect(await ctx.panel.click('.config-back-to-dashboard')).toBe(true)
+  await expect.poll(() => ctx.panel.exists('.brand-takeover-root')).toBe(false)
   await expectChooserVisible(ctx.panel)
+})
+
+test('Builds dropdown opens both import flows and restores focus on Escape @windows @macos @linux', async () => {
+  const trigger = '[data-testid="build-actions-menu-trigger"]'
+  expect(await ctx.panel.click(trigger)).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="build-actions-add-existing"]')
+  await ctx.panel.pressKey('Escape')
+  await expect
+    .poll(() =>
+      ctx.panel.evaluate<boolean>(`document.activeElement?.matches('${trigger}') ?? false`)
+    )
+    .toBe(true)
+
+  for (const [action, modal] of [
+    ['add-existing', 'track-modal'],
+    ['load-snapshot', 'load-snapshot-modal']
+  ]) {
+    expect(await ctx.panel.click(trigger)).toBe(true)
+    const item = `[data-testid="build-actions-${action}"]`
+    await ctx.panel.waitForVisible(item)
+    expect(await ctx.panel.click(item)).toBe(true)
+    await ctx.panel.waitForVisible(`[data-testid="${modal}"]`)
+    expect(await ctx.panel.click('.takeover-back')).toBe(true)
+    await expect.poll(() => ctx.panel.exists(`[data-testid="${modal}"]`)).toBe(false)
+    await expectChooserVisible(ctx.panel)
+  }
 })
 
 test('activate hook focuses the existing chooser host instead of spawning a duplicate @windows @macos @linux', async () => {
@@ -84,7 +110,7 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems.length).toBeGreaterThan(0)
+  expect(popupItems).toEqual(['Open Dashboard', 'Desktop Settings', 'Close Window', 'Quit Desktop'])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {
