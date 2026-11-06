@@ -1033,6 +1033,7 @@ async function runLaunch(
   let desktopAddedAssets = false
   /** A member's agent campaign gave no answer this launch, and this core can take the flag. */
   let agentUnanswered = false
+  let agentHandTyped = false
   let coreCommit: string | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
@@ -1464,6 +1465,7 @@ async function runLaunch(
     const split = splitLaunchCommand(launchCmd)
     if (split) {
       const { prefixArgs, userArgs, mainPyAbs, comfyuiDir } = split
+      agentHandTyped = userArgs.includes('--enable-agent')
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
       // Read here rather than reused from `revision` above: that one falls back to the
       // record when HEAD is unreadable, which is the very disagreement being checked for.
@@ -1604,12 +1606,16 @@ async function runLaunch(
   //
   // A member whose campaign flag didn't answer in time keeps the agent a previous launch installed,
   // with nothing installed: there is no override to try, and core's file may pin only a placeholder.
+  // So does a user who typed the flag (and this core kept it): no campaign gives them an override.
   let kept: string | null = null
-  if (agentUnanswered && launchCmd.args) {
+  const handTyped = agentHandTyped && launchCmd.args?.includes('--enable-agent') === true
+  if ((agentUnanswered || handTyped) && launchCmd.args) {
     const plan = planAgentRequirementsInstall(inst, [...launchCmd.args, '--enable-agent'])
     kept = plan && (await installedWorkingAgent(plan, readOverrideState(inst), abort.signal))
     if (abort.signal.aborted) return { ok: false, cancelled: true }
-    if (kept) {
+    if (kept && handTyped) {
+      makeSendOutput(sender, installationId)(`\nKeeping the installed agent ${kept}\n`)
+    } else if (kept) {
       launchCmd.args.push('--enable-agent')
       makeSendOutput(
         sender,

@@ -9,9 +9,11 @@ import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import { stripAnsi } from './stderrTail'
+import { parseArgs } from './util'
 import {
   FRONTEND_PACKAGE,
   agentGoBehindAgent,
+  compareVersions,
   coreFrontendVersion,
   effectiveAgentRequirements,
   coreFileInstalled,
@@ -23,7 +25,8 @@ import {
   overrideSignature,
   parseInstalled,
   parseAgentRequirementsOverride,
-  pinsOverBareLines
+  pinsOverBareLines,
+  readOverrideState
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -662,6 +665,38 @@ export async function installedWorkingAgent(
   }
 }
 
+/** The newer frontend to hold with `--override`, only beside an agent the launch would keep. */
+export async function handForcedFrontend(
+  installation: InstallationRecord,
+  requirementsText: string,
+  uvPath: string,
+  pythonPath: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const pinned = coreFrontendVersion(requirementsText)
+  const { launchArgs, installPath } = installation
+  if (pinned === null || typeof launchArgs !== 'string' || typeof installPath !== 'string')
+    return null
+  if (!parseArgs(launchArgs).includes(ENABLE_AGENT_ARG)) return null
+  const agentFile = path.join(installPath, 'ComfyUI', AGENT_REQUIREMENTS)
+  const coreText = await fs.promises.readFile(agentFile, 'utf-8').catch(() => null)
+  if (coreText === null || !corePinsPlaceholderAgent(coreText)) return null
+  const listed = await listInstalled({ uvPath, pythonPath, installPath }, signal)
+  if (listed === null) return null
+  try {
+    if (keepableAgent(coreText, listed, readOverrideState(installation)) === null) return null
+    const installed = parseInstalled(listed)?.find(
+      (p) => normalizePackageName(p.name) === FRONTEND_PACKAGE
+    )?.version
+    // A local label (`+cu`) has no order against a public pin: compare its public part.
+    return installed !== undefined && compareVersions(installed.split('+')[0]!, pinned) > 0
+      ? `${FRONTEND_PACKAGE}==${installed}`
+      : null
+  } catch {
+    return null
+  }
+}
+
 async function checkCache(
   plan: AgentRequirementsInstall,
   reqPath: string,
@@ -753,7 +788,7 @@ const LIST_TIMEOUT_MS = 30_000
 /** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive,
  *  bounded as an install's stop is: the grace, then a hard stop. */
 async function listInstalled(
-  plan: AgentRequirementsInstall,
+  plan: Pick<AgentRequirementsInstall, 'uvPath' | 'pythonPath' | 'installPath'>,
   signal: AbortSignal | undefined,
   untilExit = false
 ): Promise<string | null> {
