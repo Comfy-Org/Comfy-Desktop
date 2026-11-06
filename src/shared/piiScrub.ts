@@ -21,14 +21,35 @@
  * is safe to bundle into either side.
  */
 
+// Separators are `[\\/]+` so the same path matches whether it is written
+// plainly (`C:\Users\x`), with forward or mixed slashes (`C:/Users/x`), or
+// escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
+// stops at `"` or a line break so a JSON string's closing quote, or the next
+// stderr line, survives; not at `'` or a space, which are legal in a Windows
+// username.
+//
+// The separator before the name decides whether `\uXXXX` belongs to it: after
+// `/` or an escaped `\\` it is a JSON escape (non-ASCII name), so it is part of
+// the name; after a single raw `\` it is a folder (`C:\Users\x\u1234`). Escaped
+// separators are matched in pairs so a leading escape keeps its backslash.
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
+const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
+// A `\\` share root must not follow a path character: escaped, a nested
+// `x\\Users` folder would otherwise read as share `x`.
+const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
 const PII_PATH_PATTERNS: RegExp[] = [
-  /([A-Za-z]:[\\/]Users[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\(?:wsl\$|wsl\.localhost)[\\/][^\\/]+[\\/]home[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\\\\[^\\/]+[\\/](?:Users|home)[\\/])[^\\/]+?(?=[\\/]|$)/gi,
-  /(\/Users\/)[^\\/]+?(?=\/|$)/gi,
-  /(\/home\/)[^\\/]+?(?=\/|$)/gi,
-  /(\/mnt\/wsl\/[^/]+\/home\/)[^/]+?(?=\/|$)/gi
-]
+  String.raw`([A-Za-z]:[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+(?:Users|home))`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
+  // A backslash `\Users\` only at a path root (`\Users\x`): nested, it is usually a project folder.
+  String.raw`((?<![\w.~$\\/-])\\+Users)`,
+  // Forward-slash roots for the rest: a backslash `\home\` is usually a nested project folder.
+  String.raw`(\/Users)`,
+  String.raw`(\/home)`
+].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
@@ -52,7 +73,11 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 export function scrubPII(value: string): string {
   let scrubbed = value
   for (const pattern of PII_PATH_PATTERNS) {
-    scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
+    scrubbed = scrubbed.replace(
+      pattern,
+      (_match, root: string, escapedSep?: string, rawSep?: string) =>
+        `${root}${escapedSep ?? rawSep ?? ''}[REDACTED]`
+    )
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')
 }
