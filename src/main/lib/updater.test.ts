@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type * as UpdaterModule from './updater'
 
 let mockPlatform = 'linux'
@@ -44,6 +47,7 @@ vi.mock('./quit-state', () => ({
   clearQuitReason: vi.fn(),
   setQuitReason: vi.fn(),
   getQuitReason: vi.fn(() => 'none'),
+  isUpdateInstallQuit: vi.fn(() => false),
   isSessionEnding: vi.fn(() => false)
 }))
 
@@ -451,8 +455,10 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     checkForUpdates: ReturnType<typeof vi.fn>
     restartAndInstall: ReturnType<typeof vi.fn>
   }
-  let electronUpdaterMock: { autoInstallOnAppQuit: boolean }
+  let electronUpdaterMock: { autoInstallOnAppQuit: boolean; installerPath?: string | null }
   let emitMock: ReturnType<typeof vi.fn>
+  let broadcastMock: ReturnType<typeof vi.fn>
+  let cancelAllMock: ReturnType<typeof vi.fn>
   let sessionEnding: boolean
   let readyVersion: string | null
   let quitReason: 'none' | 'user-quit' | 'update-install'
@@ -496,6 +502,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     }
     electronUpdaterMock = { autoInstallOnAppQuit: true }
     emitMock = vi.fn()
+    broadcastMock = vi.fn()
+    cancelAllMock = vi.fn()
 
     vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
     vi.doMock('electron-updater', () => ({ autoUpdater: electronUpdaterMock }))
@@ -505,10 +513,19 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       deriveAppChannel: () => 'stable'
     }))
     vi.doMock('./quit-state', () => ({
-      clearQuitReason: vi.fn(),
-      setQuitReason: vi.fn(),
+      clearQuitReason: vi.fn(() => {
+        quitReason = 'none'
+      }),
+      setQuitReason: vi.fn((reason: typeof quitReason) => {
+        quitReason = reason
+      }),
       getQuitReason: vi.fn(() => quitReason),
+      isUpdateInstallQuit: vi.fn(() => quitReason === 'update-install'),
       isSessionEnding: vi.fn(() => sessionEnding)
+    }))
+    vi.doMock('./ipc/shared', () => ({
+      _broadcastToRenderer: broadcastMock,
+      cancelAll: cancelAllMock
     }))
     vi.doMock('../settings', () => ({
       get: vi.fn((key: string) => settingsStore[key]),
@@ -527,6 +544,11 @@ describe('startup update install + session-end guard (issue #1065)', () => {
    *  assertions can't drift apart on the filter predicate. */
   const findEmitCalls = (event: string): unknown[][] =>
     emitMock.mock.calls.filter((c) => c[0] === event)
+
+  /** A finished download: the update state is 'ready'. */
+  const stageUpdate = (version = '1.0.1'): void => {
+    for (const cb of listeners['update-downloaded'] || []) cb({ version })
+  }
 
   it('register() disables install-on-quit by default on Windows when startup install is enabled', async () => {
     await bootUpdater()
@@ -606,7 +628,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['autoInstallUpdates'] = false
     const updater = await import('./updater')
     updater.register()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     // The manual path is the whole point of auto-install off — it must work.
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
   })
@@ -635,7 +658,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   it('attributes an updater error after restartAndInstall to apply_restart', async () => {
     const updater = await bootUpdater()
     for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
-    updater.installUpdate()
+    await updater.installUpdate()
     for (const cb of listeners.error || []) cb(new TypeError('installer apply failed'))
 
     const errors = findEmitCalls('comfy.desktop.app_update.error')
@@ -758,20 +781,23 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   it('installUpdate() is a no-op while the OS session is ending', async () => {
     sessionEnding = true
     const updater = await bootUpdater()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
   it('installUpdate() shows the NSIS installer UI by default on Windows', async () => {
     const updater = await bootUpdater()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: false })
   })
 
   it('installUpdate() installs silently when showInstallerUI is opted out', async () => {
     settingsStore['showInstallerUI'] = false
     const updater = await bootUpdater()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
   })
 
@@ -779,8 +805,341 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     settingsStore['showInstallerUI'] = true
     const updater = await bootUpdater()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
+  })
+
+  describe('installUpdate() stops ComfyUI and waits before the installer', () => {
+    const deferred = (): { promise: Promise<void>; resolve: () => void } => {
+      let resolve!: () => void
+      const promise = new Promise<void>((r) => {
+        resolve = r
+      })
+      return { promise, resolve }
+    }
+
+    it('stops nothing when no update is ready to install', async () => {
+      const updater = await bootUpdater()
+      await updater.installUpdate()
+      expect(cancelAllMock).not.toHaveBeenCalled()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+      expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
+        message: expect.any(String)
+      })
+    })
+
+    it('stops nothing when the staged installer is gone from disk', async () => {
+      electronUpdaterMock.installerPath = path.join(os.tmpdir(), `missing-${Date.now()}.exe`)
+      const updater = await bootUpdater()
+      stageUpdate()
+      await updater.installUpdate()
+      expect(cancelAllMock).not.toHaveBeenCalled()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+      expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
+        message: expect.any(String)
+      })
+    })
+
+    it('stops nothing when electron-updater has nothing staged (null installer path)', async () => {
+      electronUpdaterMock.installerPath = null
+      const updater = await bootUpdater()
+      stageUpdate()
+      await updater.installUpdate()
+      expect(cancelAllMock).not.toHaveBeenCalled()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    })
+
+    it('runs no update check while the install waits', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      fakeUpdater.checkForUpdates.mockClear()
+      await updater.runCheck('auto-check')
+      expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled()
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not start the installer when an updater error failed it during the wait', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+    })
+
+    it('installs when the staged installer is on disk', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'staged-'))
+      electronUpdaterMock.installerPath = path.join(dir, 'Setup.exe')
+      fs.writeFileSync(electronUpdaterMock.installerPath, '')
+      try {
+        const updater = await bootUpdater()
+        stageUpdate()
+        await updater.installUpdate()
+        expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('starts the installer only after the stopped ComfyUI has exited', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      await new Promise((r) => setTimeout(r, 20))
+      expect(cancelAllMock).toHaveBeenCalledTimes(1)
+      expect(quitReason).toBe('update-install')
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('a second trigger during the wait neither stops again nor installs twice', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const first = updater.installUpdate()
+      await updater.installUpdate()
+      exit.resolve()
+      await first
+      expect(cancelAllMock).toHaveBeenCalledTimes(1)
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      expect(findEmitCalls('comfy.desktop.app_update.install_triggered')).toHaveLength(1)
+    })
+
+    it('does not start the installer when the OS session ends during the wait', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      await new Promise((r) => setTimeout(r, 0))
+      sessionEnding = true
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+    })
+
+    it('a user quit during the wait keeps its reason and its hold, and the install goes ahead', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      // Tray Quit: quitApp sets its own reason, then before-quit holds on the same sequence.
+      quitReason = 'user-quit'
+      const quit = vi.fn()
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit })
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      expect(quitReason).toBe('user-quit')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(quit).toHaveBeenCalledTimes(1)
+    })
+
+    it('an updater error while a quit is held does not drop the hold', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      // Menu Quit keeps the update-install reason and holds on the same sequence.
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit: vi.fn() })
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      expect(quitWait.isQuitHeld()).toBe(true)
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    })
+
+    it('an updater error after a user quit took over keeps the quit in progress', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      quitReason = 'user-quit'
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit: vi.fn() })
+      // E.g. the 10-minute check, which runs again once the reason is no longer the install's.
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      // Still a quit in progress: the respawn, launch and relaunch guards keep holding.
+      expect(quitReason).toBe('user-quit')
+      expect(quitWait.isQuitHeld()).toBe(true)
+      exit.resolve()
+      await installing
+    })
+
+    it('a session end during the wait leaves a held user quit intact', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      quitReason = 'user-quit'
+      const quit = vi.fn()
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit })
+      sessionEnding = true
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('user-quit')
+      // Still the same held quit: a repeated before-quit is held, not a second sequence.
+      expect(quitWait.isQuitHeld()).toBe(true)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(quit).toHaveBeenCalledTimes(1)
+    })
+
+    it('spends one deadline in total: the quit after the update does not wait again', async () => {
+      vi.useFakeTimers()
+      try {
+        const updater = await bootUpdater()
+        const quitWait = await import('./quitWait')
+        stageUpdate()
+        // A tree that never exits: the update gives up at the deadline and installs.
+        cancelAllMock.mockImplementation(() =>
+          quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        )
+        const installing = updater.installUpdate()
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS - 1)
+        expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1)
+        await installing
+        expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+        // The quit the installer triggers reuses the spent deadline.
+        let waited = false
+        void quitWait.waitForExitWork().then(() => {
+          waited = true
+        })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(waited).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('abandons a failed install: the next quit gets a fresh deadline', async () => {
+      vi.useFakeTimers()
+      try {
+        const updater = await bootUpdater()
+        const quitWait = await import('./quitWait')
+        stageUpdate()
+        cancelAllMock.mockImplementation(() =>
+          quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        )
+        fakeUpdater.restartAndInstall.mockImplementation(() => {
+          throw new Error('installer failed')
+        })
+        const installing = updater.installUpdate()
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS)
+        await installing
+        expect(quitReason).toBe('none')
+        expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
+          message: 'installer failed'
+        })
+        // Work still running then: a fresh sequence waits for it again in full.
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        let waited = false
+        void quitWait.waitForExitWork().then(() => {
+          waited = true
+        })
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS - 1)
+        expect(waited).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(waited).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('the startup backstop abandons a sequence whose install never quit', async () => {
+      vi.useFakeTimers()
+      try {
+        const updater = await bootUpdater()
+        const quitWait = await import('./quitWait')
+        stageUpdate()
+        await updater.installUpdate(false)
+        expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+        // No quit followed; the backstop recovers into the normal UI after the deadline passed.
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS)
+        updater.recordStartupInstallBackstopRecovered()
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        let waited = false
+        void quitWait.waitForExitWork().then(() => {
+          waited = true
+        })
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS - 1)
+        expect(waited).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reports a failure to stop ComfyUI as a failed install', async () => {
+      const updater = await bootUpdater()
+      stageUpdate()
+      cancelAllMock.mockImplementation(() => {
+        throw new Error('stop failed')
+      })
+      await updater.installUpdate()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+      expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
+        message: 'stop failed'
+      })
+    })
+
+    it('an updater error while applying abandons the install sequence', async () => {
+      vi.useFakeTimers()
+      try {
+        const updater = await bootUpdater()
+        const quitWait = await import('./quitWait')
+        stageUpdate()
+        cancelAllMock.mockImplementation(() =>
+          quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        )
+        const installing = updater.installUpdate()
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS)
+        await installing
+        for (const cb of listeners.error || []) cb(new Error('No update filepath provided'))
+        expect(quitReason).toBe('none')
+        // Work still running then: a fresh sequence waits for it again in full.
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        let waited = false
+        void quitWait.waitForExitWork().then(() => {
+          waited = true
+        })
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS - 1)
+        expect(waited).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it('hasPendingStartupUpdate() reflects the staged-update markers', async () => {
@@ -1334,7 +1693,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.1'
     sidecarMarker = { version: '1.0.1', attemptedAt: new Date().toISOString() }
     const updater = await bootUpdater()
-    updater.installUpdate()
+    stageUpdate()
+    await updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
