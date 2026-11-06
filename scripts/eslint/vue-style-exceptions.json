@@ -1,11 +1,11 @@
 {
   "src/renderer/src/comfyTitleBar/TitleBarApp.vue": {
     "reason": "Download notification keyframes and reduced-motion override.",
-    "sha256": "d565a10bc6589a2181ee6334a64b346519538ed1d7ae7b309c24e69758298f47"
+    "sha256": "ae98e99ddcf4e544979bf9ec45aa7a511267fd069f4ed3b8c59a6aaed009f58c"
   },
   "src/renderer/src/comfyTitlePopup/DownloadsFullView.vue": {
     "reason": "Preserve the existing dlm-shimmer animation.",
-    "sha256": "66b532a70c7553372d5e1ee76d3d108af35ba1895a8f46df7c6776e917adc6e0"
+    "sha256": "bc1de6656ec6e8ec3b0786d4d1b5a0b760583d52b1641df2630fe54c4988341f"
   },
   "src/renderer/src/comfyTitlePopup/globalSettings/GitHubLinkCard.vue": {
     "reason": "Preserve the existing github-stars-shimmer animation.",
@@ -13,7 +13,7 @@
   },
   "src/renderer/src/comfyTitlePopup/globalSettings/ModelsDirList.vue": {
     "reason": "Preserve the existing models-dir-promote animation.",
-    "sha256": "aa28c4e9acb7ea9680bb9893674d3b9a0de54860ee7c423a3a881299d8197043"
+    "sha256": "43c1d80acbfe44499f33d337205d634e7672ac36e2a8f0a61d2e61acd9ac8d6a"
   },
   "src/renderer/src/comfyTitlePopup/globalSettings/UpdatesSection.vue": {
     "reason": "Preserve the existing progress-indeterminate animation.",
@@ -21,30 +21,30 @@
   },
   "src/renderer/src/components/settings/ComfyUISettingsContent.vue": {
     "reason": "Preserve the existing op-bar-slide animation.",
-    "sha256": "bf5b6da0902a0e0c96c922e7b8a545307b3de39bfb8c0bdec401311ae42b2cd0"
+    "sha256": "4ba5e3f6005ab08e0f73514f2ebf7ab12cf1e96269b731cf4c6b413b3c3a41e4"
   },
   "src/renderer/src/components/TemplatePickerStep.vue": {
     "reason": "Preserve the existing template-preview-pulse animation.",
-    "sha256": "f6939b02602758e17f40529cd24db181f95854f153bce6be496bf324b90d31f8"
+    "sha256": "abc7b8a05e7216706c30c90cf2ef47b1a97303862535e688f0c895218c133704"
   },
   "src/renderer/src/views/comfyUISettings/ConsoleTerminalPane.vue": {
     "reason": "Unlayered xterm vendor integration overrides for generated terminal DOM.",
-    "sha256": "ac35f9448c82e5cb0eeba067da1566bd988d52f2b11e133325eccafa216010a0"
+    "sha256": "78f9a56c47eeea411ff06eed081ce752ead7d200d79e078ee78f05433db4e00f"
   },
   "src/renderer/src/views/comfyUISettings/SnapshotsView.vue": {
     "reason": "Preserve the existing snapshots-op-bar-indet animation.",
-    "sha256": "248c1565520bc3e176a7e33f308b0b875dd55ad8535dc4208347e518d091acf6"
+    "sha256": "3d71124e5068eb9a77d38045dd024d08bf11746b306343105a997f12325d66ac"
   },
   "src/renderer/src/views/FirstUseTakeover.vue": {
     "reason": "Preserve the existing first-use-consent-shake animation.",
-    "sha256": "bffc076f2a15f1611fa59333c26bc11f0355ab364c0456ba9dbeb9918395528e"
+    "sha256": "2bf120cc057db0bb18dbf98ebb7fa58cc3346cc871dde85ccfa153d424b7af48"
   },
   "src/renderer/src/views/InstallWizardModal.vue": {
     "reason": "Preserve the existing install-template-alert-shake animation.",
-    "sha256": "899eaeeb7210feead9bdb5eaf0b5f051648ad1be04eea2a357dd3a0241b74c64"
+    "sha256": "36bd614b16c149192ffb7136c76f8c60a51d173f503a64bc9bac93222bd51d9f"
   },
   "src/renderer/src/views/PerformanceTestView.vue": {
     "reason": "Preserve the existing performance-test-download-pulse animation.",
-    "sha256": "86d523680d0e1f14e65b223eda79ee85535188b476c33a6105cc04f81bddaada"
+    "sha256": "c5a9975e80a57536162bb3a9bebb3b4f251e9852012051178ef7bab9eb8a7c97"
   }
 }

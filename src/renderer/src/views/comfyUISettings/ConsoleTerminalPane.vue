@@ -293,9 +293,6 @@ onBeforeUnmount(teardown)
 </template>
 
 <style scoped>
-/* xterm creates this DOM outside Vue and ships unlayered vendor CSS. These
- * integration overrides must stay unlayered so the viewport fits its host and
- * cannot capture pointer events beyond the pane. Component layout is utility-owned. */
 .console-host :deep(.xterm) {
   overflow: hidden;
   height: 100%;

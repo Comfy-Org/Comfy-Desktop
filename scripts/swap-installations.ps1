@@ -89,16 +89,12 @@ $installationsFile = Join-Path $dataDir "installations.json"
 $settingsFile = Join-Path $dataDir "settings.json"
 $profilesDir = Join-Path $dataDir "test-profiles"
 
-# Sentinel marker stamped on installs we add ourselves so subsequent
-# runs can recognise + reuse them rather than stacking duplicates.
 $SentinelKey = "_firstUseHelperSentinel"
 $ReturningSentinel = "returning"
 $LegacySentinel = "legacy"
 
-# --- Running-app guard ----------------------------------------------------
 $readOnlyActions = @("list", "list-backups")
 $isMutating = -not ($readOnlyActions -contains $Action)
-# 'first-use status' is also read-only - we defer that check to the handler.
 if ($isMutating -and $Action -ne "first-use") {
   $appProc = Get-Process -Name "ComfyUI*" -ErrorAction SilentlyContinue
   if ($appProc) {
@@ -108,7 +104,6 @@ if ($isMutating -and $Action -ne "first-use") {
   }
 }
 
-# --- JSON helpers ---------------------------------------------------------
 function Read-Json {
   param([string]$Path, $Default)
   if (-not (Test-Path $Path)) { return $Default }
@@ -137,10 +132,6 @@ function Get-Installations {
   return @($data)
 }
 
-# --- Backup / restore plumbing -------------------------------------------
-# Timestamped backups so repeat runs never clobber the previous snapshot.
-# The plain `.bak` is created only the first time, so it always points at
-# the genuine pre-script original even after many runs.
 function Backup-File {
   param([string]$Path)
   if (-not (Test-Path $Path)) { return }
@@ -161,10 +152,6 @@ function Get-Backups {
   return @($stamped)
 }
 
-# Resolve a backup file for a given live path + name selector.
-#   $null / '' / 'original' -> the plain `<file>.bak` (very first snapshot)
-#   'latest'                -> the newest timestamped .bak
-#   yyyyMMdd-HHmmss         -> that specific timestamped .bak
 function Resolve-Backup {
   param([string]$Path, [string]$Selector)
   $sel = if ([string]::IsNullOrWhiteSpace($Selector)) { '' } else { $Selector.Trim() }
@@ -180,14 +167,11 @@ function Resolve-Backup {
   if (Test-Path $candidate) { return $candidate } else { return $null }
 }
 
-# --- First-use helpers ---------------------------------------------------
 function Set-FirstUseCompleted {
   param([bool]$Value)
   $settings = Read-Json $settingsFile ([ordered]@{})
   if ($null -eq $settings) { $settings = [ordered]@{} }
   Backup-File $settingsFile
-  # ConvertFrom-Json returns a PSCustomObject; rebuild as ordered
-  # hashtable so we can re-serialise predictably.
   $bag = [ordered]@{}
   if ($settings -is [System.Collections.IDictionary]) {
     foreach ($key in $settings.Keys) { $bag[$key] = $settings[$key] }
@@ -230,7 +214,6 @@ function New-FakeStandaloneInstall {
   $stubDir = Join-Path $dataDir "first-use-helper-fake-standalone"
   if (-not (Test-Path $stubDir)) {
     New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
-    # Sentinel file so the launcher's startup empty-dir sweep keeps the entry.
     Set-Content -Path (Join-Path $stubDir ".first-use-helper-sentinel") -Value "fake install seeded by swap-installations.ps1"
   }
   return [ordered]@{
@@ -369,7 +352,6 @@ function Invoke-FirstUse {
   }
 }
 
-# --- Profile / lifecycle handlers ----------------------------------------
 function Require-Name {
   if (-not $Name) {
     Write-Error "Profile name is required for '$Action'."
@@ -442,8 +424,6 @@ switch ($Action) {
     }
     if (-not $primary) { Write-Error "No eligible primary installation found."; exit 1 }
     Backup-File $installationsFile
-    # Make sure the install dir exists and isn't considered empty by the
-    # startup sweep, which would otherwise drop our single entry.
     $instPath = $primary.installPath
     if ($instPath -and -not (Test-Path $instPath)) {
       New-Item -ItemType Directory -Path $instPath -Force | Out-Null
@@ -487,10 +467,6 @@ switch ($Action) {
   "first-use" { Invoke-FirstUse $Name }
 
   "restore" {
-    # restore both installations.json and settings.json from the chosen
-    # selector. Missing-backup is fatal for installations.json (it's the
-    # primary target) but only a soft skip for settings.json - some
-    # actions (e.g. profile load) never touch settings.
     $selector = if ($Name) { $Name } else { '' }
     $shown = if ($selector) { $selector } else { 'original' }
     Write-Host "Restoring from backup selector: '$shown'" -ForegroundColor Cyan

@@ -807,8 +807,6 @@ onUnmounted(() => {
 </template>
 
 <style>
-/* Download notification animations retain their original timing and reduced-motion override. */
-
 @keyframes title-downloads-pulse {
   0%,
   100% {

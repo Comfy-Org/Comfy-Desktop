@@ -1703,7 +1703,6 @@ defineExpose({ open })
 </template>
 
 <style>
-/* The disk-space warning preserves its original asymmetric shake. */
 @keyframes install-template-alert-shake {
   10%,
   90% {

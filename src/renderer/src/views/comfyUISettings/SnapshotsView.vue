@@ -1009,7 +1009,6 @@ async function handleImport(): Promise<void> {
 </template>
 
 <style>
-/* The indeterminate progress fill travels beyond both ends of its track. */
 @keyframes snapshots-op-bar-indet {
   0% {
     transform: translateX(-100%);

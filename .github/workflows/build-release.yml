@@ -14,8 +14,6 @@ on:
 
 permissions:
   contents: write
-  # Required for Workload Identity Federation (keyless GCP auth) used to fetch
-  # the proprietary PP Formula font from gs://comfy-org-fonts before building.
   id-token: write
 
 concurrency:
@@ -76,12 +74,6 @@ jobs:
             echo "${delimiter}"
           } >> "$GITHUB_OUTPUT"
 
-      # Fetch the proprietary PP Formula font into the renderer public dir
-      # before the build. It is gitignored (never committed to this public
-      # repo) and pulled from a private bucket via keyless Workload Identity
-      # Federation. Release builds must ship the licensed display face, so the
-      # fetch fails loudly (no --soft-fail); a missing font would otherwise
-      # silently fall back to Inter.
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -117,27 +109,14 @@ jobs:
         run: pnpm run datadog:sourcemaps:upload
 
       - name: Install ToDesktop CLI
-        # 1.28.0 is the first release whose todesktop.json schema accepts
-        # `targetOverrides`, which selects the per-architecture Windows
-        # bootstrap-python (win-x64 vs win-arm64) in todesktop.json.
         run: npm install --location=global @todesktop/cli@1.28.1
 
       - name: Pre-fetch bootstrap-python for all platforms
-        # @todesktop/cli now eagerly validates the `extraResources` paths in
-        # todesktop.json *before* invoking the `beforeBuild` hook, so the
-        # platform-specific bootstrap-python directories must exist locally
-        # at the time `todesktop build` is invoked.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run bootstrap:fetch
 
       - name: Verify bootstrap-python is populated for every platform
-        # Belt-and-braces check: even though fetch-bootstrap-python.mjs now
-        # exits non-zero on failure, surface the directory state in the build
-        # log and explicitly fail if any platform's Python binary is missing.
-        # The 0.6.4 installer shipped without bootstrap-python because a fetch
-        # error was swallowed and the directory was empty going into the
-        # packaging step. That class of failure must never be quiet again.
         shell: bash
         run: |
           set -euo pipefail
@@ -174,8 +153,6 @@ jobs:
           done
           mkdir -p todesktop-targets/linux-x64
           mv bootstrap-python/linux-x64 todesktop-targets/linux-x64/bootstrap-python
-          # ToDesktop requires matching resource paths across architectures.
-          # Keep the ARM64 directory nonempty for upload, without a Python binary.
           mkdir -p todesktop-targets/linux-arm64/bootstrap-python
           printf '%s\n' 'Bootstrap Python is not available for Linux ARM64.' > todesktop-targets/linux-arm64/bootstrap-python/README.txt
 
@@ -213,8 +190,6 @@ jobs:
           NODE
 
       - name: Fetch ToDesktop build metadata
-        # `builds` returns only five rows unless count is explicit. Keep enough history
-        # to find this build when other builds finish while this job is waiting.
         run: todesktop builds --config=todesktop.json --count 100 --format=json --exit > todesktop-build.json
 
       - name: Extract build details
@@ -493,11 +468,6 @@ jobs:
             exit 0
           fi
 
-          # Classify the tag. Anything with a pre-release suffix
-          # (vX.Y.Z-rc.N, -beta.N, -alpha.N, etc.) ships as a GitHub
-          # "Pre-release" — visible at /releases but not surfaced as
-          # "Latest" and not picked up by auto-update unless the user
-          # explicitly opts in. Plain vX.Y.Z is the stable channel.
           if [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+$ ]]; then
             channel_flag="--prerelease"
             channel_label="pre-release"
@@ -506,11 +476,6 @@ jobs:
             channel_label="latest"
           fi
 
-          # Prefer the release PR body as release notes when the
-          # workflow was dispatched with a pr_number. Falls back to
-          # GitHub's auto-generated PR-titles list when no PR is
-          # known (manual tag push, etc.) so we never ship a release
-          # with empty notes.
           notes_file=""
           if [[ -n "${PR_NUMBER}" ]]; then
             notes_file="$(mktemp)"
@@ -541,9 +506,6 @@ jobs:
 
   comment-on-release-pr:
     needs: [build, smoke-linux-appimage]
-    # Post the ToDesktop build page + downloads back onto the version-bump PR
-    # that produced this tag. Runs on success or failure (a link to a failed
-    # build is still useful); skipped only when no build id was produced.
     if: >
       always() &&
       startsWith(github.ref, 'refs/tags/v') &&
@@ -575,7 +537,6 @@ jobs:
           app_id="$(jq -r '.id' todesktop.json)"
           build_url="https://app.todesktop.com/apps/${app_id}/builds/${BUILD_ID}"
 
-          # Which PR produced this tagged commit?
           pr="${INPUT_PR:-}"
           if [[ -z "${pr}" ]]; then
             pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '.[0].number' 2>/dev/null || true)"
@@ -611,7 +572,6 @@ jobs:
           if [[ -n "${LINUX_URL}" ]]; then printf -- '- Linux: %s\n'   "${LINUX_URL}" >> comment.md; have_links=1; fi
           if [[ "${have_links}" -eq 0 ]]; then printf '_No per-platform download links reported._\n' >> comment.md; fi
 
-          # Upsert: update our previous comment (matched by marker) or create a new one.
           existing="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate \
             --jq ".[] | select(.body | contains(\"${marker}\")) | .id" 2>/dev/null | head -1 || true)"
           if [[ -n "${existing}" && "${existing}" != "null" ]]; then

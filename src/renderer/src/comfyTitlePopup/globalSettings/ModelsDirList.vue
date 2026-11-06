@@ -240,7 +240,6 @@ const rows = computed(() =>
 </template>
 
 <style>
-/* The promotion pulse has multiple stops; layout and state styling use utilities. */
 @keyframes models-dir-promote {
   0% {
     background: transparent;

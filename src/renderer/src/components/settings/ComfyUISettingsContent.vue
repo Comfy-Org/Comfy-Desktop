@@ -1212,7 +1212,6 @@ defineExpose({
 </template>
 
 <style>
-/* The indeterminate operation bar translates beyond both clipped edges. */
 @keyframes op-bar-slide {
   0% {
     transform: translateX(-130%);

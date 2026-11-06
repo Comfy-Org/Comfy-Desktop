@@ -1,4 +1,3 @@
-/* Standalone BrowserWindow documents keep their native element defaults. */
 @layer theme, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
