@@ -1,5 +1,4 @@
 import { computed } from 'vue'
-import { look } from '../look'
 import { building, appsProto } from '../appFlow'
 import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
@@ -7,7 +6,8 @@ import { resetTuning, tuning } from './uiTuner'
 import { surface, onCloud } from './shell/surface'
 import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
-import { palette } from './palette'
+// Graphite is applied on load.
+import './palette'
 import { cover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
@@ -186,9 +186,6 @@ export const TWEAKS = {
     reset: () => (proto.signedIn = true)
   },
   surface: one(surface, 'desktop'),
-  nav: one(marNav, 'panels'),
-  palette: one(palette, 'graphite'),
-  theme: { isDefault: () => look.theme === 'dark', reset: () => (look.theme = 'dark') },
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),

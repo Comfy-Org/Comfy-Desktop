@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
 
 /**
- * Neutral palettes to try (UI Playground › Palette). All stay grey, so
+ * The neutral palettes tried; Graphite is the one in use. All stay grey, so
  * imagery keeps the colour; each leans a hair towards one hue, enough to
  * tell them apart and to give the product a quiet signature. Only the
  * surfaces and greys move; the theme's contrast steps stay the same.
@@ -26,19 +26,7 @@ export const PALETTES: Palette[] = [
   { id: 'plum', label: 'Plum · a hint of aubergine', hue: 320, chroma: 0.012 }
 ]
 
-// v2: Graphite is the default (Pablo/Mar, Oct 30).
-const KEY = 'comfy.design.mar.palette.v2'
-
-export const palette = reactive<{ id: string }>({
-  id: (() => {
-    try {
-      const v = localStorage.getItem(KEY)
-      return PALETTES.some((p) => p.id === v) ? v! : 'graphite'
-    } catch {
-      return 'graphite'
-    }
-  })()
-})
+export const palette = reactive<{ id: string }>({ id: 'graphite' })
 
 // Each step keeps the theme's lightness; only hue and chroma change.
 const DARK: [string, number, number][] = [
@@ -85,11 +73,6 @@ watch(
         ? ''
         : `:root[data-mar-ui='on']:not([data-ds-theme='light']) { ${rule(DARK, p)} }
 :root[data-mar-ui='on'][data-ds-theme='light'] { ${rule(LIGHT, p)} }`
-    try {
-      localStorage.setItem(KEY, id)
-    } catch {
-      // Storage blocked: the pick lasts for this window only.
-    }
   },
   { immediate: true }
 )
