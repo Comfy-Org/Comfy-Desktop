@@ -1637,6 +1637,8 @@ describe('adoptDesktopInstall', () => {
         return { ok: true as const }
       })
       const tools = buildSilentTools()
+      const mirrors = { pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true }
+      vi.mocked(settings.getMirrorConfig).mockReturnValueOnce(mirrors)
       await adoptDesktopInstall({
         tools,
         deps: buildDeps({ cloneSourceFromGit: cloneFn }, legacy.info)
@@ -1650,6 +1652,13 @@ describe('adoptDesktopInstall', () => {
       const args = calledArgs as string[]
       expect(args.slice(0, 3)).toEqual(['pip', 'install', 'pygit2'])
       expect(args).toContain('--python')
+      expect(
+        runUvPipMock.mock.calls[0]![5],
+        "the user's mirrors, so it can retry with them ahead of pypi.org"
+      ).toBe(mirrors)
+      expect(args, 'the uv helper adds the index args').not.toEqual(
+        expect.arrayContaining(['--index-url'])
+      )
       // pygit2 result reported in telemetry succeeded payload.
       expect(telemetry.capture).toHaveBeenCalledWith(
         'comfy.desktop.adopt.succeeded',

@@ -101,6 +101,8 @@ import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
 import type { InstallationRecord } from '../../installations'
+import { get as getSetting, getMirrorConfig } from '../../settings'
+import { PYPI_INDEX_URL } from '../../lib/pip'
 
 function isGitAvailable(): boolean {
   try {
@@ -428,6 +430,46 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const installCalls = spawnState.uvCalls.filter((a) => a.includes('install'))
       expect(installCalls.length).toBe(1)
     })
+
+    it.each([
+      ['with', true],
+      ['without', false]
+    ])(
+      'installs the requirements %s the dry run when pypi.org is unreachable and the mirror-first retry succeeds',
+      async (_label, dryRunConflictCheck) => {
+        const MIRROR = 'https://mirror.example/simple/'
+        vi.mocked(getMirrorConfig).mockReturnValue({ pypiMirror: MIRROR, useChineseMirrors: false })
+        vi.mocked(getSetting).mockImplementation((key: string) =>
+          key === 'pypiMirror' ? MIRROR : key === 'useChineseMirrors' ? false : undefined
+        )
+        spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+        const pypiFirst = (args: string[]): boolean =>
+          args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
+        spawnState.uvHandler = (args) => fakeProc({ exitCode: pypiFirst(args) ? 1 : 0 })
+
+        try {
+          const result = await runComfyUIUpdate(makeBaseOpts(installPath, { dryRunConflictCheck }))
+
+          expect(result.ok).toBe(true)
+          expect(headSha()).toBe(repoShas.v2Sha)
+          const installs = spawnState.uvCalls.filter(
+            (a) => a.includes('-r') && !a.includes('--dry-run')
+          )
+          expect(installs.map(pypiFirst).slice(0, 2), 'pypi.org first, then mirror first').toEqual([
+            true,
+            false
+          ])
+        } finally {
+          vi.mocked(getSetting).mockImplementation((key: string) =>
+            key === 'useChineseMirrors' ? false : undefined
+          )
+          vi.mocked(getMirrorConfig).mockReturnValue({
+            pypiMirror: undefined,
+            useChineseMirrors: false
+          })
+        }
+      }
+    )
 
     it('keeps the updated source and persists version when the install succeeds', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)

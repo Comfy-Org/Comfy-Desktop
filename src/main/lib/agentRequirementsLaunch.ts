@@ -498,12 +498,11 @@ function uvErrorSection(output: string): string | null {
  * or failed on something it names that is not a download (a permission error, a locked file). A
  * cache-only try proves nothing, since a cache miss reads as no solution.
  */
-function cannotDownload(result: CachedResult): boolean {
+function cannotDownload(result: CachedResult): 'no_solution' | 'other' | false {
   if (!result.online || result.report.outcome !== 'exited') return false
+  if (NO_SOLUTION.test(stripAnsi(result.output))) return 'no_solution'
   const error = uvErrorSection(result.output)
-  return (
-    NO_SOLUTION.test(stripAnsi(result.output)) || (error !== null && !DOWNLOAD_FAILED.test(error))
-  )
+  return error !== null && !DOWNLOAD_FAILED.test(error) ? 'other' : false
 }
 
 export type Deferral = 'agent' | 'update'
@@ -729,9 +728,9 @@ async function tryOverride(
     })
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
-      return cannotDownload(installed)
-        ? revertOnInstall(sendOutput, pins, installed.report)
-        : deferOverride(sendOutput, pins, installed.report)
+      const cause = cannotDownload(installed)
+      if (!cause) return deferOverride(sendOutput, pins, installed.report)
+      return revertOnInstall(sendOutput, pins, installed.report, cause === 'no_solution')
     }
   } catch {
     return revertOnInstall(sendOutput, pins)
@@ -893,12 +892,14 @@ function deferOverride(
 function revertOnInstall(
   sendOutput: (text: string) => void,
   pins: OverridePins,
-  install?: InstallReport
+  install?: InstallReport,
+  noSolution = false
 ): OverrideDecision {
   sendOutput(
-    `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
+    `agent version override ${overrideSignature(pins)} ${noSolution ? 'found no solution' : 'did not install'}; using ComfyUI's versions\n`
   )
-  return { decision: 'reverted', reason: 'install_failed', pins, ...(install ? { install } : {}) }
+  const reason = noSolution ? 'resolve_failed' : 'install_failed'
+  return { decision: 'reverted', reason, pins, ...(install ? { install } : {}) }
 }
 
 /** Its own bound: the wheel is about 25 MB, and a launch that runs out of time tries again next. */

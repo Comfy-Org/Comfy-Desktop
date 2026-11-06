@@ -418,10 +418,13 @@ export async function runComfyUIUpdate(
             sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
             const pipResult = await runUvPipDetailed(
               uvPath,
-              ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
+              ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython],
               installPath,
               sendOutput ?? (() => {}),
-              signal
+              signal,
+              undefined,
+              undefined,
+              settings.getMirrorConfig()
             )
             if (pipResult.code !== 0) {
               depFailure = withOutputTail(

@@ -4217,12 +4217,36 @@ describe('agent requirements at launch', () => {
       )
     })
 
-    it('retires a version uv proves unsatisfiable on two launches, as before', async () => {
+    it('never retires a version uv finds no solution for: an index may not have synced it yet', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => ({
         code: missesOverride(args) ? 1 : 0,
         output: missesOverride(args) ? 'error: No solution found when resolving dependencies\n' : ''
       })
+
+      await launchAndPrint()
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason, e.failures])).toEqual([
+        ['reverted', 'resolve_failed', null],
+        ['reverted', 'resolve_failed', null],
+        ['reverted', 'resolve_failed', null]
+      ])
+      expect(overrideEvents()[0]).toMatchObject({
+        exit_code: 1,
+        error_tail: 'error: No solution found when resolving dependencies'
+      })
+      expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
+      expect(overrideState(), 'nothing counted toward retiring it').toBeUndefined()
+    })
+
+    it('retires a version that fails to install on two launches, as before', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) =>
+        missesOverride(args)
+          ? { code: 1, output: 'error: failed to remove file `x.pyd`: Access is denied.\n' }
+          : { code: 0, output: '' }
 
       await launchAndPrint()
       await launchAndPrint()
@@ -4235,10 +4259,6 @@ describe('agent requirements at launch', () => {
         ['reverted', 'install_failed', 2],
         ['reverted', 'previously_failed', null]
       ])
-      expect(overrideEvents()[0]).toMatchObject({
-        exit_code: 1,
-        error_tail: 'error: No solution found when resolving dependencies'
-      })
       expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
       expect(overrideState(), 'install failures, not agent start failures').toEqual({
         signature: 'comfy-agent==0.2.3',
