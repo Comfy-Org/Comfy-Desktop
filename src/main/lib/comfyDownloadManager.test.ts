@@ -1373,3 +1373,25 @@ describe('areModelsPresent', () => {
     expect(present).toBe(false)
   })
 })
+
+describe('pickSaveDialogParent', () => {
+  const win = (visible: boolean) =>
+    ({ isVisible: () => visible }) as unknown as Electron.BrowserWindow
+
+  it('parents the dialog to the window that started the download', () => {
+    const source = win(true)
+    expect(mod.pickSaveDialogParent(source, win(true), [])).toBe(source)
+  })
+
+  it('skips a hidden source window (a reserved blank tab, #1729) for the focused window', () => {
+    // A sheet on an invisible window would never be seen, blocking the save.
+    const focused = win(true)
+    expect(mod.pickSaveDialogParent(win(false), focused, [])).toBe(focused)
+  })
+
+  it('falls back to the first window when nothing else qualifies', () => {
+    const first = win(true)
+    expect(mod.pickSaveDialogParent(null, null, [first])).toBe(first)
+    expect(mod.pickSaveDialogParent(null, null, [])).toBeNull()
+  })
+})
