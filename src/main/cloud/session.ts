@@ -8,8 +8,14 @@
  */
 import type { TokenProvider } from '../comfybuilder'
 import { workspaceIdOf } from './claims'
-import type { OAuthOptions } from './oauth'
-import { openAuthorizePage, refresh, signIn } from './oauth'
+import { openAuthorizePage, refresh } from './oauth'
+import {
+  mintPartnerNodeToken,
+  mintWorkspaceToken,
+  revokeAccountSession,
+  signInAccount
+} from './accountSession'
+import { SignInFailure } from './signInFailure'
 import {
   activateWorkspace,
   clearTokens,
@@ -29,8 +35,17 @@ const REFRESH_SKEW_MS = 60_000
 export class CloudSession {
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
+  private readonly partnerTokens = new Map<
+    string,
+    {
+      credential: string
+      pending: Promise<string | null>
+      expiresAt: number
+    }
+  >()
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
+  private loginAbort: AbortController | null = null
 
   /** Latest browser-auth intent. Older flows may finish, but cannot replace
    *  tokens chosen by a newer login, workspace switch, or logout. */
@@ -57,15 +72,24 @@ export class CloudSession {
   }
 
   private clearPendingLogin(): void {
+    this.loginAbort?.abort()
+    this.loginAbort = null
     this.loginInFlight = null
     this.loginAuthorizeUrl = null
   }
 
-  /** Forget tokens. Installed environments are untouched. */
-  logout(): void {
+  /** Clear local credentials and request server sign-out. */
+  async logout(): Promise<void> {
     this.authGeneration += 1
+    this.partnerTokens.clear()
     this.clearPendingLogin()
+    const sessionToken = loadTokens()?.sessionToken
     clearTokens()
+    if (sessionToken) {
+      await revokeAccountSession(sessionToken).catch(() => {
+        console.warn('Cloud account signed out locally; server revocation failed')
+      })
+    }
   }
 
   status(): AuthStatus {
@@ -89,12 +113,15 @@ export class CloudSession {
   async getAccessToken(): Promise<string | null> {
     const tokens = loadTokens()
     if (!tokens) return null
-    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken)
-      return tokens.accessToken
+    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now()) return tokens.accessToken
     const workspaceId = workspaceIdOf(tokens.accessToken)
     await this.refreshWorkspaceTokens(workspaceId, tokens)
     const active = loadTokens()
-    return active && workspaceIdOf(active.accessToken) === workspaceId ? active.accessToken : null
+    return active &&
+      active.expiresAt > Date.now() &&
+      workspaceIdOf(active.accessToken) === workspaceId
+      ? active.accessToken
+      : null
   }
 
   private refreshKey(workspaceId: string | null, refreshToken: string): string {
@@ -105,7 +132,7 @@ export class CloudSession {
     workspaceId: string | null,
     tokens: AuthTokens
   ): Promise<AuthTokens | null> {
-    const key = this.refreshKey(workspaceId, tokens.refreshToken ?? '')
+    const key = this.refreshKey(workspaceId, tokens.sessionToken ?? tokens.refreshToken ?? '')
     const inFlight = this.refreshing.get(key)
     if (inFlight) return inFlight
     const refreshing = this.doRefresh(workspaceId, tokens).finally(() => {
@@ -120,13 +147,25 @@ export class CloudSession {
     tokens: AuthTokens
   ): Promise<AuthTokens | null> {
     const refreshToken = tokens.refreshToken
-    if (!refreshToken) return tokens
+    if (!refreshToken && !tokens.sessionToken) return null
     try {
-      const rotated = await refresh(refreshToken)
+      const rotated = tokens.sessionToken
+        ? await mintWorkspaceToken(tokens.sessionToken, workspaceId ?? undefined)
+        : await refresh(refreshToken!)
       const saved = replaceWorkspaceTokens(workspaceId, tokens.accessToken, refreshToken, rotated)
       return saved ? rotated : loadWorkspaceTokens(workspaceId)
-    } catch {
-      return loadWorkspaceTokens(workspaceId)
+    } catch (error) {
+      if (
+        error instanceof SignInFailure &&
+        error.httpStatus === 401 &&
+        loadTokens()?.sessionToken === tokens.sessionToken &&
+        tokens.sessionToken
+      ) {
+        this.invalidateStoredSession()
+        return null
+      }
+      const cached = loadWorkspaceTokens(workspaceId)
+      return cached && cached.expiresAt > Date.now() ? cached : null
     }
   }
 
@@ -146,11 +185,38 @@ export class CloudSession {
     return listWorkspaceMembers(token)
   }
 
-  /** Activate cached workspace credentials, using browser auth only when needed. */
+  /** Select a workspace through the account session, or migrate a legacy login. */
   async switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     this.clearPendingLogin()
     const generation = ++this.authGeneration
     const current = loadTokens()
+    if (current?.sessionToken) {
+      let tokens: AuthTokens
+      try {
+        tokens = await mintWorkspaceToken(current.sessionToken, workspaceId)
+      } catch (error) {
+        if (
+          error instanceof SignInFailure &&
+          error.httpStatus === 401 &&
+          generation === this.authGeneration &&
+          loadTokens()?.sessionToken === current.sessionToken
+        ) {
+          this.invalidateStoredSession()
+          return this.status()
+        }
+        return this.status()
+      }
+      if (
+        generation === this.authGeneration &&
+        loadTokens()?.sessionToken === current.sessionToken
+      ) {
+        if (workspaceIdOf(tokens.accessToken) !== workspaceId) {
+          return this.status()
+        }
+        saveTokens(tokens)
+      }
+      return this.status()
+    }
     let cached =
       current && workspaceIdOf(current.accessToken) === workspaceId
         ? current
@@ -168,14 +234,89 @@ export class CloudSession {
 
   private async authenticateAtGeneration(
     generation: number,
-    options: OAuthOptions
+    options: { workspaceId?: string; onAuthorizeUrl?: (url: string) => void }
   ): Promise<AuthStatus> {
-    const { workspaceId } = options
-    const { tokens, status } = await signIn(options)
-    if (generation !== this.authGeneration) return this.status()
-    if (workspaceId && status.workspaceId !== workspaceId) return this.status()
+    const controller = new AbortController()
+    this.loginAbort?.abort()
+    this.loginAbort = controller
+    let tokens: AuthTokens
+    try {
+      tokens = await signInAccount(options.onAuthorizeUrl ?? (() => {}), controller.signal)
+    } catch (error) {
+      if (generation !== this.authGeneration) return this.status()
+      throw error
+    }
+    if (generation !== this.authGeneration) {
+      if (tokens.sessionToken) await revokeAccountSession(tokens.sessionToken).catch(() => {})
+      return this.status()
+    }
+    try {
+      if (options.workspaceId && tokens.sessionToken) {
+        tokens = await mintWorkspaceToken(
+          tokens.sessionToken,
+          options.workspaceId,
+          controller.signal
+        )
+      }
+      if (options.workspaceId && workspaceIdOf(tokens.accessToken) !== options.workspaceId) {
+        throw new SignInFailure('Unexpected workspace in login response', 'server_error')
+      }
+      if (generation !== this.authGeneration) {
+        if (tokens.sessionToken) await revokeAccountSession(tokens.sessionToken).catch(() => {})
+        return this.status()
+      }
+    } catch (error) {
+      if (tokens.sessionToken) await revokeAccountSession(tokens.sessionToken).catch(() => {})
+      if (generation !== this.authGeneration) return this.status()
+      throw error
+    }
+    const previous = loadTokens()?.sessionToken
+    this.partnerTokens.clear()
+    clearTokens()
     saveTokens(tokens)
-    return status
+    if (previous && previous !== tokens.sessionToken)
+      void revokeAccountSession(previous).catch(() => {})
+    return this.status()
+  }
+
+  async getPartnerNodeToken(workspaceId: string): Promise<string | null> {
+    const generation = this.authGeneration
+    let tokens = loadTokens()
+    if (!tokens || workspaceIdOf(tokens.accessToken) !== workspaceId) return null
+    if (!tokens.sessionToken) {
+      if (!(await this.getAccessToken()) || generation !== this.authGeneration) return null
+      tokens = loadTokens()
+      if (!tokens || workspaceIdOf(tokens.accessToken) !== workspaceId) return null
+    }
+    const credential = tokens.sessionToken ?? tokens.accessToken
+    let entry = this.partnerTokens.get(workspaceId)
+    if (!entry || entry.credential !== credential || entry.expiresAt <= Date.now()) {
+      const pending = mintPartnerNodeToken(credential, workspaceId)
+        .then(
+          (token) => {
+            if (workspaceIdOf(token.accessToken) !== workspaceId) return null
+            created.expiresAt = Math.max(Date.now() + 5_000, token.expiresAt - REFRESH_SKEW_MS)
+            return token.accessToken
+          },
+          () => null
+        )
+        .then((token) => {
+          if (!token) created.expiresAt = Date.now() + 5_000
+          return token
+        })
+      const created = { credential, pending, expiresAt: Infinity }
+      entry = created
+      this.partnerTokens.set(workspaceId, entry)
+    }
+    const token = await entry.pending
+    return generation === this.authGeneration && this.currentWorkspaceId() === workspaceId
+      ? token
+      : null
+  }
+
+  private invalidateStoredSession(): void {
+    this.partnerTokens.clear()
+    clearTokens()
   }
 
   /** Adapter for the comfy-builder client's auth seam. */
@@ -186,7 +327,7 @@ export class CloudSession {
         // A request issued before a newer login may return 401 afterward. Only
         // invalidate the exact token the server rejected, never the new session.
         if (loadTokens()?.accessToken !== rejectedAccessToken) return
-        this.logout()
+        this.invalidateStoredSession()
         onSignedOut?.()
       }
     }

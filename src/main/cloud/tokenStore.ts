@@ -1,5 +1,5 @@
 /**
- * OAuth token store (main process only). Tokens are encrypted at rest with
+ * Cloud token store (main process only). Tokens are encrypted at rest with
  * Electron `safeStorage` in `userData/comfy-cloud-auth.bin` and never reach the
  * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
  * unavailable, tokens are kept in memory for the process lifetime only.
@@ -56,7 +56,10 @@ function isTokens(v: unknown): v is AuthTokens {
     !!v &&
     typeof v === 'object' &&
     typeof (v as AuthTokens).accessToken === 'string' &&
-    typeof (v as AuthTokens).expiresAt === 'number'
+    typeof (v as AuthTokens).expiresAt === 'number' &&
+    ((v as AuthTokens).sessionToken === undefined ||
+      (typeof (v as AuthTokens).sessionToken === 'string' &&
+        (v as AuthTokens).sessionToken?.startsWith('comfy-session-') === true))
   )
 }
 
@@ -144,6 +147,7 @@ function loadVault(): TokenVault | null {
 
 /** Save and activate a browser-auth token bundle. A changed account replaces the vault. */
 export function saveTokens(tokens: AuthTokens): void {
+  if (!isTokens(tokens)) throw new Error('Invalid cloud credentials')
   const current = loadVault()
   const nextSubject = subjectOf(tokens.accessToken)
   const accountChanged = current !== null && (!nextSubject || current.subject !== nextSubject)
@@ -198,9 +202,10 @@ export function activateWorkspace(workspaceId: string): AuthTokens | null {
 export function replaceWorkspaceTokens(
   workspaceId: string | null,
   expectedAccessToken: string,
-  expectedRefreshToken: string,
+  expectedRefreshToken: string | undefined,
   tokens: AuthTokens
 ): boolean {
+  if (!isTokens(tokens)) return false
   const vault = loadVault()
   if (!vault) return false
   const key = workspaceKey(workspaceId)
