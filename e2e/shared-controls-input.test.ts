@@ -34,7 +34,7 @@ test('the WebContents facade drives shared selects and tabs with native input @w
         { type: 'mouseup', trusted: true },
         { type: 'click', trusted: true }
       ])
-    expect(await popup.clickByText('[role="listbox"] [role="option"]', 'Last used instance')).toBe(
+    expect(await popup.clickByText('[role="listbox"] [role="option"]', 'Last used build')).toBe(
       true
     )
     await expect

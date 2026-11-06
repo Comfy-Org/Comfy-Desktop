@@ -464,9 +464,9 @@ describe('ComfyUISettingsContent', () => {
     })
 
     const SNAPSHOTS_TOOLTIP =
-      'A saved point-in-time state of an instance (versions + custom nodes) you can restore later.'
+      'A saved point-in-time state of a build (versions + custom nodes) you can restore later.'
     const CONSOLE_TOOLTIP =
-      "An interactive shell running in this instance's folder. Works whether ComfyUI is running or stopped."
+      "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
     const TAB_LABELS = new Set([
       'Update',

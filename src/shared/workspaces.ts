@@ -17,3 +17,14 @@ export function workspaceContextId(workspace: {
     ? PERSONAL_WORKSPACE_ID
     : workspace.workspaceId || PERSONAL_WORKSPACE_ID
 }
+
+export function installationWorkspaceId(installation: { workspaceId?: string }): string {
+  return installation.workspaceId === undefined ? PERSONAL_WORKSPACE_ID : installation.workspaceId
+}
+
+export function isInstallationInWorkspace(
+  installation: { workspaceId?: string },
+  workspaceId: string
+): boolean {
+  return installationWorkspaceId(installation) === workspaceId
+}
