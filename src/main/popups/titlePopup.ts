@@ -49,7 +49,12 @@ import {
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
-import { DASHBOARD_WORKSPACE_SETTING, PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
+import {
+  DASHBOARD_WORKSPACE_SETTING,
+  PERSONAL_WORKSPACE_ID,
+  installationWorkspaceId,
+  isInstallationInWorkspace
+} from '../../shared/workspaces'
 import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
@@ -207,53 +212,68 @@ export function resolvePickerSelectedInstallId(
   return mostRecentlyLaunchedInstallId(installs)
 }
 
-function pickerInstallsForHost(
-  installs: InstancePickerInstall[],
-  hostInstallationId: string | null
-): InstancePickerInstall[] {
-  const host = installs.find((install) => install.id === hostInstallationId)
-  const workspaceId = host
-    ? (host.workspaceId ?? PERSONAL_WORKSPACE_ID)
+export interface InstancePickerScope {
+  installs: InstancePickerInstall[]
+  selectedInstallationId: string | null
+}
+
+export function scopeInstancePicker(
+  allInstalls: InstancePickerInstall[],
+  hostInstallationId: string | null,
+  requestedInstallationId: string | null,
+  anchorInstallationId: string | null
+): InstancePickerScope {
+  const scopeInstall =
+    allInstalls.find((install) => install.id === hostInstallationId) ??
+    allInstalls.find((install) => install.id === anchorInstallationId)
+  const workspaceId = scopeInstall
+    ? installationWorkspaceId(scopeInstall)
     : settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
   const hideCloud = settings.get('hideCloudFromPicker') === true
-  return installs.filter(
+  const installs = allInstalls.filter(
     (install) =>
-      (install.workspaceId ?? PERSONAL_WORKSPACE_ID) === workspaceId &&
-      (!hideCloud || install.sourceCategory !== 'cloud')
+      isInstallationInWorkspace(install, workspaceId) &&
+      (!hideCloud || install.sourceCategory !== 'cloud' || install.id === hostInstallationId)
   )
+  return {
+    installs,
+    selectedInstallationId: resolvePickerSelectedInstallId(
+      requestedInstallationId,
+      hostInstallationId,
+      installs
+    )
+  }
+}
+
+function pickerScopeAnchorId(entry: TitlePopupEntry): string | null {
+  const anchor = entry.pickerScopeAnchor
+  return anchor && anchor.dashboardWorkspaceId === settings.get(DASHBOARD_WORKSPACE_SETTING)
+    ? anchor.installationId
+    : null
 }
 
 export function buildInstancePickerSnapshot(
   args: BuildInstancePickerSnapshotArgs
 ): InstancePickerSnapshot {
   const activeInstallationId = args.hostInstallationId ?? args.previewInstallationId ?? null
-  const installs = pickerInstallsForHost(args.installs, activeInstallationId)
   const currentCategory: Category | null = activeInstallationId
     ? normaliseCategory(args.installs.find((i) => i.id === activeInstallationId)?.sourceCategory)
     : null
   const currentView: ViewKind = viewKindFor(activeInstallationId, currentCategory)
-  const selectedInstallationId = resolvePickerSelectedInstallId(
-    args.selectedInstallationId,
-    activeInstallationId,
-    installs
-  )
   return {
-    installs,
+    installs: args.installs,
     activeInstallationId,
     currentView,
     currentCategory,
     runningInstallationIds: args.runningInstallationIds,
     runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,
-    selectedInstallationId,
+    selectedInstallationId: args.selectedInstallationId ?? null,
     pickerSelectionEpoch: args.pickerSelectionEpoch ?? 0,
     selectedSettings: args.selectedSettings ?? null,
     selectedSnapshots: args.selectedSnapshots ?? null,
     initialTab: args.initialTab ?? null,
-    autoAction:
-      args.selectedInstallationId && args.selectedInstallationId !== selectedInstallationId
-        ? null
-        : (args.autoAction ?? null),
+    autoAction: args.autoAction ?? null,
     autoActionNonce: args.autoActionNonce ?? 0,
     storage: args.storage,
     operatingInstallationIds: args.operatingInstallationIds ?? [],
@@ -295,6 +315,7 @@ export interface TitlePopupEntry {
   lastConfigJson: string | null
   lastSyncedConfigJson: string | null
   pickerSelectedInstallationId: string | null
+  pickerScopeAnchor: { installationId: string; dashboardWorkspaceId: unknown } | null
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
   pickerAutoAction: string | null
@@ -532,11 +553,11 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     const parentEntry = comfyWindows.get(entry.parentEntryId)
     const effectiveHostInstallationId =
       parentEntry?.installationId ?? parentEntry?.previewInstallationId ?? null
-    const installs = pickerInstallsForHost(allInstalls, effectiveHostInstallationId)
-    const selectedId = resolvePickerSelectedInstallId(
-      entry.pickerSelectedInstallationId,
+    const { installs, selectedInstallationId: selectedId } = scopeInstancePicker(
+      allInstalls,
       effectiveHostInstallationId,
-      installs
+      entry.pickerSelectedInstallationId,
+      pickerScopeAnchorId(entry)
     )
     entry.pickerSelectedInstallationId = selectedId
     const details = selectedId
@@ -547,7 +568,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       : { settings: null, snapshots: null }
     if (mySeq !== pickerSnapshotBroadcastSeq) return
     const snapshot = buildInstancePickerSnapshot({
-      installs: allInstalls,
+      installs,
       hostInstallationId: parentEntry?.installationId ?? null,
       previewInstallationId: parentEntry?.previewInstallationId ?? null,
       runningInstallationIds,
@@ -629,6 +650,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     lastConfigJson: null,
     lastSyncedConfigJson: null,
     pickerSelectedInstallationId: null,
+    pickerScopeAnchor: null,
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
     pickerAutoAction: null,
@@ -1084,6 +1106,37 @@ function openInstancePickerForHost(
   initialTab?: string | null,
   autoAction?: string | null
 ): void {
+  const show = (): void =>
+    showInstancePickerForHost(
+      parentEntry,
+      parentEntryId,
+      bindings,
+      titleBarSender,
+      anchor,
+      selectedInstallationId,
+      initialTab,
+      autoAction
+    )
+  if (
+    selectedInstallationId &&
+    !cachedInstallsForPicker.some((install) => install.id === selectedInstallationId)
+  ) {
+    void refreshCachedInstallsForPicker().then(show)
+    return
+  }
+  show()
+}
+
+function showInstancePickerForHost(
+  parentEntry: ComfyWindowEntry,
+  parentEntryId: number,
+  bindings: TitlePopupHostBindings,
+  titleBarSender: Electron.WebContents,
+  anchor: { x: number; y: number },
+  selectedInstallationId?: string | null,
+  initialTab?: string | null,
+  autoAction?: string | null
+): void {
   if (parentEntry.window.isDestroyed()) return
   const allInstalls = cachedInstallsForPicker.slice()
   const runningInstallationIds = bindings.getRunningInstallationIds()
@@ -1091,23 +1144,29 @@ function openInstancePickerForHost(
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   const effectiveHostInstallationId =
     parentEntry.installationId ?? parentEntry.previewInstallationId ?? null
-  const installs = pickerInstallsForHost(allInstalls, effectiveHostInstallationId)
-  const initialSelectedId = resolvePickerSelectedInstallId(
-    selectedInstallationId,
+  const { installs, selectedInstallationId: initialSelectedId } = scopeInstancePicker(
+    allInstalls,
     effectiveHostInstallationId,
-    installs
+    selectedInstallationId ?? null,
+    selectedInstallationId ?? null
   )
   if (selectedInstallationId && selectedInstallationId !== initialSelectedId) autoAction = null
   const autoActionNonce = autoAction ? (_pickerAutoActionNonce += 1) : _pickerAutoActionNonce
   const popupEntry = ensureTitlePopup(parentEntry.window)
   const pickerSelectionEpoch = popupEntry.pickerSelectionEpoch + 1
   popupEntry.pickerSelectedInstallationId = initialSelectedId
+  popupEntry.pickerScopeAnchor = selectedInstallationId
+    ? {
+        installationId: selectedInstallationId,
+        dashboardWorkspaceId: settings.get(DASHBOARD_WORKSPACE_SETTING)
+      }
+    : null
   popupEntry.pickerSelectionEpoch = pickerSelectionEpoch
   popupEntry.pickerInitialTab = initialTab ?? null
   popupEntry.pickerAutoAction = autoAction ?? null
   popupEntry.pickerAutoActionNonce = autoActionNonce
   const snapshot = buildInstancePickerSnapshot({
-    installs: allInstalls,
+    installs,
     hostInstallationId: parentEntry.installationId,
     previewInstallationId: parentEntry.previewInstallationId,
     runningInstallationIds,

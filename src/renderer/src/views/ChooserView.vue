@@ -21,7 +21,7 @@ import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { openInstallManager } from '../lib/openInstallManager'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
+import { PERSONAL_WORKSPACE_ID, isInstallationInWorkspace } from '../../../shared/workspaces'
 
 const props = withDefaults(
   defineProps<{
@@ -90,9 +90,7 @@ watch(
 )
 
 function installationIsInSelectedScope(inst: Installation): boolean {
-  return dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
-    ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
-    : inst.workspaceId === dashboardScope.selectedWorkspaceId
+  return isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId)
 }
 
 const sortOrder = ref<'used' | 'name'>('used')

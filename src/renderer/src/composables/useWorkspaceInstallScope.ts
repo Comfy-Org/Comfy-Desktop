@@ -2,7 +2,7 @@ import { computed, watch, type Ref } from 'vue'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import type { Installation } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 export function useWorkspaceInstallScope(installations: Ref<Installation[]>) {
   const authStore = useAuthStore()
@@ -22,9 +22,7 @@ export function useWorkspaceInstallScope(installations: Ref<Installation[]>) {
   )
 
   function installationIsInSelectedScope(installation: Installation): boolean {
-    return selectedWorkspaceId.value === PERSONAL_WORKSPACE_ID
-      ? installation.workspaceId === undefined || installation.workspaceId === PERSONAL_WORKSPACE_ID
-      : installation.workspaceId === selectedWorkspaceId.value
+    return isInstallationInWorkspace(installation, selectedWorkspaceId.value)
   }
 
   const scopedInstallations = computed(() =>
