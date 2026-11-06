@@ -299,8 +299,8 @@ const windowLines = computed<MenuLine[]>(() =>
       ]
     : [newWindow]
 )
-// More: the install's own actions, Desktop's order; Stop, Forget and
-// Uninstall last.
+// More: the install's own actions, Desktop's order; Forget and Uninstall
+// last. Stop lives on the caret, beside Restart, and only there.
 const moreLines = computed<MenuLine[]>(() => [
   { label: 'Rename', icon: Pencil, run: () => (tab.value = 'about') },
   ...(own.value
@@ -317,9 +317,6 @@ const moreLines = computed<MenuLine[]>(() => [
       ]
     : []),
   'sep',
-  ...(running.value && own.value
-    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
-    : []),
   { label: 'Forget', icon: EyeOff, run: leaveHere },
   ...(own.value
     ? [
