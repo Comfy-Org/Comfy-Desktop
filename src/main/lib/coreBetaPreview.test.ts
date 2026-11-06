@@ -338,7 +338,6 @@ describe('previewCoreBetaArgs', () => {
     h.prove.mockClear()
     h.checkout = { kind: 'head', commit: OTHER_HEAD }
     proven({ [SHA_A]: true, [SHA_B]: true })
-    // The record names the old HEAD, so its version grant is refused as stale too.
     await expect(preview()).resolves.toEqual([])
     expect(h.prove.mock.calls.map((call) => call[2])).toEqual([OTHER_HEAD, OTHER_HEAD])
   })
@@ -391,7 +390,6 @@ describe('previewCoreBetaArgs', () => {
     release()
     await vi.advanceTimersByTimeAsync(0)
     h.prove.mockClear()
-    // The abandoned walk went on to prove SHA_B as well.
     await expect(preview()).resolves.toHaveLength(2)
     expect(h.prove).not.toHaveBeenCalled()
   })

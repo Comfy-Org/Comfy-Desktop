@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Integration test for the release-update success path. Stubs source.install /
-// postInstall (a real download + venv bootstrap is infeasible) and runs
-// migrate-from against a seeded source tree, asserting the new release-update
-// entry, file migration, and newInstallationId hand-off.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -74,7 +70,6 @@ vi.mock('../../../installations', () => ({
   uniqueName: (baseName: string, _existing: InstallationRecord[]) => baseName
 }))
 
-// Heavy subsystems pulled in transitively; unexercised here.
 vi.mock('../../snapshots', () => ({
   saveSnapshot: vi.fn(async () => 'noop.json'),
   getSnapshotCount: vi.fn(async () => 0),
@@ -107,7 +102,6 @@ import { comfybuilder } from '../../../sources/comfybuilder'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
 
-// Fake WebContents that satisfies `makeSendProgress` / `makeSendOutput`.
 function makeSender(): Electron.WebContents {
   return {
     isDestroyed: () => false,
@@ -285,8 +279,6 @@ describe('handleReleaseUpdate (release-update success path)', () => {
     fs.mkdirSync(srcRoot, { recursive: true })
     seedSource(srcRoot)
 
-    // The new install defaults to shared models/input/output, so migrate-from
-    // routes them to settings.get's dirs; point those at per-test tmp dirs.
     sharedModelsDir = path.join(tmpRoot, 'shared-models')
     sharedInputDir = path.join(tmpRoot, 'shared-input')
     sharedOutputDir = path.join(tmpRoot, 'shared-output')
@@ -310,7 +302,6 @@ describe('handleReleaseUpdate (release-update success path)', () => {
     }
     installationsStore.set(src.id, src)
 
-    // No-op the heavy hooks; handleReleaseUpdate + mergeDirFlat create the dirs.
     standalone.install = (async () => {}) as typeof standalone.install
     standalone.postInstall = (async () => {}) as typeof standalone.postInstall
   })
@@ -368,14 +359,11 @@ describe('handleReleaseUpdate (release-update success path)', () => {
     expect(newInst!.copiedFromName).toBe(src.name)
     expect(typeof newInst!.copiedAt).toBe('string')
 
-    // Custom nodes land under the new install's own ComfyUI tree.
     const dstComfyUI = path.join(newInst!.installPath, 'ComfyUI')
     expect(
       fs.readFileSync(path.join(dstComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
     ).toBe(NODE_FILE_BODY)
 
-    // Models route through useSharedModels and input/output route
-    // through useSharedInput/useSharedOutput to the settings-provided dirs.
     expect(fs.readFileSync(path.join(sharedModelsDir, 'checkpoints', MODEL_FILE), 'utf-8')).toBe(
       MODEL_BODY
     )
@@ -408,9 +396,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
     }
     installationsStore.set(src.id, src)
 
-    // A real venv fixup / pip transaction is infeasible here; the handler's
-    // contract (copy first, delegate to change-pytorch, keep the copy on
-    // failure) is what's under test.
     standalone.fixupCopy = (async () => {}) as typeof standalone.fixupCopy
     standalone.handleAction = vi.fn(async () => ({
       ok: true
@@ -449,7 +434,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
     expect(newInst!.copiedFrom).toBe(src.id)
     expect(newInst!.copiedFromName).toBe(src.name)
     expect(newInst!.installPath).not.toBe(srcRoot)
-    // The copy is a full clone of the source tree.
     expect(
       fs.readFileSync(
         path.join(newInst!.installPath, 'ComfyUI', 'custom_nodes', NODE_NAME, NODE_FILE),
@@ -457,7 +441,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
       )
     ).toBe(NODE_FILE_BODY)
 
-    // change-pytorch ran against the copied record, never the source.
     const calls = vi.mocked(standalone.handleAction).mock.calls
     expect(calls).toHaveLength(1)
     const [actionId, target, data] = calls[0] as unknown as [
@@ -477,7 +460,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
 
     const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
 
-    // Same principle as Copy & Update: the copy survives so the user can retry.
     expect(result.ok).toBe(true)
     expect(typeof result.newInstallationId).toBe('string')
     const newInst = installationsStore.get(result.newInstallationId!)
@@ -485,7 +467,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
     expect(fs.existsSync(newInst!.installPath)).toBe(true)
     expect(newInst!.copyReason).toBe('copy-pytorch')
 
-    // Source registration and tree are intact.
     expect(installationsStore.get(src.id)).toBeTruthy()
     expect(
       fs.readFileSync(path.join(srcRoot, 'ComfyUI', 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
@@ -493,8 +474,6 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
   })
 
   it("re-homes a source-own modelDirsPrimary to the copy's own models dir", async () => {
-    // Explicitly promoted install-own download target: the persisted path
-    // points inside the *source* tree, so the copy must point inside its own.
     src.modelDirsPrimary = path.join(srcRoot, 'ComfyUI', 'models')
     installationsStore.set(src.id, src)
 

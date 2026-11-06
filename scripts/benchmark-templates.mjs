@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * Generate and validate `assets/benchmark-templates.json`, the example workflows
- * the performance test page offers. The list mirrors the API-format prompts in
- * the workflow_templates repo's `benchmarks/` folder; every display field comes
- * from `templates/index.json`, so nothing is hand-edited.
- *
- *   node scripts/benchmark-templates.mjs validate
- *   node scripts/benchmark-templates.mjs regenerate [--source <workflow_templates checkout>]
- *
- * `validate` checks the file's shape and that every example can actually be
- * downloaded from GitHub `main`: its `benchmarks/<id>.json` prompt and its parent
- * `templates/<id>.json` editor workflow. `regenerate` rebuilds the list from
- * GitHub `main`, or from a local checkout with `--source` (then run `validate`
- * to see what is not published yet).
- */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +9,6 @@ const REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/mai
 const LISTING_URL = 'https://api.github.com/repos/Comfy-Org/workflow_templates/contents/benchmarks'
 const SCHEMA_VERSION = 1
 const MODALITIES = ['video', 'image', '3d', 'audio']
-/** Mirrors the app's id validator: an id reaches a URL and a file path. */
 const ID = /^[a-zA-Z0-9_.-]+$/
 const RESERVED_IDS = new Set(['.', '..', 'none'])
 
@@ -45,7 +29,6 @@ async function fetchOk(url, init) {
   return response
 }
 
-/** `null` when the file is not published (404); network errors still throw. */
 const unlessMissing = (error) => {
   if (error?.status === 404) return null
   throw error
@@ -66,7 +49,6 @@ function isApiPrompt(value) {
   )
 }
 
-/** Source of the benchmark ids, their prompts and the template index. */
 function repoSource(sourceDir) {
   if (sourceDir) {
     const read = (...parts) => JSON.parse(fs.readFileSync(path.join(sourceDir, ...parts), 'utf8'))
@@ -112,7 +94,6 @@ function indexById(categories) {
   return byId
 }
 
-/** Shape errors the app would silently drop the entry for. */
 function shapeErrors(doc) {
   if (doc?.schemaVersion !== SCHEMA_VERSION) return [`schemaVersion must be ${SCHEMA_VERSION}`]
   if (!Array.isArray(doc.templates)) return ['templates must be an array']
@@ -208,6 +189,5 @@ try {
   else if (command === 'regenerate') await regenerate(sourceFlag >= 0 ? args[sourceFlag + 1] : null)
   else die('usage: benchmark-templates.mjs validate | regenerate [--source <dir>]')
 } catch (error) {
-  // Network failures (offline, timeout, HTTP errors) end the run without a stack trace.
   die(`${error?.cause?.message ?? error?.message ?? error}`)
 }

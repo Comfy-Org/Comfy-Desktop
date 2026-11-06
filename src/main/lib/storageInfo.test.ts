@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type * as PcieInfoModule from './pcieInfo'
 
-// Per-test fixture data returned by the mocked systeminformation probes.
 let mockFsSize: unknown[] = []
 let mockBlockDevices: unknown[] = []
 let mockDiskLayout: unknown[] = []
@@ -18,8 +17,6 @@ vi.mock('systeminformation', () => ({
   }
 }))
 
-// Replace only the probe (it spawns processes / reads sysfs); keep the real
-// deviceLookupKey so the join logic under test is the production one.
 vi.mock('./pcieInfo', async (importOriginal) => {
   const actual = await importOriginal<typeof PcieInfoModule>()
   return {
@@ -54,8 +51,6 @@ afterEach(() => {
 })
 
 const GB = 1_073_741_824
-
-// --- Windows fixtures -------------------------------------------------------
 
 function windowsFixtures(): void {
   mockFsSize = [
@@ -265,10 +260,10 @@ describe('classifyPaths - Windows', () => {
     const a = map.get('C:\\a')!
     expect(a.driveModel).toBeNull()
     expect(a.driveVendor).toBeNull()
-    expect(a.storageClass).toBe('nvme_ssd') // classification is unaffected
+    expect(a.storageClass).toBe('nvme_ssd')
     const b = map.get('D:\\b')!
-    expect(b.driveModel).toBeNull() // bare UUID
-    expect(b.driveVendor).toBeNull() // digits only (serial-ish)
+    expect(b.driveModel).toBeNull()
+    expect(b.driveVendor).toBeNull()
   })
 
   it('reduces unrecognized filesystem types to "other"', async () => {
@@ -286,7 +281,6 @@ describe('classifyPaths - Windows', () => {
     const map = await classifyPaths(['C:\\x'])
     const info = map.get('C:\\x')!
     expect(info.storageClass).toBe('unknown')
-    // The block-device link still allows same-drive grouping.
     expect(info.driveKey).toBe('\\\\.\\PHYSICALDRIVE0')
     expect(info.volumeSizeGb).toBe(2000)
   })
@@ -323,8 +317,6 @@ describe('classifyPaths - Windows', () => {
   })
 })
 
-// --- PCIe link caps join ------------------------------------------------------
-
 describe('classifyPaths - PCIe link caps', () => {
   beforeEach(() => {
     setPlatform('win32')
@@ -340,8 +332,6 @@ describe('classifyPaths - PCIe link caps', () => {
   })
 
   it('never attaches PCIe caps to non-NVMe drives, even when probed', async () => {
-    // A (bogus) probe entry for the SATA drive must be ignored: it would
-    // describe the shared AHCI controller, not the drive.
     mockPcie = new Map([['physicaldrive1', { maxGen: 3, slotMaxGen: 3 }]])
     const map = await classifyPaths(['D:\\models'])
     const info = map.get('D:\\models')!
@@ -362,7 +352,7 @@ describe('classifyPaths - PCIe link caps', () => {
     mockPcieShouldReject = true
     const map = await classifyPaths(['C:\\a'])
     const info = map.get('C:\\a')!
-    expect(info.storageClass).toBe('nvme_ssd') // classification unaffected
+    expect(info.storageClass).toBe('nvme_ssd')
     expect(info.pcieMaxGen).toBeNull()
   })
 
@@ -400,8 +390,6 @@ describe('classifyPaths - PCIe link caps', () => {
     expect(info.pcieSlotMaxGen).toBe(4)
   })
 })
-
-// --- Linux fixtures ---------------------------------------------------------
 
 describe('classifyPaths - Linux', () => {
   beforeEach(() => {
@@ -468,7 +456,6 @@ describe('classifyPaths - Linux', () => {
   })
 
   it('is path-component aware when matching mounts', async () => {
-    // "/mnt/modelsX" is NOT under the "/mnt/models" mount - falls to "/".
     const map = await classifyPaths(['/mnt/modelsX/file'])
     expect(map.get('/mnt/modelsX/file')!.storageClass).toBe('nvme_ssd')
   })
@@ -525,12 +512,9 @@ describe('classifyPaths - Linux', () => {
     })
     const map = await classifyPaths(['/mnt/extra/models'])
     const info = map.get('/mnt/extra/models')!
-    // Matched the /mnt/extra/ volume (2000 GB), not the / root volume.
     expect(info.volumeSizeGb).toBe(2000)
   })
 })
-
-// --- macOS fallback ---------------------------------------------------------
 
 describe('classifyPaths - macOS volume-level fallback', () => {
   beforeEach(() => {
@@ -538,7 +522,6 @@ describe('classifyPaths - macOS volume-level fallback', () => {
     mockFsSize = [
       { fs: '/dev/disk3s1', type: 'APFS', size: 1000 * GB, available: 400 * GB, mount: '/' }
     ]
-    // No usable diskLayout join; blockDevices carries media + protocol.
     mockBlockDevices = [
       {
         name: 'disk3s1',
@@ -557,7 +540,7 @@ describe('classifyPaths - macOS volume-level fallback', () => {
   it('falls back to blockDevices media and protocol', async () => {
     const map = await classifyPaths(['/Users/u/ComfyUI'])
     const info = map.get('/Users/u/ComfyUI')!
-    expect(info.storageClass).toBe('nvme_ssd') // SSD media on a PCIe bus
+    expect(info.storageClass).toBe('nvme_ssd')
     expect(info.bus).toBe('pcie')
     expect(info.driveKey).toBe('vol:/')
   })

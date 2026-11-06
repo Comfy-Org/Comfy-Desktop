@@ -60,9 +60,6 @@ import {
 import type { ActionDef, DetailField, Installation, ShowProgressOpts } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 
-/** Per-install settings body. The host owns chrome, focus trap, and
- *  dismissal; this component is the pure inner UI. */
-
 export type ComfyUISettingsTab = PickerTab
 
 interface ActiveOperation {
@@ -81,27 +78,13 @@ interface ActiveOperation {
 interface Props {
   installation: Installation | null
   initialTab?: ComfyUISettingsTab
-  /** Action id to fire automatically once `sections` load. Consumed
-   *  once per (autoAction, autoActionNonce) transition. */
   autoAction?: string | null
-  /** Bumped on each explicit (re)open. The popup is cached, so keying
-   *  the consumed-guard on this nonce lets a repeat trigger re-fire. */
   autoActionNonce?: number
   globalSettingsSnapshot?: StorageSnapshot
-  /** When set and the active tab is `'update'`, the Update tab body is
-   *  replaced with an inline progress / result view. */
   activeOperation?: ActiveOperation | null
-  /** Install attached to the host window. Decides whether the footer
-   *  primary action restarts in-place (this window) or focuses the
-   *  install's already-open window (another window). */
   activeInstallationId?: string | null
-  /** Host view-kind (from the picker snapshot). Drives the state-aware
-   *  navigation decision for the footer CTA + caret. Defaults to a dashboard
-   *  host for callers that don't pass it. */
   currentView?: ViewKind
-  /** Raw active-install category of the host (`null` on a dashboard host). */
   currentCategory?: Category | null
-  /** Hosted as a full page: segmented tabs, with the actions teleported here. */
   pageActionsTarget?: string
 }
 
@@ -124,17 +107,10 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'show-progress': [opts: ShowProgressOpts]
-  /** Install was removed; host should close and tear down the window. */
   'navigate-list': []
   'request-close': []
-  /** Backend stopped from the preview; host dismisses the whole popup so the
-   *  window's stopped-relaunch card shows. */
   'request-dismiss': []
-  /** Footer primary CTA. Carries the resolved `NavDecision`; the picker routes
-   *  its verb through the instance-action dispatcher. */
   'primary-action': [decision: NavDecision]
-  /** Caret split-button item (e.g. "Open in new window"). Carries the secondary
-   *  `NavDecision` the user picked. */
   'open-new-window': [decision: NavDecision]
   'op-cancel': []
   'op-retry': []
@@ -163,8 +139,6 @@ watch(
 )
 
 const installation = toRef(props, 'installation')
-// One nav-state read-model drives both the footer CTA and the caret; `installCta`
-// is its shared run-state derivation, reused here rather than built twice.
 const navState = useInstanceNavState(installation, {
   currentView: () => props.currentView,
   currentCategory: () => props.currentCategory,
@@ -196,10 +170,6 @@ const {
   onDismissPreview: () => emit('request-dismiss')
 })
 
-// Fires the named action once per prop transition, after sections load.
-// Keyed on `autoAction` + `autoActionNonce` (not install id) so reloads
-// on the same trigger don't double-fire while a repeat of the same
-// action still re-fires.
 const autoActionKey = computed<string | null>(() =>
   props.autoAction ? `${props.autoAction}#${props.autoActionNonce ?? 0}` : null
 )
@@ -210,15 +180,11 @@ watch(autoActionKey, (next, prev) => {
 watch(
   [() => autoActionKey.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
   async ([key, installId, isFresh]) => {
-    // Only act on fresh sections; the visible payload can belong to the previous selection.
     if (!installId || !key || !isFresh) return
     if (consumedAutoActionKey.value === key) return
     const autoAction = props.autoAction
     if (!autoAction) return
 
-    // Channel-card-aware resolution so nested per-channel actions target
-    // the install's currently-selected channel, not another channel's
-    // same-id action.
     const channelField = sections.value
       .flatMap((s) => s.fields ?? [])
       .find((f) => f.editType === 'channel-cards')
@@ -229,8 +195,6 @@ watch(
     consumedAutoActionKey.value = key
     await nextTick()
 
-    // Re-check the install after the tick — selection can change and a
-    // stale invocation would fire a destructive op against the wrong one.
     if (props.installation?.id !== installId) return
 
     void runAction(action)
@@ -238,20 +202,11 @@ watch(
   { immediate: true }
 )
 
-// Auto-refresh stale channel-cards when the Update tab opens, so a user
-// who opens the picker long after install doesn't see release data from
-// the last manual check. Fires only when the selected card's
-// `data.lastCheckedAt` is missing or older than `STALE_CHANNEL_CARD_MS`.
-// Per-(install, channel) dedupe via `refreshedChannelKeys`; main
-// short-circuits on a 10s window.
 const STALE_CHANNEL_CARD_MS = 15 * 60 * 1000
 const refreshedChannelKeys = new Set<string>()
 watch(
   [() => activeTab.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
   ([tab, installId, isFresh]) => {
-    // `isFresh` is critical: without it the watcher would walk the
-    // previous install's stale sections and fire `check-update` against
-    // the new install, which errors on Cloud / remote URL installs.
     if (tab !== 'update' || !installId || !isFresh) return
 
     const channelField = sections.value
@@ -262,19 +217,11 @@ watch(
     const currentChannel = typeof channelField.value === 'string' ? channelField.value : null
     if (!currentChannel) return
 
-    // Skip while the selected card's data is still fresh. Without this
-    // gate the watcher fires on every Update-tab mount regardless of
-    // cache age — the dedupe set below only blocks repeat fires within
-    // the same component instance, not re-mounts (the picker rebuilds
-    // on every open).
     const currentCard = channelField.options?.find((o) => o.value === currentChannel)
     const lastCheckedAt = (currentCard?.data as { lastCheckedAt?: number } | undefined)
       ?.lastCheckedAt
     if (lastCheckedAt && Date.now() - lastCheckedAt <= STALE_CHANNEL_CARD_MS) return
 
-    // Look up the canonical action def from sections to inherit whatever
-    // `enabled` / disabledMessage main attaches. Bail if main isn't
-    // exposing the action for this install.
     const checkAction = sections.value
       .flatMap((s) => s.actions ?? [])
       .find((a) => a.id === 'check-update')
@@ -284,8 +231,6 @@ watch(
     if (refreshedChannelKeys.has(dedupeKey)) return
     refreshedChannelKeys.add(dedupeKey)
 
-    // `silent: true` — automatic on-tab-open refresh, not a user click,
-    // so it must not pop the "you're up to date" alert a manual check does.
     void runAction({ ...checkAction, data: { ...checkAction.data, silent: true } })
   },
   { immediate: true }
@@ -296,7 +241,6 @@ interface TabDef {
   sectionTab: SectionTab
   label: string
   icon: typeof SlidersHorizontal
-  /** Richer hover copy; falls back to `label` when unset. */
   tooltip?: string
 }
 
@@ -345,10 +289,6 @@ const ALL_TABS: TabDef[] = [
   }
 ]
 
-// The console tab has no backend `sections` — it's a live PTY view — so it
-// can't be section-gated like the others. Visibility by instance type is
-// centralized in `isTabAllowedForCategory` (cloud + remote run no local
-// process to attach a shell to).
 const showConsoleTab = computed(
   () =>
     installation.value != null &&
@@ -356,8 +296,6 @@ const showConsoleTab = computed(
 )
 
 const tabs = computed<TabDef[]>(() => {
-  // Cloud runs no local process, so the `config` tab carries no real
-  // startup args — relabel it "Storage" to match its contents.
   const isCloud = installation.value?.sourceCategory === 'cloud'
   return ALL_TABS.filter((tab) =>
     tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
@@ -373,16 +311,6 @@ const showUpdateBadge = computed(() => {
   return inst?.statusTag?.style === 'update' || inst?.status === 'update-available'
 })
 
-// If the selected tab disappeared, fall back to the requested
-// `initialTab` if now available, else the first surviving tab. Prefer
-// the requested tab over `next[0]` so deep links honour caller intent.
-//
-// Gated on `sectionsFresh`: while a local install's sections are empty or
-// stale (initial load / retarget), every backend-gated tab vanishes and
-// only the section-less Console tab survives, so an ungated fallback would
-// latch `activeTab` onto Console and never revert once the real sections
-// arrive (the Console tab stays valid). Only reconcile against a payload
-// that actually belongs to the current install.
 watch([tabs, sectionsFresh], ([next, isFresh]) => {
   if (!isFresh) return
   if (next.length === 0) return
@@ -404,9 +332,6 @@ const rootRef = useTemplateRef<HTMLElement>('root')
 const footerRef = useTemplateRef<HTMLElement>('footer')
 const tabsRef = useTemplateRef<HTMLElement>('tabs')
 
-// Tooltips that echo the visible label add nothing, so only keep them
-// alive for tabs whose label is hidden. Mirror the `< 640px` collapse
-// breakpoint (see `@container settings-tabs` below) via a ResizeObserver.
 const TAB_COLLAPSE_PX = 640
 const tabsCollapsed = ref(false)
 let tabsObserver: ResizeObserver | undefined
@@ -444,8 +369,6 @@ function closeMoreMenu(): void {
   moreMenuOpen.value = false
 }
 
-// When set, the body swaps to the dedicated sub-page instead of the
-// tab list. Tab switch resets it so the args editor never orphans.
 type SubPage = 'args' | null
 const subPage = ref<SubPage>(null)
 const subPageTransition = ref<'subpage-push' | 'subpage-pop'>('subpage-push')
@@ -461,12 +384,9 @@ function closeSubPage(): void {
   subPage.value = null
 }
 
-// Tab-swap transition direction. Compares tab indices from the visible
-// `tabs` list (not static ALL_TABS) because cloud installs hide tabs.
 const tabTransition = ref<'subpage-push' | 'subpage-pop'>('subpage-push')
 
 function selectTab(key: ComfyUISettingsTab): void {
-  // Locked while an op is in flight — only the active tab stays live.
   if (opInflight.value && key !== activeTab.value) return
   if (subPage.value !== null) subPageTransition.value = 'subpage-pop'
   if (key !== activeTab.value) {
@@ -481,8 +401,6 @@ function selectTab(key: ComfyUISettingsTab): void {
   subPage.value = null
 }
 
-// Reset sub-page + close the More menu when the install changes, and
-// force the tab-swap into "push" so every switch reads as forward motion.
 watch(
   () => props.installation?.id ?? null,
   () => {
@@ -492,8 +410,6 @@ watch(
   }
 )
 
-// Keys the inner tab panes so switching installs (even on the same tab)
-// remounts the pane and fires the `tabTransition` animation.
 const paneInstallKey = computed(() => props.installation?.id ?? 'none')
 
 const argsField = computed<DetailField | null>(() => {
@@ -515,7 +431,6 @@ function handleArgsUpdate(value: string): void {
   if (f) void updateField(f, value)
 }
 
-/** Live `remoteUrl` field from the status sections (remote connections only). */
 const remoteUrlField = computed<DetailField | null>(() => {
   for (const s of sectionsForTab('status').value) {
     for (const f of s.fields ?? []) {
@@ -525,9 +440,6 @@ const remoteUrlField = computed<DetailField | null>(() => {
   return null
 })
 
-/** Commit a remote-URL edit through `updateField` (optimistic write, rollback,
- *  error pill, restart-dirty + telemetry). Resolves `false` on rejection so
- *  StatusFactPanel reverts; success is read back from the field-error map. */
 async function handleUrlUpdate(value: string): Promise<boolean> {
   const field = remoteUrlField.value
   if (!field) return false
@@ -549,12 +461,8 @@ const hasPendingRestart = computed(
   () => isRunningInThisWindow.value && pendingRestartFieldIds.value.size > 0
 )
 
-// The footer CTA verb/label and the caret items both come from one
-// `decideNavigation` call (via the shared `navState` above), so they can't drift.
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
 
-/** Resolve a decision label key, re-pointing "Open Cloud" → "Open Remote" for a
- *  remote install (the table folds remote into cloud; raw category is known here). */
 function resolveNavLabel(key: string): string {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
     return t('instancePicker.openRemote', 'Open Remote')
@@ -569,7 +477,6 @@ const primaryActionLabel = computed(() => {
   return resolveNavLabel(primaryDecision.value.primaryLabel)
 })
 
-/** Leading icon for a nav label key (shared by the primary CTA and caret items). */
 function navIcon(labelKey: string): Component {
   switch (labelKey) {
     case 'instancePicker.openCloud':
@@ -590,8 +497,6 @@ function navIcon(labelKey: string): Component {
   }
 }
 
-/** Category-aware icon: the folded "Open Cloud" cell shows a server glyph for an
- *  actual remote install (mirrors `resolveNavLabel`). */
 function navIconFor(key: string): Component {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
     return Server
@@ -603,17 +508,11 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-/** The selected install's "Stop" action (absent for cloud — no local process to
- *  stop). Surfaced on the caret to put stopping one click from the CTA. */
 const stopAction = computed<ActionDef | undefined>(() =>
   pinBottomActions.value.find((a) => a.id === 'stop')
 )
-/** Nav caret items are keyed by `secondary[]` index, not label, so two
- *  alternatives sharing a label can't collide. */
 const NAV_ITEM_PREFIX = 'nav:'
 const caretActions = computed<MenuAction[]>(() => {
-  // A running target (verb `focus`) can't open a second window — its only
-  // useful caret action is Stop (remote has one; cloud doesn't → empty caret).
   if (primaryDecision.value.verb === 'focus') {
     return stopAction.value ? [{ ...stopAction.value, icon: actionIcon('stop') }] : []
   }
@@ -628,8 +527,6 @@ const caretActions = computed<MenuAction[]>(() => {
   return navItems
 })
 
-/** Leading icon for a footer "More" action id; falls back to a neutral glyph so
- *  the icon column never reads half-empty for a backend action we don't map. */
 function actionIcon(id: string): Component {
   switch (id) {
     case 'update-comfyui':
@@ -671,9 +568,6 @@ const pinBottomMenuActions = computed<MenuAction[]>(() =>
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
-  // A restart click IS the restart: main stops + relaunches with the
-  // freshly-saved values, so consume the pending-restart state now. A remote
-  // relaunch surfaces no observable lifecycle dip, so the watchers can't clear it.
   if (primaryDecision.value.verb === 'restart' && pendingRestartFieldIds.value.size > 0) {
     clearPendingRestart(selectedInstall.id)
   }
@@ -689,9 +583,6 @@ function closeCaretMenu(): void {
 }
 function handleCaretPick(action: ActionDef): void {
   if (!installation.value) return
-  // Nav alternatives carry a `nav:<index>` id → emit the matching decision; a
-  // reused lifecycle action (e.g. Stop) keeps its own id and routes through the
-  // same `runAction` the More menu uses.
   if (action.id.startsWith(NAV_ITEM_PREFIX)) {
     const index = Number(action.id.slice(NAV_ITEM_PREFIX.length))
     const picked = primaryDecision.value.secondary[index]
@@ -751,8 +642,6 @@ const opSpeedLabel = computed(() => {
   return spd != null && spd > 0 ? formatSpeed(spd) : null
 })
 
-// Show overlay whenever an op is present, except snapshot-restore on
-// the Snapshots tab, which has its own timeline rail in SnapshotsView.
 const showOpOverlay = computed(() => {
   const op = props.activeOperation
   if (!op) return false
@@ -762,22 +651,12 @@ const showOpOverlay = computed(() => {
 
 const opBlocksFooter = computed(() => opInflight.value)
 
-// The tab that renders progress for the active op. Only snapshot-restore
-// has its own rail in SnapshotsView (matching `showOpOverlay`); every
-// other op — including snapshot-save/delete — surfaces in the Update
-// tab's inline overlay.
 const opHomeTab = computed<ComfyUISettingsTab | null>(() => {
   const op = props.activeOperation
   if (!op) return null
   return op.actionId === 'snapshot-restore' ? 'snapshots' : 'update'
 })
 
-// Locking the other tabs during an op is meant to force the user onto
-// the progress view, but the lock alone doesn't move them there. Switch
-// to the op's home tab whenever the selected install has an in-flight op
-// so progress is always visible. Covers op-start, mount, async tab load,
-// and selecting an already-operating install (e.g. from another window's
-// shelf). Sets `activeTab` directly because `selectTab` is locked mid-op.
 watch(
   [
     () => opInflight.value,
@@ -810,9 +689,7 @@ watch(opSuccess, (yes) => {
     clearCountdown()
     return
   }
-  // Reload so installed version + update badge reflect the new state.
   void reload()
-  // Clear the dedup key so the auto-refresh watcher can re-fire.
   const installId = props.installation?.id
   if (installId) {
     for (const key of Array.from(refreshedChannelKeys)) {
@@ -829,7 +706,6 @@ watch(opSuccess, (yes) => {
   }, 1000)
 })
 
-// Close the More menu when an op begins, before its footer button greys out.
 watch(opInflight, (yes) => {
   if (yes && moreMenuOpen.value) closeMoreMenu()
 })
@@ -854,7 +730,6 @@ const subpageTransitionClasses = {
 }
 
 defineExpose({
-  /** Host can force-focus the active tab so initial focus lands in the body. */
   focusActiveTab(): void {
     const firstTab = rootRef.value?.querySelector<HTMLButtonElement>('.settings-v2-tab.is-active')
     firstTab?.focus()
@@ -1022,8 +897,6 @@ defineExpose({
                   :key="`tab-storage-${paneInstallKey}`"
                   class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
                 >
-                  <!-- Lazy-mounted via `v-else-if` so picker opens that never
-                   visit Storage skip rendering the global model-dir UI. -->
                   <StoragePane
                     :snapshot="globalSettingsSnapshot"
                     :sections="storageSections"

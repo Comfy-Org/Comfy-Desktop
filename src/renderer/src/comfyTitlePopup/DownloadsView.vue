@@ -2,30 +2,14 @@
 import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  CircleAlert,
-  CircleCheck,
-  LoaderCircle,
-  PauseCircle,
-  // TODO(brand-cleanup): PlayCircle was the Resume action icon — redesign skips it; restore if Pause/Resume comes back.
-  // PlayCircle,
-  RotateCcw,
-  X
-} from 'lucide-vue-next'
+import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from 'lucide-vue-next'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 
 const { t } = useI18n()
 
-/**
- * Live downloads tray view. Stateless; `TitlePopupApp` owns the subscription and passes
- * the `DownloadsState` as a prop, and per-entry actions dispatch back over IPC. Entry /
- * state / action shapes are mirrored inline from `comfyTitlePopupPreload.ts`.
- */
-
 interface DownloadEntry {
-  /** Stable per-job identifier; preferred over `url` for actions. */
   id?: string
   url: string
   filename: string
@@ -80,32 +64,19 @@ function isTerminal(d: DownloadEntry): boolean {
 const fetchThumbnail = (savePath: string): Promise<string | null> =>
   bridge?.getDownloadThumbnail(savePath) ?? Promise.resolve(null)
 
-/** A completed image asset reserves the enlarged rounded preview box (the
- *  thumbnail itself may still fail to load, falling back to the status icon). */
 function isCompletedImage(download: DownloadEntry): boolean {
   return download.isImage === true && download.status === 'completed'
 }
 
-/** Combined list newest-first by `createdAt` so a download staying in place across
- *  active → terminal isn't split across the IPC's active/recent buckets. */
 const orderedEntries = computed<DownloadEntry[]>(() =>
   [...props.state.active, ...props.state.recent].sort(
     (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)
   )
 )
 
-// Actions address a row by stable job id (`ref`); the URL rides along as a
-// compatibility fallback.
 function cancel(d: DownloadEntry): void {
   bridge?.downloadsAction({ action: 'cancel', ref: d.id, url: d.url })
 }
-// TODO(brand-cleanup): redesign skips pause/resume — keep handlers wired for an easy restore.
-// function pause(d: DownloadEntry): void {
-//   bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
-// }
-// function resume(d: DownloadEntry): void {
-//   bridge?.downloadsAction({ action: 'resume', ref: d.id, url: d.url })
-// }
 function showInFolder(d: DownloadEntry, savePath: string): void {
   bridge?.downloadsAction({ action: 'show-in-folder', ref: d.id, url: d.url, savePath })
 }
@@ -119,7 +90,6 @@ function viewAllDownloads(): void {
   bridge?.openDownloadsModal()
 }
 
-/** Right-edge X cancels an in-flight entry or removes a terminal row. */
 function handleClose(d: DownloadEntry): void {
   if (isTerminal(d)) dismiss(d)
   else cancel(d)
@@ -129,7 +99,6 @@ function closeLabel(d: DownloadEntry): string {
   return isTerminal(d) ? t('downloadsPopup.remove') : t('downloadsPopup.cancel')
 }
 
-/** Subtitle: full bytes/speed/ETA for active rows; "Show in Finder" for terminal rows with a path. */
 function subtitle(d: DownloadEntry): string {
   if (d.status === 'downloading' || d.status === 'pending') {
     return statusLine(d)
@@ -146,7 +115,6 @@ function subtitle(d: DownloadEntry): string {
   return statusLine(d)
 }
 
-/** Whole-row click opens the file location for completed entries with a save path. */
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
   if ((event.target as HTMLElement).closest('.downloads-item-close, .downloads-item-retry')) return
   if (d.status === 'completed' && d.savePath) showInFolder(d, d.savePath)
@@ -156,20 +124,14 @@ function isRowClickable(d: DownloadEntry): boolean {
   return d.status === 'completed' && !!d.savePath
 }
 
-/** Inline progress-fill gradient where the card itself reads as the progress bar. */
 function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
   if (d.status !== 'downloading' && d.status !== 'pending') return undefined
   const pct = d.status === 'pending' ? 0 : Math.max(0, Math.min(1, d.progress)) * 100
-  // ~1% transition so the leading edge reads as a crisp line; collapses to solid at 100%.
   const next = Math.min(100, pct + 0.91)
   return {
     background: `linear-gradient(90deg, var(--downloads-card) 0%, var(--downloads-card) ${pct}%, var(--downloads-bar-rest) ${next}%)`
   }
 }
-
-// TODO(brand-cleanup): redesign skips Pause/Resume in the popover. The
-// bridge handlers + i18n strings remain so re-introducing them is just
-// reinstating the buttons below.
 </script>
 
 <template>

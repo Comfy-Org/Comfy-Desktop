@@ -1,28 +1,15 @@
-// Shared main-process color constants. Brand colors match the frontend design system.
-
 import { perceivedLuminance, LUMINANCE_LIGHT_THRESHOLD } from '../../shared/colorLuminance'
 
-/** ComfyUI "Electric Yellow" — `--color-brand-yellow` / `--color-electric-400` in the frontend. */
 export const BRAND_YELLOW = '#F0FF41'
 
-/** Dark background used for comfy windows — matches the frontend's dark theme `--bg-color`. */
 export const COMFY_BG_DARK = '#202020'
 
-/** Light background — matches the frontend's light theme fallback. */
 export const COMFY_BG_LIGHT = '#f5f5f5'
 
-/** Default dark background for comfy windows (used at creation time before theme is known). */
 export const COMFY_BG = '#171717'
 
-/** Title bar background: `--color-window-background`, oklch(0.119 0.003 285). Must stay in sync
- *  with `--titlebar-bg` in `src/renderer/src/assets/main.css` so the OS window-controls
- *  overlay matches the Vue `.title-bar` on every window. */
 export const TITLEBAR_BG = '#050506'
 
-/** Window-control symbol color (`#dddddd` on dark backgrounds, `#333333` on light) chosen by the
- *  perceived luminance of `bg` so the min/max/close glyphs stay legible against any reported
- *  ComfyUI theme. Accepts `#rgb` / `#rrggbb` / `rgb()` / `rgba()`; falls back to the dark-safe
- *  light glyph on any parse failure. */
 export function readableSymbolColor(bg: string): string {
   const rgb = parseColor(bg)
   if (!rgb) return '#dddddd'
@@ -56,5 +43,4 @@ export interface SplashTheme {
 export const SPLASH_DARK: SplashTheme = { bg: COMFY_BG_DARK, fg: '#ffffff', isDark: true }
 export const SPLASH_LIGHT: SplashTheme = { bg: COMFY_BG_LIGHT, fg: '#000000', isDark: false }
 
-/** Desktop update splash follows the same palette as the launcher chrome. */
 export const SPLASH_DESKTOP: SplashTheme = { bg: TITLEBAR_BG, fg: '#ffffff', isDark: true }

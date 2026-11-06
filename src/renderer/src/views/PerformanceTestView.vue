@@ -237,9 +237,6 @@ function correctRunCountOnCommit(
 ): string {
   const input = event?.target instanceof HTMLInputElement ? event.target : undefined
   const corrected = correctRunCount(input?.value ?? currentValue, minimum, maximum, fallback)
-  // Input and change can occur in one update batch (spinner buttons do this).
-  // If normalization returns the existing model, Vue has no changed prop to
-  // repaint. Commit the accepted text to the field as well as the model.
   if (input) input.value = corrected
   return corrected
 }
@@ -330,8 +327,6 @@ async function runPerformanceTest(): Promise<void> {
   const token = ++runToken
   const runTelemetry: PerformanceTestRunTelemetry = {
     installationId,
-    // Bundled examples send their stored file name (`<templateId>.json`, as in results.json);
-    // imported workflows are user-named files, so they are reported only as 'custom'.
     workflowName:
       workflowDisplayName.value === null ? 'custom' : (filePath.split(/[\\/]/).pop() ?? ''),
     warmupRuns: warmups,

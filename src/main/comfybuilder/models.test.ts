@@ -21,9 +21,6 @@ afterEach(() => {
   for (const d of tmpRoots.splice(0)) fs.rmSync(d, { recursive: true, force: true })
 })
 
-/** Fake managed-job surface. `behave` decides each started job's outcome;
- *  the default writes `bytes` at the resolved destination and completes,
- *  mimicking a successful verified transfer. */
 function fakeJobs(
   behave?: (opts: ModelJobOptions, dest: string) => ModelJobOutcome | Promise<ModelJobOutcome>
 ) {
@@ -210,11 +207,8 @@ describe('stageModels', () => {
     const install = freshInstall()
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-escape-'))
     tmpRoots.push(outside)
-    // A malicious archive ships ComfyUI/models/<type> as a symlink escaping the install.
     const modelsRoot = installModelsRoot(install)
     fs.mkdirSync(modelsRoot, { recursive: true })
-    // A junction on Windows needs no privilege/Developer Mode, unlike a real
-    // directory symlink; realpath resolves both, so the escape check still fires.
     fs.symlinkSync(
       outside,
       path.join(modelsRoot, 'evil'),
@@ -263,8 +257,8 @@ describe('stageModels', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
     const jobs = fakeJobs((opts, dest) => {
       opts.onProgress?.(1_048_576, 10_485_760)
-      nowSpy.mockReturnValue(1_001_000) // 1s later
-      opts.onProgress?.(3_145_728, 10_485_760) // +2 MiB over that second
+      nowSpy.mockReturnValue(1_001_000)
+      opts.onProgress?.(3_145_728, 10_485_760)
       fs.mkdirSync(path.dirname(dest), { recursive: true })
       fs.writeFileSync(dest, Buffer.from('weights'))
       return { status: 'completed', savePath: dest }
@@ -279,12 +273,10 @@ describe('stageModels', () => {
     } finally {
       nowSpy.mockRestore()
     }
-    // First sample has no prior window, so it carries bytes but no rate.
     const first = seen.find((p) => p.receivedBytes === 1_048_576)!
     expect(first.totalBytes).toBe(10_485_760)
     expect(first.speedBytesPerSec).toBeUndefined()
     expect(first.etaSecs).toBeUndefined()
-    // Second sample: 2 MiB in 1s, with the ETA derived from that rate.
     const second = seen.find((p) => p.receivedBytes === 3_145_728)!
     expect(second.speedBytesPerSec).toBeCloseTo(2_097_152)
     expect(second.etaSecs).toBeCloseTo((10_485_760 - 3_145_728) / 2_097_152)
@@ -328,7 +320,6 @@ describe('stageModels', () => {
       jobs: { start, cancel },
       signal: controller.signal
     })
-    // Let the job start, then abort the install.
     await vi.waitFor(() => expect(start).toHaveBeenCalled())
     controller.abort()
     await expect(staging).rejects.toThrow(/cancel/i)

@@ -36,46 +36,15 @@ import type { ComfyWindowEntry } from './registry'
 
 const APP_VERSION = getAppVersion()
 
-/** Local managed source types that back the served frontend's terminal tab
- *  with a per-install shell (a defined `getTerminalEnv` or the standalone
- *  default). These get the stopgap Terminal-tab injection; remote/cloud and
- *  external (legacy v1 desktop) installs do not. */
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 
-/** Entry point that triggered a zoom reset, tagged as `source` on the
- *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
- *  and `menu` (the title menu's "Reset Zoom") flow through the per-install
- *  `comfyZoomResets` closure; `shortcut` (Ctrl/Cmd + 0) emits directly from
- *  the key handler. */
 export type ZoomResetSource = 'titlebar' | 'menu' | 'shortcut'
 
-/** Lifecycle-state maps owned by `index.ts` that `attachInstall` and the
- *  related relaunch flow both touch. Late-bound via
- *  `setAttachFactories(...)` so a future move of these maps doesn't
- *  require re-touching every call site. */
 export interface AttachFactories {
-  /** Per-install backoff cancel for the comfyContents `did-fail-load`
-   *  retry timer. The relaunch flow uses this to interrupt a pending
-   *  retry that would otherwise navigate away from the splash page. */
   comfyFailRetryTimerCancels: Map<string, () => void>
-  /** Per-install comfyView reload (browser-style page reload). Registered
-   *  on attach, cleared on detach. Lets the title-bar refresh button reuse
-   *  the same reload path as F5/Ctrl+R without lifting the closure. */
   comfyReloads: Map<string, () => void>
-  /** Per-install comfyView zoom reset (→ 100%). Registered on attach,
-   *  cleared on detach. Lets both the title-bar zoom pill and the title
-   *  menu's "Reset Zoom" entry reset the live comfyContents, push the
-   *  `comfy-titlebar:zoom-changed` update so the pill clears, and emit the
-   *  matching `comfy.desktop.zoom.reset` telemetry (`source` tags which
-   *  entry point) without lifting the closure. */
   comfyZoomResets: Map<string, (source: ZoomResetSource) => void>
-  /** Per-install relaunch state. Keys present in this map gate every
-   *  attach-side reload path so a relaunch-in-progress install can't
-   *  be auto-retried out from under the splash. */
   relaunchStates: Map<string, unknown>
-  /** Compute whether an install has a pending in-app update. Used to
-   *  push the title-bar install-update pill on attach + on every
-   *  install-record `'updated'` event. */
   computeInstallUpdateAvailable: (
     installationId: string
   ) => Promise<{ available: boolean; version?: string }>
@@ -97,32 +66,11 @@ function getFactories(): AttachFactories {
 export interface AttachInstallOpts {
   installation: InstallationRecord
   comfyUrl: string
-  /** `true` for locally-launched installs; `false` for remote/cloud installs. */
   isLocal: boolean
 }
 
-/**
- * Bind an install to a freshly-constructed (or detached) host entry.
- * Wires every install-keyed listener — install-record subscription,
- * theme observer, fail-retry, render-process-gone, before-input
- * keystrokes, attachSessionDownloadHandler, content-script injection
- * — and stashes a symmetric undo on `entry._installCleanup`
- * (consumed by the close handler and by `detachInstall()`).
- *
- * Calling on an already-attached entry throws — callers must detach
- * first or construct a fresh window. The cleanup is idempotent
- * (calling it twice is a no-op the second time) so the close
- * handler is free to invoke it without checking detach state.
- */
 export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts): boolean {
   if (isInstallHost(entry)) {
-    // Defensive — every current call site already gates with
-    // `isChooserHost(entry)`, but a future caller that forgets
-    // the guard would otherwise take down the entire launch flow
-    // with an uncaught exception in main. Surface the violation
-    // to telemetry and let the caller fall back (the install-
-    // backed wrapper destroys the just-created host; the claim
-    // path skips the in-place attach and the wrapper recovers).
     const message =
       `attachInstall: entry windowKey=${entry.windowKey} is already attached to ` +
       `installationId=${entry.installationId}; detach first`
@@ -148,34 +96,18 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const titleBarView = entry.titleBarView
   activateFirebaseAuthReporter(comfyContents)
 
-  // Seed entry install state. The secondary index is the source of
-  // truth for `getEntryByInstallationId(id)` — keep it in lockstep
-  // with `entry.installationId` (detach symmetrically clears both).
   entry.installationId = installationId
   entry.comfyUrl = comfyUrl
   entry.titleBarText = installation.name
   entry.sourceCategory = sourceMap[installation.sourceId]?.category ?? null
-  // The attach consumes any in-progress identity preview; clearing the
-  // state field keeps a later detach from clobbering identity twice.
   entry.previewInstallationId = null
   indexInstallationId(installationId, entry.windowKey)
 
-  // Seed the MRU tracker if this in-place attach happens on the
-  // already-focused host: no fresh OS `'focus'` event would fire to
-  // catch it otherwise, leaving the tracker pointing at a stale (or
-  // null) install on the next dock-icon click.
   if (comfyWindow.isFocused()) {
     setLastFocusedInstallationId(installationId)
-    // An attach onto the focused host makes this install the active surface;
-    // persist it so the next boot restores this instance (no fresh focus
-    // event fires for an in-place attach). The record helper no-ops while
-    // quitting.
     recordInstanceSurface(installationId)
   }
 
-  // OS-level window title is rebuilt whenever the page title or the
-  // install name changes. Closures over the install lifetime — reset
-  // by `_installCleanup` below.
   let currentInstallName = installation.name
 
   let currentPageTitle = ''
@@ -186,20 +118,10 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
   refreshOsWindowTitle()
 
-  // Push install-derived initial state — the title bar may already
-  // be mounted (re-attach case). The shared title-bar-ready handshake
-  // re-pushes from entry.* on a fresh mount, but the eager push covers
-  // the in-place transform path.
   if (!titleBarView.webContents.isDestroyed()) {
     titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
     titleBarView.webContents.send('comfy-titlebar:source-category-changed', entry.sourceCategory)
-    // Flip the renderer's reactive `isInstallLess` to false so install-
-    // scoped chrome (install-update pill, install-menu items) wakes up
-    // without needing a title-bar URL reload.
     titleBarView.webContents.send('comfy-titlebar:installation-id-changed', installationId)
-    // Cancel any active preview-mode state on the renderer so the
-    // post-attach title bar drops back to the steady-state install
-    // gating. No-op when no preview was pushed before this attach.
     titleBarView.webContents.send('comfy-titlebar:preview-mode-changed', false)
     void fx.computeInstallUpdateAvailable(installationId).then((state) => {
       if (titleBarView.webContents.isDestroyed()) return
@@ -207,11 +129,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     })
   }
 
-  // Reflect rename / source change in both the comfy tab and the
-  // OS-level window title as the install record mutates. Also
-  // recompute the install-update pill state (the install's source
-  // may have flipped its statusTag between releases as the
-  // release-cache resolves in the background).
   const onInstallationUpdated = (updated: InstallationRecord): void => {
     if (updated.id !== entry.installationId) return
     const nextTabText = updated.name
@@ -239,13 +156,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
   installationEvents.on('updated', onInstallationUpdated)
 
-  /**
-   * Paint the Vue header and the OS window-controls overlay from ComfyUI's
-   * reported `bg` in one call, so the strip behind the min/max/close controls
-   * stays seamless with the bar. `symbolColor` is
-   * luminance-derived to keep the glyphs legible on any theme. Instance-only —
-   * the install-less chooser keeps `--titlebar-bg`.
-   */
   const applyComfyTheme = (bg: string): void => {
     if (comfyWindow.isDestroyed()) return
     const theme = { bg, text: readableSymbolColor(bg) }
@@ -292,14 +202,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `read();` +
     `})()`
 
-  /**
-   * Cloud-page patches installed on each dom-ready:
-   * 1. Remove popup-blocked auth toasts while Desktop handles sign-in.
-   * 2. Hide the login page briefly during a bridge-triggered reload to avoid flicker.
-   * 3. Hide the Download ComfyUI onboarding CTA, since Desktop is already installed.
-   *    A persistent CSS selector handles SPA hydration; a text-based observer is
-   *    the fallback when the frontend's class chain changes.
-   */
   const COMFY_CLOUD_PATCHES_JS =
     `(function(){` +
     `try{` +
@@ -321,10 +223,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `function looksBlocked(n){` +
     `if(!n||n.nodeType!==1)return false;` +
     `var t=(n.textContent||'').toLowerCase();` +
-    // Raw SDK error code (older cloud frontend builds surface it
-    // directly) + the user-friendly text current builds map it to.
-    // Both phrases are specific enough to the sign-in popup path
-    // that matching them won't catch unrelated toasts.
     `return t.indexOf('auth/popup-blocked')>=0` +
     `||t.indexOf('signing you in')>=0;` +
     `}` +
@@ -385,48 +283,21 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
-    // Inject the Terminal entry on local managed installs. The content script
-    // checks bottomPanelTabs for command-terminal and avoids a duplicate entry.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
-    // Offer this view as a classifier for ops-flag person targeting. A RETRY path, not the
-    // trigger: the classification is driven by the identity consensus, which reclassifies as
-    // soon as any view reports a change. This covers the case where the consensus resolved while
-    // the views it asked could not answer, and is a no-op otherwise. Deliberately OUTSIDE the
-    // `!isLocal` branch below: the grant these flags carry is consumed only by the local launch
-    // path (`buildLaunchArgs`), since a cloud install spawns no Core — so binding on cloud views
-    // alone would cover every surface except the one that can use the result. Fire-and-forget;
-    // only a boolean is stored, and sending it is consent-gated in telemetry.
     void refreshStaffFlagTargeting(comfyContents)
 
-    // Cloud-only patches (popup-blocked toast suppression + post-signin
-    // flicker hide). Skipped for local installs — they don't load cloud
-    // frontend, never see the toast or the redirect flash.
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
-      // Refresh the cached subscription tier off the cloud view's
-      // Firebase auth record + /customers/me. Used by billing telemetry
-      // and free-tier offer UI. Fire-and-forget — failures leave the tier
-      // cache as-is.
       void refreshCloudUserTier(comfyContents)
-      // Mark cloud entry for the acquisition funnel. Deduped per session
-      // and carries `first_time` for the first-ever cloud entry.
       noteCloudEntered()
     } else {
-      // Local counterpart to `noteCloudEntered`: the bottom of the
-      // install→canvas funnel. The page reaching dom-ready is the first
-      // moment the user can see the workflow canvas. Deduped per launch
-      // (reloads / re-attaches don't re-fire) and carries
-      // `server_ready_to_canvas_ms` for the provisioning-time funnel.
       noteCanvasRendered(installationId)
     }
   }
   comfyContents.on('dom-ready', onDomReady)
 
-  // F5 / Ctrl+R reload — gated on the entry having an install backing
-  // it (a detached host returns early so the dummy view can't reload
-  // a stale URL).
   const currentComfyUrl = (): string => entry.comfyUrl || comfyUrl
   const reloadComfy = (): void => {
     if (comfyWindow.isDestroyed()) return
@@ -448,20 +319,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       reloadComfy()
       return
     }
-    // Restore Ctrl/Cmd + =/+/-/0 zoom on the comfy WebContentsView. The default
-    // accelerators target BrowserWindow.webContents (empty) and the
-    // app menu has no View > Zoom roles, so we wire it explicitly here. Step
-    // 0.5 mirrors Electron's standard zoomLevel granularity (~91% / 110% / ...).
-    // Exclude Alt to avoid AltGr / Ctrl+Alt collisions on non-US layouts.
-    //
-    // NOTE on view hot-swapping: this handler closes over `comfyContents`
-    // captured at attach time. Today, comfyView swaps happen only before
-    // attachInstall runs, so the listener always lives on the active view and
-    // `_installCleanup` removes it symmetrically. If we later hot-swap
-    // entry.comfyView mid-attach (e.g. to reuse a host window without tearing
-    // down install state), this binding goes stale and zoom shortcuts will
-    // silently stop working until the next attach. The Reset Zoom menu item
-    // re-reads parentEntry.comfyView at click time, so it stays correct.
     if (
       mod &&
       !input.alt &&
@@ -473,8 +330,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         const previousLevel = comfyContents.getZoomLevel()
         comfyContents.setZoomLevel(0)
         pushZoom()
-        // Only emit when this was a real reset (skip no-op presses at 1x)
-        // so the event count tracks actual recovery actions, not key-spam.
         if (previousLevel !== 0) {
           emitZoomReset('shortcut', previousLevel)
         }
@@ -494,8 +349,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onZoomChanged = (): void => pushZoom()
   comfyContents.on('zoom-changed', onZoomChanged)
 
-  // One emit site for `comfy.desktop.zoom.reset` so every entry point (zoom
-  // pill, title menu, Ctrl/Cmd + 0) shares the payload shape and a typed `source`.
   const emitZoomReset = (source: ZoomResetSource, previousLevel: number): void => {
     mainTelemetry.emit('comfy.desktop.zoom.reset', {
       source,
@@ -506,10 +359,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     })
   }
 
-  // Failure retry — backoff on did-fail-load that isn't aborted /
-  // mid-relaunch. Per-install timer cancel registered into the
-  // shared map so onModelFolderRelaunch can interrupt a pending
-  // retry that would otherwise navigate away from the splash page.
   let failRetryTimer: ReturnType<typeof setTimeout> | null = null
   const cancelFailRetry = (): void => {
     if (failRetryTimer) {
@@ -537,10 +386,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (!isMainFrame || code === -3 || failRetryTimer) return
     const id = entry.installationId
     if (id === null) return
-    // Local install's main-frame load failed to reach the canvas. Record it
-    // as the failed leg of the install→canvas funnel (bypasses the
-    // first-render dedup — a failed load is a distinct signal). Cloud loads
-    // have their own paths and are excluded here.
     if (isLocal) {
       noteCanvasRendered(id, { loadFailed: true })
     }
@@ -576,16 +421,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
   comfyContents.on('render-process-gone', onRenderProcessGone)
 
-  // Per-window download routing — attached at session level so a
-  // download dispatched from the comfyContents lands in this
-  // window's download tray. `detachWindowDownloads` is per-window
-  // and survives mode flips (it lives in the createHostWindow close
-  // handler, not in `_installCleanup`).
   attachSessionDownloadHandler(comfyContents.session)
 
-  // First local launch after install: auto-open the chosen starter template via a
-  // URL deeplink, then clear the one-shot so relaunches start blank. Remote/cloud
-  // installs don't load the local frontend that reads the param, so they're skipped.
   let urlToLoad = comfyUrl
   const pendingTemplate =
     typeof installation.pendingTemplateOpen === 'string' ? installation.pendingTemplateOpen : null
@@ -598,10 +435,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   comfyContents.loadURL(urlToLoad)
 
-  // Symmetric undo. Called by the close handler (always) and by
-  // `detachInstall()` when the host flips back to chooser mode in
-  // place. Idempotent — sets `_installCleanup = null` on first call
-  // so subsequent calls are no-ops.
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
@@ -619,37 +452,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     }
     const id = entry.installationId
     if (id !== null) {
-      // Abort any in-flight install / migrate / quick-install /
-      // update-while-running op for this install BEFORE killing the
-      // running session. Renderer-side overlay `onCancel` is the
-      // happy-path rollback prompt; this is the safety net that
-      // fires when the renderer side has no overlay mounted (e.g.
-      // window-close consult returns `cleared: true` immediately
-      // because the panel state is empty). Without it, in-flight
-      // operations continued running orphaned in main after window teardown.
       const inFlight = _operationAborts.get(id)
       if (inFlight) {
         inFlight.abort()
         _operationAborts.delete(id)
       }
-      // Tear down a still-running background template-model download - it's
-      // keyed separately from _operationAborts, so it would otherwise outlive
-      // the window it was started for. This releases the install's leases on
-      // the real managed model jobs. Releasing the last lease PARKS the
-      // transfer (network stops; staged bytes + sidecar kept, resumable from
-      // the Downloads UI) - never destroys it; only an explicit Downloads
-      // Cancel deletes staged bytes. During app quit the release defers
-      // entirely to the quit path, which parks every active transfer itself.
       abortTemplateDownload(id)
-      // Same teardown for a build install's background model staging. This is
-      // also the safety net ahead of a delete: deleting an install closes its
-      // window, and a task still writing into the tree must stop before the
-      // tree is removed.
       abortModelStaging(id)
-      // Detach the relaunch will-navigate blocker before clearing the
-      // map slot — without `comfyContents.off(...)`, a re-attach would
-      // inherit a still-active blocker that preventDefaults every
-      // navigation until the comfyContents itself is destroyed.
       const relaunch = fx.relaunchStates.get(id) as
         | { navBlocker: (...args: unknown[]) => void }
         | undefined
@@ -657,10 +466,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         comfyContents.off('will-navigate', relaunch.navBlocker)
       }
       ipc.stopRunning(id)
-      // Close this install's pop-out terminal/logs windows. They're standalone
-      // BrowserWindows outside the host registry, so without this they outlive
-      // the install and — being open windows — suppress `window-all-closed`,
-      // keeping the whole app alive after the user closed its host window.
       closeInstallPopouts(id)
       fx.comfyFailRetryTimerCancels.delete(id)
       fx.comfyReloads.delete(id)

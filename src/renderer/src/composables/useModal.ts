@@ -115,7 +115,6 @@ function getLastCheckboxValues(): Record<string, boolean> {
   return _lastCheckboxValues
 }
 
-/** Cancel value per ModalType — must match what a backdrop/ESC dismiss resolves to. */
 function cancelValueForType(type: ModalType): unknown {
   switch (type) {
     case 'confirm':
@@ -131,7 +130,6 @@ function cancelValueForType(type: ModalType): unknown {
   }
 }
 
-/** Resolve any open modal as if the user clicked the backdrop. No-op when nothing is open. */
 function dismiss(): void {
   if (!state.visible) return
   close(cancelValueForType(state.type))

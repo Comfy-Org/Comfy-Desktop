@@ -4,23 +4,13 @@ import Button from '@comfyorg/design-system/button/Button'
 import { ExternalLink, Folder, FolderOpen, RotateCcw } from 'lucide-vue-next'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
-/** Readonly directory row: an icon, a clickable path that opens the folder, an
- *  optional tag, and Browse / Reset actions. Shared by the per-instance and
- *  shared input/output sections so both states look identical. */
-
 interface Props {
-  /** Field label shown above the row. Omit when a section header already names it. */
   label?: string
   path: string
-  /** Small pill shown after the path (e.g. "default"). */
   tag?: string
-  /** Show a reset-to-default action. */
   resettable?: boolean
-  /** Show the Browse action. Off for rows edited elsewhere (shared dirs). */
   browsable?: boolean
-  /** Show a "manage in Desktop Settings" action instead of local editing. */
   manageable?: boolean
-  /** Globally-shared dir → shows the shared badge on its icon. */
   shared?: boolean
 }
 

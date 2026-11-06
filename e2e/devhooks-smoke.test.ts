@@ -1,13 +1,3 @@
-/**
- * Smoke test for the G0 E2E dev-hooks bridge. Verifies that the
- * `globalThis.__e2e` helpers are wired up when E2E=1, and that each
- * helper either round-trips a payload or invokes its main-side
- * implementation without throwing.
- *
- * The downstream G1–G4 suites assume this plumbing works; if it
- * regresses, fail loudly here rather than have every dependent test
- * mis-attribute the failure.
- */
 
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'

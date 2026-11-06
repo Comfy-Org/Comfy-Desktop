@@ -8,17 +8,12 @@ import { useSessionStore } from '../../stores/sessionStore'
 import type { CoreBetaArgs } from '../../types/ipc'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 
-/** "+N beta": the running session's Core beta args, or while stopped those the next launch is
- *  eligible for. Fetches its own data while mounted, so nothing else in the view waits on it. */
-
 const props = defineProps<{
   installationId: string
   argsValue: string
-  /** Bumped when the args field's schema load settles; the preview reads that cache. */
   schemaVersion: number
 }>()
 
-// Match the scoped pill selector priority inside an input’s trailing slot.
 const pillTriggerClass =
   '[&.beta-args_button.ui-menu-trigger]:gap-1 [&.beta-args_button.ui-menu-trigger]:w-auto [&.beta-args_button.ui-menu-trigger]:h-[22px] [&.beta-args_button.ui-menu-trigger]:px-[7px] [&.beta-args_button.ui-menu-trigger]:py-0 [&.beta-args_button.ui-menu-trigger]:text-[11px] [&.beta-args_button.ui-menu-trigger]:font-medium [&.beta-args_button.ui-menu-trigger]:whitespace-nowrap [&.beta-args_button.ui-menu-trigger]:text-text-muted [&.beta-args_button.ui-menu-trigger]:bg-transparent [&.beta-args_button.ui-menu-trigger]:border [&.beta-args_button.ui-menu-trigger]:border-solid [&.beta-args_button.ui-menu-trigger]:border-[var(--border)] [&.beta-args_button.ui-menu-trigger]:rounded-[9999px] [&.beta-args_button.ui-menu-trigger:hover]:text-text [&.beta-args_button.ui-menu-trigger:hover]:bg-border-hover [&.beta-args_button.ui-menu-trigger[aria-expanded=true]]:text-text [&.beta-args_button.ui-menu-trigger[aria-expanded=true]]:bg-border-hover'
 
@@ -33,7 +28,6 @@ const loading = ref(false)
 let requestSeq = 0
 let shownFor: string | null = null
 
-// Keyed on start time too: a restart can reach a hidden picker as running -> running.
 const sessionKey = computed(() => {
   const running = sessionStore.runningInstances.get(props.installationId)
   return running ? `running:${running.startedAt ?? ''}` : 'stopped'
@@ -41,7 +35,6 @@ const sessionKey = computed(() => {
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
-  // Never show one install's args while another's are on the way.
   if (shownFor !== props.installationId) data.value = null
   shownFor = props.installationId
   const slow = setTimeout(() => {

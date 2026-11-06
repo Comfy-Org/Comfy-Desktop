@@ -8,8 +8,6 @@ import exceptions from './vue-style-exceptions.json'
 const root = resolve(import.meta.dirname, '../..')
 const allowed: Record<string, { sha256: string; reason: string }> = exceptions
 
-// Hash the complete block, including attributes. Ignore only checkout line
-// endings so the same source is accepted on Windows and Unix.
 export function fingerprintStyleBlock(block: string) {
   return createHash('sha256').update(block.replace(/\r\n/g, '\n')).digest('hex')
 }
@@ -36,7 +34,6 @@ export default {
 
     return {
       Program() {
-        // Consume the exception once: duplicating the original block must fail too.
         let available = exception?.sha256
         for (const block of getDocumentFragment()?.children ?? []) {
           if (block.type !== 'VElement' || block.name !== 'style') continue

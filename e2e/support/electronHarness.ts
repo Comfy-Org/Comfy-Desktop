@@ -15,24 +15,10 @@ export interface LauncherAppHandle {
 }
 
 export interface SeedOptions {
-  /** Seed installation records into the isolated data directory. */
   installations?: SeedInstallation[]
-  /** Merge into the seeded `settings.json` to bypass one-time gates (e.g.
-   *  `firstUseCompleted`) so a test isn't racing the first-use takeover. */
   settings?: Record<string, unknown>
-  /** Runs after the isolated dirs are created but before launch. Both homeDir
-   *  and appDataDir are isolated from the user's real app profile on every OS. */
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
-  /** Seed `<configDir>/ops-flags.json` — the persisted ops-flag cache that `coreBetaGrants`
-   *  falls back to when PostHog is unreachable. Env-delivered rather than written here for the
-   *  same reason `settings` is: main is the only process that knows where that file lives on
-   *  every platform. */
   opsFlags?: Record<string, unknown>
-  /** Launch against this exact profile dir instead of a fresh mkdtemp one,
-   *  with the same semantics as `LIFECYCLE_REUSE_DIR` (persisted settings are
-   *  folded into the seed; the dir survives cleanup). Lets a spec quit and
-   *  relaunch the SAME profile to cover restart hydration. The caller owns
-   *  creating and removing the dir. */
   profileDir?: string
 }
 
@@ -42,14 +28,10 @@ export interface SeedInstallation {
   sourceId?: string
   installPath?: string
   status?: string
-  /** Snapshot JSON records to seed into `<installPath>/.launcher/snapshots/`,
-   *  written in the same format the live snapshot store produces. */
   snapshots?: SeedSnapshot[]
   [key: string]: unknown
 }
 
-/** Loose Snapshot shape duplicated to keep the harness free of src/ imports.
- *  Keep in sync with `src/main/lib/snapshots/types.ts`. */
 export interface SeedSnapshot {
   version?: 1
   createdAt?: string
@@ -67,12 +49,9 @@ export interface SeedSnapshot {
   pipPackages?: Record<string, string>
   pythonVersion?: string
   updateChannel?: string
-  /** Makes `snapshot-restore` skip the live pip phase (no real `uv`/Python). */
   skipPipSync?: boolean
 }
 
-/** Must mirror `formatTimestamp` in `src/main/lib/snapshots/store.ts` so
- *  seeded filenames sort identically to live ones (newest-first by name). */
 function formatSeedTimestamp(date: Date): string {
   const pad = (n: number, len = 2): string => String(n).padStart(len, '0')
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}_${pad(date.getMilliseconds(), 3)}`
@@ -97,25 +76,18 @@ function buildIsolatedEnv(
     XDG_CACHE_HOME: path.join(homeDir, '.cache'),
     XDG_DATA_HOME: path.join(homeDir, '.local', 'share'),
     XDG_STATE_HOME: path.join(homeDir, '.local', 'state'),
-    // Gates `registerE2EHooks()` in main so `globalThis.__e2e` is wired up.
     E2E: '1'
   }
 
-  // Windows resolves userData via APPDATA; point it into the isolated home
-  // so the app doesn't touch the real profile.
   if (process.platform === 'win32') {
     env['APPDATA'] = path.join(homeDir, 'AppData', 'Roaming')
     env['LOCALAPPDATA'] = path.join(homeDir, 'AppData', 'Local')
   }
 
-  // macOS resolves home, userData, logs and downloads through Apple's libraries, which ignore
-  // HOME and read this variable instead.
   if (process.platform === 'darwin') {
     env['CFFIXED_USER_HOME'] = homeDir
   }
 
-  // Settings seed read by main before first load.
-  // Always send a seed for a known-clean state; caller overrides win on merge.
   const effectiveSeed: Record<string, unknown> = {
     firstUseCompleted: false,
     telemetryEnabled: false,
@@ -129,10 +101,6 @@ function buildIsolatedEnv(
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  // Honor an explicit `profileDir` (spec-driven relaunch of the same
-  // profile) or `LIFECYCLE_REUSE_DIR` (operator rerun without redoing the
-  // ~2-minute install). A reused dir is preserved on cleanup; a fresh dir is
-  // printed so the operator can re-export it.
   const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
   const homeDir = reuseDir
     ? path.resolve(reuseDir)
@@ -146,8 +114,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     )
   }
 
-  // Pre-create the platform-specific config dir Electron resolves to inside the
-  // isolated home so `settings.set()` writes succeed.
   const appDataDir =
     process.platform === 'win32'
       ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
@@ -160,12 +126,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     await options.onSetup({ homeDir, appDataDir })
   }
 
-  // Normalize seed records up front: they ride into main via
-  // `E2E_INSTALLATIONS_SEED` (mirroring `E2E_SETTINGS_SEED`), written to the
-  // platform-specific installations.json by main before its first read. A
-  // post-launch file write from here raced main's boot-time cloud-entry seed
-  // and the renderer store's one-shot hydration (which only refetches on an
-  // `installations-changed` broadcast that a behind-the-back write never fires).
   const seedRecords = (options?.installations ?? []).map((inst, i) => {
     const { snapshots: _snapshots, ...rest } = inst
     return {
@@ -179,12 +139,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     }
   })
 
-  // Boot-time sweep protection: main reclaims install dirs that contain only
-  // ignored entries (marker file etc.) as aborted installs — removing the
-  // record. Seeded dirs typically hold just the marker, so give each EXISTING
-  // dir a `.launcher/` entry (what a real managed install has) to classify as
-  // populated. Dirs the test deliberately left missing stay missing (the sweep
-  // never reclaims those).
   for (const record of seedRecords) {
     if (!record.installPath) continue
     try {
@@ -195,9 +149,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     await mkdir(path.join(record.installPath, '.launcher'), { recursive: true })
   }
 
-  // Seed snapshot JSON files under `<installPath>/.launcher/snapshots/` so
-  // the snapshots tab finds them on first read. Pure fs under the install
-  // paths (created above by the caller), so it can run before launch.
   if (options?.installations) {
     const { writeFile: writeFileFs } = await import('node:fs/promises')
     for (let i = 0; i < options.installations.length; i++) {
@@ -228,36 +179,21 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     }
   }
 
-  // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
   const args = ['.']
   if (isBackgroundRun() && !FOREGROUND_PROJECTS.includes(test.info().project.name)) {
     args.unshift(
       '-r',
-      // Relative to the repo root, like the '.' app argument.
       path.resolve('e2e/support/backgroundWindowsShim.cjs'),
-      // Windows covered by the developer's own must keep painting: `capturePage()` and
-      // first-paint reveals wait on the compositor.
       '--disable-features=CalculateNativeWinOcclusion',
       '--disable-backgrounding-occluded-windows'
     )
   }
   if (process.platform === 'linux') {
     args.push('--no-sandbox')
-    // Ozone picks its backend from the session, and on a Wayland desktop it picks Wayland
-    // even with WAYLAND_DISPLAY unset — so a headless run under Xvfb dies at
-    // "Failed to initialize Wayland platform" before any test code runs. Setting
-    // E2E_OZONE_PLATFORM=x11 pins the backend for those runs. Unset elsewhere (CI included),
-    // so the default behaviour is unchanged.
     const ozone = process.env['E2E_OZONE_PLATFORM']
     if (ozone) args.push(`--ozone-platform=${ozone}`)
   }
 
-  // A reused profile must keep its persisted settings: main overwrites
-  // settings.json with E2E_SETTINGS_SEED on every boot, so fold the
-  // profile's existing file into the seed (defaults < persisted < caller
-  // overrides). Without this a hydrated run boots with
-  // firstUseCompleted=false and lands on the first-use takeover instead
-  // of the chooser.
   let persistedSettings: Record<string, unknown> = {}
   if (reuseDir) {
     try {
@@ -267,11 +203,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         persistedSettings = parsed as Record<string, unknown>
       }
-    } catch {
-      /* no settings yet on a first run against the reuse dir */
-    }
-    // Safety invariant: a persisted profile must never re-enable telemetry
-    // under the harness. Callers can still override explicitly.
+    } catch {}
     delete persistedSettings['telemetryEnabled']
   }
   const env = buildIsolatedEnv(
@@ -288,10 +220,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     env
   })
 
-  // Under Playwright the ready-to-show event may fire but isVisible() can lag,
-  // so force-show once a BrowserWindow exists. Retried because the show is
-  // idempotent; side-effectful evaluate calls must NOT be blanket-retried
-  // (a retry can re-run a callback that already executed - see evalRetry.ts).
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await evalWithRetry(() =>
@@ -301,10 +229,6 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     })
   )
 
-  // Suppress the native uncaught-exception dialog and exit fast so tests don't
-  // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  // Retried: re-assigning the stub is harmless, and the exit handler guards
-  // itself with a flag so a retry after a lost result can't register it twice.
   await evalWithRetry(() =>
     application.evaluate(({ app: electronApp, dialog }) => {
       dialog.showErrorBox = () => {}
@@ -324,11 +248,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       if (proc && proc.exitCode === null) {
         await application.close().catch(() => {})
       }
-    } catch {
-      // Application already closed / disconnected — nothing to clean up.
-    }
-    // Preserve the reuse dir so the next `LIFECYCLE_REUSE_DIR=<path>`
-    // invocation can pick it up. Only wipe dirs we created ourselves.
+    } catch {}
     if (!reuseDir) {
       await rm(homeDir, { recursive: true, force: true })
     }

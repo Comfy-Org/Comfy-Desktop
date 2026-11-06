@@ -45,17 +45,6 @@ import {
 } from '../../sources/standalone/envPaths'
 import type { InstallationRecord } from '../../installations'
 
-/**
- * Kept-local disclosure for an import about to be restored: when the
- * envelope's newest snapshot records a managed PyTorch stack this machine
- * cannot apply (foreign vendor, unpublished, ABI-incompatible, or drifted),
- * the compatible restore will keep the local stack. Surfacing that BEFORE
- * the restore lets the user decide with full information instead of
- * discovering the substitution afterwards. Applicability is decided by the
- * same resolveSnapshotManagedTarget the restore itself uses. Errors and
- * observed-stack (v1) records return null: the restore path discloses those
- * cases itself, and a preview must never block the import.
- */
 async function importTorchStackNotice(
   inst: InstallationRecord,
   newest: Snapshot
@@ -67,8 +56,6 @@ async function importTorchStackNotice(
     const target = await resolveSnapshotManagedTarget(inst, snapTorch.ref)
     if (target) return null
   } catch {
-    // Could not check (offline catalog): the restore action re-checks and
-    // discloses; don't scare the user with a maybe-wrong warning here.
     return null
   }
   return i18n.t('standalone.pytorchSnapshotStackWillKeepLocal', {
@@ -179,10 +166,6 @@ export function registerSnapshotHandlers(): void {
         direction: 'out'
       }))
 
-    // Surface the inbound copy on the destination's rail too — `copiedFromName`
-    // is captured at copy time so it survives source rename / deletion. Falls
-    // back to the source's current name when missing (older copies that
-    // predate `copiedFromName`), then to the raw id as a last resort.
     const copiedFrom = inst.copiedFrom as string | undefined
     const copiedAt = inst.copiedAt as string | undefined
     if (copiedFrom && copiedAt) {
@@ -266,10 +249,6 @@ export function registerSnapshotHandlers(): void {
     })
     if (canceled || !filePath) return { ok: false }
     await fs.promises.writeFile(filePath, JSON.stringify(envelope, null, 2))
-    // Fire only after the file is actually written — a cancelled save
-    // dialog returns above, so this never counts cancels. Pairs with the
-    // existing snapshot.created / .imported / .restore_* events so the
-    // Snapshots dashboard can show the full create → share → import loop.
     telemetry.emit('comfy.desktop.snapshot.shared', {
       installation_id: installationId,
       scope: 'latest',
@@ -353,7 +332,6 @@ export function registerSnapshotHandlers(): void {
         diff.pipsRemoved.length === 0 &&
         diff.pipsChanged.length === 0
 
-      // Reject if the import would produce no changes
       if (empty) {
         return { ok: false, message: i18n.t('snapshots.importAlreadyCurrent') }
       }
@@ -375,14 +353,6 @@ export function registerSnapshotHandlers(): void {
       const inst = await installations.get(installationId)
       if (!inst || !inst.installPath) return { ok: false, message: 'Installation not found.' }
 
-      // Stage the envelope as a restore target instead of committing it to the
-      // live history. It only becomes history if/when the restore succeeds (see
-      // the `snapshot-restore` action), so a failed restore can't leave a
-      // never-applied snapshot at the top of the timeline.
-      //
-      // Only the newest snapshot is staged: it is the restore target,
-      // and committed history must only contain states THIS install has
-      // actually been in — the file's older snapshots never were.
       const newest = pending.envelope.snapshots[0]!
       const restoreToken = await stageSnapshotEnvelope(
         {
@@ -507,17 +477,10 @@ export function registerSnapshotHandlers(): void {
 
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return { ok: false, message: `Unsupported platform: ${process.platform}` }
-      // stripPlatform also drops a beta- prefix, so a snapshot taken on a
-      // pre-release bundle still maps to its accelerator here.
       const strippedVariant = stripPlatform(snapshotVariant)
       const baseGpu = strippedVariant.replace(/-.*$/, '')
 
       const source = sourceMap['standalone']!
-      // `includeLatestStable: true` opens the standalone source's release list
-      // (see `standalone/index.ts:328`). Without it the source returns an
-      // empty array and create-from-snapshot bails with "No releases available."
-      // even when there *are* releases. Mirrors the InstallWizard / QuickInstall
-      // call shape on the renderer side.
       const releaseOptions = await source.getFieldOptions!(
         'release',
         {},
@@ -567,22 +530,6 @@ export function registerSnapshotHandlers(): void {
         if (!matched) matched = variantOptions[0]!
       }
 
-      // Recreate the exact standalone environment the snapshot was captured on
-      // by pinning to its original R2 bundle tag when that bundle still exists.
-      // The release dropdown only exposes the 'stable'/'latest' channels (whose
-      // variants point at the newest bundle), so without this the install would
-      // download the latest env — a different Python/torch baseline than the
-      // snapshot.
-      //
-      // v2 snapshots with a managed torch stack make the stack's bundle tag
-      // authoritative: it is the artifact whose torch family matches the
-      // snapshot exactly (it can differ from comfyui.releaseTag after an
-      // in-place PyTorch change). If that bundle has been pruned from R2,
-      // fall back to this machine's matched variant (compatible mode): the
-      // restore discloses the torch substitution and skips committing the
-      // imported envelope, so history stays truthful. v1 snapshots (no torch
-      // identity) keep the legacy behavior: pin when possible, else newest
-      // bundle.
       const managedTorch =
         targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
       const pinTag =
@@ -597,11 +544,6 @@ export function registerSnapshotHandlers(): void {
         sourceId: source.id,
         sourceLabel: source.label,
         ...source.buildInstallation({ release: selectedRelease, variant: installVariant }),
-        // Freeze to the snapshot's pinned ComfyUI version. Even with the exact
-        // bundle pinned above, buildInstallation would set autoUpdateComfyUI:
-        // true for a stable/latest channel and auto-update to latest before the
-        // snapshot restore re-pins. The restore is the sole authority for the
-        // core commit; updateChannel mirrors the snapshot as the manual pref.
         ...frozenSnapshotInstallOverrides(targetSnapshot.updateChannel)
       }
       const baseName = customName || envelope.installationName || DEFAULT_INSTALL_NAME

@@ -76,8 +76,6 @@ describe('useActionGuard.checkBeforeAction', () => {
   })
 
   it('treats a progressStore-only in-flight op (no active session) as busy', async () => {
-    // Some ops register progress without a sessionStore entry, so the busy
-    // guard must consult progressStore directly.
     progressState.info.set(INSTALL_ID, { status: 'Copying…', percent: 42 })
     mockConfirm.mockResolvedValue(false)
 
@@ -93,7 +91,6 @@ describe('useActionGuard.checkBeforeAction', () => {
     mockConfirm.mockResolvedValue(true)
 
     const pending = useActionGuard().checkBeforeAction(INSTALL_ID, 'Restart')
-    // Let the poll iterate a couple of times before the op clears.
     await new Promise((r) => setTimeout(r, 250))
     expect(mockCancelOperation).toHaveBeenCalledWith(INSTALL_ID)
     progressState.info.set(INSTALL_ID, null)

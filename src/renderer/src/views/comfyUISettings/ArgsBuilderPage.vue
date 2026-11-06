@@ -13,21 +13,12 @@ import { parseArgs, serialize } from '../../lib/argsParser'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import { scoreName } from '../../utils/fuzzyMatch'
 
-/**
- * Sub-page editor for `launchArgs`. Schema fetched from `get-comfy-args` on mount; each flag renders as a toggle (+ text input for value/optional types).
- * `exclusiveGroup` flags collapse into a radio cluster (enabling one disables siblings); unknown flags round-trip via `parseArgs().extra`.
- * Owns a local `value` mirror for snappy edits and commits to the parent via `update` on every mutation.
- */
-
 interface Props {
   installationId: string
   initialValue: string
-  /** True when args were edited while the instance is running, so they won't
-   *  apply until a restart; mirrors the tag other settings fields show. */
   pendingRestart?: boolean
 }
 
-// Preserve the clear button’s own sizing inside BaseInput’s trailing slot.
 const searchClearClass =
   '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-[22px] [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-[120ms] [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:[outline-style:solid] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-[var(--action)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
 
@@ -42,8 +33,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** Translate a stable category slug (from `comfy-args.ts`) for display.
- *  vue-i18n falls back to the English (`en`) catalog for any untranslated key. */
 function categoryLabel(key: string): string {
   return t(`comfyUISettings.argsCategory.${key}`)
 }
@@ -57,7 +46,6 @@ const search = ref('')
 watch(
   () => props.initialValue,
   (next) => {
-    // Resync the mirror when the parent commits a value we didn't originate.
     if (next !== localValue.value) localValue.value = next
   }
 )
@@ -84,8 +72,6 @@ async function fetchSchema(): Promise<void> {
   }
 }
 
-/** The edit waiting out the debounce, if any. Deliberately not a `ref` -
- *  nothing renders it; it exists so `onBeforeUnmount` can still flush it. */
 let pendingArgsChange: { argKey: string; valueKind: ComfyArgDef['type'] } | null = null
 
 function flushArgsChanged(): void {
@@ -99,10 +85,6 @@ function flushArgsChanged(): void {
   })
 }
 
-// `start()` clears any armed timer before setting a new one, which is the
-// 500ms debounce that keeps text-input args from emitting per keystroke.
-// `useDebounceFn` would read more directly but hands back a bare function with
-// no cancel or flush, and this one has to be flushable on unmount.
 const { start: scheduleArgsChanged, stop: cancelArgsChanged } = useTimeoutFn(
   flushArgsChanged,
   500,
@@ -121,13 +103,8 @@ onMounted(() => {
   void fetchSchema()
 })
 
-// Flush the final value if the page closes mid-debounced edit.
 onBeforeUnmount(() => {
   if (localValue.value !== props.initialValue) emit('update', localValue.value)
-  // And the same for the debounced telemetry: an edit made in the last 500ms
-  // is still an edit. Left armed it either lands after the user has moved on,
-  // or - when the unmount is the settings window closing - never ships at all,
-  // quietly undercounting exactly the change-then-leave case.
   cancelArgsChanged()
   flushArgsChanged()
 })
@@ -148,7 +125,6 @@ function commit(known: Map<string, string>): void {
   emit('update', next)
 }
 
-// Toggle a flag on/off; turning one on clears its exclusive-group siblings.
 function toggleFlag(def: ComfyArgDef): void {
   const next = new Map(parsed.value.known)
   if (next.has(def.name)) {
@@ -187,8 +163,6 @@ function selectExclusive(group: string, name: string): void {
   if (chosen) emitArgsChanged(chosen.name, chosen.type)
 }
 
-// Backs the select's synthetic "None" option, which clears the group (a plain
-// radio set can't deselect).
 function clearExclusive(group: string): void {
   const next = new Map(parsed.value.known)
   for (const a of schema.value) {
@@ -204,24 +178,17 @@ function activeInGroup(group: string): string {
   return ''
 }
 
-// The currently-selected member of an exclusive group, so the cluster can show
-// its full help text below the dropdown (the dropdown options are collapsed
-// once one is chosen).
 function activeDefInGroup(group: string): ComfyArgDef | null {
   const name = activeInGroup(group)
   if (!name) return null
   return schema.value.find((a) => a.name === name) ?? null
 }
 
-// The active member of an exclusive group, when it takes a value — lets the
-// cluster show a value input (e.g. `--cache-ram 4 8`, `--cache-lru 10`).
 function activeValueDefInGroup(group: string): ComfyArgDef | null {
   const def = activeDefInGroup(group)
   return def && def.type !== 'boolean' ? def : null
 }
 
-// Dropdown options for an exclusive cluster: a synthetic "None" entry that
-// clears the group, followed by each member flag.
 function clusterOptions(args: ComfyArgDef[]): BaseSelectOption[] {
   return [
     {
@@ -233,8 +200,6 @@ function clusterOptions(args: ComfyArgDef[]): BaseSelectOption[] {
   ]
 }
 
-// One-line preview of the members so the collapsed dropdown says what you're
-// choosing between, not just a generic "Choose one".
 function clusterSummary(args: ComfyArgDef[]): string {
   return args.map((a) => `--${a.name}`).join(' ')
 }
@@ -244,7 +209,6 @@ function onExclusivePick(group: string, value: string): void {
   else selectExclusive(group, value)
 }
 
-// Score a query token against help prose. Strict (word-boundary or substring only); loose subsequence would make "cuda" hit unrelated help.
 function scoreHelp(needle: string, help: string): number {
   if (!needle) return 1
   if (!help) return 0
@@ -258,7 +222,6 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// Score a flag against a multi-token query; every token must hit name or help. Name hits dominate help 3:1.
 function scoreArg(query: string, arg: ComfyArgDef): number {
   const tokens = query.split(/\s+/).filter(Boolean)
   if (tokens.length === 0) return 1
@@ -282,17 +245,14 @@ interface GroupItem {
   args?: ComfyArgDef[]
 }
 
-// Categorized, search-filtered structure with exclusive groups collapsed to one row; sorted by descending score when a query is present.
 const structuredGroups = computed(() => {
   const q = search.value.trim().toLowerCase()
-  // Pre-score every flag once; score-0 flags drop under an active query, and no query scores everything 1 (schema order).
   const scored = new Map<string, number>()
   for (const arg of schema.value) {
     const s = q ? scoreArg(q, arg) : 1
     if (s > 0) scored.set(arg.name, s)
   }
 
-  // Group score = max member score, so a query surfaces the cluster even if one member matched.
   function groupScore(exclusiveGroup: string): number {
     let best = 0
     for (const a of schema.value) {
@@ -338,11 +298,6 @@ const structuredGroups = computed(() => {
     )
   }
 
-  // Pin currently-set flags to the top as their own section so they're
-  // editable without hunting through categories. Skipped while searching
-  // (the filtered list already narrows things down). Reuses the same items
-  // as the categories below, so an active exclusive group shows as its
-  // dropdown here too.
   if (q) return result
   const activeItems: GroupItem[] = []
   for (const items of result.values()) {
@@ -496,7 +451,6 @@ function onRawChange(value: string): void {
           :key="idx"
           class="args-page-item flex min-w-0 flex-col [&+.args-page-item]:mt-0.5"
         >
-          <!-- Exclusive cluster as a compact dropdown; the label lists the members so you can see the choices before opening, and a synthetic "None" option clears the group. -->
           <template v-if="item.kind === 'exclusive' && item.args && item.group">
             <div class="args-page-cluster flex min-w-0 flex-col gap-1">
               <span
@@ -536,7 +490,6 @@ function onRawChange(value: string): void {
             </div>
           </template>
 
-          <!-- Single arg row: switch + flag/help stack, optional value input indented below. -->
           <template v-else-if="item.kind === 'arg' && item.arg">
             <div
               class="args-page-arg-row grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2.5 -mx-2.5 rounded-lg px-2.5 py-2 transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"

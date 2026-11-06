@@ -39,26 +39,16 @@ interface ActiveOperation {
   actionData?: Record<string, unknown>
 }
 
-/** Snapshots tab body: save / restore / delete / export / import.
- *  Presentational + IPC-glue only; restore runs through `show-progress`
- *  so PanelApp's ProgressModal owns the long-running op. */
-
 interface Props {
   installationId: string
-  /** Live background-op status, used to mark the restoring row and lock
-   *  out the others. */
   activeOperation?: ActiveOperation | null
 }
 
 const props = withDefaults(defineProps<Props>(), { activeOperation: null })
 
 const emit = defineEmits<{
-  /** Fires when restore commits; the host routes it through the
-   *  show-progress flow. */
   'run-action': [action: ActionDef]
-  /** Lets the host re-load sections after a snapshot op. */
   'refresh-all': []
-  /** Cancel / retry / dismiss for the inline top-card restore op. */
   'op-cancel': []
   'op-retry': []
   'op-dismiss': []
@@ -82,8 +72,6 @@ const loadError = ref<string | null>(null)
 const snapshots = computed<SnapshotSummary[]>(() => listData.value?.snapshots ?? [])
 const copyEvents = computed<CopyEvent[]>(() => listData.value?.copyEvents ?? [])
 
-// Restore feedback card in the "Save New Snapshot" slot at the top of the
-// rail: ok → success (auto-dismiss + reload), error → retry/dismiss.
 const restoreOp = computed<ActiveOperation | null>(() => {
   const op = props.activeOperation
   return op && op.actionId === 'snapshot-restore' ? op : null
@@ -111,8 +99,6 @@ const restoreCancellable = computed<boolean>(
     ((restoreOp.value as ActiveOperation & { cancellable?: boolean }).cancellable ?? false)
 )
 
-/** Label for the snapshot being restored to. Falls back to the filename
- *  when the row isn't loaded locally yet. */
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
   if (!file)
@@ -126,7 +112,6 @@ const restoreFromLabel = computed<string>(() => {
   return file
 })
 
-// Latched terminal state so the card keeps the right copy until dismissed.
 const restoreTerminal = ref<'ok' | 'error' | 'cancelled' | null>(null)
 const restoreErrorMessage = ref<string>('')
 let restoreOkTimer: ReturnType<typeof setTimeout> | null = null
@@ -153,7 +138,6 @@ watch(
   restoreOp,
   (op, prev) => {
     if (!op) return
-    // In-flight → done transition only.
     if (!op.done || (prev && prev.done)) return
     if (op.ok) {
       clearRestoreTerminal()
@@ -161,15 +145,12 @@ watch(
       restoreOkTimer = setTimeout(() => {
         restoreTerminal.value = null
         restoreOkTimer = null
-        // Reload so the post-restore snapshot lands as the newest entry.
         void load()
         emit('refresh-all')
         emit('op-dismiss')
       }, 1800)
     } else if (op.error === MSG_CANCELLED) {
       clearRestoreTerminal()
-      // An import cancel keeps a card up (the staged target is still retryable),
-      // but as a neutral "cancelled" state — not a red failure.
       if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
       else emit('op-dismiss')
     } else {
@@ -190,7 +171,6 @@ const showRestoreCard = computed<boolean>(
   () => restoreInFlight.value || restoreTerminal.value !== null
 )
 
-// Scroll to the top card when an op begins so it's not missed deep in the timeline.
 const topCardRef = ref<HTMLElement | null>(null)
 watch(restoreInFlight, (yes) => {
   if (!yes) return
@@ -199,7 +179,6 @@ watch(restoreInFlight, (yes) => {
   })
 })
 
-// Merged timeline (snapshots + copy events), newest first.
 type TimelineItem =
   | { kind: 'snapshot'; snapshot: SnapshotSummary; snapshotIndex: number }
   | { kind: 'copy'; event: CopyEvent }
@@ -226,9 +205,6 @@ const timeline = computed<TimelineItem[]>(() => {
   return out
 })
 
-/** "Latest: 8d ago" stat from the newest snapshot; null when none. Copy
- * events are excluded so an interleaved "Copied from/as X" entry can't hijack
- * the stat. */
 const latestRelative = computed<string | null>(() => {
   const newest = snapshots.value[0]
   if (!newest) return null
@@ -244,17 +220,13 @@ function autoExpandFirst(): void {
 }
 
 async function load(silent = false): Promise<void> {
-  // `silent` = background refresh: keep the current list visible (no
-  // Loading… flash, no auto-expand) while refetching in place.
   if (!silent) loading.value = true
   loadError.value = null
   try {
     const data = await window.api.getSnapshots(props.installationId)
     listData.value = data
-    // Cache so the next remount paints instantly.
     setCachedSnapshotList(props.installationId, data)
   } catch (err: unknown) {
-    // Surface IPC rejections so "load failed" is distinguishable from "none".
     if (!silent) {
       loadError.value = (err as Error)?.message ?? String(err)
       listData.value = null
@@ -266,8 +238,6 @@ async function load(silent = false): Promise<void> {
   }
 }
 
-// Live refresh on `installations-changed`, debounced so a burst of pushes
-// collapses into a single silent reload.
 let unsubChanges: (() => void) | undefined
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleReload(): void {
@@ -285,13 +255,8 @@ onMounted(() => {
   }
 })
 
-// --- Per-row expansion (change summary) ---
-
 const expandedFilenames = ref<Set<string>>(new Set())
 
-// Two diff accordions per snapshot, keyed `${filename}|${mode}`:
-// `previous` = changes vs the prior snapshot; `current` = restore preview
-// vs live state. `diffCache` presence = loaded.
 type DiffMode = 'previous' | 'current'
 const diffCache = ref<Map<string, SnapshotDiffData | null>>(new Map())
 const openDiffs = ref<Set<string>>(new Set())
@@ -359,7 +324,6 @@ watch(
     diffLoading.value = new Set()
     const cached = getCachedSnapshotList(id)
     if (cached) {
-      // Paint the cached list instantly, then refresh silently.
       listData.value = cached
       loading.value = false
       loadError.value = null
@@ -371,8 +335,6 @@ watch(
   },
   { immediate: true }
 )
-
-// --- Save ---
 
 async function handleSave(): Promise<void> {
   const label = await dialogs.prompt({
@@ -404,8 +366,6 @@ async function handleSave(): Promise<void> {
   emit('refresh-all')
 }
 
-// --- Restore (with diff preview confirm) ---
-
 async function handleRestore(filename: string): Promise<void> {
   let diff: SnapshotDiffData | null
   try {
@@ -421,8 +381,6 @@ async function handleRestore(filename: string): Promise<void> {
     has_diff: hasChanges
   })
 
-  // Pass the diff-preview confirm through so `runAction` augments it with
-  // the willStopRunning warning rather than synthesizing a second modal.
   emit('run-action', {
     id: 'snapshot-restore',
     label: t('standalone.snapshotRestore', 'Restore'),
@@ -439,8 +397,6 @@ async function handleRestore(filename: string): Promise<void> {
     }
   })
 }
-
-// --- Delete ---
 
 async function handleDelete(filename: string): Promise<void> {
   const target = snapshots.value.find((s) => s.filename === filename)
@@ -477,8 +433,6 @@ async function handleDelete(filename: string): Promise<void> {
   emit('refresh-all')
 }
 
-// --- Export ---
-
 async function handleExport(filename: string): Promise<void> {
   await window.api.exportSnapshot(props.installationId, filename)
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
@@ -495,10 +449,7 @@ async function handleExportAll(): Promise<void> {
   })
 }
 
-// --- Import ---
-
 async function handleImport(): Promise<void> {
-  // Step 1: pick file(s) → preview
   const preview = await window.api.importSnapshotsPreview()
   if (!preview.ok) {
     if (preview.message) {
@@ -526,7 +477,6 @@ async function handleImport(): Promise<void> {
   })
   if (importChoice !== 'primary') return
 
-  // Step 2: diff
   const diff = await window.api.importSnapshotsDiff(props.installationId)
   if (!diff.ok) {
     if (diff.message) {
@@ -539,9 +489,6 @@ async function handleImport(): Promise<void> {
     return
   }
 
-  // Step 3: confirm restore. Gate behind the busy guard — confirm writes
-  // the staged snapshots and auto-restores, so racing an in-flight op
-  // would clobber both surfaces.
   if (
     !(await actionGuard.checkBeforeAction(
       props.installationId,
@@ -560,10 +507,6 @@ async function handleImport(): Promise<void> {
     }
     return
   }
-  // Kept-local PyTorch disclosure: the snapshot's recorded stack can't be
-  // applied on this machine, so the restore will keep the local stack.
-  // Surface that BEFORE running the restore; cancelling leaves only the
-  // staged token behind (it self-prunes), nothing was mutated.
   if (importResult.torchStackNotice) {
     const noticeChoice = await dialogs.confirm({
       title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
@@ -580,9 +523,6 @@ async function handleImport(): Promise<void> {
     imported_bucket: toCountBucket(importResult.imported ?? 0)
   })
 
-  // The import only staged a restore target; nothing landed in the live history
-  // yet, so don't reload here. The restore commits it on success and the
-  // success watcher reloads then.
   if (importResult.restoreToken) {
     emit('run-action', {
       id: 'snapshot-restore',
@@ -660,8 +600,6 @@ async function handleImport(): Promise<void> {
       </Button>
     </div>
 
-    <!-- Timeline rail: first node is the "Save New Snapshot" CTA, then
-         snapshots + copy events, newest first. -->
     <ul
       class="snapshots-rail relative m-0 flex list-none flex-col gap-3 p-0"
       :class="{ 'is-empty': timeline.length === 0 }"
@@ -780,15 +718,12 @@ async function handleImport(): Promise<void> {
               </Button>
             </div>
 
-            <!-- Success: auto-dismisses after ~1.8s. -->
             <div
               v-else-if="restoreTerminal === 'ok'"
               class="snapshots-op-card is-success flex flex-col gap-2.5"
               role="status"
               :data-testid="TID.snapshotsOpCard"
             >
-              <!-- A successful import is an apply, not a rollback; "Rolled
-                   back to {label}" is only for restores of local history. -->
               <p
                 v-if="restoreOpIsImport"
                 class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
@@ -803,8 +738,6 @@ async function handleImport(): Promise<void> {
               </p>
             </div>
 
-            <!-- Error/cancelled: persistent until user dismisses. A cancelled
-                 import keeps the retry action but renders neutrally. -->
             <div
               v-else-if="restoreTerminal === 'error' || restoreTerminal === 'cancelled'"
               class="snapshots-op-card flex flex-col gap-2.5"
@@ -846,7 +779,6 @@ async function handleImport(): Promise<void> {
               </div>
             </div>
 
-            <!-- Idle: the Save CTA. -->
             <Button
               v-else
               type="button"
@@ -904,9 +836,6 @@ async function handleImport(): Promise<void> {
                   {{ item.snapshot.label }}
                 </p>
 
-                <!-- "Release notes": changes vs the previous snapshot.
-                     Hidden for the oldest snapshot (no predecessor); copy
-                     events interleaved in the timeline don't count. -->
                 <div
                   v-if="item.snapshotIndex < snapshots.length - 1"
                   class="snap-diff-accordion mt-2 flex flex-col"
@@ -964,9 +893,6 @@ async function handleImport(): Promise<void> {
                   </BaseAccordion>
                 </div>
 
-                <!-- "Restore preview": changes vs live state. Hidden for the
-                     newest snapshot (restoring it is a no-op); copy events
-                     interleaved in the timeline don't count. -->
                 <div v-if="item.snapshotIndex !== 0" class="snap-diff-accordion mt-2 flex flex-col">
                   <Button
                     type="button"
@@ -1024,8 +950,6 @@ async function handleImport(): Promise<void> {
                   </BaseAccordion>
                 </div>
 
-                <!-- Actions live in the expanded detail so the collapsed
-                     row stays a clean tap target. -->
                 <div
                   class="snapshots-view-detail-actions mt-1 flex flex-wrap justify-end gap-2 border-t border-solid border-border-hover pt-3"
                 >

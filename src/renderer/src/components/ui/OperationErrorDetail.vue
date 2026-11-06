@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Scrollable, selectable error block with a copy button for in-shelf
-// operation failures. Keeps the full message (e.g. multi-line stderr)
-// readable and copyable instead of clamping it to one line. Pass `compact`
-// for the smaller title-popup card.
 import { useI18n } from 'vue-i18n'
 import BaseCopyButton from './BaseCopyButton.vue'
 import { TID } from '../../../../shared/testIds'

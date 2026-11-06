@@ -40,18 +40,8 @@ interface VariantData {
   downloadFiles: { url: string; filename: string; size: number }[]
 }
 
-/** Max wait for the "models downloaded" check before returning options unbadged. */
 const MODELS_PRESENT_BUDGET_MS = 2500
 
-/**
- * Build a variant card FieldOption from a single R2 bundle release. Shared by
- * the install-wizard variant list (newest bundle per vendor) and the
- * snapshot-load flow (a specific historical bundle). `displayTag`, when set,
- * advertises the upstream version the post-install update lands on instead of
- * the bundle's checked-in ComfyUI version; pass `nightly: true` for the
- * "Latest on GitHub" channel, where the install fast-forwards to master HEAD
- * (a few commits past `displayTag`, the latest stable tag).
- */
 function buildVariantOption(
   vendorId: string,
   release: R2Variant,
@@ -67,8 +57,6 @@ function buildVariantOption(
       size: release.size
     }
   ]
-  // The description is a fixed-format, non-localized string ("ComfyUI X ·
-  // Python Y · Z MB"), so the nightly marker is a plain literal too.
   const displayVersion = displayTag
     ? `${displayTag.replace(/^v/, '')}${nightly ? ' (nightly)' : ''}`
     : release.comfyui_version
@@ -91,13 +79,6 @@ function buildVariantOption(
   }
 }
 
-/**
- * Resolve a variant card pinned to a specific historical bundle `releaseTag`
- * for `variantId`, using the vendor history carried on a 'release' FieldOption.
- * Lets the snapshot-load flow recreate the exact standalone environment a
- * snapshot was captured on. Returns null when that tag is no longer in R2
- * (pruned), so the caller can fall back to the newest bundle for the channel.
- */
 export function buildPinnedVariant(
   release: FieldOption,
   variantId: string,
@@ -125,10 +106,6 @@ export const standalone: SourcePlugin = {
   get fields() {
     return [
       { id: 'release', label: t('common.release'), type: 'select' as const },
-      // Last-N stable tags ordered newest first. Only shown for the 'stable'
-      // channel; the 'latest' channel always follows master HEAD by definition,
-      // and a tag picker there would contradict the channel intent. The
-      // wizard renders an empty/disabled select on 'latest' (zero options).
       { id: 'comfyVersion', label: t('standalone.comfyVersion'), type: 'select' as const },
       {
         id: 'variant',
@@ -136,9 +113,6 @@ export const standalone: SourcePlugin = {
         type: 'select' as const,
         renderAs: 'cards' as const
       },
-      // Optional starter template to auto-open on first launch. Rendered
-      // as cards after the variant; always returns options (incl. a "None"
-      // skip), so the wizard's field chain completes and Continue enables.
       {
         id: 'bundledTemplate',
         label: t('standalone.starterTemplate'),
@@ -174,38 +148,17 @@ export const standalone: SourcePlugin = {
     const r2Release = vd?.r2Release
     const variantId = vd?.variantId || ''
     const isCpu = stripPlatform(variantId) === 'cpu' || stripPlatform(variantId).startsWith('cpu-')
-    // The release dropdown values now match the IPP channel ids.
-    // BOTH options trigger the post-install update step — the bundle
-    // ships with whatever commit was current when the R2 artefact was
-    // built, which is necessarily behind master AND usually behind the
-    // latest stable tag too. So:
-    //   - 'stable' → autoUpdateComfyUI + updateChannel='stable' →
-    //     post-install checks out the latest stable tag.
-    //   - 'latest' → autoUpdateComfyUI + updateChannel='latest' →
-    //     post-install fast-forwards to master HEAD ('Latest on GitHub'
-    //     means actually-on-GitHub, not bundle-time).
-    // The same `updateChannel` is consumed by the IPP Update tab so
-    // future channel-switches stay consistent with the install-time pick.
     const isStable = selections.release?.value === 'stable'
     const isLatest = selections.release?.value === 'latest'
     const releaseTag = r2Release?.tag || selections.release?.value || 'unknown'
-    // Only honour a comfyVersion pick on the stable channel; getFieldOptions
-    // returns [] for 'latest', so any stale value carried in selections from
-    // a prior channel toggle is dropped here as a defence-in-depth.
     const pickedComfyTag = isStable
       ? typeof selections.comfyVersion?.value === 'string' &&
         /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
         ? selections.comfyVersion.value
         : undefined
       : undefined
-    // Starter template: the chosen template id, or undefined when the user left
-    // the "None" option selected. Format-validated (not matched against the
-    // static curated set) so a live-index substitute still installs, while a
-    // stale/forged selection that could escape a path/URL is still rejected.
     const tplValue = selections.bundledTemplate?.value
     const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
-    // Freeze the hydrated size the user consented to, so the install-time
-    // download estimate matches the wizard label without re-hydrating the index.
     const bundledTemplateSizeBytes =
       typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
         ? (selections.bundledTemplate.data.sizeBytes as number)
@@ -217,11 +170,6 @@ export const standalone: SourcePlugin = {
       downloadUrl: vd?.downloadUrl || '',
       downloadFiles: vd?.downloadFiles || [],
       pythonVersion: manifest?.python_version || '',
-      // Frozen install-time fingerprint. Used to detect when a newer standalone
-      // ships an incompatible Python/torch and the user should be informed they
-      // can migrate to a fresh install. We store these explicitly rather than
-      // derive them from releases.json so the comparison stays correct even if
-      // history is pruned in the future.
       ...(r2Release?.build !== undefined ? { originalBuild: r2Release.build } : {}),
       ...(r2Release?.torch_version ? { originalTorchVersion: r2Release.torch_version } : {}),
       launchArgs: isCpu ? `${DEFAULT_LAUNCH_ARGS} --cpu` : DEFAULT_LAUNCH_ARGS,
@@ -231,10 +179,6 @@ export const standalone: SourcePlugin = {
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
       ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
-      // Starter template. `bundledTemplateId` is the durable record of the
-      // user's pick; `pendingTemplateOpen` is a one-shot flag the first launch
-      // consumes (appends `?template=` to the comfy URL, then clears) so the
-      // template only auto-opens once — not on every relaunch.
       ...(bundledTemplateId
         ? {
             bundledTemplateId,
@@ -247,9 +191,6 @@ export const standalone: SourcePlugin = {
   },
 
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
-    // `getActivePythonPath` is adopted-aware: returns `adoptedPythonPath`
-    // for legacy-desktop adoptions and the managed `ComfyUI/.venv` python
-    // otherwise.
     const adopted = installation.adopted === true
     const pythonPath = getActivePythonPath(installation)
     if (!pythonPath || !fs.existsSync(pythonPath)) return null
@@ -258,21 +199,6 @@ export const standalone: SourcePlugin = {
     const userArgs = ((installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS).trim()
     const parsed = userArgs.length > 0 ? parseArgs(userArgs) : []
     const port = extractPort(parsed)
-    // Adopted installs keep their data (models, user, input, output,
-    // custom_nodes) at the legacy basePath. `--base-directory` and
-    // `--user-directory` are structural plumbing the user shouldn't need
-    // to touch, so pin them here. Input/output are first-class per-install
-    // fields (`installation.inputDir` / `outputDir`) handled by launch.ts'
-    // shared-input-output branch — adopted records ship with both set to
-    // `<legacyBasePath>/{input,output}` so the end result is the same.
-    //
-    // `--database-url` is also pinned: ComfyUI's default DB path resolves
-    // to `<source>/../user/comfyui.db`, which for an adopted install
-    // points at the empty `<newInstallPath>/user/` (parent dir doesn't
-    // exist) → SQLite "unable to open database file". The user's real
-    // SQLite DB lives in the legacy user dir, so point ComfyUI at it
-    // explicitly. Skipped when the user already set their own
-    // `--database-url` in launchArgs.
     const adoptedBaseDir = adopted ? (installation.adoptedBaseDir as string | undefined) : undefined
     const userSetDatabaseUrl = parsed.some(
       (a) => a === '--database-url' || a.startsWith('--database-url=')
@@ -288,9 +214,6 @@ export const standalone: SourcePlugin = {
             : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`])
         ]
       : []
-    // Desktop-managed feature flags (e.g. show_signin_button) are injected in
-    // handleLaunch after we discover the running ComfyUI's feature-flag registry,
-    // so we only set keys the install actually knows about.
     return {
       cmd: pythonPath,
       args: ['-s', path.join('ComfyUI', 'main.py'), ...adoptArgs, ...parsed],
@@ -320,19 +243,8 @@ export const standalone: SourcePlugin = {
     const adopted = inst.adopted === true
     const adoptedBaseDir = adopted ? (inst.adoptedBaseDir as string | undefined) : undefined
 
-    // For an adopted install, the wrapper at `installPath` only contains
-    // the freshly cloned ComfyUI source — the venv and user data live
-    // under `adoptedBaseDir`. We need to pull those over too so the copy
-    // is a self-contained install that can run independently of the
-    // original Legacy Desktop workspace.
-    //
-    // Models are deliberately NOT copied — they remain shared via the
     // global `modelsDirs` setting (inherited from the source record),
-    // matching the source's `useSharedModels: true`. This keeps the
-    // copy cheap and avoids duplicating multi-GB checkpoint files.
     if (adopted && adoptedBaseDir && fs.existsSync(adoptedBaseDir)) {
-      // Order matters only for cancellation responsiveness — the venv is
-      // by far the largest, so put it first to surface progress quickly.
       const carryOver = ['.venv', 'user', 'custom_nodes', 'input', 'output']
       const destComfyUI = path.join(destPath, 'ComfyUI')
       for (const entry of carryOver) {
@@ -340,10 +252,6 @@ export const standalone: SourcePlugin = {
         const src = path.join(adoptedBaseDir, entry)
         if (!fs.existsSync(src)) continue
         const dst = path.join(destComfyUI, entry)
-        // Skip if the wrapper copy already placed an entry there (the
-        // upstream ComfyUI clone has empty `input/`, `output/`,
-        // `custom_nodes/` checked in). Remove the empty placeholder
-        // first so the merge isn't ambiguous.
         if (fs.existsSync(dst)) {
           try {
             await fs.promises.rm(dst, { recursive: true, force: true })
@@ -370,12 +278,6 @@ export const standalone: SourcePlugin = {
     const venvPath = getVenvDir(destPath)
     if (!fs.existsSync(venvPath)) return
 
-    // Path-rewrite source for the venv metadata:
-    //   - managed: pyvenv.cfg references `<installPath>/ComfyUI/.venv/...`
-    //     → rewrite `<installPath>` → `<destPath>`.
-    //   - adopted: pyvenv.cfg references `<adoptedBaseDir>/.venv/...`
-    //     → rewrite `<adoptedBaseDir>` → `<destPath>/ComfyUI`, because the
-    //     adopted environment lives under ComfyUI in the destination.
     const srcRewriteFrom = adopted && adoptedBaseDir ? adoptedBaseDir : inst.installPath
     const srcRewriteTo = adopted && adoptedBaseDir ? path.join(destPath, 'ComfyUI') : destPath
 
@@ -414,14 +316,7 @@ export const standalone: SourcePlugin = {
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return []
 
-      // Always revalidate R2 manifests when populating the install wizard —
-      // a stale persisted ETag can otherwise hide a freshly-shipped standalone
-      // release and strand new installs on whatever the previous run cached.
       const latest = (await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true })) as R2Latest
-      // Platform prefix AND architecture: only the host's own architecture can
-      // run. Windows publishes x64 and ARM64 today; Linux ARM64 intentionally
-      // gets no options until an explicitly suffixed bundle is published (see
-      // `variantMatchesHost`).
       const vendorIds = Object.keys(latest).filter((id) => variantMatchesHost(id))
       if (vendorIds.length === 0) return []
 
@@ -436,7 +331,6 @@ export const standalone: SourcePlugin = {
         )
       )
 
-      // Collect unique release tags across all vendors for this platform
       const tagMap = new Map<string, { comfyui_version: string; date: string; tag: string }>()
       for (const releases of Object.values(vendorReleases)) {
         for (const release of releases) {
@@ -453,21 +347,9 @@ export const standalone: SourcePlugin = {
 
       const options: FieldOption[] = []
 
-      // Same two channel options the IPP Update tab uses (see
-      // `getChannelDefs()` in `./updateSections.ts`). Both trigger a
-      // post-install auto-update: 'stable' to the latest stable tag,
-      // 'latest' to master HEAD. Per-bundle-tag entries (v0.20.1-env1,
-      // etc.) were dropped at the same time; they exposed an
-      // implementation detail (the R2 bundle tag) instead of the channel
-      // users actually care about.
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
-        // `latestStableTag` is the upstream ComfyUI version the post-install
-        // auto-update resolves to. Thread it through so the variant cards show
-        // that (the latest stable tag for 'stable'; the same tag marked as a
-        // nightly for 'latest', which fast-forwards a few commits past it)
-        // rather than the older ComfyUI baked into the standalone bundle.
         const channelData = {
           tag: newestBundle.tag,
           vendorReleases,
@@ -491,14 +373,9 @@ export const standalone: SourcePlugin = {
     }
 
     if (fieldId === 'comfyVersion') {
-      // The picker is only meaningful on 'stable' — 'latest' tracks master
-      // HEAD by intent, and the post-install update already fast-forwards
-      // there. Returning [] makes the wizard render an empty/disabled select.
       if (selections.release?.value !== 'stable') return []
       const tags = await getStableTags()
       if (tags.length === 0) return []
-      // Newest first; the wizard auto-selects the `recommended` option so
-      // the default lands on the most recent stable tag.
       return tags.map((tag, i) => ({
         value: tag,
         label: tag,
@@ -522,10 +399,6 @@ export const standalone: SourcePlugin = {
       const isStable = selections.release?.value === 'stable'
       const isLatest = selections.release?.value === 'latest'
       const gpu = context?.gpu as string | undefined
-      // When the user picked a specific stable tag from the comfyVersion
-      // dropdown, the variant card should advertise THAT version (the one
-      // the post-install update checks out), not the channel head. Falls
-      // back to the channel-head's resolved tag when no pick was made.
       const pickedComfyTag =
         isStable &&
         typeof selections.comfyVersion?.value === 'string' &&
@@ -538,12 +411,6 @@ export const standalone: SourcePlugin = {
         .map(([vendorId, releases]): FieldOption | null => {
           const release = releases[0]
           if (!release) return null
-          // Stable: advertise the upstream tag the user lands on after the
-          // post-install auto-update (picked tag wins; otherwise channel
-          // head). Latest: advertise the latest stable tag as a nightly,
-          // since the install fast-forwards to master HEAD (a few commits
-          // past it). Both fall back to the bundled version when the tag is
-          // unresolvable (offline, etc.).
           const displayTag = isStable
             ? (pickedComfyTag ?? releaseData.latestStableTag ?? null)
             : isLatest
@@ -555,8 +422,6 @@ export const standalone: SourcePlugin = {
     }
 
     if (fieldId === 'bundledTemplate') {
-      // "None" comes first and is the wizard's default; `recommended` only
-      // badges a card.
       const catalog = await loadTemplateCatalog()
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null

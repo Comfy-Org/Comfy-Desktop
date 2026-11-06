@@ -77,8 +77,6 @@ describe('thumbnailUrlFor', () => {
 })
 
 describe('CURATED_TEMPLATES manifest', () => {
-  // Must match the frontend deeplink validator so the auto-open can't be
-  // rejected for a malformed id.
   const ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
 
   it('offers exactly 4 templates per modality', () => {

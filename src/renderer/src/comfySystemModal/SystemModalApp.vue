@@ -2,14 +2,6 @@
 import { computed, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 
-/**
- * System-modal popup shell. Renders a confirm dialog via the shared `BaseAlert` so
- * chrome matches the rest of the app's confirms. The spec arrives via
- * `comfy-systemmodal:set-modal` on each open; the webContents persists between opens,
- * so the bridge listener is registered once at mount. `spec.theme` is kept for IPC
- * contract stability but ignored here.
- */
-
 type SystemModalConfirmStyle = 'primary' | 'danger'
 type SystemModalSecondaryStyle = 'primary' | 'danger' | 'default'
 type SystemModalAction = 'confirm' | 'cancel' | 'secondary'
@@ -55,7 +47,6 @@ function ack(action: SystemModalAction): void {
 
 let unsubModal: (() => void) | undefined
 
-/** Only the most recent modal's tick fires `notifyRendered`, suppressing stale acks. */
 let renderSeq = 0
 
 onMounted(() => {
@@ -90,7 +81,6 @@ onUnmounted(() => {
     @cancel="ack('cancel')"
     @secondary="ack('secondary')"
   >
-    <!-- When the spec carries `details`, render `message` then each group as a bulleted list. -->
     <template v-if="spec?.details && spec.details.length > 0" #default>
       <p v-if="spec.message" class="system-modal-message mt-0 mr-0 mb-3 ml-0">{{ spec.message }}</p>
       <div

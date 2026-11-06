@@ -21,7 +21,6 @@ const BOOT_PHASE_EVENT = 'comfy.desktop.comfyui.boot_phase'
 
 beforeEach(() => {
   vi.useFakeTimers()
-  // Pin a deterministic epoch so ms_since_boot_started is reproducible.
   vi.setSystemTime(new Date('2026-06-16T00:00:00.000Z'))
   _resetForTest()
   vi.clearAllMocks()
@@ -38,7 +37,6 @@ describe('startBootPhases', () => {
     recordBootPhase('inst-1', 'gpu')
     expect(_peekBootPhases('inst-1')).toHaveLength(2)
 
-    // A new attempt on the same id wipes the prior attempt's entries.
     startBootPhases('inst-1', 'stable')
     expect(_peekBootPhases('inst-1')).toEqual([])
   })
@@ -48,7 +46,6 @@ describe('startBootPhases', () => {
     vi.advanceTimersByTime(9999)
     recordBootPhase('inst-1', 'old')
 
-    // Restart resets bootStartedAt to "now".
     startBootPhases('inst-1', 'nightly')
     vi.advanceTimersByTime(120)
     recordBootPhase('inst-1', 'spawn')
@@ -87,7 +84,6 @@ describe('recordBootPhase', () => {
     vi.advanceTimersByTime(100)
     recordBootPhase('inst-1', 'gpu')
 
-    // Re-entry / skip-advance into a phase already seen is a no-op.
     vi.advanceTimersByTime(900)
     recordBootPhase('inst-1', 'gpu')
 
@@ -95,7 +91,6 @@ describe('recordBootPhase', () => {
   })
 
   it('is a no-op when no buffer is active for the id', () => {
-    // No startBootPhases called for this id.
     recordBootPhase('inst-unknown', 'spawn')
     expect(_peekBootPhases('inst-unknown')).toBeNull()
     expect(mockedEmit).not.toHaveBeenCalled()
@@ -223,7 +218,6 @@ describe('flushBootPhasesOnFailure', () => {
     recordBootPhase('inst-a', 'spawn')
     recordBootPhase('inst-b', 'spawn')
 
-    // Flushing one id leaves the other intact.
     expect(flushBootPhasesOnFailure('inst-a')).toBe('spawn')
     expect(_peekBootPhases('inst-b')).toEqual([{ phase: 'spawn', msSinceBootStarted: 10 }])
 

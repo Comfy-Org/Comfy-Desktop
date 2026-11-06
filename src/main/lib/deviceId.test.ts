@@ -4,8 +4,6 @@ import os from 'os'
 import path from 'path'
 import { createHash } from 'crypto'
 
-// Mock paths.ts directly: configDir() reads XDG_CONFIG_HOME on Linux, bypassing
-// the electron.app.getPath mock and breaking CI.
 let testUserData = ''
 
 vi.mock('./paths', () => ({
@@ -22,7 +20,6 @@ vi.mock('electron', () => ({
 
 let mockSystemUuid: string | undefined = 'aabbccdd-eeff-0011-2233-445566778899'
 let mockSystemError: Error | null = null
-// Held past the budget until `answerLateLookup()` (if ever).
 let mockLookupHangs = false
 let answerLateLookup: () => void = () => {}
 const lookupCalls = { system: 0, uuid: 0 }
@@ -53,7 +50,6 @@ const SALT = 'comfy-installation-id-v1'
 
 const ETC_MACHINE_ID = '/etc/machine-id'
 const DBUS_MACHINE_ID = '/var/lib/dbus/machine-id'
-// Contents served for the Linux machine-id locations; absent key = no file.
 let mockMachineIdFiles: Record<string, string> = {}
 const originalPlatform = process.platform
 
@@ -100,9 +96,7 @@ describe('deviceId', () => {
     setPlatform(originalPlatform)
     try {
       fs.rmSync(testUserData, { recursive: true, force: true })
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   })
 
   describe('initDeviceId — fresh install (no existing file)', () => {
@@ -156,7 +150,6 @@ describe('deviceId', () => {
     it('does NOT re-fire the migration if the guard file is present', async () => {
       const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
       fs.writeFileSync(path.join(testUserData, 'device-id.txt'), legacyUuid)
-      // Prior boot already completed the local identity-file migration.
       fs.writeFileSync(
         path.join(testUserData, 'identity-migration-completed'),
         new Date().toISOString()
@@ -165,7 +158,6 @@ describe('deviceId', () => {
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
 
-      // The id still gets corrected (the guard only suppresses re-reporting).
       const expected = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
 
       expect(mod.getDeviceId()).toBe(expected)
@@ -565,8 +557,6 @@ describe('deviceId', () => {
       await mod.initDeviceId()
       expect(lookupCalls).toEqual({ system: 0, uuid: 1 })
       expect(mod.getIdClass()).toBe('machine_derived')
-      // That si.uuid().hardware equals si.system().uuid on win32 is pinned by
-      // deviceId.dependency.test.ts; this pins the mapping from it to the id.
       expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
     })
 
@@ -632,7 +622,6 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('provisional')
       expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(legacyUuid)
 
-      // Boot deletes the marker on every launch.
       fs.rmSync(path.join(testUserData, 'pending-identity-alias.txt'))
       await nextLaunch()
       expect((await mod.initDeviceId()).legacyId).toBe(legacyUuid)

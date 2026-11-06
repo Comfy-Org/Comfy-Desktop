@@ -47,8 +47,6 @@ const currentWorkspaceName = computed(() => {
   }
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
-  // Cached auth metadata describes only the authenticated workspace, which
-  // may differ from the dashboard's selection (especially while offline).
   if (store.status.workspaceId === currentWorkspaceId.value) {
     if (
       isPersonalWorkspace({ name: store.status.workspaceName, type: store.status.workspaceType })

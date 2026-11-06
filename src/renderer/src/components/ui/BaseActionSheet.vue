@@ -3,9 +3,6 @@ import { useId } from 'vue'
 import BaseModal from './BaseModal.vue'
 import Button from '@comfyorg/design-system/button/Button'
 
-// Action-sheet primitive: title, message, list of choices, Cancel footer.
-// Not BaseSelect.vue, which is the inline form combobox.
-
 export interface ActionSheetItem {
   value: string
   label: string

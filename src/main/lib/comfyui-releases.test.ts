@@ -181,13 +181,10 @@ describe('fetchLatestRelease', () => {
     })
 
     it('a null tag uses the short failure TTL, not the long success TTL', async () => {
-      // A null result must expire on the failure cadence; caching it for the
-      // 10-min success TTL stranded new installs on the bundled version.
       vi.useFakeTimers()
       try {
         mockedLsRemoteLatestTag.mockResolvedValueOnce(undefined).mockResolvedValueOnce('v1.19.5')
         const a = await getLatestStableTag()
-        // Past the 30s failure TTL but within the 10-min success TTL.
         vi.setSystemTime(Date.now() + 60_000)
         const b = await getLatestStableTag()
         expect(a).toBeNull()

@@ -7,7 +7,6 @@ test.describe('Main window visibility (#283)', () => {
   test('main window becomes visible after launch @macos @windows @linux', async () => {
     const { application, cleanup } = await launchLauncherApp()
     try {
-      // The host window starts with show:false and transitions via ready-to-show.
       await expect.poll(
         async () => evalWithRetry(() => application.evaluate(({ BrowserWindow }) => {
           const wins = BrowserWindow.getAllWindows()
@@ -28,9 +27,6 @@ test.describe('Main window visibility (#283)', () => {
       expect(bounds!.width).toBeGreaterThan(0)
       expect(bounds!.height).toBeGreaterThan(0)
 
-      // The chooser host's panel WebContentsView mounts the Vue app at
-      // `.panel-shell`. We assert via the eval bridge because the parent
-      // BrowserWindow's webContents has no DOM (it only hosts children).
       await waitForWebContents(application, 'panel.html', 15_000)
       const panel = panelPage(application)
       await panel.waitForSelector('.panel-shell', { timeout: 10_000 })

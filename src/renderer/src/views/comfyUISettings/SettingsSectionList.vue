@@ -24,22 +24,12 @@ import type {
   VersionStatsValue
 } from '../../types/ipc'
 
-/**
- * Shared section + field renderer for both the Settings drawer and the instance-picker's Settings accordion.
- * Pure presentation; the host wires the handlers so the same DOM serves panel (`window.api`) and popup (bridge) without either importing the other's IPC.
- */
-
 interface Props {
   sections: DetailSection[]
-  /** Status-tab styling: hairline dividers + label-over-value, no input chrome. */
   readonly?: boolean
-  /** Installation context for install-scoped IPCs (e.g. ArgsBuilderField's `getComfyArgs(id)`). */
   installationId?: string
-  /** Inline-action busy set driving per-button spinner/disabled state. */
   runningActionIds?: Set<string>
-  /** Field ids edited while running that need a restart; renders a tag next to the label. */
   pendingRestartFieldIds?: Set<string>
-  /** Per-field error messages from failed `updateInstallation` IPCs; renders a red inline pill. */
   fieldErrorMessages?: Map<string, string>
 }
 
@@ -51,7 +41,6 @@ const props = withDefaults(defineProps<Props>(), {
   fieldErrorMessages: () => new Map<string, string>()
 })
 
-// Wrap in a computed so each `.has()` tracks a reactive dep (bare access on a destructured prop can miss it).
 const runningIdsSet = computed(() => props.runningActionIds ?? new Set<string>())
 function isActionRunning(actionId: string): boolean {
   return runningIdsSet.value.has(actionId)
@@ -71,8 +60,6 @@ const emit = defineEmits<{
   'update-field': [field: DetailField, value: unknown]
   'run-action': [action: ActionDef]
   'open-args-page': [field: DetailField]
-  /** Open a filesystem path in the OS file manager; the host wires the IPC
-   *  (`window.api.openPath` in the panel, the bridge in the title popup). */
   'open-path': [path: string]
 }>()
 
@@ -82,8 +69,6 @@ function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-/** Unpack a `version-stats` field. The backend owns the wording - it knows what
- *  the versions mean - so this only supplies defaults for a malformed payload. */
 function versionStats(field: DetailField): Required<VersionStatsValue> {
   const v = (field.value ?? {}) as Partial<VersionStatsValue>
   return {
@@ -95,8 +80,6 @@ function versionStats(field: DetailField): Required<VersionStatsValue> {
   }
 }
 
-/** Guards each row before VersionStatPanel dereferences `id`/`label`/`value`:
- *  a malformed IPC payload (e.g. a null entry) must not break the render. */
 function isVersionStatRow(r: unknown): r is VersionStatRow {
   if (r === null || typeof r !== 'object') return false
   const row = r as Partial<VersionStatRow>
@@ -105,7 +88,6 @@ function isVersionStatRow(r: unknown): r is VersionStatRow {
   )
 }
 
-// Per-title collapse state; only titled sections (with a `section.collapsed` seed) are collapsible.
 const collapsedTitles = ref(new Set<string>())
 
 watch(
@@ -143,17 +125,12 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
-/** Field types that render the section's actions themselves, so the generic
- *  full-width footer must stand down or the buttons appear twice. */
 const ACTION_OWNING_EDIT_TYPES = new Set(['channel-cards', 'version-stats'])
 
 function fieldOwnsSectionActions(section: DetailSection): boolean {
   return (section.fields ?? []).some((f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType))
 }
 
-/** Chunk a section's fields into rows: consecutive fields sharing a
- *  `rowGroup` render side-by-side; everything else gets its own row.
- *  Only adjacency groups, so unrelated fields never merge. */
 function fieldRows(section: DetailSection): DetailField[][] {
   const rows: DetailField[][] = []
   for (const field of section.fields ?? []) {
@@ -178,10 +155,6 @@ function isPathLikeValue(value: unknown): boolean {
   return v.includes('/') || v.includes('\\') || v.startsWith('~')
 }
 
-/** Stricter than `isPathLikeValue`: only values safe to open in the OS file
- *  manager. `editType === 'path'` is openable when it holds a real value (not
- *  empty or the em dash placeholder); otherwise the value must look like a local
- *  path (not a URL, SSH remote, or date). */
 function canOpenFilesystemPath(field: DetailField): boolean {
   const v = asString(field.value).trim()
   if (field.editType === 'path') return v.length > 0 && v !== '\u2014'
@@ -196,8 +169,6 @@ function fieldOwnsLabel(field: DetailField): boolean {
   return (
     field.editType === 'env-vars' ||
     field.editType === 'channel-cards' ||
-    // The panel leads with its own headline; a label above it would echo the
-    // section title.
     field.editType === 'version-stats'
   )
 }
@@ -329,10 +300,6 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
         ]"
       >
-        <!-- `data-field-id` is the only per-row anchor a settings deep link has to aim at
-             (e.g. the beta activation notice pointing at the beta opt-in switch): the row is
-             rendered several components below whoever opened the popup, so there is no
-             template ref to hand out. -->
         <div
           v-for="field in row"
           :key="field.id"

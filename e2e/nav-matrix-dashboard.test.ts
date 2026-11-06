@@ -1,14 +1,3 @@
-/**
- * E2E: instance/window navigation matrix — Dashboard → X.
- *
- * Drives the real picker bridge (`window.__comfyTitlePopup`) from a dashboard
- * (chooser) host and asserts the navigation outcome via recorded IPC
- * invocations + BrowserWindow counts. Mirrors `picker-cluster.test.ts`.
- *
- * Covers: stopped instance → same-window launch; running instance → focus;
- * cloud → new-window via the caret. The decision itself is exhaustively unit
- * tested (`navDecision.test.ts`); this pins the bridge → main → window wiring.
- */
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -89,14 +78,11 @@ test('Dashboard → stopped instance: same-window launch, no new window @windows
     timeout: 5_000, intervals: [100, 200],
   }).toBe(false)
 
-  // Stopped pick from the chooser host runs `runAction('launch')` in place.
   await expect.poll(async () => {
     const calls = (await getIpcInvocations(ctx.app, 'run-action')) as { installationId?: string; actionId?: string }[]
     return calls.some((c) => c.installationId === INSTALL_A_ID && c.actionId === 'launch')
   }, { timeout: 10_000, intervals: [200, 500] }).toBe(true)
 
-  // Same window — no new host spawned, no focus-existing. Sample the full window
-  // so a late `focus-comfy-window` IPC can't slip in (a poll would pass at t=0).
   expect(await liveWindowCount(ctx.app)).toBe(before)
   await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
     message: 'unexpected focus-comfy-window on a same-window launch',
@@ -116,8 +102,6 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
     return calls.some((c) => c.installationId === INSTALL_A_ID)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // Focus path, NOT a relaunch: no `launch` run-action, and no new window.
-  // Sample the full window so a late `launch` IPC can't slip past.
   await expectNoIpcInvocation(ctx.app, 'run-action', (c) => c.actionId === 'launch', {
     message: 'unexpected run-action launch on a focus-existing path',
   })
@@ -128,7 +112,6 @@ test('Dashboard → cloud via "Open in new window": spawns a new window @windows
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
 
-  // The caret's secondary action calls openInstallNewWindow directly.
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(`window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(CLOUD_ID)})`)
 
@@ -137,6 +120,5 @@ test('Dashboard → cloud via "Open in new window": spawns a new window @windows
     return calls.some((c) => c.installationId === CLOUD_ID && c.focusedExisting === false)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // A fresh chooser host window was spawned for the cloud install.
   await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
 })

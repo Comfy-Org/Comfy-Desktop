@@ -1,8 +1,4 @@
 // @vitest-environment node
-// The unit tests inject `access`, so they prove the branch but not that the
-// component placing a file and the one looking for it pick the same path. Here
-// the real writer chooses the destination and the real reader is asked about
-// it; only the network boundary is replaced.
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -19,7 +15,6 @@ vi.mock('electron', () => ({
   }
 }))
 
-/** Writes to whatever destination the writer chose, as a transfer would. */
 const download = vi.fn(async (_url: string, destPath: string) => {
   await fs.promises.mkdir(path.dirname(destPath), { recursive: true })
   await fs.promises.writeFile(destPath, 'bytes')
@@ -39,8 +34,6 @@ let installPath: string
 const log = () => {}
 
 function installation(): InstallationRecord {
-  // Without `useSharedInput: false` the lookup escapes to the user's own
-  // configured input directory.
   return { id: 'inst-test', installPath, useSharedInput: false } as InstallationRecord
 }
 

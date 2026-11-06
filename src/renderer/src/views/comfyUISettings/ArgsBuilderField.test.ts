@@ -7,8 +7,6 @@ import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import type { ComfyArgDef, DetailField } from '../../types/ipc'
 
-// Tests that the args-field autocomplete appears, narrows on typing, and commits the picked flag via `update`.
-
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
@@ -104,7 +102,6 @@ describe('ArgsBuilderField — inline autocomplete', () => {
     expect(popover.exists()).toBe(true)
     const names = popover.findAll('.args-raw-input-ac-flag').map((n) => n.text())
     expect(names).toContain('--lowvram')
-    // `--cpu` doesn't match "lo" so it shouldn't surface.
     expect(names).not.toContain('--cpu')
   })
 
@@ -157,8 +154,6 @@ describe('ArgsBuilderField — inline autocomplete', () => {
     const wrapper = await mountField()
     const input = wrapper.get('input')
     await input.trigger('focusin')
-    // `--port` is a value-type flag — after the space the user is
-    // typing the PORT value, not a flag name, so no dropdown.
     await input.setValue('--port 81')
     await flushPromises()
     expect(wrapper.find('.args-raw-input-ac').exists()).toBe(false)
@@ -252,7 +247,6 @@ describe('ArgsBuilderField — beta args pill', () => {
     resolveOld({ args: [] })
     await flushPromises()
 
-    // The stale load neither replaces the schema nor asks the pill to look again.
     expect(api.getCoreBetaArgs.mock.calls.length).toBe(before)
     await wrapper.get('input').trigger('focusin')
     await wrapper.get('input').setValue('--lo')
@@ -287,7 +281,6 @@ describe('ArgsBuilderField — trailing buttons stay out of autocomplete', () =>
     await pill.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
-    // Typing commits '--lo' itself; what must never be committed is the completed flag.
     const committed = (wrapper.emitted('update') ?? []).map(([, value]) => value)
     expect(committed.some((value) => String(value).includes('--lowvram'))).toBe(false)
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('--lo')
@@ -297,7 +290,6 @@ describe('ArgsBuilderField — trailing buttons stay out of autocomplete', () =>
     stubElectronApi(BETA)
     const wrapper = await mountField()
     await typePartialFlag(wrapper)
-    // Suggestions still open: the keydown alone has to be ignored, not the focus change.
     await wrapper.get('.beta-args button').trigger('keydown', { key: 'Enter' })
     await flushPromises()
     const committed = (wrapper.emitted('update') ?? []).map(([, value]) => value)

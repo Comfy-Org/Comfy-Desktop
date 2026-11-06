@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => [] as unknown[]),
   openExternal: vi.fn(async () => {}),
   openSystemModalAsync: vi.fn(async () => false),
-  // session
   login: vi.fn(),
   logout: vi.fn(),
   status: vi.fn(),
@@ -16,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   setUnauthorizedHandler: vi.fn(),
   clearVersionCache: vi.fn(),
   getVersionCacheGeneration: vi.fn(() => 3),
-  // client + policy
   getBuilderClient: vi.fn(() => ({
     listBuilds: mocks.listBuilds,
     createBuildDraft: mocks.createBuildDraft
@@ -27,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
   resolveSelectedHostArtifact: vi.fn(),
-  // installations + shared helpers
   add: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
@@ -124,8 +121,6 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
-/** A host entry carrying only the panelView the broadcast targets. Host windows
- *  load no page of their own, so the panelView IS the dashboard renderer. */
 function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: boolean } = {}) {
   const send = vi.fn()
   const panelView = opts.none
@@ -180,9 +175,6 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
-  // The regression that made a file-menu sign-in look like nothing happened:
-  // the host window loads no page, so broadcasting only to `getAllWindows()`
-  // reaches an empty webContents and the account chip never repaints.
   it('signIn reaches the dashboard renderer in each host panelView', async () => {
     mocks.getAllWindows.mockReturnValue([])
     const panelA = registerHostWithPanel(1)

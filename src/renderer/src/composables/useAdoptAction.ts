@@ -12,9 +12,6 @@ interface AdoptConfirmOptions {
   confirmLabel?: string
 }
 
-// Legacy Desktop → Desktop 2.0 in-place adoption confirm. A plain confirm
-// listing what will be reused; separate from useMigrateAction, which
-// delegates here for legacy desktop sources.
 export function useAdoptAction(opts?: { surface?: 'modal' | 'takeover' }) {
   const { t } = useI18n()
   const modal = useModal()
@@ -22,8 +19,6 @@ export function useAdoptAction(opts?: { surface?: 'modal' | 'takeover' }) {
   const sessionStore = useSessionStore()
   const surface: 'modal' | 'takeover' = opts?.surface ?? 'modal'
 
-  // Returns true if confirmed, false if cancelled, null if the action guard
-  // blocked entry (another op in flight).
   async function confirmAdoption(
     installation: Installation,
     confirm?: AdoptConfirmOptions

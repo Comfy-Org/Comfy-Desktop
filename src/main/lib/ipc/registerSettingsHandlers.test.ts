@@ -1,18 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
 const mockSettingsSet = vi.fn((key: string, value: unknown) => {
   mockSettings[key] = value
 })
 
-// Stubbed seeding resolver. Held in an object so the vi.mock factory (hoisted
-// above this file's statements) reads the value at call time, not at import.
 const mockBeta = { resolved: false }
 
-// Real English strings so label assertions catch missing locale keys (see
-// lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so they
-// can't reference top-level static imports.
 vi.mock('./shared', async () => {
   const { lookupEnMessage } = await import('../localeTestHelper')
   return {
@@ -49,7 +43,6 @@ vi.mock('../globalSettingsEvents', () => ({
   globalSettingsEvents: { on: vi.fn(), emit: vi.fn() }
 }))
 vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
-// Values mirror src/main/settings.ts; mocked because the real module imports electron.
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
 import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
@@ -65,9 +58,6 @@ describe('buildSettingsSections', () => {
     mockBeta.resolved = false
   })
 
-  // Sourcing this from the raw setting would either re-seed on every read or
-  // coerce an undefined store to ON; the resolver owns the one-time seed, so
-  // the field must mirror the resolver even when the two disagree.
   it('sources the beta-features field from the seeding resolver', () => {
     mockSettings.betaFeaturesEnabled = false
     mockBeta.resolved = true
@@ -98,9 +88,6 @@ describe('buildSettingsSections', () => {
   })
 
   it('does not offer the Manager security level globally (it is per-install)', () => {
-    // The level is per-install, on each install's Startup Args tab
-    // (buildLaunchSettingsFields); a global field silently overriding every
-    // install's config.ini is the regression this pins against.
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string }[] | undefined) ?? []
     )

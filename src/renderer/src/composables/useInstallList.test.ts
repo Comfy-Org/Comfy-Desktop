@@ -48,10 +48,6 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['new', 'mid', 'old', 'never'])
     })
 
-    // Regression: cloud must not jump above an older local install — recency
-    // is the only thing that decides order. Before the unpin refactor, cloud
-    // lived in its own surface (dashboard) or was tie-break-pinned (picker),
-    // both of which broke straight recency ordering.
     it('places a cloud install below a more-recent local install (no cloud pinning)', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -72,8 +68,6 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['recent-local', 'old-cloud'])
     })
 
-    // Equal-recency cloud and local installs have no category priority.
-    // Both must remain in the result.
     it('does not pin cloud ahead of a same-recency local install', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -92,8 +86,6 @@ describe('useInstallList', () => {
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       const ids = list.visibleInstalls.value.map((i) => i.id)
-      // Stable sort on a tie keeps the input order; the test guards against
-      // a regression that explicitly re-orders cloud to the top.
       expect(ids).toEqual(['local-tie', 'cloud-tie'])
     })
   })
@@ -102,7 +94,6 @@ describe('useInstallList', () => {
     it('local filter includes standalone and Legacy Desktop installs (both report category local)', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
-        // Legacy Desktop reports category `local`; sourceId is the marker.
         makeInstall({
           id: 'd',
           sourceCategory: 'local',
@@ -142,13 +133,11 @@ describe('useInstallList', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
         makeInstall({ id: 'r', sourceCategory: 'remote' }),
-        // Legacy Desktop reports category `local`; sourceId is the marker.
         makeInstall({ id: 'd', sourceCategory: 'local', sourceId: 'desktop' }),
         makeInstall({ id: 'c', sourceCategory: 'cloud' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
-      // The default all filter includes cloud and local installs.
       expect(list.visibleInstalls.value.map((i) => i.id).sort()).toEqual(['c', 'd', 'l', 'r'])
     })
   })
@@ -276,8 +265,6 @@ describe('useInstallList', () => {
   })
 })
 
-/** Runs `fn` inside a stub Vue app with i18n installed, so `useI18n()`
- *  resolves; captures and returns the composable's value. */
 function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
   let captured!: T
   const App = defineComponent({
@@ -288,7 +275,6 @@ function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
   })
   const app = createApp(App)
   app.use(i18n)
-  // jsdom provides a document.body; mount + immediately unmount.
   const host = document.createElement('div')
   app.mount(host)
   app.unmount()

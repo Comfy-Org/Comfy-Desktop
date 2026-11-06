@@ -1,20 +1,3 @@
-/**
- * Lifecycle E2E: live `snapshot-restore` against real git repos.
- *
- * Goes beyond IPC wiring: pre-stages two local bare git repos
- * (ComfyUI + one custom node), clones them into a fake installation
- * dir at "newer" commit B, seeds a snapshot pointing at "older"
- * commit A, then restores it through the snapshots picker UI and asserts:
- *   - the ComfyUI working tree HEAD moved from B → A
- *   - the custom node working tree HEAD moved from B → A
- *   - a fresh `post-restore` snapshot was captured
- *
- * The seeded snapshot has `skipPipSync: true` so the live restore
- * skips the pip phase (it would otherwise demand a real `uv` +
- * Python env). All other restore work (git checkout for ComfyUI
- * and per-node checkout via `restoreCustomNodes`) runs for real
- * against the bare-repo `origin`s on disk.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -72,10 +55,6 @@ function gitIn(cwd: string, args: string[]): string {
   }).trim()
 }
 
-/**
- * Build a local bare repo (`<root>/<name>.git`) plus a throw-away working
- * clone, push two commits to `master`, and return the SHAs.
- */
 async function buildTwoCommitRepo(
   root: string,
   name: string,
@@ -111,7 +90,6 @@ test.describe.configure({ mode: 'serial' })
 test.beforeAll(async () => {
   workTmpPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-snapshot-restore-e2e-'))
 
-  // Two bare repos: simulated ComfyUI + simulated custom node.
   const comfy = await buildTwoCommitRepo(
     workTmpPath,
     'comfyui-origin',
@@ -132,16 +110,11 @@ test.beforeAll(async () => {
   nodeCommitA = node.commitA
   nodeCommitB = node.commitB
 
-  // Build the fake installation: ComfyUI clone + custom_nodes/<node>.
-  // Both start at the NEWER commit B; restore should move them to A.
   stagedInstallPath = path.join(workTmpPath, 'install')
   await mkdir(stagedInstallPath, { recursive: true })
 
   const comfyuiDir = path.join(stagedInstallPath, 'ComfyUI')
   gitIn(workTmpPath, ['clone', '--quiet', comfyOriginPath, comfyuiDir])
-  // Force HEAD onto commit B explicitly — `git clone` already lands on B
-  // (the most recent commit on master), but call it out so the intent is
-  // greppable from the test.
   gitIn(comfyuiDir, ['checkout', '--quiet', comfyCommitB])
 
   const customNodesDir = path.join(comfyuiDir, 'custom_nodes')
@@ -189,11 +162,6 @@ test.beforeAll(async () => {
           {
             trigger: 'manual',
             label: 'current-state',
-            // Newer than restore-target so it is the "current state" row
-            // at seed time, but OLDER than any snapshot the app captures
-            // during the run: the newest row (snapshotIndex 0) renders no
-            // Restore control, and the picker-driven test below must be
-            // able to restore this one after post-restore lands on top.
             createdAt: '2026-01-02T00:00:00.000Z',
             comfyui: {
               ref: comfyCommitB,
@@ -290,10 +258,6 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', a
 })
 
 test('restore captures a post-restore snapshot @lifecycle', async () => {
-  // After a successful restore, `actions.ts` calls `saveSnapshot(... 'post-restore')`.
-  // Poll because the post-restore save runs after `update(restoreState)` returns
-  // — the runAction call already awaited the action result, but the snapshot
-  // count update happens on a follow-up tick.
   await expect
     .poll(
       async () =>
@@ -309,29 +273,9 @@ test('restore captures a post-restore snapshot @lifecycle', async () => {
     })
 })
 
-/**
- * Picker-driven restore: drives the same snapshot-restore action through
- * the instance-picker UI and asserts the inline top-card UX — restoring
- * state visible immediately, success state appears, save CTA returns
- * once the op auto-dismisses.
- *
- * Its distinct coverage is the picker-bridge → `pickerStartBackgroundOp` →
- * `_activeOperationStatus` broadcast → inline SnapshotsView op-card UX.
- *
- * The install is NOT running here (no ComfyUI process) so we don't hit the
- * IN_PLACE_RELAUNCH leg — the op completes in place and we observe just
- * the op-card terminal states. The actual git-checkout work is identical
- * to the earlier test; we don't re-assert HEAD movement (that's covered).
- */
 test('picker-driven restore surfaces inline op-card + auto-dismisses on success @lifecycle', async () => {
   test.setTimeout(120_000)
 
-  // Target the seeded `current-state` snapshot (commit B). It was seeded
-  // with `skipPipSync: true` BEFORE app launch, so no fixture mutation
-  // happens mid-run - and since the earlier restore left HEADs on commit
-  // A, restoring it gives the op real git checkout work (A -> B). Real
-  // pip sync remains uncovered here (no Python env in this fixture); see
-  // the file header.
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
   )
@@ -350,31 +294,22 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
-  // Expand the target row, click Restore, accept the confirm modal.
   await popup.waitForSelector(byTestId(TID.snapshotRow(target!.filename)), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.snapshotRow(target!.filename)))).toBe(true)
   await popup.waitForVisible(byTestId(TID.snapshotRowRestore(target!.filename)), { timeout: 10_000 })
   expect(await popup.click(byTestId(TID.snapshotRowRestore(target!.filename)))).toBe(true)
 
-  // SnapshotsView's confirm path: rich-confirm when the snapshot has a
-  // change summary, BaseAlert when not — accept either.
   const confirmSelector = '[data-testid="modal-confirm-button"], [data-testid="base-alert-action"]'
   await popup.waitForVisible(confirmSelector, { timeout: 15_000 })
   expect(await popup.click(confirmSelector)).toBe(true)
 
-  // The inline op-card replaces the dashed "Save New Snapshot" slot at
-  // the top of the rail. Wait for it to appear (in-flight state is the
-  // first variant rendered).
   await popup.waitForVisible(byTestId(TID.snapshotsOpCard), { timeout: 15_000 })
 
-  // Fast local restores may already be latched in success by the first read.
   const labelText = await popup.evaluate<string>(
     `document.querySelector('.snapshots-rail-node.is-save .snapshots-rail-label')?.textContent ?? ''`,
   )
   expect(labelText.trim()).toMatch(/Restoring snapshot|Snapshot restored/i)
 
-  // Poll until the success state lands (the card grows the
-  // `.is-op-success` border + the header reads "Snapshot restored").
   await expect
     .poll(
       async () =>
@@ -385,7 +320,6 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
     )
     .toBe(true)
 
-  // After the 1.8s success latch, the card clears and the Save CTA returns.
   await expect
     .poll(
       async () =>
@@ -396,7 +330,6 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
     )
     .toBe(true)
 
-  // The op card is gone after the auto-dismiss.
   expect(
     await popup.evaluate<boolean>(
       `!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`,

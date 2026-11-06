@@ -57,10 +57,6 @@ test.beforeAll(async () => {
     ]
   })
   popup = titlePopupPage(ctx.app)
-  // settings.json lives in the main process's configDir(): XDG config on
-  // Linux, Electron userData elsewhere (which on macOS resolves outside the
-  // harness's isolated home dir). Ask the app once rather than guessing the
-  // layout; later evaluate calls can race popup navigations.
   settingsDir = await evalWithRetry(() => ctx.app.evaluate(({ app }) => {
     if (process.platform !== 'linux') return app.getPath('userData')
     const base = process.env.XDG_CONFIG_HOME || `${app.getPath('home')}/.config`

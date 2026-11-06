@@ -105,7 +105,6 @@ function formatDuration(value: number): string {
 
 export const MAX_BENCHMARK_COMPARISON_EXPORT_RUNS = 20
 
-/** Create a self-contained SVG containing the selected benchmark comparison. */
 export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData): string {
   if (data.runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) {
     throw new Error(

@@ -16,9 +16,7 @@ const props = withDefaults(
     delayMs?: number
     disabled?: boolean
     interactive?: boolean
-    /** Stays open when the trigger is clicked, for triggers that only explain something. */
     keepOpenOnClick?: boolean
-    /** Asked each time the tooltip is about to open, for conditions only measurable then. */
     shouldOpen?: () => boolean
   }>(),
   {

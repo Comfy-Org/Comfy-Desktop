@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Integration test for the delete path's browser-partition cleanup. Runs the
-// real handleDelete + deleteBrowserPartition against a seeded install tree and
-// a tmp userData/Partitions dir, asserting unique partitions are removed (and
-// their session cleared) while shared partitions are left untouched.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -94,7 +90,6 @@ function invokeDelete(id: string, inst: InstallationRecord) {
 function seedInstall(installPath: string, id: string): void {
   fs.mkdirSync(installPath, { recursive: true })
   fs.writeFileSync(path.join(installPath, MARKER_FILE), id)
-  // A little content so deleteDir has something to walk.
   fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
   fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), '# stub\n')
 }
@@ -177,9 +172,6 @@ describe('handleDelete browser-partition cleanup', () => {
   })
 
   it('removes a per-install partition dir even after the setting was toggled to shared', async () => {
-    // browserPartition is user-editable: an install created as 'unique' (which
-    // already created Partitions/<id>) can later read as 'shared'. Its own dir
-    // must still be cleaned up on delete, while persist:shared is untouched.
     const id = 'inst-toggled'
     const installPath = path.join(tmpRoot, 'toggled-install')
     seedInstall(installPath, id)
@@ -230,9 +222,7 @@ describe('handleDelete browser-partition cleanup', () => {
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(installPath)).toBe(false)
-    // Record removal must not depend on partition cleanup succeeding.
     expect(installationsStore.has(id)).toBe(false)
-    // rm still runs even though clearStorageData rejected.
     expect(fs.existsSync(partitionDir(id))).toBe(false)
   })
 
@@ -286,7 +276,7 @@ describe('sweepOrphanPartitions', () => {
     seedPartition('inst-orphan-1')
     seedPartition('inst-orphan-2')
     seedPartition('shared')
-    seedPartition('some-other-session') // not install-id shaped
+    seedPartition('some-other-session')
 
     sweepOrphanPartitions(new Set(['inst-keep-1', 'inst-keep-2']))
 
@@ -294,7 +284,6 @@ describe('sweepOrphanPartitions', () => {
     expect(fs.existsSync(partitionDir('inst-keep-2'))).toBe(true)
     expect(fs.existsSync(partitionDir('inst-orphan-1'))).toBe(false)
     expect(fs.existsSync(partitionDir('inst-orphan-2'))).toBe(false)
-    // Never touch the shared bucket or anything not install-id shaped.
     expect(fs.existsSync(partitionDir('shared'))).toBe(true)
     expect(fs.existsSync(partitionDir('some-other-session'))).toBe(true)
   })

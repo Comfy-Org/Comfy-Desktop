@@ -1,9 +1,3 @@
-/**
- * E2E: instance/window navigation matrix — cloud-target deltas.
- *
- * Pins the dashboard cloud target's "Open in new window" picker action via
- * recorded IPC + window count. No real cloud attach or network is needed.
- */
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
@@ -67,10 +61,6 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-// Tagged platform, not @lifecycle: the cloud install is a seeded record,
-// sessions are cleared via a dev hook, and the assertion is IPC + window
-// count - synthetic navigation coverage, not a real cloud attach flow
-// (that is lifecycle-cloud.test.ts).
 test('cloud target with no window: opens a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
   await openCloudInNewWindow()

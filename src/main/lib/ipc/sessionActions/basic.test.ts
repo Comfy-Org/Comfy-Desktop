@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the ../shared surface handleRename touches so the test needs no
-// Electron runtime or datastore.
 const hasNameConflict = vi.fn<(id: string, name: string) => Promise<boolean>>()
 const update = vi.fn<(id: string, data: Record<string, unknown>) => Promise<unknown>>()
 

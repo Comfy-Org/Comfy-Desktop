@@ -14,28 +14,12 @@ interface ActiveSession {
 interface ErrorInstance {
   installationName: string
   exitCode?: number | string
-  /** POSIX signal name (e.g. `'SIGKILL'`) when the ComfyUI child process
-   *  was killed by signal. Absent on a normal crash with a non-zero exit
-   *  code and on Windows TerminateProcess paths. */
   signal?: string
   message?: string
-  /** Scrubbed tail of the failed process's stderr, if main captured one
-   *  (only set on `crashed=true` exits — operation failures stay
-   *  message-only). The lifecycle view renders this inline so the user
-   *  doesn't have to dig into the log file to see what blew up. */
   lastStderr?: string
-  /** Hex form of a Windows native-crash exit code (e.g. `'0xC0000005'`), shown
-   *  next to the raw decimal so the code is decipherable. Absent for plain
-   *  application exits. */
   exitCodeHex?: string
-  /** Recognised native-crash flavour (e.g. `'access-violation'`) used to pick
-   *  more specific, actionable crash copy. */
   crashKind?: CrashKind
-  /** VC++ runtime DLLs found missing on a Windows access-violation crash;
-   *  non-empty drives the "repair the redistributable" hint. */
   vcRuntimeMissing?: string[]
-  /** Wall-clock ms when the crash was first recorded. Used to measure
-   *  crash-to-relaunch latency on `comfy.desktop.instance.relaunched_after_crash`. */
   crashedAtMs?: number
 }
 
@@ -45,28 +29,15 @@ export const useSessionStore = defineStore('session', () => {
   const activeSessions = reactive(new Map<string, ActiveSession>())
   const errorInstances = reactive(new Map<string, ErrorInstance>())
   const stoppingInstances = reactive(new Set<string>())
-  /** Installs with an action in flight on main (`operation-changed`), keyed by
-   *  install id. Unlike `activeSessions` (window-local, set by this window's
-   *  progressStore) this covers operations started from ANY window - e.g. an
-   *  update fired from the picker popup - so the dashboard can reflect them. */
   const operationInstances = reactive(new Map<string, { actionId: string }>())
   const stoppingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   const sessions = reactive(new Map<string, SessionBuffer>())
 
-  /** Flips to `true` after the first `init()` completes (running-instance
-   *  hydration + IPC subscriptions wired). Views that key off the
-   *  derived lifecycle state — most importantly `ComfyLifecycleView` —
-   *  must gate their default render branches on this so they don't
-   *  flash the 'stopped' card during the brief window between mount and
-   *  hydration. Before `ready` flips, the maps are empty and lifecycle
-   *  state would compute `'stopped'` even when an auto-launch is about
-   *  to fire. */
   const ready = ref(false)
 
   const runningTabCount = computed(() => activeSessions.size + runningInstances.size)
   const hasErrors = computed(() => errorInstances.size > 0)
 
-  // Track IPC unsubscribe functions for cleanup
   const cleanups: (() => void)[] = []
 
   function isRunning(installationId: string): boolean {
@@ -90,9 +61,6 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /** Mark an install as stopping with a safety auto-clear, in case the
-   *  matching `instance-stopped` is missed (window opened mid-stop, etc.).
-   *  Idempotent — resets the timer rather than stacking timeouts. */
   function markStopping(installationId: string): void {
     stoppingInstances.add(installationId)
     const existing = stoppingTimeouts.get(installationId)
@@ -121,7 +89,6 @@ export const useSessionStore = defineStore('session', () => {
     sessions.delete(installationId)
   }
 
-  // Session buffer methods
   function startSession(installationId: string): void {
     sessions.set(installationId, { output: '', exited: false })
   }
@@ -145,26 +112,18 @@ export const useSessionStore = defineStore('session', () => {
       sessions.set(installationId, session)
     }
 
-    // Handle carriage returns (\r) used by tqdm-style progress bars.
-    // A \r means "return to the start of the current line", so text after
-    // a \r should replace everything after the last \n in the output.
-    // Split on bare \r (not followed by \n) to handle tqdm-style progress bars.
-    // Windows CRLF (\r\n) must be preserved as a normal newline.
     const parts = text.split(/\r(?!\n)/)
     for (let i = 0; i < parts.length; i++) {
       const segment = parts[i]!
       if (i === 0) {
-        // First segment: always append (no preceding \r)
         session.output += segment
       } else if (segment.length > 0) {
-        // After a bare \r: overwrite from the last newline
         const lastNewline = session.output.lastIndexOf('\n')
         session.output = session.output.slice(0, lastNewline + 1) + segment
       }
     }
   }
 
-  /** Initialize IPC listeners once from the panel entry point. */
   async function init(): Promise<void> {
     dispose()
     const instances = await window.api.getRunningInstances()
@@ -172,10 +131,6 @@ export const useSessionStore = defineStore('session', () => {
       runningInstances.set(inst.installationId, inst)
     }
 
-    // Hydrate in-flight launches too — a window opened mid-launch missed the
-    // one-shot `instance-launching` broadcast, so without this snapshot its
-    // dashboard would show no "Starting…" pill. Skip ids already running (the
-    // launch finished between the two snapshots).
     const launching = (await window.api.getLaunchingInstances?.()) ?? []
     for (const inst of launching) {
       if (!runningInstances.has(inst.installationId)) {
@@ -183,25 +138,14 @@ export const useSessionStore = defineStore('session', () => {
       }
     }
 
-    // Hydrate in-flight stops so a window opened mid-stop shows "Stopping…".
-    // No running-guard: an install briefly appears in both sets during the
-    // stop, and stopping should win.
     const stopping = (await window.api.getStoppingInstances?.()) ?? []
     for (const id of stopping) markStopping(id)
 
-    // Hydrate in-flight operations so a window opened mid-operation (e.g. an
-    // update running from the picker popup) shows the busy state instead of
-    // missing the one-shot `operation-changed` broadcast.
     const activeOps = (await window.api.getActiveOperations?.()) ?? []
     for (const op of activeOps) {
       operationInstances.set(op.installationId, { actionId: op.actionId })
     }
 
-    // Hydrate retained crashes so a freshly-opened dashboard shows error tiles
-    // for crashes that happened before it existed. Op-failure errors are
-    // renderer-owned and not covered here. Skip running /
-    // launching ids — the crash buffer clears on relaunch, but guard
-    // defensively so an in-flight launch shows "Starting…", not a stale crash.
     const crashes = (await window.api.getCrashInstances?.()) ?? []
     for (const c of crashes) {
       if (!runningInstances.has(c.installationId) && !launchingInstances.has(c.installationId)) {
@@ -222,9 +166,6 @@ export const useSessionStore = defineStore('session', () => {
       window.api.onInstanceLaunching(
         (data: { installationId: string; installationName: string }) => {
           launchingInstances.set(data.installationId, { installationName: data.installationName })
-          // A new launch supersedes any prior crash — clear the error so the
-          // dashboard tile drops its red/error state (main already cleared its
-          // crash buffer at launch start via `clearCrash`).
           errorInstances.delete(data.installationId)
         }
       ),
@@ -234,8 +175,6 @@ export const useSessionStore = defineStore('session', () => {
       window.api.onInstanceStarted((data: RunningInstance) => {
         launchingInstances.delete(data.installationId)
         runningInstances.set(data.installationId, data)
-        // Backstop in case the `instance-launching` broadcast was missed
-        // (window opened mid-launch, etc.) — a running instance is not errored.
         errorInstances.delete(data.installationId)
       }),
       window.api.onInstanceStopped((data: { installationId: string }) => {
@@ -245,7 +184,6 @@ export const useSessionStore = defineStore('session', () => {
       window.api.onInstanceStopping((data: { installationId: string }) => {
         markStopping(data.installationId)
       }),
-      // Guarded - a slimmer api shim (picker popup) may not forward this.
       window.api.onOperationChanged?.(
         (data: { installationId: string; actionId: string; active: boolean }) => {
           if (data.active) {
@@ -270,9 +208,6 @@ export const useSessionStore = defineStore('session', () => {
           session.output += `\n\n--- ${msg} ---\n`
         }
       }),
-      // Crash error state is driven off the `instance-crashed` broadcast (not
-      // the sender-only `comfy-exited`) so a dashboard window that didn't
-      // launch the instance still turns its tile red live.
       window.api.onInstanceCrashed((data: ComfyExitedData) => {
         errorInstances.set(data.installationId, {
           installationName: data.installationName,

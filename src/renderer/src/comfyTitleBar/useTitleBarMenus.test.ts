@@ -17,9 +17,6 @@ interface Bridge {
   onDownloadsChanged: (cb: (s: unknown) => void) => () => void
 }
 
-/** Mount the composable in a throwaway host so its `onMounted` bridge
- *  subscriptions fire, then drive it via the captured menu-opened/closed
- *  callbacks the title bar would receive from main. */
 function setup() {
   const opened: ((info: { menu: TitleMenuKind }) => void)[] = []
   const closed: ((info: { menu: TitleMenuKind }) => void)[] = []

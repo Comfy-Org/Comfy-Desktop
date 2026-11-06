@@ -32,7 +32,6 @@ test('Electron keeps app state, sessions and user folders inside the test profil
     expect(await canonicalPath(actual.userData)).toBe(profile)
     expect(await canonicalPath(actual.sessionData)).toBe(profile)
     expect(await canonicalPath(actual.logs)).toContain(home)
-    // Windows cannot resolve its Downloads folder inside a redirected profile.
     if (process.platform !== 'win32') {
       const user = await handle.application.evaluate(({ app }) => ({
         home: app.getPath('home'),

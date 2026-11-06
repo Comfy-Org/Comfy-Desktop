@@ -5,40 +5,16 @@ export interface LockingProcess {
   name: string
 }
 
-/** Why a probe never produced a list of holders. */
-export type LockProbeFailure =
-  /** The platform tool was still running when `TIMEOUT_MS` killed it. */
-  | 'timeout'
-  /** The platform tool could not be run at all (not installed, spawn failed). */
-  | 'unavailable'
+export type LockProbeFailure = 'timeout' | 'unavailable'
 
-/**
- * Outcome of one lock probe.
- *
- * `ok: true` means the probe ran to completion and named who it found, so an
- * empty `processes` means it looked and named nobody. That is as strong as the
- * platform tools allow: `lsof` reports an unreadable `/proc` entry or a denied
- * permission with the same exit status it uses for a clean no-match, so a
- * determined-empty answer is "nothing it could see holds the file".
- *
- * `ok: false` means the probe never got that far, which is a different thing
- * entirely and must not be reported to the user as "nothing is using it".
- */
 export type LockProbeResult =
   | { ok: true; processes: LockingProcess[] }
   | { ok: false; reason: LockProbeFailure }
 
 const TIMEOUT_MS = 10000
 
-/**
- * Processes holding a lock on `filePath`.
- *
- * Still best-effort - it can fail to get an answer - but it reports that
- * failure instead of folding it into an empty list.
- */
 export function findLockingProcesses(
   filePath: string,
-  /** The probe's cap; tests on a loaded machine pass a longer one. */
   timeoutMs: number = TIMEOUT_MS
 ): Promise<LockProbeResult> {
   if (process.platform === 'win32') {
@@ -47,62 +23,28 @@ export function findLockingProcesses(
   return findLockingProcessesUnix(filePath, timeoutMs)
 }
 
-/**
- * Printed by the Windows script when a Restart Manager call fails. The script
- * reports "nobody holds this file" as empty output, so without a distinct
- * token a failed API call is indistinguishable from a clean answer - and the
- * process still exits 0, which puts it out of reach of any exit-code check.
- */
 const WINDOWS_PROBE_FAILED = '__RM_QUERY_FAILED__'
 
-/**
- * Separate "the tool answered, and the answer is empty" from "we never got an
- * answer". Returns `null` for the former.
- *
- * A kill - the `TIMEOUT_MS` cap, or an outside signal - and a spawn failure,
- * which surfaces as a string `code` such as `ENOENT` rather than an exit
- * status, mean the same thing on both platforms. What an *exit status* means
- * does not, so each platform decides that for itself below.
- */
 function classifyCommonFailure(err: ExecFileException): LockProbeFailure | null {
-  // Order matters. A `maxBuffer` overflow also arrives `killed: true`, so
-  // checking the kill first would file it under the 10s cap and put a wrong
-  // reason in the caller's log. Our own timeout kill carries no string `code`,
-  // so letting that test win first costs it nothing. A signal from outside is
-  // genuinely indistinguishable from our own and stays 'timeout'.
   if (typeof err.code === 'string') return 'unavailable'
   if (err.killed === true || err.signal) return 'timeout'
   return null
 }
 
-/**
- * `lsof` exits 1 when it simply matches nothing, so that one status is a real
- * answer and the ordinary unlocked-file path arrives here as an error.
- * Treating every error as a failure would make every successful delete claim
- * the lock check broke. Any *other* status is unexplained, and guessing that
- * it means "empty" is the very conflation this module exists to remove.
- */
 function classifyUnixFailure(err: ExecFileException): LockProbeFailure | null {
   const common = classifyCommonFailure(err)
   if (common) return common
   return err.code === 1 ? null : 'unavailable'
 }
 
-/**
- * PowerShell has no "found nothing" exit status - a probe that ran reports
- * emptiness in its output and exits 0 - so unlike `lsof` every nonzero exit
- * here is a script that did not complete, whatever its code.
- */
 function classifyWindowsFailure(err: ExecFileException): LockProbeFailure {
   return classifyCommonFailure(err) ?? 'unavailable'
 }
 
-// Windows: query the built-in Restart Manager API via inline C# in PowerShell.
 function findLockingProcessesWindows(
   filePath: string,
   timeoutMs: number
 ): Promise<LockProbeResult> {
-  // Escape single quotes for PowerShell string embedding.
   const escaped = filePath.replace(/'/g, "''")
   const script = `
 $code = @'
@@ -176,11 +118,7 @@ Add-Type -TypeDefinition $code
       { timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyWindowsFailure(err) : null
-        // A timeout kill can leave a partial scan behind. Reporting those
-        // names as the answer would swap one half-truth for another.
         if (failure === 'timeout') return resolve({ ok: false, reason: failure })
-        // The script ran and told us its query broke - a case no exit status
-        // reaches, since PowerShell itself succeeded.
         if (stdout.trim() === WINDOWS_PROBE_FAILED) {
           return resolve({ ok: false, reason: 'unavailable' })
         }
@@ -192,8 +130,6 @@ Add-Type -TypeDefinition $code
   })
 }
 
-// Linux/macOS: `lsof -F pc` gives machine-readable "p<pid>" / "c<command>"
-// line pairs, avoiding the column-shift parsing issues of the default format.
 function findLockingProcessesUnix(filePath: string, timeoutMs: number): Promise<LockProbeResult> {
   return new Promise((resolve) => {
     execFile(
@@ -202,13 +138,8 @@ function findLockingProcessesUnix(filePath: string, timeoutMs: number): Promise<
       { timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyUnixFailure(err) : null
-        // A timeout kill can leave a partial scan in `stdout`. Reporting those
-        // names as the answer would just swap one half-truth for another, so
-        // drop them and say the probe did not finish.
         if (failure === 'timeout') return resolve({ ok: false, reason: failure })
         const processes = parseLsofOutput(stdout)
-        // An unexplained exit that still named holders did find something real;
-        // only one with nothing to show means we never got an answer.
         if (failure && processes.length === 0) return resolve({ ok: false, reason: failure })
         resolve({ ok: true, processes })
       }
@@ -216,7 +147,6 @@ function findLockingProcessesUnix(filePath: string, timeoutMs: number): Promise<
   })
 }
 
-/** `pid\tname` rows, one per holder. */
 function parseRestartManagerOutput(stdout: string): LockingProcess[] {
   const results: LockingProcess[] = []
   for (const line of stdout.trim().split('\n')) {
@@ -230,8 +160,6 @@ function parseRestartManagerOutput(stdout: string): LockingProcess[] {
   return results
 }
 
-/** `lsof -F pc` output: "p<pid>" / "c<command>" line pairs, deduplicated by
- *  pid so a process holding the file through several fds is named once. */
 function parseLsofOutput(stdout: string): LockingProcess[] {
   const results: LockingProcess[] = []
   const seen = new Set<number>()

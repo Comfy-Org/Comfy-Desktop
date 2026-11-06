@@ -1,11 +1,4 @@
 // @vitest-environment node
-/**
- * Integration tests for the envelope commit gating in
- * `restoreSnapshotIntoInstallation` (fresh-install migration restore): the
- * imported envelope commits only when the recorded state was provably
- * reached. Legacy partial torch records compare tag-aware (+cpu vs +cu121),
- * and unverifiable protected drift blocks the commit and is disclosed.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -17,7 +10,6 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
 }))
 
-// Modules imported by standaloneMigration but unused on the restore path.
 vi.mock('./gpu', () => ({ detectGPU: vi.fn() }))
 vi.mock('./download', () => ({ download: vi.fn() }))
 vi.mock('./cache', () => ({ createCache: vi.fn() }))
@@ -150,15 +142,11 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
       comfyui: { commit: 'abc1234' },
       pipPackages: [],
       skipPipSync: true,
-      // Legacy partial record: torch alone, with a CPU local tag. Under the
-      // old publicVersion comparison this wrongly matched the +cu121 install.
       torchStack: { kind: 'observed', torchVersion: '2.4.1+cpu' }
     })
 
     await restoreSnapshotIntoInstallation(entry, stagedFile, false, tools(), async () => {})
 
-    // The restore succeeds (fresh installs adapt), but the recorded state was
-    // not reached: the substitution is disclosed and nothing is committed.
     expect(outputs.join('')).toContain('pytorchSnapshotObservedSkip')
     expect(snapshotsMock.importSnapshots).not.toHaveBeenCalled()
     expect(snapshotsMock.ensureCurrentSnapshotOnTop).toHaveBeenCalled()

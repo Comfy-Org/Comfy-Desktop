@@ -17,12 +17,6 @@ function flatten(obj: Tree, prefix = ''): Map<string, string> {
   return out
 }
 
-/**
- * en.json is the single source of truth for content. zh.json must translate
- * every en key (with `_label` exempt — it's the language's own display name).
- * The renderer falls back to en for any gap, but a missing key here means
- * untranslated UI for zh users, so the gap is a hard failure, not a warning.
- */
 describe('locale coverage', () => {
   const enKeys = flatten(en as Tree)
   const zhKeys = flatten(zh as Tree)

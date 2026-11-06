@@ -5,18 +5,12 @@ import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import { TID } from '../../../../shared/testIds'
 import type { Installation } from '../../types/ipc'
 
-// Compact list-row for the picker's left pane. Body click emits `select`
-// (updates the right detail pane only; doesn't launch).
-
 interface Props {
   installation: Installation
   active?: boolean
   running?: boolean
-  /** Install whose host window opened the picker; drives the "Current" pill. */
   isCurrent?: boolean
-  /** Drives the orange dot, which takes precedence over the green running dot. */
   updateAvailable?: boolean
-  /** Background op in flight; spinner dot takes precedence over the other dots. */
   operating?: boolean
   lastLaunchedShortLabel: string
 }

@@ -26,13 +26,9 @@ interface Props {
   installation: Installation
   showFreeRunsPill?: boolean
   showWhyCloud?: boolean
-  /** Override runtime lifecycle presentation for surfaces that own separate sessions. */
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
-  /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
-  /** True while Desktop captures this instance and creates its workspace draft. */
   isPromotingToWorkspace?: boolean
-  /** Hide the card's context/kebab menu while keeping inline action pills enabled. */
   showMenu?: boolean
 }
 
@@ -72,10 +68,6 @@ const isStopping = computed(() =>
     ? sessionStore.isStopping(inst.value.id)
     : props.lifecycleStatus === 'stopping'
 )
-/* A managed update flips the record to status 'updating'; a standalone
- * update never touches the record and is only visible through main's
- * operation broadcast. Key on both so the tile reports "Updating" the same
- * way for either kind, regardless of which window started the update. */
 const isUpdating = computed(() => {
   if (inst.value.status === 'updating') return true
   const op = sessionStore.operationInstances.get(inst.value.id)
@@ -87,9 +79,6 @@ const hasError = computed(() =>
     : props.lifecycleStatus === 'error'
 )
 
-/* Backend-flagged problem states (failed install, interrupted delete, missing
- * install folder) carry a `danger` statusTag. Surface it as a static red pill —
- * distinct from a live crash (`hasError`), which owns the clickable error badge. */
 const dangerTag = computed(() =>
   inst.value.statusTag?.style === 'danger' ? inst.value.statusTag : null
 )
@@ -101,8 +90,6 @@ const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
-/* Lifecycle -> status chip. Stopping wins over launching wins over running; an
- * idle tile gets no chip. An errored tile shows the clickable error chip instead. */
 const statusPill = computed<{
   label: string
   markerClass: string
@@ -150,25 +137,17 @@ const showWhyCloudTrigger = computed(
 )
 
 const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
-// The backend tags every migratable install (Legacy Desktop, portable, git)
-// with a `migrate` status tag — mirror `hasUpdate` rather than special-casing
-// a single source.
 const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate')
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
-/** Wears the build glyph rather than its install-type icon, so a build keeps
- *  one identity whether it's installed or still a card. */
 const isFromBuild = computed(() => isBuildInstall(inst.value))
 
 const buildVersion = computed(() =>
   typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
 )
 
-/** Desktop's listPreview is the bare installPath (useless as a label), so fall
- *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
-  // The path is noise on a tile whose identity is the build.
   if (isFromBuild.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
@@ -177,7 +156,6 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-/** Labelled ("Build v7") so it can't be read as the ComfyUI version beside it. */
 const trailingFact = computed(() =>
   isFromBuild.value
     ? buildVersion.value
@@ -186,16 +164,12 @@ const trailingFact = computed(() =>
     : inst.value.version || ''
 )
 
-/** Build installs show the ComfyUI version followed by the Build version;
- *  everything else shows the source followed by its version. */
 const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
 
-/** The single update/migrate affordance, or null when the install has neither.
- *  The Update tooltip surfaces the target version the bare pill hides. */
 const actionPill = computed(() => {
   if (isUpdating.value) return null
   if (hasUpdate.value)
@@ -252,8 +226,6 @@ function handleContextMenu(event: MouseEvent): void {
   emit('open-card-menu', event, inst.value)
 }
 
-/** Fire an action pill's emit, no-op while REQUIRES_STOPPED actions are gated.
- *  Shared by the update + migrate pills' click / enter / space handlers. */
 function triggerInstallAction(action: 'update' | 'migrate'): void {
   if (props.isStoppedActionGated) return
   emit('trigger-action', action, inst.value)

@@ -253,8 +253,6 @@ describe('firebaseAuthIdentity consensus', () => {
       via: 'desktop_login_code'
     })
 
-    // The attribution is staged with telemetry at bind time; the stale
-    // pre-login report is superseded, not trusted: no identify yet.
     expect(telemetry.stageLoginAttribution).toHaveBeenCalledWith('F', {
       via: 'desktop_login_code'
     })
@@ -277,12 +275,9 @@ describe('firebaseAuthIdentity consensus', () => {
     vi.clearAllMocks()
 
     bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents())
-    // The injected session reaches the pre-reload document via Firebase's
-    // cross-tab sync; its report affirms the UID Desktop itself verified.
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
 
-    // The reload still happens; the final document produces no second identify.
     reporter.navigate('https://cloud.comfy.org/workspaces/final')
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
@@ -305,8 +300,6 @@ describe('firebaseAuthIdentity consensus', () => {
       userId: 'other'
     })
 
-    // A fresher session in the document outranks Desktop's verification; a
-    // single resolved reporter is not a conflict, so the epoch stays clean.
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
     expect(telemetry.markAnonymousEpochUnmergeable).not.toHaveBeenCalled()
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('other')
@@ -338,8 +331,6 @@ describe('firebaseAuthIdentity consensus', () => {
     reporter.failProvisionalNavigation(reloadUrl)
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
 
-    // The injected session is already in IndexedDB, so the surviving
-    // pre-reload document observes it and reports the new UID.
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
@@ -353,9 +344,6 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
     vi.clearAllMocks()
 
-    // The injected script reloads the document before executeJavaScript
-    // resolves, so the navigation can start before the bind runs and snapshot
-    // the stale pre-login signed_out report as the recoverable state.
     const reloadUrl = 'https://cloud.comfy.org/workspaces/final'
     reporter.startNavigation(reloadUrl)
     bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents(), {
@@ -384,7 +372,6 @@ describe('firebaseAuthIdentity consensus', () => {
     vi.clearAllMocks()
 
     reporter.startNavigation(localUrl)
-    // Late IPC from a replaced document: the frame matches no accepted slot.
     recordFirebaseAuthState(
       reporter.asWebContents(),
       { processId: 999, routingId: 999 },
@@ -456,8 +443,6 @@ describe('firebaseAuthIdentity consensus', () => {
       expect(telemetry.releaseFirebasePendingConsensus).not.toHaveBeenCalled()
 
       vi.advanceTimersByTime(1)
-      // An unresolved reporter is no evidence of sign-out: the identity stays
-      // bound and only the write quarantine ends.
       expect(telemetry.releaseFirebasePendingConsensus).toHaveBeenCalledTimes(1)
       expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
       expect(telemetry.capture).toHaveBeenCalledWith(
@@ -476,14 +461,12 @@ describe('firebaseAuthIdentity consensus', () => {
       expect(telemetry.releaseFirebasePendingConsensus).toHaveBeenCalledTimes(1)
       vi.clearAllMocks()
 
-      // Still the same wedged episode: commit re-runs reconcile while pending.
       reporter.commitNavigation(cloudUrl)
       expect(telemetry.applyFirebasePendingConsensus).not.toHaveBeenCalled()
 
       reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
       expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
 
-      // A fresh navigation after resolution quarantines (and arms) again.
       vi.clearAllMocks()
       reporter.startNavigation(cloudUrl)
       expect(telemetry.applyFirebasePendingConsensus).toHaveBeenCalled()
@@ -502,8 +485,6 @@ describe('firebaseAuthIdentity consensus', () => {
       vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
       vi.clearAllMocks()
 
-      // Logout and account changes in a healthy window must detach and rebind identity
-      // even when another window cannot report.
       reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_out' })
       expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
 
@@ -524,8 +505,6 @@ describe('firebaseAuthIdentity consensus', () => {
       reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_out' })
       expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
 
-      // Resolving detaches and discards held writes; releasing would replay
-      // them under the user who already logged out.
       telemetry.isFirebaseConsensusPending.mockReturnValue(false)
       vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
       expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
@@ -919,9 +898,6 @@ describe('firebaseAuthIdentity consensus', () => {
     reporter.startNavigation(flakyUrl)
     reporter.failProvisionalNavigation(flakyUrl)
 
-    // Commit a later navigation without changing the main-frame identity, as
-    // same-process navigations do (the FakeWebContents helper always rotates
-    // routing ids, so emit the commit directly).
     reporter.startNavigation(cloudUrl)
     reporter.emit(
       'did-frame-navigate',
@@ -936,7 +912,6 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
     vi.clearAllMocks()
 
-    // A later cancellation for the same URL and frame still settles.
     reporter.startNavigation(flakyUrl)
     reporter.failProvisionalNavigation(flakyUrl)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
@@ -966,22 +941,18 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(reporter)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
-    // Canceling with no in-flight report re-binds the retained signed-in state.
     reporter.startNavigation('https://cloud.comfy.org/workspaces/canceled')
     vi.clearAllMocks()
     reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/canceled')
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
 
-    // A report from the retained document during a later in-flight load
-    // updates its latest auth state without applying it yet…
     reporter.startNavigation('https://cloud.comfy.org/workspaces/canceled-again')
     vi.clearAllMocks()
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
     expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
 
-    // …so this cancel settles to that latest state, not the old signed-in bind.
     reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/canceled-again')
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
   })
@@ -1162,9 +1133,6 @@ describe('firebaseAuthIdentity consensus', () => {
   })
 })
 
-// The reconciled outcome, published rather than only spent on telemetry side effects. Anything
-// that needs to know WHICH ACCOUNT this process is serving reads it from here; `staffFlagTargeting`
-// is the first such consumer, and its own suite covers what it does with each outcome.
 describe('firebaseAuthIdentity published consensus', () => {
   let published: FirebaseIdentityConsensus[] = []
   let unobserve: () => void = () => {}
@@ -1239,9 +1207,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('publishes unknown, NOT signed out, when the last contributor goes away', () => {
-    // The distinction the split exists for. Telemetry detaches on both — an in-memory binding
-    // with nobody left to affirm it should stop claiming events — but a consumer that PERSISTS
-    // the account must not read "every window closed" as "somebody signed out".
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
@@ -1254,9 +1219,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('stays unknown for a local view that was never signed into', () => {
-    // Its reports are untrusted until a main-verified sign-in scopes them, so it contributes
-    // nothing at all. "No auth store here" is not a vote that nobody is signed in — contrast the
-    // cloud view below, whose identical report IS a resolved sign-out.
     const local = new FakeWebContents('http://127.0.0.1:8188/')
     activate(local)
 
@@ -1273,8 +1235,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('publishes on change only', () => {
-    // `reconcile()` runs on every navigation event. An observer that re-read a page on each one
-    // would be a poll with extra steps.
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
@@ -1287,8 +1247,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('holds the last outcome when a tainted epoch defers the bind', () => {
-    // Publishing here would announce an account the process has not adopted: telemetry is held
-    // anonymous and a retry is expected.
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
     telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(true)
     telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(false)
@@ -1314,8 +1272,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('keeps reconciling when an observer throws', () => {
-    // An observer is a consumer, not a participant. One that fails must not take the identity
-    // engine down with it.
     const failing = observeFirebaseIdentityConsensus(() => {
       throw new Error('observer exploded')
     })
@@ -1342,8 +1298,6 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('names a main-verified view before its reporter has reported', () => {
-    // This process already believes that view holds the account, so it is a legitimate one to
-    // put a question to.
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
 
@@ -1354,25 +1308,17 @@ describe('firebaseAuthIdentity published consensus', () => {
   })
 
   it('drops a main-verified view whose document has moved to another origin', () => {
-    // `reconcile()` prunes this map on exactly this condition, and pruning happens ONLY in there.
-    // Naming a view that has moved would send a caller's question to — and make it trust an answer
-    // from — a page at a different origin. Defence in depth: every origin change observed here
-    // also runs `reconcile()`, so this guards the window rather than a reproduced live bug.
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
     bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
     expect(viewsReportingFirebaseUser('F')).toEqual([reporter.asWebContents()])
 
-    // Moves the document's URL without a commit, so no prune runs in between.
     reporter.navigate('https://elsewhere.example.com/page', true)
 
     expect(viewsReportingFirebaseUser('F')).toEqual([])
   })
 
   it('stops dispatching an outcome a nested publish has superseded', () => {
-    // An observer can synchronously re-enter `reconcile()`. The nested dispatch delivers the newer
-    // outcome to everybody; resuming the outer loop afterwards would hand the observers it had not
-    // reached a value that disagrees with `getFirebaseIdentityConsensus()`.
     const seen: string[] = []
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)

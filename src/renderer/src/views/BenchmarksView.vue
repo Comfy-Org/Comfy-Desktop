@@ -386,7 +386,6 @@ const comparisonSortOptions = computed<BaseSelectOption[]>(() => [
   ...comparisonMetricOptions.value
 ])
 const isRelativeView = computed(() => comparisonVisualization.value === 'relative')
-// Without an explicit pick, the baseline is the first column as displayed (sorted or manual).
 const effectiveComparisonBaselineId = computed(() =>
   selectedIds.value.has(comparisonBaselineId.value)
     ? comparisonBaselineId.value
@@ -677,8 +676,6 @@ async function loadBenchmarks(folderPath?: string): Promise<void> {
   }
 }
 
-/** Pick up runs finished while this page was off screen, leaving the current
- *  folder, selection and list in place. */
 async function syncBenchmarksOnReturn(): Promise<void> {
   if (loading.value) return
   const folderPath = benchmarksFolderPath.value
@@ -692,9 +689,7 @@ async function syncBenchmarksOnReturn(): Promise<void> {
     benchmarks.value = result.benchmarks
     const remainingIds = new Set(result.benchmarks.map(({ id }) => id))
     selectedOrderIds.value = selectedOrderIds.value.filter((id) => remainingIds.has(id))
-  } catch {
-    // The list on screen is still the last good read.
-  }
+  } catch {}
 }
 
 async function selectBenchmarksFolder(): Promise<void> {
@@ -1369,7 +1364,6 @@ onActivated(() => {
                     : t('benchmarks.durationRangeHint')
                 }}
               </p>
-              <!-- Rendered in both views so rows keep their position when toggling. -->
               <div
                 class="benchmarks__chart-axis mb-2 grid min-h-3.5 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 text-[10px] text-text-muted"
                 aria-hidden="true"

@@ -3,14 +3,9 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CloudUserTier, Installation } from '../types/ipc'
 
-/** Whether a Comfy Cloud offer may be shown, and how to open it. Every signal
- *  fails closed, so an unreachable flag service hides the offer rather than
- *  rendering a CTA we cannot stand behind. */
 export interface CloudGate {
   freeRunsEnabled: Ref<boolean>
   userTier: Ref<CloudUserTier>
-  /** True once the flag and tier both allow an offer AND a cloud installation
-   *  exists to launch. Never true before `resolve()` has run. */
   canOffer: ComputedRef<boolean>
   resolve: () => Promise<void>
   openCloud: () => Promise<boolean>
@@ -32,10 +27,7 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
   const userTier = ref<CloudUserTier>('unknown')
   const cloudInstall = ref<Installation | null>(null)
 
-  /** A miss re-reads through main, since the store is empty on a cold start. */
   async function findCloudInstall(): Promise<Installation | null> {
-    // `sourceId` is persisted; `sourceCategory` is decorated on by
-    // `getInstallations`. Matching either survives an early-hydrated store.
     const isCloud = (i: Installation): boolean =>
       i.sourceId === 'cloud' || i.sourceCategory === 'cloud'
     const fromStore = installationStore.installations.find(isCloud) ?? null
@@ -59,11 +51,6 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
     () => freeRunsEnabled.value && userTier.value === 'free' && cloudInstall.value !== null
   )
 
-  /** Opens Cloud in its own window, leaving this install untouched. Runs the
-   *  install's primary action rather than `openInstallWindow`, which only
-   *  focuses an open window and otherwise drops the user on the chooser. */
-  /** Shared so a double-click cannot fire two launches before the session
-   *  store reflects the first. */
   let launching: Promise<boolean> | null = null
 
   async function openCloud(): Promise<boolean> {

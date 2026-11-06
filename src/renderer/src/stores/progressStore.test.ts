@@ -13,12 +13,6 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
-// progressStore emits `comfy.desktop.op.result` via `emitTelemetryAction`,
-// which dispatches a CustomEvent on `window`. The `vi.stubGlobal('window',
-// …)` below replaces window with a plain object that drops prototype
-// methods like `dispatchEvent`, so stub the telemetry helper out — these
-// tests cover op lifecycle, not telemetry dispatch. `toErrorBucket` is
-// kept real (pure function used inside the store's emit path).
 vi.mock('../lib/telemetry', async (importOriginal) => ({
   ...(await importOriginal<typeof TelemetryModule>()),
   emitTelemetryAction: vi.fn()
@@ -75,7 +69,7 @@ describe('useProgressStore', () => {
     })
 
     it('returns flat status and percent when no steps defined', () => {
-      const apiCall = () => new Promise<ActionResult>(() => {}) // never resolves
+      const apiCall = () => new Promise<ActionResult>(() => {})
       store.startOperation({
         installationId: 'inst-1',
         title: 'Install',
@@ -124,9 +118,6 @@ describe('useProgressStore', () => {
       op.activePhase = 'download'
       op.activePercent = 0
 
-      // Without an explicit status string from main, ambient consumers
-      // should see the registered step label rather than the dev-y phase
-      // slug. Phase id only surfaces when no label exists either.
       const info = store.getProgressInfo('inst-1')
       expect(info).toEqual({ status: 'Download', percent: 0 })
     })
@@ -353,9 +344,6 @@ describe('useProgressStore', () => {
     })
 
     it('does NOT stop ComfyUI when the op has already finished', async () => {
-      // Silent takeover→takeover overlay swaps fire `onCancel`
-      // indiscriminately. Stopping ComfyUI for a finished op would tear
-      // down the relaunched session (or the next op's session).
       let resolve: ((value: ActionResult) => void) | null = null
       store.startOperation({
         installationId: 'inst-1',
@@ -383,13 +371,8 @@ describe('useProgressStore', () => {
 
   describe('onErrorDetail subscription', () => {
     it('does not throw at construction when window.api.onErrorDetail is undefined', () => {
-      // The picker popup's `window.api` shim does not forward
-      // `onErrorDetail` (it's a panel-side IPC subscription, not a
-      // shim-routed call). A hard call would throw at store
-      // construction and silently blank the entire
-      // ComfyUISettingsContent right pane.
       const orig = window.api.onErrorDetail
-      // @ts-expect-error — testing the missing-method case the shim hits.
+      // @ts-expect-error
       window.api.onErrorDetail = undefined
       try {
         setActivePinia(createTestingPinia({ stubActions: false }))
@@ -451,7 +434,6 @@ describe('useProgressStore', () => {
         title: 'Standalone op',
         apiCall: () => new Promise<ActionResult>(() => {})
       })
-      // null (not undefined) so the Operation literal stays well-typed.
       expect(store.operations.get('inst-3')?.chainSpan).toBeNull()
     })
 
@@ -464,7 +446,7 @@ describe('useProgressStore', () => {
         chainSpan: 'launch'
       })
       expect(window.api.logsSnapshot).toHaveBeenCalledWith('inst-snap')
-      await Promise.resolve() // let the snapshot promise + its .then settle
+      await Promise.resolve()
       await Promise.resolve()
       expect(store.operations.get('inst-snap')?.terminalOutput).toBe('install-leg lines\n')
     })
@@ -481,9 +463,6 @@ describe('useProgressStore', () => {
     })
 
     it('caps the install leg of a chain at 0–70% of the continuous bar', () => {
-      // globalProgressFor now folds the install/launch split in directly: a
-      // chainSpan='install' op fills 0–70 (reserving 70–100 for the launch
-      // leg) so the two legs read as one continuous bar.
       store.startOperation({
         installationId: 'inst-4',
         title: 'Installing',
@@ -505,9 +484,6 @@ describe('useProgressStore', () => {
     })
 
     it('a finished+ok install leg reports 70, not 100 (chain hands off to launch)', () => {
-      // The install leg completing is NOT the end of the journey — capping it
-      // at the 70% boundary stops the bar flashing full before the launch leg
-      // ("Starting ComfyUI") takes over.
       store.startOperation({
         installationId: 'inst-5',
         title: 'Installing',

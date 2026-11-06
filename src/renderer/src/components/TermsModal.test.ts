@@ -4,12 +4,6 @@ import { createI18n } from 'vue-i18n'
 import TermsModal from './TermsModal.vue'
 import { LEGAL_DOCS, type LegalDocId } from '../lib/legalDocs'
 
-/**
- * `TermsModal` renders all four legal docs. Contract: the `doc` prop routes to
- * the matching `LEGAL_DOCS` entry, title/meta resolve from it, and `close`
- * emits on ESC / ✕ / overlay. Crossed routing = wrong doc (legal regression).
- */
-
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
@@ -36,7 +30,6 @@ async function mountModal(doc?: LegalDocId) {
     props: doc ? { doc } : {},
     global: {
       plugins: [i18n],
-      // Stub Teleport so content renders inside the wrapper for assertions.
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     }
   })
@@ -65,13 +58,11 @@ describe('TermsModal', async () => {
 
   it('emits `close` when the ✕ button is clicked', async () => {
     const wrapper = await mountModal('eula')
-    // The close button belongs to BaseModal.
     await wrapper.find('[data-testid="base-modal-close"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('renders block content from the routed doc (not from a stale fallback)', async () => {
-    // EULA §1 is "Definitions", ToS §1 is "Acceptance" — assert each shows its own.
     const eulaText = (await mountModal('eula')).find('.terms-body').text()
     const tosText = (await mountModal('tos')).find('.terms-body').text()
     expect(eulaText).toContain('1. Definitions')

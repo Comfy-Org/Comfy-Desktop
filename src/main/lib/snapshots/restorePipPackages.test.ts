@@ -1,9 +1,4 @@
 // @vitest-environment node
-/**
- * Rollback must preserve packages that were installed before the restore.
- * A malformed or incomplete freeze is not evidence that a package was absent;
- * only packages proven absent from site-packages may be uninstalled.
- */
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -52,7 +47,6 @@ import { pipFreeze, runUvPip } from '../pip'
 import type { Snapshot } from './types'
 import type { InstallationRecord } from '../../installations'
 
-// Paths the mocked env accessors hand back; assigned per test in beforeEach.
 let uvBinPath = ''
 let venvDirPath = ''
 let sitePackagesPath = ''
@@ -60,7 +54,6 @@ let tmpRoot = ''
 
 const installation = { id: 'test', installPath: '' } as unknown as InstallationRecord
 
-/** Write a package's `.dist-info` directory, as an installed package has. */
 function installOnDisk(name: string, version: string): void {
   const distInfo = path.join(
     sitePackagesPath,
@@ -84,7 +77,6 @@ function snapshotWith(pipPackages: Record<string, string>): Snapshot {
   }
 }
 
-/** Every `uv pip <verb>` invocation the run made, as recorded arg arrays. */
 function uvCalls(): string[][] {
   return vi.mocked(runUvPip).mock.calls.map((call) => call[1] as string[])
 }
@@ -145,23 +137,14 @@ describe('restorePipPackages', () => {
   })
 
   describe('the revert never uninstalls pre-existing packages', () => {
-    /**
-     * The freeze
-     * under-reports what is installed, so packages that are in fact present
-     * are planned as fresh installs. A later removal failure then triggers the
-     * revert. Those packages must survive it.
-     */
     const brokenFreezeSetup = (): Snapshot => {
       for (const name of ['aiohttp', 'filelock', 'numpy']) installOnDisk(name, '1.0.0')
-      // The freeze sees none of the installed packages, only an extra one.
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
       return snapshotWith({ aiohttp: '1.0.0', filelock: '1.0.0', numpy: '1.0.0' })
     }
 
     it('leaves packages that were already on disk alone when the restore fails', async () => {
       const target = brokenFreezeSetup()
-      // Installs succeed (they are no-ops in reality); every removal fails,
-      // exactly as uv rejected the mangled names in the bug report.
       vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
         (args as string[])[1] === 'uninstall' ? 1 : 0
       )
@@ -171,14 +154,11 @@ describe('restorePipPackages', () => {
       expect(result.failed).toEqual(['ghost-pkg'])
       expect(result.revert).toBeDefined()
       expect(result.revert!.reason).toBe('failures')
-      // The three pre-existing packages are recognised and spared...
       expect(result.revert!.keptPreexisting.sort()).toEqual(['aiohttp', 'filelock', 'numpy'])
       expect(result.revert!.uninstalled).toEqual([])
-      // ...and no uv invocation ever names them as an uninstall target.
       for (const name of ['aiohttp', 'filelock', 'numpy']) {
         expect(uninstallArgs()).not.toContain(name)
       }
-      // Their files are still in site-packages.
       for (const name of ['aiohttp', 'filelock', 'numpy']) {
         expect(fs.existsSync(path.join(sitePackagesPath, name, '__init__.py'))).toBe(true)
       }
@@ -202,9 +182,6 @@ describe('restorePipPackages', () => {
       }
     })
 
-    // Back up packages that already exist on disk even if freeze omits them.
-    // An install may overwrite them; preserving the installed package is not enough
-    // to restore its original version after failure.
     it('backs up a disk-detected package whose installed version differs', async () => {
       installOnDisk('aiohttp', '1.0.0')
       const pkgFile = path.join(sitePackagesPath, 'aiohttp', '__init__.py')
@@ -212,28 +189,21 @@ describe('restorePipPackages', () => {
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
       vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
         const a = args as string[]
-        // The install really does overwrite the copy already on disk — that is
-        // the whole reason it needs backing up.
         if (a[1] === 'install') {
           fs.writeFileSync(pkgFile, '# snapshot 2.0.0\n')
           return 0
         }
-        return 1 // every uninstall fails, tipping the restore into its revert
+        return 1
       })
 
-      // The snapshot wants a different version of the package already on disk.
       const result = await run(snapshotWith({ aiohttp: '2.0.0' }))
 
       expect(result.revert!.keptPreexisting).toEqual(['aiohttp'])
       expect(result.revert!.uninstalled).toEqual([])
-      // Not uninstalling it is not enough: the revert has to put the
-      // pre-restore version's files back, which only the backup can do.
       expect(fs.readFileSync(pkgFile, 'utf-8')).toBe('# pre-restore 1.0.0\n')
     })
 
     it('still uninstalls packages the restore genuinely added', async () => {
-      // `brand-new` has no dist-info on disk, so it really is new; the other
-      // two predate the restore. Only the new one may be rolled back.
       installOnDisk('aiohttp', '1.0.0')
       installOnDisk('numpy', '1.0.0')
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
@@ -257,7 +227,6 @@ describe('restorePipPackages', () => {
     it('reports an incomplete revert instead of asserting a clean one', async () => {
       installOnDisk('ghost-pkg', '9.9.9')
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
-      // Both the removal and the revert's uninstall fail.
       vi.mocked(runUvPip).mockResolvedValue(1)
 
       const result = await run(snapshotWith({ 'brand-new': '2.0.0' }))
@@ -268,8 +237,6 @@ describe('restorePipPackages', () => {
     })
 
     it('does not claim a complete revert for a package it could not back up', async () => {
-      // Legacy metadata only: `findPackageEntries` locates `.dist-info`, so
-      // nothing is captured and the install's effect on it cannot be undone.
       fs.mkdirSync(path.join(sitePackagesPath, 'legacy_pkg.egg-info'), { recursive: true })
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
       vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
@@ -278,29 +245,21 @@ describe('restorePipPackages', () => {
 
       const result = await run(snapshotWith({ 'legacy-pkg': '2.0.0' }))
 
-      // Still never uninstalled — that part holds...
       expect(result.revert!.keptPreexisting).toEqual(['legacy-pkg'])
       expect(result.revert!.uninstalled).toEqual([])
-      // ...but the revert is honest that it could not restore it.
       expect(result.revert!.complete).toBe(false)
       expect(output.join('')).toContain('No backup was captured')
     })
 
-    // The restore loop deletes each destination before copying over it, so
-    // letting one failure abort would leave the earlier entries deleted and the
-    // later ones never restored — a revert that destroys more than it repairs.
     it('keeps restoring the remaining packages when one entry fails', async () => {
       for (const name of ['alpha', 'omega']) {
         installOnDisk(name, '1.0.0')
         fs.writeFileSync(path.join(sitePackagesPath, name, '__init__.py'), `# live ${name}\n`)
       }
-      // Both are extras the snapshot does not have, so both get backed up and
-      // are removal targets; the removal then fails and tips it into a revert.
       vi.mocked(pipFreeze).mockResolvedValue({ alpha: '1.0.0', omega: '1.0.0' })
       vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
         const a = args as string[]
         if (a[1] === 'uninstall') {
-          // Simulate uv having deleted the files before reporting failure.
           for (const name of ['alpha', 'omega']) {
             fs.rmSync(path.join(sitePackagesPath, name), { recursive: true, force: true })
           }
@@ -308,8 +267,6 @@ describe('restorePipPackages', () => {
         }
         return 0
       })
-      // One entry fails on the way BACK into site-packages (not while the
-      // backup is being taken); the rest must still be restored.
       const realCp = fs.promises.cp
       vi.spyOn(fs.promises, 'cp').mockImplementation(async (src, dst, opts) => {
         const target = String(dst)
@@ -321,17 +278,13 @@ describe('restorePipPackages', () => {
 
       const result = await run(snapshotWith({}))
 
-      // omega came back despite alpha failing...
       expect(fs.readFileSync(path.join(sitePackagesPath, 'omega', '__init__.py'), 'utf-8')).toBe(
         '# live omega\n'
       )
-      // ...and the failure is reported rather than papered over.
       expect(result.revert!.complete).toBe(false)
       expect(result.revert!.restoredFromBackup).toBe(false)
     })
 
-    // Cancelling between taking the backup and the first pip call leaves
-    // nothing to revert, so an uncaptured backup is not a failure to revert.
     it('does not blame an uncaptured backup when no pip work started', async () => {
       fs.mkdirSync(path.join(sitePackagesPath, 'legacy_pkg.egg-info'), { recursive: true })
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
@@ -351,8 +304,6 @@ describe('restorePipPackages', () => {
       let installs = 0
       vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
         const a = args as string[]
-        // The bulk install fails, then each single install fails, so the phase
-        // reports failures; every uninstall (removal + revert) succeeds.
         if (a[1] === 'install') {
           installs++
           return 1
@@ -400,8 +351,6 @@ describe('preexistingOnDisk', () => {
     ])
   })
 
-  // Legacy setuptools metadata still marks an installed distribution. Missing
-  // it would put a pre-existing package back on the revert's uninstall list.
   it('recognises legacy .egg-info and .egg-link metadata', () => {
     fs.mkdirSync(path.join(tmp, 'oldpkg.egg-info'), { recursive: true })
     fs.mkdirSync(path.join(tmp, 'versioned_pkg-1.0-py3.12.egg-info'), { recursive: true })
@@ -413,9 +362,6 @@ describe('preexistingOnDisk', () => {
     ])
   })
 
-  // The bare legacy forms carry the raw name, hyphens and all. Splitting at the
-  // first hyphen would read `my-package.egg-link` as `my`, miss the package,
-  // and put it back on the revert's uninstall list.
   it('keeps hyphens in bare legacy metadata names', () => {
     fs.writeFileSync(path.join(tmp, 'my-package.egg-link'), '/src/my-package\n')
     fs.mkdirSync(path.join(tmp, 'other-thing.egg-info'), { recursive: true })
@@ -425,17 +371,12 @@ describe('preexistingOnDisk', () => {
     ])
   })
 
-  // `.egg-link` always names the distribution outright, so the version branch
-  // must not apply to it: `foo-2bar.egg-link` is `foo-2bar`, not `foo` at
-  // version `2bar`.
   it('treats an always-bare .egg-link stem as the whole name', () => {
     fs.writeFileSync(path.join(tmp, 'foo-2bar.egg-link'), '/src/foo-2bar\n')
     expect(preexistingOnDisk(tmp, ['foo'])).toEqual([])
     expect(preexistingOnDisk(tmp, ['foo-2bar'])).toEqual(['foo-2bar'])
   })
 
-  // A longer distribution name must not be mistaken for a version of a
-  // shorter one — only a digit can follow the separator.
   it('does not match a package against a longer package name', () => {
     distInfo('foo_bar-1.0')
     expect(preexistingOnDisk(tmp, ['foo'])).toEqual([])
@@ -447,8 +388,6 @@ describe('preexistingOnDisk', () => {
     expect(preexistingOnDisk(tmp, ['aiohttp'])).toEqual([])
   })
 
-  // "Can't tell" must never read as "nothing was installed before" — that is
-  // the reading that uninstalls the user's environment.
   it('treats every candidate as pre-existing when site-packages cannot be read', () => {
     expect(preexistingOnDisk(path.join(tmp, 'does-not-exist'), ['aiohttp', 'numpy'])).toEqual([
       'aiohttp',

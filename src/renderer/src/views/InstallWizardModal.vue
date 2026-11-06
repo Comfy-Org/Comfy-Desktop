@@ -47,7 +47,6 @@ const emit = defineEmits<{
   close: []
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
-  /** Configure footer's Back link when opened by the first-use chain; host returns to the FirstUseTakeover localBranch step. */
   'back-to-local-branch': []
 }>()
 
@@ -56,7 +55,6 @@ const spinnerClass =
 
 const props = withDefaults(
   defineProps<{
-    /** Hide the "Back to Dashboard" chevron when chained from the first-use takeover. */
     hideBackToDashboard?: boolean
   }>(),
   { hideBackToDashboard: false }
@@ -70,14 +68,10 @@ const sources = ref<Source[]>([])
 const currentSource = ref<Source | null>(null)
 const selections = ref<Record<string, FieldOption>>({})
 const instName = ref('')
-/** Placeholder's suggested default (`ComfyUI` -> `ComfyUI (2)` if taken). `handleSave`'s blank-field fallback produces the same value, so it's truthful. */
 const suggestedName = ref('')
 const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
-/** Non-blocking hardware warning from `validateHardware()` (e.g. Linux AMD
- *  /dev/kfd inaccessible): install may proceed, but the user should know GPU
- *  acceleration will not work until they act. Plain-English text from main. */
 const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
@@ -87,7 +81,6 @@ const sourceError = ref('')
 const workspaceId = ref<string | null>(null)
 const selectedBuildId = ref('')
 const selectedBuildTargetId = ref('')
-/** Resolve the local Personal scope to its server workspace for managed operations. */
 const managedWorkspaceId = computed(() => {
   if (!authStore.isSignedIn || !workspaceId.value) return null
   if (workspaceId.value !== PERSONAL_WORKSPACE_ID) return workspaceId.value
@@ -236,13 +229,11 @@ watch(selectedBuild, (build) => {
   suggestManagedBuildName(build)
 })
 
-// Per-field state
 const fieldOptions = ref(new Map<string, FieldOption[]>())
 const fieldLoading = ref(new Map<string, boolean>())
 const fieldErrors = ref(new Map<string, string>())
 const textFieldValues = ref(new Map<string, string>())
 
-// Disk space and path validation
 const {
   diskSpace,
   diskSpaceLoading,
@@ -254,8 +245,6 @@ let hardwareValidation: HardwareValidation | null = null
 
 const estimatedInstallSize = computed(() => {
   if (!localInstallMode.value) {
-    // Managed builds report the whole-archive size; apply the same
-    // download-to-installed factor as local variants.
     const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
     return sizeBytes > 0 ? Math.ceil(sizeBytes * 2.25) : 0
   }
@@ -269,17 +258,9 @@ const estimatedInstallSize = computed(() => {
   return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
 })
 
-/** Entrypoint that opened this wizard, for the handoff funnel events. */
 const entrypoint = ref('unknown')
-/** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
- *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
- *  onBeforeUnmount `wizard_cancelled` emit so exactly one *terminal* event
- *  fires per open. `add_installation_failed` is an attempt-level failure - it
- *  intentionally leaves this false so a later retry (-> dispatched) or give-up
- *  (-> wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
-/** Shared context for the install-handoff funnel events. */
 function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
@@ -292,13 +273,11 @@ function installHandoffProps(): Record<string, string | boolean | null> {
 
 const NO_TEMPLATE_VALUE = 'none'
 
-/** The selected starter template option (excludes the "None" sentinel). */
 const selectedTemplate = computed<FieldOption | null>(() => {
   const sel = selections.value.bundledTemplate
   return sel && sel.value !== NO_TEMPLATE_VALUE ? sel : null
 })
 
-/** True when the selected template carries a non-zero model download. */
 const templateHasModels = computed(() => {
   const size = selectedTemplate.value?.data?.sizeBytes as number | undefined
   return typeof size === 'number' && size > 0
@@ -306,9 +285,6 @@ const templateHasModels = computed(() => {
 
 const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
 
-/** Proactive disk guard - shares `isTemplateDiskBlocked` with TemplatePickerStep
- *  so the alert, the disabled Install button, and the save-time hard block can't
- *  drift. */
 const templateInstallBlocked = computed(() => {
   if (diskSpaceLoading.value) return false
   return isTemplateDiskBlocked(diskSpace.value, templateDownloadBytes(selectedTemplate.value))
@@ -316,13 +292,9 @@ const templateInstallBlocked = computed(() => {
 
 const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
 
-/** Alert state surfaced by the picker, rendered above the card so it's always
- *  visible (never clipped by the card's scroll). */
 const templateDiskError = computed(() => pickerRef.value?.shownDiskError ?? null)
 const hasTemplateAlerts = computed(() => !!templateDiskError.value)
 
-/** Shake the disk-error alert when a blocked Install is clicked (mirrors the
- *  first-use consent gate). Auto-resets so it can replay on the next click. */
 const templateAlertNudge = ref(false)
 let templateNudgeTimer: ReturnType<typeof setTimeout> | undefined
 function nudgeTemplateAlert(): void {
@@ -333,13 +305,8 @@ function nudgeTemplateAlert(): void {
   }, 600)
 }
 
-/** Which step of the takeover is showing: Configure, then the (optional,
- *  standalone-only) starter-template picker before install. */
 const step = ref<'configure' | 'template'>('configure')
 const dontShowTemplatePicker = ref(false)
-/** Whether to even offer the picker step: skippable for returning opted-out
- *  users. The "Don't show again" checkbox itself only appears once the user
- *  already has ≥1 local install (a first-ever user always sees the step). */
 const pickerEnabled = ref(true)
 const hasLocalInstall = ref(false)
 
@@ -347,10 +314,6 @@ const templateOptions = computed<FieldOption[]>(
   () => fieldOptions.value.get('bundledTemplate') ?? []
 )
 
-/** Volume can't fit even the smallest model-bearing template (incl. headroom).
- *  When known and true, there's nothing the picker could install, so we skip the
- *  step outright rather than show it with every option blocked. Stays `false`
- *  while disk space is unknown/loading - we only skip on a confirmed shortfall. */
 const diskTooSmallForAnyTemplate = computed(() => {
   if (diskSpaceLoading.value || !diskSpace.value) return false
   if (templateOptions.value.some(isApiNodeTemplate)) return false
@@ -358,12 +321,6 @@ const diskTooSmallForAnyTemplate = computed(() => {
   return isTemplateDiskBlocked(diskSpace.value, cheapest)
 })
 
-/** Show the picker step only for the standalone source when it's enabled,
- *  the template field produced options, and the volume can fit at least one
- *  template's models. Gated only by the `skipTemplatePickerStep` user opt-out
- *  (`pickerEnabled`) - shown to everyone on the standalone install path.
- *  The `localInstallMode` guard keeps the picker out of managed installs,
- *  which ignore templates entirely. */
 const shouldShowPickerStep = computed(
   () =>
     localInstallMode.value &&
@@ -376,8 +333,6 @@ const shouldShowPickerStep = computed(
 function selectTemplate(option: FieldOption): void {
   const prev = selections.value.bundledTemplate?.value
   selections.value.bundledTemplate = option
-  // Emit only on real (non-`None`) picks, and only on a value change so
-  // re-clicking the already-selected row doesn't inflate the event count.
   if (option.value !== NO_TEMPLATE_VALUE && option.value !== prev) {
     const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
     emitTelemetryAction('comfy.desktop.template.selected', {
@@ -388,14 +343,8 @@ function selectTemplate(option: FieldOption): void {
   }
 }
 
-/** Configure's primary button: advance to the picker step, or install directly
- *  when the picker is gated off (non-standalone source, no template options,
- *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // No template is pre-selected - the "None" sentinel stays put until the
-    // user actively picks a card, so nobody installs a starter workflow (and
-    // its models) they never chose.
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
     emitTelemetryAction('comfy.desktop.template.picker_shown', {
@@ -408,10 +357,6 @@ async function handleConfigureContinue(): Promise<void> {
   await handleSave()
 }
 
-/** Picker's "Install": persist the opt-out (if ticked) then install. When the
- *  volume can't fit the selected template, shake the disk-error alert instead of
- *  installing (the button stays clickable so the nudge can fire, mirroring the
- *  first-use consent gate). */
 async function handleTemplateInstall(): Promise<void> {
   if (templateInstallBlocked.value) {
     nudgeTemplateAlert()
@@ -429,7 +374,6 @@ async function handleTemplateInstall(): Promise<void> {
   await handleSave()
 }
 
-/** Picker's "Skip & Install": no template, then install. */
 async function handleTemplateSkip(): Promise<void> {
   emitTelemetryAction('comfy.desktop.template.skipped', {
     had_template_selected: !!selectedTemplate.value,
@@ -446,9 +390,7 @@ async function persistDontShowAgain(): Promise<void> {
   if (dontShowTemplatePicker.value) {
     try {
       await window.api.setSetting('skipTemplatePickerStep', true)
-    } catch {
-      // Non-fatal - the step just shows again next time.
-    }
+    } catch {}
   }
 }
 
@@ -458,19 +400,15 @@ watch(instPath, (newPath) => {
   fetchDiskSpace(newPath)
 })
 
-/** Bumped on each open/source change to discard stale responses. */
 let loadGeneration = 0
-/** Bumped on each open/workspace mode change to discard stale mode initialization. */
 let modeGeneration = 0
 
-// Reject whitespace-only names; a truly-blank field is allowed (falls back to the suggested default).
 const nameError = computed(() =>
   instName.value.length > 0 && instName.value.trim().length === 0
     ? t('newInstall.nameWhitespace')
     : ''
 )
 
-// Mirrors main's `parseUrl`: a scheme-less value is tried as `http://<value>` and must yield a hostname.
 function isValidConnectionUrl(raw: string): boolean {
   const trimmed = raw.trim()
   if (!trimmed) return false
@@ -482,7 +420,6 @@ function isValidConnectionUrl(raw: string): boolean {
   }
 }
 
-// Inline error for the `url` field on Remote Connection / Cloud sources; scoped to `id === 'url'` so other text fields keep their own flow.
 const urlFieldError = computed(() => {
   const source = currentSource.value
   if (!source) return ''
@@ -492,7 +429,6 @@ const urlFieldError = computed(() => {
   return isValidConnectionUrl(value) ? '' : t('newInstall.urlInvalid')
 })
 
-// Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
   if (managedBuildMode.value) {
     const targets = selectedBuild.value?.releaseTargets ?? []
@@ -509,7 +445,6 @@ const canContinue = computed(() => {
   return !saveDisabled.value && pathIssues.value.length === 0
 })
 
-/** Deep-strip Vue reactive proxies for safe IPC serialization. */
 function rawSelections(): Record<string, FieldOption> {
   const raw = toRaw(selections.value)
   const result: Record<string, FieldOption> = {}
@@ -541,12 +476,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // Onboarding->install drop-off: the wizard is unmounting without a
-  // resolved handoff outcome, so the user left the install path without
-  // dispatching. `skipInstall` sources (Remote Connection) never install, so
-  // they're not part of this funnel. The happy-path dispatch, the defensive
-  // no-entry close, and the Back-to-onboarding navigation all set `resolved`
-  // first, so this only catches genuine abandonment (✕ / dismiss).
   if (!resolved.value && !currentSource.value?.skipInstall) {
     emitTelemetryAction('comfy.desktop.install.not_started', {
       ...installHandoffProps(),
@@ -556,9 +485,6 @@ onBeforeUnmount(() => {
   clearTimeout(templateNudgeTimer)
 })
 
-/** Configure footer Back link (first-use chain only). Records that install
- *  didn't start here and marks the outcome resolved so the unmount that
- *  follows doesn't also report `wizard_cancelled`. */
 function handleBackToLocalBranch(): void {
   resolved.value = true
   emitTelemetryAction('comfy.desktop.install.not_started', {
@@ -569,11 +495,8 @@ function handleBackToLocalBranch(): void {
 }
 
 interface OpenOpts {
-  /** Set when opened via the first-use localBranch -> Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
   cameFromLocalBranch?: boolean
-  /** Where this wizard was opened from (`first_use`, `chooser`, `titlebar`, `url`); carried onto the install.dispatched / install.not_started funnel events. */
   entrypoint?: string
-  /** Active workspace whose compatible Builds replace the generic source controls. */
   workspaceId?: string
 }
 
@@ -609,8 +532,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   initializing.value = true
   step.value = 'configure'
   dontShowTemplatePicker.value = false
-  // Reset to defaults synchronously so a slow prior-open response can't leave
-  // stale gating on this open; the guarded callbacks below then refill them.
   pickerEnabled.value = true
   hasLocalInstall.value = false
 
@@ -628,16 +549,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     ) {
       await authStore.fetchWorkspaces()
     }
-    // The dashboard prefetches this catalog when its workspace selection
-    // changes. Use that result immediately: a catalog with no host-compatible
-    // release defaults to Public Builds without flashing the empty Managed tab.
     if (managedBuildCatalogLoaded.value && workspaceBuilds.value.length === 0) {
       workspaceInstallMode.value = 'public'
     }
     await initializeInstallMode(gen, true)
-    // Direct entry points may not have visited the dashboard. In that case the
-    // managed initialization above performs the first fetch; apply the same
-    // default once its result is known.
     if (
       gen === modeGeneration &&
       managedBuildMode.value &&
@@ -704,8 +619,6 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
     })
     .catch(() => {})
 
-  // These are needed only if the user reaches the later template step, so they
-  // run in the background and never block the Configure screen's first paint.
   void window.api
     .getSetting('skipTemplatePickerStep')
     .then((skip) => {
@@ -766,7 +679,6 @@ async function selectManagedInstallMode(): Promise<void> {
     return
   }
   workspaceInstallMode.value = 'managed'
-  // Managed installs must not inherit source or template selections.
   resetSourceState(null)
   suggestedName.value = ''
   const gen = ++modeGeneration
@@ -825,14 +737,9 @@ async function selectSourceCard(source: Source): Promise<void> {
   })
 }
 
-/** Drop all source-scoped wizard state (source, selections, loaded field
- *  options) and invalidate in-flight option loads. Runs when a source is
- *  picked and when the Managed/Public mode toggles, so no stale state (e.g.
- *  standalone template options) leaks across sources or modes. */
 function resetSourceState(source: Source | null): void {
   loadGeneration++
   currentSource.value = source
-  // A different source can't keep the (standalone-only) picker open.
   step.value = 'configure'
   selections.value = {}
   fieldOptions.value.clear()
@@ -856,13 +763,11 @@ async function selectSource(source: Source): Promise<void> {
     }
   }
 
-  // Start loading from the first loadable (non-text) field
   const firstLoadable = source.fields.findIndex((f) => f.type !== 'text')
   if (firstLoadable >= 0) {
     await loadFieldOptions(firstLoadable)
   }
 
-  // Sources with only text fields and skipInstall can be saved immediately
   if (source.skipInstall && source.fields.every((f) => f.type === 'text')) {
     saveDisabled.value = false
   }
@@ -880,7 +785,6 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
   fieldOptions.value.delete(field.id)
   saveDisabled.value = true
 
-  // Clear downstream select fields
   for (let i = fieldIndex + 1; i < source.fields.length; i++) {
     const df = source.fields[i]
     if (!df || df.type === 'text') continue
@@ -889,7 +793,6 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     delete selections.value[df.id]
   }
 
-  // Clear any previous error on the error target field
   const clearTarget =
     field.errorTarget ||
     (() => {
@@ -911,32 +814,21 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
       field.id === 'release' ? { includeLatestStable: true } : undefined
     )
 
-    // Discard stale response if source/modal changed during the await
     if (gen !== loadGeneration) return
 
     fieldLoading.value.set(field.id, false)
     fieldOptions.value.set(field.id, options)
 
     if (options.length > 0) {
-      // The starter-template field must never default to a `recommended` pick
-      // (e.g. MiniMax) — that pre-selects a workflow, and the models it pulls
-      // in, before the user has chosen anything. It always defaults to the
-      // "None" sentinel (index 0; see `standalone/index.ts`), same as every
-      // other field falls back to index 0 when nothing is `recommended`.
       let defaultIndex =
         field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
       const defaultOption = options[defaultIndex]
       if (defaultOption) selections.value[field.id] = defaultOption
     } else {
-      // Conditional fields (e.g. `comfyVersion` on the 'latest' channel) return
-      // [] when not applicable. Drop any stale selection so a value from a
-      // prior channel toggle doesn't leak into `buildInstallation`.
       delete selections.value[field.id]
     }
 
-    // Load next select field. An empty-options field still hands off downstream
-    // so a conditional field can't strand the chain (would leave Continue disabled).
     const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
     if (nextSelect >= 0) {
       await loadFieldOptions(nextSelect)
@@ -948,7 +840,6 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldLoading.value.set(field.id, false)
     const errMsg = (err as Error).message || String(err)
 
-    // Show error on the declared errorTarget, or fall back to preceding text field
     let errorFieldId = field.errorTarget
     if (!errorFieldId) {
       for (let i = fieldIndex - 1; i >= 0; i--) {
@@ -1091,7 +982,6 @@ async function handleWorkspaceBuildSave(): Promise<void> {
   const build = selectedBuild.value
   if (!build || !(await validateSelectedInstallRoot())) return
 
-  // Soft-warn when the volume looks too small for the estimated install size.
   if (instPath.value && estimatedInstallSize.value > 0) {
     try {
       if (
@@ -1105,9 +995,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
       ) {
         return
       }
-    } catch {
-      // If disk space check fails, proceed anyway
-    }
+    } catch {}
   }
 
   const result = await window.api.comfybuilder
@@ -1137,7 +1025,6 @@ async function handleSave(): Promise<void> {
   const source = currentSource.value
   if (!source) return
 
-  // Warn if NVIDIA driver is too old for the bundled PyTorch
   if (source.id === 'standalone') {
     const variantId = selections.value.variant?.data?.variantId as string | undefined
     if (variantId && stripVariantPrefix(variantId).startsWith('nvidia')) {
@@ -1147,18 +1034,12 @@ async function handleSave(): Promise<void> {
     }
   }
 
-  // Sync text field values into selections before building
   for (const f of source.fields) {
     if (f.type === 'text') {
       const value = textFieldValues.value.get(f.id) ?? ''
       selections.value[f.id] = { value, label: value }
     }
   }
-
-  // Note: the starter-template model download is gated entirely by the chosen
-  // `bundledTemplate` - `buildInstallation` sets `downloadTemplateModels` from
-  // the template id, so "Skip & Install" (template = None) means no download.
-  // The renderer doesn't sync a separate consent field.
 
   const instData = await window.api.buildInstallation(source.id, rawSelections())
   const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
@@ -1186,7 +1067,6 @@ async function handleSave(): Promise<void> {
 
   if (!(await validateSelectedInstallRoot())) return
 
-  // Check disk space before proceeding
   if (instPath.value) {
     try {
       const downloadFiles = selections.value.variant?.data?.downloadFiles as
@@ -1206,12 +1086,9 @@ async function handleSave(): Promise<void> {
       ) {
         return
       }
-    } catch {
-      // If disk space check fails, proceed anyway
-    }
+    } catch {}
   }
 
-  // Hard-block when the volume can't hold the selected template's models.
   if (instPath.value && templateHasModels.value) {
     if (
       !(await checkTemplateDiskOrBlock({
@@ -1262,13 +1139,7 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
   handleFieldSelectChange(field, fieldIndex, String(idx))
 }
 
-/** Conditional fields like `comfyVersion` (only meaningful on the stable
- *  channel) return an empty options array when not applicable. Hide them
- *  outright so the wizard doesn't render a "No options" dropdown. */
 function isHiddenWhenEmpty(field: SourceField): boolean {
-  // The starter-template field gets its own dedicated step when the picker is
-  // enabled - hide its Advanced-section card so it isn't shown twice. (When the
-  // picker is gated off, the Advanced card stays as the fallback.)
   if (field.id === 'bundledTemplate' && shouldShowPickerStep.value) return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
   const options = fieldOptions.value.get(field.id)
@@ -1702,7 +1573,6 @@ defineExpose({ open })
       </div>
     </div>
 
-    <!-- Dedicated starter-template picker step (after Configure, before install). -->
     <div
       v-else-if="step === 'template'"
       class="template-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[960px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"

@@ -5,7 +5,6 @@ import {
   successTerminalGoDashboardOrOpen
 } from './progressTerminalPresets'
 
-// The panel-side success-choice handler switches on these action ids, so their stability is a contract.
 describe('successTerminalGoDashboardOrOpen', () => {
   it('returns Go to Dashboard as the first action and Open Instance as the primary CTA', () => {
     const t = successTerminalGoDashboardOrOpen({

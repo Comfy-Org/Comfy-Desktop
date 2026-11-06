@@ -15,7 +15,6 @@ test('the WebContents facade drives shared selects and tabs with native input @w
 
     const trigger = '[data-field-id="autoLaunchOnStartup"] [role="combobox"]'
     await popup.waitForVisible(trigger)
-    // Observe the browser's events without driving component state from the test.
     await popup.evaluate(`(() => {
       window.__inputEvents = []
       for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
@@ -36,7 +35,6 @@ test('the WebContents facade drives shared selects and tabs with native input @w
     expect(await popup.clickByText('[role="listbox"] [role="option"]', 'Last used instance')).toBe(true)
     await expect.poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')")).toBe('last')
 
-    // Select dismissal must return focus, allowing a real key to reopen it.
     await expect.poll(() => popup.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(trigger)})`)).toBe(true)
     await popup.pressKey('Enter')
     await popup.waitForVisible('[role="listbox"]')
@@ -46,7 +44,6 @@ test('the WebContents facade drives shared selects and tabs with native input @w
     await popup.selectOption(trigger, 'None (show dashboard)')
     await expect.poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')")).toBe('none')
 
-    // Shared tabs respond to pointer-down and focused keyboard navigation.
     expect(await popup.clickNth('[role="tab"]', 2)).toBe(true)
     await expect.poll(() => popup.textOf('[role="tab"][aria-selected="true"]')).toBe('Storage')
     await popup.pressKey('Home')

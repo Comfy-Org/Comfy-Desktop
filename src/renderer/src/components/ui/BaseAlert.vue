@@ -6,27 +6,18 @@ import DesktopDialogSurface from './DesktopDialogSurface.vue'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'
 
-// Compact alert primitive. Footer supports up to three actions in order
-// `[Cancel] [Secondary] [Primary]`. Use BaseModal for richer header/footer
-// needs; not BaseSelect (the inline form combobox).
-
 interface Props {
   open: boolean
   title: string
   message?: string
-  /** Low-emphasis guidance rendered below the main content. */
   hint?: string
   buttonLabel?: string
-  /** Render Cancel + primary; ESC / backdrop emit `cancel`. */
   showCancel?: boolean
   cancelLabel?: string
   tone?: 'primary' | 'danger'
-  /** Middle action between Cancel and Primary; emits `@secondary`. */
   secondaryLabel?: string
   secondaryTone?: 'primary' | 'danger' | 'default'
-  /** Header ✕ that emits `cancel`. Mutually exclusive with `showCancel`. */
   showCloseIcon?: boolean
-  /** Recessed sub-blocks below the message (release notes, change summaries). */
   messageDetails?: ModalDetailGroup[]
   ariaLabel?: string
   ariaLabelledby?: string
@@ -71,8 +62,6 @@ const dialogAriaLabelledby = computed(
   () => props.ariaLabelledby ?? (props.ariaLabel ? undefined : TITLE_ID)
 )
 
-// ESC + backdrop dismiss as cancel when a cancel affordance exists,
-// else as primary OK. Secondary never receives ESC/backdrop dismissal.
 function dismiss(): void {
   if (props.showCancel || props.showCloseIcon) emit('cancel')
   else emit('close')
@@ -80,7 +69,6 @@ function dismiss(): void {
 
 const hasDetails = computed(() => props.messageDetails.length > 0)
 const linkifiedMessage = computed(() => linkify(props.message))
-// A secondary action means two non-cancel buttons, which need a wider panel.
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
 const actionVariants = { default: 'secondary', primary: 'inverted', danger: 'destructive' } as const
@@ -172,7 +160,6 @@ const linkClass =
       <p v-if="hint" class="base-alert-hint mt-3 text-xs leading-[1.4] text-text-muted/75">
         {{ hint }}
       </p>
-      <!-- Sits below message + details (unlike the default slot, which replaces them). -->
       <div v-if="$slots.extra" class="base-alert-extra mt-3">
         <slot name="extra" />
       </div>

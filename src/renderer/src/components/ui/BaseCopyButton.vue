@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Icon button that copies `value` (or `getValue()`) to the clipboard,
-// swapping Copy → Check briefly on success. Use `getValue` for lazy strings.
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { Copy, Check } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -41,10 +39,7 @@ async function handleClick(): Promise<void> {
       copied.value = false
       resetTimer = null
     }, COPIED_RESET_MS)
-  } catch {
-    // Stay silent on clipboard failure: the text is still selectable for
-    // manual copy, so a toast would be noisier than the failure warrants.
-  }
+  } catch {}
 }
 
 onBeforeUnmount(clearResetTimer)

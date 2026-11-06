@@ -1,20 +1,3 @@
-/**
- * Durable sidecar for the startup-install loop-breaker.
- *
- * The settings copy of the marker (`lastStartupUpdateAttemptVersion`) is the
- * last write before the app quits into the installer, so settings.json.bak
- * never contains it - a `.bak` restore under AV/indexer interference erases
- * it and the same version reinstalls on every boot. This sidecar keeps the
- * marker in a tiny file of its own: no `.bak` machinery to roll it back, no
- * other writers, and read-back verification so the caller can fail closed
- * when the marker is not durable (see `applyPendingUpdateOnStartup`).
- *
- * Reads are tri-state: a marker file that EXISTS but cannot be read (lock
- * outlasting the retry budget) may record an attempt of exactly the pending
- * version, so it must surface as `unavailable`, never as `absent` - absent is
- * what authorizes an install.
- */
-
 import fs from 'fs'
 import path from 'path'
 import { configDir } from './paths'
@@ -63,21 +46,9 @@ export function readStartupAttemptMarker(): StartupAttemptMarkerRead {
       }
     }
   } catch {}
-  // Unparseable content can't loop-break anything; treat it like the file
-  // isn't there (writes are atomic, so this is not a torn write).
   return { state: 'absent' }
 }
 
-/**
- * Record that a startup install of `version` is about to run, and verify the
- * marker actually landed on disk. `attemptId` keeps telemetry correlated when
- * settings.json is unavailable or restored from backup. The write is durable
- * (fsynced before the rename publishes it) so the machine rebooting into the
- * installer - or losing power mid-update - cannot roll it back out of the OS
- * write cache. Returns false when it could not be persisted or the read-back
- * does not match - the caller must then NOT install, because a marker that only
- * lives in memory cannot break the reinstall loop.
- */
 export function recordStartupAttempt(version: string, attemptId: string): boolean {
   const marker: StartupAttemptMarker = {
     version,
@@ -97,7 +68,6 @@ export function recordStartupAttempt(version: string, attemptId: string): boolea
   )
 }
 
-/** Persist the latest emitted status without removing the loop-breaker. */
 export function recordStartupAttemptOutcome(marker: StartupAttemptMarker, outcome: string): void {
   try {
     writeFileSafe(markerPath(), JSON.stringify({ ...marker, reportedOutcome: outcome }, null, 2), {

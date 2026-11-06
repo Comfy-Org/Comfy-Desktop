@@ -10,15 +10,8 @@ withDefaults(
     tagline?: string
     disabled?: boolean
     glow?: boolean
-    /** Renders as a radio option (no arrow); click selects rather than
-     *  commits, leaving the commit to a parent Continue button. Selection
-     *  reads from the card border/background — there is no radio glyph. */
     selectable?: boolean
     selected?: boolean
-    /** Hold the group's tab stop while unselected. A radiogroup with
-     *  nothing checked still needs one Tab-reachable radio (WAI-ARIA APG
-     *  §3.15) or it drops out of the tab order entirely; the parent picks
-     *  which card — see `keyboardEntryChoice` in FirstUseTakeover. */
     tabStop?: boolean
   }>(),
   {

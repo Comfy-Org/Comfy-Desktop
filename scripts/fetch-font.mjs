@@ -1,27 +1,3 @@
-/**
- * Download the proprietary PP Formula font from the private GCS bucket into the
- * renderer public dir, so release builds ship the brand display face.
- *
- * PP Formula (Pangram Pangram) is license-restricted and is NOT committed to
- * this public repo. The renderer references it as a public asset
- * (`/fonts/PPFormula-Extrabold.otf`); when absent the app falls back to Inter.
- *
- * Usage:
- *   node scripts/fetch-font.mjs [--bucket gs://comfy-org-fonts] [--output-dir <dir>] [--soft-fail]
- *
- * Options:
- *   --bucket      Source bucket (default: gs://comfy-org-fonts)
- *   --output-dir  Override output dir (default: src/renderer/public/fonts)
- *   --soft-fail   Exit 0 even if the fetch fails. For LOCAL DEV ONLY — the app
- *                 just falls back to Inter. Production/release builds MUST NOT
- *                 pass this: shipping a release without the licensed display
- *                 face is a regression we want to fail loudly on.
- *
- * Auth: uses Application Default Credentials via the `gcloud` CLI. In CI the
- * google-github-actions/auth step (Workload Identity Federation) provides ADC
- * and setup-gcloud provides the binary. Locally, `gcloud auth login` with a
- * comfy.org account that has read on the bucket.
- */
 
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -34,9 +10,6 @@ const projectRoot = path.resolve(__dirname, '..')
 const DEFAULT_BUCKET = 'gs://comfy-org-fonts'
 const DEFAULT_OUTPUT_DIR = path.join(projectRoot, 'src', 'renderer', 'public', 'fonts')
 
-// Files to pull. Keep in sync with the @font-face declarations in
-// src/renderer/src/assets/main.css. Only the weights actually referenced are
-// fetched, to avoid shipping unused (but still licensed) styles.
 const FONT_FILES = ['PPFormula-Extrabold.otf']
 
 function parseArgs() {
@@ -59,11 +32,7 @@ function parseArgs() {
 function downloadFile(bucket, file, outputDir) {
   const src = `${bucket.replace(/\/$/, '')}/${file}`
   const dest = path.join(outputDir, file)
-  // execFileSync (not execSync) so the bucket/file/dest are passed as argv
-  // entries rather than interpolated into a shell string.
   execFileSync('gcloud', ['storage', 'cp', src, dest], { stdio: 'inherit' })
-  // A 0 exit from gcloud is not enough — verify the file landed and is
-  // non-empty before treating it as success.
   const stat = fs.existsSync(dest) ? fs.statSync(dest) : null
   if (!stat || stat.size === 0) {
     throw new Error(`Expected ${dest} after download, but it is missing or empty.`)

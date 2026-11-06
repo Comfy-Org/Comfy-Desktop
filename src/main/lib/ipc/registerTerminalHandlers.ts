@@ -16,13 +16,6 @@ import {
   openTerminalPopout
 } from '../terminalPopoutWindow'
 
-/**
- * IPC for the interactive per-installation console.
- *
- * Only bundled Desktop terminal renderers may use these channels. The served
- * ComfyUI renderer has a separate navigation-only bridge.
- */
-
 const EMPTY_RESTORE: TerminalRestore = {
   buffer: [],
   size: { cols: 80, rows: 30 },

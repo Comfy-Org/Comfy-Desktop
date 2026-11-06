@@ -8,8 +8,6 @@ import { TID } from '../../../../shared/testIds'
 import SnapshotsView from './SnapshotsView.vue'
 import type { SnapshotSummary, SnapshotListData, CopyEvent } from '../../types/ipc'
 
-// The import flow drives promise-based dialogs and the busy guard; stub both
-// so tests can script the user's choices without a DialogHost/session store.
 const { mockConfirm, mockAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
   mockConfirm: vi.fn(),
   mockAlert: vi.fn(),
@@ -26,8 +24,6 @@ vi.mock('../../composables/useDialogs', () => ({
 vi.mock('../../composables/useActionGuard', () => ({
   useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction })
 }))
-
-// Tests the snapshots tab + inline restore op-card state machine: in-flight, success (auto-dismiss 1.8s), error (Retry/Dismiss), cancelled.
 
 const messages = {
   en: {
@@ -56,7 +52,6 @@ const messages = {
       noPrevious: 'First snapshot — no previous to compare',
       diffNoChanges: 'No changes',
       empty: 'No snapshots yet.',
-      // Trigger labels for `triggerLabel`:
       triggerBoot: 'Boot',
       triggerRestart: 'Manager',
       triggerManual: 'Manual',
@@ -93,7 +88,7 @@ function createTestI18n() {
 function makeSnapshot(overrides: Partial<SnapshotSummary> = {}): SnapshotSummary {
   return {
     filename: 'snap-2026-04-01.json',
-    createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // ~1h ago
+    createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     trigger: 'boot',
     label: null,
     comfyuiVersion: 'v0.3.20',
@@ -184,28 +179,21 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
 
-    // Save CTA gone, op-card present.
     expect(w.find('.snapshots-rail-cta').exists()).toBe(false)
     const card = w.find(`[data-testid="${TID.snapshotsOpCard}"]`)
     expect(card.exists()).toBe(true)
 
-    // Header label.
     expect(w.find('.snapshots-rail-label').text()).toContain('Restoring snapshot')
 
-    // Target label resolves "from {trigger · relative-time}".
     expect(card.find('.snapshots-op-card-target').text()).toMatch(/from\s+Boot/)
 
-    // Percent text.
     expect(card.find('.snapshots-op-bar-pct').text()).toContain('42%')
 
-    // Phase status.
     expect(card.find('.snapshots-op-bar-status').text()).toContain('Loading snapshot')
 
-    // Spinner dot on the top card (not the historical rows).
     const topNode = w.findAll('.snapshots-rail-node.is-save')[0]
     expect(topNode!.find('.snapshots-rail-dot.is-spinning').exists()).toBe(true)
 
-    // Cancel button visible (cancellable=true) + carries the dedicated TID.
     expect(w.find(`[data-testid="${TID.snapshotsOpCardCancel}"]`).exists()).toBe(true)
   })
 
@@ -240,13 +228,11 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
 
-    // Reset call count from initial load() so the post-success reload is the new call.
     const apiGetSnapshots = vi.mocked(
       (window as unknown as { api: { getSnapshots: ReturnType<typeof vi.fn> } }).api.getSnapshots
     )
     apiGetSnapshots.mockClear()
 
-    // Transition op to done+ok.
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
@@ -260,21 +246,17 @@ describe('comfyUISettings/SnapshotsView', () => {
     })
     await flushPromises()
 
-    // Green success card present.
     expect(w.find('.snapshots-rail-save-box.is-op-success').exists()).toBe(true)
     expect(w.find('.snapshots-rail-label').text()).toContain('Snapshot restored')
     expect(w.find('.snapshots-op-card.is-success .snapshots-op-card-target').text()).toMatch(
       /Rolled back to/
     )
 
-    // Before timer fires: no op-dismiss yet.
     expect(w.emitted('op-dismiss')).toBeUndefined()
 
-    // Advance through the 1.8s auto-dismiss timer.
     await vi.advanceTimersByTimeAsync(1800)
     await flushPromises()
 
-    // op-dismiss + refresh-all emitted, list reloaded.
     expect(w.emitted('op-dismiss')).toHaveLength(1)
     expect(w.emitted('refresh-all')).toHaveLength(1)
     expect(apiGetSnapshots).toHaveBeenCalledWith('install-A')
@@ -337,14 +319,11 @@ describe('comfyUISettings/SnapshotsView', () => {
     })
     await flushPromises()
 
-    // Red card present, error message visible.
     expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(true)
     expect(w.find(`[data-testid="${TID.pickerOpErrorMessage}"]`).text()).toBe('Permission denied')
 
-    // Retry button.
     await w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).trigger('click')
     expect(w.emitted('op-retry')).toHaveLength(1)
-    // The error card is cleared optimistically on retry — Save CTA back.
     await nextTick()
     expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
   })
@@ -498,9 +477,6 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
   })
 
-  // A cross-vendor envelope's PyTorch stack can't be applied here; the
-  // compatible restore keeps the local stack. That substitution must be
-  // disclosed BEFORE the restore runs, and the user must be able to back out.
   describe('import flow: kept-local PyTorch disclosure', () => {
     const NOTICE =
       "The snapshot's PyTorch build (2.11.0+xpu) is not available for this machine; the current PyTorch will be kept."
@@ -583,15 +559,12 @@ describe('comfyUISettings/SnapshotsView', () => {
     })
   })
 
-  // A "Copied from/as X" event that sorts above the
-  // newest snapshot must not steal the "Latest" designation. Latest tracks the
-  // newest *snapshot* (snapshotIndex === 0), not the merged timeline index.
   describe('latest detection with copy events (#1007)', () => {
     function makeCopyEvent(overrides: Partial<CopyEvent> = {}): CopyEvent {
       return {
         installationId: 'install-B',
         installationName: 'Copy of A',
-        copiedAt: new Date().toISOString(), // now — newer than the ~1h-old snapshots
+        copiedAt: new Date().toISOString(),
         copyReason: 'copy',
         exists: true,
         direction: 'in',
@@ -613,17 +586,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     it('keeps the Latest badge on the newest snapshot when an incoming copy event sorts first', async () => {
       const w = await mountWithCopyEvent(makeCopyEvent({ direction: 'in' }))
 
-      // The copy event is rendered (and sorts to the top of the rail)…
       expect(w.text()).toContain('Copied from Copy of A')
 
-      // …but the "Latest" badge appears exactly once, on the newest snapshot.
       const badges = w.findAll('.snapshot-row-latest')
       expect(badges).toHaveLength(1)
       const newestRow = w.find(`[data-testid="${TID.snapshotRow('snap-newest.json')}"]`)
       expect(newestRow.find('.snapshot-row-latest').exists()).toBe(true)
 
-      // The newest snapshot is auto-expanded; restoring it is a no-op, so it
-      // must not offer a Restore action even though a copy event sorts above it.
       expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
         false
       )
@@ -642,8 +611,6 @@ describe('comfyUISettings/SnapshotsView', () => {
     it('header "Latest:" stat reflects the newest snapshot, not the copy event time', async () => {
       const w = await mountWithCopyEvent(makeCopyEvent({ direction: 'in' }))
 
-      // Snapshots are ~1h old; the copy event is "now". The stat must show the
-      // snapshot's age (1h ago), proving the copy event didn't hijack it.
       const latest = w.find('.snapshots-view-latest')
       expect(latest.text()).toContain('Latest:')
       expect(latest.text()).toContain('1h ago')

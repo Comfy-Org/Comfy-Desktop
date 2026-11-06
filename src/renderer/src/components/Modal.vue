@@ -2,14 +2,6 @@
 import { computed } from 'vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
 
-/**
- * Single modal primitive.
- *
- * - `binding`: true → no click-outside / Esc dismiss; defaults the backdrop to
- *   `opaque`. Caller must provide an explicit close affordance.
- * - `inline`: true → render the content frame only (no Teleport/backdrop/Esc)
- *   for embedding in a panel body; layout stays identical to overlay mode.
- */
 type Opacity = 'dim' | 'heavy-dim' | 'opaque'
 
 const props = withDefaults(
@@ -17,9 +9,7 @@ const props = withDefaults(
     binding?: boolean
     opacity?: Opacity
     width?: 'regular' | 'wide'
-    /** Extra class(es) appended to the content box. */
     contentClass?: string
-    /** Render content frame only (no overlay/backdrop/dismiss). */
     inline?: boolean
     ariaLabel?: string
     ariaLabelledby?: string

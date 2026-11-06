@@ -27,7 +27,6 @@ describe('LEGAL_DOCS', () => {
   })
 
   it('no doc body still claims "anonymous" data collection', () => {
-    // Data stops being anonymous once the user signs in to Comfy Cloud.
     for (const id of ids) {
       for (const block of LEGAL_DOCS[id].blocks) {
         const body = block.text ?? block.items?.join(' ') ?? ''

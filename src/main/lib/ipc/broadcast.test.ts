@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the electron parts shared.ts touches at load; we only test the registry.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,

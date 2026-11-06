@@ -53,8 +53,6 @@ useTheme()
 
 const params = new URLSearchParams(window.location.search)
 const installationId = params.get('installationId') || ''
-// Main passes the persisted first-use gate synchronously so cold
-// start doesn't wait on IPC before painting chooser vs takeover.
 seedLauncherPrefsFromUrl(window.location.search)
 const urlFirstUseCompleted = params.get('firstUseCompleted') === 'true'
 const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
@@ -62,45 +60,24 @@ const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
 const sessionStore = useSessionStore()
 const installationStore = useInstallationStore()
 const launcherPrefs = useLauncherPrefs()
-// Overlap the IPC round-trip with panel bundle parse / Vue mount.
 void launcherPrefs.loadPrefs()
-// Surface `loaded` as a top-level template binding so Vue auto-unwraps
-// it in the body-gate `v-if`. Refs accessed as object properties on
-// `launcherPrefs` aren't auto-unwrapped in templates, only top-level
-// setup bindings are.
 const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 
 const modal = useModal()
-// Surface main-process mid-operation prompts (e.g. Legacy Desktop adoption)
-// as in-app dialogs above the ProgressModal instead of native OS message boxes.
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
-// installationStore.fetchInstallations() is wired to onInstallationsChanged
-// inside the store itself, so the panel just needs to read from it.
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
 )
 
-/**
- * Resolves once `onMounted` has finished its async bootstrap (locale +
- * sessionStore + installationStore + launcherPrefs). The install-update
- * deep-link handler awaits this before resolving the installation so a
- * `panel-trigger-overlay` IPC that arrives during the panelView's first
- * `did-finish-load` (i.e. before the store has hydrated) doesn't
- * silently drop the click — it queues until the unified Settings modal
- * can render against a populated store and translated copy.
- */
 let resolveBootstrap: (() => void) | null = null
 const bootstrapReady: Promise<void> = new Promise<void>((resolve) => {
   resolveBootstrap = resolve
 })
 
-// Template refs for the overlay slot's mounted components — the
-// composable consumes these but doesn't own them so vue-tsc can see
-// the bindings as used by the template's `ref="…"` props.
 const progressRef = ref<InstanceType<typeof ProgressModal> | null>(null)
 const newInstallRef = ref<InstanceType<typeof InstallWizardModal> | null>(null)
 const trackRef = ref<InstanceType<typeof TrackModal> | null>(null)
@@ -109,18 +86,6 @@ const quickInstallRef = ref<InstanceType<typeof QuickInstallModal> | null>(null)
 const firstUseRef = ref<InstanceType<typeof FirstUseTakeover> | null>(null)
 const migrateTakeoverRef = ref<InstanceType<typeof MigrateConfirmTakeover> | null>(null)
 
-// The three panel composables form a small dependency cycle:
-//   - useFirstUseChain needs overlay helpers (dismissTakeoverDirect,
-//     switchPanel, handleShowProgress) and chooser launch.
-//   - usePanelOverlays needs the chain's hooks bag + the chooser's
-//     prepareChooserHostHandoff.
-//   - useChooserHandoff needs the overlay's handleShowProgress +
-//     switchPanel.
-// Break the cycle with deferred lazy references: composables that
-// have to be instantiated first take callbacks that read the later-
-// assigned holders at call time (not at construction time). By the
-// time any callback fires (user click, IPC, watcher) all three
-// holders are populated.
 let overlays!: ReturnType<typeof usePanelOverlays>
 let chooserHandoff!: ReturnType<typeof useChooserHandoff>
 
@@ -166,8 +131,6 @@ const {
   switchPanel
 } = overlays
 
-// Defers only for a running instance, not an open overlay — the picker lives
-// inside the new-install takeover, which is exactly when we want it warm.
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
@@ -175,7 +138,6 @@ const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
 let warmTemplateThumbnailsOnce: Promise<void> | null = null
 function warmTemplateThumbnails(): Promise<void> {
   if (firstUseCompleted.value) return Promise.resolve()
-  // Both first-use branches can reach this on one cold start; warm just once.
   warmTemplateThumbnailsOnce ??= (async () => {
     try {
       const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
@@ -185,19 +147,11 @@ function warmTemplateThumbnails(): Promise<void> {
           return typeof url === 'string' ? url : null
         })
       )
-    } catch {
-      // Best-effort warm-up; the picker still loads thumbnails on demand.
-    }
+    } catch {}
   })()
   return warmTemplateThumbnailsOnce
 }
 
-// E2E surface: tests drive UI-level flows (e.g. inject a finished
-// failed op to render ProgressModal's error state) by calling into
-// `handleShowProgress` from outside the Vue tree. Gated on the
-// `e2e=1` URL flag main propagates only when `process.env.E2E === '1'`,
-// matching the registration gate in `panel/main.ts`; `__e2eRenderer`
-// is never present in production.
 if (params.get('e2e') === '1') {
   bindE2EPanelHooks({
     showProgress: handleShowProgress,
@@ -236,9 +190,6 @@ const firstUseTakeoverActive = computed(
   () => currentOverlay.value?.kind === 'takeover' && currentOverlay.value.component === 'first-use'
 )
 
-/** Chooser/lifecycle body: show immediately when main already knows
- *  first-use is done; otherwise wait for prefs IPC. Always hide while
- *  the first-use takeover is mounted (prevents chooser bleed-through). */
 const showPanelBody = computed(() => {
   if (firstUseTakeoverActive.value) return false
   if (urlFirstUseCompleted) return true
@@ -256,11 +207,6 @@ chooserHandoff = useChooserHandoff({
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
-// Boot-time restore: the host window is hidden until we tell main the outcome.
-// Use `performChooserLaunch` (NOT `handleChooserPick`) so a missing launch
-// action falls back to the dashboard instead of opening the new-install wizard.
-// Reveal the launching takeover when it comes up; otherwise (already running,
-// missing action, console/external mode, error) fall back to the dashboard.
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
     const outcome = await chooserHandoff.performChooserLaunch(inst)
@@ -273,12 +219,6 @@ async function handleStartupRestorePick(inst: Installation): Promise<void> {
   }
 }
 
-// When an overlay closes on a chooser host without producing an attach
-// (cancel / error / dismiss), revert the install identity preview that
-// `claimAttachHost` pushed to the title bar — otherwise the chooser host
-// keeps showing the last-attempted install's name. On a successful
-// attach the chooser PanelApp tears down before this watcher fires, so
-// the happy path never triggers a release.
 if (!installationId) {
   watch(currentOverlay, (next, prev) => {
     if (prev && !next) {
@@ -294,10 +234,6 @@ let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
-// All Manage routes go through `window.api.openInstancePicker` — the picker's
-// expanded mode is the single per-install settings surface. Delete keeps its
-// fast path (confirm + show-progress) so the user never sees the picker for
-// that action; everything else opens the picker.
 const { triggerAction: triggerInstallAction } = useInstallContextMenu({
   onManage: (inst, manageOpts) => {
     const autoAction = manageOpts?.autoAction ?? null
@@ -322,14 +258,6 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
-    // Chooser-host pick (no installationId backing this host) → swap
-    // in-place via the same path the dashboard chooser uses, so the
-    // dashboard window becomes the picked install. Install-backed
-    // pick → spawn a new Comfy window for the picked install
-    // (focus-or-launch contract — main already short-circuits to
-    // focus-existing when the install is already running in another
-    // window before this IPC fires, so we only ever see launches
-    // here for installs that aren't running yet).
     if (!installationId) {
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
@@ -343,26 +271,13 @@ useDeepLinkRouter({
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {
-    // The IPC carries the composable's menu-item id (`copy-install`,
-    // `untrack`, `delete`, `reveal-in-folder`), so this is a direct
-    // dispatch — `triggerAction` resolves each id to either a
-    // `runAction` IPC or an `onManage` overlay open.
     await triggerInstallAction(actionId, inst)
   },
   showProgressFromPicker: (showOpts) => handleShowProgress(showOpts)
 })
 
-// Picker-driven mutating ops resolve here when the user picks a CTA on
-// the ProgressModal's success-terminal screen. New presets land as
-// extra branches; the underlying ProgressModal stays preset-agnostic.
 function handleProgressSuccessChoice(actionId: string, targetInstallationId: string): void {
   if (actionId === SUCCESS_ACTION_OPEN_INSTANCE) {
-    // Cold-spawn chooser host (cross-instance Update that opened a
-    // fresh window for the target): `handleChooserPick` attaches the
-    // install in-place, so this same window becomes the target's
-    // window — no extra chooser hop, no orphan chooser left behind.
-    // Install-backed host: fall back to `openInstallWindow`, which
-    // focuses an existing window or opens a fresh chooser.
     if (!installationId) {
       const inst = installationStore.getById(targetInstallationId)
       if (inst) {
@@ -374,60 +289,34 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
     return
   }
   if (actionId === SUCCESS_ACTION_GO_DASHBOARD) {
-    // No-op on chooser hosts; flips an install-backed host back in place.
     void window.api.returnToDashboard()
   }
 }
 
-/** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
   activePanel,
   (next) => {
     const isOverlay = next === 'feedback' || next === 'announcement'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
-    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
-    // and Chromium pauses rAF for an occluded view, so it would never fire.
     void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
 )
 
 onMounted(async () => {
-  // Register the brand-takeover surface so `useMigrateAction` can route
-  // chain-migrate confirms here instead of the legacy Modal. Instance
-  // settings keep the Modal default.
-  // Wired before bootstrap because the surface is read by the
-  // FirstUseTakeover chain — if it landed mid-takeover (e.g. due to a
-  // slow bootstrap) the chain would silently fall back to the modal.
   registerMigrateTakeover({
     open: (title, confirmLabel) => migrateTakeoverRef.value!.open(title, confirmLabel),
     update: (opts) => migrateTakeoverRef.value?.update(opts)
   })
 
-  // Main can request a panel switch (e.g. from title-bar buttons, or when
-  // the install lifecycle changes — main flips us to 'comfy-lifecycle' when
-  // the instance stops so the Comfy tab body shows the right transient UI).
-  // Flow panels (new-install / track / load-snapshot / quick-install) need
-  // the imperative open() reset to run after mount, so funnel through
-  // switchPanel() rather than assigning activePanel directly.
   unsubPanel = window.api.onPanelSwitch((data) => {
     if (isValidPanel(data.panel)) {
       void switchPanel(data.panel)
     }
   })
 
-  // Consult the active overlay's cancel prompt before closing the host window.
-  // Echo the result and requestId so main can pair the response with its request.
-  //
-  // With no overlay, defer to main for the close confirmation. The panel can be
-  // hidden behind ComfyUI, so it cannot reliably display the host's confirmation.
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
-    // Ack synchronously so main extends its hung-renderer timeout —
-    // the actual response can take arbitrary time when the user is
-    // looking at a cancel-prompt confirmation modal, and the old
-    // 5s response timeout was racing slow user input and force-
-    // closing the window.
     window.api.ackCloseRequest({ requestId })
     void (async () => {
       if (currentOverlay.value !== null) {
@@ -438,17 +327,9 @@ onMounted(async () => {
     })()
   })
 
-  // File menu's "Return to Dashboard" consult. Layered:
-  //   - In-flight overlay → tier-aware cancel-prompt via `closeOverlay`.
-  //   - No overlay + local install → "Stop ComfyUI?" confirm so the
-  //     user knows the running session is about to be stopped.
-  // Cloud / remote installs (and chooser hosts) clear silently.
   unsubReturnToDashboardRequest = window.api.onReturnToDashboardRequest(({ requestId }) => {
     window.api.ackReturnToDashboardRequest({ requestId })
     void (async () => {
-      // The inner await chain is wrapped so a thrown / rejected confirm doesn't
-      // strand main waiting forever on the response; the catch returns a
-      // default `cleared: false` and the response always fires below.
       const { cleared, reason } = await (async (): Promise<{
         cleared: boolean
         reason: 'in_flight' | 'running' | 'stopped' | 'crashed'
@@ -481,17 +362,10 @@ onMounted(async () => {
     })()
   })
 
-  // Auto-fire the restart prompt when an auto-off user-initiated
-  // download finishes — closes the loop on the single-gesture flow
-  // (Download → wait → Restart) without forcing the user to find the
-  // pill again.
   unsubAppUpdatePromptRestart = window.api.onAppUpdatePromptRestart(({ version }) => {
     void showAppUpdateRestartPrompt(version || null)
   })
 
-  // Surface user-initiated update failures (download/install) as an
-  // alert. Background auto-on download errors stay silent (main
-  // doesn't broadcast them on this channel).
   unsubAppUpdateUserActionFailed = window.api.onAppUpdateUserActionFailed(({ message }) => {
     void modal.alert({
       title: t('appUpdate.errorTitle'),
@@ -499,19 +373,12 @@ onMounted(async () => {
     })
   })
 
-  // The file-menu "Skip Onboarding" IPC subscription lives in
-  // useFirstUseChain so the chain owns its own input surface; no
-  // duplicate listener here.
-
   try {
-    // Initialize stores and preferences needed by the dashboard and settings.
-    // installationStore wires its own onInstallationsChanged listener.
     const shouldOpenFirstUse =
       urlFirstUsePending ||
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
-      // Warm before opening so the prefetch queue is pumping as the picker mounts.
       void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
@@ -525,32 +392,17 @@ onMounted(async () => {
       })
     ])
 
-    // If the URL-driven initial panel mounts as a flow wizard takeover,
-    // kick it open now — script-setup couldn't because the template
-    // hadn't rendered yet.
     if (isFlowPanel(initialPanel)) {
       void switchPanel(initialPanel, 'url')
     }
 
-    // First-use takeover auto-mounts when the persisted gate is still
-    // false. Runs AFTER the URL-driven flow panel branch so a
-    // `?panel=new-install` request still wins (e.g. when main re-routes
-    // a chooser pick into new-install for an un-installed source); the
-    // first-use takeover will replay on the next launch since
-    // `firstUseCompleted` stays false until the explicit completion
-    // path runs.
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
-      // Warm before opening so the prefetch queue is pumping as the picker mounts.
       void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
     console.error('Panel: bootstrap failed', err)
   } finally {
-    // bootstrapReady must always resolve — useDeepLinkRouter awaits it
-    // before resolving overlay deep-links, and a never-resolved promise
-    // would silently wedge any panel-trigger-overlay IPC the user fires
-    // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
   }
@@ -563,12 +415,8 @@ onUnmounted(() => {
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()
   unsubAppUpdateUserActionFailed?.()
-  // Strip the overlay-mode class so HMR / view reload / host teardown
-  // while the drawer is open doesn't leak transparency past unmount.
   document.body.classList.remove('panel-overlay-mode')
   sessionStore.dispose()
-  // Release the E2E binding so a stale closure can't keep driving the
-  // progress chain on a detached PanelApp instance after a panel swap.
   if (params.get('e2e') === '1') bindE2EPanelHooks(null)
 })
 </script>
@@ -590,10 +438,6 @@ onUnmounted(() => {
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
         :class="showSidebar && 'rounded-shell bg-[var(--bg)]'"
       >
-        <!-- `showPanelBody` — chooser when main/IPC says first-use is done;
-             hidden while the first-use takeover is mounted (no chooser
-             bleed-through during BrandTakeoverLayout's fade-in). Flow
-             takeovers keep the chooser mounted underneath by design. -->
         <div v-if="showPanelBody" class="panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             v-if="activePanel === 'comfy-lifecycle'"
@@ -638,19 +482,6 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <!-- Host-level overlay slot. One DOM node at a
-         time, owned by `useOverlay`. Mounts either a Tier 1 popover,
-         the in-flight progress modal (Tier 2), or one of the Tier 3
-         takeovers (the four flow modals + the first-use takeover).
-         The branches are mutually exclusive because `useOverlay` only
-         ever holds one overlay in `current.value`.
-
-         App-update is NOT in this chain — the title-bar app-update
-         pill click pops a `useModal.confirm` modal that
-         lives in the global ModalDialog mount below, not in the
-         overlay slot. -->
-    <!-- ProgressModal renders the shared takeover loader for delete, install, update,
-         copy, migrate, snapshot, and launch operations. -->
     <template v-if="currentOverlay?.kind === 'takeover'">
       <ProgressModal
         v-if="currentOverlay.component === 'update'"

@@ -41,10 +41,6 @@ export function isFirebaseSessionInjectionRecordOwnedBy(
   )
 }
 
-/**
- * Own the next Firebase session write and invalidate any write still running
- * for a superseded sign-in flow.
- */
 export function beginFirebaseSessionInjection(contents: WebContents): FirebaseSessionInjection {
   if (activeInjection) invalidateInjection(activeInjection)
   const injection = { contents, frame: null, token: randomUUID() }
@@ -58,24 +54,6 @@ export function releaseFirebaseSessionInjection(injection: FirebaseSessionInject
   invalidateInjection(injection)
 }
 
-/**
- * Build the JavaScript string passed to `comfyContents.executeJavaScript`
- * to write the captured Firebase user into the embedded view's IndexedDB
- * and reload the page so Firebase's SDK rehydrates from persistence.
- *
- * Schema (stable across Firebase JS SDK v9-v11):
- *   - DB:     `firebaseLocalStorageDb`
- *   - Store:  `firebaseLocalStorage`
- *   - KeyPath:`fbase_key`
- *   - Key:    `firebase:authUser:<apiKey>:[DEFAULT]`
- *   - Value:  `{ fbase_key, value: <user.toJSON()> }`
- *
- * After the write, `location.reload()` triggers Firebase's persistence
- * read on init, which fires `onAuthStateChanged(user)` and lets the
- * cloud frontend's existing `useSessionCookie.createSession()` flow
- * post the ID token to `/auth/session` — same path as a normal popup
- * sign-in.
- */
 export function buildIndexedDbInjectScript(
   user: Record<string, unknown>,
   apiKey: string,
@@ -88,8 +66,6 @@ export function buildIndexedDbInjectScript(
   const ownerTokenJson = JSON.stringify(ownerToken)
   const ownerKeyJson = JSON.stringify(INJECTION_OWNER_KEY)
   const recordOwnerKeyJson = JSON.stringify(FIREBASE_SESSION_INJECTION_OWNER_FIELD)
-  // Wrapped in an IIFE that resolves once the IDB transaction commits
-  // (so `executeJavaScript`'s returned Promise tracks the actual write).
   return `(async () => {
   const ownerKey = ${ownerKeyJson};
   const expectedOrigin = ${expectedOriginJson};
@@ -149,11 +125,6 @@ export function buildIndexedDbInjectScript(
 })()`
 }
 
-/**
- * Bind the credential-bearing script to the main frame observed after the
- * origin check. A navigation destroys that frame; a superseding flow changes
- * its in-page owner token, so neither race can commit and reload stale auth.
- */
 export async function injectFirebaseSession(
   injection: FirebaseSessionInjection,
   expectedOrigin: string,

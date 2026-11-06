@@ -102,7 +102,6 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
   return api
 }
 
-// Stub BrandTakeoverLayout to skip its Teleport-to-body so assertions render inline.
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
   template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>'
@@ -111,7 +110,6 @@ const brandTakeoverStub = {
 function mountView(installationId = 'inst-1', installation: Installation | null = SAMPLE_INSTALL) {
   return mount(ComfyLifecycleView, {
     props: { installationId, installation },
-    // No createPinia() here — beforeEach's setActivePinia must own the instance so its mutations land.
     global: {
       plugins: [createTestI18n()],
       stubs: { BrandTakeoverLayout: brandTakeoverStub }
@@ -123,17 +121,13 @@ describe('ComfyLifecycleView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     installMockApi()
-    // The view gates on sessionStore.ready; tests bypass init() so flip it manually.
     useSessionStore().ready = true
   })
 
   it('renders the stopped surface in the not-running state so a clean stop is not a black window', async () => {
-    // After a user-initiated stop, no live ComfyUI view covers the panel.
-    // The not-running state must display its relaunch card.
     const wrapper = mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('ComfyUI is stopped')
-    // Neutral surface, not the crashed/error chrome.
     expect(wrapper.find('.brand-progress__banner--error').exists()).toBe(false)
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(false)
     const button = wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`)
@@ -211,7 +205,6 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('memory access violation')
     expect(wrapper.text()).toContain('0xC0000005')
-    // No VC++ hint unless DLLs were actually found missing.
     expect(wrapper.text()).not.toContain('Visual C++ Redistributable')
   })
 
@@ -266,7 +259,6 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.text()).toContain('(PID 11944, 17348) did not exit.')
     expect(wrapper.text()).not.toContain('ComfyUI exited unexpectedly')
     expect(wrapper.text()).not.toContain('The ComfyUI process exited')
-    // Still recoverable from here.
     expect(wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`).exists()).toBe(true)
   })
 
@@ -328,9 +320,6 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     const logs = wrapper.find('.brand-progress__logs')
     expect(logs.exists()).toBe(true)
-    // PII scrubbing belongs on the telemetry path, not the local-UI path.
-    // If any of these fail, we've regressed back to scrubbing logs the user
-    // sees on their own machine.
     expect(logs.text()).toContain('C:\\Users\\alice\\ComfyUI\\main.py')
     expect(logs.text()).toContain('/Users/bob/ComfyUI/main.py')
     expect(logs.text()).toContain('/home/carol/ComfyUI/main.py')
@@ -402,8 +391,6 @@ describe('ComfyLifecycleView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    // A panel recreated after the live event must still get the rich copy + hint
-    // rather than regressing to the bare decimal code.
     expect(wrapper.text()).toContain('memory access violation')
     expect(wrapper.text()).toContain('0xC0000005')
     expect(wrapper.text()).toContain('Visual C++ Redistributable')
@@ -421,7 +408,6 @@ describe('ComfyLifecycleView', () => {
     })
 
     const wrapper = mountView()
-    // The live IPC handler wins over the on-mount fetch.
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
@@ -440,7 +426,6 @@ describe('ComfyLifecycleView', () => {
 
     expect(api.getLastCrashError).toHaveBeenCalledWith('inst-1')
     const stored = sessionStore.errorInstances.get('inst-1')
-    // The best-effort buffer fetch must not clobber the fresher live event.
     expect(stored?.lastStderr).toBe('live event stderr')
     expect(stored?.exitCode).toBe(137)
     expect(wrapper.find('.brand-progress__logs').text()).toContain('live event stderr')
@@ -509,7 +494,6 @@ describe('ComfyLifecycleView', () => {
     const back = buttons.find((b) => b.text().includes('Back'))
     expect(back?.exists()).toBe(true)
     expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
-    // Back on the left, Restart on the right.
     expect(buttons[0]!.text()).toContain('Back')
     expect(buttons[1]!.text()).toContain('Restart')
     await back!.trigger('click')

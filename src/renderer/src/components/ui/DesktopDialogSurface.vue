@@ -39,16 +39,12 @@ function onOpenChange(open: boolean): void {
 }
 
 function onEscape(event: KeyboardEvent): void {
-  // An inner dialog owns Escape even when it cannot be dismissed. In a
-  // separate Desktop popup, bubbling would otherwise close the host window.
   event.stopImmediatePropagation()
   if (!props.dismissOnEscape) event.preventDefault()
 }
 
 function onContentEscape(event: KeyboardEvent): void {
   if (event.defaultPrevented) return
-  // Desktop's host popup also listens on window. Contain a key originating
-  // in this focused dialog before it reaches that separate window handler.
   event.stopPropagation()
   event.preventDefault()
   if (props.dismissOnEscape) emit('close')
@@ -59,17 +55,11 @@ function onPointerDownOutside(event: Event): void {
 }
 
 function onOpenAutoFocus(event: Event): void {
-  // Prefer an explicitly marked field over the library's first tabbable
-  // element. Other dialogs start on their content, never a destructive CTA.
-  // Not [autofocus]: the package refocuses that on every focus of the content,
-  // so clicking blank dialog space would jump to the field and select its text.
   const content = event.target
   if (event.defaultPrevented || !(content instanceof HTMLElement)) return
   event.preventDefault()
   const target = content.querySelector<HTMLElement>('[data-initial-focus]')
   target?.focus()
-  // A disabled or hidden target may refuse focus. Keep it on the dialog
-  // rather than allowing the library to pick an unrelated first button.
   if (content.ownerDocument.activeElement !== target) content.focus()
 }
 </script>
@@ -78,8 +68,6 @@ function onOpenAutoFocus(event: Event): void {
   <Dialog :open="open" @update:open="onOpenChange">
     <DialogPortal v-if="open">
       <div class="pointer-events-none" :class="overlayClass">
-        <!-- The package overlay owns its reference-counted body scroll lock.
-             Omitting it preserves the explicit preventScroll=false contract. -->
         <DialogOverlay
           v-if="preventScroll"
           class="absolute inset-0 bg-transparent pointer-events-auto data-[state=open]:animate-none data-[state=closed]:animate-none"
@@ -101,9 +89,6 @@ function onOpenAutoFocus(event: Event): void {
           @pointer-down-outside="onPointerDownOutside"
           @open-auto-focus="onOpenAutoFocus"
         >
-          <!-- Register the package title context without announcing a second
-               heading. The dialog is named above by aria-label or by the
-               consumer's visible heading through aria-labelledby. -->
           <DialogTitle as="span" class="hidden" aria-hidden="true" />
           <slot />
         </DialogContent>

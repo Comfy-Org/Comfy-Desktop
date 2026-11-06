@@ -2,24 +2,12 @@
 import type { CoachmarkBeakPayload } from '../../../types/ipc'
 import { nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-/**
- * Title-tooltip popup renderer. Renders the hover bubble (and onboarding
- * coachmark) and reports its rendered size to main on each config update so
- * main resizes the popup view before showing it. Used because macOS doesn't
- * reliably surface native `title` tooltips for unfocused sibling chrome views.
- */
-
 interface TooltipConfig {
-  /** `'tooltip'` (default) for the hover bubble; `'coachmark'` for the
-   *  onboarding card. */
   variant?: 'tooltip' | 'coachmark'
-  /** Hover-bubble body (tooltip variant). */
   text?: string
-  /** Coachmark title + body + dismiss label (coachmark variant). */
   title?: string
   body?: string
   dismissLabel?: string
-  /** Secondary action beside dismiss, when the card has one. Absent = dismiss-only. */
   actionLabel?: string
   theme: { bg: string; text: string; border: string; accent?: string }
   configToken: string
@@ -29,14 +17,8 @@ interface Bridge {
   ready(): void
   notifyRendered(payload: { width: number; height: number; configToken: string }): void
   onConfig(cb: (config: TooltipConfig) => void): () => void
-  /** Coachmark dismiss button — tells main to hide + persist the
-   *  once-ever flag. No-op for the tooltip variant. */
   dismissCoachmark?(configToken: string): void
-  /** Beak position as a fraction of the card's width, pushed once main has measured the card
-   *  and settled its final bounds. */
   onBeak?(cb: (payload: CoachmarkBeakPayload) => void): () => void
-  /** Coachmark secondary action — retires the card the same way dismiss does, and lets the
-   *  owning feature run its follow-up (e.g. opening Settings). */
   actionCoachmark?(configToken: string): void
 }
 
@@ -48,29 +30,13 @@ const cmTitle = ref<string>('')
 const cmBody = ref<string>('')
 const cmDismissLabel = ref<string>('Got it')
 const cmActionLabel = ref<string>('')
-/** Defaults to centred, which is what a card with no clamp and a correct anchor resolves to
- *  anyway — so a missed push degrades to the old behaviour rather than to a detached beak. */
 const cmBeakFraction = ref<number>(0.5)
-/** Where the card's midpoint belongs inside the view, as MAIN computed it — `null` until it
- *  arrives, and on an older main that never sends it, which falls back to the CSS centring.
- *
- *  Placement comes from main because centring here measures this page's own width, and that
- *  width is sometimes still the pre-resize value: the view has new bounds and the page has not
- *  processed them. Centring against it puts the card one gutter off the anchor, and the beak
- *  is pinned to the card, so the whole thing points beside the bell. Measured at 8px, with the
- *  page reporting 300 inside a 316-wide view.
- *
- *  A centre rather than a left edge, so it stays correct at whatever width the card actually
- *  renders — `translateX(-50%)` offsets by half of the real card, not half of an assumed one. */
 const cmCardCentre = ref<number | null>(null)
-// Until main's config arrives: the Void tooltip (main/popups/titleTooltip.ts).
 const themeBg = ref<string>('#f0f0f1')
 const themeText = ref<string>('#141415')
 const themeBorder = ref<string>('#f0f0f1')
 const themeAccent = ref<string>('#f0f0f1')
 const coachmarkBorder = 'rgba(255, 255, 255, 0.22)'
-/** Token of the latest config, echoed in every render-ack so main can discard
- *  stale acks. */
 let currentConfigToken = ''
 
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
@@ -78,19 +44,12 @@ const bubbleRef = useTemplateRef<HTMLElement>('bubble')
 let unsubConfig: (() => void) | undefined
 let unsubBeak: (() => void) | undefined
 
-/** Wait for the Inter web font before measuring, else the first show measures in
- *  the fallback font and reports a wrong size, making the bubble visibly
- *  re-size when the real font paints. */
 async function measureAndAck(): Promise<void> {
-  // Capture the token now; a config change mid-await produces a stale ack that
-  // main ignores because the token won't match.
   const token = currentConfigToken
   if (document.fonts && typeof document.fonts.ready?.then === 'function') {
     try {
       await document.fonts.ready
-    } catch {
-      // Best-effort — fall through to measuring with whatever's loaded.
-    }
+    } catch {}
   }
   await nextTick()
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
@@ -115,8 +74,6 @@ onMounted(() => {
     cmTitle.value = cfg.title ?? ''
     cmBody.value = cfg.body ?? ''
     cmDismissLabel.value = cfg.dismissLabel ?? cmDismissLabel.value
-    // Reset rather than retain: one popup serves several cards, so a dismiss-only card
-    // following an actioned one must not inherit the previous card's button.
     cmActionLabel.value = cfg.actionLabel ?? ''
     themeBg.value = cfg.theme.bg
     themeText.value = cfg.theme.text
@@ -126,16 +83,12 @@ onMounted(() => {
   })
   unsubBeak = bridge?.onBeak?.(({ beakFraction, cardCentreInView }) => {
     cmBeakFraction.value = Math.min(1, Math.max(0, beakFraction))
-    // `?? null` and a finiteness guard, not a `=== null` test: an older preload sends
-    // `undefined`, which would otherwise reach the style binding and emit `undefinedpx`.
     cmCardCentre.value =
       typeof cardCentreInView === 'number' && Number.isFinite(cardCentreInView)
         ? Math.max(0, cardCentreInView)
         : null
   })
   bridge?.ready()
-  // Re-measure if Inter loads mid-session (after the initial ack) so main can
-  // resize to the new metrics.
   if (document.fonts && typeof document.fonts.addEventListener === 'function') {
     document.fonts.addEventListener('loadingdone', () => {
       if (text.value) void measureAndAck()
@@ -143,9 +96,6 @@ onMounted(() => {
   }
 })
 
-// Defensive re-measure if rendered text changes outside the config push (HMR,
-// future mutations that bypass `onConfig`). `cmActionLabel` is in here because adding or
-// dropping the action button changes the card's measured width.
 watch([text, cmTitle, cmBody, cmActionLabel], () => {
   void measureAndAck()
 })
@@ -228,7 +178,6 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
-  <!-- No empty light bubble while main's first config is on its way. -->
   <span
     v-else-if="text"
     ref="bubble"

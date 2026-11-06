@@ -1,7 +1,3 @@
-/**
- * Test-side wrappers around the main-process `globalThis.__e2e` helpers.
- * Must stay in sync with what `src/main/lib/e2eHooks.ts` exposes.
- */
 
 import type { ElectronApplication } from 'playwright'
 import { evalWithRetry } from './evalRetry'
@@ -56,8 +52,6 @@ export async function seedDownloads(
   }, snapshot))
 }
 
-/** Live downloads tray snapshot from main (`active` in-flight + `recent`
- *  terminal entries) - the read counterpart to `seedDownloads`. */
 export async function getLiveDownloadsTrayState(
   app: ElectronApplication,
 ): Promise<DownloadsTrayStateLike> {
@@ -112,7 +106,6 @@ export async function returnFirstInstallHostToDashboard(
   }))
 }
 
-/** Recorded args for an instrumented IPC channel since the last reset. */
 export async function getIpcInvocations(
   app: ElectronApplication,
   channel: string,
@@ -135,7 +128,6 @@ export async function resetIpcInvocations(
   }, channel))
 }
 
-/** URLs captured by the launcher's `shell.openExternal` wrapper in E2E mode. */
 export async function getShellOpenExternalCalls(
   app: ElectronApplication,
 ): Promise<string[]> {
@@ -154,14 +146,11 @@ export async function resetShellOpenExternalCalls(app: ElectronApplication): Pro
   }))
 }
 
-/** Register a synthetic running session so the REQUIRES_STOPPED guard and
- *  `sessionStore.isRunning` fire without spawning a real ComfyUI process. */
 export async function seedRunningSession(
   app: ElectronApplication,
   opts: {
     installationId: string
     installationName: string
-    /** Core beta grants the seeded session reports as on its command line. */
     coreBetaArgs?: { arg: string; name: string | null }[]
   },
 ): Promise<void> {
@@ -174,9 +163,6 @@ export async function seedRunningSession(
   }, opts))
 }
 
-/** Mount the install-backed panelView eagerly. Production lazily mounts it
- *  (on Settings click / comfy-lifecycle body); tests that need `panel.html`
- *  reachable right after launch call this to skip the lazy step. */
 export async function ensureInstallPanelView(
   app: ElectronApplication,
   installationId: string,
@@ -190,8 +176,6 @@ export async function ensureInstallPanelView(
   }, installationId))
 }
 
-/** Force every release-cache entry's `checkedAt` to `maxCheckedAt` (ms) to
- *  drive the stale-data auto-refresh watcher without waiting wall-clock. */
 export async function ageReleaseCache(
   app: ElectronApplication,
   maxCheckedAt: number,
@@ -203,7 +187,6 @@ export async function ageReleaseCache(
   }, maxCheckedAt))
 }
 
-/** Drop every synthetic session seeded via `seedRunningSession`. */
 export async function clearRunningSessions(app: ElectronApplication): Promise<void> {
   await evalWithRetry(() => app.evaluate(() => {
     const helpers = (globalThis as unknown as { __e2e?: { clearRunningSessions: () => void } }).__e2e
@@ -219,8 +202,6 @@ export interface RunningSessionSnapshotLike {
   url: string | undefined
 }
 
-/** Snapshot the live running-session entry for `installationId` (real
- *  or synthetic). Returns `null` when no session is registered. */
 export async function getRunningSessionSnapshot(
   app: ElectronApplication,
   installationId: string,
@@ -234,9 +215,6 @@ export async function getRunningSessionSnapshot(
   }, installationId))
 }
 
-/** Whether main still holds the per-install background-operation slot
- *  (`_operationAborts`) for `installationId`. Poll to `false` before
- *  triggering a new picker op, since main rejects overlapping ops. */
 export async function hasActiveOperation(
   app: ElectronApplication,
   installationId: string,
@@ -250,8 +228,6 @@ export async function hasActiveOperation(
   }, installationId))
 }
 
-/** Whether main currently holds the launching marker for `installationId`,
- *  i.e. the install is inside the boot window (spawned, not yet port-ready). */
 export async function isInstallLaunching(
   app: ElectronApplication,
   installationId: string,
@@ -265,9 +241,6 @@ export async function isInstallLaunching(
   }, installationId))
 }
 
-/** Whether main has a launch handler in flight for `installationId` -
- *  covers the WHOLE handler, including the pre-marker prep window that
- *  `isInstallLaunching` (spawn -> port-ready) cannot see. */
 export async function hasActiveLaunch(
   app: ElectronApplication,
   installationId: string,
@@ -281,10 +254,6 @@ export async function hasActiveLaunch(
   }, installationId))
 }
 
-/** Arm the one-shot launch-spawn hold: the NEXT launch parks right before
- *  spawning ComfyUI (launching marker set, port reserved, no process yet)
- *  until released or aborted. Pair with `releaseLaunchSpawnHold` in a
- *  finally so a failed test can't leave a launch parked forever. */
 export async function armLaunchSpawnHold(app: ElectronApplication): Promise<void> {
   await evalWithRetry(() => app.evaluate(() => {
     const helpers = (globalThis as unknown as {
@@ -295,7 +264,6 @@ export async function armLaunchSpawnHold(app: ElectronApplication): Promise<void
   }))
 }
 
-/** Release a held launch (and disarm a not-yet-consumed hold). Idempotent. */
 export async function releaseLaunchSpawnHold(app: ElectronApplication): Promise<void> {
   await evalWithRetry(() => app.evaluate(() => {
     const helpers = (globalThis as unknown as {
@@ -306,7 +274,6 @@ export async function releaseLaunchSpawnHold(app: ElectronApplication): Promise<
   }))
 }
 
-/** Whether a launch is currently parked at the spawn hold. */
 export async function isLaunchSpawnHeld(app: ElectronApplication): Promise<boolean> {
   return await evalWithRetry(() => app.evaluate(() => {
     const helpers = (globalThis as unknown as {
@@ -317,8 +284,6 @@ export async function isLaunchSpawnHeld(app: ElectronApplication): Promise<boole
   }))
 }
 
-/** Read the `checkedAt` ms timestamp of the shared release-cache entry
- *  for `(repo, channel)`. Returns `null` when no entry exists yet. */
 export async function getReleaseCacheCheckedAt(
   app: ElectronApplication,
   repo: string,

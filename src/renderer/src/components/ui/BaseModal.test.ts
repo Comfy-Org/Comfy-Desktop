@@ -11,9 +11,6 @@ const i18n = createI18n({
   fallbackWarn: false
 })
 
-// Tracked so `afterEach` can tear them down — otherwise a leaked
-// `document.keydown` listener's `stopImmediatePropagation()` would block
-// later ESC tests.
 const wrappers: VueWrapper[] = []
 
 async function mountModal(props: Record<string, unknown> = {}) {
@@ -27,7 +24,6 @@ async function mountModal(props: Record<string, unknown> = {}) {
     slots: { default: '<p class="body-content">Hello</p>' },
     global: {
       plugins: [i18n],
-      // Stub `<Teleport>` so the panel renders inside the wrapper for assertions.
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     }
   })
@@ -82,7 +78,6 @@ describe('BaseModal', async () => {
   it('locks body scroll while open and restores the prior value on close', async () => {
     document.body.style.overflow = 'auto'
     const wrapper = await mountModal()
-    // The shared overlay locks scrolling once its portal mounts.
     expect(document.body.style.overflow).toBe('hidden')
     await wrapper.setProps({ open: false })
     await flushPromises()

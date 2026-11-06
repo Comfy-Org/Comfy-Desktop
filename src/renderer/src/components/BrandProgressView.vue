@@ -3,11 +3,6 @@ import { computed } from 'vue'
 import { Check, LoaderCircle, X } from 'lucide-vue-next'
 import type { ProgressStepVM } from '../lib/progressViewModel'
 
-/**
- * Focus stepper — replaces the caption for stepped ops. Fixed viewport, track
- * translates so the active row sits on the centre line; done steps fade up,
- * pending steps wait below.
- */
 const props = defineProps<{ steps: ProgressStepVM[] }>()
 
 const ROW_H = 46
@@ -16,9 +11,6 @@ const VISIBLE_ROWS = 3
 const activeIndex = computed(() => {
   const i = props.steps.findIndex((s) => s.status === 'active')
   if (i >= 0) return i
-  // No active step yet (brief gap, or all done). Anchor to the FIRST step, not
-  // the last — otherwise the stepper centres on the final phase then jerks
-  // back to the top when the first real phase fires.
   if (props.steps.every((s) => s.status === 'done')) return props.steps.length - 1
   return 0
 })

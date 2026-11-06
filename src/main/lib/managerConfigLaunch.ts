@@ -5,17 +5,6 @@ import { ensureManagerConfig, isManagerSecurityLevel, isManagerNetworkMode } fro
 
 export type ManagerReconcileResult = { ok: true } | { ok: false; error: unknown }
 
-/** Reconcile ComfyUI-Manager's config.ini before a local launch.
- *  `securityLevel` / `networkMode` are the launched install's own
- *  (per-install) settings; the enums are validated here so a hand-edited
- *  record can't leak a free-form string into config.ini.  Remote instances
- *  have no local install to reconcile.
- *
- *  Failure policy: when the user chose a Manager option, a failed write must
- *  block the launch - starting anyway would run Manager with stale (possibly
- *  weaker) security settings while the UI claims the new value. Mirror-only
- *  seeding keeps the old non-blocking behavior (telemetry only): it is a
- *  convenience, not a security boundary. */
 export async function reconcileManagerConfigForLaunch(opts: {
   remote: boolean
   installPath: string

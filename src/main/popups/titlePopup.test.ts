@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// shared.ts (via registry.ts) loads electron at import, so mock it first.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -16,8 +15,6 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-// The menu-click handler emits PostHog Node telemetry on every activation;
-// stub it so the dispatch tests stay pure and don't bootstrap the SDK.
 vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
 
 vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
@@ -104,7 +101,6 @@ function makeEntry(
 
 describe('computePopupHeight', () => {
   it('counts items at 32px and separators at 9px plus the 10px chrome budget', () => {
-    // 1 item + 1 sep + 1 item + 1 sep + 1 item = 32+9+32+9+32 = 114 + 10 chrome = 124
     const h = computePopupHeight([
       { id: 'a', label: 'A' },
       { kind: 'separator' },
@@ -287,7 +283,6 @@ describe('buildTitlePopupMenuItems', () => {
     }
   })
 
-  // Loading-lockdown keeps the full menu live so the user can act while a long op runs.
   it('returns the same item set during loading-lockdown as in normal mode', () => {
     for (const installationId of [null, 'inst-1'] as const) {
       const normal = buildTitlePopupMenuItems(makeEntry({ installationId }))
@@ -300,10 +295,6 @@ describe('buildTitlePopupMenuItems', () => {
 })
 
 describe('activateTitlePopupMenuItem', () => {
-  // Minimal popup entry: the reset-zoom branch reads `kind` + `parentEntryId`
-  // (the latter resolves the host from `comfyWindows`), and the shared
-  // `hideTitlePopup` tail reads `view`. An inert closed view makes the
-  // dismiss a no-op so the test stays focused on the dispatch.
   function makePopupEntry(parentEntryId: number) {
     return {
       kind: 'menu',
@@ -395,11 +386,6 @@ describe('isFlowMenuItemId', () => {
 })
 
 describe('requiresPerOpenConfigSync', () => {
-  // A deep-linked global-settings open (e.g. the instance pane's "Manage
-  // Shared Directories" -> Storage tab) must bypass the identical-config
-  // fast path: the cached popup may sit on another tab even though the
-  // config JSON is unchanged, so the snapshot must be re-pushed for the
-  // view's tab-retarget watch to fire.
   it('forces a config re-send for a global-settings open with a requested tab', () => {
     expect(
       requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: 'storage' } })
@@ -443,7 +429,6 @@ describe('resolvePickerSelectedInstallId', () => {
   })
 
   it('defaults to the most-recently-launched install on an install-less host', () => {
-    // 'b' (most recent) is second to prove recency, not list order, decides the default.
     const installs = [
       makeInstall({ id: 'a', lastLaunchedAt: 1000 }),
       makeInstall({ id: 'b', lastLaunchedAt: 5000 }),
@@ -458,7 +443,6 @@ describe('resolvePickerSelectedInstallId', () => {
   })
 
   it('does not default to the seeded cloud entry just because it sorts first', () => {
-    // The seeded cloud install sorts first but has no launch history; a real install wins.
     const installs = [
       makeInstall({ id: 'cloud', sourceCategory: 'cloud' }),
       makeInstall({ id: 'local-a', sourceCategory: 'local' }),
@@ -579,8 +563,6 @@ describe('buildInstancePickerSnapshot', () => {
   })
 
   it('falls back to previewInstallationId when no real attach yet', () => {
-    // Chooser host that staked an attach claim pre-launch: previewInstallationId
-    // is set while installationId is still null, but it should still "own" the install.
     const snap = buildInstancePickerSnapshot({
       installs: [makeInstall({ id: 'a' })],
       hostInstallationId: null,
@@ -593,7 +575,6 @@ describe('buildInstancePickerSnapshot', () => {
   })
 
   it('prefers the real hostInstallationId over previewInstallationId', () => {
-    // Once `attachInstall` runs, the real id takes over; a stale preview must not override it.
     const snap = buildInstancePickerSnapshot({
       installs: [makeInstall({ id: 'a' }), makeInstall({ id: 'b' })],
       hostInstallationId: 'a',
@@ -616,8 +597,6 @@ describe('buildInstancePickerSnapshot', () => {
     expect(snap.launchingInstallationIds).toEqual(['a', 'b'])
   })
 
-  // The picker treats `selectedInstallationId` as authoritative only when
-  // `pickerSelectionEpoch` advances; only `openInstancePickerForHost` bumps it.
   it('defaults pickerSelectionEpoch to 0 when not provided', () => {
     const snap = buildInstancePickerSnapshot({
       installs: [],
@@ -818,9 +797,6 @@ describe('global settings IPC handlers', () => {
   })
 })
 
-// `telemetryGranted` is a TOP-LEVEL snapshot property, not a settings field:
-// todo 16's toggle needs the raw consent state to decide whether opting in is
-// even offered, and a `DetailField` can only carry the beta value itself.
 describe('buildGlobalSettingsSnapshot telemetry grant', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -830,7 +806,6 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     const actualGet = settings.get
     vi.spyOn(settings, 'get').mockImplementation(((key: string) =>
       key === 'telemetryEnabled' ? consent : actualGet(key)) as typeof settings.get)
-    // Stubbed so building a snapshot never seeds (and persists) the real store.
     vi.spyOn(settings, 'resolveBetaFeaturesEnabled').mockReturnValue(false)
     return _test_buildGlobalSettingsSnapshot()
   }
@@ -839,8 +814,6 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     expect(snapshotWithConsent(true).telemetryGranted).toBe(true)
   })
 
-  // Strictly `=== true`: the telemetry FIELD coerces undefined to enabled via
-  // `!== false`, and reusing that here would report a grant nobody gave.
   it('does not grant when consent was never recorded', () => {
     expect(snapshotWithConsent(undefined).telemetryGranted).toBe(false)
   })

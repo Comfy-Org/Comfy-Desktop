@@ -1,6 +1,5 @@
 import type { ComposerTranslation } from 'vue-i18n'
 
-// Raw main-process status strings mapped to friendlier UI copy.
 const OP_STATUS_MAP: Record<string, string> = {
   'Fetching latest stable version': 'Checking for latest version…',
   'Fetching version tags…': 'Checking for latest version…',
@@ -17,8 +16,6 @@ type TLike = ComposerTranslation | ((key: string, fallback?: string) => string)
 export function humanizeOpStatus(raw: string | null | undefined, t: TLike): string {
   const key = raw || ''
   if (key in OP_STATUS_MAP) return OP_STATUS_MAP[key]!
-  // Launch progress reports live sub-activity as `launch.activity.*` i18n
-  // keys (see launchProgress.ts); resolve them instead of showing the key.
   if (key.startsWith('launch.activity.')) return (t as (k: string) => string)(key)
   if (key) return key
   return (t as (k: string, fb?: string) => string)('instancePicker.progressWorking', 'Working…')
@@ -34,7 +31,6 @@ function isDowngrade(op: OperationLabelDescriptor): boolean {
   return (op.actionData as { isDowngrade?: boolean } | null | undefined)?.isDowngrade === true
 }
 
-/** In-flight progress title for a background op, keyed by `actionId`. */
 export function operationInflightLabel(op: OperationLabelDescriptor, t: TLike): string {
   const tt = t as (k: string, fb?: string) => string
   switch (op.actionId) {
@@ -65,7 +61,6 @@ export function operationInflightLabel(op: OperationLabelDescriptor, t: TLike): 
   }
 }
 
-/** Success heading for a completed background op, keyed by `actionId`. */
 export function operationSuccessLabel(op: OperationLabelDescriptor, t: TLike): string {
   const tt = t as (k: string, fb?: string) => string
   switch (op.actionId) {

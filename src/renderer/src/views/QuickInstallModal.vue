@@ -77,7 +77,6 @@ function handleOpenPath(): void {
   if (instPath.value) void window.api.openPath(instPath.value)
 }
 
-/** Deep-strip Vue reactive proxies for safe IPC serialization */
 function rawSelections(): Record<string, FieldOption> {
   const result: Record<string, FieldOption> = {}
   if (releaseSelection.value) {
@@ -148,7 +147,6 @@ async function open(): Promise<void> {
       flow: 'quick'
     })
 
-    // Load releases and auto-select latest
     const releases = await window.api.getFieldOptions(
       'standalone',
       'release',
@@ -162,13 +160,11 @@ async function open(): Promise<void> {
     }
     releaseSelection.value = releases[0]!
 
-    // Load variants for the selected release
     const variants = await window.api.getFieldOptions('standalone', 'variant', {
       release: JSON.parse(JSON.stringify(toRaw(releaseSelection.value))) as FieldOption
     })
     variantOptions.value = variants
 
-    // Auto-select recommended variant
     const recommended = variants.find((v) => v.recommended)
     selectedVariant.value = recommended ?? variants[0] ?? null
 
@@ -193,7 +189,6 @@ async function handleInstall(): Promise<void> {
   installing.value = true
 
   try {
-    // Warn if NVIDIA driver is too old for the bundled PyTorch
     const variantId = selectedVariant.value.data?.variantId as string | undefined
     if (variantId && stripVariantPrefix(variantId).startsWith('nvidia')) {
       if (!(await checkNvidiaDriverOrWarn('quick', 'install', modal.confirm, t))) {
@@ -202,7 +197,6 @@ async function handleInstall(): Promise<void> {
       }
     }
 
-    // Validate install path
     if (instPath.value) {
       try {
         const issues = await window.api.validateInstallPath(instPath.value)
@@ -210,12 +204,9 @@ async function handleInstall(): Promise<void> {
           installing.value = false
           return
         }
-      } catch {
-        // If validation fails, proceed anyway
-      }
+      } catch {}
     }
 
-    // Check disk space
     if (instPath.value) {
       try {
         const downloadFiles = selectedVariant.value.data?.downloadFiles as
@@ -236,9 +227,7 @@ async function handleInstall(): Promise<void> {
           installing.value = false
           return
         }
-      } catch {
-        // If disk space check fails, proceed anyway
-      }
+      } catch {}
     }
 
     const instData = await window.api.buildInstallation('standalone', rawSelections())

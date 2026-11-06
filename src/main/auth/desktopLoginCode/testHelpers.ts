@@ -5,7 +5,6 @@ export function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-/** Fetch stub that stays pending until its abort signal fires. */
 export function hangingFetch(): typeof fetch {
   return (...args: Parameters<typeof fetch>) =>
     new Promise<Response>((_resolve, reject) => {

@@ -98,9 +98,6 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
         editable: true,
         editType: 'boolean'
       },
-      // Built main-side by `buildSettingsSections` off
-      // `resolveBetaFeaturesEnabled()`, so it always carries a real boolean —
-      // a legacy install with nothing stored arrives seeded, never blank.
       {
         id: 'betaFeaturesEnabled',
         label: 'Opt-in to beta features',
@@ -109,7 +106,6 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
         editType: 'boolean'
       }
     ],
-    // Explicit telemetry consent; gates the OFF -> ON direction of the row above.
     telemetryGranted: true,
     desktopUpdateFields: [
       {
@@ -225,22 +221,16 @@ describe('GlobalSettingsView', () => {
   })
 
   it('lands on the tab named by snapshot.initialTab', () => {
-    // The instance pane's "Manage Shared Directories" deep-link opens this
-    // popup with initialTab 'storage' so the user lands on the Storage tab.
     installMockBridge()
     const wrapper = mountView(makeSnapshot({ initialTab: 'storage' }))
     expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
   })
 
   describe('settings deep-link highlight', () => {
-    /** The row wrapper `DetailSection` renders for a field id — the only per-row anchor a
-     *  deep link has to aim at. */
     const row = (id: string): HTMLElement | null =>
       document.querySelector(`[data-field-id="${id}"]`)
 
     it('flashes the field the snapshot names, on the tab it lives on', async () => {
-      // The beta activation notice's "Settings" link lands here: General tab, Privacy
-      // section, beta opt-in row. Landing on the tab alone leaves that row below the fold.
       installMockBridge()
       const wrapper = mountView(
         makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
@@ -267,8 +257,6 @@ describe('GlobalSettingsView', () => {
     })
 
     it('does not re-flash on a null-highlight rebroadcast', async () => {
-      // Same per-open rule as initialTab: a live data refresh must not pulse a row the user
-      // has already read and moved past.
       installMockBridge()
       const wrapper = mountView(
         makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
@@ -284,8 +272,6 @@ describe('GlobalSettingsView', () => {
     })
 
     it('survives a field id that matches no row', async () => {
-      // Main forwards the id opaquely rather than validating it against a renderer-side
-      // list, so a stale or misspelled id has to be a no-op, not a throw.
       installMockBridge()
       mountView(makeSnapshot({ initialTab: 'general', highlightFieldId: 'noSuchField' }))
       await flushPromises()
@@ -294,8 +280,6 @@ describe('GlobalSettingsView', () => {
   })
 
   it('keeps the user-selected tab across a null-initialTab rebroadcast', async () => {
-    // Live snapshot rebroadcasts (star count, settings changed) carry
-    // initialTab null and must not yank the user back to the opener's tab.
     installMockBridge()
     const wrapper = mountView(makeSnapshot({ initialTab: 'storage' }))
     await wrapper
@@ -308,9 +292,6 @@ describe('GlobalSettingsView', () => {
   })
 
   it('re-applies the requested tab when a reopen pushes a new snapshot', async () => {
-    // The popup view is cached across opens, so a second deep-link open
-    // pushes a fresh snapshot object with the same initialTab value; the
-    // identity-watch must still retarget the tab.
     installMockBridge()
     const wrapper = mountView(makeSnapshot({ initialTab: 'storage' }))
     await wrapper
@@ -331,7 +312,6 @@ describe('GlobalSettingsView', () => {
     expect(bridge.openExternalCalls).toEqual(['https://github.com/comfyanonymous/ComfyUI'])
   })
 
-  // Storage tab shares `GlobalStorageSections`; rendering is covered by StoragePane.test.ts.
   it('Storage tab routes a make-primary click through the bridge', async () => {
     const bridge = installMockBridge()
     const wrapper = mountView()
@@ -502,7 +482,6 @@ describe('GlobalSettingsView', () => {
     expect(primaryRow.find('.models-dir-menu-wrap').exists()).toBe(false)
   })
 
-  // Covers the Shared Directories field-write path, not just the model-dir actions.
   it('Storage tab routes a Shared Directories browse through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/in'
@@ -548,8 +527,6 @@ describe('GlobalSettingsView', () => {
     expect(bridge.updateFieldCalls).toEqual([{ id: 'outputDir', value: '/picked/out' }])
   })
 
-  // Every dir in the global Storage tab is shared, so all rows carry the shared
-  // glyph — matching the per-instance Storage tab (StoragePane.vue).
   it('Storage tab marks shared models and input/output dirs with the shared glyph', async () => {
     installMockBridge()
     const snapshot = makeSnapshot({
@@ -572,9 +549,6 @@ describe('GlobalSettingsView', () => {
     expect(dirRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
   })
 
-  // The global Storage tab explains its scope: shared model dirs are included
-  // by every instance (which can add its own dirs in its Storage tab), and
-  // each instance opts into the shared input/output folders independently.
   it('Storage tab section tooltips state the global-vs-instance scope', async () => {
     installMockBridge()
     const snapshot = makeSnapshot({
@@ -626,11 +600,9 @@ describe('GlobalSettingsView', () => {
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
     expect(wrapper.text()).toContain('Default Install Location')
-    // The install dir is the first path row in the Advanced tab.
     const row = wrapper.find('.storage-dir-row')
     expect(row.exists()).toBe(true)
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/ComfyUI-Installs')
-    // Clicking the path opens it; browsing routes the pick through the bridge.
     await row.find('.storage-dir-name').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/home/u/ComfyUI-Installs'])
     await row.find('.storage-dir-action').trigger('click')
@@ -658,14 +630,11 @@ describe('GlobalSettingsView', () => {
       .find((t) => t.text() === 'Advanced')!
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
-    // Path rows in Advanced: [0] install location, [1] cache dir.
     const row = wrapper.findAll('.storage-dir-row')[1]!
     expect(row.exists()).toBe(true)
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/cache')
-    // Clicking the path opens it in the OS file manager.
     await row.find('.storage-dir-name').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/home/u/cache'])
-    // Browse routes the picked dir through the bridge.
     await row.find('.storage-dir-action').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'cacheDir', value: '/picked/cache' }])

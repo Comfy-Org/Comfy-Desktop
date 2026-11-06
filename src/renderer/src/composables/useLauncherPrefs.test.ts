@@ -13,7 +13,6 @@ vi.stubGlobal('window', {
   }
 })
 
-// Module-level shared state must be reset between tests.
 import { useLauncherPrefs, __resetLauncherPrefsForTest } from './useLauncherPrefs'
 
 describe('useLauncherPrefs', () => {

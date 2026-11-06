@@ -26,7 +26,6 @@ function mountReadonly(fields: DetailField[]) {
 }
 
 describe('SettingsSectionList', () => {
-  // When main attaches a field `description`, the renderer must surface it under the control.
   describe('field descriptions', () => {
     it('renders the description below the control when one is attached', () => {
       const wrapper = mountList([
@@ -91,8 +90,6 @@ describe('SettingsSectionList', () => {
     })
   })
 
-  // Fields sharing a rowGroup render side-by-side inside one paired row;
-  // everything else keeps its own full-width (layout-transparent) row.
   describe('rowGroup pairing', () => {
     const select = (id: string, rowGroup?: string): DetailField => ({
       id,
@@ -133,8 +130,6 @@ describe('SettingsSectionList', () => {
     })
   })
 
-  // Readonly path values render as a clickable open-folder button, keeping the
-  // copy button, and only fire `open-path` for real filesystem paths.
   describe('readonly path rows', () => {
     it('renders a clickable button that emits open-path for a path value', async () => {
       const wrapper = mountReadonly([
@@ -152,7 +147,6 @@ describe('SettingsSectionList', () => {
         { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' }
       ])
       expect(wrapper.find('.settings-v2-readonly-path').exists()).toBe(true)
-      // BaseCopyButton renders a button; together with the open button there are two.
       expect(wrapper.findAll('.settings-v2-readonly-path button').length).toBe(2)
     })
 
@@ -169,9 +163,6 @@ describe('SettingsSectionList', () => {
     })
   })
 
-  // The Update tab's version table renders the section's actions itself, so the
-  // generic footer must stand down (or the button appears twice), and the button
-  // is the only place the update action can be fired.
   describe('version-stats section', () => {
     const vsSection = (enabled: boolean): DetailSection => ({
       fields: [
@@ -251,10 +242,6 @@ describe('SettingsSectionList', () => {
       expect(button.attributes('aria-checked')).toBe('false')
     })
 
-    // A blocked switch must stay REACHABLE. `disabled` removes it from the tab order, so a
-    // keyboard or screen-reader user cannot land on it to discover why it is blocked — the
-    // explanation only exists as a mouse-only `title`. `aria-disabled` announces the state
-    // while keeping the control focusable; `handleClick` remains the functional block.
     it('keeps a blocked switch in the tab order', () => {
       const wrapper = mountList([betaField(false, true)])
       const button = wrapper.find('button[role="switch"]')
@@ -267,7 +254,6 @@ describe('SettingsSectionList', () => {
       const button = wrapper.find('button[role="switch"]')
       expect(button.attributes('aria-disabled')).toBe('true')
 
-      // Still inert: reachable is not the same as operable.
       await button.trigger('click')
       expect(wrapper.emitted('update-field')).toBeFalsy()
       expect(button.attributes('aria-checked')).toBe('false')
@@ -285,8 +271,6 @@ describe('SettingsSectionList', () => {
     })
 
     it('keeps the blocked styling hook after dropping the disabled attribute', () => {
-      // `.bt-switch:disabled` stops matching once the attribute is gone, so the dim/cursor
-      // styling has to key on the new state or the block becomes visually invisible.
       const wrapper = mountList([betaField(false, true)])
       expect(wrapper.find('button[role="switch"][aria-disabled="true"]').exists()).toBe(true)
     })
@@ -299,8 +283,6 @@ describe('SettingsSectionList', () => {
 
       expect(ids).toHaveLength(2)
       expect(ids[0]).toBeTruthy()
-      // A fixed literal id would make both toggles describe the same element, so the second
-      // switch would announce the first one's reason.
       expect(ids[0]).not.toBe(ids[1])
     })
 

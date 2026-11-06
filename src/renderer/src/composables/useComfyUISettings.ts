@@ -43,18 +43,11 @@ import {
   runSelectChain
 } from './actionShoppingList'
 
-// Backing state + IPC plumbing for the Settings drawer. All tabs source
-// from `getDetailSections()` and write through `update-installation` /
-// `runAction`.
-
 export interface UseComfyUISettingsOpts {
   installation: MaybeRefOrGetter<Installation | null>
   onShowProgress: (opts: ShowProgressOpts) => void
-  /** Install was removed (delete/untrack); host closes the drawer + window. */
   onNavigateList?: () => void
   onClose?: () => void
-  /** Backend was stopped from the preview; host should dismiss the whole
-   *  preview/popup so the window's stopped-relaunch card shows underneath. */
   onDismissPreview?: () => void
 }
 
@@ -64,45 +57,30 @@ export interface UseComfyUISettingsApi {
   loading: Ref<boolean>
   error: Ref<string | null>
 
-  /** True when the painted payload belongs to the selected install. Lags
-   *  during a picker switch (prior payload stays painted to avoid a
-   *  "Loading…" flash); hosts gate per-install actions on this. */
   sectionsFresh: ComputedRef<boolean>
 
-  /** Transient, non-blocking inline status line, auto-cleared. */
   notice: Ref<string | null>
 
   reload: () => Promise<void>
 
-  /** Splices only the named section in-place (preserving other subtrees);
-   *  falls back to full `reload()` when the title isn't in the new payload. */
   refreshSection: (sectionTitle: string | undefined) => Promise<void>
 
   updateField: (field: DetailField, value: unknown) => Promise<void>
 
-  /** Running-install field ids edited away from their launched value;
-   *  drives the "Restart to apply" pill. Held per-install. */
   pendingRestartFieldIds: ComputedRef<Set<string>>
 
-  /** Consume the pending-restart + error state for an install. Called when the
-   *  user initiates the restart, since a remote relaunch surfaces no observable
-   *  lifecycle dip to clear it automatically. */
   clearPendingRestart: (installId: string) => void
 
-  /** Per-install field error messages from failed `updateField` IPCs. */
   fieldErrorMessages: ComputedRef<Map<string, string>>
 
-  /** Commit a new name. True on commit, false on no-op / rejection. */
   renameInstallation: (newName: string) => Promise<boolean>
 
   runAction: (action: ActionDef) => Promise<void>
 
-  /** Inline-path action ids in flight; drives per-button spinners. */
   runningActionIds: Ref<Set<string>>
 
   sectionsForTab: (tab: SectionTab) => ComputedRef<DetailSection[]>
 
-  /** Synthetic Disk-Usage row (sourced from a separate IPC). */
   diskUsageItem: ComputedRef<{ label: string; value: string } | null>
 
   pinBottomSection: ComputedRef<DetailSection | null>
@@ -136,8 +114,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
   const sections = ref<DetailSection[]>([])
   const diskSpace = ref<DiskSpaceInfo | null>(null)
-  // Install's own on-disk footprint (a directory-tree walk), null until it
-  // lands. Used instead of volume `total - free`, which is whole-disk usage.
   const installSize = ref<number | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -152,32 +128,17 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       noticeTimer = null
     }, NOTICE_TTL_MS)
   }
-  // Replaced (not mutated) so Vue's shallow Set reactivity tracks changes.
   const runningActionIds = ref<Set<string>>(new Set())
-  // Restart-required dirty tracking, keyed by install id then field id; the
-  // value is the launched baseline. Reverting to it drops the entry.
-  // Per-install keying survives picker toggles.
   const restartBaselines = ref<Map<string, Map<string, unknown>>>(new Map())
-  // Per-install field error messages, same keying as restartBaselines.
   const errorMessages = ref<Map<string, Map<string, string>>>(new Map())
-  // Auto-clear timers for error pills, keyed by `installId:fieldId`.
   const errorClearTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  // Optimistic-write rollback deadline; a local IPC + JSON merge shouldn't take this long.
   const UPDATE_TIMEOUT_MS = 5000
   const ERROR_TAG_TTL_MS = 4000
-  // Last id `loadAll` ran with; lets `refreshSection` drop late splices after a switch.
   let lastLoadedId: string | null = null
-  // Id of the install whose payload is currently painted; backs `sectionsFresh`.
   const sectionsPayloadId = ref<string | null>(null)
-  // Request id: each load captures the next value and only writes back if
-  // still latest, so an A->B->A late response can't overwrite the pane.
   let requestSeq = 0
 
   async function loadAll(installationId: string, installPath: string): Promise<void> {
-    // Deliberately don't blank sections on switch: blanking flashed
-    // "Loading…" on every picker click. The prior payload stays painted
-    // (host crossfades by install id) and `sectionsPayloadId` lags so hosts
-    // can gate on freshness until the new payload lands.
     lastLoadedId = installationId
     loading.value = true
     error.value = null
@@ -197,7 +158,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     } finally {
       if (seq === requestSeq) loading.value = false
     }
-    // Footprint scan runs after the main load so it can't block first render.
     void window.api
       .getInstallationSize(installationId)
       .then((r) => {
@@ -218,14 +178,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       installSize.value = null
       sectionsPayloadId.value = null
       lastLoadedId = null
-      // Bump the sequence so an in-flight loadAll can't write into our refs.
       requestSeq++
       return
     }
     await loadAll(inst.id, inst.installPath ?? '')
   }
 
-  // Splices only the matching section in-place to preserve other subtrees.
   async function refreshSection(sectionTitle: string | undefined): Promise<void> {
     if (!sectionTitle) {
       await reload()
@@ -237,11 +195,9 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     const seq = ++requestSeq
     try {
       const fresh = await window.api.getDetailSections(targetId)
-      // Drop stale/out-of-order results so they can't splice into the wrong pane.
       if (seq !== requestSeq || lastLoadedId !== targetId) return
       const updated = fresh.find((s) => s.title === sectionTitle)
       if (!updated) {
-        // Title gone from the new payload; full replace to stay coherent.
         sections.value = fresh
         return
       }
@@ -255,13 +211,10 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       if (seq !== requestSeq) return
       error.value = e instanceof Error ? e.message : String(e)
     } finally {
-      // This request may have superseded a full load, which then won't clear it.
       if (seq === requestSeq) loading.value = false
     }
   }
 
-  // Field-value equality for restart tracking; `===` for primitives, a flat
-  // key-by-key walk for objects like `envVars`.
   function restartFieldsEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true
     if (a == null || b == null) return false
@@ -277,7 +230,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     return true
   }
 
-  // Races a promise against a deadline; throws an `isTimeout`-tagged Error on it.
   function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<T>((_, reject) => {
@@ -292,7 +244,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     })
   }
 
-  // Returns the live field ref so callers can mutate `field.value` in place.
   function findFieldInSections(fieldId: string): DetailField | null {
     for (const s of sections.value) {
       const f = s.fields?.find((x) => x.id === fieldId)
@@ -359,13 +310,10 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     if (!inst) return
     const installId = inst.id
 
-    // Prior value: both the dirty-tracking baseline and the rollback target.
     const liveField = findFieldInSections(field.id)
     const priorValue = liveField ? liveField.value : (field.value as unknown)
-    // Optimistic write so the control re-renders this frame; reconciled below.
     if (liveField) liveField.value = value as DetailField['value']
 
-    // Re-editing clears the prior error pill.
     clearFieldError(installId, field.id)
 
     try {
@@ -376,7 +324,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     } catch (err: unknown) {
       const live = findFieldInSections(field.id)
       if (live) live.value = priorValue as DetailField['value']
-      // A rejected write never engages the restart-required state.
       clearRestartDirty(installId, field.id)
       const isTimeout = (err as { isTimeout?: boolean })?.isTimeout === true
       const message = isTimeout
@@ -387,11 +334,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       setFieldError(installId, field.id, message)
       return
     }
-    // Restart-required dirty tracking, only after a successful IPC. A
-    // launching instance counts: the spawned process consumed its
-    // configuration at launch start, so an edit made while it boots is not
-    // reflected in it either - without tracking, the instance would come up
-    // on the old values with the UI showing the new ones and no restart CTA.
     if (
       field.requiresRestart &&
       (sessionStore.isRunning(installId) || sessionStore.isLaunching(installId))
@@ -408,8 +350,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       value_kind: field.editType || 'text',
       bool_value: typeof value === 'boolean' ? value : undefined
     })
-    // A field can declare an `onChangeAction` to fire after its value changes
-    // (e.g. switching channel triggers `check-update`).
     if (field.onChangeAction) {
       try {
         await window.api.runAction(inst.id, field.onChangeAction)
@@ -420,7 +360,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         })
       }
     }
-    // `refreshSection` splices only that section to preserve other subtrees.
     if (field.refreshSection) {
       const owningSection = sections.value.find((s) => s.fields?.some((f) => f.id === field.id))
       await refreshSection(owningSection?.title)
@@ -429,8 +368,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     }
   }
 
-  // The IPC handler owns the duplicate-name guard; a rejection alerts here.
-  // True on commit, false on no-op (empty/unchanged) or rejection.
   async function renameInstallation(newName: string): Promise<boolean> {
     const inst = toValue(opts.installation)
     if (!inst) return false
@@ -449,16 +386,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     const inst = toValue(opts.installation)
     if (!inst) return
 
-    // Synthetic footer action handled renderer-side (no main `stop` action);
-    // dismiss the preview on success so the window shows its stopped card.
     if (action.id === 'stop') {
       const stopped = await confirmAndStop(inst.id)
       if (stopped) opts.onDismissPreview?.()
       return
     }
 
-    // Share is a renderer-side IPC (export + native dialog), not a source
-    // action, so intercept it before the dispatch chain. Cancel is a no-op.
     if (action.id === 'share') {
       const result = await shareLatestSnapshot(inst.id)
       if (!result.ok) {
@@ -475,8 +408,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     const telemetryContext = { action_id: action.id }
 
-    // 1. Busy-only guard. migrate-to-standalone owns its own busy check + UI,
-    //    so skip this pre-flight and the step-3 augment (its apiCall still self-stops).
     const ownsPreflight = action.id === 'migrate-to-standalone'
     const requiresStoppedGuard = REQUIRES_STOPPED.has(action.id)
     const wasRunning = sessionStore.isRunning(inst.id)
@@ -487,7 +418,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     let mutableAction: ActionDef = { ...action }
 
-    // 2. migrate-to-standalone uses its own takeover; merge its form data.
     if (mutableAction.id === 'migrate-to-standalone') {
       const migrateResult = await confirmMigration(inst, mutableAction.confirm)
       if (!migrateResult) return
@@ -497,8 +427,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       }
     }
 
-    // 3. Stop-warning augment: prepend the stop sentence to the action's copy
-    //    (or use it standalone). Skipped for migrate, which owns its surface.
     if (requiresStoppedGuard && wasRunning && !ownsPreflight) {
       mutableAction = augmentActionWithStopWarning(
         mutableAction,
@@ -506,10 +434,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       )
     }
 
-    // 4-8. Shopping-list chain: fieldSelects -> select -> prompt -> confirm ->
-    //      disk-check. Each returns the merged action or null on cancel.
-    //      Confirm skips migrate (handled in step 2); confirm + disk-check
-    //      stay on `useModal` for `confirmWithOptions` parity.
     const afterFieldSelects = await runFieldSelectsChain(mutableAction, dialogs, t)
     if (!afterFieldSelects) return
     mutableAction = afterFieldSelects
@@ -530,9 +454,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     if (!(await runDiskSpaceCheck(mutableAction, inst, modal, t, null, dialogs))) return
 
-    // 9. showProgress: the synthetic `restart` id maps to stop -> wait -> launch.
-    //    REQUIRES_STOPPED ops against a running install wrap apiCall to
-    //    stop -> wait -> run, and append a relaunch for IN_PLACE_RELAUNCH.
     if (mutableAction.showProgress) {
       const rawTitle = (mutableAction.progressTitle || mutableAction.label).replace(
         /\{(\w+)\}/g,
@@ -571,7 +492,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         cancellable: !!mutableAction.cancellable,
         returnTo: 'detail',
         triggersInstanceStart: mutableAction.id === 'launch' || isRestart || wantsRelaunch,
-        // The synthetic `restart` reads as a launch to the caption pipeline.
         opKind: isRestart ? 'launch' : progressOpKindForActionId(mutableAction.id),
         destroysInstance: destroysInstanceForActionId(mutableAction.id),
         actionId: mutableAction.id,
@@ -580,11 +500,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       return
     }
 
-    // 10. Inline invoke. Self-stops too, so a running install's backend
-    //     check can't race the stop.
     runningActionIds.value = new Set(runningActionIds.value).add(mutableAction.id)
-    // Floor the spinner's lifetime so a sub-frame backend response doesn't
-    // hide it and read as a no-op (see MIN_BUSY_FEEDBACK_MS in uiTiming.ts).
     const busyStartedAt = Date.now()
     try {
       emitTelemetryAction('comfy.desktop.action.invoked', telemetryContext)
@@ -593,7 +509,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       }
       const result = await window.api.runAction(inst.id, mutableAction.id, mutableAction.data)
       if (result.running) {
-        // Backend race: a launch slipped in after the stop; surface the guard.
         await actionGuard.checkBeforeAction(inst.id, mutableAction.label)
         return
       }
@@ -607,8 +522,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         opts.onNavigateList?.()
       } else if (result.navigate === 'detail') {
         await reload()
-        // A reload can also carry a message (e.g. "already up to date");
-        // surface it as a transient notice, not an interrupting modal.
         if (result.message) {
           flashNotice(result.message)
         }
@@ -636,7 +549,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   }
 
   function sectionsForTab(tab: SectionTab): ComputedRef<DetailSection[]> {
-    // `pinBottom` sections live in the footer, not the tab body.
     return computed(() => sections.value.filter((s) => s.tab === tab && !s.pinBottom))
   }
 
@@ -644,18 +556,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     () => sections.value.find((s) => s.pinBottom) ?? null
   )
 
-  // Footer actions, minus launch/restart (the primary CTA owns those).
   const pinBottomActions = computed<ActionDef[]>(() => {
     const acts = (pinBottomSection.value?.actions ?? []).filter(
       (a) => a.id !== 'launch' && a.id !== 'restart'
     )
     const inst = toValue(opts.installation)
     if (!inst) return acts
-    // Synthetic Stop — shut down the running backend while keeping the window
-    // alive. Renderer-only (running-state lives here, not in main), mirroring
-    // how `restart` is synthesized from `launch`. Local-like + running only;
-    // cloud/remote have no local Python process to stop. Grouped at the head of
-    // the destructive cluster (Forget/Uninstall) and styled danger to match.
     if (inst.sourceCategory !== 'cloud' && sessionStore.isRunning(inst.id)) {
       const stopAction: ActionDef = {
         id: 'stop',
@@ -671,14 +577,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   })
 
   const diskUsageItem = computed<{ label: string; value: string } | null>(() => {
-    // Prefer the install's own footprint; volume `total - free` is whole-disk usage.
     if (installSize.value !== null) {
       return {
         label: t('comfyUISettings.diskUsage', 'Disk Usage'),
         value: formatBytes(installSize.value)
       }
     }
-    // Placeholder while the scan is in flight so the row doesn't pop in.
     if (!diskSpace.value) return null
     return {
       label: t('comfyUISettings.diskUsage', 'Disk Usage'),
@@ -686,7 +590,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     }
   })
 
-  // Derived from the per-install baseline map for the selected install.
   const pendingRestartFieldIds = computed<Set<string>>(() => {
     const inst = toValue(opts.installation)
     if (!inst) return new Set()
@@ -708,10 +611,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     { immediate: true }
   )
 
-  // Main fires this when background enrichment writes a new commitsAhead, so
-  // the open pane can upgrade its release card in place. Uses `reload()`
-  // (race-safe via requestSeq) rather than refreshSection, which keys on a
-  // locale-dependent title.
   const offReleaseEnriched = window.api.onReleaseCacheEnriched?.(() => {
     if (toValue(opts.installation)) void reload()
   })
@@ -720,8 +619,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     if (noticeTimer) clearTimeout(noticeTimer)
   })
 
-  // Main reports every action's end to every window, so this also catches an
-  // update started elsewhere. Inline actions reload themselves when they finish.
   watch(
     () => {
       const inst = toValue(opts.installation)
@@ -732,8 +629,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     }
   )
 
-  // Drop the per-install dirty + error entries once a (re)launch has consumed
-  // the new values, so the "Restart to apply" state clears after the restart.
   function clearRestartAndErrors(installId: string): void {
     if (restartBaselines.value.has(installId)) {
       const next = new Map(restartBaselines.value)
@@ -751,32 +646,17 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     () => {
       const inst = toValue(opts.installation)
       if (!inst || !sessionStore.isRunning(inst.id)) return null
-      // Keyed on the session, not just "running": a restart can reach this window as
-      // running -> running (the stop and relaunch landing between two snapshots), and the
-      // session-derived rows - the port, the beta-args pill - belong to the old session.
-      // A string, so only a real change fires: `<install id>\0<session start>`.
       return `${inst.id}\0${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
     },
     (session, previous) => {
       const inst = toValue(opts.installation)
       if (!inst) return
-      // The SAME install's session replaced by a new one consumed the edited values, so nothing
-      // is pending any more. The stop/launching edges below would clear this, but a restart seen
-      // as running -> running shows neither (e.g. a picker that was hidden for the restart).
-      // Switching between two running installs is not a restart: their pending state survives.
       const sameInstall = session?.split('\0')[0] === previous?.split('\0')[0]
       if (session && previous && sameInstall && session !== previous) clearRestartAndErrors(inst.id)
-      // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
-      // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
-      // reload()'s requestSeq.
       void reload()
     }
   )
 
-  // Pending-restart cleanup is keyed on the session maps themselves (not the
-  // selected install) so lifecycle edges of off-screen installs are not
-  // missed - e.g. install A stops or fails its launch while B is selected.
-  // Stop edge: nothing is left to apply (next launch picks up new values).
   watch(
     () => [...sessionStore.runningInstances.keys()],
     (runningIds, prevIds) => {
@@ -787,28 +667,14 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     }
   )
 
-  // A restart may not surface a running->stopped dip (e.g. a remote connection
-  // has no process to kill, so the snapshot can coalesce stop+relaunch into one
-  // running broadcast). Catch the relaunch via the launching edge instead: any
-  // (re)launch re-reads the persisted values, so the pending-restart state is
-  // satisfied the moment a new launch begins.
   watch(
     () => [...sessionStore.launchingInstances.keys()],
     (launchingIds, prevIds) => {
       const launching = new Set(launchingIds)
       const prev = new Set(prevIds)
-      // Rising edge: a new launch begins and re-reads the persisted values,
-      // satisfying any pending state. Edits made DURING the boot window land
-      // after this clear, so they stay pending into the running state (the
-      // booting process consumed its config at launch start).
       for (const id of launching) {
         if (!prev.has(id)) clearRestartAndErrors(id)
       }
-      // Failed launch (launching ends without reaching running): the edits
-      // are persisted and the next launch will pick them up, so nothing is
-      // pending on the now-stopped install. On a successful launch the id is
-      // already in running when this falling edge fires, so boot-window
-      // edits are kept.
       for (const id of prev) {
         if (!launching.has(id) && !sessionStore.isRunning(id)) {
           clearRestartAndErrors(id)

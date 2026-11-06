@@ -34,13 +34,10 @@ import type {
   PrefetchReport
 } from './agentRequirementsOverride'
 
-/** The Core flag that starts ComfyUI with the agent enabled. */
 const ENABLE_AGENT_ARG = '--enable-agent'
 
-/** Requirements file Core ships beside `main.py` for the agent. */
 const AGENT_REQUIREMENTS = 'agent_requirements.txt'
 
-/** ComfyUI's own requirements, where the frontend is pinned. */
 const CORE_REQUIREMENTS = 'requirements.txt'
 
 let attempts = 0
@@ -49,44 +46,16 @@ function attemptTag(): string {
   return `${process.pid}-${++attempts}`
 }
 
-/** Cap on the force-stop itself, so hard-stopping a uv cannot become the very
- *  open-ended wait the grace period exists to end. */
 const FORCE_STOP_TIMEOUT_MS = 5_000
 
-/**
- * Grace between asking uv to stop and the launch giving up on it.
- *
- * Killing is best-effort and not awaited: `killProcTree` sends SIGTERM to the
- * process group on POSIX and swallows a failed `taskkill` on Windows, while the
- * install settles only on the child's own exit. A uv that does not take the
- * signal would therefore hold the launch open past the very ceiling that exists
- * to stop that, so the wait is bounded here too and the launch proceeds either
- * way. An abandoned uv may still be writing to the environment, which is worth
- * one warning line and is strictly better than never starting.
- */
 const KILL_GRACE_MS = 10_000
 
-/** Run a short-lived helper command and resolve when it exits or the cap hits.
- *  Bounded because this runs with the user waiting at the launcher. */
 function runBounded(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve) => {
     execFile(cmd, args, { timeout: FORCE_STOP_TIMEOUT_MS, windowsHide: true }, () => resolve())
   })
 }
 
-/**
- * Hard-stop the uv this launch started, and clear what it left behind.
- *
- * Reached only when the grace period expired, i.e. uv ignored the SIGTERM the
- * shared helper sends. Without this the launch would continue while a live uv
- * kept writing into the environment ComfyUI is booting from, and the helper's
- * filtered copy would stay on disk, because it unlinks only once uv settles.
- *
- * `proc` is the handle the helper delivered for THIS install, so exactly that
- * process tree is killed and nothing is searched for or guessed at. Every step
- * is bounded and every failure swallowed: a force-stop must not become the
- * open-ended wait the grace period exists to end.
- */
 async function forceStopAgentInstall(
   proc: ChildProcess | null,
   installPath: string,
@@ -111,8 +80,6 @@ function settledWithin(promise: Promise<unknown>, ms: number): Promise<boolean> 
   return Promise.race([promise.then(() => true), late]).finally(() => clearTimeout(timer))
 }
 
-/** Negated pid: the helper spawns detached, so uv leads its own process group and the group is
- *  the tree. Falls back to the bare pid when the group is already gone. */
 function killGroup(pid: number): void {
   try {
     process.kill(-pid, 'SIGKILL')
@@ -126,8 +93,6 @@ function killGroup(pid: number): void {
 const UV_RECORD_PREFIX = '.agent-uv-'
 const runningOwnUv = new Set<number>()
 
-/** On POSIX a detached uv outlives a Desktop that is killed: leave a note the next start can
- *  find it by. (Windows ties uv to Desktop's job object.) */
 function recordUv(proc: ChildProcess, installPath: string): void {
   const pid = proc.pid
   if (process.platform === 'win32' || !pid) return
@@ -142,14 +107,9 @@ function recordUv(proc: ChildProcess, installPath: string): void {
   })
 }
 
-/** No agent uv runs this long (the background download's budget is 30 minutes): its record is
- *  stale, and is removed without asking `ps`. */
 const RECORD_MAX_AGE_MS = 60 * 60_000
 const PS_TIMEOUT_MS = 2_000
 
-/** Whether `pid` is still the uv a record names: pids recycle, so the name and start time must
- *  match too (`ps` reports the start to the second). `ps` exits 1, silent, for a pid that is gone;
- *  any other failure leaves it unknown, and the record is kept for a later start to retry. */
 function recordedUvIdentity(
   pid: number,
   startedAt: number
@@ -168,7 +128,6 @@ function recordedUvIdentity(
   })
 }
 
-/** Whether `pid` is gone within `ms`: only ESRCH says so, not a pid we may not signal. */
 async function goneWithin(pid: number, ms: number): Promise<boolean> {
   for (const until = Date.now() + ms; Date.now() < until; ) {
     try {
@@ -181,12 +140,6 @@ async function goneWithin(pid: number, ms: number): Promise<boolean> {
   return false
 }
 
-/**
- * Stop a uv a killed Desktop left running from `installPath`: it holds the environment's lock,
- * so a launch would wait on it, and it writes into files a new start clears. Skips the uv this
- * process runs; a record whose process is gone, or is not that uv, is just removed, and one
- * that can't be told is kept. Every record is checked at once. Never throws.
- */
 export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
   if (process.platform === 'win32') return
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
@@ -214,8 +167,6 @@ async function reapRecord(record: string): Promise<void> {
   if (!keep) await fs.promises.rm(record, { force: true }).catch(() => {})
 }
 
-/** Which way the bounded wait ended: uv exited, it threw, or the launch stopped
- *  waiting for a uv that would not stop. */
 type InstallOutcome =
   | { kind: 'settled'; result: UvPipResult }
   | { kind: 'failed'; error: unknown }
@@ -227,8 +178,6 @@ export interface BoundedResult {
   output: string
 }
 
-/** Only uv's error, from its first `error:` or `×` line, with local paths and URLs scrubbed: a
- *  custom index's URL would name it, and the index kind is reported on its own. */
 export function uvErrorTail(output: string, installPath: string): string | null {
   let text = uvErrorSection(output)
   if (text === null) return null
@@ -247,27 +196,9 @@ export interface AgentRequirementsInstall {
   uvPath: string
   pythonPath: string
   installPath: string
-  /** Names the install in launch-output warnings; the agent's by default. */
   label?: string
 }
 
-/**
- * Decide whether this launch installs the agent's Python requirements, and
- * resolve everything the install needs.
- *
- * `args` must be the FINAL spawn args. `--enable-agent` reaches them either
- * from the user's own launch args or from a Core beta grant, so the args are
- * the one place that knows whether the agent is really starting. A core whose
- * schema does not know the flag has normally had it filtered out by then, with
- * one exception: when schema discovery itself failed the launch keeps the raw
- * args, so a hand-typed flag survives to a core that cannot parse it. That
- * launch fails on argparse either way; the cost is one wasted install.
- *
- * The environment test is the one every `manager_requirements.txt` site makes,
- * which is what confines this to the Desktop-managed installs (standalone and
- * adopted). Portable, git and build installs drive a Python environment this
- * helper has no uv binary for; Core's own `pip install -r` hint covers them.
- */
 export function planAgentRequirementsInstall(
   installation: InstallationRecord,
   args: readonly string[]
@@ -282,20 +213,6 @@ export function planAgentRequirementsInstall(
   return { reqPath, uvPath, pythonPath, installPath: installation.installPath }
 }
 
-/**
- * Run one `uv pip install -r`, streaming uv's output into the launch. `ok` when it exited 0.
- *
- * Bounded and fail-open. Never throws: neither a failure nor a timeout here may
- * stop the launch. ComfyUI still starts with the
- * flag, prints its own install hint and disables the agent itself, which beats
- * refusing to start.
- *
- * `signal` is the launch's own, and stays untouched: uv is driven through a
- * controller owned here, so the deadline ends the wait without cancelling the
- * launch. Because killing uv is best-effort, the wait is bounded twice over:
- * the ceiling asks it to stop, and `KILL_GRACE_MS` later the launch stops
- * waiting whether or not it did. Nothing downstream depends on which happened.
- */
 async function runBoundedInstall(
   plan: AgentRequirementsInstall,
   reqPath: string,
@@ -330,8 +247,6 @@ async function runBoundedInstall(
   const abandoned = new Promise<InstallOutcome>((resolve) => {
     abandon = () => resolve({ kind: 'abandoned' })
   })
-  // Armed on whichever side raised the abort, so neither the ceiling nor a user
-  // cancel can be held open by a uv that never takes the signal.
   uvAbort.signal.addEventListener(
     'abort',
     () => {
@@ -346,11 +261,6 @@ async function runBoundedInstall(
     uvAbort.abort()
   }, timeoutMs)
 
-  // Settled into a value rather than awaited directly: losing the race leaves
-  // this pending, and a later rejection with nothing awaiting it would surface
-  // as an unhandled rejection.
-  // The helper hands back the process it spawned, so the abandon path below can
-  // stop exactly this install rather than looking for it.
   let uvProc: ChildProcess | null = null
   const install: Promise<InstallOutcome> = installFilteredRequirementsDetailed(
     reqPath,
@@ -375,12 +285,8 @@ async function runBoundedInstall(
 
   try {
     const outcome = await Promise.race([install, abandoned])
-    // A uv that ignored the stop is hard-stopped whoever asked for it: a caller that waits for
-    // the stop (removing the install) must not go on with uv still running from inside it.
     if (outcome.kind === 'abandoned')
       await forceStopAgentInstall(uvProc, plan.installPath, tempName)
-    // A cancelled launch kills uv mid-install, so whatever it reports is the
-    // cancellation rather than a failure worth showing.
     if (signal?.aborted) return result('cancelled', null)
     if (outcome.kind === 'abandoned') {
       sendOutput(
@@ -391,13 +297,6 @@ async function runBoundedInstall(
         `⚠ ${plan.label ?? AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`
       )
     } else if (outcome.result.code !== 0) {
-      // The exit code decides, not the timer that was racing it: an install
-      // that finished inside the grace period succeeded, however close to the
-      // ceiling it landed, and must not be reported as skipped.
-      //
-      // Only the code, never a tail of the captured output: uv streams into
-      // this same sink as it runs, so appending what it captured reprints the
-      // error a second time in the log.
       sendOutput(
         timedOut
           ? `\n⚠ ${label} install exceeded ${Math.round(timeoutMs / 1000)}s; continuing without it\n`
@@ -423,29 +322,12 @@ interface RunOptions {
   subcommand?: 'install' | 'compile'
 }
 
-/**
- * How long a launch waits on downloading the agent's packages, shared by every download on the
- * launch. Each install tries uv's cache first; what is missing is then downloaded into the cache,
- * in parallel and outside the environment, for what is left of this, and installed from the
- * cache. Only the download is held to this: stopping uv part-way through an install would leave
- * the environment half-changed. What does not land in time goes to `prefetchAgentRequirements`,
- * which no one waits on, and the agent starts on the launch after it lands. About a Windows
- * ComfyUI boot (median 24 s), and above the 13 s the whole agent payload took on a fast link.
- */
 const ONLINE_BUDGET_MS = 20_000
 
-/** A cache-only install downloads nothing but still writes the whole agent into the
- *  environment, which a cross-drive copy and a virus scan can make slow: sized for that, as the
- *  launch's install was before it moved downloads to the background. */
 const OFFLINE_TIMEOUT_MS = 120_000
 
-/** The cache-only check (`--dry-run`, so it writes nothing) before every install from the cache: an
- *  install waits on the lock of a wheel another install's download is fetching, which a check does
- *  not take, and a check is safe to stop where an install into the environment is not. */
 const CACHE_CHECK_TIMEOUT_MS = 30_000
 
-/** One download at a time: a stopped uv keeps every wheel it finished, where in parallel a slow
- *  link finishes none of the large ones and every attempt starts over. */
 const SERIAL_DOWNLOADS = { UV_CONCURRENT_DOWNLOADS: '1' }
 
 const OFFLINE = '--offline'
@@ -457,14 +339,8 @@ export interface PrefetchStep {
 
 export interface PrefetchRequest {
   plan: AgentRequirementsInstall
-  /** In order: core's own file first when it is not in yet, since a launch installs it first. */
   steps: PrefetchStep[]
   signature: string
-  /** Ahead of any launch: unreported when the cache already holds everything. It still resolves
-   *  online first, so an index it can't reach is reported as `unreachable`, cache or not. When
-   *  the compile would move an installed version no index serves, its replacement is not fetched,
-   *  and the run is `not_served` if nothing is fetched; when a constraint pins such a version
-   *  that is not a local build, the compile finds no solution and the step is `resolve_failed`. */
   eager?: boolean
 }
 
@@ -479,25 +355,16 @@ type CachedRun = (
   network?: boolean
 ) => Promise<CachedResult>
 
-/** uv's words for a resolve it proved impossible, in every version Desktop ships (0.11, 0.13). */
 const NO_SOLUTION = /No solution found when resolving/
-/** uv's words for a download or index that failed: a later download can fix those. Exit codes
- *  can't tell them apart: uv 0.11 exits 1 for a download cut short, as for no solution. */
 const DOWNLOAD_FAILED =
   /Failed to (?:download|fetch)|error sending request|Request failed|\btimed out\b|\b(?:re|dis)?connect(?:s|ed|ing|ion|ions)?\b|dns error|certificate|HTTP status/i
 
-/** uv's error, from its first `error:` or `×` line: whole, for deciding what failed. */
 function uvErrorSection(output: string): string | null {
   const lines = stripAnsi(output).split(/\r?\n/)
   const start = lines.findIndex((line) => /^error:|^\s*×/.test(line))
   return start === -1 ? null : lines.slice(start).join('\n').trim()
 }
 
-/**
- * A failure no download can fix, from a try that had the network: uv proved there is no solution,
- * or failed on something it names that is not a download (a permission error, a locked file). A
- * cache-only try proves nothing, since a cache miss reads as no solution.
- */
 function cannotDownload(result: CachedResult): boolean {
   if (!result.online || result.report.outcome !== 'exited') return false
   const error = uvErrorSection(result.output)
@@ -508,14 +375,6 @@ function cannotDownload(result: CachedResult): boolean {
 
 export type Deferral = 'agent' | 'update'
 
-/**
- * Install the planned requirements. Bounded and fail-open, never throws. An `override` that
- * validates and passes its check goes in first; otherwise, or when it is not downloaded in time,
- * core's own file. On a fresh install the override waits for core's file and then goes in on the
- * same launch. What does not download in time is handed to `onDeferred` for a background download;
- * a failure of core's file no download can fix goes to `onCoreFailed` instead. Returns the decision
- * to report, if any.
- */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
   sendOutput: (text: string) => void,
@@ -535,7 +394,6 @@ export async function installAgentRequirements(
       runBoundedInstall(plan, reqPath, tempName, OFFLINE_TIMEOUT_MS, output, signal, {
         extraArgs: [OFFLINE, ...extraArgs]
       })
-    // Quiet: a cache miss is the expected case on a cold cache; the network try speaks for it.
     const checked = await cacheHoldsAll()
     const cached = checked.ok ? await fromCache(() => {}) : checked
     if (cached.ok || signal?.aborted || !network || onlineLeft <= 0) {
@@ -552,8 +410,6 @@ export async function installAgentRequirements(
     )
     onlineLeft -= Date.now() - startedAt
     if (fetched.kind === 'failed') {
-      // uv writes the scratch target only after the wheels are in its cache, and on a slow disk
-      // that writing alone can outlast the budget: the cache may already hold everything.
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
       const retried = late && (await cacheHoldsAll()).ok ? await fromCache() : null
@@ -573,7 +429,6 @@ export async function installAgentRequirements(
   }
   let deferred = false
   let kept: string | null = null
-  // Everything not in yet, in the order a launch installs it: core's file, then the override.
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
     deferred = true
@@ -585,8 +440,6 @@ export async function installAgentRequirements(
       ...(coreText === null ? [] : [{ text: coreText }]),
       ...(overrideStep ? [overrideStep] : [])
     ]
-    // Core's file in means the agent starts now, on core's versions, and only the override waits:
-    // unless core pins only the placeholder, which is no agent at all.
     const placeholder = corePinsPlaceholderAgent(
       coreText ?? (await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => ''))
     )
@@ -608,7 +461,6 @@ export async function installAgentRequirements(
     prepare
   )
   if (signal?.aborted || decision?.decision === 'applied') return decision
-  // Core's file would put the placeholder over a working agent: keep that agent instead.
   if (decision && !(decision.decision === 'refused' && decision.reason === 'core_first')) {
     kept = await installedWorkingAgent(plan, overrideState, signal)
     if (signal?.aborted) return decision
@@ -628,23 +480,15 @@ export async function installAgentRequirements(
     return decision
   }
   if (decision?.decision !== 'refused' || decision.reason !== 'core_first') return decision
-  // Core's packages are in now, so the override goes in on this same launch, its constraints
-  // built from what core's file installed.
   const retried = await tryOverride(plan, override, overrideState, run, sendOutput, signal, prepare)
   if (signal?.aborted) return retried
   if (retried?.decision === 'deferred') await defer(false)
   if (retried?.decision === 'deferred' || retried?.decision === 'reverted') {
-    // A failed install may have moved packages; core's file puts them back from the cache.
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
 }
 
-/**
- * The installed agent to keep, as `name==version`, when core's file pins only the placeholder (so
- * falling back to it would switch the agent off) and a real agent is in the environment. Null
- * otherwise, or when either can't be read. Never throws.
- */
 export async function installedWorkingAgent(
   plan: AgentRequirementsInstall,
   state: AgentOverrideState | null,
@@ -657,7 +501,6 @@ export async function installedWorkingAgent(
   try {
     return keepableAgent(coreText, listed, state)
   } catch {
-    // Keeping is an optimisation: a version shape it can't read must never stop the launch.
     return null
   }
 }
@@ -691,7 +534,6 @@ async function tryOverride(
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
   const { pins } = parsed
   if (isRevertedFor(state, pins)) {
-    // Core's file can't take back a pin over a line it leaves unversioned.
     const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
     const stuck = pinsOverBareLines(coreText, pins)
     sendOutput(
@@ -711,18 +553,15 @@ async function tryOverride(
   if (ready.kind === 'refused') return refuse(sendOutput, ready.reason, pins)
   const { coreText, text, constraints, listed } = ready
   prepare(text, constraints, pins)
-  // Per attempt: two sessions of one install can run at once, and must not share these files.
   const tag = attemptTag()
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
   const overridePath = path.join(plan.installPath, `.launch-agent-reqs-override-${tag}-src.txt`)
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
-    // Not counted toward retiring the override: it applies on a later launch, once core's are in.
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
     await fs.promises.writeFile(overridePath, text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
-    // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
     const installed = await run(overridePath, `.launch-agent-reqs-override-${tag}.txt`, {
       name: constraintsName,
       text: constraints
@@ -747,11 +586,8 @@ async function tryOverride(
   return { decision: 'applied', pins }
 }
 
-/** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
 const LIST_TIMEOUT_MS = 30_000
 
-/** `untilExit`: a stop still waits for uv to exit, for a hold that must not return with it alive,
- *  bounded as an install's stop is: the grace, then a hard stop. */
 async function listInstalled(
   plan: AgentRequirementsInstall,
   signal: AbortSignal | undefined,
@@ -824,11 +660,6 @@ async function prepareOverride(
   return { kind: 'ready', coreText, text: effective.text, constraints, listed }
 }
 
-/**
- * What a launch with the agent would install, for a background download ahead of that launch: the
- * override's text when it validates and has not been given up on, else core's own file. Null when
- * core's file can't be read. Never throws.
- */
 export async function prepareAgentPrefetch(
   plan: AgentRequirementsInstall,
   raw: unknown,
@@ -878,7 +709,6 @@ async function preparePrefetch(
   }
 }
 
-/** Never counted toward retiring the override: an install that is not done yet costs no launch time. */
 function deferOverride(
   sendOutput: (text: string) => void,
   pins: OverridePins,
@@ -901,16 +731,8 @@ function revertOnInstall(
   return { decision: 'reverted', reason: 'install_failed', pins, ...(install ? { install } : {}) }
 }
 
-/** Its own bound: the wheel is about 25 MB, and a launch that runs out of time tries again next. */
 const FRONTEND_RESTORE_TIMEOUT_MS = 60_000
 
-/**
- * Put ComfyUI's own `comfyui-frontend-package==X` back after an override moved it, with nothing
- * else installed (`--no-deps`; the package has no dependencies). Runs whether or not the agent
- * starts, since the launch after a campaign pulls its pin may not enable it. Bounded and fail-open,
- * never throws; true once ComfyUI's version is in, or when there is nothing to put back (no uv, or
- * no exact frontend pin in a readable `requirements.txt`), so the record is dropped either way.
- */
 export async function restoreCoreFrontend(
   installation: InstallationRecord,
   sendOutput: (text: string) => void,
@@ -953,7 +775,6 @@ export async function restoreCoreFrontend(
   }
 }
 
-/** Generous: no one waits on it, and a stopped one resumes from the wheels it finished. */
 const PREFETCH_TIMEOUT_MS = 30 * 60_000
 
 const PREFETCH_PREFIX = '.agent-prefetch-'
@@ -967,19 +788,8 @@ interface RunningPrefetch {
 const prefetches = new Map<string, RunningPrefetch>()
 const preparing = new Map<string, { stop: AbortController; done: Promise<unknown> }>()
 const held = new Map<string, number>()
-/** Aborted on quit: nothing starts after, and preparation ahead of a launch stops too. */
 let quit = new AbortController()
 
-/**
- * Fetch what a launch could not install into uv's cache without touching the environment ComfyUI
- * runs from: resolve (`uv pip compile`, preferring what is installed), then install exactly the
- * pins it lacks into a scratch target, deleted after. The next launch's cache-only install takes
- * them from there.
- *
- * One runs per install: another request while it runs is refused (false), and a different one
- * gets `onDone(null)` at once, so no caller waits on it. False after quit or while the install is
- * held. `onDone` gets nothing for a run that did nothing (everything cached). Never throws.
- */
 export function prefetchAgentRequirements(
   request: PrefetchRequest,
   onDone: (report: PrefetchReport | null) => void
@@ -1003,7 +813,6 @@ export function prefetchAgentRequirements(
   return true
 }
 
-/** For quit: on POSIX uv leads its own process group, so it would outlive Desktop. */
 export function stopAgentPrefetches(): void {
   quit.abort()
   for (const { stop } of prefetches.values()) stop.abort()
@@ -1013,12 +822,6 @@ export function agentPrefetchesStopped(): boolean {
   return quit.signal.aborted
 }
 
-/**
- * For foreground work on an install's environment (a launch, an update, a copy, a delete), which a
- * background uv would contend with or hold open (on Windows, blocking a delete or a rename): stops
- * its download and any preparation for one, waits for uv to exit, and starts none for it until
- * `release` is called.
- */
 export async function holdAgentPrefetch(installPath: string): Promise<() => void> {
   held.set(installPath, (held.get(installPath) ?? 0) + 1)
   const preparation = preparing.get(installPath)
@@ -1037,7 +840,6 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
   }
 }
 
-/** uv names only the large wheels as they download; the counts cover those. */
 const UV_DOWNLOADING_LINE = /^\s*Downloading\s/
 const UV_DOWNLOADED_LINE = /^\s*Downloaded\s/
 const DRY_RUN_ADDED = /^ \+ (\S+==\S+)$/
@@ -1088,13 +890,11 @@ async function runPrefetch(
       }
     }
     if (cachedSteps === request.steps.length) return null
-    // No tail for a decline: it names the installed version, which may carry a private label.
     const nothing = declined ? 'not_served' : 'nothing_missing'
     return done(fetches.length ? 'completed' : nothing, fetches.at(-1))
   } catch {
     return done('spawn_error')
   } finally {
-    // Also clears what a run that Desktop's exit cut short left behind.
     await removePrefetchFiles(plan.installPath)
   }
 }
@@ -1130,22 +930,18 @@ async function fetchStep(
     eager: boolean
     signal: AbortSignal
     left: () => number
-    /** A launch waits on its download, so it fetches in parallel and may take the lock. */
     mode: 'launch' | 'prefetch'
     output?: (text: string) => void
   }
 ): Promise<StepResult> {
   const srcPath = path.join(plan.installPath, `${tag}-src.txt`)
   const pinsPath = path.join(plan.installPath, `${tag}-pins.txt`)
-  // Relative to uv's cwd (the install dir): uv splits an absolute path on spaces.
   const constraintsName = `${tag}-constraints.txt`
   await fs.promises.writeFile(srcPath, step.text, 'utf-8')
   const constraintArgs: string[] = []
   if (step.constraints !== undefined) {
     await fs.promises.writeFile(
       path.join(plan.installPath, constraintsName),
-      // A compile can't see installed versions, so pinning a local build leaves no solution; the
-      // seed and the probe keep it installed instead.
       mode === 'prefetch' ? step.constraints.replace(/^.*==\S*\+.*$\n?/gm, '') : step.constraints,
       'utf-8'
     )
@@ -1166,20 +962,13 @@ async function fetchStep(
       pins: run.output.split(/\r?\n/).flatMap((line) => line.match(DRY_RUN_ADDED)?.[1] ?? [])
     }
   }
-  // Not a dry-run: that takes the environment's lock, and a ComfyUI-Manager install into the
-  // running ComfyUI would wait behind it.
   const compile = async (): Promise<Resolved | null> => {
     const parsed = parseInstalled((await listInstalled(plan, signal, true)) ?? '')
-    // Unseeded, the compile would move every installed version, local builds included.
     if (parsed === null) return null
     const listed = parsed.filter((p) => VALID_PIP_NAME.test(p.name) && PIP_VERSION.test(p.version))
-    // uv prints compiled names normalised; `uv pip list` prints them as the package spells them.
     const installed = new Map(listed.map((p) => [normalizePackageName(p.name), p.version]))
     const compiledName = `${tag}-compiled.txt`
     const compiledPath = path.join(plan.installPath, compiledName)
-    // uv keeps a version already in its output file where the requirements allow and an index
-    // serves it. One no index serves (a local build) is not kept: uv picks the newest it finds,
-    // or, under a constraint that pins it, finds no solution.
     const freeze = listed.map(({ name, version }) => `${name}==${version}\n`).join('')
     await fs.promises.writeFile(compiledPath, freeze, 'utf-8')
     const run = await runBoundedInstall(
@@ -1199,9 +988,6 @@ async function fetchStep(
       const pin = line.trim().match(COMPILED_PIN)
       return pin && installed.get(pin[1]!) !== pin[2] ? [{ name: pin[1]!, line: pin[0] }] : []
     })
-    // A launch keeps an installed version that still satisfies, unless offline it can't: then it
-    // replaces one no index serves (a local build) with what this compile chose, once that is
-    // cached. So the replacement for such a version is not fetched; the rest is.
     const unserved = new Set<string>()
     for (const { name } of pins.filter(({ name }) => installed.has(name))) {
       const probePath = path.join(plan.installPath, `${tag}-installed.txt`)
@@ -1235,7 +1021,6 @@ async function fetchStep(
   if (pins.length === 0) return { kind: eager ? 'cached' : 'nothing' }
   await fs.promises.writeFile(pinsPath, pins.join('\n') + '\n', 'utf-8')
   if (eager) {
-    // Asked of the scratch target: asking the environment takes its lock.
     const check = await checkCache(
       plan,
       pinsPath,
@@ -1266,10 +1051,6 @@ async function fetchStep(
 
 const PIP_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+!_-]*$/
 
-/**
- * A launch's network try: download what `reqPath` is missing into uv's cache, in parallel and into
- * a scratch target, so stopping it at the budget leaves the environment as it was. Never throws.
- */
 async function fetchForLaunch(
   plan: AgentRequirementsInstall,
   reqPath: string,
@@ -1281,7 +1062,6 @@ async function fetchForLaunch(
   const prefix = '.launch-agent-fetch-'
   const tag = `${prefix}${attemptTag()}`
   const staleBefore = Date.now() - 60 * 60_000
-  // Not awaited: deleting a large leftover tree must not spend the download's budget.
   void removeScratch(
     plan.installPath,
     async (name, at) =>

@@ -7,19 +7,12 @@ import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 
-/**
- * Status tab: grouped install summary with an inline-editable identity hero (committing calls `onRename`).
- */
-
 interface Props {
   installation: Installation | null
   sections: DetailSection[]
   diskUsage: { label: string; value: string } | null
-  /** Commit a rename, resolving `true` on success; a function prop (not an emit) so blur can await and revert only on failure. */
   onRename?: (newName: string) => Promise<boolean>
-  /** Commit a remote-URL change, resolving `true` on success. Same function-prop rationale as `onRename`: blur awaits and reverts only on failure. */
   onUpdateUrl?: (newUrl: string) => Promise<boolean>
-  /** True when the remote URL was edited while running and a reconnect is pending. Owned by the composable so it clears on stop/restart like the footer button. */
   urlRestartPending?: boolean
 }
 
@@ -32,14 +25,10 @@ function openPath(path: string): void {
   if (path && path !== '—') void window.api.openPath(path)
 }
 
-// The Comfy Cloud entry is not user-renamable: render its name as
-// static text with no contenteditable / pencil affordance.
 const nameEditable = computed(() => props.installation?.sourceCategory !== 'cloud')
 
-// Drive the hero name imperatively: mixing `{{ }}` with the inline pencil icon left Vue unable to patch the edited text node, so a committed rename painted everywhere except here.
 const nameEl = useTemplateRef<HTMLElement>('nameEl')
 
-// Write the name into the editable element if it differs, without stomping the caret mid-edit.
 function syncName(): void {
   const el = nameEl.value
   if (!el) return
@@ -47,7 +36,6 @@ function syncName(): void {
   if (el.textContent !== name) el.textContent = name
 }
 
-// Watch the name AND the ref (which starts null) so the initial name paints once the contenteditable mounts.
 watch(
   [() => props.installation?.name ?? '', nameEl],
   () => {
@@ -56,7 +44,6 @@ watch(
   { immediate: true, flush: 'post' }
 )
 
-// Clicking the pencil should behave like clicking into the field: focus the editable name and place the caret at the end.
 function focusName(): void {
   const el = nameEl.value
   if (!el) return
@@ -85,7 +72,6 @@ function handleNamePaste(event: ClipboardEvent): void {
   document.execCommand('insertText', false, text)
 }
 
-// Escape restores the original name and blurs; the blur handler then no-ops.
 function handleNameEscape(): void {
   syncName()
   nameEl.value?.blur()
@@ -96,22 +82,16 @@ async function handleNameBlur(event: FocusEvent): Promise<void> {
   const current = props.installation?.name ?? ''
   const newName = el.textContent?.trim() ?? ''
   if (newName && newName !== current) {
-    // Keep the trimmed text optimistically so the hero doesn't flash back mid-round-trip; only a rejection reverts.
     if (el.textContent !== newName) el.textContent = newName
     const committed = await props.onRename?.(newName)
     if (committed === false) syncName()
     return
   }
-  // Empty / whitespace-only / unchanged: restore the canonical name now.
   syncName()
 }
 
-// --- Remote connection URL: inline-editable, mirroring the name-edit pattern above. ---
-
-// Only the Remote Connection source exposes an editable `remoteUrl`; Cloud's URL stays read-only.
 const urlEditable = computed(() => props.installation?.sourceCategory === 'remote')
 
-// Mirrors main's `parseUrl`: a scheme-less value is tried as `http://<value>` and must yield a hostname.
 function isValidConnectionUrl(raw: string): boolean {
   const trimmed = raw.trim()
   if (!trimmed) return false
@@ -123,24 +103,15 @@ function isValidConnectionUrl(raw: string): boolean {
   }
 }
 
-// The live session is pinned to the launch-time URL, so an edit while running
-// only takes effect on restart. Visibility is owned by the composable's
-// restart-dirty state (via `urlRestartPending`), which clears on stop/restart —
-// gated here on `isRunning` so the tag hides the instant the instance stops.
 const showUrlRestart = computed(() => {
   const id = props.installation?.id
   return !!props.urlRestartPending && !!id && sessionStore.isRunning(id)
 })
 
-// Same imperative-sync rationale as the name hero (pencil sibling can't live inside the contenteditable).
-// A `ref` on an element inside `v-for` resolves to an array; the URL row renders at most once, so unwrap to the single node.
 const urlElRaw = useTemplateRef<HTMLElement | HTMLElement[]>('urlEl')
 const urlEl = computed<HTMLElement | null>(() =>
   Array.isArray(urlElRaw.value) ? (urlElRaw.value[0] ?? null) : (urlElRaw.value ?? null)
 )
-// Source the canonical URL from the `remoteUrl` detail field (always present in
-// the sections) rather than `installation.remoteUrl`, which the picker snapshot
-// may omit. Falls back to the installation field if the section value is a placeholder.
 function currentUrl(): string {
   for (const section of props.sections) {
     for (const field of section.fields ?? []) {
@@ -159,8 +130,6 @@ function syncUrl(): void {
   const url = currentUrl()
   if (el.textContent !== url) el.textContent = url
 }
-// Repaint the canonical URL when it changes externally (e.g. main re-normalised
-// it), without stomping the caret mid-edit.
 watch(
   [() => currentUrl(), urlEl],
   () => {
@@ -174,7 +143,6 @@ function handleUrlEscape(): void {
   urlEl.value?.blur()
 }
 
-// Pencil click: focus the URL field and drop the caret at the end so the user can edit immediately.
 function focusUrlField(): void {
   const el = urlEl.value
   if (!el) return
@@ -187,7 +155,6 @@ function focusUrlField(): void {
   sel?.addRange(range)
 }
 
-// The editable URL row is the remote source's `remoteUrl` fact (matched on the field id carried into the row).
 function isUrlRow(row: { id: string }): boolean {
   return urlEditable.value && row.id === 'remoteUrl'
 }
@@ -197,12 +164,9 @@ async function handleUrlBlur(event: FocusEvent): Promise<void> {
   const current = currentUrl()
   const next = el.textContent?.trim() ?? ''
   if (!next || next === current || !isValidConnectionUrl(next)) {
-    // Empty / unchanged / invalid: restore the canonical value, no commit.
     syncUrl()
     return
   }
-  // On rejection, revert; on success the composable sets the restart-pending
-  // state (when running) and main normalises the URL — the watcher repaints it.
   const committed = await props.onUpdateUrl?.(next)
   if (committed === false) syncUrl()
 }
@@ -212,9 +176,7 @@ interface FactRow {
   label: string
   value: string
   copyable?: boolean
-  /** Clickable path that opens the folder in the OS file manager. */
   openable?: boolean
-  /** `'start'` keeps the tail visible (used by paths); everything else end-truncates. */
   truncate?: 'start' | 'end'
 }
 
@@ -240,7 +202,6 @@ function fieldValue(field: DetailField): string {
   return String(v)
 }
 
-// Localised dates contain only digits and separators; without this guard the slash-based path heuristic sprouts a nonsensical copy button on dates.
 function looksLikeDate(value: string): boolean {
   return /^[\d/.\-: ]+$/.test(value)
 }
@@ -313,10 +274,6 @@ const lineageRows = computed<FactRow[]>(() => {
   return allFields.value.filter((field) => matchLabel(field, ['lineage'])).map(toRow)
 })
 
-// The running port arrives as an `active-port` field from main (it's the only
-// source that knows the real port in every window). Visibility is gated on the
-// reactive session store so the section hides the instant the instance stops,
-// without waiting for a section refetch.
 const runningDetailRows = computed<FactRow[]>(() => {
   const id = props.installation?.id
   if (!id || !sessionStore.isRunning(id)) return []
@@ -341,10 +298,6 @@ const groups = computed<FactGroup[]>(() => {
       rows: running
     })
   }
-  // Location & storage only makes sense for a local on-disk install. Cloud and
-  // remote connections have no local footprint, so suppress the whole group
-  // (covers the "no disk storage data available" case too — `diskUsage` is null
-  // for them and the path rows describe a remote host, not local storage).
   const isLocalInstall = props.installation?.sourceCategory === 'local'
   const location = locationRows.value
   if (isLocalInstall && location.length > 0) {

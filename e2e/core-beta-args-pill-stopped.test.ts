@@ -1,17 +1,3 @@
-/**
- * Beta-args pill for a STOPPED install — instance-picker Settings › Startup Args.
- *
- * While stopped, the pill shows the grants the install is eligible for at its next launch. Main decides
- * them with the launch's own pure function, fed only inputs it can read without side effects: the
- * seeded grant payload, the record's Core version, the user's args, and the args schema the
- * settings view itself discovers (the fake install answers `--help`). The pill therefore appears
- * only once that discovery has cached the schema, after which the pill asks again.
- *
- * The pill asks for its data itself, so the last case also pins what does NOT ask: a settings
- * edit to another field, and the sections re-read it triggers.
- *
- * Linux-only: `writeFakeComfyInstall` builds a shell-script interpreter.
- */
 
 import os from 'node:os'
 import path from 'node:path'
@@ -35,11 +21,9 @@ test.describe.configure({ mode: 'serial' })
 const INSTALL_ID = 'inst-beta-args-stopped'
 const ARGS_FIELD = '[data-field-id="launchArgs"]'
 const PILL = `${ARGS_FIELD} .beta-args button`
-/** Teleported to <body>, so not under the field. */
 const MENU = '.beta-args-menu'
 const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 const BETA_SWITCH = '.global-settings [data-field-id="betaFeaturesEnabled"] button[role="switch"]'
-/** Keeps telemetry (needed so the opt-in can be turned back on) from leaving the machine. */
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
 let ctx: AppContext
@@ -48,7 +32,6 @@ let port: number
 let previousPosthogHost: string | undefined
 
 test.beforeAll(async () => {
-  // Launching the app can run well past the 45s default on a loaded machine.
   test.setTimeout(120_000)
   previousPosthogHost = process.env['POSTHOG_HOST']
   process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
@@ -115,17 +98,12 @@ async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
   )
 }
 
-/** Absence is a real answer only against a fresh sections read. Every caller reaches here from the
- *  Desktop Settings popup kind, which unmounts the picker, so the args field `openStartupArgs` waited
- *  for was rendered from this open's own response. The schema is already cached by then, so no
- *  discovery-driven re-read is still coming either. */
 async function expectNoPill(popup: WebContentsPage): Promise<void> {
   expect(await pillAriaLabel(popup)).toBeNull()
 }
 
 test('shows the grants the next launch is eligible for @linux', async () => {
   const popup = await openStartupArgs()
-  // First open: the field's own schema discovery fills the cache, then the pill asks again.
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillAriaLabel(popup)).toBe(
     '1 beta argument eligible for the next launch, show details',
@@ -174,7 +152,6 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
 test('an opt-in change made while the picker is hidden shows on reopen @linux', async () => {
   let popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
-  // Hidden, not swapped: the cached picker keeps its sections, which is what could go stale.
   await closeTitlePopupIfOpen(ctx.app)
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', false)`)
 
@@ -193,7 +170,6 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
 const betaArgsRequests = async (): Promise<number> =>
   (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length
 
-/** Commit a new args value through the input's own change event, as a blur would. */
 async function commitArgs(popup: WebContentsPage, value: string): Promise<void> {
   await popup.evaluate(
     `(() => {
@@ -210,7 +186,6 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
 
-  // Save an unrelated field through the settings UI, and wait until main has stored it.
   const PORT_CONFLICT = '[data-field-id="portConflict"] .ui-select-trigger'
   const OTHER_OPTION = '.ui-select-listbox [role="option"]:not([data-state="checked"])'
   await popup.clickUntilVisible(PORT_CONFLICT, OTHER_OPTION, { timeout: 10_000 })
@@ -220,7 +195,6 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
       `window.api.getInstallations().then((all) => all.find((i) => i.id === ${JSON.stringify(INSTALL_ID)})?.portConflict ?? null)`,
     )
   await expect.poll(stored, { timeout: 10_000, intervals: [100, 200] }).not.toBeNull()
-  // The view re-reads its sections after a save; give that re-read time to land, then count.
   await expect.poll(() => popup.exists(PILL), { timeout: 5_000 }).toBe(true)
   expect(await betaArgsRequests(), 'a save of another field asked for beta args').toBe(0)
 
@@ -233,7 +207,6 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
 test("adding the grant's opposite to the startup args removes it @linux", async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
-  // Commit through the input's own change event, as a blur would.
   await popup.evaluate(
     `(() => {
       const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})

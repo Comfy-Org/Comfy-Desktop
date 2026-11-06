@@ -197,10 +197,8 @@ describe('InstallWizardModal starter template disk gate', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
     await wrapper.get('.config-continue').trigger('click')
-    // The disk-space probe is debounced.
     await vi.waitFor(() => expect(window.api.getDiskSpace).toHaveBeenCalled(), { timeout: 5000 })
     await flushPromises()
-    // Nothing is pre-selected: the user picks the card.
     await wrapper.get('.tps__card').trigger('click')
     await flushPromises()
     return wrapper
@@ -585,7 +583,6 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const wrapper = await openWorkspaceModal()
 
-    // Visit Standalone (loads template options), then return to Managed.
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
@@ -942,7 +939,6 @@ describe('InstallWizardModal hardware warning', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    // Standalone is auto-selected; the warning shows.
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(true)
 
     const remotePill = wrapper
@@ -952,7 +948,6 @@ describe('InstallWizardModal hardware warning', () => {
     await remotePill!.trigger('click')
     await flushPromises()
 
-    // Remote installs run on other hardware; local GPU access is irrelevant.
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
 })

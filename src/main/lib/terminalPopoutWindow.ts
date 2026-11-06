@@ -1,13 +1,3 @@
-/**
- * Pop-out terminal window. A small standalone Electron BrowserWindow that
- * runs xterm in a bundled Desktop renderer that is isolated from the served
- * ComfyUI frontend. Uses the same per-install shared shell as the trusted
- * console view (`terminal-*` IPC handlers in `registerTerminalHandlers.ts`).
- *
- * The dedicated preload is the security boundary: this renderer gets PTY
- * access while the served ComfyUI renderer gets only an open/focus request.
- */
-
 import { BrowserWindow } from 'electron'
 import type { WebContents } from 'electron'
 import path from 'path'
@@ -29,10 +19,6 @@ function stripSourceMapComment(source: string): string {
   return source.replace(/\n?\/\/# sourceMappingURL=.*$/u, '')
 }
 
-/**
- * Build the standalone xterm bootstrap script for the pop-out window.
- * Memoised — the UMD payloads are large and never change at runtime.
- */
 function buildPopoutScript(): string {
   if (!cachedScript) {
     const xtermJs = stripSourceMapComment(readPackageFile('@xterm/xterm/lib/xterm.js'))
@@ -62,12 +48,6 @@ function buildPopoutScript(): string {
   return cachedScript
 }
 
-/**
- * Standalone xterm bootstrap. Subscribes to the shared shell of the
- * popout's bound install, wires data/output/exit, fits to the window,
- * and refits on every resize. Render mounts directly to the body — no
- * bottom-panel tab plumbing.
- */
 const POPOUT_MAIN_JS = `
 var bridge = window.__comfyDesktopTerminal;
 if (!bridge) return;
@@ -166,8 +146,6 @@ bridge.subscribe().then(function (restore) {
 }).catch(function () {});
 `
 
-// Track open pop-outs per installation so a second click on the inline
-// button focuses the existing window instead of spawning a duplicate.
 const popoutsByInstallation = new Map<string, BrowserWindow>()
 
 export function findTerminalPopoutInstallationIdBySender(sender: WebContents): string | null {
@@ -184,16 +162,11 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
     return
   }
 
-  // Best-effort label using the install's user-facing name; falls back
-  // to a generic title when the lookup fails. Lookup is async so the
-  // IPC handler awaits this whole call.
   let label = 'Comfy Terminal'
   try {
     const inst = await installations.get(installationId)
     if (inst?.name) label = `Comfy Terminal — ${inst.name}`
-  } catch {
-    // installations registry not ready; keep the generic label
-  }
+  } catch {}
 
   const win = new BrowserWindow({
     width: 800,
@@ -227,21 +200,12 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
   })
 }
 
-/**
- * Close the terminal pop-out for a single install, if one is open. Used when
- * the install is detached / its host window closes (so an orphaned pop-out
- * can't keep the app alive) and before update/restore (so the shared shell
- * can be torn down without a surface still bound to it). The window's
- * `closed` handler drops the map entry; we delete eagerly too so a
- * concurrent re-open spawns a fresh window.
- */
 export function closeTerminalPopout(installationId: string): void {
   const win = popoutsByInstallation.get(installationId)
   popoutsByInstallation.delete(installationId)
   if (win && !win.isDestroyed()) win.destroy()
 }
 
-/** Close every open terminal pop-out (e.g. on app quit). */
 export function closeAllTerminalPopouts(): void {
   for (const win of popoutsByInstallation.values()) {
     if (!win.isDestroyed()) win.destroy()

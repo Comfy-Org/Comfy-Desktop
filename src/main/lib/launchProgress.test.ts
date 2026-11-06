@@ -16,7 +16,6 @@ interface Emit {
   steps?: { phase: string; label: string }[]
 }
 
-/** Run a log through the tracker, fed as `chunks` slices. Returns every emit. */
 function run(log: string, opts: { nodeCount?: number; chunks?: number } = {}): Emit[] {
   const emits: Emit[] = []
   const tracker = createLaunchProgressTracker({
@@ -24,8 +23,6 @@ function run(log: string, opts: { nodeCount?: number; chunks?: number } = {}): E
     nodeCount: opts.nodeCount,
     sendProgress: (phase, detail) => emits.push({ phase, ...detail })
   })
-  // Ensure a trailing newline so the final line is flushed (real logs always
-  // end newline-terminated; an un-terminated tail legitimately stays buffered).
   const text = log.endsWith('\n') ? log : log + '\n'
   const chunkCount = opts.chunks ?? 1
   const size = Math.ceil(text.length / chunkCount)
@@ -35,8 +32,6 @@ function run(log: string, opts: { nodeCount?: number; chunks?: number } = {}): E
   return emits
 }
 
-/** The ordered list of distinct phase ids the tracker advanced through
- *  (ignores the initial 'steps' payload and repeated same-phase updates). */
 function phaseOrder(emits: Emit[]): string[] {
   const out: string[] = []
   for (const e of emits) {
@@ -56,7 +51,6 @@ describe('createLaunchProgressTracker', () => {
 
   it('advances through the real phases in order', () => {
     const order = phaseOrder(run(FIXTURE))
-    // Monotonic, in definition order, ending at startingServer.
     const idx = (p: string) => DEFAULT_LAUNCH_PHASES.findIndex((d) => d.phase === p)
     for (let i = 1; i < order.length; i++) {
       expect(idx(order[i]!)).toBeGreaterThanOrEqual(idx(order[i - 1]!))
@@ -79,15 +73,12 @@ describe('createLaunchProgressTracker', () => {
     tracker.ingest('Starting server\n')
     expect(observed).toEqual(['launchStart', 'gpu', 'startingServer'])
 
-    // Reboot retry: the respawned process re-logs its boot from the top. The
-    // per-attempt buffer must see those milestones again...
     observed.length = 0
     const uiEmitsBefore = emits.length
     tracker.resetPhaseObservation()
     tracker.ingest('Total VRAM 8192 MB\n')
     tracker.ingest('Starting server\n')
     expect(observed).toEqual(['launchStart', 'gpu', 'startingServer'])
-    // ...while the monotonic UI progress does not regress or re-emit entries.
     expect(emits.slice(uiEmitsBefore).every((e) => e.phase === 'startingServer')).toBe(true)
   })
 
@@ -98,13 +89,9 @@ describe('createLaunchProgressTracker', () => {
       sendProgress: (phase, detail) => emits.push({ phase, ...detail })
     })
     tracker.start()
-    // steps payload first, then the first phase entered active — so the
-    // renderer never sees a steps-but-no-active gap (which made the stepper
-    // jump to the last step then jerk back to the first).
     expect(emits[0]?.phase).toBe('steps')
     expect(emits[1]?.phase).toBe(DEFAULT_LAUNCH_PHASES[0]!.phase)
     expect(emits[1]?.phase).toBe('launchStart')
-    // Idempotent.
     const count = emits.length
     tracker.start()
     expect(emits.length).toBe(count)
@@ -117,8 +104,6 @@ describe('createLaunchProgressTracker', () => {
   })
 
   it('is resilient to milestones split across chunks', () => {
-    // 1-char chunks force every milestone line to be reassembled from the
-    // pending buffer before matching.
     const order = phaseOrder(run(FIXTURE, { chunks: FIXTURE.length }))
     expect(order).toContain('gpu')
     expect(order[order.length - 1]).toBe('startingServer')
@@ -144,7 +129,6 @@ describe('createLaunchProgressTracker', () => {
     const nodeEmits = emits.filter(
       (e) => e.phase === 'customNodes' && /\d+ \/ \d+/.test(e.status ?? '')
     )
-    // Entry emits "0 / 2" at 0%, then counts up with the node name appended.
     expect(nodeEmits.map((e) => e.status)).toEqual(['0 / 2', '1 / 2 · node-a', '2 / 2 · node-b'])
     expect(nodeEmits.map((e) => e.percent)).toEqual([0, 50, 100])
   })
@@ -155,47 +139,38 @@ describe('createLaunchProgressTracker', () => {
       'Using sub quadratic optimization for attention'
     ].join('\n')
     const emits = run(log)
-    // The raw line is NOT surfaced; a human i18n key is emitted instead.
     const streamed = emits.find(
       (e) => e.phase === 'gpu' && e.status === 'launch.activity.optimizing'
     )
     expect(streamed).toBeTruthy()
     expect(streamed?.percent).toBe(-1)
-    // No emit ever carries the raw log text.
     expect(emits.some((e) => /sub quadratic/i.test(e.status ?? ''))).toBe(false)
   })
 
   it('skip-advances if a late milestone arrives before earlier ones', () => {
-    // No security/gpu lines — jump straight to the server line.
     const order = phaseOrder(run('Starting server\nTo see the GUI go to: http://x\n'))
     expect(order).toEqual(['startingServer'])
   })
 
   it('never walks the phase index backward', () => {
-    const log = [
-      'Starting server', // jumps to last phase
-      'Total VRAM 24576 MB' // earlier milestone arriving late — must NOT regress
-    ].join('\n')
+    const log = ['Starting server', 'Total VRAM 24576 MB'].join('\n')
     const order = phaseOrder(run(log))
     expect(order).toEqual(['startingServer'])
   })
 
   it('advances correctly amid interleaved noise (no phantom jumps)', () => {
-    // Real startup interleaves chatter between milestones. The phase matchers
-    // are specific enough that unrelated lines don't trigger a premature
-    // phase; real milestones still drive the order.
     const log = [
       'loading module comfy.foo',
-      'Adding extra search path checkpoints /x', // securityScan
+      'Adding extra search path checkpoints /x',
       'registry: checking server config',
       'some line mentioning the gui in passing',
-      '[DONE] Security scan', // mountLibraries
+      '[DONE] Security scan',
       'torch backend probe',
-      'Total VRAM 49152 MB, total RAM 49152 MB', // gpu
+      'Total VRAM 49152 MB, total RAM 49152 MB',
       'mps allocator init',
-      'ComfyUI version: 0.24.1', // customNodes
+      'ComfyUI version: 0.24.1',
       'frontend assets',
-      'Starting server' // startingServer
+      'Starting server'
     ].join('\n')
     const order = phaseOrder(run(log))
     expect(order).toEqual([
@@ -236,7 +211,6 @@ describe('buildLaunchPhases — extensibility', () => {
     const phases = buildLaunchPhases({}, { preLaunchPhases: ['repair', 'torchRepair'] })
     expect(phases.slice(0, 2).map((p) => p.phase)).toEqual(['repair', 'torchRepair'])
     expect(phases.length).toBe(DEFAULT_LAUNCH_PHASES.length + 2)
-    // Both carry a weight so the renderer can renormalize the bar (no 1/n fallback).
     expect(phases.every((p) => typeof p.weight === 'number' && p.weight > 0)).toBe(true)
   })
 
@@ -247,11 +221,9 @@ describe('buildLaunchPhases — extensibility', () => {
       phases,
       sendProgress: (phase, detail) => emits.push({ phase, ...detail })
     })
-    // Synthetic phase is entered up front (the repair finished before spawn).
     tracker.start()
     expect(emits[0]?.phase).toBe('steps')
     expect(emits[1]?.phase).toBe('torchRepair')
-    // The first real boot milestone skip-advances past the synthetic step.
     tracker.ingest('Adding extra search path checkpoints /x\n[DONE] Security scan\n')
     const order = phaseOrder(emits)
     expect(order[0]).toBe('torchRepair')
@@ -261,7 +233,6 @@ describe('buildLaunchPhases — extensibility', () => {
 })
 
 describe('addLatePhase for work discovered after the tracker was armed', () => {
-  /** Arm a tracker over `phases` and return it with its emit log. */
   function armed(phases = buildLaunchPhases({}, { preLaunchPhases: ['torchRepair'] })): {
     tracker: ReturnType<typeof createLaunchProgressTracker>
     emits: Emit[]
@@ -276,8 +247,6 @@ describe('addLatePhase for work discovered after the tracker was armed', () => {
   }
 
   it('re-emits the steps payload so the renderer knows the new phase', () => {
-    // Without the re-emit the renderer drops the phase's progress outright:
-    // progressStore returns early when the phase is absent from `steps`.
     const { tracker, emits } = armed()
     const initial = emits
       .filter((e) => e.phase === 'steps')
@@ -304,8 +273,6 @@ describe('addLatePhase for work discovered after the tracker was armed', () => {
   })
 
   it('inserts directly after the active phase so the bar cannot regress', () => {
-    // torchRepair is active (phase 0). The new phase must land at 1, ahead of
-    // it and ahead of nothing already completed.
     const { tracker, emits } = armed()
 
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
@@ -340,7 +307,6 @@ describe('addLatePhase for work discovered after the tracker was armed', () => {
       .filter((e) => e.phase === 'steps')
       .at(-1)!
       .steps!.map((s) => s.phase)
-    // launchStart is active at index 0, so the install lands right after it.
     expect(published.slice(0, 2)).toEqual(['launchStart', 'agentRequirements'])
     expect(phaseOrder(emits).at(-1)).toBe('agentRequirements')
   })

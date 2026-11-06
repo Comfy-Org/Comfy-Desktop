@@ -1,6 +1,3 @@
-// Canonical structured data for the legal docs in TermsModal. Kept in source
-// (not i18n) so the consent step shows the exact wording the user agrees to.
-
 export interface LegalDocBlock {
   kind: 'h2' | 'h3' | 'p' | 'ul'
   text?: string
@@ -13,7 +10,6 @@ export interface LegalDoc {
   blocks: LegalDocBlock[]
 }
 
-/** Doc ids surfaced by `TermsModal`'s `doc` prop. */
 export type LegalDocId = 'eula' | 'tos' | 'privacy' | 'notices'
 
 export const EULA: LegalDoc = {

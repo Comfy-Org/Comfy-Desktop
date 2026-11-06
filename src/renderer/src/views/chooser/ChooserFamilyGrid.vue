@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/** One grid of installed instances for the selected dashboard scope. */
 import ChooserInstallTile from './ChooserInstallTile.vue'
 import type { Installation } from '../../types/ipc'
 
@@ -29,8 +28,6 @@ const emit = defineEmits<{
   'why-cloud': []
 }>()
 
-/** Freeze a leaving tile's box so it doesn't collapse under `position:
- *  absolute`, letting survivors FLIP into the gap immediately. */
 function lockLeavingTileSize(el: Element): void {
   const node = el as HTMLElement
   const grid = node.parentElement
@@ -43,9 +40,6 @@ function lockLeavingTileSize(el: Element): void {
   node.style.top = `${rect.top - gridRect.top + grid.scrollTop}px`
 }
 
-/** Drop the locked box when a leaving tile is reinserted (leave cancelled):
- *  Vue reuses the DOM node, and `.tile-leave-active` no longer applies, so a
- *  stale inline width/height would otherwise freeze the revived tile's size. */
 function unlockTileSize(el: Element): void {
   const node = el as HTMLElement
   node.style.removeProperty('width')

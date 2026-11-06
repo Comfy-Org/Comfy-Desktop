@@ -26,8 +26,6 @@ function layout(
   }
 }
 
-/** Write a policy envelope shaped like a governed archive's (signature unchecked). */
-
 describe('launch', () => {
   let dir: string
   beforeEach(() => {
@@ -47,8 +45,6 @@ describe('launch', () => {
     const staged = path.join(dir, 'venv', 'base', 'python.exe')
     fs.mkdirSync(path.dirname(staged), { recursive: true })
     fs.writeFileSync(staged, '')
-    // Current archives stage it below the venv root; that placement is what keeps the
-    // venv's entry points relocatable.
     expect(venvPython(dir)).toBe(staged)
   })
 
@@ -105,7 +101,6 @@ describe('launch', () => {
   })
 
   it.each([
-    // [name, stored args, allowed now, allowed before, expected]
     ['a No build loses the default flag', '--enable-manager', false, undefined, ''],
     [
       'a No build keeps its other args',

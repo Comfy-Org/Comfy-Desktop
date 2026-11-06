@@ -1,9 +1,3 @@
-/**
- * Dropdowns and tooltips inside the install settings popup, driven with real
- * input against the popup's real host. The list's width needs a browser, and
- * Escape needs the popup's own window listener, so neither can be proven lower.
- */
-
 import { test, expect } from '@playwright/test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'

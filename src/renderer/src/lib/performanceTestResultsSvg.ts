@@ -52,7 +52,6 @@ function informationCard(
   return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" class="card" />${content}`
 }
 
-/** Create a dependency-free, self-contained SVG matching the visible results summary. */
 export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImageData): string {
   const width = 1200
   const margin = 56
@@ -122,7 +121,6 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
 </svg>`
 }
 
-/** Rasterize the self-contained results SVG at its intrinsic dimensions. */
 export async function createResultsPng(svg: string): Promise<ArrayBuffer> {
   const dimensions = svg.match(/<svg\b[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"/)
   const width = Number(dimensions?.[1])

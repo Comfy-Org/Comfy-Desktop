@@ -18,7 +18,6 @@ function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
 }
 
-/** A status section carrying the `active-port` field main appends for a running install. */
 function portSection(port: number): DetailSection {
   return {
     tab: 'status',
@@ -26,7 +25,6 @@ function portSection(port: number): DetailSection {
   } as unknown as DetailSection
 }
 
-/** Mark inst-1 running in the session store (mirrors what the dashboard / popup hydrate). */
 function markRunning(): void {
   useSessionStore().runningInstances.set('inst-1', {
     installationId: 'inst-1',
@@ -69,7 +67,6 @@ function mountPanel(props: {
 }
 
 describe('StatusFactPanel — hero name', () => {
-  // Guards that the imperatively-painted hero shows the name on mount (the watcher must key on the element ref, not just the name).
   it('shows the install name on initial mount, before any edit', async () => {
     const wrapper = mountPanel({ installation: makeInstall("Maanil's Comfy") })
     await nextTick()
@@ -123,12 +120,10 @@ describe('StatusFactPanel — hero name', () => {
     const name = wrapper.find('.status-fact-hero-name')
     expect(name.exists()).toBe(true)
     expect(name.text()).toBe('Comfy Cloud')
-    // No contenteditable affordance and no pencil hint.
     expect(name.attributes('contenteditable')).toBeUndefined()
     expect(wrapper.find('.status-fact-hero-name-static').exists()).toBe(true)
     expect(wrapper.find('.status-fact-hero-edit-hint').exists()).toBe(false)
 
-    // Blur must not commit a rename for the Cloud entry.
     await name.trigger('blur')
     expect(onRename).not.toHaveBeenCalled()
   })
@@ -159,7 +154,6 @@ describe('StatusFactPanel — running details', () => {
   })
 
   it('hides Running details when the instance is not running, even if a port field is present', async () => {
-    // No markRunning() — sessionStore reports the install as stopped.
     const wrapper = mountPanel({
       installation: makeInstall('Maanil'),
       sections: [portSection(8188)]
@@ -181,7 +175,6 @@ describe('StatusFactPanel — running details', () => {
     const installGroup = wrapper
       .findAll('.status-fact-group')
       .find((g) => g.find('.status-fact-group-title').text() === 'Instance details')
-    // The only field is the port, which belongs to Running details, so there is no Instance details group.
     expect(installGroup).toBeUndefined()
   })
 

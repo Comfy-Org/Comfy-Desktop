@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// Shared grand title + subtitle for the Tier 3 takeover modals.
 defineProps<{
   title: string
   subtitle?: string
