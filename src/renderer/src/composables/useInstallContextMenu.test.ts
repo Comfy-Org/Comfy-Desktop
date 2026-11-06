@@ -327,7 +327,7 @@ describe('useInstallContextMenu - copy-install routing', () => {
     apiMock.runAction.mockClear()
   })
 
-  it('offers Duplicate Instance for standalone and managed Build installs only', () => {
+  it('offers Duplicate for standalone and managed Build installs only', () => {
     expect(
       findItem(mountHarness(makeInstall()).menu.ctxMenuItems.value, 'copy-install')
     ).toBeTruthy()
@@ -473,8 +473,8 @@ describe('useInstallContextMenu - promote to workspace', () => {
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Create Build',
-      hint: 'Create a Build from this instance in Comfy Developer Platform.',
+      label: 'Upload Build',
+      hint: 'Upload this build to Comfy Developer Platform.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more'
     })
@@ -530,7 +530,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
     await menu.triggerAction('promote-to-workspace', inst)
 
     expect(modalMock.alert).toHaveBeenCalledWith({
-      title: 'Could not create build',
+      title: 'Could not upload build',
       message: 'Snapshot upload failed.'
     })
   })

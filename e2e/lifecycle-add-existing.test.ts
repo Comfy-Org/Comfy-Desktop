@@ -80,7 +80,7 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('Builds menu → Add Existing → Browse probes the staged directory → Track Install registers it @lifecycle', async () => {
+test('Builds menu → Add Existing → Browse probes the staged directory → Add Build registers it @lifecycle', async () => {
   expect(await ctx.panel.click('[data-testid="build-actions-menu-trigger"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="build-actions-add-existing"]')
   expect(await ctx.panel.click('[data-testid="build-actions-add-existing"]')).toBe(true)

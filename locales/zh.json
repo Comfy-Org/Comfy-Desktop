@@ -352,11 +352,11 @@
   },
   "list": {
     "loadSnapshot": "加载快照",
-    "snapshotSourceName": "源实例",
+    "snapshotSourceName": "源构建",
     "snapshotCount": "快照总数",
     "snapshotTimeline": "快照历史",
     "snapshotNewestDetail": "最新快照（将被恢复）",
-    "snapshotCreateInstall": "创建实例",
+    "snapshotCreateInstall": "创建构建",
     "snapshotDropHint": "将快照 .json 文件拖放到这里",
     "snapshotNameHint": "类似 < > : \" / \\ | ? * 的字符将被移除",
     "snapshotRelease": "版本",
@@ -377,7 +377,7 @@
   },
   "loadSnapshot": {
     "grandTitle": "从快照恢复",
-    "grandSubtitle": "加载已保存的快照文件，以在此重新创建该实例。"
+    "grandSubtitle": "加载已保存的快照文件，以在此重新创建该构建。"
   },
   "newInstall": {
     "title": "新建实例",
@@ -479,17 +479,17 @@
     "computingCommitsAhead": "正在计算领先的提交…"
   },
   "track": {
-    "title": "添加现有实例",
-    "grandTitle": "添加现有实例",
-    "grandSubtitle": "将现有本地 ComfyUI 检出添加到 Desktop，无需重新安装。",
+    "title": "添加现有构建",
+    "grandTitle": "添加现有构建",
+    "grandSubtitle": "将现有 ComfyUI 安装添加到 Comfy Desktop。",
     "installDir": "安装目录",
     "selectDir": "选择目录…",
     "detectedType": "检测到的类型",
     "browseDirFirst": "请先浏览并选择目录",
     "detecting": "正在检测…",
     "noDetected": "未检测到已知安装",
-    "trackInstallation": "跟踪安装",
-    "cannotTrack": "无法跟踪",
+    "trackInstallation": "添加构建",
+    "cannotTrack": "无法添加构建",
     "version": "版本",
     "repository": "仓库",
     "branch": "分支"
@@ -786,11 +786,11 @@
     "checkForUpdate": "检查更新",
     "featureNotImplemented": "此功能尚未实现。",
     "updateAvailable": "有可用更新",
-    "copyInstallation": "复制实例",
-    "copyInstallationTitle": "复制实例",
+    "copyInstallation": "复制",
+    "copyInstallationTitle": "复制构建",
     "copyInstallationMessage": "输入副本名称。它会创建在原实例旁边。",
     "copyInstallationConfirm": "复制",
-    "copyingInstallation": "正在复制实例",
+    "copyingInstallation": "正在复制构建",
     "copyingFiles": "正在复制文件…",
     "delete": "卸载",
     "deleteConfirmTitle": "卸载",
@@ -1343,11 +1343,11 @@
       "instanceCountLabel": "实例",
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",
-      "promoteToWorkspace": "创建构建",
-      "promoteToWorkspaceHint": "在 Comfy Developer Platform 中用此实例创建构建。",
+      "promoteToWorkspace": "上传构建",
+      "promoteToWorkspaceHint": "将此构建上传到 Comfy Developer Platform。",
       "readMore": "了解更多",
       "promoting": "正在创建...",
-      "promoteFailedTitle": "无法创建构建",
+      "promoteFailedTitle": "无法上传构建",
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
     "build": {
@@ -1509,7 +1509,7 @@
   "fileMenu": {
     "newWindow": "打开仪表板",
     "newInstall": "新建实例",
-    "addExistingInstall": "添加现有实例",
+    "addExistingInstall": "添加现有构建",
     "loadSnapshot": "加载快照",
     "performanceTest": "性能测试",
     "benchmarks": "基准比较",

@@ -98,7 +98,7 @@ describe('TrackModal — browse-only install directory', () => {
     expect(api.openPath).toHaveBeenCalledWith('/Users/jo/ComfyUI')
   })
 
-  it('probes and enables Track Install when a folder is picked via Browse', async () => {
+  it('probes and enables Add Build when a folder is picked via Browse', async () => {
     const api = installMockApi({
       browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
     })
@@ -115,7 +115,7 @@ describe('TrackModal — browse-only install directory', () => {
     expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 
-  it('keeps Track Install disabled when no install is detected at the picked folder', async () => {
+  it('keeps Add Build disabled when no install is detected at the picked folder', async () => {
     const api = installMockApi({
       browseFolder: vi.fn().mockResolvedValue('/tmp/not-comfy'),
       probeInstallation: vi.fn().mockResolvedValue([])
