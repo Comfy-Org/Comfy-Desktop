@@ -71,9 +71,9 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.wizard-title').text()).toBe('Create a New Instance')
-    expect(wrapper.find('[aria-label="Create a New Instance"]').exists()).toBe(true)
-    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-title').text()).toBe('Create a New Build')
+    expect(wrapper.find('[aria-label="Create a New Build"]').exists()).toBe(true)
+    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI install.')
   })
 
   it('shows signed-out local fields directly like the Public workspace tab', async () => {
@@ -429,7 +429,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI install.')
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
     expect(wrapper.get('.config-advanced').classes()).toContain('is-open')
@@ -557,7 +557,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI install.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
@@ -628,7 +628,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI install.')
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
