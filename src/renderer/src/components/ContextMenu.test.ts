@@ -26,8 +26,8 @@ describe('ContextMenu', () => {
         items: [
           {
             id: 'promote-to-workspace',
-            label: 'Create Build',
-            hint: 'Create a Build from this instance in Comfy Developer Platform.',
+            label: 'Upload Build',
+            hint: 'Upload this build to Comfy Developer Platform.',
             hintUrl: 'https://platform.comfy.org/profile/deploy',
             hintLinkLabel: 'Read more'
           }
@@ -40,7 +40,7 @@ describe('ContextMenu', () => {
     const item = document.body.querySelector(
       `[data-testid="${TID.contextMenuItem('promote-to-workspace')}"]`
     )
-    expect(item?.textContent?.trim()).toBe('Create Build')
+    expect(item?.textContent?.trim()).toBe('Upload Build')
     const row = item?.parentElement
     const info = row?.querySelector('.info-tooltip-trigger') as HTMLElement
     expect(row?.classList.contains('context-menu-item')).toBe(true)
@@ -57,9 +57,7 @@ describe('ContextMenu', () => {
     await flushPromises()
 
     const bubble = document.querySelector('.tooltip-bubble')
-    expect(bubble?.textContent).toContain(
-      'Create a Build from this instance in Comfy Developer Platform.'
-    )
+    expect(bubble?.textContent).toContain('Upload this build to Comfy Developer Platform.')
     const link = bubble?.querySelector('.info-tooltip-link') as HTMLAnchorElement
     expect(link.textContent?.trim()).toBe('Read more')
     expect(link.href).toBe('https://platform.comfy.org/profile/deploy')
@@ -106,7 +104,7 @@ describe('ContextMenu', () => {
           x: 40,
           y: 40,
           items: [
-            { id: 'promote', label: 'Create Build', hint: 'Why', hintUrl: 'https://example.com' }
+            { id: 'promote', label: 'Upload Build', hint: 'Why', hintUrl: 'https://example.com' }
           ]
         },
         attachTo: document.body

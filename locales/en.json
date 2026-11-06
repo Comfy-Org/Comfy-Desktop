@@ -352,11 +352,11 @@
   },
   "list": {
     "loadSnapshot": "Load Snapshot",
-    "snapshotSourceName": "Source Instance",
+    "snapshotSourceName": "Source Build",
     "snapshotCount": "Total Snapshots",
     "snapshotTimeline": "Snapshot History",
     "snapshotNewestDetail": "Newest Snapshot (will be restored)",
-    "snapshotCreateInstall": "Create Instance",
+    "snapshotCreateInstall": "Create Build",
     "snapshotDropHint": "Drop a snapshot .json file here",
     "snapshotNameHint": "Characters like < > : \" / \\ | ? * will be removed",
     "snapshotRelease": "Release",
@@ -377,7 +377,7 @@
   },
   "loadSnapshot": {
     "grandTitle": "Restore From Snapshot",
-    "grandSubtitle": "Load a saved snapshot file to recreate that instance here."
+    "grandSubtitle": "Load a saved snapshot file to recreate that build here."
   },
   "newInstall": {
     "title": "New Instance",
@@ -479,17 +479,17 @@
     "computingCommitsAhead": "Computing commits ahead…"
   },
   "track": {
-    "title": "Add Existing Instance",
-    "grandTitle": "Add Existing Instance",
-    "grandSubtitle": "Add an existing local ComfyUI checkout to Desktop without reinstalling it.",
+    "title": "Add Existing Build",
+    "grandTitle": "Add Existing Build",
+    "grandSubtitle": "Add an existing ComfyUI install to Comfy Desktop.",
     "installDir": "Install location",
     "selectDir": "Select a directory…",
     "detectedType": "Detected type",
     "browseDirFirst": "Browse to a directory first",
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
-    "trackInstallation": "Track Install",
-    "cannotTrack": "Cannot Track",
+    "trackInstallation": "Add Build",
+    "cannotTrack": "Cannot Add Build",
     "version": "Version",
     "repository": "Repository",
     "branch": "Branch"
@@ -786,11 +786,11 @@
     "checkForUpdate": "Check for updates",
     "featureNotImplemented": "This feature is not yet implemented.",
     "updateAvailable": "Update Available",
-    "copyInstallation": "Duplicate Instance",
-    "copyInstallationTitle": "Duplicate Instance",
+    "copyInstallation": "Duplicate",
+    "copyInstallationTitle": "Duplicate Build",
     "copyInstallationMessage": "Enter a name for the duplicate. It will be created next to the original.",
     "copyInstallationConfirm": "Duplicate",
-    "copyingInstallation": "Duplicating Instance",
+    "copyingInstallation": "Duplicating Build",
     "copyingFiles": "Copying files…",
     "delete": "Uninstall",
     "deleteConfirmTitle": "Uninstall",
@@ -1343,11 +1343,11 @@
       "instanceCountLabel": "INSTANCES",
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",
-      "promoteToWorkspace": "Create Build",
-      "promoteToWorkspaceHint": "Create a Build from this instance in Comfy Developer Platform.",
+      "promoteToWorkspace": "Upload Build",
+      "promoteToWorkspaceHint": "Upload this build to Comfy Developer Platform.",
       "readMore": "Read more",
       "promoting": "Creating...",
-      "promoteFailedTitle": "Could not create build",
+      "promoteFailedTitle": "Could not upload build",
       "promoteFailedMessage": "Could not create a draft in Comfy Developer Platform."
     },
     "build": {
@@ -1509,7 +1509,7 @@
   "fileMenu": {
     "newWindow": "Open Dashboard",
     "newInstall": "New Instance",
-    "addExistingInstall": "Add Existing Instance",
+    "addExistingInstall": "Add Existing Build",
     "loadSnapshot": "Load Snapshot",
     "performanceTest": "Performance Tests",
     "benchmarks": "Benchmarks",

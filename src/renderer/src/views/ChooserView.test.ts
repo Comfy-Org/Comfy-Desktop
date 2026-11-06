@@ -696,7 +696,7 @@ describe('ChooserView', () => {
     expect(toolbar.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
   })
 
-  it('offers Create Build for an instance owned by the selected workspace', async () => {
+  it('offers Upload Build for an instance owned by the selected workspace', async () => {
     installMockApiSignedIn(
       [
         makeInstall({
@@ -728,8 +728,8 @@ describe('ChooserView', () => {
       disabled?: boolean
     }[]
     expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
-      label: 'Create Build',
-      hint: 'Create a Build from this instance in Comfy Developer Platform.',
+      label: 'Upload Build',
+      hint: 'Upload this build to Comfy Developer Platform.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more',
       disabled: false
@@ -788,7 +788,7 @@ describe('ChooserView', () => {
       false
     ]
   ])(
-    'offers Create Build for %s',
+    'offers Upload Build for %s',
     async (_label, installOverrides, activeWorkspaceId, useUnmanaged) => {
       installMockApiSignedIn(
         [
