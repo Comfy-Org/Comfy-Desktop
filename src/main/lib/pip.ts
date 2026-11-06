@@ -214,19 +214,39 @@ function normalizeIndexUrl(url: string): string {
   return trimmed.endsWith('/') ? trimmed : trimmed + '/'
 }
 
-/**
- * uv's index arguments, a configured mirror first, then the Chinese mirrors when they are on, then
- * pypi.org. uv asks every `--extra-index-url`, in order, before `--index-url`, so the mirrors go in
- * as extras and pypi.org as `--index-url`, the last resort. Under uv's default first-index strategy
- * pypi.org is then asked only for a package no mirror lists, so a pypi.org the network can't reach
- * costs nothing while a mirror answers.
- */
 export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
-  const args = ['--index-url', PYPI_INDEX_URL]
-  const seen = new Set([normalizeIndexUrl(PYPI_INDEX_URL)])
-  for (const url of [pypiMirror?.trim(), ...(useChineseMirrors ? PYPI_MIRROR_URLS : [])]) {
-    if (!url || seen.has(normalizeIndexUrl(url))) continue
-    seen.add(normalizeIndexUrl(url))
+  const mirror = pypiMirror?.trim() || undefined
+
+  let primary: string
+  if (mirror) {
+    primary = mirror
+  } else if (useChineseMirrors && PYPI_MIRROR_URLS.length > 0) {
+    primary = PYPI_MIRROR_URLS[0]!
+  } else {
+    primary = PYPI_INDEX_URL
+  }
+
+  const args: string[] = ['--index-url', primary]
+  const seen = new Set<string>([normalizeIndexUrl(primary)])
+  const extras: string[] = []
+
+  const pypiNorm = normalizeIndexUrl(PYPI_INDEX_URL)
+  if (!seen.has(pypiNorm)) {
+    extras.push(PYPI_INDEX_URL)
+    seen.add(pypiNorm)
+  }
+
+  if (useChineseMirrors) {
+    for (const url of PYPI_MIRROR_URLS) {
+      const norm = normalizeIndexUrl(url)
+      if (!seen.has(norm)) {
+        extras.push(url)
+        seen.add(norm)
+      }
+    }
+  }
+
+  for (const url of extras) {
     args.push('--extra-index-url', url)
   }
   return args
