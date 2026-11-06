@@ -133,6 +133,30 @@ describe('restorePipPackages', () => {
       signal
     )
 
+  it('hands the mirrors to every install, bulk and one-by-one, so each can fall back to pypi.org', async () => {
+    vi.mocked(pipFreeze).mockResolvedValue({})
+    vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+      (args as string[]).includes('--no-deps') ? 0 : 1
+    )
+    const mirrors = { pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true }
+
+    await restorePipPackages(
+      tmpRoot,
+      installation,
+      snapshotWith({ aiohttp: '1.0.0', numpy: '1.0.0' }),
+      noProgress,
+      (text) => output.push(text),
+      undefined,
+      mirrors
+    )
+
+    const installs = vi
+      .mocked(runUvPip)
+      .mock.calls.filter(([, args]) => (args as string[])[1] === 'install')
+    expect(installs, 'one bulk install, then one per package').toHaveLength(3)
+    for (const call of installs) expect(call[5]).toBe(mirrors)
+  })
+
   describe('identity case: live environment already matches the snapshot', () => {
     it('does nothing when the live environment already matches the snapshot', async () => {
       const packages = Object.fromEntries(

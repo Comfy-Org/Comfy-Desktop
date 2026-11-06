@@ -5,6 +5,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
+  getPipFallbackIndexArgs,
   getPipIndexArgs,
   installFilteredRequirementsDetailed,
   parsePipFreeze,
@@ -149,6 +150,45 @@ describe('getPipIndexArgs', () => {
 
   it('passes undefined the same as no argument', () => {
     expect(getPipIndexArgs(undefined)).toEqual(getPipIndexArgs())
+  })
+})
+
+describe('getPipFallbackIndexArgs', () => {
+  const MIRROR = 'https://custom.mirror.example/simple/'
+
+  it('is null without a mirror, so there is nothing to fall back to', () => {
+    expect(getPipFallbackIndexArgs()).toBeNull()
+    expect(getPipFallbackIndexArgs('  ')).toBeNull()
+    expect(getPipFallbackIndexArgs('https://pypi.org/simple')).toBeNull()
+  })
+
+  it('asks the mirrors first, configured mirror then the Chinese mirrors, and pypi.org last', () => {
+    expect(
+      getPipFallbackIndexArgs(MIRROR),
+      'uv asks every --extra-index-url, in order, before --index-url'
+    ).toEqual(['--index-url', PYPI_INDEX_URL, '--extra-index-url', MIRROR])
+    expect(getPipFallbackIndexArgs(MIRROR, true)).toEqual([
+      '--index-url',
+      PYPI_INDEX_URL,
+      '--extra-index-url',
+      MIRROR,
+      ...PYPI_MIRROR_URLS.flatMap((url) => ['--extra-index-url', url])
+    ])
+  })
+
+  it('lists a mirror that repeats pypi.org or a Chinese mirror once', () => {
+    expect(getPipFallbackIndexArgs(`${PYPI_MIRROR_URLS[0]!.slice(0, -1)}`, true)).toEqual([
+      '--index-url',
+      PYPI_INDEX_URL,
+      '--extra-index-url',
+      PYPI_MIRROR_URLS[0]!.slice(0, -1),
+      ...PYPI_MIRROR_URLS.slice(1).flatMap((url) => ['--extra-index-url', url])
+    ])
+    expect(getPipFallbackIndexArgs('https://pypi.org/simple', true)).toEqual([
+      '--index-url',
+      PYPI_INDEX_URL,
+      ...PYPI_MIRROR_URLS.flatMap((url) => ['--extra-index-url', url])
+    ])
   })
 })
 
@@ -429,5 +469,164 @@ describe('runUvPipDetailed onSpawn', () => {
     proc.emit('close', 0)
 
     await expect(running).resolves.toEqual({ code: 0, output: '' })
+  })
+})
+
+describe('runUvPipDetailed mirror fallback', () => {
+  const MIRROR = 'https://custom.mirror.example/simple/'
+  const spawnMock = vi.mocked(spawn)
+
+  /** Each spawn exits with the next code in `codes`, printing `out<n>`. */
+  function uvExiting(...codes: number[]): void {
+    let n = 0
+    spawnMock.mockImplementation((() => {
+      const proc = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter
+        stderr: EventEmitter
+        pid: undefined
+        kill: () => boolean
+      }
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      // No pid: an abort must not signal a real process group.
+      proc.pid = undefined
+      proc.kill = () => true
+      const i = n++
+      setImmediate(() => {
+        proc.stderr.emit('data', Buffer.from(`out${i}\n`))
+        proc.emit('close', codes[i] ?? 0)
+      })
+      return proc
+    }) as never)
+  }
+  const indexArgsOf = (call: number): string[] =>
+    (spawnMock.mock.calls[call]![1] as string[]).slice(2)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('reruns a failed install once with the mirrors first, and returns the rerun', async () => {
+    uvExiting(1, 0)
+    const output: string[] = []
+    const result = await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      (t) => output.push(t),
+      undefined,
+      undefined,
+      undefined,
+      { pypiMirror: MIRROR }
+    )
+
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(indexArgsOf(0)).toEqual(getPipIndexArgs(MIRROR))
+    expect(indexArgsOf(1)).toEqual(getPipFallbackIndexArgs(MIRROR))
+    expect(result).toEqual({ code: 0, output: 'out1\n' })
+    expect(output.join('')).toContain('Retrying with the mirrors ahead of pypi.org')
+  })
+
+  it('returns the rerun failure when both orders fail', async () => {
+    uvExiting(1, 2)
+    const result = await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      { useChineseMirrors: true }
+    )
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(result).toEqual({ code: 2, output: 'out1\n' })
+  })
+
+  it('runs once when the pypi.org-first install succeeds', async () => {
+    uvExiting(0)
+    const result = await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      { pypiMirror: MIRROR, useChineseMirrors: true }
+    )
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(result.code).toBe(0)
+  })
+
+  it('runs once, against pypi.org alone, when no mirror is set', async () => {
+    uvExiting(1, 0)
+    const result = await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      { pypiMirror: '', useChineseMirrors: false }
+    )
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(indexArgsOf(0)).toEqual(['--index-url', PYPI_INDEX_URL])
+    expect(result.code).toBe(1)
+  })
+
+  it('does not rerun after the caller aborts', async () => {
+    uvExiting(1, 0)
+    const abort = new AbortController()
+    const output: string[] = []
+    await runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      (t) => output.push(t),
+      abort.signal,
+      () => abort.abort(),
+      undefined,
+      { pypiMirror: MIRROR }
+    )
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(output.join(''), 'no retry is announced for a stopped install').not.toContain('Retrying')
+  })
+
+  it('adds no index args for a caller that passes no mirror config', async () => {
+    uvExiting(1)
+    await runUvPipDetailed('uv', ['pip', 'list'], '/inst', () => {})
+    expect(spawnMock.mock.calls[0]![1]).toEqual(['pip', 'list'])
+  })
+
+  it('falls back for a filtered requirements install, compile included', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pip-fallback-'))
+    try {
+      const reqPath = path.join(dir, 'reqs.txt')
+      fs.writeFileSync(reqPath, 'comfy-agent==0.2.0\n')
+      uvExiting(1, 0)
+      const result = await installFilteredRequirementsDetailed(
+        reqPath,
+        'uv',
+        '/py',
+        dir,
+        'filtered.txt',
+        () => {},
+        undefined,
+        { pypiMirror: MIRROR },
+        ['-o', 'out.txt'],
+        undefined,
+        undefined,
+        'compile'
+      )
+      expect(result.code).toBe(0)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect((spawnMock.mock.calls[1]![1] as string[]).slice(-4)).toEqual(
+        getPipFallbackIndexArgs(MIRROR)
+      )
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

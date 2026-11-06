@@ -1650,6 +1650,9 @@ describe('adoptDesktopInstall', () => {
       const args = calledArgs as string[]
       expect(args.slice(0, 3)).toEqual(['pip', 'install', 'pygit2'])
       expect(args).toContain('--python')
+      expect(runUvPipMock.mock.calls[0]![5], 'the mirrors, so it can fall back to pypi.org').toEqual(
+        { pypiMirror: undefined, useChineseMirrors: false }
+      )
       // pygit2 result reported in telemetry succeeded payload.
       expect(telemetry.capture).toHaveBeenCalledWith(
         'comfy.desktop.adopt.succeeded',

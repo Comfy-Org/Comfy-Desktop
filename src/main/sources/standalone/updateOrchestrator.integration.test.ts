@@ -101,6 +101,8 @@ import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
 import type { InstallationRecord } from '../../installations'
+import { getMirrorConfig } from '../../settings'
+import { PYPI_INDEX_URL } from '../../lib/pip'
 
 function isGitAvailable(): boolean {
   try {
@@ -427,6 +429,34 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       // Only the main requirements install was attempted; manager reqs skipped.
       const installCalls = spawnState.uvCalls.filter((a) => a.includes('install'))
       expect(installCalls.length).toBe(1)
+    })
+
+    it.each([
+      ['with', true],
+      ['without', false]
+    ])('installs the requirements %s the dry run when a lagging mirror fails and the pypi.org-first retry succeeds', async (_label, dryRunConflictCheck) => {
+      vi.mocked(getMirrorConfig).mockReturnValue({
+        pypiMirror: 'https://mirror.example/simple/',
+        useChineseMirrors: false
+      })
+      spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+      const pypiFirst = (args: string[]): boolean =>
+        args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
+      spawnState.uvHandler = (args) => fakeProc({ exitCode: pypiFirst(args) ? 0 : 1 })
+
+      try {
+        const result = await runComfyUIUpdate(makeBaseOpts(installPath, { dryRunConflictCheck }))
+
+        expect(result.ok).toBe(true)
+        expect(headSha()).toBe(repoShas.v2Sha)
+        const installs = spawnState.uvCalls.filter((a) => a.includes('-r') && !a.includes('--dry-run'))
+        expect(installs.map(pypiFirst).slice(0, 2), 'mirror first, then pypi.org first').toEqual([
+          false,
+          true
+        ])
+      } finally {
+        vi.mocked(getMirrorConfig).mockReturnValue({ pypiMirror: undefined, useChineseMirrors: false })
+      }
     })
 
     it('keeps the updated source and persists version when the install succeeds', async () => {

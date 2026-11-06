@@ -729,9 +729,10 @@ async function tryOverride(
     })
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
-      return cannotDownload(installed)
-        ? revertOnInstall(sendOutput, pins, installed.report)
-        : deferOverride(sendOutput, pins, installed.report)
+      if (!cannotDownload(installed)) return deferOverride(sendOutput, pins, installed.report)
+      return NO_SOLUTION.test(stripAnsi(installed.output))
+        ? unresolved(sendOutput, pins, installed.report)
+        : revertOnInstall(sendOutput, pins, installed.report)
     }
   } catch {
     return revertOnInstall(sendOutput, pins)
@@ -888,6 +889,19 @@ function deferOverride(
     `agent version override ${overrideSignature(pins)} is not downloaded yet; using ComfyUI's versions\n`
   )
   return { decision: 'deferred', reason: 'not_cached', pins, install }
+}
+
+/** Not counted toward retiring the override: an index that has not synced a pin yet looks the
+ *  same as a pin no index will ever serve, and a later launch may resolve it. */
+function unresolved(
+  sendOutput: (text: string) => void,
+  pins: OverridePins,
+  install: InstallReport
+): OverrideDecision {
+  sendOutput(
+    `agent version override ${overrideSignature(pins)} found no solution; using ComfyUI's versions\n`
+  )
+  return { decision: 'reverted', reason: 'resolve_failed', pins, install }
 }
 
 function revertOnInstall(

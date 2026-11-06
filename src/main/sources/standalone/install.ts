@@ -55,7 +55,7 @@ function emitInstallPhase(
   installation: InstallationRecord,
   phase: InstallPhase,
   status: InstallPhaseStatus,
-  info: { durationMs?: number; error?: unknown } = {}
+  info: { durationMs?: number; error?: unknown; updateAborted?: boolean } = {}
 ): void {
   // Side-channel only: classification/emission must never derail an install
   // phase (this is also the installer's onPhase tap).
@@ -67,6 +67,7 @@ function emitInstallPhase(
       status
     }
     if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
+    if (info.updateAborted) props.update_aborted = 1
     if (status === 'error') {
       // Standard error schema so a failing phase carries the actual error
       // text, not just the coarse bucket.
@@ -83,13 +84,17 @@ function emitInstallPhase(
 async function withPostInstallPhase<T>(
   installation: InstallationRecord,
   phase: InstallPhase,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  aborted: (result: T) => boolean = () => false
 ): Promise<T> {
   emitInstallPhase(installation, phase, 'start')
   const t0 = Date.now()
   try {
     const result = await fn()
-    emitInstallPhase(installation, phase, 'end', { durationMs: Date.now() - t0 })
+    emitInstallPhase(installation, phase, 'end', {
+      durationMs: Date.now() - t0,
+      updateAborted: aborted(result)
+    })
     return result
   } catch (err) {
     emitInstallPhase(installation, phase, 'error', { durationMs: Date.now() - t0, error: err })
@@ -310,30 +315,39 @@ export async function postInstall(
         // (the forced `pip install --upgrade -r requirements.txt` can run
         // 60+ min on a cold torch/cuda set). Own boundary so it stops hiding
         // inside the post_install mega-span and a stall here is attributable.
-        const result = await withPostInstallPhase(installation, 'torch_deps_sync', () =>
-          runComfyUIUpdate({
-            installPath: installation.installPath,
-            installation,
-            channel,
-            ...(pickedTag ? { targetTag: pickedTag } : {}),
-            update,
-            sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
-            signal,
-            // The standalone bundle ships a pre-extracted venv whose pinned
-            // versions can lag ComfyUI's own `requirements.txt` (most visibly
-            // `comfy-aimdo`, which crashes on import when the venv's copy is
-            // older than what ComfyUI's source expects). Force a `pip install
-            // --upgrade -r requirements.txt` after the post-install git update,
-            // even when the file is byte-identical pre/post, so the venv always
-            // ends up in sync with ComfyUI's pins before the user runs anything.
-            forceDepsSync: true
-          })
+        const result = await withPostInstallPhase(
+          installation,
+          'torch_deps_sync',
+          () =>
+            runComfyUIUpdate({
+              installPath: installation.installPath,
+              installation,
+              channel,
+              ...(pickedTag ? { targetTag: pickedTag } : {}),
+              update,
+              sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
+              signal,
+              // The standalone bundle ships a pre-extracted venv whose pinned
+              // versions can lag ComfyUI's own `requirements.txt` (most visibly
+              // `comfy-aimdo`, which crashes on import when the venv's copy is
+              // older than what ComfyUI's source expects). Force a `pip install
+              // --upgrade -r requirements.txt` after the post-install git update,
+              // even when the file is byte-identical pre/post, so the venv always
+              // ends up in sync with ComfyUI's pins before the user runs anything.
+              forceDepsSync: true
+            }),
+          (r) => !r.ok
         )
         installation = result.installation
         if (result.ok) {
           sendProgress('update', { percent: 100, status: 'Up to date' })
         } else {
-          sendProgress('update', { percent: 100, status: 'Skipped (update failed)' })
+          // The install stays usable on the version it shipped with, so this is not an install failure.
+          const reason = result.message?.split('\n')[0] ?? 'unknown error'
+          sendProgress('update', {
+            percent: 100,
+            status: `Update failed, staying on the bundled version: ${reason}`
+          })
         }
       }
     } catch (err) {

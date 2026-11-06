@@ -14,6 +14,7 @@ import type * as pip from './pip'
 
 vi.mock('./pip', async (importOriginal) => ({
   VALID_PIP_NAME: (await importOriginal<typeof pip>()).VALID_PIP_NAME,
+  PYPI_INDEX_URL: (await importOriginal<typeof pip>()).PYPI_INDEX_URL,
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
   runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
@@ -42,7 +43,9 @@ vi.mock('child_process', async (importOriginal) => {
       return {}
     }
   )
-  return { ...actual, execFile, default: { ...actual, execFile } }
+  // A passthrough: only the mirror fallback test below drives it, through the real uv helper.
+  const spawn = vi.fn(actual.spawn)
+  return { ...actual, execFile, spawn, default: { ...actual, execFile, spawn } }
 })
 
 import {
@@ -58,7 +61,8 @@ import {
 } from './agentRequirementsLaunch'
 import type { PrefetchRequest } from './agentRequirementsLaunch'
 import type { PrefetchReport } from './agentRequirementsOverride'
-import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
+import { installFilteredRequirementsDetailed, runUvPipDetailed, PYPI_INDEX_URL } from './pip'
+import { spawn } from 'child_process'
 import { getUvPath, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import type * as ChildProcessModule from 'child_process'
@@ -1719,7 +1723,7 @@ describe('installAgentRequirements with a version override', () => {
       expect(onDeferred).toHaveBeenCalledWith(expect.anything(), 'update')
     })
 
-    it('retires an override with no solution even when a name in it reads like a download error', async () => {
+    it('reports no solution, not a deferral, even when a name in it reads like a download error', async () => {
       respond = ({ constraints }) =>
         constraints
           ? {
@@ -1731,7 +1735,7 @@ describe('installAgentRequirements with a version override', () => {
 
       expect(await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)).toMatchObject({
         decision: 'reverted',
-        reason: 'install_failed'
+        reason: 'resolve_failed'
       })
     })
 
@@ -1828,7 +1832,7 @@ describe('installAgentRequirements with a version override', () => {
       })
     })
 
-    it('retires an override uv proved unsatisfiable, and hands nothing over for it', async () => {
+    it('falls back from an override uv found no solution for, handing nothing over, as a resolve failure', async () => {
       respond = ({ constraints }) =>
         constraints
           ? { code: 1, output: 'error: No solution found when resolving dependencies\n' }
@@ -1844,9 +1848,9 @@ describe('installAgentRequirements with a version override', () => {
         onDeferred
       )
 
-      expect(decision).toMatchObject({
+      expect(decision, 'a resolve failure, which the launch does not count').toMatchObject({
         decision: 'reverted',
-        reason: 'install_failed',
+        reason: 'resolve_failed',
         install: {
           exitCode: 1,
           errorTail: 'error: No solution found when resolving dependencies'
@@ -1888,7 +1892,7 @@ describe('installAgentRequirements with a version override', () => {
       ).toMatchObject({ decision: 'deferred', reason: 'not_cached' })
     })
 
-    it('puts core file back from the cache only after a same-launch retry that was retired', async () => {
+    it('puts core file back from the cache only after a same-launch retry that found no solution', async () => {
       mockUvPip
         .mockResolvedValueOnce({
           code: 0,
@@ -1924,7 +1928,7 @@ describe('installAgentRequirements with a version override', () => {
         vi.fn()
       )
 
-      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'resolve_failed' })
       const lastOverride = tries.map((t) => t.core).lastIndexOf(false)
       expect(
         tries.slice(lastOverride + 1),
@@ -2512,8 +2516,48 @@ describe('installAgentRequirements with a version override', () => {
 
       const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
-      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'resolve_failed', kept: KEPT })
       expect(placeholderRuns()).toBe(0)
+    })
+
+    it('applies it, counting no failure, when pypi.org is unreachable and the mirror-first retry installs it', async () => {
+      // The real uv helper, over a uv that fails whenever pypi.org is asked first: the override's
+      // outcome must be the retry's, so a mirror the retry rescues never counts toward retiring it.
+      const real = await vi.importActual<typeof pip>('./pip')
+      const pypiFirst = (args: string[]): boolean =>
+        args[args.indexOf('--extra-index-url') + 1] === PYPI_INDEX_URL
+      vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
+        const proc = Object.assign(new EventEmitter(), {
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+          pid: undefined,
+          kill: () => true
+        })
+        // The cache holds what a mirror-first run fetched, so the offline check misses it too
+        // when pypi.org is asked first.
+        const code = pypiFirst(args) ? 1 : 0
+        setImmediate(() => proc.emit('close', code))
+        return proc
+      }) as never)
+      mockInstall.mockImplementation(real.installFilteredRequirementsDetailed)
+
+      try {
+        const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+        expect(decision).toMatchObject({ decision: 'applied' })
+        const runs = vi.mocked(spawn).mock.calls.map(([, args]) => args as string[])
+        expect(
+          runs.map((args) => [args.includes('--dry-run'), pypiFirst(args)]),
+          'the cache check and the install each ran pypi.org first, then retried mirror first'
+        ).toEqual([
+          [true, true],
+          [true, false],
+          [false, true],
+          [false, false]
+        ])
+      } finally {
+        vi.mocked(spawn).mockReset()
+      }
     })
 
     it('keeps it while a not-yet-downloaded override fetches for the next launch', async () => {

@@ -21,7 +21,7 @@ import {
 import { resolveLocalVersion } from './version-resolve'
 import type { ComfyVersion } from './version'
 import { getComfyUIRemoteUrl } from './github-mirror'
-import { installFilteredRequirements, runUvPip, getPipIndexArgs } from './pip'
+import { installFilteredRequirements, runUvPip } from './pip'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
@@ -713,17 +713,11 @@ async function installAdoptedRequirements(
   tools.sendOutput('Installing pygit2 into legacy venv (enables Manager + in-place updates)…\n')
   const pygit2Code = await runUvPip(
     uvPath,
-    [
-      'pip',
-      'install',
-      'pygit2',
-      '--python',
-      pythonPath,
-      ...getPipIndexArgs(mirrors.pypiMirror, mirrors.useChineseMirrors)
-    ],
+    ['pip', 'install', 'pygit2', '--python', pythonPath],
     installPath,
     tools.sendOutput,
-    tools.signal
+    tools.signal,
+    mirrors
   )
   report.pygit2ExitCode = pygit2Code
   if (pygit2Code !== 0) {
