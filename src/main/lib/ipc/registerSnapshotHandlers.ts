@@ -44,6 +44,7 @@ import {
   stripPlatform
 } from '../../sources/standalone/envPaths'
 import type { InstallationRecord } from '../../installations'
+import { tryBuildInstallation } from '../buildInstallation'
 
 /**
  * Kept-local disclosure for an import about to be restored: when the
@@ -593,10 +594,13 @@ export function registerSnapshotHandlers(): void {
         buildPinnedVariant(selectedRelease, matched.data?.variantId as string, pinTag, gpu?.id) ??
         matched
 
+      const buildResult = tryBuildInstallation(source, {
+        release: selectedRelease,
+        variant: installVariant
+      })
+      if (!buildResult.ok) return buildResult
       const instData = {
-        sourceId: source.id,
-        sourceLabel: source.label,
-        ...source.buildInstallation({ release: selectedRelease, variant: installVariant }),
+        ...buildResult.data,
         // Freeze to the snapshot's pinned ComfyUI version. Even with the exact
         // bundle pinned above, buildInstallation would set autoUpdateComfyUI:
         // true for a stable/latest channel and auto-update to latest before the
