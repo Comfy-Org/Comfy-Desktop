@@ -133,89 +133,27 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
   })
 
-  it('includes install-creation entries on a chooser host', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    const ids = items.map((i) => i.id ?? null)
-    expect(ids).toContain('new-install')
-    expect(ids).toContain('track')
-    expect(ids).toContain('load-snapshot')
-    expect(ids).not.toContain('return-to-dashboard')
-  })
+  it.each([null, 'inst-1'] as const)(
+    'keeps settings and window actions without duplicate dashboard shortcuts on host %s',
+    (installationId) => {
+      const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
+      expect(items.map((item) => item.id ?? 'separator')).toEqual([
+        'new-window',
+        'separator',
+        'settings',
+        'separator',
+        'exit-window',
+        'close-all-windows'
+      ])
+    }
+  )
 
-  it('includes install-creation entries on an install-backed host', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
-    const ids = items.map((i) => i.id ?? null)
-    expect(ids).toContain('new-install')
-    expect(ids).toContain('track')
-    expect(ids).toContain('load-snapshot')
-  })
-
-  it('chooser host includes Performance Test, Benchmarks, Settings, and window actions', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    const ids = items.map((i) => i.id ?? null)
-    expect(ids).toContain('new-window')
-    expect(ids).toContain('performance-test')
-    expect(items.find((item) => item.id === 'performance-test')?.label).toBe('Performance Tests')
-    expect(ids).toContain('benchmarks')
-    expect(items.find((item) => item.id === 'benchmarks')?.label).toBe('Benchmarks')
-    expect(ids).toContain('settings')
-    expect(ids).toContain('feedback')
-    expect(ids).toContain('exit-window')
-    expect(ids).toContain('close-all-windows')
-    const quit = items.find((i) => i.id === 'close-all-windows')
-    expect(quit?.label).toBe('Quit Desktop')
-  })
-
-  it('chooser host matches the canonical order', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
-    expect(ids).toEqual([
-      'new-window',
-      'new-install',
-      'track',
-      'load-snapshot',
-      'performance-test',
-      'benchmarks',
-      'settings',
-      'feedback',
-      'exit-window',
-      'close-all-windows'
-    ])
-  })
-
-  it('install host matches the canonical order with Close Window between Send Feedback and Quit Desktop', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
-    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
-    expect(ids).toEqual([
-      'new-window',
-      'new-install',
-      'track',
-      'load-snapshot',
-      'performance-test',
-      'benchmarks',
-      'settings',
-      'feedback',
-      'exit-window',
-      'close-all-windows'
-    ])
-    const closeWindow = items.find((i) => i.id === 'exit-window')
-    expect(closeWindow?.label).toBe('Close Window')
-    const quit = items.find((i) => i.id === 'close-all-windows')
-    expect(quit?.label).toBe('Quit Desktop')
-  })
-
-  it('install host lists Reset Zoom after Send Feedback when zoomed', () => {
+  it('install host lists Reset Zoom after Settings when zoomed', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
       'new-window',
-      'new-install',
-      'track',
-      'load-snapshot',
-      'performance-test',
-      'benchmarks',
       'settings',
-      'feedback',
       'reset-zoom',
       'exit-window',
       'close-all-windows'
@@ -257,31 +195,6 @@ describe('buildTitlePopupMenuItems', () => {
     const ids = items.map((i) => i.id ?? null)
     expect(ids[0]).toBe('new-window')
     expect(ids[ids.length - 1]).toBe('close-all-windows')
-  })
-
-  it('has a single separator above Performance Test', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    const performanceTestsIdx = items.findIndex((i) => i.id === 'performance-test')
-    expect(items[performanceTestsIdx - 1]?.kind).toBe('separator')
-    expect(items[performanceTestsIdx - 2]?.kind).not.toBe('separator')
-  })
-
-  it('groups Performance Test and Benchmarks above a separator and Desktop Settings', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    const settingsIdx = items.findIndex((i) => i.id === 'settings')
-    expect(items[settingsIdx - 1]?.kind).toBe('separator')
-    expect(items[settingsIdx - 2]?.id).toBe('benchmarks')
-    expect(items[settingsIdx - 3]?.id).toBe('performance-test')
-  })
-
-  it('separators bracket the install-creation block on both hosts', () => {
-    for (const installationId of [null, 'inst-1'] as const) {
-      const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
-      const newWindowIdx = items.findIndex((i) => i.id === 'new-window')
-      expect(items[newWindowIdx + 1]?.kind).toBe('separator')
-      const newInstallIdx = items.findIndex((i) => i.id === 'new-install')
-      expect(newInstallIdx).toBeGreaterThan(newWindowIdx + 1)
-    }
   })
 
   it('returns the same item set during loading-lockdown as in normal mode', () => {

@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockConfirm = vi.hoisted(() => vi.fn())
 vi.mock('./useModal', () => ({
@@ -37,9 +34,9 @@ vi.mock('../stores/progressStore', () => ({
 }))
 
 const mockCancelOperation = vi.hoisted(() => vi.fn())
-;(
-  globalThis as unknown as { window: { api: { cancelOperation: typeof mockCancelOperation } } }
-).window = { api: { cancelOperation: mockCancelOperation } }
+;(window as unknown as { api: { cancelOperation: typeof mockCancelOperation } }).api = {
+  cancelOperation: mockCancelOperation
+}
 
 import { useActionGuard } from './useActionGuard'
 

@@ -1,77 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
 
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { TID } from '../../../../shared/testIds'
-
-const messages = {
-  en: {
-    common: {
-      back: 'Back',
-      cancel: 'Cancel',
-      copyError: 'Copy error details',
-      loading: 'Loading...'
-    },
-    comfyUISettings: {
-      title: 'Settings',
-      tabConfig: 'Startup Args',
-      tabStatus: 'About',
-      tabUpdate: 'Update',
-      tabSnapshots: 'Snapshots',
-      tabStorage: 'Storage',
-      tabTerminal: 'Terminal',
-      relaunch: 'Relaunch',
-      more: 'More'
-    },
-    tooltips: {
-      tabUpdate: 'Update settings',
-      tabConfig: 'Startup argument settings',
-      tabStorage: 'Storage settings',
-      tabStatus: 'Instance status',
-      snapshots:
-        'A saved point-in-time state of an installation (versions + custom nodes) you can restore later.',
-      console:
-        "An interactive shell running in this installation's folder. Works whether ComfyUI is running or stopped."
-    },
-    instancePicker: {
-      open: 'Start',
-      restart: 'Restart',
-      switch: 'Switch',
-      restartToApply: 'Restart to apply changes',
-      progressUpdating: 'Updating…',
-      progressDowngrading: 'Downgrading…',
-      progressSuccessStopped: 'Update complete',
-      progressSuccessRunning: 'Updated & relaunched',
-      progressDowngraded: 'Downgrade complete',
-      progressCopying: 'Copying…',
-      progressCopied: 'Copy complete',
-      progressCopyingUpdating: 'Copying & updating…',
-      progressCopiedUpdated: 'Copy complete',
-      progressDeleting: 'Deleting…',
-      progressDeleted: 'Deleted',
-      progressRestoring: 'Restoring snapshot…',
-      progressRestored: 'Snapshot restored',
-      progressMigrating: 'Migrating…',
-      progressMigrated: 'Migration complete',
-      progressDone: 'Done',
-      progressCancel: 'Cancel',
-      progressRetry: 'Try Again',
-      progressDismiss: 'Dismiss',
-      progressError: 'Something went wrong',
-      progressCancelled: 'Cancelled',
-      progressWorking: 'Working…',
-      progressSuccessCountdown: 'Returning to settings in {n}…'
-    }
-  }
-} as const
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
+import ComfyUISettingsContent from './ComfyUISettingsContent.vue'
 
 const useComfyUISettingsState = {
   pinBottomActions: ref<{ id: string; label: string }[]>([{ id: 'untrack', label: 'Forget' }]),
@@ -149,7 +84,6 @@ const SAMPLE_INSTALL: Installation = {
 } as unknown as Installation
 
 async function mountContent(props: Record<string, unknown> = {}): Promise<VueWrapper> {
-  const { default: ComfyUISettingsContent } = await import('./ComfyUISettingsContent.vue')
   const pinia = getActivePinia() ?? createPinia()
   const wrapper = mount(ComfyUISettingsContent, {
     props: {
@@ -158,7 +92,7 @@ async function mountContent(props: Record<string, unknown> = {}): Promise<VueWra
       activeOperation: null,
       ...props
     },
-    global: { plugins: [createTestI18n(), pinia] }
+    global: { plugins: [pinia] }
   }) as VueWrapper
   await flushPromises()
   return wrapper
@@ -530,9 +464,9 @@ describe('ComfyUISettingsContent', () => {
     })
 
     const SNAPSHOTS_TOOLTIP =
-      'A saved point-in-time state of an installation (versions + custom nodes) you can restore later.'
+      'A saved point-in-time state of a build (versions + custom nodes) you can restore later.'
     const CONSOLE_TOOLTIP =
-      "An interactive shell running in this installation's folder. Works whether ComfyUI is running or stopped."
+      "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
     const TAB_LABELS = new Set([
       'Update',

@@ -68,7 +68,7 @@ function handleChange(value: string): void {
   <ArgsRawInput
     :model-value="localValue"
     :schema="schema"
-    :placeholder="t('comfyUISettings.argsPlaceholder', 'No arguments set')"
+    :placeholder="t('comfyUISettings.argsPlaceholder')"
     :aria-label="field.label"
     @update:model-value="handleInput"
     @change="handleChange"
@@ -82,7 +82,7 @@ function handleChange(value: string): void {
       />
       <InputGroupButton
         size="icon-sm"
-        :aria-label="t('comfyUISettings.configureArgs', 'Configure arguments')"
+        :aria-label="t('comfyUISettings.configureArgs')"
         @click="handleEdit"
       >
         <Settings :size="14" />

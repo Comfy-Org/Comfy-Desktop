@@ -31,16 +31,5 @@ if (!localStorageDescriptor || 'get' in localStorageDescriptor) {
 }
 
 config.global.plugins = [...(config.global.plugins ?? []), createAppI18n()]
-const duplicateI18nRegistration =
-  /^\[Vue warn\]: (Component "(?:i18n-t|I18nT|i18n-n|I18nN|i18n-d|I18nD)"|Directive "t") has already been registered in target app\.$/
-const missingI18nFixtureKey = /^\[intlify\] Not found '.+' key in 'en' locale messages\.$/
-const originalConsoleWarn = console.warn.bind(console)
-
-console.warn = (...args: unknown[]): void => {
-  const first = typeof args[0] === 'string' ? args[0] : ''
-  if (duplicateI18nRegistration.test(first)) return
-  if (missingI18nFixtureKey.test(first)) return
-  originalConsoleWarn(...args)
-}
 
 enableAutoUnmount(afterEach)

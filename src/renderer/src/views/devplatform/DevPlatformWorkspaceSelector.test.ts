@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, DOMWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import DevPlatformWorkspaceSelector from './DevPlatformWorkspaceSelector.vue'
@@ -16,26 +15,12 @@ const api = {
   installBuild: vi.fn()
 }
 
-const messages = {
-  en: {
-    common: { loading: 'Loading...' },
-    devPlatform: {
-      workspace: {
-        personalLabel: 'Personal',
-        switchLabel: 'Workspace',
-        currentFallback: 'Current workspace',
-        loadError: "Couldn't load workspaces. Retry"
-      }
-    }
-  }
-}
-
 function mountSelector(modelValue = 'w1') {
   return mount(DevPlatformWorkspaceSelector, {
     props: { modelValue },
     attachTo: document.body,
     global: {
-      plugins: [createI18n({ legacy: false, locale: 'en', messages }), createPinia()]
+      plugins: [createPinia()]
     }
   })
 }
@@ -117,7 +102,7 @@ describe('DevPlatformWorkspaceSelector', () => {
       '[data-testid="devplatform-workspace-selector"]'
     )
     expect(selector.text()).toContain('Team One')
-    expect(selector.text()).not.toContain('Loading...')
+    expect(selector.text()).not.toContain('Loading…')
     expect(selector.get('.dp-avatar').text()).toBe('T')
 
     workspaces.resolve([

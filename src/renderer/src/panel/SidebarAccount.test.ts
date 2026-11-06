@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import en from '@locales/en.json'
 
 import SidebarAccount from './SidebarAccount.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -43,8 +41,7 @@ async function mountAccount(status: AuthStatus, collapsed = false) {
   setActivePinia(createPinia())
   const wrapper = mount(SidebarAccount, {
     attachTo: document.body,
-    props: { collapsed },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] }
+    props: { collapsed }
   })
   await flushPromises()
   return { wrapper, comfybuilder }

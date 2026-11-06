@@ -235,12 +235,9 @@ async function handleRemoveModelDir(index: number): Promise<void> {
   const extras = currentExtras()
   if (!extras.some((d) => samePath(d, row.path))) return
   const ok = await modal.confirm({
-    title: t('models.removeInstanceDirTitle', 'Remove model directory?'),
-    message: t(
-      'models.removeInstanceDirConfirm',
-      "This won't delete any files. You can re-add the directory later from this list."
-    ),
-    confirmLabel: t('models.removeDir', 'Remove'),
+    title: t('models.removeInstanceDirTitle'),
+    message: t('models.removeInstanceDirConfirm'),
+    confirmLabel: t('models.removeDir'),
     confirmStyle: 'danger'
   })
   if (!ok) return
@@ -345,24 +342,19 @@ function handleRevealPath(path: string): void {
         aria-hidden="true"
       />
       <p class="storage-note-text m-0 text-[12px] leading-[1.45]">
-        {{
-          t(
-            'comfyUISettings.storageRestartNote',
-            'Restart the application (or close and reopen) for these changes to take effect.'
-          )
-        }}
+        {{ t('comfyUISettings.storageRestartNote') }}
       </p>
     </div>
 
     <GlobalSettingsMicroSection
-      :title="t('settings.modelStorage', 'Models')"
+      :title="t('settings.modelStorage')"
       :tooltip="t('tooltips.instanceModels')"
     >
       <template v-if="useSharedModelsField" #actions>
         <label
           class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
         >
-          <span>{{ t('comfyUISettings.includeSharedDirs', 'Include Shared Directories') }}</span>
+          <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
           <BooleanToggle
             :field="useSharedModelsField"
@@ -373,7 +365,7 @@ function handleRevealPath(path: string): void {
 
       <ModelsDirList
         :dirs="modelDirRows"
-        :add-label="t('models.addInstanceDir', 'Add Directory')"
+        :add-label="t('models.addInstanceDir')"
         @change="handleChangeModelDir"
         @remove="handleRemoveModelDir"
         @make-primary="handleMakeModelPrimary"
@@ -390,16 +382,16 @@ function handleRevealPath(path: string): void {
         class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--action)] focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:outline-none focus-visible:ring-0"
         @click="handleManageSharedDirs"
       >
-        {{ t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings') }}
+        {{ t('comfyUISettings.manageSharedDirs') }}
       </Button>
     </GlobalSettingsMicroSection>
 
-    <GlobalSettingsMicroSection :title="t('settings.inputStorage', 'Input')">
+    <GlobalSettingsMicroSection :title="t('settings.inputStorage')">
       <template v-if="useSharedInputField" #actions>
         <label
           class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
         >
-          <span>{{ t('comfyUISettings.useSharedInput', 'Use Shared Input') }}</span>
+          <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
           <BooleanToggle
             :field="useSharedInputField"
@@ -421,7 +413,7 @@ function handleRevealPath(path: string): void {
       <StorageDirRow
         v-else
         :path="effectiveInputDir"
-        :tag="!inputOverridden ? t('models.default', 'default') : ''"
+        :tag="!inputOverridden ? t('models.default') : ''"
         :resettable="inputOverridden"
         @open="handleOpenPath(effectiveInputDir)"
         @browse="handleBrowseInputDir"
@@ -429,12 +421,12 @@ function handleRevealPath(path: string): void {
       />
     </GlobalSettingsMicroSection>
 
-    <GlobalSettingsMicroSection :title="t('settings.outputStorage', 'Output')">
+    <GlobalSettingsMicroSection :title="t('settings.outputStorage')">
       <template v-if="useSharedOutputField" #actions>
         <label
           class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
         >
-          <span>{{ t('comfyUISettings.useSharedOutput', 'Use Shared Output') }}</span>
+          <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
           <BooleanToggle
             :field="useSharedOutputField"
@@ -456,7 +448,7 @@ function handleRevealPath(path: string): void {
       <StorageDirRow
         v-else
         :path="effectiveOutputDir"
-        :tag="!outputOverridden ? t('models.default', 'default') : ''"
+        :tag="!outputOverridden ? t('models.default') : ''"
         :resettable="outputOverridden"
         @open="handleOpenPath(effectiveOutputDir)"
         @browse="handleBrowseOutputDir"

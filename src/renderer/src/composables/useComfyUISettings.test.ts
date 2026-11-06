@@ -3,12 +3,9 @@ import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref, type Ref } from 'vue'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, arg?: string | Record<string, unknown>) =>
-      typeof arg === 'string' ? arg : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const modalSpies = vi.hoisted(() => ({
   confirm: vi.fn(),
@@ -413,7 +410,9 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string }
-    expect(callArg.message).toBe('errors.willStopRunning\n\nThis will pull the latest ComfyUI.')
+    expect(callArg.message).toBe(
+      'A is running and will be stopped first.\n\nThis will pull the latest ComfyUI.'
+    )
     scope.stop()
   })
 
@@ -430,7 +429,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string; title: string }
-    expect(callArg.message).toBe('errors.willStopRunning')
+    expect(callArg.message).toBe('A is running and will be stopped first.')
     expect(callArg.title).toBe('Restore Snapshot')
     scope.stop()
   })
@@ -611,7 +610,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     } as ActionDef)
 
     const promptArg = dialogsSpies.prompt.mock.calls[0]![0] as { message: string }
-    expect(promptArg.message).toBe('errors.willStopRunning\n\nName the copy.')
+    expect(promptArg.message).toBe('A is running and will be stopped first.\n\nName the copy.')
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
     expect(opts.triggersInstanceStart).toBe(false)

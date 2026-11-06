@@ -513,7 +513,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
         :allow-empty="false"
         roving-focus
         class="picker-chips min-w-0 flex-wrap gap-1.5"
-        :aria-label="$t('chooser.filterLabel', 'Source filter')"
+        :aria-label="$t('chooser.filterLabel')"
       >
         <ToggleGroupItem
           v-for="chip in visibleChips"

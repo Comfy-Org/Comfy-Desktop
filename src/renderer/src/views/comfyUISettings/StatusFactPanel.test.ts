@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 
-import { en } from '../../lib/i18nMessages.ts'
 import { useSessionStore } from '../../stores/sessionStore'
 import StatusFactPanel from './StatusFactPanel.vue'
 import type { DetailSection, Installation } from '../../types/ipc'
@@ -13,10 +11,6 @@ import type { DetailSection, Installation } from '../../types/ipc'
 beforeEach(() => {
   setActivePinia(createTestingPinia({ stubActions: false }))
 })
-
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
 
 function portSection(port: number): DetailSection {
   return {
@@ -61,8 +55,7 @@ function mountPanel(props: {
   onRename?: (newName: string) => Promise<boolean>
 }) {
   return mount(StatusFactPanel, {
-    props: { sections: [], diskUsage: null, ...props },
-    global: { plugins: [makeI18n()] }
+    props: { sections: [], diskUsage: null, ...props }
   })
 }
 

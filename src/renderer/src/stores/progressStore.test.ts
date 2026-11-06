@@ -7,11 +7,9 @@ import type * as TelemetryModule from '../lib/telemetry'
 import { useProgressStore } from './progressStore'
 import { useSessionStore } from './sessionStore'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string) => key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 vi.mock('../lib/telemetry', async (importOriginal) => ({
   ...(await importOriginal<typeof TelemetryModule>()),

@@ -48,7 +48,7 @@ const actionClass =
           variant="textonly"
           size="unset"
           class="storage-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-lg border-none bg-transparent p-0 text-left font-normal text-[13px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-          :title="t('models.openDir', 'Open folder')"
+          :title="t('models.openDir')"
           @click="emit('open')"
         >
           {{ path }}
@@ -66,8 +66,8 @@ const actionClass =
           variant="textonly"
           size="unset"
           :class="actionClass"
-          :aria-label="t('common.browse', 'Browse')"
-          :title="t('common.browse', 'Browse')"
+          :aria-label="t('common.browse')"
+          :title="t('common.browse')"
           @click="emit('browse')"
         >
           <FolderOpen :size="14" aria-hidden="true" />
@@ -78,12 +78,8 @@ const actionClass =
           variant="textonly"
           size="unset"
           :class="actionClass"
-          :aria-label="
-            t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings')
-          "
-          :title="
-            t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings')
-          "
+          :aria-label="t('comfyUISettings.manageSharedDirs')"
+          :title="t('comfyUISettings.manageSharedDirs')"
           @click="emit('manage')"
         >
           <ExternalLink :size="14" aria-hidden="true" />
@@ -94,8 +90,8 @@ const actionClass =
           variant="textonly"
           size="unset"
           :class="actionClass"
-          :aria-label="t('common.resetDefault', 'Reset to default')"
-          :title="t('common.resetDefault', 'Reset to default')"
+          :aria-label="t('common.resetDefault')"
+          :title="t('common.resetDefault')"
           @click="emit('reset')"
         >
           <RotateCcw :size="14" aria-hidden="true" />

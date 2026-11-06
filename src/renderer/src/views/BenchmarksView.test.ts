@@ -1,8 +1,6 @@
 import { defineComponent, h, KeepAlive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
-import en from '@locales/en.json'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import BaseSelect from '../components/ui/BaseSelect.vue'
@@ -32,83 +30,6 @@ vi.mock('../lib/performanceTestResultsSvg', async (importOriginal) => ({
 vi.mock('./devplatform/DevPlatformAccountChip.vue', () => ({
   default: { template: '<div data-testid="account-chip" />' }
 }))
-
-const messages = {
-  common: { loading: 'Loading...' },
-  benchmarks: {
-    title: 'Benchmarks',
-    description: 'Compare results from your performance tests.',
-    runsLibrary: 'Runs library',
-    openFolder: 'Select folder',
-    refresh: 'Refresh sessions',
-    searchPlaceholder: 'Search runs...',
-    allWorkspaces: 'All workspaces',
-    allInstances: en.benchmarks.allInstances,
-    allHardware: 'All hardware',
-    allWorkflows: 'All workflows',
-    columns: 'Properties',
-    columnsToDisplay: 'Columns to display',
-    unmanagedWorkspace: 'Unmanaged',
-    unknownHardware: 'Unknown hardware',
-    session: 'Session',
-    dateTime: 'Date / Time',
-    workflow: 'Workflow',
-    instance: en.benchmarks.instance,
-    workspace: 'Workspace',
-    runs: 'Runs',
-    hardware: 'GPU / Hardware',
-    fastest: 'Fastest',
-    average: 'Average',
-    median: 'Median',
-    slowest: 'Slowest',
-    measuredRuns: 'Measured runs',
-    selectVisible: 'Select all visible runs',
-    selectRun: 'Select {workflow}',
-    actions: 'Actions',
-    deleteRecord: 'Delete {workflow} benchmark',
-    deleteConfirmTitle: 'Delete {workflow}?',
-    deleteConfirmMessage:
-      'This will permanently delete all files for session {session}. This cannot be undone.',
-    deleteFiles: 'Delete files',
-    deleteErrorTitle: 'Could not delete benchmark',
-    deleteErrorMessage: 'The benchmark files could not be deleted.',
-    sessionName: 'Session name',
-    editSessionName: 'Edit session {session}',
-    renameErrorTitle: 'Could not rename session',
-    renameErrorMessage: 'The session folder could not be renamed.',
-    sessionNameRequired: 'Enter a session name.',
-    comparison: 'Comparison',
-    sortComparison: 'Sort comparison',
-    manualSort: 'Manual sort',
-    switchSortAscending: 'Switch to ascending sort',
-    switchSortDescending: 'Switch to descending sort',
-    reorderComparisonColumn: 'Reorder {workflow} comparison column',
-    reorderComparisonHint: 'Drag to reorder. You can also press Alt+Left or Alt+Right.',
-    comparisonImageTitle: 'Benchmark Comparison',
-    exportResultsImage: 'Export results',
-    exportingImage: 'Exporting image...',
-    exportImageFailed: 'Could not export the comparison image.',
-    metric: 'Metric',
-    baseline: 'Baseline',
-    selectBaseline: 'Use {workflow}, session {session}, as the baseline',
-    visualization: 'Comparison visualization',
-    speed: 'Speed',
-    relativePerformance: 'Relative speed',
-    relativePerformanceHint:
-      'Choose a baseline. Relative speed factor = baseline duration / run duration.',
-    faster: 'Faster',
-    slower: 'Slower',
-    same: 'Same speed',
-    missing: 'Unavailable',
-    duration: 'Duration',
-    durationRange: 'Duration range (min → max)',
-    durationRangeHint: 'Range hint',
-    selectPrompt: 'Select runs from the library to compare them.',
-    empty: 'No performance test results yet.',
-    noMatches: 'No runs match these filters.',
-    loadError: 'Could not load performance test results.'
-  }
-}
 
 function benchmark(
   id: string,
@@ -156,11 +77,7 @@ const sampleBenchmarks = [
 ]
 
 function mountView() {
-  return mount(BenchmarksView, {
-    global: {
-      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: messages } })]
-    }
-  })
+  return mount(BenchmarksView)
 }
 
 function mountKeptAlive() {
@@ -170,10 +87,7 @@ function mountKeptAlive() {
       h(KeepAlive, null, { default: () => (props.visible ? h(BenchmarksView) : h('div')) })
   })
   return mount(Page, {
-    props: { visible: true },
-    global: {
-      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: messages } })]
-    }
+    props: { visible: true }
   })
 }
 
@@ -330,7 +244,7 @@ describe('BenchmarksView', () => {
     expect(svg).toContain('Benchmark Comparison')
     expect(svg).toContain('portrait.json')
     expect(svg).toContain('Duration range')
-    expect(svg).toContain('Range hint')
+    expect(svg).toContain('Each line shows the fastest and slowest run, with the average marked.')
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('class="footer-date"')
     expect(svg.match(/class="table-cell best-cell"/g)).toHaveLength(4)

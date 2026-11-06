@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ChooserView from './ChooserView.vue'
@@ -28,84 +27,6 @@ const mockModal = {
 vi.mock('../composables/useModal', () => ({
   useModal: () => mockModal
 }))
-
-const messages = {
-  en: {
-    common: { loading: 'Loading...' },
-    cloud: { label: 'Cloud', desc: 'Try Cloud' },
-    dashboard: {
-      cloudSection: 'ComfyUI Cloud',
-      launchedAgo: 'Launched {time}',
-      neverLaunched: 'Not launched yet'
-    },
-    firstUse: { whyTryCloud: 'Why try Cloud?', cloudFreeRunsPill: '400 FREE CREDITS' },
-    instancePicker: { progressUpdating: 'Updating.' },
-    installShowcase: {
-      cloudFailedTitle: "Couldn't open Comfy Cloud",
-      cloudFailedMessage: 'Check your connection and try again from the dashboard.'
-    },
-    list: { view: 'View' },
-    running: { dismiss: 'Dismiss' },
-    chooser: {
-      newInstall: 'New Instance',
-      newInstallDesc: 'Set up a fresh ComfyUI environment.',
-      filterAll: 'All',
-      filterLocal: 'Local',
-      filterCloud: 'Cloud',
-      filterRemote: 'Remote',
-      moreActions: 'More actions',
-      manageInstall: 'Manage',
-      searchPlaceholder: 'Search instances',
-      noMatches: 'No instances match',
-      buildsTitle: 'Builds',
-      newBuild: 'New Build',
-      newBuildLabel: 'New build',
-      filterThisComputer: 'This computer',
-      whereLabel: 'Where it runs',
-      sortLabel: 'Sort',
-      sortLastUsed: 'Last used',
-      sortName: 'Name',
-      searchBuilds: 'Search builds',
-      openInstall: 'Open',
-      startInstall: 'Start',
-      updateAvailable: 'Update available',
-      nothingMatches: 'Nothing matches',
-      nothingMatchesHint: 'Try another word, or clear the filters to see everything.',
-      clearFilters: 'Clear filters',
-      noBuildsTitle: 'Set up where your work runs',
-      noBuildsBody: 'A build is ComfyUI with its own version, custom nodes and models.',
-      statusRunning: 'Running',
-      statusLaunching: 'Starting...',
-      statusStopping: 'Stopping...',
-      statusError: 'Error',
-      viewErrorTooltip: 'View error details',
-      errorTitle: 'Error',
-      updatePill: 'Update',
-      migratePill: 'Migrate'
-    },
-    devPlatform: {
-      workspace: {
-        personalLabel: 'Personal',
-        switchLabel: 'Workspace',
-        currentFallback: 'Current workspace',
-        instanceCountLabel: 'INSTANCES',
-        loadError: "Couldn't load workspaces. Retry",
-        refresh: 'Refresh workspaces',
-        promoteToWorkspace: 'Create Build',
-        promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
-        readMore: 'Read more',
-        promoting: 'Creating...',
-        promoteFailedTitle: 'Could not create build',
-        promoteFailedMessage: 'Could not create a draft in Comfy Developer Platform.'
-      },
-      build: { version: 'Build v{version}' }
-    }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 interface MockApi {
   getInstallations: ReturnType<typeof vi.fn>
@@ -204,7 +125,7 @@ function tabButtons(wrapper: ReturnType<typeof mountChooser>) {
 function mountChooser() {
   return mount(ChooserView, {
     attachTo: document.body,
-    global: { plugins: [createTestI18n(), createPinia()] }
+    global: { plugins: [createPinia()] }
   })
 }
 
@@ -381,7 +302,7 @@ describe('ChooserView', () => {
 
     const tile = wrapper.get(`[data-testid="${TID.dashboardTile('managed-update')}"]`)
     expect(tile.text()).toContain('Managed Build')
-    expect(tile.text()).toContain('Updating.')
+    expect(tile.text()).toContain('Updating…')
     expect(tile.attributes('aria-disabled')).toBe('true')
     expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
     expect(tile.find(`[data-testid="${TID.dashboardTileKebab('managed-update')}"]`).exists()).toBe(

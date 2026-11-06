@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import { useEventListener } from '@vueuse/core'
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
@@ -10,7 +13,7 @@ import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Plus, RefreshCw, Search } from 'lucide-vue-next'
+import { ChevronDown, Plus, RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
@@ -36,10 +39,21 @@ const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
   'show-new-install': []
+  'show-build-import': [flow: 'track' | 'load-snapshot']
   'show-progress': [opts: ShowProgressOpts]
 }>()
 
 const { t } = useI18n()
+const buildMenuOpen = ref(false)
+useEventListener(window, 'blur', () => {
+  buildMenuOpen.value = false
+})
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) buildMenuOpen.value = false
+  }
+)
 const installationStore = useInstallationStore()
 const authStore = useAuthStore()
 const modal = useModal()
@@ -252,17 +266,55 @@ const gridHandlers = {
         <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
           {{ t('chooser.buildsTitle') }}
         </h1>
-        <Button
-          type="button"
-          variant="inverted"
-          size="md"
-          class="chooser-tile-new shrink-0 gap-1.5 px-3 text-[13px]/5"
-          :aria-label="t('chooser.newBuildLabel')"
-          @click="handleNewInstallClick"
-        >
-          <Plus :size="15" aria-hidden="true" />
-          {{ t('chooser.newBuild') }}
-        </Button>
+        <div class="flex shrink-0">
+          <Button
+            type="button"
+            variant="inverted"
+            size="md"
+            class="chooser-tile-new gap-1.5 rounded-r-none px-3 text-[13px]/5"
+            :aria-label="t('chooser.newBuildLabel')"
+            @click="handleNewInstallClick"
+          >
+            <Plus :size="15" aria-hidden="true" />
+            {{ t('chooser.newBuild') }}
+          </Button>
+          <Menu
+            v-model:open="buildMenuOpen"
+            :modal="false"
+            align="end"
+            class="z-20 min-w-[200px]"
+            :aria-label="t('chooser.moreBuildOptions')"
+          >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="inverted"
+                size="md"
+                class="rounded-l-none border-l border-background/20 px-2"
+                :aria-label="t('chooser.moreBuildOptions')"
+                data-testid="build-actions-menu-trigger"
+              >
+                <ChevronDown :size="15" aria-hidden="true" />
+              </Button>
+            </template>
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full"
+              data-testid="build-actions-add-existing"
+              @select="emit('show-build-import', 'track')"
+              >{{ t('chooser.addExistingBuild') }}</MenuItem
+            >
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full"
+              data-testid="build-actions-load-snapshot"
+              @select="emit('show-build-import', 'load-snapshot')"
+              >{{ t('fileMenu.loadSnapshot') }}</MenuItem
+            >
+          </Menu>
+        </div>
       </header>
 
       <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">

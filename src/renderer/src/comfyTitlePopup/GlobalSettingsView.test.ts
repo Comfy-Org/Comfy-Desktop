@@ -1,9 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 
-import { en } from '../lib/i18nMessages.ts'
 import { useModal } from '../composables/useModal'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 
@@ -69,10 +67,6 @@ function installMockBridge(): BridgeState {
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
-}
-
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
 }
 
 function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
@@ -162,7 +156,6 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
 function mountView(snapshot = makeSnapshot()) {
   return mount(GlobalSettingsView, {
     props: { snapshot: snapshot as never },
-    global: { plugins: [makeI18n()] },
     attachTo: document.body
   })
 }
@@ -727,7 +720,9 @@ describe('GlobalSettingsView', () => {
       const wrapper = mountView(snapshotWith(false, false))
       const toggle = toggleFor(wrapper, BETA_LABEL)
       expect(toggle.attributes('aria-disabled')).toBe('true')
-      expect(toggle.attributes('title')).toBe(en.tooltips.betaFeaturesNeedTelemetry)
+      expect(toggle.attributes('title')).toBe(
+        'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'
+      )
 
       await toggle.trigger('click')
       await flushPromises()

@@ -133,11 +133,7 @@ const rows = computed(() =>
       <StorageItemIcon
         :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
         :shared="row.shared"
-        :title="
-          row.locked
-            ? t('models.lockedDir', 'This directory is always used and cannot be removed.')
-            : undefined
-        "
+        :title="row.locked ? t('models.lockedDir') : undefined"
       />
       <div class="models-dir-main flex min-w-0 flex-auto items-center">
         <Button
@@ -145,11 +141,7 @@ const rows = computed(() =>
           variant="link"
           size="unset"
           class="models-dir-name block min-w-0 max-w-full truncate p-0 text-left text-[13px] leading-[18px] font-normal"
-          :title="
-            row.isExtra
-              ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details')
-              : t('models.openDir', 'Open folder')
-          "
+          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')"
           @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
         >
           {{ row.path }}
@@ -159,16 +151,14 @@ const rows = computed(() =>
         v-if="row.isPrimary"
         class="models-dir-tag tag-primary inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[color-mix(in_srgb,var(--action)_35%,transparent)] bg-[color-mix(in_srgb,var(--action)_10%,transparent)] text-[var(--action)]"
       >
-        {{ t('models.primary', 'Downloads') }}
+        {{ t('models.primary') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
       </span>
       <span
         v-if="row.locked || row.isExtra"
         class="models-dir-tag tag-local inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] text-text-muted"
       >
-        {{
-          row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance')
-        }}
+        {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
         <InfoTooltip
           :text="
             row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
@@ -182,8 +172,8 @@ const rows = computed(() =>
           variant="textonly"
           size="icon"
           :class="actionClass"
-          :aria-label="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
-          :title="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
+          :aria-label="t('comfyUISettings.viewCustomPathDetails')"
+          :title="t('comfyUISettings.viewCustomPathDetails')"
           @click.stop="emit('details', row.index)"
         >
           <ChevronRight :size="14" aria-hidden="true" />
@@ -194,8 +184,8 @@ const rows = computed(() =>
           variant="textonly"
           size="icon"
           :class="actionClass"
-          :aria-label="t('common.browse', 'Browse')"
-          :title="t('common.browse', 'Browse')"
+          :aria-label="t('common.browse')"
+          :title="t('common.browse')"
           @click.stop="handleChange(row.index)"
         >
           <FolderOpen :size="14" aria-hidden="true" />
@@ -215,21 +205,21 @@ const rows = computed(() =>
                 variant="textonly"
                 size="icon"
                 :class="actionClass"
-                :aria-label="t('models.moreActions', 'More actions')"
+                :aria-label="t('models.moreActions')"
                 @click.stop
               >
                 <MoreHorizontal :size="14" aria-hidden="true" />
               </Button>
             </template>
             <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
-              {{ t('models.makePrimary', 'Use for Model Downloads') }}
+              {{ t('models.makePrimary') }}
             </MenuItem>
             <MenuItem
               v-if="row.canRemove"
               class="text-destructive"
               @select="handleRemove(row.index)"
             >
-              {{ t('models.removeDir', 'Remove') }}
+              {{ t('models.removeDir') }}
             </MenuItem>
           </Menu>
         </div>
@@ -244,7 +234,7 @@ const rows = computed(() =>
       @click="emit('add')"
     >
       <Plus :size="14" aria-hidden="true" />
-      <span>{{ props.addLabel ?? t('models.addDir', 'Add Shared Directory') }}</span>
+      <span>{{ props.addLabel ?? t('models.addDir') }}</span>
     </Button>
   </div>
 </template>

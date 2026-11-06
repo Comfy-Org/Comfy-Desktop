@@ -137,12 +137,9 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
               : () => window.api.runAction(id, actionId, actionData)
           const successTerminal = payload.successChoice
             ? successTerminalGoDashboardOrOpen({
-                title:
-                  payload.opKind === 'update'
-                    ? t('progress.updatedSuccess', 'Updated successfully')
-                    : undefined,
-                dashboardLabel: t('progress.successChoiceGoDashboard', 'Go to Dashboard'),
-                openLabel: t('progress.successChoiceOpen', 'Open Instance')
+                title: payload.opKind === 'update' ? t('progress.updatedSuccess') : undefined,
+                dashboardLabel: t('progress.successChoiceGoDashboard'),
+                openLabel: t('progress.successChoiceOpen')
               })
             : undefined
           opts.showProgressFromPicker?.({

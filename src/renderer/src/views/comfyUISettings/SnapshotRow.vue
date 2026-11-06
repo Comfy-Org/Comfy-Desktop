@@ -105,7 +105,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             v-if="isLatest"
             class="snapshot-row-latest shrink-0 rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-px text-[11px] leading-[16.5px] font-medium text-text-muted"
           >
-            {{ t('snapshots.latestBadge', 'Latest') }}
+            {{ t('snapshots.latestBadge') }}
           </span>
         </div>
         <div class="snapshot-row-head-right flex min-w-0 items-center gap-2">
@@ -158,7 +158,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
             >~{{ nodeDelta.changed }}</span
           >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel', 'nodes') }}</span>
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel') }}</span>
         </span>
         <span
           v-if="hasPipChanges"
@@ -180,7 +180,7 @@ const hasTitlePill = computed(() => !!titlePillText.value)
             class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
             >~{{ pipDelta.changed }}</span
           >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel', 'pkgs') }}</span>
+          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel') }}</span>
         </span>
       </div>
     </Button>

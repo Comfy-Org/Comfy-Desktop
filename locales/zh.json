@@ -70,6 +70,8 @@
     "buildsTitle": "构建",
     "newBuild": "新建构建",
     "newBuildLabel": "新建构建",
+    "moreBuildOptions": "更多构建选项",
+    "addExistingBuild": "添加现有构建",
     "filterThisComputer": "此电脑",
     "whereLabel": "运行位置",
     "sortLabel": "排序",
@@ -82,7 +84,8 @@
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
     "noBuildsTitle": "设置工作的运行位置",
-    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。"
+    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。",
+    "filterLabel": "来源筛选"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
@@ -194,7 +197,10 @@
     "argsAwaitingValue": "需要一个值",
     "argsUnsupported": "不支持：",
     "argsMissingValue": "缺少值：",
-    "argsUnexpected": "意外的参数："
+    "argsUnexpected": "意外的参数：",
+    "updateFieldTimeout": "无法连接到应用，请重试",
+    "useSharedInput": "使用共享输入",
+    "useSharedOutput": "使用共享输出"
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
@@ -244,7 +250,8 @@
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
     "removeDirTitle": "要移除共享模型目录吗？",
     "removeDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
-    "moreActions": "更多操作"
+    "moreActions": "更多操作",
+    "addInstanceDir": "添加目录"
   },
   "common": {
     "back": "返回",
@@ -318,7 +325,10 @@
     "managerNetworkMode_personal_cloud": "个人云",
     "managerNetworkMode_personal_cloud_desc": "将此机器视为你自己信任的远程主机：解除 --listen 对安装节点包的阻止（所选安全级别仍然生效）。仅在你控制的个人机器上使用 - 它会放宽为共享或公共主机设计的保护。",
     "copyError": "复制错误详情",
-    "clear": "清除"
+    "clear": "清除",
+    "active": "当前",
+    "error": "错误",
+    "retry": "重试"
   },
   "comfybuilder": {
     "build": "构建",
@@ -618,7 +628,9 @@
     "storageTab": "存储",
     "sharedDirectories": "共享目录",
     "installLocation": "默认安装位置",
-    "updatesTab": "更新"
+    "updatesTab": "更新",
+    "diagnostics": "诊断",
+    "openLogsFolder": "打开日志文件夹"
   },
   "zoom": {
     "changed": "缩放级别已更改",
@@ -1229,7 +1241,14 @@
     "importSuccess": "已导入 {imported} 个快照。",
     "importAlreadyCurrent": "此快照已与当前状态匹配。",
     "importInvalidFile": "无效的快照文件。",
-    "exportSuccess": "快照已导出。"
+    "exportSuccess": "快照已导出。",
+    "importPreviewLabel": "快照",
+    "importedSnapshot": "导入的快照",
+    "latestBadge": "最新",
+    "latestLabel": "最新：",
+    "noneYet": "还没有快照",
+    "restoreCancelled": "恢复已取消",
+    "restoreCancelledBody": "导入的快照未被应用。"
   },
   "portable": {
     "label": "便携版",
@@ -1461,7 +1480,11 @@
     "remove": "移除变量",
     "namePlaceholder": "VARIABLE_NAME",
     "valuePlaceholder": "value",
-    "securityWarning": "环境变量值会以未加密形式存储在磁盘上。不要添加 API 密钥、令牌、密码或其他机密。"
+    "securityWarning": "环境变量值会以未加密形式存储在磁盘上。不要添加 API 密钥、令牌、密码或其他机密。",
+    "duplicateKey": "名称重复",
+    "hideValue": "隐藏值",
+    "revealValue": "显示值",
+    "securityWarningShort": "环境变量可能包含机密"
   },
   "contextMenu": {
     "openLinkInBrowser": "在浏览器中打开链接",
@@ -1478,7 +1501,10 @@
     "installDetails": "构建详情",
     "editName": "编辑构建名称",
     "editUrl": "编辑连接 URL",
-    "restartToApply": "重启以应用"
+    "restartToApply": "重启以应用",
+    "runningDetails": "运行详情",
+    "locationStorage": "位置与存储",
+    "lineage": "来源"
   },
   "fileMenu": {
     "newWindow": "打开仪表板",
@@ -1494,6 +1520,10 @@
     "exitWindow": "关闭窗口",
     "exitAllWindows": "退出桌面端",
     "skipOnboarding": "跳过引导"
+  },
+  "feedback": {
+    "modalLabel": "发送反馈",
+    "loading": "正在加载反馈表单…"
   },
   "performanceTest": {
     "title": "性能测试",
@@ -1731,7 +1761,8 @@
     "progressMigrated": "迁移完成",
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
-    "progressCancelled": "已取消"
+    "progressCancelled": "已取消",
+    "restartToApply": "重启以应用更改"
   },
   "installShowcase": {
     "cloud": {

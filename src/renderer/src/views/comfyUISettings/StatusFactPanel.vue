@@ -286,7 +286,7 @@ const groups = computed<FactGroup[]>(() => {
   if (details.length > 0) {
     out.push({
       id: 'install-details',
-      title: t('statusFactPanel.installDetails', 'Build details'),
+      title: t('statusFactPanel.installDetails'),
       rows: details
     })
   }
@@ -294,7 +294,7 @@ const groups = computed<FactGroup[]>(() => {
   if (running.length > 0) {
     out.push({
       id: 'running-details',
-      title: t('statusFactPanel.runningDetails', 'Running details'),
+      title: t('statusFactPanel.runningDetails'),
       rows: running
     })
   }
@@ -303,7 +303,7 @@ const groups = computed<FactGroup[]>(() => {
   if (isLocalInstall && location.length > 0) {
     out.push({
       id: 'location-storage',
-      title: t('statusFactPanel.locationStorage', 'Location & storage'),
+      title: t('statusFactPanel.locationStorage'),
       rows: location
     })
   }
@@ -311,7 +311,7 @@ const groups = computed<FactGroup[]>(() => {
   if (lineage.length > 0) {
     out.push({
       id: 'lineage',
-      title: t('statusFactPanel.lineage', 'Lineage'),
+      title: t('statusFactPanel.lineage'),
       rows: lineage
     })
   }
@@ -332,7 +332,7 @@ const groups = computed<FactGroup[]>(() => {
             ref="nameEl"
             class="status-fact-hero-name peer/name cursor-text hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] min-w-0 truncate rounded-md px-1.5 py-0.5 text-[18px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease]"
             role="textbox"
-            :aria-label="t('statusFactPanel.editName', 'Edit build name')"
+            :aria-label="t('statusFactPanel.editName')"
             contenteditable="plaintext-only"
             spellcheck="false"
             @blur="handleNameBlur"
@@ -353,7 +353,7 @@ const groups = computed<FactGroup[]>(() => {
             size="unset"
             type="button"
             class="status-fact-hero-edit-btn static inline-flex w-0 shrink-0 items-center justify-center -ml-1.5 overflow-hidden rounded-md border-none bg-transparent p-0 appearance-auto transition-[width,margin-left] duration-[120ms] ease-[ease] hover:bg-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:outline-offset-1 focus-visible:ring-0 group-hover/name:w-[17px] group-hover/name:ml-0 peer-focus-visible/name:w-[17px] peer-focus-visible/name:ml-0 focus-visible:w-[17px] focus-visible:ml-0 [&>svg]:opacity-0 group-hover/name:[&>svg]:opacity-60 peer-focus-visible/name:[&>svg]:opacity-60 focus-visible:[&>svg]:opacity-60"
-            :aria-label="t('statusFactPanel.editName', 'Edit build name')"
+            :aria-label="t('statusFactPanel.editName')"
             aria-controls="status-fact-hero-name"
             @click="focusName"
           >
@@ -397,7 +397,7 @@ const groups = computed<FactGroup[]>(() => {
                 ref="urlEl"
                 class="status-fact-value min-w-0 truncate status-fact-url-editable -mr-1.5 cursor-text rounded-md px-1.5 py-0.5 text-right outline-none transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] focus-visible:overflow-visible focus-visible:text-clip"
                 role="textbox"
-                :aria-label="t('statusFactPanel.editUrl', 'Edit connection URL')"
+                :aria-label="t('statusFactPanel.editUrl')"
                 contenteditable="plaintext-only"
                 spellcheck="false"
                 :title="row.value"
@@ -410,8 +410,8 @@ const groups = computed<FactGroup[]>(() => {
                 size="unset"
                 type="button"
                 class="status-fact-url-edit-btn static inline-flex size-[22px] shrink-0 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-60 appearance-auto transition-[opacity,background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-text hover:opacity-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-0"
-                :aria-label="t('statusFactPanel.editUrl', 'Edit connection URL')"
-                :title="t('statusFactPanel.editUrl', 'Edit connection URL')"
+                :aria-label="t('statusFactPanel.editUrl')"
+                :title="t('statusFactPanel.editUrl')"
                 @click="focusUrlField"
               >
                 <Pencil :size="12" aria-hidden="true" />
@@ -422,7 +422,7 @@ const groups = computed<FactGroup[]>(() => {
               class="status-fact-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
               role="status"
             >
-              {{ t('statusFactPanel.restartToApply', 'Restart to apply') }}
+              {{ t('statusFactPanel.restartToApply') }}
             </span>
           </dd>
           <dd
@@ -436,7 +436,7 @@ const groups = computed<FactGroup[]>(() => {
               type="button"
               class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
               :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
-              :title="t('models.openDir', 'Open folder')"
+              :title="t('models.openDir')"
               @click="openPath(row.value)"
             >
               <bdi v-if="row.truncate === 'start'" dir="ltr">{{ row.value }}</bdi>

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
 import { TID } from '../../../../shared/testIds'
 import type { TerminalRestore } from '../../types/ipc'
@@ -58,23 +57,6 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
-const messages = {
-  en: {
-    console: {
-      sessionEnded: 'Console session ended',
-      restartSession: 'Restart console',
-      shellLabel: 'Shell',
-      copy: 'Copy',
-      paste: 'Paste',
-      selectAll: 'Select All'
-    }
-  }
-} as const
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
-
 let exitCallbacks: Array<(data: { installationId: string }) => void> = []
 let outputCallbacks: Array<(data: { installationId: string; data: string }) => void> = []
 
@@ -103,8 +85,7 @@ function setupApi(subscribeRestore: TerminalRestore = makeRestore()): void {
 
 function mountPane(): VueWrapper {
   return mount(ConsoleTerminalPane, {
-    props: { installationId: 'install-A' },
-    global: { plugins: [createTestI18n()] }
+    props: { installationId: 'install-A' }
   }) as VueWrapper
 }
 

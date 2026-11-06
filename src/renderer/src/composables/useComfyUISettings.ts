@@ -327,7 +327,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       clearRestartDirty(installId, field.id)
       const isTimeout = (err as { isTimeout?: boolean })?.isTimeout === true
       const message = isTimeout
-        ? t('comfyUISettings.updateFieldTimeout', "Couldn't reach app — try again")
+        ? t('comfyUISettings.updateFieldTimeout')
         : err instanceof Error
           ? err.message
           : String(err)
@@ -355,7 +355,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         await window.api.runAction(inst.id, field.onChangeAction)
       } catch (err: unknown) {
         await dialogs.alert({
-          title: t('common.error', 'Error'),
+          title: t('common.error'),
           message: err instanceof Error ? err.message : String(err)
         })
       }
@@ -399,8 +399,8 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
           title: action.label,
           message:
             result.reason === 'none'
-              ? t('snapshots.noSnapshotsToShare', 'There are no snapshots to share yet.')
-              : (result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'))
+              ? t('snapshots.noSnapshotsToShare')
+              : (result.message ?? t('snapshots.shareFailed'))
         })
       }
       return
@@ -565,7 +565,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     if (inst.sourceCategory !== 'cloud' && sessionStore.isRunning(inst.id)) {
       const stopAction: ActionDef = {
         id: 'stop',
-        label: t('actions.stop', 'Stop'),
+        label: t('actions.stop'),
         style: 'danger',
         enabled: true
       }
@@ -579,13 +579,13 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   const diskUsageItem = computed<{ label: string; value: string } | null>(() => {
     if (installSize.value !== null) {
       return {
-        label: t('comfyUISettings.diskUsage', 'Disk Usage'),
+        label: t('comfyUISettings.diskUsage'),
         value: formatBytes(installSize.value)
       }
     }
     if (!diskSpace.value) return null
     return {
-      label: t('comfyUISettings.diskUsage', 'Disk Usage'),
+      label: t('comfyUISettings.diskUsage'),
       value: '—'
     }
   })

@@ -1,35 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import TermsModal from './TermsModal.vue'
 import { LEGAL_DOCS, type LegalDocId } from '../lib/legalDocs'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: {
-    en: {
-      firstUse: {
-        eulaModalTitle: 'End-User License Agreement',
-        tosModalTitle: 'Terms of Service',
-        privacyModalTitle: 'Privacy Policy',
-        noticesModalTitle: 'Third-Party Notices',
-        legalDocEffective: 'Effective',
-        legalDocAppliesTo: 'Applies to'
-      },
-      common: { close: 'Close' }
-    }
-  },
-  missingWarn: false,
-  fallbackWarn: false
-})
 
 async function mountModal(doc?: LegalDocId) {
   const wrapper = mount(TermsModal, {
     attachTo: document.body,
     props: doc ? { doc } : {},
     global: {
-      plugins: [i18n],
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     }
   })

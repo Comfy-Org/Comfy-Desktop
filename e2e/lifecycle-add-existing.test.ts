@@ -5,7 +5,6 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
-import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
@@ -81,12 +80,10 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('waffle menu → Add Existing → Browse probes the staged directory → Track Install registers it @lifecycle', async () => {
-  expect(await ctx.titleBar.click('.title-menu-button')).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible('li.item', { timeout: 10_000 })
-  expect(await popup.clickByText('li.item', 'Add Existing Instance')).toBe(true)
+test('Builds menu → Add Existing → Browse probes the staged directory → Track Install registers it @lifecycle', async () => {
+  expect(await ctx.panel.click('[data-testid="build-actions-menu-trigger"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="build-actions-add-existing"]')
+  expect(await ctx.panel.click('[data-testid="build-actions-add-existing"]')).toBe(true)
 
   await ctx.panel.waitForVisible('[data-testid="track-modal"]', { timeout: 10_000 })
 

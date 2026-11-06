@@ -105,12 +105,9 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
   const dir = props.snapshot.modelsDirs[index]
   if (!dir) return
   const ok = await modal.confirm({
-    title: t('models.removeDirTitle', 'Remove shared models directory?'),
-    message: t(
-      'models.removeDirConfirm',
-      "This won't delete any files. You can re-add the directory later from this list."
-    ),
-    confirmLabel: t('models.removeDir', 'Remove'),
+    title: t('models.removeDirTitle'),
+    message: t('models.removeDirConfirm'),
+    confirmLabel: t('models.removeDir'),
     confirmStyle: 'danger'
   })
   if (!ok) return
@@ -141,10 +138,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
 </script>
 
 <template>
-  <GlobalSettingsMicroSection
-    :title="t('settings.models', 'Shared Models')"
-    :tooltip="t('tooltips.sharedModels')"
-  >
+  <GlobalSettingsMicroSection :title="t('settings.models')" :tooltip="t('tooltips.sharedModels')">
     <ModelsDirList
       :dirs="sharedModelDirs"
       @change="handleChangeModelsDir"
@@ -156,12 +150,12 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   </GlobalSettingsMicroSection>
 
   <GlobalSettingsMicroSection
-    :title="t('settings.sharedDirectories', 'Shared Directories')"
+    :title="t('settings.sharedDirectories')"
     :tooltip="t('tooltips.sharedDirectories')"
   >
     <StorageDirRow
       v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir', 'Shared Input')"
+      :label="sharedInputField.label || t('media.inputDir')"
       :path="sharedFieldPath(sharedInputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
@@ -169,7 +163,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
     <StorageDirRow
       v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir', 'Shared Output')"
+      :label="sharedOutputField.label || t('media.outputDir')"
       :path="sharedFieldPath(sharedOutputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"

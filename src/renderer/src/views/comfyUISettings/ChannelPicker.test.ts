@@ -1,20 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../../lib/i18nMessages.ts'
 import ChannelPicker from './ChannelPicker.vue'
 import type { DetailField } from '../../types/ipc'
-
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
 
 function mountPicker(field: DetailField) {
   return mount(ChannelPicker, {
     props: { field },
     global: {
-      plugins: [makeI18n()],
       stubs: {
         BaseSelect: true,
         InfoTooltip: true

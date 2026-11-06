@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { setChecked } from './testHelpers'
 
 vi.mock('../lib/telemetry', () => ({
@@ -55,14 +54,6 @@ import FirstUseTakeover from './FirstUseTakeover.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { GpuTier } from '../../../shared/gpuTier'
 
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: { en: {} },
-  missingWarn: false,
-  fallbackWarn: false
-})
-
 function systemInfo(
   tier: GpuTier,
   label: string | null = 'NVIDIA',
@@ -97,9 +88,7 @@ beforeEach(() => {
 })
 
 function mountTakeover() {
-  return mount(FirstUseTakeover, {
-    global: { plugins: [i18n] }
-  })
+  return mount(FirstUseTakeover)
 }
 
 describe('FirstUseTakeover start step', () => {
@@ -152,7 +141,7 @@ describe('FirstUseTakeover start step', () => {
       '[data-testid="stub-tooltip-wrap"]'
     ) as HTMLElement | null
     expect(tooltip).not.toBeNull()
-    expect(tooltip?.getAttribute('data-text')).toBe('firstUse.whyTryCloud')
+    expect(tooltip?.getAttribute('data-text')).toBe('Why try Cloud?')
   })
 
   it('Express-install checkbox is visible on the default Local pick and hides only when Cloud is picked', async () => {
@@ -313,9 +302,9 @@ describe('FirstUseTakeover start step', () => {
     const wrapper = mountTakeover()
     await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     const btn = wrapper.find('[data-testid="first-use-continue"]')
-    expect(btn.text()).toBe('firstUse.startContinue')
+    expect(btn.text()).toBe('Continue')
     await btn.trigger('click')
-    expect(btn.text()).toBe('firstUse.startContinueBusy')
+    expect(btn.text()).toBe('Preparing your install…')
     expect(btn.attributes('disabled')).toBeDefined()
     expect(btn.attributes('aria-busy')).toBe('true')
   })
@@ -325,13 +314,13 @@ describe('FirstUseTakeover start step', () => {
     await setChecked(wrapper.find('[data-testid="first-use-consent-tos"] [role="checkbox"]'), true)
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
     const btnBusy = wrapper.find('[data-testid="first-use-continue"]')
-    expect(btnBusy.text()).toBe('firstUse.startContinueBusy')
+    expect(btnBusy.text()).toBe('Preparing your install…')
     expect(btnBusy.attributes('disabled')).toBeDefined()
 
     await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
 
     const btnFresh = wrapper.find('[data-testid="first-use-continue"]')
-    expect(btnFresh.text()).toBe('firstUse.startContinue')
+    expect(btnFresh.text()).toBe('Continue')
     expect(btnFresh.attributes('disabled')).toBeUndefined()
     expect(btnFresh.attributes('aria-busy')).toBe('false')
   })
@@ -575,7 +564,9 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
     const reasonId = cloudCard.attributes('aria-describedby')
 
     expect(reasonId).toBe('first-use-cloud-reco-reason')
-    expect(wrapper.find(`#${reasonId}`).text()).toBe('firstUse.cloudRecommendedForHardwareTooltip')
+    expect(wrapper.find(`#${reasonId}`).text()).toBe(
+      "This device doesn't have a GPU powerful enough for most workflows. Cloud runs them on hosted GPUs instead."
+    )
   })
 
   it.each<GpuTier>(['high', 'mid', 'low', 'apple'])('leaves the %s tier alone', async (tier) => {
@@ -853,7 +844,9 @@ describe('FirstUseTakeover beta-features opt-in', () => {
     expect(box.attributes('disabled')).toBeUndefined()
     expect(box.attributes('aria-readonly')).toBe('true')
     expect(reasonId).toBeTruthy()
-    expect(w.find(`#${reasonId}`).text()).toBe('tooltips.betaFeaturesNeedTelemetry')
+    expect(w.find(`#${reasonId}`).text()).toBe(
+      'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'
+    )
     await box.trigger('click')
     expect(isChecked(betaBox(w))).toBe(false)
 

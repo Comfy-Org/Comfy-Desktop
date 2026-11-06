@@ -51,7 +51,7 @@ function normalizeVersion(raw: string | undefined | null): string {
 
 const targetVersionLabel = computed(() => {
   if (props.state.version) return formatVersionLabel(props.state.version)
-  return t('appUpdate.fallbackVersion', 'this update')
+  return t('appUpdate.fallbackVersion')
 })
 
 const statusSentence = computed(() => {
@@ -82,7 +82,7 @@ const statusSentence = computed(() => {
         'Update available'
       )
     default:
-      return t('appUpdate.panelIdleTitle', 'Comfy Desktop is up to date')
+      return t('appUpdate.panelIdleTitle')
   }
 })
 
@@ -133,15 +133,15 @@ const preferenceSections = computed<DetailSection[]>(() =>
 )
 
 const primaryActionLabel = computed(() => {
-  if (props.checking) return t('settings.checkingForUpdates', 'Checking…')
-  if (props.isDownloading) return t('appUpdate.downloading', 'Downloading…')
+  if (props.checking) return t('settings.checkingForUpdates')
+  if (props.isDownloading) return t('appUpdate.downloading')
   switch (props.state.kind) {
     case 'ready':
-      return t('appUpdate.restartNow', 'Restart & update')
+      return t('appUpdate.restartNow')
     case 'available':
-      return t('appUpdate.download', 'Download')
+      return t('appUpdate.download')
     default:
-      return t('settings.checkForUpdates', 'Check for updates')
+      return t('settings.checkForUpdates')
   }
 })
 
@@ -217,12 +217,7 @@ const progressDetail = computed<string | null>(() => {
           v-if="systemManaged"
           class="updates-note m-0 text-[11px] leading-4 text-text-muted opacity-85"
         >
-          {{
-            t(
-              'appUpdate.systemManagedNote',
-              'Updates for this install are delivered through your system package manager.'
-            )
-          }}
+          {{ t('appUpdate.systemManagedNote') }}
         </p>
 
         <div v-if="isDownloading" class="updates-progress flex flex-col gap-1 pt-1">
@@ -259,7 +254,7 @@ const progressDetail = computed<string | null>(() => {
           :disabled="actionsDisabled"
           @click="emit('check-for-update')"
         >
-          {{ t('settings.checkForUpdates', 'Check for updates') }}
+          {{ t('settings.checkForUpdates') }}
         </Button>
         <Button
           type="button"
