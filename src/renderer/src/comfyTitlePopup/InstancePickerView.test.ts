@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '../stores/sessionStore'
 
-import { en } from '../lib/i18nMessages.ts'
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
 
 const SWITCH_DECISION: NavDecision = {
@@ -151,7 +149,6 @@ function makeInstall(overrides: Partial<MockInstall>): MockInstall {
 }
 
 async function mountPicker(snapshot: MockSnapshot) {
-  const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } })
   const pinia = createPinia()
   const { default: InstancePickerView } = await import('./InstancePickerView.vue')
   const enriched = {
@@ -170,7 +167,7 @@ async function mountPicker(snapshot: MockSnapshot) {
         modelsSystemDefault: ''
       }
     },
-    global: { plugins: [i18n, pinia] }
+    global: { plugins: [pinia] }
   })
 }
 

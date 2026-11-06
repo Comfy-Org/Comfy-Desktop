@@ -1,40 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
 import TrackModal from './TrackModal.vue'
 import type { ProbeResult } from '../types/ipc'
-
-const messages = {
-  en: {
-    common: {
-      name: 'Name',
-      browse: 'Browse',
-      namePlaceholder: 'e.g. ComfyUI Main',
-      backToDashboard: 'Back to Dashboard'
-    },
-    git: { venv: 'Virtual Environment', venvNotFound: 'Not found' },
-    track: {
-      grandTitle: 'Add Existing Instance',
-      grandSubtitle: 'Add an existing local ComfyUI checkout.',
-      installDir: 'Install location',
-      selectDir: 'Select a directory',
-      detectedType: 'Detected type',
-      browseDirFirst: 'Browse to a directory first',
-      detecting: 'Detecting',
-      noDetected: 'No known install detected',
-      trackInstallation: 'Track Install',
-      cannotTrack: 'Cannot Track',
-      version: 'Version',
-      repository: 'Repository',
-      branch: 'Branch'
-    }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 interface MockApi {
   getUniqueName: ReturnType<typeof vi.fn>
@@ -69,7 +37,6 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
 function mountTrack() {
   return mount(TrackModal, {
     global: {
-      plugins: [createTestI18n()],
       stubs: {
         BrandTakeoverLayout: { template: '<div><slot /><slot name="footer-left" /></div>' },
         TakeoverBack: true,
@@ -81,7 +48,7 @@ function mountTrack() {
 }
 
 function browseButton(wrapper: ReturnType<typeof mountTrack>) {
-  const button = wrapper.findAll('button').find((button) => button.text() === 'Browse')
+  const button = wrapper.findAll('button').find((button) => button.text() === 'Browse…')
   if (!button) throw new Error('Browse button not found')
   return button
 }

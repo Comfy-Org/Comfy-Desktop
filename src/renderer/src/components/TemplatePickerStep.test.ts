@@ -1,14 +1,10 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../lib/i18nMessages'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import TemplatePickerStep from './TemplatePickerStep.vue'
 
 const GB = 1024 ** 3
-
-const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } })
 
 const NONE: FieldOption = { value: 'none', label: 'Blank canvas' }
 
@@ -50,8 +46,7 @@ function mountPicker(
       diskSpace: null,
       diskSpaceLoading: false,
       ...props
-    },
-    global: { plugins: [i18n] }
+    }
   })
 }
 

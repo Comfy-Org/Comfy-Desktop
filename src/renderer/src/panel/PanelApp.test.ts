@@ -126,123 +126,13 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   }
 }))
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
+import { en } from '../lib/i18nMessages'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-
-const messages = {
-  en: {
-    titleBar: {
-      panelComfy: 'ComfyUI',
-      panelInstallSettings: 'Instance Settings',
-      panelLauncherSettings: 'Launcher Settings',
-      installSettingsComingSoon: 'Coming soon',
-      installationLabel: 'Instance'
-    },
-    common: {
-      loading: 'Loading…'
-    },
-    settings: {
-      logs: 'Logs'
-    },
-    devPlatform: {
-      account: {
-        signedInAs: 'Signed in as {email}'
-      },
-      workspace: {
-        personalLabel: 'Personal',
-        switchLabel: 'Switch workspace'
-      }
-    },
-    performanceTest: {
-      title: 'Performance Tests',
-      description: 'Run performance tests against your ComfyUI instances.',
-      selectInstance: '1. Select an instance',
-      workspaceLabel: 'Workspace',
-      instanceLabel: 'Instance',
-      selectInstancePlaceholder: 'Select an instance',
-      chooseWorkflow: '2. Choose a workflow',
-      chooseExampleWorkflow: 'Choose an example workflow',
-      loadingExampleWorkflows: 'Loading example workflows...',
-      orImportApiWorkflow: 'or import an API workflow',
-      exampleWorkflowPickerTitle: 'Choose an example workflow',
-      exampleWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
-      useExampleWorkflow: 'Use workflow',
-      noExampleWorkflows: 'No benchmark-ready example workflows are currently available.',
-      exampleWorkflowsOffline:
-        'You need to be connected to the internet to download example workflows.',
-      exampleWorkflowUnavailable: "This example workflow isn't available yet. Choose another one.",
-      exampleWorkflowsNeedInstall: 'Finish installing this instance to use example workflows.',
-      exampleModelsDownload: 'Model download progress',
-      exampleModelsFailed: 'Could not download every model required by this workflow.',
-      exampleModelsNoSpace: "There is not enough disk space for this workflow's models.",
-      cancelExampleDownload: 'Cancel download',
-      dropWorkflowHint: 'Drop a workflow .json file in API format here, or click to browse',
-      importingWorkflow: 'Importing workflow...',
-      preparingExampleWorkflow: 'Preparing workflow and downloading required models...',
-      importFailed: 'Could not import the workflow.',
-      deleteWorkflow: 'Delete workflow',
-      deleteFailed: 'Could not delete the workflow.',
-      run: 'Run',
-      stop: 'Stop',
-      stopping: 'Stopping...',
-      stopFailed: 'Could not stop the instance.',
-      measurementSettings: '3. Set measurement settings',
-      warmupRuns: 'Warm-up runs',
-      warmupRunsHint:
-        'Runs executed first to load models and warm up caches. They are not included in the results.',
-      measuredRuns: 'Measured runs',
-      measuredRunsHint:
-        'Runs timed after the warm-up runs. Their durations are used to calculate the results.',
-      logsPlaceholder: 'Instance logs will appear here.',
-      results: 'Results',
-      resultsPlaceholder: 'Performance test results will appear here.',
-      workflowFileName: 'Workflow file',
-      fastestRun: 'Fastest run',
-      slowestRun: 'Slowest run',
-      averageRunDuration: 'Average run',
-      medianRunDuration: 'Median run',
-      measuredRunCount: 'Measured runs',
-      failedRunCount: 'Failed runs',
-      runProgress: 'Progress',
-      runProgressCount: '{completed} of {total} runs completed',
-      runDurationChart: 'Run duration aggregates',
-      device: 'Compute device',
-      vram: 'VRAM',
-      ram: 'RAM',
-      pytorchVersion: 'PyTorch version',
-      xformersVersion: 'xFormers version',
-      systemInformation: 'System information',
-      cpu: 'CPU',
-      cpuCores: 'CPU cores',
-      operatingSystem: 'Operating system',
-      architecture: 'Architecture',
-      openResultsFolder: 'Open folder',
-      imageTitle: 'Performance Test: {workflowName}',
-      exportResultsImage: 'Export results',
-      exportingImage: 'Exporting image...',
-      exportImageFailed: 'Could not export the results image.',
-      running: 'Running...',
-      launchFailed: 'Failed to start the instance.',
-      submittingRuns: 'Submitting {warmupCount} warm-up runs and {count} measured runs...',
-      completedRuns:
-        'Finished {count} measured runs ({failed} failed). Final response saved to {path}',
-      submitFailed: 'Failed to submit the performance test workflow.'
-    },
-    benchmarks: {
-      title: 'Benchmarks',
-      description: 'Browse and compare results from your performance tests.'
-    }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 interface InstallationLike {
   id: string
@@ -408,7 +298,7 @@ function installMockApi(initial?: {
   } as const
   const api = {
     comfybuilder: state.comfybuilder,
-    getLocaleMessages: vi.fn().mockResolvedValue(messages.en),
+    getLocaleMessages: vi.fn().mockResolvedValue(en),
     getLocale: vi.fn().mockResolvedValue('en'),
     onLocaleChanged: vi.fn(() => () => {}),
     onPanelSwitch: vi.fn((cb: (d: { panel: string; installationId?: string }) => void) => {
@@ -591,7 +481,7 @@ function installMockApi(initial?: {
 function mountPanel() {
   return mount(PanelApp, {
     attachTo: document.body,
-    global: { plugins: [createTestI18n(), createPinia()] }
+    global: { plugins: [createPinia()] }
   })
 }
 
@@ -710,7 +600,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
     expect(wrapper.get('.branded-page-header__description').text()).toBe(
-      'Browse and compare results from your performance tests.'
+      'Compare results from your performance tests.'
     )
   })
 
@@ -859,7 +749,7 @@ describe('PanelApp', () => {
     expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
     expect(
       wrapper.findAll('.performance-test__selection-label').map((label) => label.text())
-    ).toEqual(['Workspace', 'Instance'])
+    ).toEqual(['Workspace', 'Build'])
     expect(wrapper.findAll('.performance-test__selection-control button')).toHaveLength(2)
     expect(wrapper.find('.performance-test__workspace-select .ui-select-trigger').exists()).toBe(
       false
@@ -871,7 +761,7 @@ describe('PanelApp', () => {
     expect(wrapper.findAll('.performance-test__column')).toHaveLength(3)
     expect(
       wrapper.findAll('.performance-test__column h2').map((heading) => heading.text())
-    ).toEqual(['1. Select an instance', '2. Choose a workflow', '3. Set measurement settings'])
+    ).toEqual(['1. Select a build', '2. Choose a workflow', '3. Set measurement settings'])
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
     expect(settings.map((setting) => setting.find('label').text())).toEqual([
@@ -937,7 +827,7 @@ describe('PanelApp', () => {
       'Drop a workflow .json file in API format here, or click to browse'
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
-    expect(wrapper.find('.performance-test__logs').text()).toBe('Instance logs will appear here.')
+    expect(wrapper.find('.performance-test__logs').text()).toBe('Build logs will appear here.')
     expect(wrapper.get('.performance-test__logs').classes()).toContain('scroll-visible')
     await logsToggle.trigger('click')
     expect(logsToggle.attributes('aria-expanded')).toBe('false')
@@ -946,10 +836,10 @@ describe('PanelApp', () => {
     const instanceSelect = wrapper.get('.performance-test__instance-select button')
     expect(instanceSelect.attributes()).toMatchObject({
       role: 'combobox',
-      'aria-label': 'Select an instance',
+      'aria-label': 'Select a build',
       'aria-expanded': 'false'
     })
-    expect(instanceSelect.text()).toBe('Select an instance')
+    expect(instanceSelect.text()).toBe('Select a build')
     await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
@@ -964,7 +854,7 @@ describe('PanelApp', () => {
     ).toEqual(['Standalone · 0.3.50', 'Standalone', 'Standalone'])
     expect(wrapper.text()).not.toContain('Other Workspace Install')
     expect(wrapper.find('.branded-page-header__description').text()).toBe(
-      'Run performance tests against your ComfyUI instances.'
+      'Run performance tests against your ComfyUI builds.'
     )
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
     ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).dispatchEvent(
@@ -1256,7 +1146,7 @@ describe('PanelApp', () => {
       .trigger('click')
     await flushPromises()
 
-    expect(instanceSelect.text()).toBe('Select an instance')
+    expect(instanceSelect.text()).toBe('Select a build')
     await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
@@ -1846,7 +1736,7 @@ describe('PanelApp', () => {
 
     expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
     expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
-      'Finish installing this instance to use example workflows.'
+      'Finish installing this build to use example workflows.'
     )
   })
 
@@ -2656,8 +2546,8 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'appUpdate.readyTitle',
-      confirmLabel: 'appUpdate.restartNow'
+      title: 'Desktop Update Ready',
+      confirmLabel: 'Restart & Update'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -2688,8 +2578,8 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'appUpdate.availableTitle',
-      confirmLabel: 'appUpdate.download'
+      title: 'Desktop Update Available',
+      confirmLabel: 'Download'
     })
     expect(mockState.downloadUpdate).toHaveBeenCalledTimes(1)
   })
@@ -2704,7 +2594,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'appUpdate.readyTitle'
+      title: 'Desktop Update Ready'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -2718,7 +2608,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.alert).toHaveBeenCalledTimes(1)
     expect(mockModal.alert.mock.calls[0]?.[0]).toMatchObject({
-      title: 'appUpdate.errorTitle',
+      title: 'Desktop Update Error',
       message: 'network down'
     })
   })

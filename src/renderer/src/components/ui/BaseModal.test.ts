@@ -1,15 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import BaseModal from './BaseModal.vue'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: { en: { common: { close: 'Close' } } },
-  missingWarn: false,
-  fallbackWarn: false
-})
 
 const wrappers: VueWrapper[] = []
 
@@ -23,7 +14,6 @@ async function mountModal(props: Record<string, unknown> = {}) {
     },
     slots: { default: '<p class="body-content">Hello</p>' },
     global: {
-      plugins: [i18n],
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     }
   })

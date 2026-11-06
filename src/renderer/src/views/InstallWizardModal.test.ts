@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
@@ -11,16 +9,12 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
-
 function mountModal() {
   const pinia = createPinia()
   setActivePinia(pinia)
   return mount(InstallWizardModal, {
     global: {
-      plugins: [makeI18n(), pinia],
+      plugins: [pinia],
       stubs: {
         BrandTakeoverLayout: {
           template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'

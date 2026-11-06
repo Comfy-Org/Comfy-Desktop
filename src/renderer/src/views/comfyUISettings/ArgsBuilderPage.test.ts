@@ -1,18 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
-import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
 import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: { en },
-  missingWarn: false,
-  fallbackWarn: false
-})
 
 const SCHEMA: ComfyArgDef[] = [
   {
@@ -61,7 +51,6 @@ async function mountPage(initialValue = '', pendingRestart = false): Promise<Vue
   const wrapper = mount(ArgsBuilderPage, {
     props: { installationId: 'inst-1', initialValue, pendingRestart },
     global: {
-      plugins: [i18n],
       stubs: { Teleport: { template: '<div><slot /></div>' } }
     },
     attachTo: document.body

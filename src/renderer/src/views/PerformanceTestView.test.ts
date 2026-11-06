@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { createI18n } from 'vue-i18n'
 import PerformanceTestView from './PerformanceTestView.vue'
 
 vi.mock('../stores/authStore', () => ({
@@ -23,18 +22,9 @@ vi.mock('../composables/useWorkspaceInstallScope', async () => {
   }
 })
 
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  messages: { en: {} },
-  missingWarn: false,
-  fallbackWarn: false
-})
-
 function mountView() {
   return mount(PerformanceTestView, {
     global: {
-      plugins: [i18n],
       stubs: {
         BrandBackground: { template: '<div><slot /></div>' },
         BrandedPageHeader: true,

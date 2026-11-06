@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ProgressModal from './ProgressModal.vue'
@@ -16,70 +15,6 @@ const mockModal = {
 vi.mock('../composables/useModal', () => ({
   useModal: () => mockModal
 }))
-
-const messages = {
-  en: {
-    common: {
-      copy: 'Copy',
-      cancel: 'Cancel',
-      back: 'Back'
-    },
-    dashboard: {
-      confirmStopLocal: {
-        title: 'Return to Dashboard?',
-        message: 'This will stop the current ComfyUI.',
-        confirmLabel: 'Return to Dashboard'
-      }
-    },
-    overlay: {
-      cancelCurrentTitle: 'Cancel current operation?',
-      cancelMessage: 'The operation will stop where it is.',
-      cancelConfirm: 'Cancel operation'
-    },
-    progress: {
-      working: 'Working…',
-      starting: 'Starting…',
-      cancelling: 'Cancelling…',
-      completedSuccess: 'Completed successfully',
-      completedError: 'Operation failed',
-      completedCancelled: 'Operation was cancelled',
-      returnToDashboard: 'Return to Dashboard',
-      reboot: 'Reboot',
-      restartComfyui: 'Restart ComfyUI',
-      phaseLabel: {
-        cleanup: 'Tidying up dependencies...',
-        download: 'Downloading ComfyUI…',
-        gpu: 'Initializing GPU...',
-        launchStart: 'Starting ComfyUI...',
-        securityScan: 'Running security scan...',
-        source: 'Staging ComfyUI source code...',
-        startingServer: 'Starting server...',
-        torchRepair: 'Restoring GPU PyTorch…'
-      }
-    },
-    launch: {
-      viewLogs: 'View logs'
-    },
-    errors: {
-      portConflictTitle: 'Port already in use',
-      portConflictUsePort: 'Use next available port',
-      portConflictKill: 'Stop process and retry',
-      portConflictKillFailed: 'Could not free port {port}.',
-      priorProcessBusyTitle: 'ComfyUI is still running a prompt',
-      priorProcessBusyStop: 'Stop it and launch',
-      priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.',
-      priorProcessUnknownTitle: 'An earlier ComfyUI is still running',
-      priorProcessUnknownConfirmMessage: 'This stops it and cancels anything it is doing.',
-      priorSurvivorsTitle: 'Processes from an earlier ComfyUI are still running',
-      priorSurvivorsConfirmMessage: 'This stops those processes and anything they are doing.',
-      priorSurvivorsStop: 'Stop them and launch'
-    }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
 
 interface MockApi {
   onInstallProgress: ReturnType<typeof vi.fn>
@@ -147,8 +82,7 @@ function snapOp(installationId: string, patch: Partial<Operation> = {}): Operati
 
 function mountProgress() {
   return mount(ProgressModal, {
-    props: { installationId: null },
-    global: { plugins: [createTestI18n()] }
+    props: { installationId: null }
   })
 }
 
@@ -448,7 +382,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       'Port 8188 is already in use'
     )
     expect(body.selectorText('.brand-progress__error-message')).toContain(
-      'Could not free port 8188.'
+      'Could not free port 8188. The process may require manual termination.'
     )
   })
 
@@ -507,7 +441,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'An earlier ComfyUI is still running',
-        message: 'This stops it and cancels anything it is doing.'
+        message: 'This stops the earlier ComfyUI and cancels anything it is doing.'
       })
     )
   })

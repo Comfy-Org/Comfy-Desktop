@@ -1,27 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../../lib/i18nMessages.ts'
 import SettingsSectionList from './SettingsSectionList.vue'
 import BooleanToggle from './BooleanToggle.vue'
 import type { DetailField, DetailSection } from '../../types/ipc'
 
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
-
 function mountList(fields: DetailField[]) {
   return mount(SettingsSectionList, {
-    props: { sections: [{ fields }] },
-    global: { plugins: [makeI18n()] }
+    props: { sections: [{ fields }] }
   })
 }
 
 function mountReadonly(fields: DetailField[]) {
   return mount(SettingsSectionList, {
-    props: { sections: [{ fields }], readonly: true },
-    global: { plugins: [makeI18n()] }
+    props: { sections: [{ fields }], readonly: true }
   })
 }
 
@@ -179,8 +171,7 @@ describe('SettingsSectionList', () => {
 
     function mountSection(enabled: boolean) {
       return mount(SettingsSectionList, {
-        props: { sections: [vsSection(enabled)] },
-        global: { plugins: [makeI18n()] }
+        props: { sections: [vsSection(enabled)] }
       })
     }
 
@@ -200,8 +191,7 @@ describe('SettingsSectionList', () => {
       const section = vsSection(false)
       section.actions![0]!.disabledMessage = 'Finish the current update first.'
       const wrapper = mount(SettingsSectionList, {
-        props: { sections: [section] },
-        global: { plugins: [makeI18n()] }
+        props: { sections: [section] }
       })
       expect(wrapper.find('.version-stat-action').attributes('disabled')).toBeDefined()
       const tooltip = wrapper.find('.version-stat-action-tooltip')
@@ -234,7 +224,9 @@ describe('SettingsSectionList', () => {
       const wrapper = mountList([betaField(false, true)])
       const button = wrapper.find('button[role="switch"]')
       expect(button.attributes('aria-disabled')).toBe('true')
-      expect(button.attributes('title')).toBe(en.tooltips.betaFeaturesNeedTelemetry)
+      expect(button.attributes('title')).toBe(
+        'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'
+      )
       expect(button.attributes('title')).not.toBe('tooltips.betaFeaturesNeedTelemetry')
 
       await button.trigger('click')
@@ -267,7 +259,9 @@ describe('SettingsSectionList', () => {
 
       const description = wrapper.find(`#${describedBy}`)
       expect(description.exists()).toBe(true)
-      expect(description.text()).toBe(en.tooltips.betaFeaturesNeedTelemetry)
+      expect(description.text()).toBe(
+        'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'
+      )
     })
 
     it('keeps the blocked styling hook after dropping the disabled attribute', () => {
