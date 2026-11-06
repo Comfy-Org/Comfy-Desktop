@@ -47,6 +47,7 @@ import {
   hostInstallEvents,
   isChooserHost
 } from '../host/registry'
+import { isLocalInstall } from '../host/localInstall'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { Category, ViewKind } from '../../shared/viewKind'
@@ -2301,7 +2302,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.handle('desktop2-open-terminal', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
-    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    if (!isLocalInstall(parentEntry)) return false
     openInstancePickerForHost(
       parentEntry,
       parentEntry.windowKey,

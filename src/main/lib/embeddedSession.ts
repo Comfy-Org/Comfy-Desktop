@@ -5,13 +5,15 @@
  *
  * Only a short-lived access token and the identity read from it cross to the
  * renderer; the refresh token stays in main. Only the main frame of a
- * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
- * is served. Remote and LAN servers never receive the token.
+ * registered comfyView for a local install, still on the loopback ComfyUI
+ * Desktop loaded into it, is served. Remote and LAN servers never receive the
+ * token, including a Remote Connection whose URL is loopback.
  */
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
 import { getCloudSession } from '../devplatform/session'
+import { isLocalInstall } from '../host/localInstall'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
@@ -52,12 +54,12 @@ export function isLoopbackComfyUrl(url: string): boolean {
 }
 
 function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
-  if (!entry.installationId || !isLoopbackComfyUrl(entry.comfyUrl)) return false
+  if (!isLocalInstall(entry) || !isLoopbackComfyUrl(entry.comfyUrl)) return false
   const expected = originOf(entry.comfyUrl)
   return expected !== null && originOf(currentUrl) === expected
 }
 
-/** The sender is the main frame of a registered comfyView, on its own loopback ComfyUI. */
+/** The sender is the main frame of a local install's comfyView, on its own loopback ComfyUI. */
 export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender): boolean {
   const entry = findEntryByComfySender(sender)
   if (!entry || !senderFrame) return false

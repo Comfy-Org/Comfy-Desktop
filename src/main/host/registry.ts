@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
 import { _runningSessions, _isStopping } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
+import { isLocalInstall } from './localInstall'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
 
@@ -250,14 +251,12 @@ export function isInstallHost(
 
 /**
  * Predicate: tearing down / stopping this entry would kill a local ComfyUI
- * process. Drives every "are you sure?" surface. Must be install-backed AND
- * `sourceCategory === 'local'` (a preview host can carry sourceCategory without
- * an attached install).
+ * process, i.e. it is a local install. Drives every "are you sure?" surface.
  */
 export function shouldConfirmKillForEntry(
   entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
-  return !!entry && isInstallHost(entry) && entry.sourceCategory === 'local'
+  return isLocalInstall(entry)
 }
 
 /**

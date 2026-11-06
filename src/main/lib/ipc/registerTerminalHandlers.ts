@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
+import { isLocalInstall } from '../../host/localInstall'
 import { findEntryByComfySender } from '../../host/registry'
 import { isTitlePopupSender } from '../../popups/titlePopup'
 import {
@@ -43,7 +44,7 @@ function resolveInstallationId(
 export function registerTerminalHandlers(): void {
   ipcMain.handle('desktop2-open-terminal-popout', async (event): Promise<void> => {
     const entry = findEntryByComfySender(event.sender)
-    if (!entry?.installationId || entry.sourceCategory !== 'local') return
+    if (!isLocalInstall(entry)) return
     await openTerminalPopout(entry.installationId)
   })
 
