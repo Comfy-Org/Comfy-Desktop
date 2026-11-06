@@ -35,10 +35,14 @@ async function mountSidebar(activePage: DashboardPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
-  it('names the dashboard row after the page it opens', async () => {
+  it('lists Builds, Performance Tests, then Benchmarks', async () => {
     const wrapper = await mountSidebar()
 
-    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').text()).toBe('Builds')
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Builds',
+      'Performance Tests',
+      'Benchmarks'
+    ])
   })
 
   it('marks only the current page', async () => {

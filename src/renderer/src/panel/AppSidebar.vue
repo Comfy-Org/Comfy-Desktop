@@ -34,8 +34,8 @@ const mainRows = computed<SidebarRow[]>(() => [
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const toolRows = computed<SidebarRow[]>(() => [
-  { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn },
-  { page: 'performance-test', label: t('fileMenu.performanceTest'), icon: Gauge }
+  { page: 'performance-test', label: t('fileMenu.performanceTest'), icon: Gauge },
+  { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn }
 ])
 const groups = computed(() => [
   { key: 'main', rows: mainRows.value },
