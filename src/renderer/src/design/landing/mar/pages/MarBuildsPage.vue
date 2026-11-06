@@ -1211,6 +1211,7 @@ const newLabel = computed(() =>
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  backdrop-filter: blur(12px);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc-chip.is-bad {
   background: color-mix(in oklch, var(--color-status-danger) 14%, transparent);

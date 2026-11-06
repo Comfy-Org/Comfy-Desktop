@@ -30,7 +30,7 @@ const OTHERS: ItemStatus[] = [
   </Section>
   <Section
     title="On a picture"
-    note="Dark glass instead of a tint, in both themes. On cards they sit bottom-left: top-left is the select check's. Shared is not a chip on a card but a people icon on the meta line."
+    note="The same tint in the words' colour, over the picture blurred and dimmed, in both themes. On cards they sit bottom-left: top-left is the select check's. Shared is not a chip on a card but a people icon on the meta line."
   >
     <Cells :min="140">
       <Cell v-for="s in RUNS" :key="s" :label="s" on="bare">

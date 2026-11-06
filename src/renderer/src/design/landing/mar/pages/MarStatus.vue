@@ -37,7 +37,7 @@ const { status, label, onMedia } = defineProps<{
   status: ItemStatus
   /** Overrides the default word, e.g. "Queued · 2nd". */
   label?: string
-  /** Sits on a picture: dark glass instead of a tint. */
+  /** Sits on a picture: lighter words, the picture dimmed behind the tint. */
   onMedia?: boolean
 }>()
 
@@ -100,8 +100,10 @@ const tone = computed(() =>
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  /* The tint is always the words' own colour, over whatever is behind. */
+  background: color-mix(in oklch, currentColor 14%, transparent);
   color: var(--color-muted-foreground);
+  backdrop-filter: blur(12px);
 }
 .mar-status-dot {
   width: 6px;
@@ -110,29 +112,24 @@ const tone = computed(() =>
   background: currentColor;
 }
 .is-go {
-  background: color-mix(in oklch, var(--color-status-running) 14%, transparent);
   color: var(--color-status-running);
 }
 .is-go .mar-status-dot {
   animation: mar-breathe 1.6s ease-in-out infinite;
 }
 .is-bad {
-  background: color-mix(in oklch, var(--color-status-danger) 16%, transparent);
   color: var(--color-status-danger);
 }
 .is-warn {
-  background: color-mix(in oklch, oklch(0.8 0.14 75) 15%, transparent);
   color: oklch(0.8 0.14 75);
 }
 .on-media {
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) brightness(0.55);
 }
 .on-media.is-quiet {
   color: rgb(255 255 255 / 0.88);
 }
-/* On a picture the tint is lost: the words go light, the colour stays
-   in the dot or icon. */
+/* On a picture the words go light, and the tint follows them. */
 .on-media.is-bad {
   color: oklch(0.86 0.08 25);
 }

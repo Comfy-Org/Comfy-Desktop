@@ -116,6 +116,7 @@ const open = (r: RecentItem): void => {
   border-radius: 7px;
   font-size: 11px;
   font-weight: 500;
+  backdrop-filter: blur(12px);
 }
 .p13-chip.is-running {
   color: var(--color-status-running);
