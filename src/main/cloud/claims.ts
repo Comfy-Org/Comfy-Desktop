@@ -9,6 +9,7 @@ interface AccessTokenClaims {
   workspace_id?: string
   workspace_type?: string
   role?: string
+  scope?: string
 }
 
 function decodeJwtPayload(token: string): AccessTokenClaims | null {
@@ -46,6 +47,12 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
 /** The workspace id a token is scoped to, or null. Used to detect a scope switch. */
 export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
+}
+
+/** The OAuth scopes a token says it carries; empty when it names none. */
+export function scopesOf(accessToken: string): string[] {
+  const scope = decodeJwtPayload(accessToken)?.scope
+  return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : []
 }
 
 /** The account subject a token belongs to, or null for malformed/legacy tokens. */

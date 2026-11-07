@@ -17,6 +17,7 @@ import { BrowserWindow, ipcMain, shell } from 'electron'
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
+import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -122,6 +123,8 @@ export async function signInToCloud(): Promise<AuthStatus> {
   clearVersionCache()
   const status = await session.login()
   clearVersionCache()
+  getViewWorkspaceGrants().endAll()
+  getViewWorkspaceGrants().allowDesktop(status.workspaceId)
   broadcastAuthChanged(status)
   return status
 }
@@ -182,6 +185,7 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
     }
   }
   session.logout()
+  getViewWorkspaceGrants().endAll()
   clearVersionCache()
   broadcastAuthChanged(SIGNED_OUT)
   return SIGNED_OUT
@@ -203,6 +207,7 @@ export function isSignedInToCloud(): boolean {
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
   setUnauthorizedHandler(() => {
+    getViewWorkspaceGrants().endAll()
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
   })
@@ -245,9 +250,10 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) =>
-    switchCloudWorkspace(workspaceId)
-  )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) => {
+    getViewWorkspaceGrants().allowDesktop(workspaceId)
+    return switchCloudWorkspace(workspaceId)
+  })
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.promoteLocalInstance,

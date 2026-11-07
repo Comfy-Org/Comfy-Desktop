@@ -45,7 +45,16 @@ const mocks = vi.hoisted(() => ({
   buildExportEnvelope: vi.fn(),
   broadcastToRenderer: vi.fn(),
   operationAborts: new Map<string, AbortController>(),
-  translate: vi.fn((key: string) => key)
+  translate: vi.fn((key: string) => key),
+  endViewGrants: vi.fn(),
+  allowDesktopWorkspace: vi.fn()
+}))
+
+vi.mock('../viewWorkspaceGrants', () => ({
+  getViewWorkspaceGrants: () => ({
+    endAll: mocks.endViewGrants,
+    allowDesktop: mocks.allowDesktopWorkspace
+  })
 }))
 
 vi.mock('electron', () => ({
@@ -180,6 +189,18 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
+  it('signIn ends earlier view grants and lets views hold the consented workspace', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+
+    await handler('comfybuilder:signIn')({})
+
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w1')
+    expect(mocks.endViewGrants.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.allowDesktopWorkspace.mock.invocationCallOrder[0]!
+    )
+  })
+
   // The regression that made a file-menu sign-in look like nothing happened:
   // the host window loads no page, so broadcasting only to `getAllWindows()`
   // reaches an empty webContents and the account chip never repaints.
@@ -265,6 +286,7 @@ describe('registerDevPlatformHandlers', () => {
     onUnauthorized()
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
   })
 
   it('skips hosts whose panelView is torn down or absent', async () => {
@@ -287,6 +309,7 @@ describe('registerDevPlatformHandlers', () => {
     const status = await handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
       signedIn: false
     })
@@ -458,6 +481,7 @@ describe('registerDevPlatformHandlers', () => {
     })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledWith('w2')
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)

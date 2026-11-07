@@ -3,8 +3,9 @@
  * local ComfyUI view, so an SSO user (who has no Firebase account) can sign in
  * there and run partner nodes.
  *
- * Only a short-lived access token and the identity read from it cross to the
- * renderer; the refresh token stays in main. Only the main frame of a
+ * Only a workspace token minted for the view's allowed workspace and the
+ * identity read from Desktop's access token cross to the renderer; the OAuth
+ * grant stays in main. Only the main frame of a
  * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
  * is served. Remote and LAN servers never receive the token.
  */
@@ -16,6 +17,7 @@ import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
+import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
 
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
@@ -84,28 +86,23 @@ export async function stateForSender(
 }
 
 /**
- * The workspace credential for a trusted view: released only for an exact,
- * non-empty workspace that Desktop's session is scoped to. Absent, malformed
- * or mismatched scope gets nothing, so a view never runs as a workspace it
- * did not name.
+ * The workspace credential for a trusted view: only for Desktop's current
+ * workspace, only when it is on that view's allowlist in main, and a minted
+ * workspace token rather than Desktop's OAuth access token.
  */
 export async function workspaceTokenForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  const token = await trustedSessionToken(event)
-  return token && identityOf(token)?.workspaceId === workspaceId ? token : null
-}
-
-async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string | null> {
   if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  return getCloudSession().getAccessToken()
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId)
 }
 
 /**
- * Re-scopes Desktop's session to `workspaceId` for a trusted, signed-in view,
- * then reads the state back. Anything else returns its state untouched.
+ * Re-scopes Desktop's session to `workspaceId` for a trusted, signed-in view
+ * and adds it to that view's allowlist, then reads the state back. Anything
+ * else returns its state untouched.
  */
 export async function switchWorkspaceForSender(
   event: EmbeddedSessionSender,
@@ -115,6 +112,7 @@ export async function switchWorkspaceForSender(
   const state = await stateForSender(event)
   if (state.status !== 'signed_in' || typeof workspaceId !== 'string' || workspaceId === '')
     return state
+  getViewWorkspaceGrants().allowView(event.sender, workspaceId)
   await switchWorkspace(workspaceId)
   return stateForSender(event)
 }

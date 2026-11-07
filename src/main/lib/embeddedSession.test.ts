@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   enabled: true,
   getAccessToken: vi.fn<() => Promise<string | null>>(),
+  mint: vi.fn(),
+  current: 'ws-1',
   entries: [] as unknown[]
 }))
 
@@ -11,7 +13,13 @@ vi.mock('./embeddedSessionFlag', () => ({
   isEmbeddedSessionEnabled: async () => mocks.enabled
 }))
 vi.mock('../devplatform/session', () => ({
-  getCloudSession: () => ({ getAccessToken: mocks.getAccessToken })
+  getCloudSession: () => ({
+    getAccessToken: mocks.getAccessToken,
+    currentWorkspaceId: () => mocks.current
+  })
+}))
+vi.mock('../cloud/workspaceToken', () => ({
+  mintWorkspaceToken: mocks.mint
 }))
 vi.mock('../host/registry', () => ({
   get comfyWindows() {
@@ -31,6 +39,7 @@ import {
   switchWorkspaceForSender
 } from './embeddedSession'
 import type { EmbeddedSessionSender } from './embeddedSession'
+import { _resetForTest as resetViewGrants } from './viewWorkspaceGrants'
 
 function jwt(claims: Record<string, unknown>): string {
   const b64 = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
@@ -38,6 +47,7 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 const ACCESS = jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-1' })
+const MINTED = jwt({ sub: 'user-1', workspace_id: 'ws-1', auth_method: 'cloud' })
 
 interface ViewOptions {
   frameUrl?: string
@@ -68,6 +78,11 @@ beforeEach(() => {
   mocks.enabled = true
   mocks.entries = []
   mocks.getAccessToken.mockReset().mockResolvedValue(ACCESS)
+  mocks.mint
+    .mockReset()
+    .mockResolvedValue({ kind: 'minted', token: MINTED, expiresAt: Date.now() + 900_000 })
+  mocks.current = 'ws-1'
+  resetViewGrants()
 })
 
 describe('embeddedSession', () => {
@@ -84,7 +99,7 @@ describe('embeddedSession', () => {
       email: 'a@example.com',
       workspaceId: 'ws-1'
     })
-    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(ACCESS)
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(MINTED)
   })
 
   it.each([
@@ -102,7 +117,7 @@ describe('embeddedSession', () => {
   })
 
   it.each([
-    ['its own workspace', 'ws-1', ACCESS],
+    ['its own workspace', 'ws-1', MINTED],
     ['no workspace', undefined, null],
     ['an empty workspace', '', null],
     ['another workspace', 'ws-2', null],
@@ -131,6 +146,20 @@ describe('embeddedSession', () => {
       workspaceId: 'ws-2'
     })
     expect(switchWorkspace).toHaveBeenCalledWith('ws-2')
+  })
+
+  it('releases the workspace a view switched to only to that view', async () => {
+    const switcher = view('http://127.0.0.1:8000')
+    const bystander = view('http://127.0.0.1:8001')
+    const switchWorkspace = vi.fn(async () => {
+      mocks.current = 'ws-2'
+      mocks.getAccessToken.mockResolvedValue(jwt({ sub: 'user-1', workspace_id: 'ws-2' }))
+    })
+
+    await switchWorkspaceForSender(switcher.event, 'ws-2', switchWorkspace)
+
+    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBe(MINTED)
+    await expect(workspaceTokenForSender(bystander.event, 'ws-2')).resolves.toBeNull()
   })
 
   it.each([
