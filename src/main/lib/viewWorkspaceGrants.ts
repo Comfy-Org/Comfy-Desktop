@@ -1,20 +1,18 @@
 /**
  * What a local ComfyUI view may hold, decided in main. A view gets a token only
  * for Desktop's current workspace, only when that workspace is on its
- * allowlist, and never Desktop's OAuth access token once Cloud mints workspace
- * tokens for it. Sign-in and sign-out end every grant, so a reply that lands
+ * allowlist, and only a minted workspace token, never Desktop's OAuth access
+ * token. Sign-in and sign-out end every grant, so a reply that lands
  * after them reaches no view.
  */
 import type { WebContents } from 'electron'
 
-import { scopesOf, workspaceIdOf } from '../cloud/claims'
-import { CLOUD_CONFIG } from '../cloud/config'
+import { canMintWorkspaceTokens, workspaceIdOf } from '../cloud/claims'
 import { mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession } from '../devplatform/session'
 
 const MINT_REFRESH_SKEW_MS = 60_000
-const REQUESTED_SCOPES: ReadonlySet<string> = new Set(CLOUD_CONFIG.scope.split(' '))
 
 export interface GrantSession {
   currentWorkspaceId(): string | null
@@ -31,11 +29,6 @@ interface MintedToken {
   expiresAt: number
 }
 
-/** Holds only the scopes this build asks for, so it cannot mint for other workspaces. */
-function isPinnedGrantToken(accessToken: string): boolean {
-  return scopesOf(accessToken).every((scope) => REQUESTED_SCOPES.has(scope))
-}
-
 export class ViewWorkspaceGrants {
   private epoch = 0
   private seeded = false
@@ -43,7 +36,6 @@ export class ViewWorkspaceGrants {
   private viewAllowed = new WeakMap<WebContents, Set<string>>()
   private minted = new Map<string, MintedToken>()
   private minting = new Map<string, Promise<WorkspaceTokenMint>>()
-  private mintRefusedFor: string | null = null
 
   constructor(
     private readonly session: GrantSession,
@@ -72,7 +64,6 @@ export class ViewWorkspaceGrants {
     this.viewAllowed = new WeakMap()
     this.minted = new Map()
     this.minting = new Map()
-    this.mintRefusedFor = null
   }
 
   async tokenFor(view: WebContents, workspaceId: string): Promise<string | null> {
@@ -100,25 +91,15 @@ export class ViewWorkspaceGrants {
   private async workspaceToken(workspaceId: string, epoch: number): Promise<string | null> {
     const accessToken = await this.session.getAccessToken()
     if (!accessToken || workspaceIdOf(accessToken) !== workspaceId) return null
+    if (!canMintWorkspaceTokens(accessToken)) return null
     const cached = this.minted.get(workspaceId)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now()) return cached.token
-    if (this.mintRefusedFor === accessToken) return this.unmintedToken(accessToken)
 
     const result = await this.mintOnce(accessToken, workspaceId)
     if (epoch !== this.epoch) return null
-    if (result.kind === 'minted') {
-      this.minted.set(workspaceId, { token: result.token, expiresAt: result.expiresAt })
-      return result.token
-    }
-    if (result.kind === 'refused') {
-      this.mintRefusedFor = accessToken
-      return this.unmintedToken(accessToken)
-    }
-    return null
-  }
-
-  private unmintedToken(accessToken: string): string | null {
-    return isPinnedGrantToken(accessToken) ? accessToken : null
+    if (result.kind !== 'minted') return null
+    this.minted.set(workspaceId, { token: result.token, expiresAt: result.expiresAt })
+    return result.token
   }
 
   private mintOnce(accessToken: string, workspaceId: string): Promise<WorkspaceTokenMint> {

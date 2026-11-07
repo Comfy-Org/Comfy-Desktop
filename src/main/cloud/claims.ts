@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
 
+import { WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 /** Claims read (never verified here; the server does that) from the access-token JWT. */
@@ -49,10 +50,10 @@ export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
 }
 
-/** The OAuth scopes a token says it carries; empty when it names none. */
-export function scopesOf(accessToken: string): string[] {
+/** The grant behind this token can mint workspace tokens; false for grants from before the mint scope. */
+export function canMintWorkspaceTokens(accessToken: string): boolean {
   const scope = decodeJwtPayload(accessToken)?.scope
-  return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : []
+  return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
 }
 
 /** The account subject a token belongs to, or null for malformed/legacy tokens. */

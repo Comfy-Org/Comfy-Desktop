@@ -35,14 +35,9 @@ describe('mintWorkspaceToken', () => {
     )
   })
 
-  it('reports a grant Cloud will not mint for as refused', async () => {
-    respond(403, { code: 'oauth_token_mint_refused', message: 'no' })
-
-    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({ kind: 'refused' })
-  })
-
   it.each([
-    ['another 403', 403, { code: 'sso_required' }],
+    ['a refused grant', 403, { code: 'oauth_token_mint_refused' }],
+    ['an SSO-enforced workspace', 403, { code: 'sso_required' }],
     ['an unavailable workspace', 404, { code: 'NOT_FOUND' }],
     ['a rate limit', 429, {}],
     ['a server error', 500, {}],

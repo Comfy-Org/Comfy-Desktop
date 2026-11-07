@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../devplatform/session', () => ({ getCloudSession: () => ({}) }))
 
+import { CLOUD_CONFIG } from '../cloud/config'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { ViewWorkspaceGrants } from './viewWorkspaceGrants'
 
@@ -14,7 +15,7 @@ function jwt(claims: Record<string, unknown>): string {
   return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
 }
 
-function accessToken(workspaceId: string, scope = 'comfy-cloud:user:read'): string {
+function accessToken(workspaceId: string, scope: string = CLOUD_CONFIG.scope): string {
   return jwt({ sub: 'user-1', workspace_id: workspaceId, scope })
 }
 
@@ -149,36 +150,29 @@ describe('ViewWorkspaceGrants', () => {
     await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBeNull()
   })
 
-  it.each([
-    ['a failed mint', { kind: 'failed', status: 503 } as const],
-    ['an unavailable workspace', { kind: 'failed', status: 404 } as const]
-  ])('hands out nothing after %s', async (_name, result) => {
-    mint.mockResolvedValueOnce(result)
+  it.each<[string, number | null]>([
+    ['a refused grant', 403],
+    ['an SSO-enforced workspace', 403],
+    ['an unavailable workspace', 404],
+    ['a rate limit', 429],
+    ['a server error', 503],
+    ['a network error', null]
+  ])('hands out nothing after %s', async (_name, status) => {
+    mint.mockResolvedValue({ kind: 'failed', status })
 
     await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
   })
 
-  describe('while Cloud refuses to mint for this grant', () => {
-    beforeEach(() => {
-      mint.mockResolvedValue({ kind: 'refused' })
-    })
+  it('hands out nothing, and does not ask Cloud, for a grant without the mint scope', async () => {
+    grants = new ViewWorkspaceGrants(
+      {
+        currentWorkspaceId: () => 'ws-1',
+        getAccessToken: async () => accessToken('ws-1', 'comfy-cloud:user:read')
+      },
+      mint
+    )
 
-    it('keeps handing the pinned access token, and stops asking Cloud', async () => {
-      await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(accessToken('ws-1'))
-      await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(accessToken('ws-1'))
-      expect(mint).toHaveBeenCalledOnce()
-    })
-
-    it('never hands an access token holding scopes this build did not ask for', async () => {
-      grants = new ViewWorkspaceGrants(
-        {
-          currentWorkspaceId: () => 'ws-1',
-          getAccessToken: async () => accessToken('ws-1', 'comfy-cloud:user:read mint')
-        },
-        mint
-      )
-
-      await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
-    })
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
+    expect(mint).not.toHaveBeenCalled()
   })
 })

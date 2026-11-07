@@ -39,11 +39,12 @@ import {
   switchWorkspaceForSender
 } from './embeddedSession'
 import type { EmbeddedSessionSender } from './embeddedSession'
+import { CLOUD_CONFIG } from '../cloud/config'
 import { _resetForTest as resetViewGrants } from './viewWorkspaceGrants'
 
 function jwt(claims: Record<string, unknown>): string {
   const b64 = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
+  return `${b64({ alg: 'ES256' })}.${b64({ scope: CLOUD_CONFIG.scope, ...claims })}.sig`
 }
 
 const ACCESS = jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-1' })
@@ -207,6 +208,17 @@ describe('embeddedSession', () => {
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('asks a view to sign in again, and hands it nothing, while the grant predates the mint scope', async () => {
+    mocks.getAccessToken.mockResolvedValue(
+      jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
+    )
+    const { event } = view('http://127.0.0.1:8000')
+
+    await expect(stateForSender(event)).resolves.toEqual({ status: 'signed_out' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    expect(mocks.mint).not.toHaveBeenCalled()
   })
 
   it('reads signed_out when Desktop has no session', async () => {
