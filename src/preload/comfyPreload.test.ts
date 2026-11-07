@@ -78,6 +78,30 @@ describe('comfyPreload model access bridge', () => {
     mocks.send.mockReset()
   })
 
+  it('queries current host enrollment eligibility without reporting an exposure', async () => {
+    mocks.invoke.mockResolvedValue(false)
+    expect(await hostedBridge().Telemetry.canEnrollProactiveGreeting!('user-a')).toBe(false)
+    expect(mocks.invoke).toHaveBeenCalledWith('telemetry:can-enroll-proactive-greeting', 'user-a')
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it('advertises pair attribution and relays its flat fields through the existing capture channel', () => {
+    const bridge = hostedBridge()
+    expect(bridge.Telemetry.proactiveGreetingExperimentVersion).toBe(1)
+    const properties = {
+      proactive_greeting_user_id: 'user-a',
+      proactive_greeting_workspace_id: 'workspace-a',
+      proactive_greeting_group_key: '["user-a","workspace-a"]',
+      proactive_greeting_variant: 'control',
+      canvas_state: 'empty'
+    }
+    bridge.Telemetry.capture('$experiment_exposure', properties)
+    expect(mocks.send).toHaveBeenCalledWith('telemetry:capture', {
+      event: '$experiment_exposure',
+      properties
+    })
+  })
+
   it('forwards hosted frontend exceptions through the scrubbed Desktop telemetry channel', () => {
     const bridge = hostedBridge()
     const error = new Error('boom')

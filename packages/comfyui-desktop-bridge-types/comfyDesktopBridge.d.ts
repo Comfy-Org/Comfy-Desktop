@@ -158,6 +158,10 @@ export interface ComfyDesktop2LogsBridge {
   onOutput(callback: (msg: LogsOutputMsg) => void): () => void
 }
 export interface ComfyDesktop2TelemetryBridge {
+  /** Supports validated user/workspace attribution for the proactive greeting experiment. */
+  readonly proactiveGreetingExperimentVersion?: 1
+  /** Current analytics eligibility only; capture rechecks consent and actor before delivery. */
+  canEnrollProactiveGreeting?(userId: string): Promise<boolean>
   capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void
   /** Capture a hosted-frontend exception through Desktop's privacy and release-context boundary. */
   captureException?(error: ComfyDesktop2Error, properties?: ComfyDesktop2TelemetryProperties): void
