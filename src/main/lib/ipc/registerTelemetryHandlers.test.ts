@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
+  canEnrollProactiveGreeting: vi.fn(() => true),
   captureExceptionAndForward: vi.fn((_error: unknown, _properties: unknown) => true),
   findEntryByComfySender: vi.fn(),
   getFlag: vi.fn(),
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   on: vi.fn(),
   recordExposure: vi.fn(),
   reportFirebaseAuthState: vi.fn(),
+  viewsReportingFirebaseUser: vi.fn((): unknown[] => []),
   registerPersonProperties: vi.fn()
 }))
 
@@ -28,12 +30,14 @@ vi.mock('../telemetry', () => ({
   // pull in telemetry.ts's electron/posthog-node imports under the stub mock.
   asDeployment: (v: unknown) => (v === 'local' || v === 'cloud' || v === 'remote' ? v : null),
   emit: mocks.capture,
+  canEnrollProactiveGreeting: mocks.canEnrollProactiveGreeting,
   captureExceptionAndForward: mocks.captureExceptionAndForward,
   registerPersonProperties: mocks.registerPersonProperties
 }))
 
 vi.mock('../firebaseAuthIdentity', () => ({
-  reportFirebaseAuthState: mocks.reportFirebaseAuthState
+  reportFirebaseAuthState: mocks.reportFirebaseAuthState,
+  viewsReportingFirebaseUser: mocks.viewsReportingFirebaseUser
 }))
 
 vi.mock('../experiments', () => ({
@@ -72,6 +76,68 @@ describe('registerTelemetryHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     registerTelemetryHandlers()
+  })
+
+  it('admits flat pair attribution only from the main frame of its authenticated hosted view', () => {
+    const event = identityEvent('https://cloud.comfy.org/') as { sender: unknown }
+    const properties = {
+      proactive_greeting_user_id: 'user-a',
+      proactive_greeting_workspace_id: 'workspace-a',
+      proactive_greeting_group_key: '["user-a","workspace-a"]',
+      proactive_greeting_variant: 'generic',
+      canvas_state: 'workflow'
+    }
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
+    mocks.viewsReportingFirebaseUser.mockReturnValue([event.sender])
+    listener('telemetry:capture')(event, { event: '$experiment_exposure', properties })
+    expect(mocks.capture).toHaveBeenCalledWith('$experiment_exposure', {
+      ...properties,
+      deployment: 'local'
+    })
+    mocks.capture.mockClear()
+    mocks.viewsReportingFirebaseUser.mockReturnValue([])
+    listener('telemetry:capture')(event, { event: '$experiment_exposure', properties })
+    expect(mocks.capture).not.toHaveBeenCalled()
+    mocks.viewsReportingFirebaseUser.mockReturnValue([event.sender])
+    listener('telemetry:capture')(
+      { ...event, senderFrame: null },
+      { event: '$experiment_exposure', properties }
+    )
+    expect(mocks.capture).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed or incomplete experiment events before the generic relay', () => {
+    listener('telemetry:capture')(null, {
+      event: '$experiment_exposure',
+      properties: {
+        $feature_flag: 'agent-proactive-greeting-v1'
+      }
+    })
+    listener('telemetry:capture')(null, {
+      event: 'app:agent_message_sent',
+      properties: {
+        proactive_greeting_user_id: 'user-a'
+      }
+    })
+    expect(mocks.capture).not.toHaveBeenCalled()
+  })
+
+  it('answers enrollment eligibility only for the authenticated hosted main-frame actor', () => {
+    const handler = mocks.handle.mock.calls.find(
+      ([channel]) => channel === 'telemetry:can-enroll-proactive-greeting'
+    )![1] as (event: unknown, user: unknown) => boolean
+    const event = identityEvent('https://cloud.comfy.org/') as { sender: unknown }
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
+    mocks.viewsReportingFirebaseUser.mockReturnValue([event.sender])
+    mocks.canEnrollProactiveGreeting.mockReturnValue(true)
+    expect(handler(event, 'user-a')).toBe(true)
+    expect(handler(event, ' user-a ')).toBe(false)
+    expect(handler({ ...event, senderFrame: null }, 'user-a')).toBe(false)
+    mocks.canEnrollProactiveGreeting.mockReturnValue(false)
+    expect(handler(event, 'user-a')).toBe(false)
+    mocks.canEnrollProactiveGreeting.mockReturnValue(true)
+    mocks.viewsReportingFirebaseUser.mockReturnValue([])
+    expect(handler(event, 'user-a')).toBe(false)
   })
 
   it('caps event property keys, arrays, and strings', () => {

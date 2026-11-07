@@ -110,6 +110,11 @@
  */
 import { app } from 'electron'
 import { PostHog } from 'posthog-node'
+import {
+  parseProactiveGreetingAttribution,
+  proactiveGreetingProperties,
+  PROACTIVE_GREETING_FLAG
+} from './proactiveGreetingTelemetry'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
@@ -190,6 +195,7 @@ export function _resetTelemetryRelayTargets(): void {
  * close an in-flight PostHog client - tests bring their own mocked one.
  */
 export function _resetForTest(): void {
+  proactiveGreetingExposures.clear()
   client = null
   distinctId = null
   anonymousDistinctId = null
@@ -1415,6 +1421,20 @@ function capturePersonProperties(
   return capture('comfy.desktop.person.set', properties)
 }
 
+// Process-local dedup only: this is not a cross-install enrollment ledger.
+const proactiveGreetingExposures = new Set<string>()
+
+/** Read-only eligibility: never bind an identity or bypass the host's consent owner. */
+export function canEnrollProactiveGreeting(userId: string): boolean {
+  return (
+    canEmit() &&
+    consentState === 'granted' &&
+    boundUserId === userId &&
+    distinctId === userId &&
+    !firebaseWritesQuarantined()
+  )
+}
+
 /**
  * Returns whether the event was admitted. A `false` means it was dropped
  * (consent gate, volume guard, or SDK failure); one-shot callers use this to
@@ -1433,6 +1453,8 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
   recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
+  const attribution = parseProactiveGreetingAttribution(event, properties)
+  if (attribution === null || (attribution && attribution.userId !== boundUserId)) return false
   if (!_checkRateLimit(event)) return false
   if (firebaseWritesQuarantined()) {
     if (
@@ -1454,6 +1476,14 @@ function deliverEvent(
   timestamp: Date | null
 ): boolean {
   try {
+    // Recheck after quarantine as well. A delayed event must never acquire a new actor.
+    const attribution = parseProactiveGreetingAttribution(event, properties)
+    if (attribution === null || (attribution && attribution.userId !== boundUserId)) return false
+    const exposureKey =
+      attribution && event === '$experiment_exposure'
+        ? JSON.stringify([attribution.groupKey, attribution.variant])
+        : null
+    if (exposureKey && proactiveGreetingExposures.has(exposureKey)) return false
     // Per-call properties override defaults on key collision - callers
     // that explicitly pass `app_version` (e.g. session-start payload,
     // legacy event re-emitters) win.
@@ -1465,9 +1495,20 @@ function deliverEvent(
     client!.capture({
       distinctId: distinctId!,
       event,
-      properties: scrubProperties(merged),
+      properties: {
+        ...scrubProperties(merged),
+        ...(attribution ? proactiveGreetingProperties(attribution) : {}),
+        ...(exposureKey
+          ? {
+              $feature_flag: PROACTIVE_GREETING_FLAG,
+              $feature_flag_response: attribution!.variant
+            }
+          : {})
+      },
       ...(timestamp ? { timestamp } : {})
     })
+    // An SDK rejection or consent/quarantine rejection must not consume enrollment.
+    if (exposureKey) proactiveGreetingExposures.add(exposureKey)
     if (forward) forwardToRenderer(event, properties)
     return true
   } catch {

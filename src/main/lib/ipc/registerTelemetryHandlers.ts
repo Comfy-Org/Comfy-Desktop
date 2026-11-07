@@ -10,7 +10,8 @@ import {
   type ExperimentExposureSource
 } from '../experiments'
 import { normalizeExceptionContext } from '../../../shared/piiScrub'
-import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
+import { reportFirebaseAuthState, viewsReportingFirebaseUser } from '../firebaseAuthIdentity'
+import { parseProactiveGreetingAttribution } from '../proactiveGreetingTelemetry'
 import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
 import { normalizePostHogUserId } from '../opaqueIdentifier'
 
@@ -29,7 +30,9 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function firebaseAuthReporterFrame(event: IpcMainEvent): WebFrameMain | null {
+type HostedSenderEvent = Pick<IpcMainEvent, 'sender' | 'senderFrame'>
+
+function firebaseAuthReporterFrame(event: HostedSenderEvent): WebFrameMain | null {
   const frame = event.senderFrame
   const mainFrame = event.sender.mainFrame
   if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId)
@@ -191,11 +194,34 @@ function withPlatformAxes(
   return properties
 }
 
+function isProactiveGreetingSender(event: HostedSenderEvent, userId: string): boolean {
+  return Boolean(
+    event &&
+    firebaseAuthReporterFrame(event) &&
+    findEntryByComfySender(event.sender) &&
+    viewsReportingFirebaseUser(userId).includes(event.sender)
+  )
+}
+
 export function registerTelemetryHandlers(): void {
+  ipcMain.handle('telemetry:can-enroll-proactive-greeting', (event, value: unknown) => {
+    const userId = normalizePostHogUserId(value)
+    return (
+      userId !== null &&
+      userId === value &&
+      isProactiveGreetingSender(event, userId) &&
+      mainTelemetry.canEnrollProactiveGreeting(userId)
+    )
+  })
+
   ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.emit(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
+    const properties = asProps(payload.properties)
+    const attribution = parseProactiveGreetingAttribution(eventName, properties)
+    if (attribution === null) return
+    if (attribution && !isProactiveGreetingSender(event, attribution.userId)) return
+    mainTelemetry.emit(eventName, withPlatformAxes(properties, event?.sender))
   })
 
   ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {

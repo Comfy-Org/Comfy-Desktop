@@ -339,6 +339,154 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   telemetry._test_resetVolumeGuards()
 }
 
+describe('proactive greeting pair attribution', () => {
+  const exposure = '$experiment_exposure'
+  function pair(workspace = 'workspace-a', user = 'firebase-user'): Record<string, string> {
+    return {
+      proactive_greeting_user_id: user,
+      proactive_greeting_workspace_id: workspace,
+      proactive_greeting_group_key: JSON.stringify([user, workspace]),
+      proactive_greeting_variant: 'control',
+      canvas_state: 'empty'
+    }
+  }
+  function signIn(): void {
+    setupTelemetry()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    captured.length = 0
+  }
+  const exposures = () => captured.filter((call) => call.event === exposure)
+
+  it('only permits enrollment for the current authenticated actor with granted analytics consent', () => {
+    setupTelemetry()
+    expect(telemetry.canEnrollProactiveGreeting('test-distinct-id')).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+    expect(telemetry.canEnrollProactiveGreeting('other-user')).toBe(false)
+    for (const consent of ['denied', 'undecided'] as const) {
+      telemetry.setConsentState(consent)
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+    }
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+  })
+
+  it.each(['control', 'generic', 'canvas-prefill', 'canvas-only'])(
+    'attributes %s exposure and send to the canonical user and frozen workspace',
+    (variant) => {
+      signIn()
+      const properties = {
+        ...pair(),
+        proactive_greeting_variant: variant,
+        distinct_id: 'spoofed-user',
+        $user_id: 'spoofed-user'
+      }
+      telemetry.capture(exposure, properties)
+      telemetry.capture('app:agent_message_sent', properties)
+      expect(captured).toHaveLength(2)
+      for (const call of captured) {
+        expect(call.distinctId).toBe('firebase-user')
+        expect(call.properties).toMatchObject({
+          $groups: { user_workspace: '["firebase-user","workspace-a"]' },
+          '$feature/agent-proactive-greeting-v1': variant,
+          user_id: 'firebase-user',
+          distinct_id: 'firebase-user',
+          $user_id: 'firebase-user',
+          workspace_id: 'workspace-a'
+        })
+      }
+      expect(exposures()[0]?.properties).toMatchObject({
+        $feature_flag: 'agent-proactive-greeting-v1',
+        $feature_flag_response: variant
+      })
+    }
+  )
+
+  it.each([
+    { proactive_greeting_group_key: '["different-user","workspace-a"]' },
+    { proactive_greeting_workspace_id: '' },
+    { proactive_greeting_variant: 'unknown' },
+    { proactive_greeting_user_id: ' firebase-user ' },
+    { canvas_state: 'unknown' }
+  ])('rejects malformed attribution %j', (invalid) => {
+    signIn()
+    expect(telemetry.capture(exposure, { ...pair(), ...invalid })).toBe(false)
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('deduplicates only successful exposure admission per pair and variant in this process', () => {
+    signIn()
+    posthogClientMock.failNextCaptures = 1
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    expect(telemetry.capture(exposure, pair())).toBe(true)
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    telemetry.capture(exposure, pair('workspace-b'))
+    expect(exposures()).toHaveLength(2)
+    telemetry.capture('app:agent_message_sent', pair())
+    telemetry.capture('app:agent_message_sent', pair())
+    expect(captured.filter((call) => call.event === 'app:agent_message_sent')).toHaveLength(2)
+  })
+
+  it.each(['denied', 'undecided'] as const)(
+    'does not consume exposure while consent is %s',
+    (consent) => {
+      signIn()
+      telemetry.setConsentState(consent)
+      expect(telemetry.capture(exposure, pair())).toBe(false)
+      expect(exposures()).toHaveLength(0)
+      telemetry.setConsentState('granted')
+      expect(telemetry.capture(exposure, pair())).toBe(true)
+    }
+  )
+
+  it('drops old-user events after account switch rather than attributing them to the new user', () => {
+    signIn()
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(telemetry.capture('app:agent_message_sent', pair())).toBe(false)
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('holds and deduplicates exposure during quarantine, retaining originating workspace', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.capture(exposure, pair())
+    telemetry.capture('app:agent_message_sent', pair('workspace-b'))
+    expect(exposures()).toHaveLength(0)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(1)
+    expect(
+      captured.find((call) => call.event === 'app:agent_message_sent')?.properties
+    ).toMatchObject({
+      $groups: { user_workspace: '["firebase-user","workspace-b"]' }
+    })
+  })
+
+  it('does not replay quarantined exposure after consent is revoked', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.setConsentState('denied')
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('discards quarantined old-user attribution when consensus changes account', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(exposures()).toHaveLength(0)
+  })
+})
+
 afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
