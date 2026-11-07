@@ -1495,6 +1495,7 @@ function deliverEvent(
     client!.capture({
       distinctId: distinctId!,
       event,
+      ...(attribution ? { groups: { user_workspace: attribution.groupKey } } : {}),
       properties: {
         ...scrubProperties(merged),
         ...(attribution ? proactiveGreetingProperties(attribution) : {}),

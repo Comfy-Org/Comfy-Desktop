@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
+import type { PostHog } from 'posthog-node'
 import type { TelemetryValue } from './telemetry'
 import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
@@ -45,12 +46,7 @@ function makeStubWebContents(): {
   }
 }
 
-interface CapturedCall {
-  distinctId: string
-  event: string
-  properties?: Record<string, unknown>
-  timestamp?: Date
-}
+type CapturedCall = Parameters<PostHog['capture']>[0]
 const captured: CapturedCall[] = []
 
 interface IdentifyCall {
@@ -392,6 +388,9 @@ describe('proactive greeting pair attribution', () => {
       expect(captured).toHaveLength(2)
       for (const call of captured) {
         expect(call.distinctId).toBe('firebase-user')
+        expect(call.groups).toEqual({
+          user_workspace: '["firebase-user","workspace-a"]'
+        })
         expect(call.properties).toMatchObject({
           $groups: { user_workspace: '["firebase-user","workspace-a"]' },
           '$feature/agent-proactive-greeting-v1': variant,
