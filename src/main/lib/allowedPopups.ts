@@ -1,3 +1,5 @@
+import { isFirebaseAuthHandlerUrl } from '../auth/firebaseBridge/intercept'
+
 /** Shared so the checkout prefix in {@link POPUP_ALLOWED_PREFIXES} can't drift
  *  from {@link isCheckoutUrl}. */
 const CHECKOUT_PREFIX = 'https://checkout.comfy.org/'
@@ -36,6 +38,30 @@ export function isCheckoutReturnUrl(url: string): boolean {
   }
   if (host === 'checkout.comfy.org') return false
   return host === 'comfy.org' || host.endsWith('.comfy.org')
+}
+
+export type ReservedTabRoute = 'load' | 'checkout' | 'download' | 'external' | 'block'
+
+/**
+ * Where a reserved blank tab (`window.open('', '_blank')`, then `tab.location =
+ * url`) may go on its first navigation. The window-open handler only sees
+ * `about:blank`, so this re-applies its policy to the real destination:
+ * checkout and unknown pages leave for the system browser, downloads go to the
+ * tray, and only allowlisted popups and the page's own `blob:` URLs load in-app.
+ */
+export function reservedTabRoute(url: string): ReservedTabRoute {
+  // Sign-in only works through the system-browser bridge; never load it here.
+  if (isFirebaseAuthHandlerUrl(url)) return 'block'
+  if (isCheckoutUrl(url)) return 'checkout'
+  if (shouldOpenInPopup(url) || url.startsWith('blob:')) return 'load'
+  if (isLikelyDownloadUrl(url)) return 'download'
+  let protocol: string
+  try {
+    protocol = new URL(url).protocol
+  } catch {
+    return 'block'
+  }
+  return protocol === 'https:' || protocol === 'http:' ? 'external' : 'block'
 }
 
 /** Extensions indicating a download rather than something to open in the
