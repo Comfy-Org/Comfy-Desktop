@@ -9,6 +9,7 @@ const MINT_REFRESH_SKEW_MS = 60_000
 
 export interface GrantSession {
   currentWorkspaceId(): string | null
+  currentSubject(): string | null
   getAccessToken(): Promise<string | null>
 }
 
@@ -97,7 +98,7 @@ export class ViewWorkspaceGrants {
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now()) return cached.token
 
     const result = await this.mintOnce(accessToken, key, workspaceId)
-    if (epoch !== this.epoch) return null
+    if (epoch !== this.epoch || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return result.token

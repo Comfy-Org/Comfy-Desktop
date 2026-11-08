@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   openSystemModalAsync: vi.fn(async () => false),
   // session
   login: vi.fn(),
+  currentAuthGeneration: vi.fn(() => 1),
   logout: vi.fn(),
   status: vi.fn(),
   isSignedIn: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('../../popups/systemModal', () => ({
 vi.mock('../../devplatform/session', () => ({
   getCloudSession: () => ({
     login: mocks.login,
+    currentAuthGeneration: mocks.currentAuthGeneration,
     logout: mocks.logout,
     status: mocks.status,
     isSignedIn: mocks.isSignedIn,
@@ -199,6 +201,16 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.endViewGrants.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.allowDesktopWorkspace.mock.invocationCallOrder[0]!
     )
+  })
+
+  it('signIn leaves view grants alone when a newer switch superseded it', async () => {
+    mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+
+    await handler('comfybuilder:signIn')({})
+
+    expect(mocks.endViewGrants).not.toHaveBeenCalled()
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
   // The regression that made a file-menu sign-in look like nothing happened:

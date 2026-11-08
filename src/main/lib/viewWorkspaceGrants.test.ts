@@ -56,6 +56,7 @@ beforeEach(() => {
   grants = new ViewWorkspaceGrants(
     {
       currentWorkspaceId: () => current,
+      currentSubject: () => (current ? user : null),
       getAccessToken: async () => (current ? accessToken(current) : null)
     },
     mint
@@ -170,6 +171,7 @@ describe('ViewWorkspaceGrants', () => {
     grants = new ViewWorkspaceGrants(
       {
         currentWorkspaceId: () => 'ws-1',
+        currentSubject: () => user,
         getAccessToken: async () => accessToken('ws-1', 'comfy-cloud:user:read')
       },
       mint
@@ -194,6 +196,7 @@ describe('ViewWorkspaceGrants', () => {
     grants = new ViewWorkspaceGrants(
       {
         currentWorkspaceId: () => current,
+        currentSubject: () => (current ? user : null),
         getAccessToken: () =>
           reads++ === 0 ? before.promise : Promise.resolve(accessToken('ws-1'))
       },
@@ -210,5 +213,18 @@ describe('ViewWorkspaceGrants', () => {
     await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
     expect(mint).toHaveBeenCalledOnce()
     expect(mint).toHaveBeenCalledWith(accessToken('ws-1'), 'ws-1')
+  })
+
+  it('drops a mint reply that lands after another account signed in to the same workspace', async () => {
+    const reply = deferred<WorkspaceTokenMint>()
+    mint.mockReturnValueOnce(reply.promise)
+    const pending = grants.tokenFor(viewA, 'ws-1')
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledOnce())
+    user = 'user-2'
+    reply.resolve(minted('ws-1'))
+
+    await expect(pending).resolves.toBeNull()
+    await grants.tokenFor(viewA, 'ws-1')
+    expect(mint).toHaveBeenCalledTimes(2)
   })
 })

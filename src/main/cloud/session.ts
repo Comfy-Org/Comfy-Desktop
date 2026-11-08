@@ -7,7 +7,7 @@
  * the main process; the UI only ever gets {@link AuthStatus} + {@link Workspace}.
  */
 import type { TokenProvider } from '../comfybuilder'
-import { workspaceIdOf } from './claims'
+import { subjectOf, workspaceIdOf } from './claims'
 import type { OAuthOptions } from './oauth'
 import { openAuthorizePage, refresh, signIn } from './oauth'
 import {
@@ -74,6 +74,17 @@ export class CloudSession {
 
   isSignedIn(): boolean {
     return getAuthStatus().signedIn
+  }
+
+  /** Bumped by every login, workspace switch and logout. */
+  currentAuthGeneration(): number {
+    return this.authGeneration
+  }
+
+  /** The account the active token belongs to, or null when signed out. */
+  currentSubject(): string | null {
+    const t = loadTokens()
+    return t ? subjectOf(t.accessToken) : null
   }
 
   /** The workspace the active token is scoped to, or null when signed out. */

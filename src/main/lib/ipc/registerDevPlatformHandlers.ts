@@ -121,10 +121,14 @@ export function broadcastAuthChanged(status: AuthStatus): void {
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
   clearVersionCache()
-  const status = await session.login()
+  const login = session.login()
+  const generation = session.currentAuthGeneration()
+  const status = await login
   clearVersionCache()
-  getViewWorkspaceGrants().endAll()
-  getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  if (session.currentAuthGeneration() === generation) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
   broadcastAuthChanged(status)
   return status
 }
