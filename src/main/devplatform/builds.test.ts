@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  listTerminalVersions,
+  listUpdateVersions,
   listBuildRows,
   resolveHostArtifact,
   resolveHostArtifactForVersion,
   resolveSelectedHostArtifact
 } from './builds'
-import { clearVersionCache, getCachedVersions } from './versionCache'
+import { clearVersionCache, getAvailableUpdate, getCachedVersions } from './versionCache'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
@@ -138,7 +138,7 @@ describe('listBuildRows', () => {
       }
     ])
     expect(getCachedVersions('d1')?.versions).toEqual([5, 4])
-    expect(await listTerminalVersions(client, 'd1')).toEqual([5, 4])
+    expect(await listUpdateVersions(client, 'd1', HOST)).toEqual([5, 4])
     expect(await resolveHostArtifact(client, HOST, 'd1')).toMatchObject({
       version: 5,
       artifact: { id: 'cpu' }
@@ -279,7 +279,7 @@ describe('listBuildRows', () => {
   })
 })
 
-describe('listTerminalVersions', () => {
+describe('listUpdateVersions', () => {
   it('returns complete versions newest first, dropping unbuilt ones', async () => {
     const client = stubClient({
       versionsByBuild: {
@@ -291,7 +291,38 @@ describe('listTerminalVersions', () => {
         ]
       }
     })
-    expect(await listTerminalVersions(client as never, 'd1')).toEqual([5, 2])
+    expect(await listUpdateVersions(client as never, 'd1', HOST)).toEqual([5, 2])
+  })
+})
+
+describe('stopped update eligibility', () => {
+  const cases: [string, Artifact[]][] = [
+    ['no artifacts', []],
+    ['only a ready Windows artifact', [artifact({ os: 'windows' })]],
+    [
+      'only a stopped Linux artifact with a retained archive',
+      [artifact({ status: 'stopped', archiveRef: 'retained' })]
+    ]
+  ]
+
+  it.each(cases)('catalog does not advertise an update with %s', async (_name, artifacts) => {
+    const client = stubClient({
+      builds: [{ id: 'd1', name: 'Partial release' }],
+      versionsByBuild: { d1: [version(5, 'stopped'), version(4, 'complete')] },
+      artifactsByVersion: { v5: artifacts }
+    })
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 4]]))
+    expect(rows[0]).toMatchObject({ version: '5', state: 'platform-mismatch' })
+    expect(getCachedVersions('d1')?.versions).toEqual([4])
+    expect(getAvailableUpdate('d1', '4')).toBeUndefined()
+  })
+
+  it.each(cases)('update check does not advertise an update with %s', async (_name, artifacts) => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(5, 'stopped'), version(4, 'complete')] },
+      artifactsByVersion: { v5: artifacts }
+    })
+    expect(await listUpdateVersions(client, 'd1', HOST)).toEqual([4])
   })
 })
 

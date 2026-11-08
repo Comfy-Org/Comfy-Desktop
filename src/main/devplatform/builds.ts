@@ -5,7 +5,7 @@
 // load and to unit-test.
 import { isTerminalRelease } from '../comfybuilder/releases'
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
-import type { Artifact, Build, Host } from '../comfybuilder/types'
+import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPUCached } from '../lib/gpu'
 import { runPool } from '../sources/standalone/templateDownloadCore'
@@ -109,16 +109,9 @@ async function buildRow(
   }
 
   const allVersions = await client.listVersions(build.id)
-  // The manage view's version picker is built synchronously and can't fetch, so
-  // hand it what this read already saw.
-  setCachedVersions(
-    build.id,
-    allVersions.filter((v) => isTerminalRelease(v.status)).map((v) => v.version),
-    cacheGeneration
-  )
-
   const latest = latestTerminalVersion(allVersions)
   if (!latest) {
+    setCachedVersions(build.id, [], cacheGeneration)
     const pending = allVersions.some(
       (v) => v.status === 'queued' || v.status === 'building' || v.status === 'stopping'
     )
@@ -138,6 +131,13 @@ async function buildRow(
   }
 
   const { artifacts } = await client.getVersion(latest.id)
+  setCachedVersions(
+    build.id,
+    await updateVersions(allVersions, host, async (id) =>
+      id === latest.id ? artifacts : (await client.getVersion(id)).artifacts
+    ),
+    cacheGeneration
+  )
   const targetOs = [
     ...new Set(
       artifacts.filter((artifact) => artifact.status === 'ready').map((artifact) => artifact.os)
@@ -171,9 +171,9 @@ async function buildRow(
 /**
  * Every build the signed-in workspace can see, as display rows. A build whose
  * version lookup fails is dropped for THIS list rather than
- * failing the whole grid. Rows resolve through a bounded pool: each one costs
- * two gateway requests (listVersions + getVersion), so an unbounded map over a
- * large catalog would fire 2N concurrent requests and trip rate limits.
+ * failing the whole grid. Rows resolve through a bounded pool; artifact reads
+ * within each row are sequential so stopped-release eligibility checks cannot
+ * exceed the gateway request concurrency limit.
  */
 const ROW_CONCURRENCY = 6
 
@@ -266,15 +266,34 @@ export async function resolveHostArtifactForVersion(
   return artifact ? { artifact, version: target.version } : null
 }
 
-/** Every complete or stopped version, newest first - what the manage view reports as
- *  published, and the basis for a future version picker. */
-export async function listTerminalVersions(
-  client: Pick<ComfyBuilderClient, 'listVersions'>,
-  buildId: string
+/** Complete releases retain their update policy; stopped releases need a ready
+ * host-compatible artifact before the manage view may advertise them. */
+async function updateVersions(
+  versions: BuildVersion[],
+  host: Host,
+  loadArtifacts: (id: string) => Promise<Artifact[]>
 ): Promise<number[]> {
-  const versions = await client.listVersions(buildId)
-  return versions
-    .filter((v) => isTerminalRelease(v.status))
-    .map((v) => v.version)
-    .sort((a, b) => b - a)
+  const eligible: number[] = []
+  for (const version of versions) {
+    if (version.status === 'complete') {
+      eligible.push(version.version)
+    } else if (version.status === 'stopped') {
+      const artifact = selectArtifactForHost(await loadArtifacts(version.id), host)
+      if (artifact) eligible.push(version.version)
+    }
+  }
+  return eligible.sort((a, b) => b - a)
+}
+
+/** Versions eligible for the manage view's update offers, newest first. */
+export async function listUpdateVersions(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  buildId: string,
+  host: Host
+): Promise<number[]> {
+  return updateVersions(
+    await client.listVersions(buildId),
+    host,
+    async (id) => (await client.getVersion(id)).artifacts
+  )
 }

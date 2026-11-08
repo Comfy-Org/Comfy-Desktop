@@ -61,7 +61,7 @@ vi.mock('./modelStagingTask', () => ({
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
-  listTerminalVersions: vi.fn(async () => [])
+  listUpdateVersions: vi.fn(async () => [])
 }))
 
 import fs, { promises as fsp } from 'fs'
@@ -75,7 +75,7 @@ import {
   venvPython
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
-import { listTerminalVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
+import { listUpdateVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
   getCachedVersions,
@@ -1229,7 +1229,7 @@ describe('comfybuilder check-update', () => {
   })
 
   it('warms the version cache from the catalog', async () => {
-    vi.mocked(listTerminalVersions).mockResolvedValue([7, 3])
+    vi.mocked(listUpdateVersions).mockResolvedValue([7, 3])
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1238,10 +1238,14 @@ describe('comfybuilder check-update', () => {
     )
     expect(result.ok).toBe(true)
     expect(getCachedVersions('d1')?.versions).toEqual([7, 3])
+    expect(listUpdateVersions).toHaveBeenCalledWith(expect.anything(), 'd1', {
+      os: 'linux',
+      gpu: 'nvidia'
+    })
   })
 
   it('reports failure and leaves the cache untouched when the catalog read throws', async () => {
-    vi.mocked(listTerminalVersions).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(listUpdateVersions).mockRejectedValueOnce(new Error('offline'))
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1255,7 +1259,7 @@ describe('comfybuilder check-update', () => {
 
   it('does not cache an update check completed after authentication changed', async () => {
     let resolveVersions!: (versions: number[]) => void
-    vi.mocked(listTerminalVersions).mockReturnValueOnce(
+    vi.mocked(listUpdateVersions).mockReturnValueOnce(
       new Promise<number[]>((resolve) => {
         resolveVersions = resolve
       })
@@ -1269,6 +1273,7 @@ describe('comfybuilder check-update', () => {
     const startedGeneration = getVersionCacheGeneration()
     clearVersionCache()
     expect(getVersionCacheGeneration()).toBeGreaterThan(startedGeneration)
+    await vi.waitFor(() => expect(resolveVersions).toBeDefined())
     resolveVersions([9])
 
     await expect(result).resolves.toEqual({ ok: true })
