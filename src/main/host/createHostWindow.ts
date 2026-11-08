@@ -17,6 +17,7 @@ import {
 import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
+  isExternalBrowserUrl,
   isLikelyDownloadUrl,
   shouldOpenInPopup
 } from '../lib/allowedPopups'
@@ -1177,7 +1178,13 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    shell.openExternal(childUrl)
+    // Anything else goes to the system browser, but only for http(s): the
+    // open-external IPC handler enforces the same scheme allowlist, and page
+    // content must not be able to push file:, smb: or app protocol URLs to
+    // the OS handler.
+    if (isExternalBrowserUrl(childUrl)) {
+      shell.openExternal(childUrl)
+    }
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
