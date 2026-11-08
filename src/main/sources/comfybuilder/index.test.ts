@@ -74,6 +74,7 @@ import {
   resolveModelManifest,
   venvPython
 } from '../../comfybuilder'
+import { getBuilderClient } from '../../devplatform/session'
 import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
@@ -919,6 +920,83 @@ describe('comfybuilder update-comfyui', () => {
       stat.mockRestore()
     }
   })
+
+  it.each(['missing release', 'manifest 404', 'manifest timeout'])(
+    'preserves the working install when a stopped-version lookup fails: %s',
+    async (failure) => {
+      access.mockImplementation(realFsp.access)
+      mkdir.mockImplementation(realFsp.mkdir)
+      rename.mockImplementation(realFsp.rename)
+      rm.mockImplementation(realFsp.rm)
+      writeFile.mockImplementation(realFsp.writeFile)
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-manifest-failure-'))
+      const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
+      const fetchModelManifest = vi.fn(async () => {
+        throw new Error(failure)
+      })
+      const client = {
+        listVersions: async () => [
+          { id: 'older-complete', version: 1, status: 'complete' },
+          ...(failure === 'missing release'
+            ? []
+            : [{ id: 'selected-stopped', version: 9, status: 'stopped' }])
+        ],
+        fetchModelManifest
+      }
+      vi.mocked(getBuilderClient)
+        .mockReturnValueOnce(client as never)
+        .mockReturnValueOnce(client as never)
+      vi.mocked(resolveModelManifest).mockImplementationOnce(real.resolveModelManifest)
+      vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
+      vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
+        await fsp.mkdir(path.join(installPath, 'venv'), { recursive: true })
+        await fsp.mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
+        await fsp.writeFile(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
+      })
+      const tools = actionTools()
+      try {
+        await fsp.mkdir(path.dirname(real.venvPython(root)), { recursive: true })
+        await fsp.writeFile(real.venvPython(root), 'old python')
+        await fsp.mkdir(path.join(root, 'ComfyUI', 'models'), { recursive: true })
+        await fsp.mkdir(path.join(root, 'ComfyUI', 'user'), { recursive: true })
+        await fsp.writeFile(path.join(root, 'ComfyUI', 'main.py'), 'old code')
+        await fsp.writeFile(path.join(root, 'ComfyUI', 'models', 'existing.bin'), 'existing model')
+        await fsp.writeFile(
+          path.join(root, 'ComfyUI', 'user', 'workflow.json'),
+          'existing workflow'
+        )
+        const result = await comfybuilder.handleAction(
+          'update-comfyui',
+          record({ installPath: root, artifactId: 'art-1', modelsStaged: true }),
+          { version: 9 },
+          tools as never
+        )
+        expect(result.ok).toBe(false)
+        expect(result.message).toContain(
+          failure === 'missing release' ? 'build version 9' : failure
+        )
+        expect(tools.updates.at(-1)).toMatchObject({
+          version: '1',
+          artifactId: 'art-1',
+          status: 'installed'
+        })
+        expect(await fsp.readFile(real.venvPython(root), 'utf8')).toBe('old python')
+        expect(await fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).toBe('old code')
+        expect(
+          await fsp.readFile(path.join(root, 'ComfyUI', 'models', 'existing.bin'), 'utf8')
+        ).toBe('existing model')
+        expect(
+          await fsp.readFile(path.join(root, 'ComfyUI', 'user', 'workflow.json'), 'utf8')
+        ).toBe('existing workflow')
+        expect(startModelStaging).not.toHaveBeenCalled()
+        expect(fs.existsSync(path.join(root, '.comfybuilder-environment-ready'))).toBe(false)
+        if (failure === 'missing release') expect(fetchModelManifest).not.toHaveBeenCalled()
+        else expect(fetchModelManifest.mock.calls).toEqual([['selected-stopped']])
+      } finally {
+        await realFsp.rm(root, { recursive: true, force: true })
+      }
+    }
+  )
 
   it('reports failed when the environment did not survive the attempt', async () => {
     // Restoring the record but still claiming `installed` would advertise a

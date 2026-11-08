@@ -1,22 +1,9 @@
-/**
- * Build display + install-state policy: the UI layer, NOT the library.
- *
- * Builder gives raw builds, versions, and artifacts plus a pure host-matcher
- * (`compatibleArtifactsForHost`). This module applies the product
- * policy on top: for each Desktop build it resolves the latest COMPLETE version,
- * asks whether an artifact exists for THIS host, and flattens that into a single
- * renderer-safe catalog row (`installable` / `no-build` / `platform-mismatch`).
- * The workspace install wizard can select a renderer-safe artifact id while the
- * download reference and integrity value remain in the main process.
- *
- * `update-available` also lives here: given the installed version (passed in by
- * the handler from the installations store), a row whose newer complete version
- * has a host-runnable artifact is marked updatable. An up-to-date Build remains
- * installable so a workspace can contain multiple instances of the same release.
- */
+/** Build catalog and install selection for terminal releases.
+ * Ready, host-compatible artifacts alone qualify; models resolve during installation. */
 // Import from the library's leaf modules (not its barrel): these are pure and
 // pull no Electron/filesystem side effects, so this policy module stays cheap to
 // load and to unit-test.
+import { isTerminalRelease } from '../comfybuilder/releases'
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Build, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
@@ -56,9 +43,9 @@ export interface BuildRow {
   installedVersion?: number
   /** Machine-readable reason for a blocked state. */
   blockedReason?: string
-  /** OSes targeted by ready artifacts in the latest complete release. */
+  /** OSes targeted by ready artifacts in the latest terminal release. */
   targetOs?: string[]
-  /** Runnable targets in the latest complete release, recommended first. */
+  /** Runnable targets in the latest terminal release, recommended first. */
   releaseTargets?: Array<{
     artifactId: string
     releaseVersion: number
@@ -84,19 +71,18 @@ export async function resolveHost(): Promise<Host> {
   return { os: hostOs(), gpu: mapped }
 }
 
-/** Latest complete version, or null. `complete` is the only terminal status in
- *  the builder's closed enum (queued | building | complete). */
-function latestCompleteVersion<T extends { version: number; status: string }>(
+/** Latest complete or stopped release; callers still require a ready artifact. */
+function latestTerminalVersion<T extends { version: number; status: string }>(
   versions: T[]
 ): T | null {
-  const complete = versions
-    .filter((v) => v.status === 'complete')
+  const terminal = versions
+    .filter((v) => isTerminalRelease(v.status))
     .sort((a, b) => b.version - a.version)
-  return complete[0] ?? null
+  return terminal[0] ?? null
 }
 
 /**
- * Resolve one catalog entry into a build display row: newest complete
+ * Resolve one catalog entry into a build display row: newest terminal
  * version, then whether it has a host-runnable artifact. Never drops the build: an
  * un-installable one becomes a blocked row with a reason, not a hidden entry.
  */
@@ -127,16 +113,15 @@ async function buildRow(
   // hand it what this read already saw.
   setCachedVersions(
     build.id,
-    allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
+    allVersions.filter((v) => isTerminalRelease(v.status)).map((v) => v.version),
     cacheGeneration
   )
 
-  const latest = latestCompleteVersion(allVersions)
+  const latest = latestTerminalVersion(allVersions)
   if (!latest) {
-    // A version still queued/building is "in progress", not "failed" - the
-    // builder's status enum has no failed state, so any non-complete version
-    // is pending work.
-    const pending = allVersions.some((v) => v.status === 'queued' || v.status === 'building')
+    const pending = allVersions.some(
+      (v) => v.status === 'queued' || v.status === 'building' || v.status === 'stopping'
+    )
     return {
       ...base,
       state: 'no-build',
@@ -222,7 +207,7 @@ export async function resolveBuildRows(
 
 /**
  * Resolve the artifact to install for one build on this host: the latest
- * complete version's host-matched artifact, or null when none is runnable here.
+ * terminal version's host-matched artifact, or null when none is runnable here.
  * This is the same policy `listBuildRows` renders, re-run at install time
  * against fresh catalog data.
  */
@@ -231,7 +216,7 @@ export async function resolveHostArtifact(
   host: Host,
   buildId: string
 ): Promise<ResolvedHostArtifact | null> {
-  const latest = latestCompleteVersion(await client.listVersions(buildId))
+  const latest = latestTerminalVersion(await client.listVersions(buildId))
   if (!latest) return null
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
@@ -248,7 +233,7 @@ export async function resolveSelectedHostArtifact(
   artifactId: string
 ): Promise<ResolvedHostArtifact | null> {
   const release = (await client.listVersions(buildId)).find(
-    (version) => version.version === releaseVersion && version.status === 'complete'
+    (version) => version.version === releaseVersion && isTerminalRelease(version.status)
   )
   if (!release) return null
   const { artifacts } = await client.getVersion(release.id)
@@ -262,7 +247,7 @@ export async function resolveSelectedHostArtifact(
  * The same resolution against ONE named version - what the manage view's update
  * action installs. Rollback and roll-forward are the same operation.
  *
- * Null when the version isn't published, isn't complete, or has no artifact this
+ * Null when the version isn't published, isn't terminal, or has no artifact this
  * machine can run, so the caller reports that instead of installing something
  * the host can't launch.
  */
@@ -273,7 +258,7 @@ export async function resolveHostArtifactForVersion(
   version: number
 ): Promise<ResolvedHostArtifact | null> {
   const target = (await client.listVersions(buildId)).find(
-    (v) => v.version === version && v.status === 'complete'
+    (v) => v.version === version && isTerminalRelease(v.status)
   )
   if (!target) return null
   const { artifacts } = await client.getVersion(target.id)
@@ -281,7 +266,7 @@ export async function resolveHostArtifactForVersion(
   return artifact ? { artifact, version: target.version } : null
 }
 
-/** Every complete version, newest first - what the manage view reports as
+/** Every complete or stopped version, newest first - what the manage view reports as
  *  published, and the basis for a future version picker. */
 export async function listCompleteVersions(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
@@ -289,7 +274,7 @@ export async function listCompleteVersions(
 ): Promise<number[]> {
   const versions = await client.listVersions(buildId)
   return versions
-    .filter((v) => v.status === 'complete')
+    .filter((v) => isTerminalRelease(v.status))
     .map((v) => v.version)
     .sort((a, b) => b - a)
 }

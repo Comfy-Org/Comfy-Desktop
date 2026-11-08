@@ -111,16 +111,53 @@ describe('listBuildRows', () => {
     expect(client.getVersion).toHaveBeenCalledWith('v2')
   })
 
-  it('marks no-build when no version has a completed status', async () => {
+  it('offers the ready CPU sibling of a stopped release and caches its version', async () => {
     const client = stubClient({
-      builds: [{ id: 'd1', name: 'Pending' }],
-      versionsByBuild: { d1: [version(1, 'building'), version(2, 'queued')] }
+      builds: [{ id: 'd1', name: 'Mixed targets' }],
+      versionsByBuild: {
+        d1: [version(6, 'stopping'), version(5, 'stopped'), version(4, 'complete')]
+      },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'cpu', gpu: 'cpu', accelVariant: 'cpu' }),
+          artifact({ id: 'stopped-cuda', status: 'stopped', archiveRef: 'retained' })
+        ],
+        v4: [artifact({ id: 'old-cuda' })]
+      }
     })
-    const rows = await listBuildRows(client as never, HOST)
-    const row = rows[0]!
-    expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
-    expect(row.version).toBeUndefined()
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 4]]))
+    expect(rows[0]).toMatchObject({ version: '5', state: 'update-available' })
+    expect(rows[0]!.releaseTargets).toEqual([
+      {
+        artifactId: 'cpu',
+        releaseVersion: 5,
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        recommended: true
+      }
+    ])
+    expect(getCachedVersions('d1')?.versions).toEqual([5, 4])
+    expect(await listCompleteVersions(client, 'd1')).toEqual([5, 4])
+    expect(await resolveHostArtifact(client, HOST, 'd1')).toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
   })
+
+  it.each(['queued', 'building', 'stopping'])(
+    'shows a %s release as in progress',
+    async (status) => {
+      const client = stubClient({
+        builds: [{ id: 'd1', name: 'Pending' }],
+        versionsByBuild: { d1: [version(3, status)] }
+      })
+      const rows = await listBuildRows(client as never, HOST)
+      const row = rows[0]!
+      expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
+      expect(row.version).toBeUndefined()
+    }
+  )
 
   it('marks an empty version list as build failed', async () => {
     const client = stubClient({ builds: [{ id: 'd1', name: 'Empty' }] })
@@ -314,23 +351,55 @@ describe('resolveSelectedHostArtifact', () => {
     expect(client.getVersion).toHaveBeenCalledWith('v5')
   })
 
+  it('revalidates the exact stopped version and rejects its unfinished targets', async () => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'stopped')] },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'cpu', gpu: 'cpu' }),
+          ...['queued', 'building', 'stopping', 'stopped', 'failed'].map((status) =>
+            artifact({ id: status, status, archiveRef: 'retained' })
+          )
+        ],
+        v6: [artifact({ id: 'newer-cuda' })]
+      }
+    })
+    await expect(resolveSelectedHostArtifact(client, HOST, 'd1', 5, 'cpu')).resolves.toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
+    await expect(resolveHostArtifactForVersion(client, HOST, 'd1', 5)).resolves.toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
+    for (const status of ['queued', 'building', 'stopping', 'stopped', 'failed']) {
+      await expect(resolveSelectedHostArtifact(client, HOST, 'd1', 5, status)).resolves.toBeNull()
+    }
+    expect(client.getVersion.mock.calls.every(([id]) => id === 'v5')).toBe(true)
+  })
+
   it.each([
     ['unknown release', 4, 'ready'],
     ['unfinished release', 7, 'ready'],
+    ['stopping release', 8, 'ready'],
     ['unknown artifact', 5, 'missing'],
     ['wrong OS', 5, 'windows'],
     ['wrong GPU', 5, 'amd'],
     ['unfinished artifact', 5, 'pending']
   ])('rejects %s', async (_name, releaseVersion, artifactId) => {
     const client = stubClient({
-      versionsByBuild: { d1: [version(5, 'complete'), version(7, 'building')] },
+      versionsByBuild: {
+        d1: [version(5, 'complete'), version(7, 'building'), version(8, 'stopping')]
+      },
       artifactsByVersion: {
         v5: [
           artifact({ id: 'ready' }),
           artifact({ id: 'windows', os: 'windows' }),
           artifact({ id: 'amd', gpu: 'amd' }),
           artifact({ id: 'pending', status: 'building' })
-        ]
+        ],
+        v7: [artifact({ id: 'ready' })],
+        v8: [artifact({ id: 'ready' })]
       }
     })
 
