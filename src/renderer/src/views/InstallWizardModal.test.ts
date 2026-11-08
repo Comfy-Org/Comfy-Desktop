@@ -60,13 +60,13 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('uses the new-instance title and local-install subtitle', async () => {
+  it('uses the install-build title and local-install subtitle', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.wizard-title').text()).toBe('Create a New Instance')
-    expect(wrapper.find('[aria-label="Create a New Instance"]').exists()).toBe(true)
+    expect(wrapper.get('.wizard-title').text()).toBe('Install a New Build')
+    expect(wrapper.find('[aria-label="Install a New Build"]').exists()).toBe(true)
     expect(wrapper.get('.wizard-lead').text()).toBe('Set up a fresh ComfyUI environment.')
   })
 
