@@ -46,6 +46,7 @@ import {
   resolveLauncherModelDirs,
   createSessionPath,
   buildLaunchEnv,
+  getAppVersion,
   checkRebootMarker,
   makeSendProgress,
   makeSendOutput,
@@ -108,6 +109,7 @@ import {
 } from '../../agentRequirementsLaunch'
 import type { PrefetchRequest } from '../../agentRequirementsLaunch'
 import { startAgentPrefetch } from '../../agentPrefetch'
+import { agentClientContext } from '../../agentClientContext'
 import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
@@ -187,6 +189,15 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** Consent is read at spawn, like enable_telemetry: a change takes effect at the next launch. */
+async function launchClientContext(): ReturnType<typeof agentClientContext> {
+  try {
+    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+  } catch {
+    return undefined
+  }
 }
 
 /** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
@@ -1879,10 +1890,13 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
+  // Before any port check, so the wait never sits between the port re-check and the reservation.
+  const clientContext = await launchClientContext()
+
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
-    const launchEnv = buildLaunchEnv(inst)
+    const launchEnv = buildLaunchEnv(inst, undefined, clientContext)
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
@@ -2271,7 +2285,7 @@ async function runLaunch(
   // Session path / env / progress plumbing before the port is reserved, so a
   // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
-  const launchEnv = buildLaunchEnv(inst, sessionPath)
+  const launchEnv = buildLaunchEnv(inst, sessionPath, clientContext)
   const sendOutput = makeSendOutput(sender, sessionId)
 
   // Port reservation and launching marker sit INSIDE the guard: even the

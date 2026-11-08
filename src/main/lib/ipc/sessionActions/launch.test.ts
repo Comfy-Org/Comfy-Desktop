@@ -409,6 +409,8 @@ import {
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
+import { setHardwareProbe } from '../../agentClientContext'
+import { getAppVersion } from '../shared'
 import { instanceModelPathsYaml } from '../../models'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
@@ -1497,6 +1499,64 @@ describe('core beta report placement', () => {
   })
 
   const reportedEvents = (): string[] => events.map((e) => e.event)
+
+  describe.each([
+    ['skip-port', true],
+    ['port-wait', false]
+  ])('agent client context (%s path)', (pathName, skipPortWait) => {
+    let spawnEnv: Record<string, string | undefined> | undefined
+    let port = 48240 + (skipPortWait ? 0 : 10)
+    beforeEach(() => {
+      spawnEnv = undefined
+      launchHarness.spawn = (_cmd: unknown, _args: unknown, _cwd: unknown, env: unknown) => {
+        spawnEnv = env as Record<string, string | undefined>
+        return fakeChild()
+      }
+      launchHarness.launchCommand = { ...launchHarness.launchCommand, skipPortWait, port: ++port }
+      launchHarness.waitForPort = async () => {}
+      launchHarness.busyPorts = []
+    })
+    afterEach(() => {
+      settingsModule.set('telemetryEnabled', undefined)
+      setHardwareProbe(null)
+      launchHarness.busyPorts = null
+    })
+
+    it('hands the agent its channel and the probed GPU tier with telemetry consent', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      expect((await handleLaunch(ctxFor(`harness-client-context-on-${pathName}`))).ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv!.AGENT_CLIENT_CONTEXT).toBe('desktop')
+      expect(spawnEnv!.AGENT_CLIENT_CHANNEL).toBe(telemetry.deriveAppChannel(getAppVersion()))
+      expect(spawnEnv!.AGENT_CLIENT_GPU_TIER).toBe('mid')
+    })
+
+    it('still launches, without the context, when reading consent throws', async () => {
+      vi.spyOn(settingsModule, 'get').mockImplementation(() => {
+        throw new Error('EPERM: settings.json write failed')
+      })
+      const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
+      expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
+    it.each([false, undefined])('sends none with telemetry consent %s', async (consent) => {
+      settingsModule.set('telemetryEnabled', consent)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-${consent}-${pathName}`))
+      expect(res.ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      for (const name of [
+        'AGENT_CLIENT_CONTEXT',
+        'AGENT_CLIENT_CHANNEL',
+        'AGENT_CLIENT_GPU_TIER'
+      ]) {
+        expect(spawnEnv).not.toHaveProperty(name)
+      }
+    })
+  })
 
   /** Minimal live child: streams to attach to, a pid to kill, and no exit unless a test
    *  emits one, so a launch that reaches spawn settles instead of hanging. */
