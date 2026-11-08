@@ -42,7 +42,7 @@
     "emptyDesc": "Create your first ComfyUI instance to get started.",
     "createInstall": "Create instance",
     "newInstall": "Install a New Build",
-    "newInstallDesc": "Set up a fresh ComfyUI environment.",
+    "newInstallDesc": "Setup a fresh ComfyUI install.",
     "filterAll": "All",
     "filterLocal": "Local",
     "filterCloud": "Cloud",
