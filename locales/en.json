@@ -56,7 +56,8 @@
     "viewErrorTooltip": "View error details",
     "errorTitle": "Error",
     "searchPlaceholder": "Search instances",
-    "noMatches": "No instances match"
+    "noMatches": "No instances match",
+    "filterLabel": "Source filter"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
@@ -168,7 +169,10 @@
     "argsAwaitingValue": "expects a value",
     "argsUnsupported": "Unsupported:",
     "argsMissingValue": "Missing value for:",
-    "argsUnexpected": "Unexpected:"
+    "argsUnexpected": "Unexpected:",
+    "updateFieldTimeout": "Couldn't reach app — try again",
+    "useSharedInput": "Use Shared Input",
+    "useSharedOutput": "Use Shared Output"
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",
@@ -234,7 +238,8 @@
     "removeInstanceDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
     "removeDirTitle": "Remove shared models directory?",
     "removeDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "addInstanceDir": "Add Directory"
   },
   "common": {
     "back": "Back",
@@ -308,7 +313,10 @@
     "managerNetworkMode_personal_cloud": "Personal cloud",
     "managerNetworkMode_personal_cloud_desc": "Treats this machine as your own trusted remote box: lifts the --listen block on node pack installs (the chosen security level still applies). Only use on a personal machine you control - it relaxes protections meant for shared or public hosts.",
     "copyError": "Copy error details",
-    "clear": "Clear"
+    "clear": "Clear",
+    "error": "Error",
+    "active": "active",
+    "retry": "Retry"
   },
   "comfybuilder": {
     "build": "Build",
@@ -441,7 +449,9 @@
     "insideExistingInstallTitle": "Overlapping Instance",
     "insideExistingInstallMessage": "This path overlaps with an existing instance. Installing here can cause conflicts and data corruption. Please choose a different location."
   },
-  "detail": {},
+  "detail": {
+    "editName": "Edit instance name"
+  },
   "channelCards": {
     "installedVersion": "Installed Version",
     "latestVersion": "Latest Version",
@@ -608,7 +618,9 @@
     "storageTab": "Storage",
     "sharedDirectories": "Shared Directories",
     "installLocation": "Default Install Location",
-    "updatesTab": "Updates"
+    "updatesTab": "Updates",
+    "diagnostics": "Diagnostics",
+    "openLogsFolder": "Open logs folder"
   },
   "zoom": {
     "changed": "Zoom level has been changed",
@@ -1260,7 +1272,15 @@
     "importSuccess": "Imported {imported} snapshot(s).",
     "importAlreadyCurrent": "This snapshot already matches the current state.",
     "importInvalidFile": "Invalid snapshot file.",
-    "exportSuccess": "Snapshot exported."
+    "exportSuccess": "Snapshot exported.",
+    "latestBadge": "Latest",
+    "importedSnapshot": "Imported snapshot",
+    "importPreviewLabel": "Snapshots",
+    "latestLabel": "Latest:",
+    "noneYet": "No snapshots yet",
+    "exportAll": "Export All",
+    "restoreCancelled": "Restore cancelled",
+    "restoreCancelledBody": "The imported snapshot was not applied."
   },
   "portable": {
     "label": "Portable",
@@ -1492,7 +1512,11 @@
     "remove": "Remove variable",
     "namePlaceholder": "VARIABLE_NAME",
     "valuePlaceholder": "value",
-    "securityWarning": "Environment variable values are stored unencrypted on disk. Do not add API keys, tokens, passwords, or other secrets."
+    "securityWarning": "Environment variable values are stored unencrypted on disk. Do not add API keys, tokens, passwords, or other secrets.",
+    "duplicateKey": "Duplicate key",
+    "hideValue": "Hide value",
+    "revealValue": "Reveal value",
+    "securityWarningShort": "Environment variables may contain secrets"
   },
   "contextMenu": {
     "openLinkInBrowser": "Open Link in Browser",
@@ -1508,7 +1532,11 @@
   "statusFactPanel": {
     "editName": "Edit instance name",
     "editUrl": "Edit connection URL",
-    "restartToApply": "Restart to apply"
+    "restartToApply": "Restart to apply",
+    "installDetails": "Instance details",
+    "runningDetails": "Running details",
+    "locationStorage": "Location & storage",
+    "lineage": "Lineage"
   },
   "fileMenu": {
     "newWindow": "Open Dashboard",
@@ -1760,7 +1788,8 @@
     "progressMigrated": "Migration complete",
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
-    "progressCancelled": "Cancelled"
+    "progressCancelled": "Cancelled",
+    "restartToApply": "Restart to apply changes"
   },
   "installShowcase": {
     "cloud": {
@@ -1803,5 +1832,9 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from the dashboard."
+  },
+  "feedback": {
+    "modalLabel": "Send Feedback",
+    "loading": "Loading feedback form…"
   }
 }

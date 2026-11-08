@@ -31,10 +31,10 @@ interface UseCentralPillCoachmarkOpts {
    *  preserving the original behaviour for callers that do not share the popup. */
   ownsPopup?: () => boolean
   installPillRef: Readonly<ShallowRef<HTMLElement | null>>
-  /** Resolved coachmark copy (i18n done by the caller). */
-  title: string
-  body: string
-  dismissLabel: string
+  /** Resolved coachmark copy (i18n done by the caller). Can be a string or a getter function. */
+  title: string | (() => string)
+  body: string | (() => string)
+  dismissLabel: string | (() => string)
 }
 
 interface CentralPillCoachmarkApi {
@@ -92,13 +92,16 @@ export function useCentralPillCoachmark(
     const pill = opts.installPillRef.value
     if (!gatePasses() || !pill) return
 
+    const resolveText = (value: string | (() => string)): string =>
+      typeof value === 'function' ? value() : value
+
     const rect = pill.getBoundingClientRect()
     hasCoachmarkShown = true
     isShowing.value = true
     opts.bridge.showCoachmark({
-      title: opts.title,
-      body: opts.body,
-      dismissLabel: opts.dismissLabel,
+      title: resolveText(opts.title),
+      body: resolveText(opts.body),
+      dismissLabel: resolveText(opts.dismissLabel),
       leftX: Math.round(rect.left),
       rightX: Math.round(rect.right),
       bottomY: Math.round(rect.bottom)

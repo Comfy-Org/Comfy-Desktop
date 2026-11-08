@@ -56,7 +56,8 @@
     "viewErrorTooltip": "查看错误详情",
     "errorTitle": "错误",
     "searchPlaceholder": "搜索实例",
-    "noMatches": "没有匹配的实例"
+    "noMatches": "没有匹配的实例",
+    "filterLabel": "来源筛选"
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
@@ -168,7 +169,10 @@
     "argsAwaitingValue": "需要一个值",
     "argsUnsupported": "不支持：",
     "argsMissingValue": "缺少值：",
-    "argsUnexpected": "意外的参数："
+    "argsUnexpected": "意外的参数：",
+    "updateFieldTimeout": "无法连接到应用 — 请重试",
+    "useSharedInput": "使用共享输入文件夹",
+    "useSharedOutput": "使用共享输出文件夹"
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
@@ -234,7 +238,8 @@
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
     "removeDirTitle": "要移除共享模型目录吗？",
     "removeDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
-    "moreActions": "更多操作"
+    "moreActions": "更多操作",
+    "addInstanceDir": "添加目录"
   },
   "common": {
     "back": "返回",
@@ -308,7 +313,10 @@
     "managerNetworkMode_personal_cloud": "个人云",
     "managerNetworkMode_personal_cloud_desc": "将此机器视为你自己信任的远程主机：解除 --listen 对安装节点包的阻止（所选安全级别仍然生效）。仅在你控制的个人机器上使用 - 它会放宽为共享或公共主机设计的保护。",
     "copyError": "复制错误详情",
-    "clear": "清除"
+    "clear": "清除",
+    "error": "错误",
+    "active": "启用",
+    "retry": "重试"
   },
   "comfybuilder": {
     "build": "构建",
@@ -441,7 +449,9 @@
     "insideExistingInstallTitle": "实例路径重叠",
     "insideExistingInstallMessage": "此路径与现有实例重叠。在这里安装可能导致冲突和数据损坏。请选择其他位置。"
   },
-  "detail": {},
+  "detail": {
+    "editName": "编辑实例名称"
+  },
   "channelCards": {
     "installedVersion": "已安装版本",
     "latestVersion": "最新版本",
@@ -608,7 +618,9 @@
     "storageTab": "存储",
     "sharedDirectories": "共享目录",
     "installLocation": "默认安装位置",
-    "updatesTab": "更新"
+    "updatesTab": "更新",
+    "diagnostics": "诊断",
+    "openLogsFolder": "打开日志文件夹"
   },
   "zoom": {
     "changed": "缩放级别已更改",
@@ -736,53 +748,53 @@
   },
   "announcement": {
     "minimax": {
-      "title": "MiniMax H3 \u73b0\u5df2\u767b\u9646 ComfyUI",
-      "lead": "MiniMax \u6700\u65b0\u7684\u5f00\u6e90 SOTA \u89c6\u9891\u6a21\u578b\uff0c\u73b0\u5df2\u4e0a\u7ebf",
+      "title": "MiniMax H3 现已登陆 ComfyUI",
+      "lead": "MiniMax 最新的开源 SOTA 视频模型，现已上线",
       "highlights": [
-        "\u5728 Comfy Cloud \u6216 Comfy Desktop \u4e0a\u514d\u8d39\u8fd0\u884c",
-        "\u517c\u5bb9\u4f60\u73b0\u6709\u7684 ComfyUI \u5de5\u4f5c\u6d41",
-        "\u60f3\u7528\u4e8e\u5546\u4e1a\u7528\u9014\uff1f\u8054\u7cfb\u6211\u4eec\u83b7\u53d6\u6388\u6743"
+        "在 Comfy Cloud 或 Comfy Desktop 上免费运行",
+        "兼容你现有的 ComfyUI 工作流",
+        "想用于商业用途？联系我们获取授权"
       ],
-      "requestLicenseCta": "\u7533\u8bf7\u6388\u6743",
-      "learnMoreCta": "\u4e86\u89e3\u66f4\u591a",
-      "imageAlt": "MiniMax H3 \u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
+      "requestLicenseCta": "申请授权",
+      "learnMoreCta": "了解更多",
+      "imageAlt": "MiniMax H3 公告",
+      "unmute": "取消静音",
+      "mute": "静音"
     },
     "cloudNodes": {
-      "title": "\u5728 Comfy Cloud GPU \u4e0a\u8fd0\u884c\u5f00\u653e\u6743\u91cd\u6a21\u578b",
-      "lead": "\u5168\u65b0 Comfy Cloud \u8282\u70b9\u8ba9\u4f60\u5728\u81ea\u5df1\u7684\u5de5\u4f5c\u6d41\u4e2d\uff0c\u7528\u6211\u4eec\u7684\u786c\u4ef6\u8fd0\u884c\u6700\u65b0\u7684\u5f00\u653e\u6743\u91cd\u6a21\u578b",
+      "title": "在 Comfy Cloud GPU 上运行开放权重模型",
+      "lead": "全新 Comfy Cloud 节点让你在自己的工作流中，用我们的硬件运行最新的开放权重模型",
       "highlights": [
-        "\u65e0\u9700\u8ba2\u9605\uff1a\u6709\u8d26\u53f7\u548c\u79ef\u5206\u5373\u53ef\u4f7f\u7528",
-        "\u65e0\u9700\u4e0b\u8f7d\uff0c\u6ca1\u6709\u663e\u5b58\u95e8\u69db"
+        "无需订阅：有账号和积分即可使用",
+        "无需下载，没有显存门槛"
       ],
-      "primaryCta": "\u4e86\u89e3\u66f4\u591a",
-      "beta": "\u6d4b\u8bd5\u7248\uff1a\u7cbe\u9009\u8282\u70b9\u96c6\u4ecd\u5728\u8c03\u6574\uff0c\u9009\u9879\u53ef\u80fd\u589e\u51cf\uff0c\u67d0\u4e2a\u5de5\u4f5c\u6d41\u4e5f\u53ef\u80fd\u88ab\u4e0b\u7ebf\u3002",
-      "docsCta": "\u67e5\u770b\u6587\u6863",
-      "imageAlt": "Comfy Cloud \u8282\u70b9\u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
+      "primaryCta": "了解更多",
+      "beta": "测试版：精选节点集仍在调整，选项可能增减，某个工作流也可能被下线。",
+      "docsCta": "查看文档",
+      "imageAlt": "Comfy Cloud 节点公告",
+      "unmute": "取消静音",
+      "mute": "静音"
     },
     "comfyRouter": {
-      "title": "Comfy Router \u73b0\u5df2\u63a8\u51fa",
-      "lead": "\u4e00\u4e2a API\uff0c\u8c03\u7528\u6700\u65b0\u7684\u524d\u6cbf\u5a92\u4f53\u6a21\u578b",
+      "title": "Comfy Router 现已推出",
+      "lead": "一个 API，调用最新的前沿媒体模型",
       "highlights": [
-        "\u7528\u4f60\u5df2\u6709\u7684 Comfy \u79ef\u5206\uff0c\u4ece\u81ea\u5df1\u7684\u811a\u672c\u3001\u5de5\u5177\u548c\u5e94\u7528\u4e2d\u8c03\u7528\u6700\u65b0\u7684\u56fe\u50cf\u3001\u89c6\u9891\u30013D \u548c\u97f3\u9891\u6a21\u578b\u3002",
-        "\u65e0\u9700\u4e3a\u6bcf\u4e2a\u63d0\u4f9b\u5546\u5355\u72ec\u6ce8\u518c\u8d26\u53f7\u6216\u505a\u96c6\u6210\uff0c\u5373\u53ef\u6dfb\u52a0\u65b0\u6a21\u578b\u3002",
-        "\u5f53\u4e00\u4e2a\u6a21\u578b\u6709\u591a\u4e2a\u63d0\u4f9b\u5546\u65f6\uff0c\u53ef\u6309\u4ef7\u683c\u6216\u53ef\u7528\u6027\u9009\u62e9\uff0c\u5e76\u5728\u4e0d\u91cd\u5199\u96c6\u6210\u7684\u60c5\u51b5\u4e0b\u5207\u6362\u3002"
+        "用你已有的 Comfy 积分，从自己的脚本、工具和应用中调用最新的图像、视频、3D 和音频模型。",
+        "无需为每个提供商单独注册账号或做集成，即可添加新模型。",
+        "当一个模型有多个提供商时，可按价格或可用性选择，并在不重写集成的情况下切换。"
       ],
-      "primaryCta": "\u4e86\u89e3 Comfy Router",
-      "imageAlt": "Comfy Router \u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
+      "primaryCta": "了解 Comfy Router",
+      "imageAlt": "Comfy Router 公告",
+      "unmute": "取消静音",
+      "mute": "静音"
     },
     "comfyApi": {
-      "title": "Comfy API \u73b0\u5df2\u63a8\u51fa",
-      "lead": "\u5c06\u4f60\u7684 ComfyUI \u5de5\u4f5c\u6d41\u90e8\u7f72\u4e3a\u751f\u4ea7\u73af\u5883 API\u3002\u5c06\u5de5\u4f5c\u6d41\u4e0e\u5176\u81ea\u5b9a\u4e49\u8282\u70b9\u548c\u6a21\u578b\u6253\u5305\uff0c\u90e8\u7f72\u4e3a\u5e94\u7528\u548c\u5de5\u5177\u53ef\u4ee5\u8c03\u7528\u7684\u63a5\u53e3\u3002\u4f60\u4f7f\u7528 ComfyUI \u7684\u65b9\u5f0f\u4e0d\u4f1a\u6709\u4efb\u4f55\u53d8\u5316\u3002",
-      "primaryCta": "\u4e86\u89e3 Comfy API",
-      "imageAlt": "Comfy API \u516c\u544a",
-      "unmute": "\u53d6\u6d88\u9759\u97f3",
-      "mute": "\u9759\u97f3"
+      "title": "Comfy API 现已推出",
+      "lead": "将你的 ComfyUI 工作流部署为生产环境 API。将工作流与其自定义节点和模型打包，部署为应用和工具可以调用的接口。你使用 ComfyUI 的方式不会有任何变化。",
+      "primaryCta": "了解 Comfy API",
+      "imageAlt": "Comfy API 公告",
+      "unmute": "取消静音",
+      "mute": "静音"
     }
   },
   "tray": {
@@ -1260,7 +1272,15 @@
     "importSuccess": "已导入 {imported} 个快照。",
     "importAlreadyCurrent": "此快照已与当前状态匹配。",
     "importInvalidFile": "无效的快照文件。",
-    "exportSuccess": "快照已导出。"
+    "exportSuccess": "快照已导出。",
+    "latestBadge": "最新",
+    "importedSnapshot": "已导入快照",
+    "importPreviewLabel": "快照",
+    "latestLabel": "最新：",
+    "noneYet": "暂无快照",
+    "exportAll": "导出全部",
+    "restoreCancelled": "恢复已取消",
+    "restoreCancelledBody": "未应用已导入的快照。"
   },
   "portable": {
     "label": "便携版",
@@ -1492,7 +1512,11 @@
     "remove": "移除变量",
     "namePlaceholder": "VARIABLE_NAME",
     "valuePlaceholder": "value",
-    "securityWarning": "环境变量值会以未加密形式存储在磁盘上。不要添加 API 密钥、令牌、密码或其他机密。"
+    "securityWarning": "环境变量值会以未加密形式存储在磁盘上。不要添加 API 密钥、令牌、密码或其他机密。",
+    "duplicateKey": "重复的键名",
+    "hideValue": "隐藏值",
+    "revealValue": "显示值",
+    "securityWarningShort": "环境变量可能包含机密信息"
   },
   "contextMenu": {
     "openLinkInBrowser": "在浏览器中打开链接",
@@ -1508,7 +1532,11 @@
   "statusFactPanel": {
     "editName": "编辑实例名称",
     "editUrl": "编辑连接 URL",
-    "restartToApply": "重启以应用"
+    "restartToApply": "重启以应用",
+    "installDetails": "实例详情",
+    "runningDetails": "运行详情",
+    "locationStorage": "位置与存储",
+    "lineage": "复制来源"
   },
   "fileMenu": {
     "newWindow": "打开仪表板",
@@ -1760,7 +1788,8 @@
     "progressMigrated": "迁移完成",
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
-    "progressCancelled": "已取消"
+    "progressCancelled": "已取消",
+    "restartToApply": "重启以应用更改"
   },
   "installShowcase": {
     "cloud": {
@@ -1803,5 +1832,9 @@
     "label": "等待期间",
     "cloudFailedTitle": "无法打开 Comfy Cloud",
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
+  },
+  "feedback": {
+    "modalLabel": "发送反馈",
+    "loading": "正在加载反馈表单…"
   }
 }

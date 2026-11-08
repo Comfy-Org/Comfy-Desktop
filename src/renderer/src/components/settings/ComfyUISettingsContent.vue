@@ -289,50 +289,52 @@ interface TabDef {
   tooltip?: string
 }
 
-const ALL_TABS: TabDef[] = [
-  {
-    key: 'update',
-    sectionTab: 'update',
-    label: t('comfyUISettings.tabUpdate', 'Update'),
-    icon: RefreshCw,
-    tooltip: t('tooltips.tabUpdate')
-  },
-  {
-    key: 'config',
-    sectionTab: 'settings',
-    label: t('comfyUISettings.tabConfig', 'Startup Args'),
-    icon: SlidersHorizontal,
-    tooltip: t('tooltips.tabConfig')
-  },
-  {
-    key: 'snapshots',
-    sectionTab: 'snapshots',
-    label: t('comfyUISettings.tabSnapshots', 'Snapshots'),
-    icon: History,
-    tooltip: t('tooltips.snapshots')
-  },
-  {
-    key: 'storage',
-    sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage', 'Storage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
-  },
-  {
-    key: 'console',
-    sectionTab: 'console',
-    label: t('comfyUISettings.tabTerminal', 'Terminal'),
-    icon: SquareTerminal,
-    tooltip: t('tooltips.console')
-  },
-  {
-    key: 'status',
-    sectionTab: 'status',
-    label: t('comfyUISettings.tabStatus', 'About'),
-    icon: Info,
-    tooltip: t('tooltips.tabStatus')
-  }
-]
+function getAllTabs(): TabDef[] {
+  return [
+    {
+      key: 'update',
+      sectionTab: 'update',
+      label: t('comfyUISettings.tabUpdate', 'Update'),
+      icon: RefreshCw,
+      tooltip: t('tooltips.tabUpdate')
+    },
+    {
+      key: 'config',
+      sectionTab: 'settings',
+      label: t('comfyUISettings.tabConfig', 'Startup Args'),
+      icon: SlidersHorizontal,
+      tooltip: t('tooltips.tabConfig')
+    },
+    {
+      key: 'snapshots',
+      sectionTab: 'snapshots',
+      label: t('comfyUISettings.tabSnapshots', 'Snapshots'),
+      icon: History,
+      tooltip: t('tooltips.snapshots')
+    },
+    {
+      key: 'storage',
+      sectionTab: 'storage',
+      label: t('comfyUISettings.tabStorage', 'Storage'),
+      icon: HardDrive,
+      tooltip: t('tooltips.tabStorage')
+    },
+    {
+      key: 'console',
+      sectionTab: 'console',
+      label: t('comfyUISettings.tabTerminal', 'Terminal'),
+      icon: SquareTerminal,
+      tooltip: t('tooltips.console')
+    },
+    {
+      key: 'status',
+      sectionTab: 'status',
+      label: t('comfyUISettings.tabStatus', 'About'),
+      icon: Info,
+      tooltip: t('tooltips.tabStatus')
+    }
+  ]
+}
 
 // The console tab has no backend `sections` — it's a live PTY view — so it
 // can't be section-gated like the others. Visibility by instance type is
@@ -348,13 +350,15 @@ const tabs = computed<TabDef[]>(() => {
   // Cloud runs no local process, so the `config` tab carries no real
   // startup args — relabel it "Storage" to match its contents.
   const isCloud = installation.value?.sourceCategory === 'cloud'
-  return ALL_TABS.filter((tab) =>
-    tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
-  ).map((tab) =>
-    isCloud && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage', 'Storage'), icon: HardDrive }
-      : tab
-  )
+  return getAllTabs()
+    .filter((tab) =>
+      tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
+    )
+    .map((tab) =>
+      isCloud && tab.key === 'config'
+        ? { ...tab, label: t('comfyUISettings.tabStorage', 'Storage'), icon: HardDrive }
+        : tab
+    )
 })
 
 const showUpdateBadge = computed(() => {
