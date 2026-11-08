@@ -101,6 +101,46 @@ describe('standalone.buildInstallation', () => {
     } as unknown as Record<string, unknown>
   })
 
+  it.each(['release', 'variant'] as const)('rejects a missing %s selection', (field) => {
+    const selections = { release: makeRelease('latest'), variant: makeVariant(VENDOR_ID) }
+    expect(() => standalone.buildInstallation({ ...selections, [field]: undefined })).toThrow(
+      'standalone.invalidRuntime'
+    )
+  })
+
+  it('rejects an empty runtime catalog instead of building an unknown installation', () => {
+    expect(() =>
+      standalone.buildInstallation({ bundledTemplate: { value: NO_TEMPLATE_VALUE, label: 'None' } })
+    ).toThrow('standalone.invalidRuntime')
+  })
+
+  it.each([
+    { variantId: '' },
+    { downloadUrl: '', downloadFiles: [] },
+    { manifest: { comfyui_ref: '0.18.3', python_version: '' } }
+  ])('rejects incomplete variant data: %j', (data) => {
+    const variant = makeVariant(VENDOR_ID)
+    variant.data = { ...variant.data, ...data }
+    expect(() => standalone.buildInstallation({ release: makeRelease('latest'), variant })).toThrow(
+      'standalone.invalidRuntime'
+    )
+  })
+
+  it('allows latest without a ComfyUI version or starter template', () => {
+    expect(
+      standalone.buildInstallation({
+        release: makeRelease('latest'),
+        variant: makeVariant(VENDOR_ID)
+      })
+    ).toMatchObject({
+      updateChannel: 'latest',
+      variant: VENDOR_ID,
+      releaseTag: 'v0.18.2-env1',
+      pythonVersion: '3.13.12',
+      downloadFiles: [expect.objectContaining({ url: 'https://example.com/download.tar.gz' })]
+    })
+  })
+
   it('Stable: sets autoUpdateComfyUI + updateChannel="stable" so post-install checks out the latest stable tag', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
