@@ -26,6 +26,7 @@ import {
   _test_addRunningSession,
   _test_clearRunningSessions
 } from './shared'
+import { _resetQuitWaitForTest, waitForExitWork } from '../quitWait'
 
 const INSTALL = 'install-under-test'
 
@@ -45,6 +46,36 @@ describe('cancelAll', () => {
     cancelAll()
 
     expect(flushTelemetry).toHaveBeenCalledOnce()
+  })
+
+  it('aborts a launch still in its pre-spawn prep, and a quit waits for its teardown', async () => {
+    _resetQuitWaitForTest()
+    const launch = _beginLaunch(INSTALL)
+    cancelAll()
+    expect(launch.abort.signal.aborted).toBe(true)
+    let waited = false
+    const waiting = waitForExitWork().then(() => {
+      waited = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(waited).toBe(false)
+    _endLaunch(INSTALL, launch)
+    await waiting
+  })
+
+  it('a launch whose slot a relaunch took still settles, so later quits do not wait for it', async () => {
+    _resetQuitWaitForTest()
+    // A restart while the first launch is parked after registration (the template gate).
+    const first = _beginLaunch(INSTALL)
+    const second = _beginLaunch(INSTALL)
+    _endLaunch(INSTALL, second)
+    _endLaunch(INSTALL, first)
+    let waited = false
+    void waitForExitWork().then(() => {
+      waited = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(waited).toBe(true)
   })
 })
 

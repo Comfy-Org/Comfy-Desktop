@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
 import http from 'http'
+import { EventEmitter } from 'events'
+import { _resetQuitWaitForTest, holdQuit, trackExitWork, type QuitWaitFields } from './quitWait'
+import { _resetQuitStateForTest } from './quit-state'
 import type { ChildProcess } from 'child_process'
 import {
   findAvailablePort,
@@ -401,6 +404,99 @@ describe('isSafeToSignal (never signal what a forged record names)', () => {
       expect(result).toMatchObject({ killed: false, reason: 'unsafe' })
     }
   )
+})
+
+describe.runIf(process.platform !== 'win32')('a quit waits for killProcessTree', () => {
+  /** A ChildProcess as far as killProcessTree looks at it. */
+  function fakeProc(exitCode: number | null): ChildProcess {
+    return Object.assign(new EventEmitter(), {
+      pid: 4_000_000,
+      exitCode,
+      signalCode: null,
+      stdout: null,
+      stderr: null
+    }) as unknown as ChildProcess
+  }
+
+  /** Hold a quit and resolve with the fields it drained with. */
+  function quitAndDrain(): Promise<QuitWaitFields> {
+    return new Promise((resolve) => {
+      holdQuit({ preventDefault: () => {} }, { drain: async (f) => resolve(f), quit: () => {} })
+    })
+  }
+
+  beforeEach(() => {
+    _resetQuitWaitForTest()
+    _resetQuitStateForTest()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('past the tree being gone, until Node has reported the exit', async () => {
+    // The group is already gone (ESRCH) while Node has not yet emitted 'exit'.
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' })
+    })
+    const proc = fakeProc(null)
+    await killProcessTree(proc)
+    let drained = false
+    const draining = quitAndDrain().then((fields) => {
+      drained = true
+      return fields
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(drained).toBe(false)
+    proc.emit('exit', null, 'SIGKILL')
+    expect(await draining).toMatchObject({ quit_wait_stops: 1, quit_wait_timed_out: false })
+  })
+
+  it('not at all for a process that has already exited', async () => {
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' })
+    })
+    await killProcessTree(fakeProc(0))
+    expect(await quitAndDrain()).toMatchObject({ quit_wait_ms: 0, quit_wait_stops: 0 })
+  })
+
+  it('for a real tree and the exit bookkeeping that follows it', async () => {
+    const TREE = `
+      const { spawn } = require('child_process')
+      const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' })
+      console.log(c.pid)
+      setTimeout(() => {}, 60000)
+    `
+    const proc = spawnProcess(process.execPath, ['-e', TREE], process.cwd())
+    const grandchild = await new Promise<number>((resolve) => {
+      proc.stdout!.once('data', (d: Buffer) => resolve(Number(String(d).trim())))
+    })
+    let bookkeepingDone = false
+    // As onProcessTerminated does: the exit handler registers its work at 'exit'.
+    proc.once('exit', () =>
+      trackExitWork(
+        new Promise<void>((r) =>
+          setTimeout(() => {
+            bookkeepingDone = true
+            r()
+          }, 200)
+        )
+      )
+    )
+    try {
+      // Quit does not await the kill itself (cancelAll fires it and moves on).
+      void killProcessTree(proc)
+      const fields = await quitAndDrain()
+      expect(isPidAlive(grandchild)).toBe(false)
+      expect(proc.exitCode !== null || proc.signalCode !== null).toBe(true)
+      expect(bookkeepingDone).toBe(true)
+      expect(fields).toMatchObject({ quit_wait_stops: 1, quit_wait_timed_out: false })
+    } finally {
+      try {
+        process.kill(-proc.pid!, 'SIGKILL')
+      } catch {}
+    }
+  })
 })
 
 describe('requestTimeoutMs reaches the probe request', () => {
