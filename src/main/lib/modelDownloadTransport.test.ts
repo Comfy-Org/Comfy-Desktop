@@ -1102,14 +1102,17 @@ describe('final destination conflicts', () => {
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
-  it('fails closed when hard links are unsupported', async () => {
+  it('installs via a size-verified copy when hard links are unsupported', async () => {
+    // exFAT/FAT32 cannot hard-link: the install falls back to copying the
+    // verified staged bytes to a scratch name and renaming them onto the
+    // final name, so the download completes instead of failing closed
+    // (Comfy-Org/ComfyUI#16972).
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
       throw err
     })
     const openSpy = vi.spyOn(fs, 'openSync')
-    const renameSpy = vi.spyOn(fs, 'renameSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1118,15 +1121,15 @@ describe('final destination conflicts', () => {
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
-      expect(outcome.outcome).toBe('error')
-      expect((outcome as { error: string }).error).toMatch(/atomic no-replace/)
-      expect(fs.existsSync(finalPath)).toBe(false)
-      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
-      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
+      expect(outcome.outcome).toBe('completed')
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+      // No zero-byte claim marker was ever created at the final name...
       expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
-      expect(renameSpy).not.toHaveBeenCalledWith(stagingPathFor(finalPath), finalPath)
+      // ...and neither the scratch copy nor the staged pair is left behind.
+      expect(fs.existsSync(stagingPathFor(finalPath) + '.installing')).toBe(false)
+      expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
     } finally {
-      renameSpy.mockRestore()
       openSpy.mockRestore()
       linkSpy.mockRestore()
     }
@@ -1185,10 +1188,13 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('a link-less filesystem never creates a final-name claim marker', async () => {
+  it('a link-less filesystem installs without ever creating a final-name claim marker', async () => {
+    // The copy fallback must reach the final name only through the rename of
+    // complete verified bytes - the final name can never briefly exist as a
+    // zero-byte file ComfyUI's model scan could pick up (issue #1322).
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
-      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
-      err.code = 'EPERM'
+      const err = new Error('EISDIR: illegal operation on a directory') as NodeJS.ErrnoException
+      err.code = 'EISDIR'
       throw err
     })
     const openSpy = vi.spyOn(fs, 'openSync')
@@ -1200,9 +1206,8 @@ describe('final destination conflicts', () => {
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
-      expect(outcome.outcome).toBe('error')
-      expect(fs.existsSync(finalPath)).toBe(false)
-      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(outcome.outcome).toBe('completed')
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
       expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
     } finally {
       openSpy.mockRestore()

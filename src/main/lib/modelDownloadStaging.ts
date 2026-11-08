@@ -22,6 +22,11 @@ import { ALLOWED_EXTENSIONS } from './downloadFilename'
 
 export const STAGING_SUFFIX = '.part'
 export const STAGING_META_SUFFIX = '.part.dl-meta'
+/** Scratch suffix the link-less install fallback of `installStagedAtFinal`
+ *  appends to the staged path: the verified bytes are copied beside the
+ *  staged file under this non-model name and renamed onto the final name, so
+ *  a crash mid-copy can never expose a truncated model. */
+export const INSTALL_SCRATCH_SUFFIX = '.installing'
 /** Scratch suffix for atomic sidecar replacement (write tmp + rename). */
 export const STAGING_META_TMP_SUFFIX = '.tmp'
 /** Sidecar suffix used by `lib/download.ts` (still valid for cache/env
@@ -154,6 +159,7 @@ export function removeStagedArtifacts(finalPath: string): boolean {
  *  I/O or permission failure (which must fail the parking outright). */
 export const LINK_UNSUPPORTED_CODES: ReadonlySet<string> = new Set([
   'EPERM', // Windows exFAT/FAT32 and some network filesystems
+  'EISDIR', // Windows surfaces exFAT/FAT32 hard-link failures as EISDIR
   'ENOTSUP',
   'EOPNOTSUPP',
   'ENOSYS',
@@ -321,8 +327,9 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
  * Install verified staged bytes at the final name without overwriting a file
  * that appeared there independently. An identical final is accepted and the
  * staged copy is removed; a different final is preserved and reported as a
- * conflict. Filesystems without atomic hard-link support fail closed and keep
- * the staged bytes for retry.
+ * conflict. Filesystems without hard-link support (Windows exFAT/FAT32) fall
+ * back to a size-verified copy that only ever moves COMPLETE bytes onto the
+ * final name; any failure keeps the staged bytes for retry.
  */
 export async function installStagedAtFinal(
   stagingPath: string,
@@ -343,6 +350,39 @@ export async function installStagedAtFinal(
     throw new Error('a different file already exists at the destination')
   }
 
+  // Link-less filesystem fallback: copy the verified bytes to a scratch name
+  // beside the staged file, then rename them onto the final name. The scratch
+  // name carries no model extension (invisible to ComfyUI's scan even when a
+  // crash leaves it behind; the next attempt overwrites it) and sits on the
+  // same volume, so the rename cannot be EXDEV. The final name only ever
+  // receives bytes through that rename - never a claim marker - so a crash
+  // can never expose a truncated model. Between the existence check and the
+  // rename another writer could in principle land a file at the final name
+  // and be replaced; that window is the same one `parkFileNoClobber`'s
+  // claim-marker fallback already accepts on filesystems with no atomic
+  // no-replace primitive.
+  const installViaCopy = async (): Promise<void> => {
+    const scratchPath = stagingPath + INSTALL_SCRATCH_SUFFIX
+    try {
+      await fs.promises.copyFile(stagingPath, scratchPath)
+      if ((await fs.promises.stat(scratchPath)).size !== finalBytes) {
+        throw new Error('copy of staged bytes is incomplete')
+      }
+      if (fs.existsSync(finalPath)) {
+        await conflictOrAccept()
+      } else {
+        await fs.promises.rename(scratchPath, finalPath)
+      }
+    } finally {
+      try {
+        await fs.promises.unlink(scratchPath)
+      } catch {} // already gone after the rename, or never created
+    }
+    try {
+      fs.unlinkSync(stagingPath)
+    } catch {}
+  }
+
   try {
     fs.linkSync(stagingPath, finalPath)
   } catch (err) {
@@ -356,7 +396,8 @@ export async function installStagedAtFinal(
       await conflictOrAccept()
       return
     }
-    throw new Error('atomic no-replace install is not supported by this filesystem', { cause: err })
+    await installViaCopy()
+    return
   }
   try {
     fs.unlinkSync(stagingPath)
