@@ -14,6 +14,8 @@ import {
   stripPlatform,
   getActivePythonPath,
   getVenvDir,
+  isArm64Variant,
+  isWindowsArm64Host,
   recommendVariant,
   variantMatchesHost,
   writeComfyEnvironment
@@ -110,6 +112,26 @@ export function buildPinnedVariant(
   const exact = history.find((r) => r.tag === releaseTag)
   if (!exact) return null
   return buildVariantOption(variantId, exact, null, gpu)
+}
+
+/**
+ * x64 comfy-aimdo cannot hook the ARM64EC CUDA entry points on Windows on Arm
+ * and crashes ComfyUI at startup; dynamic VRAM is the only path that loads it.
+ * Only the `-arm64` bundles run ARM64 Python. Skipped for ComfyUI that
+ * predates the flag, which argparse would reject.
+ */
+function x64PythonOnArm64Args(installation: InstallationRecord, parsed: string[]): string[] {
+  if (!isWindowsArm64Host() || isArm64Variant(String(installation.variant ?? ''))) return []
+  if (parsed.some((a) => a === '--disable-dynamic-vram' || a === '--enable-dynamic-vram')) {
+    return []
+  }
+  const cliArgsPath = path.join(installation.installPath, 'ComfyUI', 'comfy', 'cli_args.py')
+  try {
+    if (!fs.readFileSync(cliArgsPath, 'utf-8').includes('--disable-dynamic-vram')) return []
+  } catch {
+    return []
+  }
+  return ['--disable-dynamic-vram']
 }
 
 export const standalone: SourcePlugin = {
@@ -293,7 +315,13 @@ export const standalone: SourcePlugin = {
     // so we only set keys the install actually knows about.
     return {
       cmd: pythonPath,
-      args: ['-s', path.join('ComfyUI', 'main.py'), ...adoptArgs, ...parsed],
+      args: [
+        '-s',
+        path.join('ComfyUI', 'main.py'),
+        ...adoptArgs,
+        ...x64PythonOnArm64Args(installation, parsed),
+        ...parsed
+      ],
       cwd: installation.installPath,
       port
     }

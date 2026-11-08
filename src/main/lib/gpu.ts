@@ -559,8 +559,9 @@ export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string
 }
 
 /** Validate hardware for standalone install. Rejects Intel Macs (MPS needs
- *  Apple Silicon); surfaces a non-blocking warning when a Linux AMD GPU is
- *  present but its compute device node is missing or inaccessible. */
+ *  Apple Silicon) and native Windows ARM64 without an NVIDIA GPU; surfaces a
+ *  non-blocking warning when a Linux AMD GPU is present but its compute device
+ *  node is missing or inaccessible. */
 async function validateHardware(): Promise<HardwareValidation> {
   if (process.platform === 'darwin') {
     const gpu = await detectMacGPU()
@@ -568,6 +569,20 @@ async function validateHardware(): Promise<HardwareValidation> {
       return {
         supported: false,
         error: 'ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.'
+      }
+    }
+  }
+  // The only Windows ARM64 bundle is NVIDIA CUDA; every picker would fall back
+  // to it on other GPUs and ComfyUI could not boot. The x64 app runs there.
+  if (process.platform === 'win32' && process.arch === 'arm64') {
+    const gpu = await detectGPUCached()
+    if (gpu?.id !== 'nvidia') {
+      return {
+        supported: false,
+        error:
+          'This ARM64 version of Comfy Desktop runs ComfyUI only on NVIDIA GPUs. ' +
+          'To run ComfyUI on this PC, install the x64 version from comfy.org/download, ' +
+          'or use Comfy Cloud.'
       }
     }
   }
