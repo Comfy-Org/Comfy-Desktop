@@ -11,6 +11,7 @@ import {
   parseRocmSmiDriverVersion,
   parseWmiDriverVersions,
   checkLinuxAmdKfdAccess,
+  validateHardware,
   type SystemGpuEntry
 } from './gpu'
 
@@ -279,5 +280,38 @@ describe('checkLinuxAmdKfdAccess', () => {
     const node = path.join(tmpDir, 'kfd')
     fs.writeFileSync(node, '')
     expect(await checkLinuxAmdKfdAccess(node)).toBeNull()
+  })
+})
+
+describe('validateHardware architecture gate', () => {
+  const realPlatform = process.platform
+  const realArch = process.arch
+  const setHost = (platform: string, arch: string): void => {
+    Object.defineProperty(process, 'platform', { value: platform })
+    Object.defineProperty(process, 'arch', { value: arch })
+  }
+
+  afterEach(() => {
+    setHost(realPlatform, realArch)
+  })
+
+  // Without this the wizard filters every bundle out and shows a bare "No
+  // options available", which the user cannot tell from an R2 outage.
+  it('blocks the local install on an architecture with no published bundle', async () => {
+    setHost('linux', 'arm64')
+    const result = await validateHardware()
+
+    expect(result.supported).toBe(false)
+    expect(result.error).toMatch(/ARM64 Linux/)
+    // The other half of the message: this machine is still useful.
+    expect(result.error).toMatch(/cloud or remote/)
+  })
+
+  it('does not gate an x64 Linux host on architecture', async () => {
+    setHost('linux', 'x64')
+    const result = await validateHardware()
+
+    // May still warn about the AMD compute node; it must not be blocked here.
+    expect(result.error).toBeUndefined()
   })
 })
