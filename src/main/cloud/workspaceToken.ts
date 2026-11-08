@@ -1,8 +1,4 @@
-/**
- * Workspace token mint: `POST {apiBase}/auth/token` with Desktop's OAuth access
- * token as the Bearer. The minted Cloud JWT is what a local ComfyUI view may
- * hold; the OAuth access token stays in main.
- */
+/** Mints a workspace token at `POST {apiBase}/auth/token` with Desktop's OAuth access token. */
 import { CLOUD_CONFIG } from './config'
 
 const DEFAULT_TIMEOUT_MS = 20_000

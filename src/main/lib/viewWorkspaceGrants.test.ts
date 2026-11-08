@@ -16,7 +16,7 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 function accessToken(workspaceId: string, scope: string = CLOUD_CONFIG.scope): string {
-  return jwt({ sub: 'user-1', workspace_id: workspaceId, scope })
+  return jwt({ sub: user, workspace_id: workspaceId, scope })
 }
 
 function minted(workspaceId: string): WorkspaceTokenMint {
@@ -39,6 +39,7 @@ const viewA = { id: 'a' } as unknown as WebContents
 const viewB = { id: 'b' } as unknown as WebContents
 
 let current: string | null
+let user: string
 let mint: ReturnType<
   typeof vi.fn<(token: string, workspaceId: string) => Promise<WorkspaceTokenMint>>
 >
@@ -49,6 +50,7 @@ function signInAt(workspaceId: string | null): void {
 }
 
 beforeEach(() => {
+  user = 'user-1'
   signInAt('ws-1')
   mint = vi.fn(async (_token: string, workspaceId: string) => minted(workspaceId))
   grants = new ViewWorkspaceGrants(
@@ -131,6 +133,7 @@ describe('ViewWorkspaceGrants', () => {
     const reply = deferred<WorkspaceTokenMint>()
     mint.mockReturnValueOnce(reply.promise)
     const pending = grants.tokenFor(viewA, 'ws-1')
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledOnce())
     signInAt(null)
     grants.endAll()
     reply.resolve(minted('ws-1'))
@@ -174,5 +177,38 @@ describe('ViewWorkspaceGrants', () => {
 
     await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
     expect(mint).not.toHaveBeenCalled()
+  })
+
+  it('never hands one account a token minted for another account in the same workspace', async () => {
+    await grants.tokenFor(viewA, 'ws-1')
+    user = 'user-2'
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    expect(mint).toHaveBeenCalledTimes(2)
+    expect(mint).toHaveBeenLastCalledWith(accessToken('ws-1'), 'ws-1')
+  })
+
+  it('does not let a request from before sign-out start a mint the next session joins', async () => {
+    const before = deferred<string | null>()
+    let reads = 0
+    grants = new ViewWorkspaceGrants(
+      {
+        currentWorkspaceId: () => current,
+        getAccessToken: () =>
+          reads++ === 0 ? before.promise : Promise.resolve(accessToken('ws-1'))
+      },
+      mint
+    )
+    const stale = grants.tokenFor(viewA, 'ws-1')
+    const firstUserToken = accessToken('ws-1')
+    grants.endAll()
+    grants.allowDesktop('ws-1')
+    user = 'user-2'
+    before.resolve(firstUserToken)
+
+    await expect(stale).resolves.toBeNull()
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    expect(mint).toHaveBeenCalledOnce()
+    expect(mint).toHaveBeenCalledWith(accessToken('ws-1'), 'ws-1')
   })
 })

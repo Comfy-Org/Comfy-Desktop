@@ -1,13 +1,6 @@
-/**
- * What a local ComfyUI view may hold, decided in main. A view gets a token only
- * for Desktop's current workspace, only when that workspace is on its
- * allowlist, and only a minted workspace token, never Desktop's OAuth access
- * token. Sign-in and sign-out end every grant, so a reply that lands
- * after them reaches no view.
- */
 import type { WebContents } from 'electron'
 
-import { canMintWorkspaceTokens, workspaceIdOf } from '../cloud/claims'
+import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
 import { mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession } from '../devplatform/session'
@@ -23,6 +16,10 @@ export type MintWorkspaceToken = (
   accessToken: string,
   workspaceId: string
 ) => Promise<WorkspaceTokenMint>
+
+function mintKey(subject: string, workspaceId: string): string {
+  return JSON.stringify([subject, workspaceId])
+}
 
 interface MintedToken {
   token: string
@@ -90,26 +87,34 @@ export class ViewWorkspaceGrants {
 
   private async workspaceToken(workspaceId: string, epoch: number): Promise<string | null> {
     const accessToken = await this.session.getAccessToken()
+    if (epoch !== this.epoch) return null
     if (!accessToken || workspaceIdOf(accessToken) !== workspaceId) return null
     if (!canMintWorkspaceTokens(accessToken)) return null
-    const cached = this.minted.get(workspaceId)
+    const subject = subjectOf(accessToken)
+    if (!subject) return null
+    const key = mintKey(subject, workspaceId)
+    const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now()) return cached.token
 
-    const result = await this.mintOnce(accessToken, workspaceId)
+    const result = await this.mintOnce(accessToken, key, workspaceId)
     if (epoch !== this.epoch) return null
     if (result.kind !== 'minted') return null
-    this.minted.set(workspaceId, { token: result.token, expiresAt: result.expiresAt })
+    this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return result.token
   }
 
-  private mintOnce(accessToken: string, workspaceId: string): Promise<WorkspaceTokenMint> {
-    const inFlight = this.minting.get(workspaceId)
+  private mintOnce(
+    accessToken: string,
+    key: string,
+    workspaceId: string
+  ): Promise<WorkspaceTokenMint> {
+    const inFlight = this.minting.get(key)
     if (inFlight) return inFlight
     const minting = this.minting
     const pending = this.mint(accessToken, workspaceId).finally(() => {
-      if (minting.get(workspaceId) === pending) minting.delete(workspaceId)
+      if (minting.get(key) === pending) minting.delete(key)
     })
-    minting.set(workspaceId, pending)
+    minting.set(key, pending)
     return pending
   }
 }
