@@ -22,6 +22,11 @@ function mintKey(subject: string, workspaceId: string): string {
   return JSON.stringify([subject, workspaceId])
 }
 
+interface HeldToken {
+  token: string
+  subject: string
+}
+
 interface MintedToken {
   token: string
   expiresAt: number
@@ -67,8 +72,9 @@ export class ViewWorkspaceGrants {
   async tokenFor(view: WebContents, workspaceId: string): Promise<string | null> {
     if (!this.mayHold(view, workspaceId)) return null
     const epoch = this.epoch
-    const token = await this.workspaceToken(workspaceId, epoch)
-    return epoch === this.epoch && this.mayHold(view, workspaceId) ? token : null
+    const held = await this.workspaceToken(workspaceId, epoch)
+    if (!held || epoch !== this.epoch || !this.mayHold(view, workspaceId)) return null
+    return this.session.currentSubject() === held.subject ? held.token : null
   }
 
   private seed(): void {
@@ -86,7 +92,7 @@ export class ViewWorkspaceGrants {
     )
   }
 
-  private async workspaceToken(workspaceId: string, epoch: number): Promise<string | null> {
+  private async workspaceToken(workspaceId: string, epoch: number): Promise<HeldToken | null> {
     const accessToken = await this.session.getAccessToken()
     if (epoch !== this.epoch) return null
     if (!accessToken || workspaceIdOf(accessToken) !== workspaceId) return null
@@ -95,13 +101,14 @@ export class ViewWorkspaceGrants {
     if (!subject) return null
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
-    if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now()) return cached.token
+    if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
+      return { token: cached.token, subject }
 
     const result = await this.mintOnce(accessToken, key, workspaceId)
     if (epoch !== this.epoch || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
-    return result.token
+    return { token: result.token, subject }
   }
 
   private mintOnce(

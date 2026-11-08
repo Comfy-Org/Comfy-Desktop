@@ -227,4 +227,25 @@ describe('ViewWorkspaceGrants', () => {
     await grants.tokenFor(viewA, 'ws-1')
     expect(mint).toHaveBeenCalledTimes(2)
   })
+
+  it('does not hand a cached token to an account that signed in while it was being read', async () => {
+    const firstUserToken = accessToken('ws-1')
+    const slowRead = deferred<string | null>()
+    let reads = 0
+    grants = new ViewWorkspaceGrants(
+      {
+        currentWorkspaceId: () => current,
+        currentSubject: () => (current ? user : null),
+        getAccessToken: () => (reads++ === 0 ? Promise.resolve(firstUserToken) : slowRead.promise)
+      },
+      mint
+    )
+    await grants.tokenFor(viewA, 'ws-1')
+    const pending = grants.tokenFor(viewA, 'ws-1')
+    user = 'user-2'
+    slowRead.resolve(firstUserToken)
+
+    await expect(pending).resolves.toBeNull()
+    expect(mint).toHaveBeenCalledOnce()
+  })
 })
