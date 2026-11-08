@@ -578,26 +578,30 @@ export function registerSnapshotHandlers(): void {
       // v2 snapshots with a managed torch stack make the stack's bundle tag
       // authoritative: it is the artifact whose torch family matches the
       // snapshot exactly (it can differ from comfyui.releaseTag after an
-      // in-place PyTorch change). If that bundle has been pruned from R2,
-      // fall back to this machine's matched variant (compatible mode): the
-      // restore discloses the torch substitution and skips committing the
-      // imported envelope, so history stays truthful. v1 snapshots (no torch
-      // identity) keep the legacy behavior: pin when possible, else newest
-      // bundle.
+      // in-place PyTorch change). If that bundle has been pruned from R2 or
+      // fails runtime validation, fall back to this machine's matched variant
+      // (compatible mode): the restore discloses the torch substitution and
+      // skips committing the imported envelope, so history stays truthful. v1
+      // snapshots (no torch identity) keep the legacy behavior: pin when
+      // possible, else newest bundle.
       const managedTorch =
         targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
       const pinTag =
         managedTorch && managedTorch.source.kind === 'comfy-bundle'
           ? managedTorch.source.bundleTag
           : targetSnapshot.comfyui.releaseTag
-      const installVariant: FieldOption =
-        buildPinnedVariant(selectedRelease, matched.data?.variantId as string, pinTag, gpu?.id) ??
-        matched
-
-      const buildResult = tryBuildInstallation(source, {
-        release: selectedRelease,
-        variant: installVariant
-      })
+      const pinnedVariant = buildPinnedVariant(
+        selectedRelease,
+        matched.data?.variantId as string,
+        pinTag,
+        gpu?.id
+      )
+      const pinnedBuild =
+        pinnedVariant &&
+        tryBuildInstallation(source, { release: selectedRelease, variant: pinnedVariant })
+      const buildResult = pinnedBuild?.ok
+        ? pinnedBuild
+        : tryBuildInstallation(source, { release: selectedRelease, variant: matched })
       if (!buildResult.ok) return buildResult
       const instData = {
         ...buildResult.data,

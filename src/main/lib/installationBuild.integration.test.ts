@@ -13,7 +13,11 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
-vi.mock('../installations', () => ({ add: vi.fn() }))
+vi.mock('../installations', () => ({
+  add: vi.fn(),
+  list: vi.fn(async () => []),
+  uniqueName: (name: string) => name
+}))
 vi.mock('./gpu', async (importOriginal) => ({
   ...(await importOriginal<typeof GpuModule>()),
   detectGPU: vi.fn().mockResolvedValue(null)
@@ -29,11 +33,13 @@ vi.mock('./telemetry', () => ({
 import { ipcMain } from 'electron'
 import * as installations from '../installations'
 import { standalone, buildPinnedVariant } from '../sources/standalone'
-import type { FieldOption } from '../types/sources'
+import type { FieldOption, SourcePlugin } from '../types/sources'
+import { tryBuildInstallation } from './buildInstallation'
 import { lookupEnMessage } from './localeTestHelper'
 import { registerAppHandlers } from './ipc/registerAppHandlers'
 import { registerSnapshotHandlers } from './ipc/registerSnapshotHandlers'
 import { handleReleaseUpdate } from './ipc/sessionActions/copy'
+import { performLocalMigration } from './localMigration'
 import {
   migrateToStandaloneFromSnapshot,
   type StandaloneTargetSelection
@@ -93,6 +99,7 @@ describe('standalone build validation at caller boundaries', () => {
     vi.spyOn(standalone, 'getFieldOptions').mockImplementation(async (field) =>
       field === 'release' ? [release] : field === 'variant' ? [variant] : []
     )
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     registerAppHandlers()
     registerSnapshotHandlers()
   })
@@ -107,7 +114,21 @@ describe('standalone build validation at caller boundaries', () => {
     return handler({} as Electron.IpcMainInvokeEvent, ...args)
   }
 
-  function migrate(owned: boolean, target: StandaloneTargetSelection = { mode: 'auto' }) {
+  function migrationTools(uniqueName = vi.fn()) {
+    return {
+      sourceMap: { standalone },
+      sendProgress: vi.fn(),
+      sendOutput: vi.fn(),
+      uniqueName,
+      signal: new AbortController().signal
+    }
+  }
+
+  function migrate(
+    owned: boolean,
+    target: StandaloneTargetSelection = { mode: 'auto' },
+    tools = migrationTools()
+  ) {
     return migrateToStandaloneFromSnapshot(
       {
         installNameBase: 'Migrated',
@@ -116,14 +137,15 @@ describe('standalone build validation at caller boundaries', () => {
         labels: { userData: '', input: '', output: '', models: '' },
         target
       },
-      {
-        sourceMap: { standalone },
-        sendProgress: vi.fn(),
-        sendOutput: vi.fn(),
-        uniqueName: vi.fn(),
-        signal: new AbortController().signal
-      }
+      tools
     )
+  }
+
+  function makeVariantValid(option: FieldOption): FieldOption {
+    return {
+      ...option,
+      data: { ...option.data, manifest: { comfyui_ref: '0.18.3', python_version: '3.13.12' } }
+    }
   }
 
   it('returns a localized build-installation failure instead of rejecting the invoke', async () => {
@@ -131,12 +153,15 @@ describe('standalone build validation at caller boundaries', () => {
       failure
     )
     expect(installations.add).not.toHaveBeenCalled()
+    expect(console.warn).toHaveBeenCalledWith(
+      '[buildInstallation] standalone rejected selections:',
+      expect.objectContaining({ message: failure.message })
+    )
   })
 
   it('returns successful build data separately from its status', async () => {
-    variant.data!.manifest = { comfyui_ref: '0.18.3', python_version: '3.13.12' }
     await expect(
-      invoke('build-installation', 'standalone', { release, variant })
+      invoke('build-installation', 'standalone', { release, variant: makeVariantValid(variant) })
     ).resolves.toMatchObject({
       ok: true,
       data: { sourceId: 'standalone', variant: 'linux-cpu', pythonVersion: '3.13.12' }
@@ -150,12 +175,28 @@ describe('standalone build validation at caller boundaries', () => {
     })
   })
 
+  it('falls back to a generic message when a source throws without one', () => {
+    const source = {
+      id: 'broken',
+      label: 'Broken',
+      buildInstallation: () => {
+        throw new Error()
+      }
+    } as unknown as SourcePlugin
+    expect(tryBuildInstallation(source, {})).toEqual({
+      ok: false,
+      message: lookupEnMessage('errors.buildFailed')
+    })
+  })
+
   it('returns a release-update failure before creating a directory or installation', async () => {
+    // The update is allocated beside the old install, so keep both inside root.
     const inst = {
       id: 'old',
       sourceId: 'standalone',
-      installPath: root
+      installPath: path.join(root, 'old')
     } as installations.InstallationRecord
+    fs.mkdirSync(inst.installPath)
     await expect(
       handleReleaseUpdate({
         event: {} as Electron.IpcMainInvokeEvent,
@@ -165,7 +206,7 @@ describe('standalone build validation at caller boundaries', () => {
       })
     ).resolves.toEqual(failure)
     expect(installations.add).not.toHaveBeenCalled()
-    expect(fs.readdirSync(root)).toEqual(['snapshot.json'])
+    expect(fs.readdirSync(root).sort()).toEqual(['old', 'snapshot.json'])
   })
 
   it('returns a create-from-snapshot failure before staging or adding an installation', async () => {
@@ -176,6 +217,24 @@ describe('standalone build validation at caller boundaries', () => {
     expect(copy).not.toHaveBeenCalled()
     expect(installations.add).not.toHaveBeenCalled()
     expect(fs.existsSync(snapshotFile)).toBe(true)
+  })
+
+  it('falls back to the matched variant when the pinned snapshot bundle is invalid', async () => {
+    const matched = makeVariantValid(variant)
+    vi.mocked(standalone.getFieldOptions!).mockImplementation(async (field) =>
+      field === 'release' ? [release] : field === 'variant' ? [matched] : []
+    )
+    vi.mocked(installations.add).mockImplementationOnce(
+      async (record) => ({ ...record, id: 'new' }) as installations.InstallationRecord
+    )
+    vi.spyOn(fs.promises, 'copyFile').mockResolvedValue()
+
+    await expect(
+      invoke('create-from-snapshot', snapshotFile, 'New', 'stable', 'linux-cpu')
+    ).resolves.toEqual({ ok: true, entry: { id: 'new', name: 'New' } })
+    expect(installations.add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ releaseTag: 'bundle', pythonVersion: '3.13.12' })
+    )
   })
 
   it.each([
@@ -204,6 +263,35 @@ describe('standalone build validation at caller boundaries', () => {
     await expect(migrate(true)).rejects.toThrow(message)
     expect(fs.existsSync(snapshotFile)).toBe(false)
     expect(installations.add).not.toHaveBeenCalled()
+  })
+
+  it('cleans up an owned snapshot when allocating the installation fails', async () => {
+    const valid = makeVariantValid(variant)
+    vi.mocked(standalone.getFieldOptions!).mockImplementation(async (field) =>
+      field === 'release' ? [release] : [valid]
+    )
+    const tools = migrationTools(vi.fn().mockRejectedValue(new Error('Name lookup failed')))
+    await expect(migrate(true, { mode: 'auto' }, tools)).rejects.toThrow('Name lookup failed')
+    expect(fs.existsSync(snapshotFile)).toBe(false)
+    expect(installations.add).not.toHaveBeenCalled()
+  })
+
+  it('rejects an explicit local migration target before scanning or staging', async () => {
+    fs.mkdirSync(path.join(root, 'ComfyUI'))
+    const tools = migrationTools()
+    await expect(
+      performLocalMigration(
+        {
+          id: 'git',
+          sourceId: 'git',
+          name: 'Git',
+          installPath: root
+        } as installations.InstallationRecord,
+        { target: { mode: 'selected', release, variant } },
+        tools
+      )
+    ).rejects.toThrow(failure.message)
+    expect(tools.sendProgress).not.toHaveBeenCalled()
   })
 
   it('cleans up an owned snapshot when loading the catalog rejects', async () => {

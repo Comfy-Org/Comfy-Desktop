@@ -246,8 +246,6 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
 
       const finalName = await uniqueName(name)
       entry = await installations.add({
-        sourceId: inst.sourceId,
-        sourceLabel: source.label,
         ...installData,
         name: finalName,
         installPath: destPath,
