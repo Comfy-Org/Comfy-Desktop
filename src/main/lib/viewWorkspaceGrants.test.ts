@@ -5,10 +5,16 @@ import type { WebContents } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../devplatform/session', () => ({ getCloudSession: () => ({}) }))
+vi.mock('./telemetry', () => ({ emit: vi.fn() }))
 
 import { CLOUD_CONFIG } from '../cloud/config'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
-import { ViewWorkspaceGrants } from './viewWorkspaceGrants'
+import * as mainTelemetry from './telemetry'
+import {
+  VIEW_TOKEN_MINT_FAILED_EVENT,
+  VIEW_TOKEN_MINTED_EVENT,
+  ViewWorkspaceGrants
+} from './viewWorkspaceGrants'
 
 function jwt(claims: Record<string, unknown>): string {
   const b64 = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
@@ -50,6 +56,7 @@ function signInAt(workspaceId: string | null): void {
 }
 
 beforeEach(() => {
+  vi.mocked(mainTelemetry.emit).mockClear()
   user = 'user-1'
   signInAt('ws-1')
   mint = vi.fn(async (_token: string, workspaceId: string) => minted(workspaceId))
@@ -64,6 +71,24 @@ beforeEach(() => {
 })
 
 describe('ViewWorkspaceGrants', () => {
+  it('reports one minted event for views sharing a mint and none for a cached token', async () => {
+    await Promise.all([grants.tokenFor(viewA, 'ws-1'), grants.tokenFor(viewB, 'ws-1')])
+    await grants.tokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([[VIEW_TOKEN_MINTED_EVENT]])
+  })
+
+  it.each([
+    [{ kind: 'failed', status: 403 } as const, { reason: 'http', http_status: 403 }],
+    [{ kind: 'failed', status: null } as const, { reason: 'network' }]
+  ])('reports a failed mint %j', async (result, properties) => {
+    mint.mockResolvedValueOnce(result)
+
+    expect(await grants.tokenFor(viewA, 'ws-1')).toBeNull()
+
+    expect(mainTelemetry.emit).toHaveBeenCalledWith(VIEW_TOKEN_MINT_FAILED_EVENT, properties)
+  })
+
   it('hands a view the minted token for the workspace Desktop started in, never the access token', async () => {
     const token = await grants.tokenFor(viewA, 'ws-1')
 

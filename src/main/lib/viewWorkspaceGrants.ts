@@ -4,8 +4,23 @@ import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claim
 import { mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession } from '../devplatform/session'
+import * as mainTelemetry from './telemetry'
 
 const MINT_REFRESH_SKEW_MS = 60_000
+
+export const VIEW_TOKEN_MINTED_EVENT = 'comfy.desktop.auth.view_token_minted'
+export const VIEW_TOKEN_MINT_FAILED_EVENT = 'comfy.desktop.auth.view_token_mint_failed'
+
+function reportMint(result: WorkspaceTokenMint): void {
+  if (result.kind === 'minted') {
+    mainTelemetry.emit(VIEW_TOKEN_MINTED_EVENT)
+    return
+  }
+  mainTelemetry.emit(
+    VIEW_TOKEN_MINT_FAILED_EVENT,
+    result.status === null ? { reason: 'network' } : { reason: 'http', http_status: result.status }
+  )
+}
 
 export interface GrantSession {
   currentWorkspaceId(): string | null
@@ -119,9 +134,14 @@ export class ViewWorkspaceGrants {
     const inFlight = this.minting.get(key)
     if (inFlight) return inFlight
     const minting = this.minting
-    const pending = this.mint(accessToken, workspaceId).finally(() => {
-      if (minting.get(key) === pending) minting.delete(key)
-    })
+    const pending = this.mint(accessToken, workspaceId)
+      .then((result) => {
+        reportMint(result)
+        return result
+      })
+      .finally(() => {
+        if (minting.get(key) === pending) minting.delete(key)
+      })
     minting.set(key, pending)
     return pending
   }
