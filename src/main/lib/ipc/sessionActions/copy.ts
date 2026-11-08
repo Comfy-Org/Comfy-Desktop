@@ -24,6 +24,7 @@ import type { FieldOption, InstallationRecord } from '../shared'
 import { parseAnyIndexStackId } from '../../../sources/standalone/torchStackTypes'
 import type { ActionContext, ActionResult } from './types'
 import { withAbortableSessionAction } from './withAbortable'
+import { tryBuildInstallation } from '../../buildInstallation'
 
 export async function handleCopy(ctx: ActionContext): Promise<ActionResult> {
   const { event, installationId, inst, actionData } = ctx
@@ -201,10 +202,12 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
 
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
-  const installData = source.buildInstallation({
+  const buildResult = tryBuildInstallation(source, {
     release: releaseSelection as unknown as FieldOption,
     variant: variantSelection as unknown as FieldOption
   })
+  if (!buildResult.ok) return buildResult
+  const installData = buildResult.data
 
   const parentDir = path.dirname(inst.installPath)
   const dirName = sanitizeDirName(name)
