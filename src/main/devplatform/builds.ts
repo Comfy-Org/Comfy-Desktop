@@ -268,7 +268,7 @@ export async function resolveHostArtifactForVersion(
 
 /** Every complete or stopped version, newest first - what the manage view reports as
  *  published, and the basis for a future version picker. */
-export async function listCompleteVersions(
+export async function listTerminalVersions(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
   buildId: string
 ): Promise<number[]> {

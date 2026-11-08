@@ -36,7 +36,7 @@ import type {
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
 import {
-  listCompleteVersions,
+  listTerminalVersions,
   resolveHost,
   resolveHostArtifactForVersion
 } from '../../devplatform/builds'
@@ -632,7 +632,7 @@ export const comfybuilder: SourcePlugin = {
         const cacheGeneration = getVersionCacheGeneration()
         setCachedVersions(
           buildId,
-          await listCompleteVersions(getBuilderClient(), buildId),
+          await listTerminalVersions(getBuilderClient(), buildId),
           cacheGeneration
         )
         return { ok: true }

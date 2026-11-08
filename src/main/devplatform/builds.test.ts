@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  listCompleteVersions,
+  listTerminalVersions,
   listBuildRows,
   resolveHostArtifact,
   resolveHostArtifactForVersion,
@@ -138,7 +138,7 @@ describe('listBuildRows', () => {
       }
     ])
     expect(getCachedVersions('d1')?.versions).toEqual([5, 4])
-    expect(await listCompleteVersions(client, 'd1')).toEqual([5, 4])
+    expect(await listTerminalVersions(client, 'd1')).toEqual([5, 4])
     expect(await resolveHostArtifact(client, HOST, 'd1')).toMatchObject({
       version: 5,
       artifact: { id: 'cpu' }
@@ -279,7 +279,7 @@ describe('listBuildRows', () => {
   })
 })
 
-describe('listCompleteVersions', () => {
+describe('listTerminalVersions', () => {
   it('returns complete versions newest first, dropping unbuilt ones', async () => {
     const client = stubClient({
       versionsByBuild: {
@@ -291,7 +291,7 @@ describe('listCompleteVersions', () => {
         ]
       }
     })
-    expect(await listCompleteVersions(client as never, 'd1')).toEqual([5, 2])
+    expect(await listTerminalVersions(client as never, 'd1')).toEqual([5, 2])
   })
 })
 

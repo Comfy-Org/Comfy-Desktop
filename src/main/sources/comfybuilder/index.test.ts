@@ -61,7 +61,7 @@ vi.mock('./modelStagingTask', () => ({
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
-  listCompleteVersions: vi.fn(async () => [])
+  listTerminalVersions: vi.fn(async () => [])
 }))
 
 import fs, { promises as fsp } from 'fs'
@@ -75,7 +75,7 @@ import {
   venvPython
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
-import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
+import { listTerminalVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
   getCachedVersions,
@@ -1229,7 +1229,7 @@ describe('comfybuilder check-update', () => {
   })
 
   it('warms the version cache from the catalog', async () => {
-    vi.mocked(listCompleteVersions).mockResolvedValue([7, 3])
+    vi.mocked(listTerminalVersions).mockResolvedValue([7, 3])
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1241,7 +1241,7 @@ describe('comfybuilder check-update', () => {
   })
 
   it('reports failure and leaves the cache untouched when the catalog read throws', async () => {
-    vi.mocked(listCompleteVersions).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(listTerminalVersions).mockRejectedValueOnce(new Error('offline'))
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1255,7 +1255,7 @@ describe('comfybuilder check-update', () => {
 
   it('does not cache an update check completed after authentication changed', async () => {
     let resolveVersions!: (versions: number[]) => void
-    vi.mocked(listCompleteVersions).mockReturnValueOnce(
+    vi.mocked(listTerminalVersions).mockReturnValueOnce(
       new Promise<number[]>((resolve) => {
         resolveVersions = resolve
       })

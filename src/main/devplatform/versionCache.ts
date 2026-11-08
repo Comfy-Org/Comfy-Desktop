@@ -12,7 +12,7 @@
  */
 
 export interface CachedVersions {
-  /** Complete versions, newest first. */
+  /** Complete or stopped versions, newest first. */
   versions: number[]
   fetchedAt: number
 }
