@@ -7,7 +7,12 @@ import {
   resolveHostArtifactForVersion,
   resolveSelectedHostArtifact
 } from './builds'
-import { clearVersionCache, getAvailableUpdate, getCachedVersions } from './versionCache'
+import {
+  clearVersionCache,
+  getAvailableUpdate,
+  getCachedVersions,
+  setCachedVersions
+} from './versionCache'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
@@ -143,6 +148,27 @@ describe('listBuildRows', () => {
       version: 5,
       artifact: { id: 'cpu' }
     })
+  })
+
+  it('keeps a resolved row and prior cache when an older stopped release read fails', async () => {
+    const client = stubClient({
+      builds: [{ id: 'd1', name: 'Available latest release' }],
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'stopped')] },
+      artifactsByVersion: { v6: [artifact()] }
+    })
+    const getVersion = client.getVersion.getMockImplementation()!
+    client.getVersion.mockImplementation(async (id) => {
+      if (id === 'v5') throw new Error('older release unavailable')
+      return getVersion(id)
+    })
+    setCachedVersions('d1', [4])
+    const cached = getCachedVersions('d1')
+    const rows = await listBuildRows(client as never, HOST)
+    expect(rows[0]).toMatchObject({ id: 'd1', version: '6', state: 'installable' })
+    expect(getCachedVersions('d1')).toEqual(cached)
+    await expect(listUpdateVersions(client, 'd1', HOST)).rejects.toThrow(
+      'older release unavailable'
+    )
   })
 
   it.each(['queued', 'building', 'stopping'])(

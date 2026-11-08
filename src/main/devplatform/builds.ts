@@ -131,13 +131,19 @@ async function buildRow(
   }
 
   const { artifacts } = await client.getVersion(latest.id)
-  setCachedVersions(
-    build.id,
-    await updateVersions(allVersions, host, async (id) =>
-      id === latest.id ? artifacts : (await client.getVersion(id)).artifacts
-    ),
-    cacheGeneration
-  )
+  try {
+    setCachedVersions(
+      build.id,
+      await updateVersions(allVersions, host, async (id) =>
+        id === latest.id ? artifacts : (await client.getVersion(id)).artifacts
+      ),
+      cacheGeneration
+    )
+  } catch (err) {
+    // Optional cache warming must not hide the already resolved catalog row.
+    // Explicit update checks still propagate the error rather than cache a partial list.
+    console.error('[devplatform] failed to warm version cache:', err)
+  }
   const targetOs = [
     ...new Set(
       artifacts.filter((artifact) => artifact.status === 'ready').map((artifact) => artifact.os)
