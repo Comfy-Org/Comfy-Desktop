@@ -54,7 +54,30 @@ export interface UvPipResult {
 export type OnUvSpawn = (proc: ChildProcess) => void
 
 /** Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output. */
-export function runUvPipDetailed(
+export async function runUvPipDetailed(
+  uvPath: string,
+  args: string[],
+  cwd: string,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal,
+  onSpawn?: OnUvSpawn,
+  extraEnv?: Record<string, string>,
+  mirrors?: PipMirrorConfig
+): Promise<UvPipResult> {
+  if (!mirrors) return spawnUvPip(uvPath, args, cwd, sendOutput, signal, onSpawn, extraEnv)
+  const { pypiMirror, useChineseMirrors } = mirrors
+  const run = (indexArgs: string[]): Promise<UvPipResult> =>
+    spawnUvPip(uvPath, [...args, ...indexArgs], cwd, sendOutput, signal, onSpawn, extraEnv)
+  const result = await run(getPipIndexArgs(pypiMirror, useChineseMirrors))
+  const fallback = getPipFallbackIndexArgs(pypiMirror, useChineseMirrors)
+  if (result.code === 0 || !fallback || signal?.aborted) return result
+  sendOutput('\nRetrying with the mirrors ahead of pypi.org…\n')
+  const retried = await run(fallback)
+  // The pypi.org-first error is the one to act on: the mirror-first one reflects the mirror's state.
+  return retried.code === 0 ? retried : result
+}
+
+function spawnUvPip(
   uvPath: string,
   args: string[],
   cwd: string,
@@ -114,9 +137,19 @@ export function runUvPip(
   args: string[],
   cwd: string,
   sendOutput: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mirrors?: PipMirrorConfig
 ): Promise<number> {
-  return runUvPipDetailed(uvPath, args, cwd, sendOutput, signal).then((r) => r.code)
+  return runUvPipDetailed(
+    uvPath,
+    args,
+    cwd,
+    sendOutput,
+    signal,
+    undefined,
+    undefined,
+    mirrors
+  ).then((r) => r.code)
 }
 
 export interface PipMirrorConfig {
@@ -149,7 +182,6 @@ export async function installFilteredRequirementsDetailed(
   await fs.promises.writeFile(filteredPath, filtered, 'utf-8')
 
   try {
-    const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
     return await runUvPipDetailed(
       uvPath,
       [
@@ -158,14 +190,14 @@ export async function installFilteredRequirementsDetailed(
         filteredPath,
         '--python',
         pythonPath,
-        ...indexArgs,
         ...(extraArgs ?? [])
       ],
       installPath,
       sendOutput,
       signal,
       onSpawn,
-      extraEnv
+      extraEnv,
+      mirrors ?? {}
     )
   } finally {
     try {
@@ -214,6 +246,17 @@ function normalizeIndexUrl(url: string): string {
   return trimmed.endsWith('/') ? trimmed : trimmed + '/'
 }
 
+function mirrorUrls(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
+  const urls: string[] = []
+  const seen = new Set([normalizeIndexUrl(PYPI_INDEX_URL)])
+  for (const url of [pypiMirror?.trim(), ...(useChineseMirrors ? PYPI_MIRROR_URLS : [])]) {
+    if (!url || seen.has(normalizeIndexUrl(url))) continue
+    seen.add(normalizeIndexUrl(url))
+    urls.push(url)
+  }
+  return urls
+}
+
 export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean): string[] {
   const mirror = pypiMirror?.trim() || undefined
 
@@ -250,6 +293,19 @@ export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean
     args.push('--extra-index-url', url)
   }
   return args
+}
+
+/**
+ * The retry's index arguments: the mirrors first, pypi.org last; null when no mirror is set. uv asks
+ * every `--extra-index-url`, in order, before `--index-url`, so the mirrors go in as extras.
+ */
+export function getPipFallbackIndexArgs(
+  pypiMirror?: string,
+  useChineseMirrors?: boolean
+): string[] | null {
+  const urls = mirrorUrls(pypiMirror, useChineseMirrors)
+  if (urls.length === 0) return null
+  return ['--index-url', PYPI_INDEX_URL, ...urls.flatMap((url) => ['--extra-index-url', url])]
 }
 
 /**

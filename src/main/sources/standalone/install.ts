@@ -54,7 +54,7 @@ type InstallPhase = InstallPhaseName | 'env_create' | 'package_copy' | 'torch_de
 function emitInstallPhase(
   installation: InstallationRecord,
   phase: InstallPhase,
-  status: InstallPhaseStatus,
+  status: InstallPhaseStatus | 'update_aborted',
   info: { durationMs?: number; error?: unknown } = {}
 ): void {
   // Side-channel only: classification/emission must never derail an install
@@ -332,8 +332,12 @@ export async function postInstall(
         installation = result.installation
         if (result.ok) {
           sendProgress('update', { percent: 100, status: 'Up to date' })
+        } else if (signal?.aborted) {
+          sendProgress('update', { percent: 100, status: 'Cancelled' })
         } else {
-          sendProgress('update', { percent: 100, status: 'Skipped (update failed)' })
+          emitInstallPhase(installation, 'torch_deps_sync', 'update_aborted')
+          const reason = result.message?.split('\n')[0] ?? 'see the app log'
+          sendProgress('update', { percent: 100, status: `Update failed: ${reason}` })
         }
       }
     } catch (err) {

@@ -41,8 +41,7 @@ vi.mock('../../settings', () => ({
 vi.mock('../pip', () => ({
   pipFreeze: vi.fn(),
   runUvPip: vi.fn(async () => 0),
-  installFilteredRequirements: vi.fn(async () => 0),
-  getPipIndexArgs: vi.fn(() => [])
+  installFilteredRequirements: vi.fn(async () => 0)
 }))
 vi.mock('../pythonEnv', () => ({
   getActiveUvPath: vi.fn(() => uvBinPath),
@@ -132,6 +131,59 @@ describe('restorePipPackages', () => {
       (text) => output.push(text),
       signal
     )
+
+  it('hands the mirrors to every install, bulk and one-by-one, so each can retry with them first', async () => {
+    vi.mocked(pipFreeze).mockResolvedValue({})
+    vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+      (args as string[]).includes('--no-deps') ? 0 : 1
+    )
+    const mirrors = { pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true }
+
+    await restorePipPackages(
+      tmpRoot,
+      installation,
+      snapshotWith({ aiohttp: '1.0.0', numpy: '1.0.0' }),
+      noProgress,
+      (text) => output.push(text),
+      undefined,
+      mirrors
+    )
+
+    const installs = vi
+      .mocked(runUvPip)
+      .mock.calls.filter(([, args]) => (args as string[])[1] === 'install')
+    expect(installs, 'one bulk install, then one per package').toHaveLength(3)
+    for (const call of installs) {
+      expect(call[5]).toBe(mirrors)
+      expect(call[1], 'the uv helper adds the index args').not.toEqual(
+        expect.arrayContaining(['--index-url'])
+      )
+    }
+  })
+
+  it('asks for pypi.org alone, bulk and one-by-one, when no mirror config is passed', async () => {
+    vi.mocked(pipFreeze).mockResolvedValue({})
+    vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+      (args as string[]).includes('--no-deps') ? 0 : 1
+    )
+
+    await restorePipPackages(
+      tmpRoot,
+      installation,
+      snapshotWith({ aiohttp: '1.0.0', numpy: '1.0.0' }),
+      noProgress,
+      (text) => output.push(text),
+      undefined
+    )
+
+    const installs = vi
+      .mocked(runUvPip)
+      .mock.calls.filter(([, args]) => (args as string[])[1] === 'install')
+    expect(installs).toHaveLength(3)
+    for (const call of installs) {
+      expect(call[5], 'an empty config, which still pins --index-url pypi.org').toEqual({})
+    }
+  })
 
   describe('identity case: live environment already matches the snapshot', () => {
     it('does nothing when the live environment already matches the snapshot', async () => {
