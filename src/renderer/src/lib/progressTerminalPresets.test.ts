@@ -6,10 +6,10 @@ import {
 } from './progressTerminalPresets'
 
 describe('successTerminalGoDashboardOrOpen', () => {
-  it('returns Go to Dashboard as the first action and Open Instance as the primary CTA', () => {
+  it('returns Go to Dashboard as the first action and Open Build as the primary CTA', () => {
     const t = successTerminalGoDashboardOrOpen({
       dashboardLabel: 'Go to Dashboard',
-      openLabel: 'Open Instance'
+      openLabel: 'Open Build'
     })
     expect(t.actions).toHaveLength(2)
     expect(t.actions[0]).toMatchObject({
@@ -19,7 +19,7 @@ describe('successTerminalGoDashboardOrOpen', () => {
     })
     expect(t.actions[1]).toMatchObject({
       id: SUCCESS_ACTION_OPEN_INSTANCE,
-      label: 'Open Instance',
+      label: 'Open Build',
       variant: 'primary'
     })
   })

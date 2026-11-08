@@ -34,14 +34,14 @@
     "build": "Build"
   },
   "chooser": {
-    "title": "Choose an instance",
+    "title": "Choose a build",
     "recent": "Recent",
     "all": "All",
     "openCloud": "Open",
     "emptyTitle": "No instances yet",
     "emptyDesc": "Create your first ComfyUI instance to get started.",
     "createInstall": "Create instance",
-    "newInstall": "New Instance",
+    "newInstall": "Install a New Build",
     "newInstallDesc": "Set up a fresh ComfyUI environment.",
     "filterAll": "All",
     "filterLocal": "Local",
@@ -65,7 +65,7 @@
     "statusError": "Error",
     "viewErrorTooltip": "View error details",
     "errorTitle": "Error",
-    "searchPlaceholder": "Search instances",
+    "searchPlaceholder": "Search builds",
     "noMatches": "No instances match",
     "buildsTitle": "Builds",
     "newBuild": "New Build",
@@ -89,7 +89,7 @@
   },
   "titleBar": {
     "panelComfy": "ComfyUI",
-    "panelInstallSettings": "Instance Settings",
+    "panelInstallSettings": "Build Settings",
     "panelLauncherSettings": "Launcher Settings",
     "installSettingsComingSoon": "Instance-specific settings will appear here in a future update.",
     "installationLabel": "Instance",
@@ -265,7 +265,7 @@
     "dismiss": "Dismiss",
     "name": "Name",
     "namePlaceholder": "e.g. ComfyUI Main",
-    "installInfo": "Instance Info",
+    "installInfo": "Build Info",
     "installMethod": "Install Method",
     "release": "Release",
     "location": "Location",
@@ -380,8 +380,8 @@
     "grandSubtitle": "Load a saved snapshot file to recreate that build here."
   },
   "newInstall": {
-    "title": "New Instance",
-    "grandTitle": "New Instance",
+    "title": "Install a New Build",
+    "grandTitle": "Install a New Build",
     "grandSubtitle": "Set up a fresh ComfyUI instance. Pick a source, name it, and configure it.",
     "installMethod": "Install Method",
     "installLocation": "Install location",
@@ -508,7 +508,7 @@
     "reboot": "Reboot",
     "restartComfyui": "Restart ComfyUI",
     "successChoiceGoDashboard": "Go to Dashboard",
-    "successChoiceOpen": "Open Instance",
+    "successChoiceOpen": "Open Build",
     "phaseLabel": {
       "download": "Downloading ComfyUI…",
       "extract": "Unpacking the install…",
@@ -797,12 +797,12 @@
     "deleteConfirmMessage": "This permanently removes this ComfyUI installation and all its files. This cannot be undone.",
     "deleteConfirmDetail": "Other installs are not affected.",
     "untrack": "Forget",
-    "untrackConfirmTitle": "Forget Instance",
-    "untrackConfirmMessage": "This will remove the instance from the app. The files will not be deleted.",
+    "untrackConfirmTitle": "Forget Build",
+    "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",
     "share": "Share",
     "rename": "Rename",
-    "renameTitle": "Rename Instance",
-    "renameMessage": "Enter a new name for this instance."
+    "renameTitle": "Rename Build",
+    "renameMessage": "Enter a new name for this build."
   },
   "migrate": {
     "migrateFrom": "Migrate From",
@@ -865,7 +865,7 @@
   "git": {
     "label": "Git Clone",
     "desc": "Track an existing ComfyUI git clone with a Python virtual environment.",
-    "installInfo": "Instance Info",
+    "installInfo": "Build Info",
     "repository": "Repository",
     "branch": "Branch",
     "commit": "Commit",
@@ -1508,7 +1508,7 @@
   },
   "fileMenu": {
     "newWindow": "Open Dashboard",
-    "newInstall": "New Instance",
+    "newInstall": "Install a New Build",
     "addExistingInstall": "Add Existing Build",
     "loadSnapshot": "Load Snapshot",
     "performanceTest": "Performance Tests",
