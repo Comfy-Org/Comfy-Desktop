@@ -21,9 +21,17 @@ export interface LatestTagOverride {
  *  safely. */
 const _cache = new Map<string, ComfyVersion>()
 
+/** Resolutions still running, by the same key as `_cache`. Every git query here spawns a process,
+ *  so concurrent callers for one commit (e.g. snapshots sharing a HEAD) share one resolution. */
+const _inFlight = new Map<string, Promise<ComfyVersion>>()
+
+/** Bumped by `clearVersionCache` so a resolution started before the clear cannot repopulate it. */
+let _generation = 0
+
 /** Short-lived cache for the latest version tag per repo path. */
 let _latestTagCache: { repoPath: string; tag: string | undefined; ts: number } | null = null
 const LATEST_TAG_TTL_MS = 5_000
+let _latestTagInFlight: { repoPath: string; promise: Promise<string | undefined> } | null = null
 
 async function getCachedLatestTag(repoPath: string): Promise<string | undefined> {
   if (
@@ -33,8 +41,15 @@ async function getCachedLatestTag(repoPath: string): Promise<string | undefined>
   ) {
     return _latestTagCache.tag
   }
-  const tag = await findLatestVersionTag(repoPath)
-  _latestTagCache = { repoPath, tag, ts: Date.now() }
+  // Callers arriving while the lookup runs would all miss the TTL cache and each spawn their own.
+  if (_latestTagInFlight?.repoPath === repoPath) return _latestTagInFlight.promise
+  const generation = _generation
+  const promise = findLatestVersionTag(repoPath).finally(() => {
+    if (_latestTagInFlight?.promise === promise) _latestTagInFlight = null
+  })
+  _latestTagInFlight = { repoPath, promise }
+  const tag = await promise
+  if (generation === _generation) _latestTagCache = { repoPath, tag, ts: Date.now() }
   return tag
 }
 
@@ -116,15 +131,39 @@ export async function resolveLocalVersion(
     ? `\0${latestTagOverride.name}\0${latestTagOverride.sha}`
     : ''
   const cacheKey = `${comfyuiDir}\0${commit}${overrideKey}`
-  const cached = _cache.get(cacheKey)
-  if (cached) {
-    // Apply fallbackTag at read time without mutating the git-only cache entry.
-    if (fallbackTag && !cached.baseTag) {
-      return { ...cached, baseTag: fallbackTag, baseTagVerified: false }
+  let resolved = _cache.get(cacheKey)
+  if (!resolved) {
+    let pending = _inFlight.get(cacheKey)
+    if (!pending) {
+      const generation = _generation
+      const promise = resolveFromGit(comfyuiDir, commit, latestTagOverride)
+        .then((result) => {
+          if (generation === _generation) _cache.set(cacheKey, result)
+          return result
+        })
+        .finally(() => {
+          if (_inFlight.get(cacheKey) === promise) _inFlight.delete(cacheKey)
+        })
+      _inFlight.set(cacheKey, promise)
+      pending = promise
     }
-    return cached
+    resolved = await pending
   }
 
+  // Apply fallbackTag at read time without mutating the git-only cache entry.
+  if (fallbackTag && !resolved.baseTag) {
+    // A caller-supplied tag (e.g. a manifest's comfyui_ref) was never checked against the graph.
+    return { ...resolved, baseTag: fallbackTag, baseTagVerified: false }
+  }
+  return resolved
+}
+
+/** The git-only part of {@link resolveLocalVersion}: no caching and no fallbackTag. */
+async function resolveFromGit(
+  comfyuiDir: string,
+  commit: string,
+  latestTagOverride?: LatestTagOverride
+): Promise<ComfyVersion> {
   const latestTagName = latestTagOverride?.name ?? (await getCachedLatestTag(comfyuiDir))
   const latestTagRef = latestTagOverride?.sha ?? latestTagName
 
@@ -202,23 +241,19 @@ export async function resolveLocalVersion(
     baseTagVerified = ancestorTag !== undefined
   }
 
-  // Cache git-only data (no fallbackTag) so callers sharing (repoPath, commit)
-  // don't poison each other.
+  // Git-only data (no fallbackTag), so callers sharing (repoPath, commit) don't poison each other.
   const result: ComfyVersion = { commit, baseTag, commitsAhead, baseTagVerified }
   // An unverified upgrade displaces a tag that IS reachable. Keep it, so a gate can measure the
   // release the install provably contains instead of refusing outright.
   if (upgraded && !baseTagVerified && ancestorTag) result.ancestorTag = ancestorTag
-  _cache.set(cacheKey, result)
-
-  if (fallbackTag && !baseTag) {
-    // A caller-supplied tag (e.g. a manifest's comfyui_ref) was never checked against the graph.
-    return { ...result, baseTag: fallbackTag, baseTagVerified: false }
-  }
   return result
 }
 
 /** Clear the version cache (e.g. after an update changes tags). */
 export function clearVersionCache(): void {
+  _generation++
   _cache.clear()
+  _inFlight.clear()
   _latestTagCache = null
+  _latestTagInFlight = null
 }
