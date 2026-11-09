@@ -1051,15 +1051,18 @@ function upload(files: FileList | null | undefined): void {
 }
 .ap-views {
   display: flex;
-  margin: 2px 4px 4px;
+  margin: 2px 0 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
   flex: 1;
 }
 /* Each view: its icon over its name. */
 :root .proto-ui.proto-ui.proto-ui .ap-views .ap-view {
+  display: flex;
   height: auto;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 8px 4px 7px;
   font-size: 12px;
