@@ -43,13 +43,13 @@ export const onHubPage = (a: LibApp): boolean =>
   can.value.design && appPage.id === 'hub' && a.group !== 'yours'
 
 /** Where an app's examples sit on its page (UI Playground › App examples):
- *  as Templates, a tab beside your Creations over the stage; on the top
+ *  as the Gallery, a tab beside your Creations over the stage; on the top
  *  line of the stage, over the picture's room; or at the top of the panel,
  *  before what you give it. */
 export type AppExamplesAt = 'tabs' | 'stage' | 'panel'
 
 export const APP_EXAMPLES_AT: { value: AppExamplesAt; label: string }[] = [
-  { value: 'tabs', label: 'Tabs · Creations and Templates over the stage' },
+  { value: 'tabs', label: 'Tabs · Creations and Gallery over the stage' },
   { value: 'stage', label: 'Stage · on the top line of the picture' },
   { value: 'panel', label: 'Panel · at the top, before the fields' }
 ]

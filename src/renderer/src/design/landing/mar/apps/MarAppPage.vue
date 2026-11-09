@@ -224,14 +224,14 @@ function run(): void {
 defineExpose({ run })
 
 // UI Playground › App examples › Tabs: over the stage, your Creations and
-// the app's Templates. It opens on Templates unless it came from an
+// the app's Gallery. It opens on the Gallery unless it came from an
 // example; picking one fills the panel and goes back to Creations.
 const onTabs = computed(() => appExamplesAt.id === 'tabs' && examples.value.length > 1)
-const stageView = ref<'creations' | 'templates'>(openOn[appId] ? 'creations' : 'templates')
-const onTemplates = computed(() => onTabs.value && stageView.value === 'templates')
+const stageView = ref<'creations' | 'gallery'>(openOn[appId] ? 'creations' : 'gallery')
+const onGallery = computed(() => onTabs.value && stageView.value === 'gallery')
 const VIEWS = computed(() => [
   { value: 'creations' as const, label: 'Creations', count: outputs.value.length || undefined },
-  { value: 'templates' as const, label: 'Templates', count: examples.value.length }
+  { value: 'gallery' as const, label: 'Gallery', count: examples.value.length }
 ])
 function playTpl(e: MouseEvent, on: boolean): void {
   const v = (e.currentTarget as HTMLElement).querySelector('video')
@@ -274,103 +274,17 @@ function back(): void {
   <div class="mar-app-editor mar-app-page text-base-foreground">
     <!-- Header: Back and the name; Compare, Share and Download on the
          right. No account: the title bar has it. -->
-    <header class="mar-app-editor-bar">
-      <div class="mar-app-editor-title">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
-          ><ChevronLeft :size="16"
-        /></Button>
-        <h1 class="shrink-0 text-heading font-semibold">{{ name }}</h1>
-      </div>
-      <span class="flex-1" />
-      <div class="mar-app-editor-actions">
-        <!-- Compare and Share: icons alone, white on no fill. -->
-        <Button
-          v-if="hasResult && state !== 'running'"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Compare before and after"
-          title="Compare"
-          :aria-pressed="comparing"
-          :class="cn('mar-app-editor-icon', comparing && 'is-on')"
-          @click="comparing = !comparing"
-          ><Columns2 :size="16"
-        /></Button>
-        <PopoverRoot>
-          <PopoverTrigger as-child>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Share"
-              title="Share"
-              class="mar-app-editor-icon"
-              ><Share2 :size="16"
-            /></Button>
-          </PopoverTrigger>
-          <!-- Share: the app and its link, copied in one click; once you've
-               run it, whether your result goes with it. -->
-          <PopoverContent align="end" class="mar-app-share w-[320px] border-0 p-0">
-            <div class="mar-app-share-head">
-              <img :src="thumb(thumbId)" alt="" />
-              <div class="min-w-0">
-                <p class="truncate text-ui font-semibold">{{ name }}</p>
-                <p class="text-[12px] text-balance text-muted-foreground">
-                  Anyone with the link can run it, on their credits.
-                </p>
-              </div>
-            </div>
-            <label v-if="state === 'done'" class="mar-app-share-opt">
-              <img :src="result" alt="" :style="{ filter: shownFilter }" />
-              <span class="min-w-0 flex-1">
-                <span class="block text-ui">Include your result</span>
-                <span class="block text-[12px] text-subtle-foreground"
-                  >They see it before they run.</span
-                >
-              </span>
-              <Switch v-model="withResult" aria-label="Include your result" />
-            </label>
-            <div class="mar-app-share-link">
-              <button type="button" class="mar-app-share-url" title="Copy link" @click="copy">
-                <Globe :size="13" /><span>{{ link }}</span>
-              </button>
-              <Button variant="primary" size="sm" class="mar-app-share-copy" @click="copy"
-                ><Check v-if="copied" :size="13" /><Link2 v-else :size="13" />{{
-                  copied ? 'Copied' : 'Copy'
-                }}</Button
-              >
-            </div>
-          </PopoverContent>
-        </PopoverRoot>
-        <!-- Download only once there is something of yours to download. -->
-        <Button
-          v-if="state === 'done'"
-          variant="primary"
-          size="sm"
-          class="ml-1"
-          @click="toast('Downloading…')"
-          ><Download :size="13" />Download</Button
-        >
-        <!-- More: what you'd do now and then, out of the way. -->
-        <DropdownMenuRoot>
-          <DropdownMenuTrigger as-child>
-            <Button variant="ghost" size="icon-sm" aria-label="More"
-              ><Ellipsis :size="16"
-            /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-52">
-            <DropdownMenuItem v-if="lib" @select="toggleAdded(lib)"
-              ><Check v-if="isAdded(appId)" :size="14" /><Plus v-else :size="14" />{{
-                isAdded(appId) ? 'In my apps' : 'Add to my apps'
-              }}</DropdownMenuItem
-            >
-            <DropdownMenuItem @select="copy"><Link2 :size="14" />Copy link</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenuRoot>
-      </div>
-    </header>
 
     <div class="mar-app-editor-body">
       <!-- Panel: what you give it, and Run at its foot -->
       <aside class="mar-app-editor-panel" aria-label="Input">
+        <!-- The app's name heads its own column. -->
+        <div class="mar-app-editor-title">
+          <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
+            ><ChevronLeft :size="16"
+          /></Button>
+          <h1 class="shrink-0 text-heading font-semibold">{{ name }}</h1>
+        </div>
         <div class="mar-app-editor-fields">
           <!-- UI Playground › App examples › Panel: a field of its own at the
                top, like the ones under it: up to five, square, sharing the
@@ -464,16 +378,99 @@ function back(): void {
         :class="cn('mar-app-editor-stage', appExamplesAt.id === 'panel' && 'is-examples-in-panel')"
         aria-label="Output"
       >
-        <MarSeg
-          v-if="onTabs"
-          v-model="stageView"
-          :options="VIEWS"
-          label="Stage"
-          class="mar-app-editor-views"
-        />
-        <!-- Templates: the app's examples, to start from; one fills the
+        <!-- Over the stage, one line: Creations and Gallery, then the
+             actions on the right. -->
+        <div class="mar-app-editor-stagebar">
+          <MarSeg v-if="onTabs" v-model="stageView" :options="VIEWS" label="Stage" />
+          <span class="flex-1" />
+          <div class="mar-app-editor-actions">
+            <!-- Compare and Share: icons alone, white on no fill. -->
+            <Button
+              v-if="hasResult && state !== 'running'"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Compare before and after"
+              title="Compare"
+              :aria-pressed="comparing"
+              :class="cn('mar-app-editor-icon', comparing && 'is-on')"
+              @click="comparing = !comparing"
+              ><Columns2 :size="16"
+            /></Button>
+            <PopoverRoot>
+              <PopoverTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Share"
+                  title="Share"
+                  class="mar-app-editor-icon"
+                  ><Share2 :size="16"
+                /></Button>
+              </PopoverTrigger>
+              <!-- Share: the app and its link, copied in one click; once you've
+                   run it, whether your result goes with it. -->
+              <PopoverContent align="end" class="mar-app-share w-[320px] border-0 p-0">
+                <div class="mar-app-share-head">
+                  <img :src="thumb(thumbId)" alt="" />
+                  <div class="min-w-0">
+                    <p class="truncate text-ui font-semibold">{{ name }}</p>
+                    <p class="text-[12px] text-balance text-muted-foreground">
+                      Anyone with the link can run it, on their credits.
+                    </p>
+                  </div>
+                </div>
+                <label v-if="state === 'done'" class="mar-app-share-opt">
+                  <img :src="result" alt="" :style="{ filter: shownFilter }" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-ui">Include your result</span>
+                    <span class="block text-[12px] text-subtle-foreground"
+                      >They see it before they run.</span
+                    >
+                  </span>
+                  <Switch v-model="withResult" aria-label="Include your result" />
+                </label>
+                <div class="mar-app-share-link">
+                  <button type="button" class="mar-app-share-url" title="Copy link" @click="copy">
+                    <Globe :size="13" /><span>{{ link }}</span>
+                  </button>
+                  <Button variant="primary" size="sm" class="mar-app-share-copy" @click="copy"
+                    ><Check v-if="copied" :size="13" /><Link2 v-else :size="13" />{{
+                      copied ? 'Copied' : 'Copy'
+                    }}</Button
+                  >
+                </div>
+              </PopoverContent>
+            </PopoverRoot>
+            <!-- Download only once there is something of yours to download. -->
+            <Button
+              v-if="state === 'done'"
+              variant="primary"
+              size="sm"
+              class="ml-1"
+              @click="toast('Downloading…')"
+              ><Download :size="13" />Download</Button
+            >
+            <!-- More: what you'd do now and then, out of the way. -->
+            <DropdownMenuRoot>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon-sm" aria-label="More"
+                  ><Ellipsis :size="16"
+                /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-52">
+                <DropdownMenuItem v-if="lib" @select="toggleAdded(lib)"
+                  ><Check v-if="isAdded(appId)" :size="14" /><Plus v-else :size="14" />{{
+                    isAdded(appId) ? 'In my apps' : 'Add to my apps'
+                  }}</DropdownMenuItem
+                >
+                <DropdownMenuItem @select="copy"><Link2 :size="14" />Copy link</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuRoot>
+          </div>
+        </div>
+        <!-- Gallery: the app's examples, to start from; one fills the
              panel with what it ran with. -->
-        <div v-if="onTemplates" class="mar-app-editor-tpls" role="list">
+        <div v-if="onGallery" class="mar-app-editor-tpls" role="list">
           <button
             v-for="x in examples"
             :key="x.id"
@@ -493,11 +490,11 @@ function back(): void {
             >
             <span class="mar-app-editor-tpl-text"
               ><span class="truncate">{{ x.title }}</span
-              ><span class="text-white/70">Use template</span></span
+              ><span class="text-white/70">Start from this</span></span
             >
           </button>
         </div>
-        <div v-show="!onTemplates" class="mar-app-editor-canvas">
+        <div v-show="!onGallery" class="mar-app-editor-canvas">
           <!-- Examples, on the top line of the picture's room: up to five
                of what this app has made, to start from like templates.
                Picking one fills the panel and shows its result; once you
@@ -598,7 +595,7 @@ function back(): void {
         <!-- Once you've run it, along the bottom as in the asset modal:
              your takes from the left, how it went in the middle, the zoom
              on the right. -->
-        <div v-if="state === 'done' && !onTemplates" class="mar-app-editor-outbar">
+        <div v-if="state === 'done' && !onGallery" class="mar-app-editor-outbar">
           <nav class="mar-app-editor-takes" aria-label="Your takes">
             <template v-if="outputs.length > 1">
               <button
@@ -654,21 +651,13 @@ function back(): void {
   display: grid;
   height: 100%;
   min-height: 560px;
-  grid-template-rows: auto minmax(0, 1fr);
-  /* No gap under the header: its 56 px centre the title on its own. */
-  padding: 0 var(--edge) var(--edge);
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--edge);
   overflow: hidden;
   background: var(--color-app-background);
 }
 
 /* Header */
-.mar-app-editor-bar {
-  display: flex;
-  height: 56px;
-  padding: 0 4px;
-  align-items: center;
-  gap: 8px;
-}
 /* Two blocks of one height: the panel, and the stage beside it. */
 .mar-app-editor-body {
   display: grid;
@@ -963,12 +952,24 @@ function back(): void {
 .mar-app-share-copy {
   flex: none;
 }
-/* Tabs over the stage: Creations and Templates, top left. */
-:root .proto-ui.proto-ui.proto-ui .mar-pseg.mar-app-editor-views {
+/* Over the stage: Creations and Gallery on the left, the actions on the
+   right, on one line. */
+.mar-app-editor-stagebar {
   position: absolute;
   top: 16px;
+  right: 20px;
   left: 24px;
   z-index: 3;
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 10px;
+}
+/* The panel's head: back and the app's name. */
+.mar-app-editor-panel > .mar-app-editor-title {
+  height: 64px;
+  flex: none;
+  padding: 0 16px 0 10px;
 }
 .mar-app-editor-tpls {
   position: absolute;
@@ -1028,7 +1029,7 @@ function back(): void {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-/* What it is, and Use template, over a fade on hover. */
+/* What it is, and Start from this, over a fade on hover. */
 .mar-app-editor-tpl-text {
   position: absolute;
   right: 0;
