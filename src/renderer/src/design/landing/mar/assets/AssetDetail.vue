@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
                 <FolderOpen :size="15" />
               </button>
             </header>
-            <!-- Download leads, in color. The rest are icons that keep their
+            <!-- Download leads, filled. The rest are icons that keep their
                  place: a missing workflow shows disabled, Save comes last. -->
             <div class="mad-actions">
               <button
@@ -976,12 +976,12 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary {
-  background: var(--color-primary-background, #0b8ce9);
-  color: #fff;
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
   font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary:hover {
-  background: color-mix(in oklch, var(--color-primary-background, #0b8ce9) 86%, #fff);
+  background: color-mix(in oklch, var(--color-base-foreground) 88%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-icon {
   width: 32px;
