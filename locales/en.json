@@ -61,7 +61,7 @@
     "downloadFailed": "Couldn't download asset",
     "moreActions": "More actions",
     "inspectAsset": "Inspect asset",
-    "inspect": "Open {name}",
+    "inspect": "Inspect {name}",
     "kindSingular": {
       "image": "Image",
       "video": "Video",

@@ -46,6 +46,7 @@ import {
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
+import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { Installation } from '../types/ipc'
 import { isDashboardSection } from './dashboardSection'
 import type { DashboardSection, SidebarPage } from './dashboardSection'
@@ -469,13 +470,16 @@ onUnmounted(() => {
             <AssetsView v-if="dashboardSection === 'assets'" />
             <section
               v-else-if="dashboardSection"
-              class="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center"
+              class="flex min-h-0 flex-1 flex-col"
+              :class="PAGE_SPOTLIGHT_CLASS"
               :data-testid="`dashboard-${dashboardSection}`"
             >
-              <h1 class="m-0 text-heading font-semibold text-foreground">
-                {{ t(`sidebar.${dashboardSection}`) }}
-              </h1>
-              <p class="m-0 text-ui text-muted-foreground">{{ t('sidebar.comingSoon') }}</p>
+              <div class="mx-auto w-full max-w-300 px-10 pt-9">
+                <h1 class="m-0 font-display text-display font-semibold text-foreground">
+                  {{ t(`sidebar.${dashboardSection}`) }}
+                </h1>
+                <p class="mt-2 mb-0 text-ui text-muted-foreground">{{ t('sidebar.comingSoon') }}</p>
+              </div>
             </section>
             <BuildDetailsView
               v-else-if="buildDetailsInstall"

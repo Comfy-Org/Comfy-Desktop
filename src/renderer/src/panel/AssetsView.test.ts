@@ -56,7 +56,7 @@ async function mountAssets(
 function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] {
   return wrapper
     .findAll('[data-testid^="asset-open-"]')
-    .map((card) => card.attributes('aria-label')!.replace('Open ', ''))
+    .map((card) => card.attributes('aria-label')!.replace('Inspect ', ''))
 }
 
 beforeEach(() => {

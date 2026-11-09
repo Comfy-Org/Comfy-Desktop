@@ -8,6 +8,7 @@ import {
   Check,
   Download,
   Ellipsis,
+  File,
   LayoutGrid,
   LayoutDashboard,
   Play,
@@ -101,6 +102,12 @@ function createdMs(asset: AssetSummary): number {
 function cardKey(asset: GalleryAsset): string {
   return `${asset.installationId}:${asset.id}`
 }
+
+const layoutClass = computed(() =>
+  layout.value === 'masonry'
+    ? 'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid'
+    : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
+)
 
 const visibleAssets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -223,8 +230,8 @@ function extensionOf(name: string): string {
     </header>
 
     <div
-      class="sticky top-0 z-10 w-full shrink-0 transition-[background-color,backdrop-filter] duration-200"
-      :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-xl'"
+      class="sticky top-0 z-10 w-full shrink-0 transition-colors duration-200"
+      :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-lg'"
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
@@ -346,15 +353,15 @@ function extensionOf(name: string): string {
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
-        <ul
-          class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5 p-0"
-          data-testid="assets-skeleton"
-        >
+        <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
-            <Skeleton class="aspect-video w-full rounded-none" />
-            <div class="flex flex-col gap-2 px-3 py-3">
-              <Skeleton class="h-2.5 w-3/4 rounded-full" />
-              <Skeleton class="h-2 w-2/5 rounded-full" />
+            <Skeleton
+              class="w-full rounded-none"
+              :class="layout === 'masonry' && n % 3 === 1 ? 'aspect-[3/4]' : 'aspect-video'"
+            />
+            <div v-if="showName || showDetails" class="flex flex-col gap-2 px-3 py-3">
+              <Skeleton v-if="showName" class="h-2.5 w-3/4 rounded-full" />
+              <Skeleton v-if="showDetails" class="h-2 w-2/5 rounded-full" />
             </div>
           </li>
         </ul>
@@ -374,11 +381,7 @@ function extensionOf(name: string): string {
       <ul
         v-else
         class="m-0 list-none p-0"
-        :class="
-          layout === 'masonry'
-            ? 'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid'
-            : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
-        "
+        :class="layoutClass"
         data-testid="assets-grid"
         @pointerenter="warmNameTooltips"
         @pointerleave="coolNameTooltips"
@@ -393,7 +396,7 @@ function extensionOf(name: string): string {
             :text="asset.name"
             side="bottom"
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
-            class="w-full"
+            class="w-full align-top"
           >
             <button
               type="button"
@@ -416,7 +419,7 @@ function extensionOf(name: string): string {
                   :src="asset.previewUrl"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                  class="block w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   :class="layout === 'grid' && 'h-full'"
                 />
                 <video
@@ -424,14 +427,15 @@ function extensionOf(name: string): string {
                   :src="asset.previewUrl"
                   preload="metadata"
                   muted
-                  class="block size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 />
                 <span
                   v-else
-                  class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                  class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 >
                   <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
-                  <Box v-else :size="28" aria-hidden="true" />
+                  <Box v-else-if="asset.kind === '3d'" :size="28" aria-hidden="true" />
+                  <File v-else :size="28" aria-hidden="true" />
                   <span class="text-ui">{{ extensionOf(asset.name) }}</span>
                 </span>
                 <span

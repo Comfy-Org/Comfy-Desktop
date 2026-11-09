@@ -61,7 +61,7 @@
     "downloadFailed": "无法下载资产",
     "moreActions": "更多操作",
     "inspectAsset": "查看资产",
-    "inspect": "打开 {name}",
+    "inspect": "查看 {name}",
     "kindSingular": {
       "image": "图片",
       "video": "视频",

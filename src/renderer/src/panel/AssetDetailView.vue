@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener } from '@vueuse/core'
 import {
@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  File,
   PanelRight
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -37,6 +38,11 @@ const emit = defineEmits<{
 const { t, locale } = useI18n()
 
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
+const root = useTemplateRef<HTMLElement>('root')
+
+onMounted(() =>
+  root.value?.querySelector<HTMLElement>('[data-testid="asset-detail-back"]')?.focus()
+)
 const panelOpen = ref(true)
 const dimensions = ref<string | null>(null)
 const duration = ref<string | null>(null)
@@ -123,7 +129,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1" data-testid="asset-detail">
+  <div ref="root" class="flex min-h-0 flex-1" data-testid="asset-detail">
     <section class="flex min-w-0 flex-1 flex-col">
       <header class="flex shrink-0 items-center gap-3 px-4 py-3">
         <Button
@@ -183,7 +189,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
         <div v-else class="flex flex-col items-center gap-2 text-muted-foreground">
           <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
-          <Box v-else :size="40" aria-hidden="true" />
+          <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
+          <File v-else :size="40" aria-hidden="true" />
           <span class="text-ui">{{ extension }}</span>
         </div>
 
@@ -241,7 +248,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               class="size-full object-cover"
             />
             <AudioLines v-else-if="item.kind === 'audio'" :size="16" aria-hidden="true" />
-            <Box v-else :size="16" aria-hidden="true" />
+            <Box v-else-if="item.kind === '3d'" :size="16" aria-hidden="true" />
+            <File v-else :size="16" aria-hidden="true" />
           </button>
         </li>
       </ol>
