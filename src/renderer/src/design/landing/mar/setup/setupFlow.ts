@@ -560,6 +560,9 @@ export const installingBehind = computed(
   () => flow.background && (flow.running || flow.step === 'error')
 )
 
+/** The first local build's name, as Builds will list it: the Home card and
+ *  the sidebar carry it before the build exists. */
+export const BUILD_NAME = 'My Local 1'
 export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow.movedDisk)
 // Only a Mac can be an Intel Mac.
 export const unsupported = computed(() => localSetup.machine === 'intel' && localSetup.os === 'mac')
