@@ -448,7 +448,7 @@ function newChat(): void {
   -webkit-app-region: no-drag;
 }
 .mar-side.is-rail {
-  width: 64px;
+  width: 56px;
   align-items: center;
   padding: 10px 8px;
 }
@@ -561,7 +561,8 @@ function newChat(): void {
     color 150ms ease;
 }
 .is-rail .mar-side-row {
-  width: 40px;
+  width: 36px;
+  height: 36px;
   justify-content: center;
   padding: 0;
 }
@@ -646,7 +647,8 @@ function newChat(): void {
   font-weight: 500;
 }
 .is-rail .mar-side-credits {
-  width: 40px;
+  width: 36px;
+  height: 36px;
   justify-content: center;
   padding: 0;
 }

@@ -445,7 +445,7 @@
   transition: padding-left 320ms cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 :root[data-mar-side='rail'] .proto-main.proto-main {
-  padding-left: 80px;
+  padding-left: 72px;
 }
 @media (prefers-reduced-motion: reduce) {
   :root[data-mar-side] .proto-main.proto-main {
@@ -460,7 +460,7 @@
   padding: 0 10px;
 }
 :root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-row {
-  width: 40px;
+  width: 36px;
   padding: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-icon {
@@ -473,7 +473,7 @@
   padding: 0 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-credits {
-  width: 40px;
+  width: 36px;
   padding: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-ws {
@@ -520,14 +520,14 @@
   box-shadow: inset -1px 0 0 color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
 :root[data-mar-side-style='integrated'][data-mar-side] .mar-side.mar-side.is-rail {
-  width: 60px;
+  width: 56px;
   padding: 12px 8px 14px;
 }
 :root[data-mar-side-style='integrated'][data-mar-side='open'] .proto-main.proto-main {
   padding-left: 248px;
 }
 :root[data-mar-side-style='integrated'][data-mar-side='rail'] .proto-main.proto-main {
-  padding-left: 60px;
+  padding-left: 56px;
 }
 /* The page's background runs behind the sidebar too. */
 :root[data-mar-side-style='integrated'][data-mar-side] .mar-backdrop.mar-backdrop {
@@ -567,8 +567,34 @@
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-credits.is-rail,
 :root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-credits {
-  width: 40px;
+  width: 36px;
   padding: 0;
+}
+/* The rail: every link, the credits and the workspace are one 36px
+   square on the centre line, so a hover or the current page is a square
+   (any density). Credits are the gold coins alone; the number is in
+   their flyout. */
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-row.mar-side-row,
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-credits.mar-side-credits {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-credits.mar-side-credits {
+  color: #ddbd31;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-credits:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-credits[data-state='open'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-credits {
+  color: oklch(0.66 0.13 85);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side.is-rail .mar-side-avatar.mar-side-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-side-label {
   padding: 14px 12px 6px;
@@ -587,8 +613,8 @@
   font-size: 13px;
 }
 :root .proto-ui.proto-ui.proto-ui .is-rail .mar-side-ws {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   justify-content: center;
 }

@@ -60,11 +60,12 @@
    hide; the main links, the Create / Build switch and the foot stay as
    icons, with their names as tooltips. */
 :root[data-mar-rail] .proto-ui aside.proto-sidebar.proto-sidebar {
-  width: 72px;
+  width: 56px;
+  padding-inline: 8px;
   transition: width 240ms var(--mar-ease-io, ease);
 }
 :root[data-mar-rail] .proto-ui aside.proto-sidebar > div {
-  width: 48px;
+  width: 40px;
 }
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .sidebar-label,
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .tabular-nums,
@@ -76,7 +77,31 @@
   justify-content: center;
   padding-inline: 0;
 }
-/* The workspace chevron. */
+/* Every link, the credits and the workspace: one 36px square on the
+   rail's centre line, so a hover or the current page is a square too. */
+:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar nav > button,
+:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar .mt-auto button {
+  width: 36px;
+  height: 36px;
+  align-self: center;
+  padding: 0;
+}
+/* Credits: no tile on the rail, just the gold coins as an icon button
+   (the number is in its flyout). */
+:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar .mar-credits-row {
+  margin-bottom: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar .mar-credits-row:hover,
+:root[data-mar-rail]
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  .mar-credits-row[data-state='open'] {
+  background: var(--color-secondary-background);
+}
+/* The workspace chevron, and Docs' out-of-app arrow. */
+:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > button > svg:last-child:not(:first-child),
 :root[data-mar-rail]
   .proto-ui
   aside.proto-sidebar
@@ -105,5 +130,6 @@
 }
 /* The pair itself stacks (MarModeSwitch passes `vertical`). */
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-agent {
-  width: 100%;
+  width: 36px;
+  height: 36px;
 }

@@ -96,8 +96,8 @@ const named = (v: T): boolean =>
   padding: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-mode.is-vertical .mar-mode-btn {
-  width: 40px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-mode-btn:hover,
 :root .proto-ui.proto-ui.proto-ui .mar-mode-btn[aria-checked='true'] {

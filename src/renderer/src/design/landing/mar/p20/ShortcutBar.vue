@@ -252,7 +252,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   --p15-left: 248px;
 }
 :root[data-mar-density='dense'][data-mar-ui='on'][data-mar-side='rail'] {
-  --p15-left: 60px;
+  --p15-left: 56px;
 }
 :root[data-mar-density='dense'][data-mar-ui='on'][data-mar-side-style='floating'] {
   --p15-left: 0px;
