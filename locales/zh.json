@@ -29,11 +29,6 @@
     "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
   },
   "assets": {
-    "browseAssetsOf": "浏览以下构建的资产",
-    "everywhere": "全部",
-    "runningBuilds": "运行中的构建",
-    "running": "运行中",
-    "stopped": "已停止",
     "kindLabel": "资产类型",
     "kind": {
       "all": "全部",
