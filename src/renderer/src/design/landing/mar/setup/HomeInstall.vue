@@ -103,8 +103,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
     </div>
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
          there, so they come first. The first-run Home's own block
-         (MarStartOriginal.vue), in the look UI Playground picks. -->
-    <div class="mt-10">
+         (MarStartOriginal.vue), in the look UI Playground picks. With pick
+         to install the first-run Home itself follows, examples included. -->
+    <div v-if="!homeOpen" class="mt-10">
       <SectionHeader
         title="Run an example on Comfy Cloud"
         :link="can.explore ? 'See all' : undefined"
