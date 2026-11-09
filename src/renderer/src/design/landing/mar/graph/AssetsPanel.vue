@@ -115,7 +115,6 @@ function setView(v: View): void {
 const ALL_VIEWS = [
   { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
   { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
-  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
   { value: 'list', label: 'List view', icon: TableOfContents }
 ] as const
 /** Production (UI Playground › ComfyUI): ComfyUI as it ships plus Better
@@ -219,7 +218,11 @@ const source = computed(() => (prod.value ? tab.value.toLowerCase() : filter.val
 watch(
   prod,
   (on) => {
-    if (!on) return
+    // The redesign has no small grid: it reads as the large one.
+    if (!on) {
+      if (view.value === 'small') view.value = 'large'
+      return
+    }
     filter.value = { ...filter.value, source: 'all' }
     if (view.value === 'masonry') view.value = 'large'
   },
