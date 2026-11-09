@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage } from '@vueuse/core'
+import { useLocalStorage, useScroll } from '@vueuse/core'
 import {
   AudioLines,
   Box,
@@ -22,6 +22,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import AssetDetailView from './AssetDetailView.vue'
 import type { GalleryAsset } from './AssetDetailView.vue'
 import { useModal } from '../composables/useModal'
@@ -30,6 +31,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
+import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
 
 type KindFilter = 'all' | AssetKind
@@ -37,6 +39,7 @@ type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
 
 const SKELETON_COUNT = 8
+const NAME_TOOLTIP_DELAY_MS = 600
 
 const { t } = useI18n()
 const modal = useModal()
@@ -55,6 +58,10 @@ const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 const assets = ref<GalleryAsset[]>([])
 const detailIndex = ref<number | null>(null)
 const cardMenuOpenId = ref<string | null>(null)
+const scroller = useTemplateRef<HTMLElement>('scroller')
+const { y: scrollTop } = useScroll(scroller)
+const nameTooltipsWarm = ref(false)
+let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
 
@@ -129,6 +136,18 @@ watch(visibleAssets, (list) => {
   if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
 })
 
+function warmNameTooltips(): void {
+  clearTimeout(warmTimer)
+  warmTimer = setTimeout(() => (nameTooltipsWarm.value = true), NAME_TOOLTIP_DELAY_MS)
+}
+
+function coolNameTooltips(): void {
+  clearTimeout(warmTimer)
+  nameTooltipsWarm.value = false
+}
+
+onBeforeUnmount(() => clearTimeout(warmTimer))
+
 function openDetail(asset: GalleryAsset): void {
   detailIndex.value = visibleAssets.value.indexOf(asset)
 }
@@ -166,17 +185,23 @@ function extensionOf(name: string): string {
   />
   <div
     v-else
+    ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
+    :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="assets-view"
   >
-    <div class="mx-auto w-full max-w-300 px-10 pb-24">
-      <header class="pt-9 pb-6">
-        <h1 class="m-0 font-display text-display font-semibold text-foreground">
-          {{ t('sidebar.assets') }}
-        </h1>
-      </header>
+    <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
+      <h1 class="m-0 font-display text-display font-semibold text-foreground">
+        {{ t('sidebar.assets') }}
+      </h1>
+    </header>
 
-      <div class="mb-5 flex min-h-8 flex-wrap items-center gap-2">
+    <div
+      class="sticky top-0 z-10 w-full shrink-0 transition-[background-color,backdrop-filter] duration-200"
+      :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-xl'"
+      data-testid="assets-toolbar"
+    >
+      <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
         <SegmentedControl
           v-model="kindFilter"
           :options="kindOptions"
@@ -291,7 +316,9 @@ function extensionOf(name: string): string {
           </Menu>
         </div>
       </div>
+    </div>
 
+    <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <ul
         v-if="loading && assets.length === 0"
         class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5 p-0"
@@ -330,6 +357,8 @@ function extensionOf(name: string): string {
             : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
         "
         data-testid="assets-grid"
+        @pointerenter="warmNameTooltips"
+        @pointerleave="coolNameTooltips"
       >
         <li
           v-for="asset in visibleAssets"
@@ -337,60 +366,70 @@ function extensionOf(name: string): string {
           class="group relative bg-secondary"
           :data-testid="`asset-${asset.id}`"
         >
-          <button
-            type="button"
-            class="block w-full cursor-pointer text-left"
-            :aria-label="t('assets.inspect', { name: asset.name })"
-            :data-testid="`asset-open-${asset.id}`"
-            @click="openDetail(asset)"
+          <Tooltip
+            :text="asset.name"
+            side="bottom"
+            :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
+            class="w-full"
           >
-            <span
-              class="relative block overflow-hidden"
-              :class="
-                layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
-                  ? 'aspect-video'
-                  : ''
-              "
+            <button
+              type="button"
+              class="block w-full cursor-pointer text-left"
+              :aria-label="t('assets.inspect', { name: asset.name })"
+              :data-testid="`asset-open-${asset.id}`"
+              @click="openDetail(asset)"
             >
-              <img
-                v-if="asset.previewUrl && asset.kind === 'image'"
-                :src="asset.previewUrl"
-                :alt="asset.name"
-                loading="lazy"
-                class="block w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
-                :class="layout === 'grid' && 'h-full'"
-              />
-              <video
-                v-else-if="asset.previewUrl && asset.kind === 'video'"
-                :src="asset.previewUrl"
-                preload="metadata"
-                muted
-                class="block size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
-              />
               <span
-                v-else
-                class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                class="relative block overflow-hidden"
+                :class="
+                  layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
+                    ? 'aspect-video'
+                    : ''
+                "
               >
-                <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
-                <Box v-else :size="28" aria-hidden="true" />
-                <span class="text-ui">{{ extensionOf(asset.name) }}</span>
+                <img
+                  v-if="asset.previewUrl && asset.kind === 'image'"
+                  :src="asset.previewUrl"
+                  :alt="asset.name"
+                  loading="lazy"
+                  class="block w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                  :class="layout === 'grid' && 'h-full'"
+                />
+                <video
+                  v-else-if="asset.previewUrl && asset.kind === 'video'"
+                  :src="asset.previewUrl"
+                  preload="metadata"
+                  muted
+                  class="block size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                />
+                <span
+                  v-else
+                  class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                >
+                  <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
+                  <Box v-else :size="28" aria-hidden="true" />
+                  <span class="text-ui">{{ extensionOf(asset.name) }}</span>
+                </span>
+                <span
+                  v-if="asset.kind === 'video'"
+                  class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
+                >
+                  <Play :size="12" aria-hidden="true" />
+                </span>
               </span>
               <span
-                v-if="asset.kind === 'video'"
-                class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
+                v-if="showName || showDetails"
+                class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5"
               >
-                <Play :size="12" aria-hidden="true" />
+                <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
+                  asset.name
+                }}</span>
+                <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
+                  assetDetails(asset)
+                }}</span>
               </span>
-            </span>
-            <span v-if="showName || showDetails" class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5">
-              <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
-                asset.name
-              }}</span>
-              <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
-                assetDetails(asset)
-              }}</span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
 
           <div
             class="absolute top-2 right-2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"

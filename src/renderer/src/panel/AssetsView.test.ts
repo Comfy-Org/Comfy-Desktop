@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import AssetsView from './AssetsView.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AssetSummary, Installation } from '../types/ipc'
@@ -198,6 +199,28 @@ describe('AssetsView', () => {
     await flushPromises()
 
     expect(listAssets).toHaveBeenCalledOnce()
+  })
+
+  it('delays the first name tooltip, then shows the rest at once until the pointer leaves', async () => {
+    listAssets.mockResolvedValue([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    const delays = () => wrapper.findAllComponents(Tooltip).map((tip) => tip.props('delayMs'))
+    expect(delays()).toEqual([600, 600])
+
+    vi.useFakeTimers()
+    try {
+      await wrapper.get('[data-testid="assets-grid"]').trigger('pointerenter')
+      await vi.advanceTimersByTimeAsync(600)
+      expect(delays()).toEqual([0, 0])
+
+      await wrapper.get('[data-testid="assets-grid"]').trigger('pointerleave')
+      expect(delays()).toEqual([600, 600])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports a failed load', async () => {
