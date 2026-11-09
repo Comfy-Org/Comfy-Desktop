@@ -12,9 +12,16 @@ import type {
   AuthStatus,
   Workspace,
   WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
   WorkspaceSwitchStatus
 } from '../main/cloud/types'
-export type { AuthStatus, Workspace, WorkspaceSwitchFailure, WorkspaceSwitchStatus }
+export type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+}
 
 // One Core beta activation card, as main resolves it for the title bar. Re-exported from its
 // producer rather than restated here: this file's header forbids duplicating types, and an
@@ -1723,7 +1730,10 @@ export interface ElectronApi {
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
-    switchWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus>
+    switchWorkspace(
+      workspaceId: string,
+      intent?: WorkspaceSwitchIntent
+    ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>

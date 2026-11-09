@@ -6,7 +6,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import ChooserView from './ChooserView.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { TID } from '../../../shared/testIds'
 import type { DevPlatformBuild, Installation } from '../types/ipc'
 
@@ -865,7 +867,7 @@ describe('ChooserView', () => {
     await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
     await flushPromises()
 
-    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
     expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
@@ -966,8 +968,92 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledTimes(2)
-    expect(api.comfybuilder.switchWorkspace).toHaveBeenLastCalledWith('w2')
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenLastCalledWith('w2', 'chosen')
     expect(wrapper.find('[data-testid="chooser-workspace-switch-failure"]').exists()).toBe(false)
+  })
+
+  it('restores a saved selection that arrives after the default resolved', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'p1', name: 'Personal' })
+    api.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'personal',
+      workspaceId: 'p1'
+    })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'p1', name: 'Personal', type: 'personal', role: 'owner' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    let resolveSaved: (workspaceId: string) => void = () => {}
+    const saved = new Promise<string>((resolve) => (resolveSaved = resolve))
+    api.getSetting.mockImplementation(async (key: string) =>
+      key === 'dashboardWorkspaceId' ? saved : undefined
+    )
+    api.comfybuilder.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'personal',
+      workspaceId: 'p1',
+      workspaceSwitchFailure: 'retryable'
+    })
+    mountChooser()
+    await flushPromises()
+
+    resolveSaved('w2')
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'restored')
+  })
+
+  it('keeps a person choosing Personal as their choice while the catalog loads', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' }
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    api.comfybuilder.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'personal',
+      workspaceId: 'p1'
+    })
+    api.comfybuilder.switchWorkspace.mockClear()
+
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper
+      .get(`[data-testid="devplatform-workspace-${PERSONAL_WORKSPACE_ID}"]`)
+      .trigger('click')
+    await flushPromises()
+    expect(api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
+
+    useAuthStore().workspaces = [
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'p1', name: 'Personal', type: 'personal', role: 'owner' }
+    ]
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('p1', 'chosen')
+  })
+
+  it('restores a saved selection at launch without asking for a browser', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.getSetting.mockImplementation(async (key: string) =>
+      key === 'dashboardWorkspaceId' ? 'w2' : undefined
+    )
+    api.comfybuilder.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    const relaunched = mountChooser()
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'restored')
+    expect(relaunched.find('[data-testid="chooser-workspace-switch-failure"]').exists()).toBe(true)
   })
 
   it('refreshes workspace membership and Builds', async () => {

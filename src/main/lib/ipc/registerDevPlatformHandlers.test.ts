@@ -507,7 +507,7 @@ describe('registerDevPlatformHandlers', () => {
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
     expect(mocks.allowDesktopWorkspace).toHaveBeenCalledWith('w2')
-    expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
+    expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
@@ -1026,7 +1026,7 @@ describe('registerDevPlatformHandlers', () => {
       ok: true
     })
 
-    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'

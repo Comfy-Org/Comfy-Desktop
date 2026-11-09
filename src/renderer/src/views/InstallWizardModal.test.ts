@@ -680,7 +680,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ).open({ workspaceId: 'w2' })
     await flushPromises()
 
-    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
     expect(
       (window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mock
         .invocationCallOrder[0]
@@ -733,7 +733,7 @@ describe('InstallWizardModal workspace Builds', () => {
       await wrapper.get('.workspace-build-refresh').trigger('click')
       await flushPromises()
 
-      expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+      expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
       expect(listBuilds).toHaveBeenCalledOnce()
       expect(switchWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
         listBuilds.mock.invocationCallOrder[0]!

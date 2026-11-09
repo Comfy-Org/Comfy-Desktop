@@ -28,6 +28,9 @@ export interface AuthStatus {
 
 export type WorkspaceSwitchFailure = 'unavailable' | 'retryable'
 
+/** `chosen` is a person's selection or retry; `restored` brings back a saved selection and never opens the browser. */
+export type WorkspaceSwitchIntent = 'chosen' | 'restored'
+
 /** The reply to a workspace switch: the resulting status, plus why it stayed put when it did. */
 export interface WorkspaceSwitchStatus extends AuthStatus {
   workspaceSwitchFailure?: WorkspaceSwitchFailure

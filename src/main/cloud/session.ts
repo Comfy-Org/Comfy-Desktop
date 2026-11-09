@@ -32,6 +32,7 @@ import type {
   Workspace,
   WorkspaceMember,
   WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
   WorkspaceSwitchStatus
 } from './types'
 import { classifyMint, mintWorkspaceToken } from './workspaceToken'
@@ -111,6 +112,7 @@ export class CloudSession {
   private readonly refreshing = new Map<string, Promise<GrantRefresh>>()
   private readonly minting = new Map<string, Promise<SettledMintOutcome>>()
   private switching: { workspaceId: string; result: Promise<SessionSwitchReply> } | null = null
+  private switchIntent: WorkspaceSwitchIntent = 'chosen'
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
@@ -386,10 +388,18 @@ export class CloudSession {
   }
 
   /** Activate `workspaceId`. Only a refused grant, an SSO policy, a missing mint scope or a
-   *  mint kill switch opens the browser; every other failure stays put and says so. */
-  switchWorkspace(workspaceId: string): Promise<SessionSwitchReply> {
-    if (this.switching?.workspaceId === workspaceId) return this.switching.result
+   *  mint kill switch opens the browser, and only for a `chosen` switch; every other failure
+   *  stays put and says so. */
+  switchWorkspace(
+    workspaceId: string,
+    intent: WorkspaceSwitchIntent = 'chosen'
+  ): Promise<SessionSwitchReply> {
+    if (this.switching?.workspaceId === workspaceId) {
+      if (intent === 'chosen') this.switchIntent = 'chosen'
+      return this.switching.result
+    }
     this.clearPendingLogin()
+    this.switchIntent = intent
     const generation = ++this.authGeneration
     const result = this.runSwitch(workspaceId, generation).finally(() => {
       if (this.switching?.result === result) this.switching = null
@@ -462,6 +472,10 @@ export class CloudSession {
     generation: number,
     reason: ReauthorizeReason
   ): Promise<SessionSwitchReply> {
+    if (this.switchIntent === 'restored') {
+      reportSwitch('retryable', reason)
+      return this.stayed('retryable')
+    }
     let browserOpened = false
     let tokens: AuthTokens
     try {

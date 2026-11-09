@@ -474,6 +474,37 @@ test('server kill: consent on another workspace does not loop: it stays put with
   expect(cloud.mints.map(({ workspaceId }) => workspaceId)).toEqual(['B', 'B'])
 })
 
+test('a relaunch after a failed switch opens no browser, and Refresh is what asks for one @macos @windows', async () => {
+  await signInOnFreshProfile()
+  cloud.mintBehavior = (workspaceId, bearerWorkspace) =>
+    workspaceId === bearerWorkspace ? undefined : MINT_DISABLED
+  cloud.consentOverride = 'A'
+
+  await select('B')
+  await expectCaption(RETRYABLE_COPY)
+  const settingsPath = path.join(userDataDir, 'settings.json')
+  await expect
+    .poll(async () => {
+      const raw = await readFile(settingsPath, 'utf-8')
+      return (JSON.parse(raw) as { dashboardWorkspaceId?: string }).dashboardWorkspaceId
+    })
+    .toBe('B')
+  await quit()
+  browserOpens = []
+  const authorizeBefore = cloud.authorizeUrls.length
+
+  await launch(JSON.parse(await readFile(settingsPath, 'utf-8')) as Record<string, unknown>)
+  await expectCaption(RETRYABLE_COPY)
+  await settle()
+
+  expect(browserOpens, 'a launch opens no browser on its own').toEqual([])
+  expect(cloud.authorizeUrls).toHaveLength(authorizeBefore)
+  expect(await activeWorkspace()).toBe('A')
+
+  expect(await panel().click(REFRESH), 'clicked refresh').toBe(true)
+  await expect.poll(() => browserOpens.length).toBe(1)
+})
+
 test('a 500 on mint opens no browser, shows the retry caption and the app keeps working on A @macos @windows', async () => {
   await signInOnFreshProfile()
   cloud.mintBehavior = () => ({ status: 500, body: {} })

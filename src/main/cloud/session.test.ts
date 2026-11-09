@@ -983,6 +983,71 @@ describe('CloudSession.switchWorkspace with no browser', () => {
 })
 
 describe('CloudSession.switchWorkspace reauthorize', () => {
+  it.each<[string, () => void, string]>([
+    ['the server kill switch', () => (mintReply = mintDisabled), 'mint_disabled'],
+    ['the Desktop ops flag', killMintSwitch, 'mint_disabled'],
+    [
+      'an SSO policy',
+      () => (mintReply = () => json(403, { code: 'sso_required' })),
+      'sso_required'
+    ],
+    [
+      'an ended grant',
+      () => {
+        mintReply = () => json(401, { code: 'oauth_grant_ended' })
+        mocked(refresh).mockRejectedValue(refreshRefused())
+      },
+      'grant_ended'
+    ]
+  ])('a restored switch stays put for %s and opens no browser', async (_name, arrange, reason) => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    arrange()
+
+    const reply = await session.switchWorkspace('w2', 'restored')
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(reply).toMatchObject({ workspaceId: 'w1', workspaceSwitchFailure: 'retryable' })
+    expect(switchEvents()).toEqual([{ outcome: 'retryable', reauthorize_reason: reason }])
+    expect(browserEvents()).toEqual([])
+  })
+
+  it('a person joining a restored switch still gets the browser the switch needs', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    const late = deferred<Response>()
+    mintReply = () => late.promise
+    mocked(signIn).mockResolvedValue({
+      tokens: grantOn('w2'),
+      status: { signedIn: true, workspaceId: 'w2' }
+    })
+
+    const restoring = session.switchWorkspace('w2', 'restored')
+    const joining = session.switchWorkspace('w2', 'chosen')
+    late.resolve(json(403, { code: 'sso_required' }))
+    await Promise.all([restoring, joining])
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('a person retrying after a restored switch reaches sign-in for a grant with no mint scope', async () => {
+    saveGrant(grantOn('w1', { scope: 'comfy-cloud:user:read' }))
+    const session = new CloudSession()
+    mocked(signIn).mockResolvedValue({
+      tokens: grantOn('w2'),
+      status: { signedIn: true, workspaceId: 'w2' }
+    })
+
+    await expect(session.switchWorkspace('w2', 'restored')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'retryable'
+    })
+    expect(signIn).not.toHaveBeenCalled()
+
+    await session.switchWorkspace('w2', 'chosen')
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
   it('T-V4: sso_required opens one browser carrying B and then succeeds', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(403, { code: 'sso_required' })

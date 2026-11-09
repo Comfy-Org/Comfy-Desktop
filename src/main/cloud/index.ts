@@ -30,5 +30,6 @@ export type {
   Workspace,
   WorkspaceMember,
   WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
   WorkspaceSwitchStatus
 } from './types'

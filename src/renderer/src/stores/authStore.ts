@@ -1,7 +1,13 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { AuthStatus, ElectronApi, Workspace, WorkspaceSwitchFailure } from '../../../types/ipc'
+import type {
+  AuthStatus,
+  ElectronApi,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent
+} from '../../../types/ipc'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
@@ -164,12 +170,18 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** Activate the workspace for remote operations. Main mints its token with no
    *  browser unless the server requires a new sign-in, and stays on the current
-   *  workspace when it cannot; `workspaceSwitchFailure` then says why. */
-  async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
+   *  workspace when it cannot; `workspaceSwitchFailure` then says why. A `restored`
+   *  switch never opens the browser. */
+  async function switchWorkspace(
+    workspaceId: string,
+    intent: WorkspaceSwitchIntent = 'chosen'
+  ): Promise<AuthStatus> {
     const thisSwitch = ++latestSwitch
     workspaceSwitchFailure.value = undefined
-    const { workspaceSwitchFailure: failure, ...next } =
-      await comfybuilderApi.switchWorkspace(workspaceId)
+    const { workspaceSwitchFailure: failure, ...next } = await comfybuilderApi.switchWorkspace(
+      workspaceId,
+      intent
+    )
     applyAuthoritativeStatus(next)
     if (thisSwitch === latestSwitch) workspaceSwitchFailure.value = failure
     return next

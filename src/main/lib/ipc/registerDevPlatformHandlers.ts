@@ -34,7 +34,12 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace, WorkspaceSwitchStatus } from '../../cloud'
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+} from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -134,12 +139,13 @@ export async function signInToCloud(): Promise<AuthStatus> {
 }
 
 async function switchAndAnnounce(
-  workspaceId: string
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent
 ): Promise<{ reply: WorkspaceSwitchStatus; superseded: boolean }> {
   const session = getCloudSession()
   const subjectBefore = session.currentSubject()
   clearVersionCache()
-  const switching = session.switchWorkspace(workspaceId)
+  const switching = session.switchWorkspace(workspaceId, intent)
   const generation = session.currentAuthGeneration()
   const { reachedThroughConsent, ...reply } = await switching
   clearVersionCache()
@@ -160,8 +166,11 @@ async function switchAndAnnounce(
  * needed. A failure stays on this reply and off the broadcast. Shared by the chooser and the
  * hosted ComfyUI view.
  */
-export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus> {
-  return (await switchAndAnnounce(workspaceId)).reply
+export async function switchCloudWorkspace(
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent = 'chosen'
+): Promise<WorkspaceSwitchStatus> {
+  return (await switchAndAnnounce(workspaceId, intent)).reply
 }
 
 /**
@@ -277,10 +286,13 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) => {
-    getViewWorkspaceGrants().allowDesktop(workspaceId)
-    return switchCloudWorkspace(workspaceId)
-  })
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.switchWorkspace,
+    (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
+      getViewWorkspaceGrants().allowDesktop(workspaceId)
+      return switchCloudWorkspace(workspaceId, intent === 'restored' ? 'restored' : 'chosen')
+    }
+  )
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.promoteLocalInstance,
@@ -312,7 +324,7 @@ export function registerDevPlatformHandlers(): void {
           if (session.currentSubject() !== subject) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
-          const { reply: switched, superseded } = await switchAndAnnounce(workspaceId)
+          const { reply: switched, superseded } = await switchAndAnnounce(workspaceId, 'chosen')
           if (superseded || !switched.signedIn || switched.workspaceId !== workspaceId) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
