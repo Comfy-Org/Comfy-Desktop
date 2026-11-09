@@ -3,17 +3,19 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   Box,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   Download,
   FolderOpen,
   Info,
-  Minus,
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  SquareSplitHorizontal,
   Workflow,
   X
 } from 'lucide-vue-next'
+import { onClickOutside } from '@vueuse/core'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import type { MarAsset } from '../pages/assetsStore'
@@ -96,20 +98,35 @@ const at = computed(() => list.findIndex((a) => a.id === asset.id))
 const picOf = (a: MarAsset): string | undefined =>
   a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
 
-/** Zoom: 50 to 300%, back to 100 on every asset. */
+/** Zoom: `zoom` scales the fitted picture (100 = fit, back to fit on
+ *  every asset). The control reads in real size: the fitted picture's
+ *  width over the file's, so a large file fits at 63%. */
 const zoom = ref(100)
-const ZOOM_STEP = 25
-const setZoom = (z: number): void => {
-  zoom.value = Math.min(300, Math.max(50, Math.round(z / ZOOM_STEP) * ZOOM_STEP))
+const media = ref<HTMLElement>()
+const fit = ref(1)
+function measure(): void {
+  const w = facts.value.width ?? (media.value?.querySelector('img')?.naturalWidth || 0)
+  if (media.value && w) fit.value = media.value.clientWidth / w
+}
+const shownPct = computed(() => Math.round(fit.value * zoom.value))
+const ZOOMS = [50, 100, 200]
+const zoomMenu = ref(false)
+const zoomBox = ref<HTMLElement>()
+onClickOutside(zoomBox, () => (zoomMenu.value = false))
+function zoomTo(pct?: number): void {
+  zoom.value = pct ? Math.min(800, Math.max(10, pct / fit.value)) : 100
+  zoomMenu.value = false
 }
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
+// Folding Details resizes the stage, so the fit changes.
+watch(side, () => nextTick(measure))
 
 // The filmstrip keeps the current asset in view, and fades at an edge
 // where more thumbnails sit past it, so none runs into the zoom.
 const strip = ref<HTMLElement>()
 const edges = ref({ start: false, end: false })
-function measure(): void {
+function measureStrip(): void {
   const el = strip.value
   if (!el) return
   edges.value = {
@@ -125,7 +142,7 @@ watch(
     strip.value
       ?.querySelector<HTMLElement>('[aria-current="true"]')
       ?.scrollIntoView({ block: 'nearest', inline: 'center' })
-    requestAnimationFrame(measure)
+    requestAnimationFrame(measureStrip)
   },
   { immediate: true }
 )
@@ -183,11 +200,13 @@ function key(e: KeyboardEvent): void {
 }
 onMounted(async () => {
   window.addEventListener('keydown', key, true)
+  window.addEventListener('resize', measure)
   await nextTick()
   if (!tab) root.value?.focus()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
+  window.removeEventListener('resize', measure)
   clearTimeout(timer)
   if (!tab) opener?.focus?.()
 })
@@ -199,6 +218,27 @@ onBeforeUnmount(() => {
       <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
         <X :size="18" />
       </button>
+      <!-- Over the app, the arrows sit outside the frame, beside it. -->
+      <template v-if="!tab">
+        <button
+          type="button"
+          class="mad-arrow is-out"
+          aria-label="Previous asset"
+          :disabled="!prev"
+          @click="prev && emit('go', prev)"
+        >
+          <ChevronLeft :size="20" />
+        </button>
+        <button
+          type="button"
+          class="mad-arrow is-out is-right"
+          aria-label="Next asset"
+          :disabled="!next"
+          @click="next && emit('go', next)"
+        >
+          <ChevronRight :size="20" />
+        </button>
+      </template>
       <div
         ref="root"
         class="proto-ui mad"
@@ -235,8 +275,8 @@ onBeforeUnmount(() => {
           >
             <ChevronLeft :size="18" />
           </button>
-          <div class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
-            <img v-if="pic" :key="asset.id" :src="pic" alt="" />
+          <div ref="media" class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
+            <img v-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
             <AssetCover v-else :name="asset.name" :type="asset.type" />
             <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
             <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
@@ -256,7 +296,7 @@ onBeforeUnmount(() => {
               class="mad-strip"
               :class="{ 'is-fade-start': edges.start, 'is-fade-end': edges.end }"
               aria-label="Assets"
-              @scroll.passive="measure"
+              @scroll.passive="measureStrip"
             >
               <button
                 v-for="a in list"
@@ -272,37 +312,38 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="a.name" :type="a.type" />
               </button>
             </nav>
-            <div class="mad-zoom" role="group" aria-label="Zoom">
+            <div ref="zoomBox" class="mad-zoom" role="group" aria-label="Zoom">
               <button
                 type="button"
                 class="mad-icon is-sm"
-                aria-label="Zoom out"
-                :disabled="zoom <= 50"
-                @click="setZoom(zoom - ZOOM_STEP)"
+                :class="zoom === 100 && 'is-on'"
+                aria-label="Fit to screen"
+                title="Fit to screen"
+                @click="zoomTo()"
               >
-                <Minus :size="14" />
+                <SquareSplitHorizontal :size="15" />
               </button>
-              <input
-                type="range"
-                min="50"
-                max="300"
-                :step="ZOOM_STEP"
-                :value="zoom"
-                aria-label="Zoom"
-                @input="setZoom(+($event.target as HTMLInputElement).value)"
-              />
               <button
                 type="button"
-                class="mad-icon is-sm"
-                aria-label="Zoom in"
-                :disabled="zoom >= 300"
-                @click="setZoom(zoom + ZOOM_STEP)"
+                class="mad-zoom-pct"
+                aria-haspopup="menu"
+                :aria-expanded="zoomMenu"
+                @click="zoomMenu = !zoomMenu"
               >
-                <Plus :size="14" />
+                <span>{{ shownPct }}%</span><ChevronDown :size="13" />
               </button>
-              <button type="button" class="mad-zoom-pct" title="Reset to 100%" @click="zoom = 100">
-                {{ zoom }}%
-              </button>
+              <div v-if="zoomMenu" class="mad-zoom-menu" role="menu">
+                <button type="button" role="menuitem" @click="zoomTo()">Fit to screen</button>
+                <button
+                  v-for="z in ZOOMS"
+                  :key="z"
+                  type="button"
+                  role="menuitem"
+                  @click="zoomTo(z)"
+                >
+                  {{ z }}%
+                </button>
+              </div>
             </div>
           </footer>
         </section>
@@ -325,49 +366,6 @@ onBeforeUnmount(() => {
                 <FolderOpen :size="15" />
               </button>
             </header>
-            <!-- Download leads, filled. The rest are icons that keep their
-                 place: a missing workflow shows disabled, Save comes last. -->
-            <div class="mad-actions">
-              <button
-                type="button"
-                class="mad-btn is-primary"
-                @click="saveFile(picOf(asset), asset.name)"
-              >
-                <Download :size="14" /><span>Download</span>
-              </button>
-              <button
-                type="button"
-                class="mad-btn is-icon"
-                :disabled="facts.workflow !== 'available'"
-                :aria-label="editable ? 'Open as workflow' : 'Open workflow'"
-                :title="
-                  facts.workflow !== 'available'
-                    ? 'No workflow in this file'
-                    : editable
-                      ? 'Open as workflow in new tab'
-                      : `Open the workflow in ${build}`
-                "
-                @click="
-                  toast(
-                    editable
-                      ? `Opened ${asset.name} as a workflow`
-                      : `Opening the workflow in ${build}`
-                  )
-                "
-              >
-                <Workflow :size="15" />
-              </button>
-              <button
-                v-if="saveable"
-                type="button"
-                class="mad-btn is-icon"
-                aria-label="Save to Assets"
-                title="Save to Assets"
-                @click="emit('save')"
-              >
-                <Plus :size="15" />
-              </button>
-            </div>
 
             <section class="mad-sec">
               <dl class="mad-rows">
@@ -436,6 +434,36 @@ onBeforeUnmount(() => {
               <GenerationInfo :facts="facts" :loading="loading" />
             </section>
           </div>
+          <!-- At the bottom, labeled: only the actions this file has. -->
+          <footer class="mad-actions">
+            <button
+              v-if="facts.workflow === 'available'"
+              type="button"
+              class="mad-btn"
+              :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
+              @click="
+                toast(
+                  editable
+                    ? `Opened ${asset.name} as a workflow`
+                    : `Opening the workflow in ${build}`
+                )
+              "
+            >
+              <Workflow :size="14" /><span>{{
+                editable ? 'Open as workflow' : 'Open workflow'
+              }}</span>
+            </button>
+            <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
+              <Plus :size="14" /><span>Save to Assets</span>
+            </button>
+            <button
+              type="button"
+              class="mad-btn is-primary"
+              @click="saveFile(picOf(asset), asset.name)"
+            >
+              <Download :size="14" /><span>Download</span>
+            </button>
+          </footer>
         </aside>
       </div>
     </div>
@@ -443,12 +471,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-/* A framed window over the app, its close outside the frame, top right. */
+/* A framed window over the app, blurred behind so the app reads as
+ * still there; its close and arrows outside the frame. */
 .mad-scrim {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgb(0 0 0 / 0.6);
+  background: rgb(0 0 0 / 0.35);
+  -webkit-backdrop-filter: blur(16px) saturate(0.9);
+  backdrop-filter: blur(16px) saturate(0.9);
   animation: mad-in 0.18s ease-out;
 }
 .mad-host {
@@ -456,7 +487,7 @@ onBeforeUnmount(() => {
 }
 .mad {
   position: absolute;
-  inset: 20px 64px 20px 20px;
+  inset: 20px 64px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px);
   overflow: hidden;
@@ -632,30 +663,81 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-arrow:disabled {
   opacity: 0.3;
 }
+/* Over the app the stage's own arrows give way to the ones outside. */
+:root .proto-ui.proto-ui.proto-ui .mad:not(.is-tab) .mad-stage > .mad-arrow {
+  display: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
+  left: 12px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out.is-right {
+  right: 12px;
+  left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.18);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
 
-/* Zoom: − slider + and the percentage, which resets to 100. */
+/* Zoom: fit, then the real-size percentage opening its presets. */
 .mad-zoom {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   gap: 2px;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-zoom input {
-  width: 88px;
-  margin: 0 4px;
-  accent-color: var(--color-base-foreground);
+:root .proto-ui.proto-ui.proto-ui .mad-icon.is-on {
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-zoom-pct {
-  width: 44px;
-  padding: 0;
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct:hover {
   color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct span {
+  min-width: 34px;
+  text-align: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct:hover,
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mad-zoom-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--color-secondary-background);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-menu button {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  text-align: left;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-menu button:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon:disabled {
   opacity: 0.35;
@@ -735,8 +817,10 @@ onBeforeUnmount(() => {
 }
 .mad-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 20px 16px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--mad-line);
 }
 .mad-side {
   --mad-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
@@ -983,15 +1067,6 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 88%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-btn.is-icon {
-  width: 32px;
-  flex: none;
-  padding: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-btn:disabled {
-  opacity: 0.35;
-  pointer-events: none;
-}
 .mad-btn svg {
   flex: none;
 }
@@ -1018,6 +1093,13 @@ onBeforeUnmount(() => {
   }
   .mad-foot {
     display: none;
+  }
+  /* Narrow: no room beside the frame, the arrows go back inside. */
+  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
+    display: none;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad:not(.is-tab) .mad-stage > .mad-arrow {
+    display: inline-flex;
   }
   .mad-side {
     border-top: 1px solid var(--mad-line);
