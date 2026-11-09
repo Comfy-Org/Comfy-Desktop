@@ -367,6 +367,10 @@ async function classifyAgreedAccount(userId: string, generation: number): Promis
 function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   classificationGeneration += 1
   if (consensus.status === 'signed_out') {
+    if (!consensus.observed) {
+      console.log('[staff-targeting] hold: signed out, but no sign-out was observed')
+      return
+    }
     classifiedUserId = null
     classifiedStaff = false
     applyClassification(false)
@@ -386,7 +390,7 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
   const consensus = getFirebaseIdentityConsensus()
   if (consensus.status === 'signed_out') {
-    applyClassification(false)
+    if (consensus.observed) applyClassification(false)
     return
   }
   if (consensus.status !== 'signed_in') return

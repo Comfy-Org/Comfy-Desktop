@@ -59,7 +59,7 @@ vi.mock('./modelStagingTask', () => ({
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
-  listCompleteVersions: vi.fn(async () => [])
+  listUpdateVersions: vi.fn(async () => [])
 }))
 
 import fs, { promises as fsp } from 'fs'
@@ -72,7 +72,8 @@ import {
   resolveModelManifest,
   venvPython
 } from '../../comfybuilder'
-import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
+import { getBuilderClient } from '../../devplatform/session'
+import { listUpdateVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
   getCachedVersions,
@@ -882,6 +883,83 @@ describe('comfybuilder update-comfyui', () => {
     }
   })
 
+  it.each(['missing release', 'manifest 404', 'manifest timeout'])(
+    'preserves the working install when a stopped-version lookup fails: %s',
+    async (failure) => {
+      access.mockImplementation(realFsp.access)
+      mkdir.mockImplementation(realFsp.mkdir)
+      rename.mockImplementation(realFsp.rename)
+      rm.mockImplementation(realFsp.rm)
+      writeFile.mockImplementation(realFsp.writeFile)
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-manifest-failure-'))
+      const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
+      const fetchModelManifest = vi.fn(async () => {
+        throw new Error(failure)
+      })
+      const client = {
+        listVersions: async () => [
+          { id: 'older-complete', version: 1, status: 'complete' },
+          ...(failure === 'missing release'
+            ? []
+            : [{ id: 'selected-stopped', version: 9, status: 'stopped' }])
+        ],
+        fetchModelManifest
+      }
+      vi.mocked(getBuilderClient)
+        .mockReturnValueOnce(client as never)
+        .mockReturnValueOnce(client as never)
+      vi.mocked(resolveModelManifest).mockImplementationOnce(real.resolveModelManifest)
+      vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
+      vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
+        await fsp.mkdir(path.join(installPath, 'venv'), { recursive: true })
+        await fsp.mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
+        await fsp.writeFile(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
+      })
+      const tools = actionTools()
+      try {
+        await fsp.mkdir(path.dirname(real.venvPython(root)), { recursive: true })
+        await fsp.writeFile(real.venvPython(root), 'old python')
+        await fsp.mkdir(path.join(root, 'ComfyUI', 'models'), { recursive: true })
+        await fsp.mkdir(path.join(root, 'ComfyUI', 'user'), { recursive: true })
+        await fsp.writeFile(path.join(root, 'ComfyUI', 'main.py'), 'old code')
+        await fsp.writeFile(path.join(root, 'ComfyUI', 'models', 'existing.bin'), 'existing model')
+        await fsp.writeFile(
+          path.join(root, 'ComfyUI', 'user', 'workflow.json'),
+          'existing workflow'
+        )
+        const result = await comfybuilder.handleAction(
+          'update-comfyui',
+          record({ installPath: root, artifactId: 'art-1', modelsStaged: true }),
+          { version: 9 },
+          tools as never
+        )
+        expect(result.ok).toBe(false)
+        expect(result.message).toContain(
+          failure === 'missing release' ? 'build version 9' : failure
+        )
+        expect(tools.updates.at(-1)).toMatchObject({
+          version: '1',
+          artifactId: 'art-1',
+          status: 'installed'
+        })
+        expect(await fsp.readFile(real.venvPython(root), 'utf8')).toBe('old python')
+        expect(await fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).toBe('old code')
+        expect(
+          await fsp.readFile(path.join(root, 'ComfyUI', 'models', 'existing.bin'), 'utf8')
+        ).toBe('existing model')
+        expect(
+          await fsp.readFile(path.join(root, 'ComfyUI', 'user', 'workflow.json'), 'utf8')
+        ).toBe('existing workflow')
+        expect(startModelStaging).not.toHaveBeenCalled()
+        expect(fs.existsSync(path.join(root, '.comfybuilder-environment-ready'))).toBe(false)
+        if (failure === 'missing release') expect(fetchModelManifest).not.toHaveBeenCalled()
+        else expect(fetchModelManifest.mock.calls).toEqual([['selected-stopped']])
+      } finally {
+        await realFsp.rm(root, { recursive: true, force: true })
+      }
+    }
+  )
+
   it('reports failed when the environment did not survive the attempt', async () => {
     vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
     vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
@@ -1104,7 +1182,7 @@ describe('comfybuilder check-update', () => {
   })
 
   it('warms the version cache from the catalog', async () => {
-    vi.mocked(listCompleteVersions).mockResolvedValue([7, 3])
+    vi.mocked(listUpdateVersions).mockResolvedValue([7, 3])
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1113,10 +1191,14 @@ describe('comfybuilder check-update', () => {
     )
     expect(result.ok).toBe(true)
     expect(getCachedVersions('d1')?.versions).toEqual([7, 3])
+    expect(listUpdateVersions).toHaveBeenCalledWith(expect.anything(), 'd1', {
+      os: 'linux',
+      gpu: 'nvidia'
+    })
   })
 
   it('reports failure and leaves the cache untouched when the catalog read throws', async () => {
-    vi.mocked(listCompleteVersions).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(listUpdateVersions).mockRejectedValueOnce(new Error('offline'))
     const result = await comfybuilder.handleAction(
       'check-update',
       record(),
@@ -1130,7 +1212,7 @@ describe('comfybuilder check-update', () => {
 
   it('does not cache an update check completed after authentication changed', async () => {
     let resolveVersions!: (versions: number[]) => void
-    vi.mocked(listCompleteVersions).mockReturnValueOnce(
+    vi.mocked(listUpdateVersions).mockReturnValueOnce(
       new Promise<number[]>((resolve) => {
         resolveVersions = resolve
       })
@@ -1144,6 +1226,7 @@ describe('comfybuilder check-update', () => {
     const startedGeneration = getVersionCacheGeneration()
     clearVersionCache()
     expect(getVersionCacheGeneration()).toBeGreaterThan(startedGeneration)
+    await vi.waitFor(() => expect(resolveVersions).toBeDefined())
     resolveVersions([9])
 
     await expect(result).resolves.toEqual({ ok: true })

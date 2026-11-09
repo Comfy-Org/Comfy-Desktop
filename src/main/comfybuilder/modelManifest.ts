@@ -1,6 +1,7 @@
 import fs from 'fs'
 
 import type { ComfyBuilderClient } from './client'
+import { isTerminalRelease } from './releases'
 import type { ModelManifest } from './types'
 
 function loadOverride(value: string): ModelManifest {
@@ -20,7 +21,9 @@ async function resolveVersionId(
   versionNumber: string
 ): Promise<string | null> {
   const versions = await client.listVersions(buildId)
-  const match = versions.find((v) => String(v.version) === versionNumber && v.status === 'complete')
+  const match = versions.find(
+    (v) => String(v.version) === versionNumber && isTerminalRelease(v.status)
+  )
   return match?.id ?? null
 }
 
@@ -34,7 +37,7 @@ export async function resolveModelManifest(
 
   const versionId = await resolveVersionId(client, buildId, version)
   if (!versionId) {
-    throw new Error(`No complete build version ${version} was found for model staging.`)
+    throw new Error(`No complete or stopped build version ${version} was found for model staging.`)
   }
   return client.fetchModelManifest(versionId)
 }

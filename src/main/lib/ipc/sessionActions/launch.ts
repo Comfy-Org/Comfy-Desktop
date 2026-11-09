@@ -1360,6 +1360,7 @@ async function runLaunch(
         indexKind(settings.getMirrorConfig())
       )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
+      if ('kept' in overrideDecision && overrideDecision.kept) kept = overrideDecision.kept
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
         void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
@@ -1369,7 +1370,12 @@ async function runLaunch(
 
   const frontendPin = overridePins?.get(FRONTEND_PACKAGE)
   const recordedFrontend = readFrontendPin(inst)
-  if (frontendPin !== undefined) {
+  if (kept && recordedFrontend !== null) {
+    makeSendOutput(
+      sender,
+      installationId
+    )(`Keeping the installed ${FRONTEND_PACKAGE} with the agent\n`)
+  } else if (frontendPin !== undefined) {
     const pinned = typeof frontendPin === 'string' ? frontendPin : pinSpecifier(frontendPin)
     if (recordedFrontend !== pinned) {
       await installations

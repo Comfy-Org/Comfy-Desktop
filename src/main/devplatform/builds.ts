@@ -1,5 +1,6 @@
+import { isTerminalRelease } from '../comfybuilder/releases'
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
-import type { Artifact, Build, Host } from '../comfybuilder/types'
+import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPUCached } from '../lib/gpu'
 import { runPool } from '../sources/standalone/templateDownloadCore'
@@ -46,13 +47,13 @@ export async function resolveHost(): Promise<Host> {
   return { os: hostOs(), gpu: mapped }
 }
 
-function latestCompleteVersion<T extends { version: number; status: string }>(
+function latestTerminalVersion<T extends { version: number; status: string }>(
   versions: T[]
 ): T | null {
-  const complete = versions
-    .filter((v) => v.status === 'complete')
+  const terminal = versions
+    .filter((v) => isTerminalRelease(v.status))
     .sort((a, b) => b.version - a.version)
-  return complete[0] ?? null
+  return terminal[0] ?? null
 }
 
 async function buildRow(
@@ -78,15 +79,12 @@ async function buildRow(
   }
 
   const allVersions = await client.listVersions(build.id)
-  setCachedVersions(
-    build.id,
-    allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
-    cacheGeneration
-  )
-
-  const latest = latestCompleteVersion(allVersions)
+  const latest = latestTerminalVersion(allVersions)
   if (!latest) {
-    const pending = allVersions.some((v) => v.status === 'queued' || v.status === 'building')
+    setCachedVersions(build.id, [], cacheGeneration)
+    const pending = allVersions.some(
+      (v) => v.status === 'queued' || v.status === 'building' || v.status === 'stopping'
+    )
     return {
       ...base,
       state: 'no-build',
@@ -103,6 +101,17 @@ async function buildRow(
   }
 
   const { artifacts } = await client.getVersion(latest.id)
+  try {
+    setCachedVersions(
+      build.id,
+      await updateVersions(allVersions, host, async (id) =>
+        id === latest.id ? artifacts : (await client.getVersion(id)).artifacts
+      ),
+      cacheGeneration
+    )
+  } catch (err) {
+    console.error('[devplatform] failed to warm version cache:', err)
+  }
   const targetOs = [
     ...new Set(
       artifacts.filter((artifact) => artifact.status === 'ready').map((artifact) => artifact.os)
@@ -166,7 +175,7 @@ export async function resolveHostArtifact(
   host: Host,
   buildId: string
 ): Promise<ResolvedHostArtifact | null> {
-  const latest = latestCompleteVersion(await client.listVersions(buildId))
+  const latest = latestTerminalVersion(await client.listVersions(buildId))
   if (!latest) return null
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
@@ -181,7 +190,7 @@ export async function resolveSelectedHostArtifact(
   artifactId: string
 ): Promise<ResolvedHostArtifact | null> {
   const release = (await client.listVersions(buildId)).find(
-    (version) => version.version === releaseVersion && version.status === 'complete'
+    (version) => version.version === releaseVersion && isTerminalRelease(version.status)
   )
   if (!release) return null
   const { artifacts } = await client.getVersion(release.id)
@@ -198,7 +207,7 @@ export async function resolveHostArtifactForVersion(
   version: number
 ): Promise<ResolvedHostArtifact | null> {
   const target = (await client.listVersions(buildId)).find(
-    (v) => v.version === version && v.status === 'complete'
+    (v) => v.version === version && isTerminalRelease(v.status)
   )
   if (!target) return null
   const { artifacts } = await client.getVersion(target.id)
@@ -206,13 +215,31 @@ export async function resolveHostArtifactForVersion(
   return artifact ? { artifact, version: target.version } : null
 }
 
-export async function listCompleteVersions(
-  client: Pick<ComfyBuilderClient, 'listVersions'>,
-  buildId: string
+async function updateVersions(
+  versions: BuildVersion[],
+  host: Host,
+  loadArtifacts: (id: string) => Promise<Artifact[]>
 ): Promise<number[]> {
-  const versions = await client.listVersions(buildId)
-  return versions
-    .filter((v) => v.status === 'complete')
-    .map((v) => v.version)
-    .sort((a, b) => b - a)
+  const eligible: number[] = []
+  for (const version of versions) {
+    if (version.status === 'complete') {
+      eligible.push(version.version)
+    } else if (version.status === 'stopped') {
+      const artifact = selectArtifactForHost(await loadArtifacts(version.id), host)
+      if (artifact) eligible.push(version.version)
+    }
+  }
+  return eligible.sort((a, b) => b - a)
+}
+
+export async function listUpdateVersions(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  buildId: string,
+  host: Host
+): Promise<number[]> {
+  return updateVersions(
+    await client.listVersions(buildId),
+    host,
+    async (id) => (await client.getVersion(id)).artifacts
+  )
 }

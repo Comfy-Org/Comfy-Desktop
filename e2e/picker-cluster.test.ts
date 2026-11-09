@@ -155,6 +155,21 @@ test('open-new-install dismisses the popup and mounts the new-install takeover @
 
   await expectTakeoverOpen(ctx.panel)
   await ctx.panel.waitForVisible('.config-shell', { timeout: 10_000 })
+
+  const tail = await ctx.panel.evaluate<number | null>(
+    `(() => {
+      const shell = document.querySelector('.config-shell')
+      let box = shell.parentElement
+      while (box && getComputedStyle(box).overflowY !== 'auto') box = box.parentElement
+      if (!box) return null
+      const top = box.getBoundingClientRect().top - box.scrollTop
+      const contentEnd = shell.getBoundingClientRect().bottom - top
+        + parseFloat(getComputedStyle(box).paddingBottom)
+      return box.scrollHeight - Math.max(box.clientHeight, Math.ceil(contentEnd))
+    })()`
+  )
+  expect(tail, 'Configure should have a scrolling box').not.toBeNull()
+  expect(tail, 'Configure should not scroll past the end of its form').toBeLessThanOrEqual(2)
 })
 
 test('open-install-action with reveal-in-folder keeps the popup open and fires the action @windows @macos @linux', async () => {

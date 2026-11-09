@@ -42,6 +42,36 @@ describe('resolveModelManifest', () => {
     expect(m.models).toEqual(MANIFEST.models)
   })
 
+  it('fetches the selected stopped release manifest instead of another complete version', async () => {
+    const fetchModelManifest = vi.fn(async () => MANIFEST)
+    const c = client({
+      listVersions: vi.fn(async () => [
+        { id: 'newer-complete', version: 6, status: 'complete' },
+        { id: 'selected-stopped', version: 5, status: 'stopped' },
+        { id: 'older-complete', version: 4, status: 'complete' }
+      ]),
+      fetchModelManifest
+    })
+    expect(await resolveModelManifest(c, 'd1', '5')).toEqual(MANIFEST)
+    expect(fetchModelManifest.mock.calls).toEqual([['selected-stopped']])
+  })
+
+  it.each(['queued', 'building', 'stopping', 'failed'])(
+    'refuses a selected %s release without using another version',
+    async (status) => {
+      const fetchModelManifest = vi.fn()
+      const c = client({
+        listVersions: vi.fn(async () => [
+          { id: 'selected', version: 5, status },
+          { id: 'older-complete', version: 4, status: 'complete' }
+        ]),
+        fetchModelManifest
+      })
+      await expect(resolveModelManifest(c, 'd1', '5')).rejects.toThrow('build version 5')
+      expect(fetchModelManifest).not.toHaveBeenCalled()
+    }
+  )
+
   it('pins the COMPLETE version when a failed row shares the number', async () => {
     const c = client({
       listVersions: vi.fn(async () => [
@@ -55,12 +85,12 @@ describe('resolveModelManifest', () => {
     ).toHaveBeenCalledWith('ver-good')
   })
 
-  it('fails when no matching complete version resolves', async () => {
+  it('fails when no matching terminal version resolves', async () => {
     const c = client({
       listVersions: vi.fn(async () => [{ id: 'ver-1', version: 1, status: 'complete' }])
     })
     await expect(resolveModelManifest(c, 'd1', '99')).rejects.toThrow(
-      'No complete build version 99'
+      'No complete or stopped build version 99'
     )
     expect(
       (c as unknown as { fetchModelManifest: ReturnType<typeof vi.fn> }).fetchModelManifest

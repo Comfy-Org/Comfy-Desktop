@@ -16,6 +16,7 @@ interface Reporter {
   pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
+  signedInOrigin: string | null
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
   provisionalFailureTerminals: Map<string, number>
@@ -79,13 +80,14 @@ interface MainVerifiedAuthState {
 export type FirebaseIdentityConsensus =
   | { status: 'unknown' }
   | { status: 'pending' }
-  | { status: 'signed_out' }
+  | { status: 'signed_out'; observed: boolean }
   | { status: 'conflicted' }
   | { status: 'signed_in'; userId: string }
 
 const reporters = new Map<WebContents, Reporter>()
 const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
 let consensus: FirebaseIdentityConsensus = { status: 'unknown' }
+let signOutWitnessed = false
 const consensusObservers = new Set<(consensus: FirebaseIdentityConsensus) => void>()
 let requestedUserId: string | null = null
 let anonymousEpochIsUnmergeable = false
@@ -99,6 +101,9 @@ function sameConsensus(
   second: FirebaseIdentityConsensus
 ): boolean {
   if (first.status !== second.status) return false
+  if (first.status === 'signed_out') {
+    return first.observed === (second as { observed: boolean }).observed
+  }
   return first.status !== 'signed_in' || first.userId === (second as { userId: string }).userId
 }
 
@@ -166,11 +171,10 @@ function revokeAcceptedLocalAuthorization(
   webContents: WebContents,
   reporter: Reporter,
   origin: string | null,
-  state: ComfyDesktop2FirebaseAuthState,
+  observedSignOut: boolean,
   userMismatch: boolean
 ): void {
-  if (!origin || !isLoopbackOrigin(origin) || (state.status !== 'signed_out' && !userMismatch))
-    return
+  if (!origin || !isLoopbackOrigin(origin) || (!observedSignOut && !userMismatch)) return
   clearVerifiedLocalFirebaseUser(origin)
   reporter.localReportingAuthorized = false
   reporter.localExpectedUserId = null
@@ -303,11 +307,13 @@ export function bindMainVerifiedFirebaseUser(
     }
     reporter.localReportingAuthorized = true
     reporter.localExpectedUserId = normalizedUserId
+    reporter.signedInOrigin = origin
     reporter.active = true
     reporter.state = { status: 'pending' }
     staleSnapshotUnlessAffirming(reporter.recoverableState)
     staleSnapshotUnlessAffirming(reporter.committedCandidate)
   } else if (isTrustedCloudUrl(source.getURL())) {
+    reporter.signedInOrigin = origin
     if (reporter.state.status !== 'signed_in' || reporter.state.userId !== normalizedUserId) {
       reporter.state = { status: 'pending' }
     }
@@ -401,7 +407,7 @@ function reconcile(): void {
   if (signedIn.length === 0) {
     detachToAnonymousIdentity()
     clearUnmergeableEpoch()
-    publishConsensus({ status: 'signed_out' })
+    publishConsensus({ status: 'signed_out', observed: signOutWitnessed })
     return
   }
 
@@ -418,6 +424,7 @@ function reconcile(): void {
 
   clearPendingConsensusDeadline()
   requestedUserId = userId
+  signOutWitnessed = false
   publishConsensus({ status: 'signed_in', userId })
   const confirmedMainStates = mainCandidates.filter(({ webContents, state, contributes }) => {
     if (state.userId !== userId) return false
@@ -500,6 +507,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
     pendingExpired: false,
     localReportingAuthorized: false,
     localExpectedUserId: null,
+    signedInOrigin: null,
     awaitingCommittedFrame: true,
     mainFrameNavigationsInFlight: 0,
     provisionalFailureTerminals: new Map(),
@@ -669,6 +677,7 @@ export function reportFirebaseAuthState(
     if (userMismatch || state.status === 'signed_out') {
       mainVerifiedState.rendererMayReaffirm = false
     }
+    if (state.status === 'signed_out') signOutWitnessed = true
     if (userMismatch) requestAnonymousIdentity()
     reconcile()
     return
@@ -679,12 +688,19 @@ export function reportFirebaseAuthState(
     ? { status: 'pending' }
     : state
   const acceptReport = (): void => {
+    if (acceptedState.status === 'signed_in') reporter.signedInOrigin = currentOrigin
+    const observedSignOut =
+      acceptedState.status === 'signed_out' && reporter.signedInOrigin === currentOrigin
+    if (observedSignOut) {
+      signOutWitnessed = true
+      reporter.signedInOrigin = null
+    }
     if (localUserMismatch) requestAnonymousIdentity()
     revokeAcceptedLocalAuthorization(
       webContents,
       reporter,
       currentOrigin,
-      acceptedState,
+      observedSignOut,
       localUserMismatch
     )
   }
@@ -729,6 +745,7 @@ export function _resetForTest(): void {
   reporters.clear()
   mainVerifiedStates.clear()
   consensus = { status: 'unknown' }
+  signOutWitnessed = false
   consensusObservers.clear()
   clearPendingConsensusDeadline()
   requestedUserId = null

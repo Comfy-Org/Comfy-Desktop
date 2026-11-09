@@ -17,16 +17,16 @@ vi.mock('./telemetry', () => ({
 }))
 
 const identity = vi.hoisted(() => {
-  let current: { status: string; userId?: string } = { status: 'unknown' }
+  let current: FirebaseIdentityConsensus = { status: 'unknown' }
   const observers = new Set<(consensus: unknown) => void>()
   const views = new Map<string, Electron.WebContents[]>()
   return {
     current: () => current,
     observers,
     views,
-    publish(next: { status: string; userId?: string }, holders: Electron.WebContents[] = []) {
+    publish(next: FirebaseIdentityConsensus, holders: Electron.WebContents[] = []) {
       current = next
-      if (next.status === 'signed_in' && next.userId) views.set(next.userId, holders)
+      if (next.status === 'signed_in') views.set(next.userId, holders)
       for (const observe of [...observers]) observe(next)
     },
     reset() {
@@ -99,7 +99,12 @@ async function consensusSignedIn(
 }
 
 async function consensusSignedOut(): Promise<void> {
-  identity.publish({ status: 'signed_out' })
+  identity.publish({ status: 'signed_out', observed: true })
+  await settle()
+}
+
+async function consensusNeverSignedIn(): Promise<void> {
+  identity.publish({ status: 'signed_out', observed: false })
   await settle()
 }
 
@@ -761,6 +766,73 @@ describe('retrying a write that did not land', () => {
 
     expect(pageReads).toBe(0)
     expect(nextLaunchBinding()).toBe(true)
+  })
+})
+
+describe('a page that never held an account', () => {
+  beforeEach(() => {
+    initStaffFlagTargeting()
+    setFlagEvaluationStaff.mockClear()
+  })
+
+  it('keeps a staff classification when a never-signed-in page loads', async () => {
+    await consensusSignedIn([stubContents(true)])
+    await consensusUnresolved('unknown')
+
+    await consensusNeverSignedIn()
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('keeps a classification carried from the previous launch', async () => {
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+
+    await consensusNeverSignedIn()
+
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('does not turn a held sign-out into a write on the dom-ready retry path', async () => {
+    await consensusSignedIn([stubContents(true)])
+    await consensusNeverSignedIn()
+
+    await refreshStaffFlagTargeting(stubContents(false))
+
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('does not write a held sign-out on the retry path after a restart', async () => {
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+    await consensusNeverSignedIn()
+
+    await refreshStaffFlagTargeting(stubContents(false))
+
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('still revokes on a sign-out observed after the unsigned page loaded', async () => {
+    await consensusSignedIn([stubContents(true)])
+    await consensusNeverSignedIn()
+
+    await consensusSignedOut()
+
+    expect(storedFile()).toMatchObject({ staff: false })
+    expect(nextLaunchBinding()).toBe(false)
+  })
+
+  it('does not re-evaluate the flags for a held sign-out', async () => {
+    const onFlagPropertiesChange = vi.fn()
+    _resetForTest()
+    initStaffFlagTargeting({ onFlagPropertiesChange })
+    await consensusSignedIn([stubContents(true)])
+    onFlagPropertiesChange.mockClear()
+
+    await consensusNeverSignedIn()
+
+    expect(onFlagPropertiesChange).not.toHaveBeenCalled()
   })
 })
 
