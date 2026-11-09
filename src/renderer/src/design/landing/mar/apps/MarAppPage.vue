@@ -124,10 +124,21 @@ const LOOKS = [
   'brightness(1.08) saturate(0.85)'
 ]
 const takes = computed(() => LOOKS.slice(0, count.value))
+/** Everything you've made here, newest first: each run adds its takes,
+ *  so earlier ones stay along the bottom to go back to. */
+const outputs = ref<{ src: string; filter: string }[]>([])
+let runs = 0
 const take = ref(0)
-const result = computed(() => sample.value ?? input.value)
+const result = computed(
+  () =>
+    (state.value === 'done' ? outputs.value[take.value]?.src : undefined) ??
+    sample.value ??
+    input.value
+)
 /** What the stage shows: your take once you've run it, else the example's. */
-const shownFilter = computed(() => (state.value === 'done' ? takes.value[take.value] : 'none'))
+const shownFilter = computed(() =>
+  state.value === 'done' ? (outputs.value[take.value]?.filter ?? 'none') : 'none'
+)
 /** Zoom, as in the asset modal: `zoom` scales the fitted picture (100 =
  *  fit); the control reads in real size. */
 const zoom = ref(100)
@@ -193,6 +204,13 @@ function run(): void {
       progress.value++
       setTimeout(tick, 650)
     } else {
+      const src = sample.value ?? input.value
+      outputs.value = [
+        ...takes.value.map((_, i) => ({ src, filter: LOOKS[(runs + i) % LOOKS.length] ?? 'none' })),
+        ...outputs.value
+      ]
+      runs += takes.value.length
+      take.value = 0
       state.value = 'done'
       emit('done')
     }
@@ -525,17 +543,17 @@ function back(): void {
              on the right. -->
         <div v-if="state === 'done'" class="mar-app-editor-outbar">
           <nav class="mar-app-editor-takes" aria-label="Your takes">
-            <template v-if="takes.length > 1">
+            <template v-if="outputs.length > 1">
               <button
-                v-for="(filter, i) in takes"
-                :key="filter"
+                v-for="(o, i) in outputs"
+                :key="outputs.length - i"
                 type="button"
-                :aria-label="`Take ${i + 1}`"
+                :aria-label="`Output ${outputs.length - i}`"
                 :aria-current="take === i"
                 class="mar-app-editor-thumb"
                 @click="take = i"
               >
-                <img :src="result" alt="" :style="{ filter }" />
+                <img :src="o.src" alt="" :style="{ filter: o.filter }" />
               </button>
             </template>
           </nav>
