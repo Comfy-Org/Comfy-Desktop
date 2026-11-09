@@ -133,12 +133,9 @@ export async function signInToCloud(): Promise<AuthStatus> {
   return status
 }
 
-/**
- * Activate `workspaceId` and announce the result; `CloudSession` decides whether a browser is
- * needed. A failure stays on this reply and off the broadcast. Shared by the chooser and the
- * hosted ComfyUI view.
- */
-export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus> {
+async function switchAndAnnounce(
+  workspaceId: string
+): Promise<{ reply: WorkspaceSwitchStatus; superseded: boolean }> {
   const session = getCloudSession()
   const subjectBefore = session.currentSubject()
   clearVersionCache()
@@ -147,15 +144,22 @@ export async function switchCloudWorkspace(workspaceId: string): Promise<Workspa
   const reply = await switching
   clearVersionCache()
   const { workspaceSwitchFailure: _failure, ...status } = reply
-  if (
-    session.currentAuthGeneration() === generation &&
-    session.currentSubject() !== subjectBefore
-  ) {
+  const superseded = session.currentAuthGeneration() !== generation
+  if (!superseded && session.currentSubject() !== subjectBefore) {
     getViewWorkspaceGrants().endAll()
     getViewWorkspaceGrants().allowDesktop(status.workspaceId)
   }
   broadcastAuthChanged(status)
-  return reply
+  return { reply, superseded }
+}
+
+/**
+ * Activate `workspaceId` and announce the result; `CloudSession` decides whether a browser is
+ * needed. A failure stays on this reply and off the broadcast. Shared by the chooser and the
+ * hosted ComfyUI view.
+ */
+export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus> {
+  return (await switchAndAnnounce(workspaceId)).reply
 }
 
 /**
@@ -291,6 +295,7 @@ export function registerDevPlatformHandlers(): void {
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
+        const subject = session.currentSubject()
         let workspaceId: string | undefined
         if (!inst.workspaceId || inst.workspaceId === PERSONAL_WORKSPACE_ID) {
           workspaceId =
@@ -302,8 +307,11 @@ export function registerDevPlatformHandlers(): void {
         }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
-          const switched = await switchCloudWorkspace(workspaceId)
-          if (!switched.signedIn || switched.workspaceId !== workspaceId) {
+          if (session.currentSubject() !== subject) {
+            return { ok: false, message: 'Could not activate the instance workspace.' }
+          }
+          const { reply: switched, superseded } = await switchAndAnnounce(workspaceId)
+          if (superseded || !switched.signedIn || switched.workspaceId !== workspaceId) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
           getViewWorkspaceGrants().allowDesktop(workspaceId)
@@ -322,7 +330,7 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
 
@@ -339,7 +347,7 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
         // The portal's draft route receives a hand-off: it processes workspace
