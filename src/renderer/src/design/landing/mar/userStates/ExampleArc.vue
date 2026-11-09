@@ -229,14 +229,13 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
-          <span class="mar-arc-title">{{ x.label }}</span>
+          <span class="mar-arc-title"
+            ><PanelsTopLeft class="mar-arc-app" :size="15" aria-label="App" />{{ x.label }}</span
+          >
           <span class="mar-arc-meta">{{ x.kind }}</span>
         </span>
         <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-badge" title="App" aria-hidden="true"
-          ><PanelsTopLeft :size="13"
-        /></span>
         <span class="mar-arc-go" aria-hidden="true"><Play :size="14" />Run app</span>
       </button>
     </div>
@@ -310,8 +309,7 @@ function wheel(e: WheelEvent): void {
 .mar-arc-text {
   position: absolute;
   top: 16px;
-  /* Clear of the App badge in the corner. */
-  right: 48px;
+  right: 16px;
   left: 16px;
   display: flex;
   flex-direction: column;
@@ -319,6 +317,9 @@ function wheel(e: WheelEvent): void {
   text-align: left;
 }
 .mar-arc-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -326,6 +327,12 @@ function wheel(e: WheelEvent): void {
   line-height: 1.2;
   text-wrap: balance;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+/* Marks the example as an app, on the title's first line. */
+.mar-arc-app {
+  flex: none;
+  margin-top: 1px;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
 }
 /* What the app does: shown with Run, over the scrim, on the front card. */
 .mar-arc-does {
@@ -355,20 +362,6 @@ function wheel(e: WheelEvent): void {
   margin-top: 2px;
   color: rgb(255 255 255 / 0.78);
   font-size: 12px;
-}
-.mar-arc-badge {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 0.32);
-  backdrop-filter: blur(8px);
-  color: #fff;
 }
 /* Run at the bottom: a white button over a soft scrim, shown on the front
    card when you point at it (or focus it). */
