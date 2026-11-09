@@ -23,11 +23,12 @@ export const undoToast = reactive<{
   key: 0
 })
 
-/** Red failed, orange take care, green finished well, blue everything else. */
+/** Red failed, orange take care, green finished well (a delete or a move
+ *  too: it did what you asked, and Undo sits beside it), blue the rest. */
 export function toneOf(message: string): ToastTone {
   if (/^(couldn|could not)|failed|didn.t/i.test(message)) return 'error'
   if (/^not enough|stops working/i.test(message)) return 'warning'
-  return /\b(copied|ready|exported|saved|added|created|restored|changed|complete|duplicated|renamed|invited|queued|cleared|updated|up to date|is live|live again|logged in|is on ComfyUI|is now a|now runs on)\b/i.test(
+  return /\b(copied|ready|exported|saved|added|created|restored|changed|complete|duplicated|renamed|deleted|removed|moved|archived|invited|queued|cleared|updated|up to date|is live|live again|logged in|is on ComfyUI|is now a|now runs on)\b/i.test(
     message
   )
     ? 'success'

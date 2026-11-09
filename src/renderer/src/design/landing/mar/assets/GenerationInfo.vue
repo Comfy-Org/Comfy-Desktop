@@ -7,8 +7,8 @@ import { modelRole, type AssetFacts } from './assetFacts'
  * How an asset was made, as far as the run's data tells (Better Asset
  * Management PRD): the prompt as text you read, each model with what it
  * did, the sampler's settings when they were recorded, and the raw run
- * data folded away. What the file can't tell is said in one line, only
- * when something is missing. Shared by Desktop's asset view and
+ * data folded away. Above them, what the file holds: metadata, workflow
+ * and run history, each available or not. Shared by Desktop's asset view and
  * ComfyUI's Asset details panel, so both read the same.
  */
 const { facts, loading = false } = defineProps<{ facts: AssetFacts; loading?: boolean }>()
@@ -41,15 +41,22 @@ const params = computed(() =>
       ]
     : []
 )
-/** Only what's missing, in words: nothing to say when all of it is there. */
-const gaps = computed(() => {
-  if (facts.imported) return ['Imported file: it carries no run.']
-  const out: string[] = []
-  if (facts.workflow !== 'available') out.push('No workflow in this file')
-  if (facts.history === 'lost') out.push('Run data wasn’t kept after a restart')
-  else if (facts.history !== 'available') out.push('No run data')
-  return out.length ? [`${out.join(' · ')}.`] : []
-})
+/** What can be recovered, each on its own line (PRD P1-03): the file's
+ *  metadata, the workflow it carries, and the run's history. */
+const SAYS: Record<string, string> = {
+  available: 'Available',
+  missing: 'Not in this file',
+  lost: 'Not kept after a restart'
+}
+const sources = computed(() => [
+  { label: 'File metadata', state: facts.metadata },
+  { label: 'Workflow', state: facts.workflow },
+  { label: 'Run history', state: facts.imported ? 'missing' : facts.history }
+])
+/** The run is there but names no prompt or model: say so, not nothing. */
+const unnamed = computed(
+  () => facts.history === 'available' && !facts.prompt && !facts.models.length
+)
 </script>
 
 <template>
@@ -58,7 +65,13 @@ const gaps = computed(() => {
       <i style="width: 90%" /><i style="width: 70%" /><i style="width: 50%" />
     </div>
     <template v-else>
-      <p v-for="g in gaps" :key="g" class="gi-gap">{{ g }}</p>
+      <ul class="gi-sources" aria-label="What this file holds">
+        <li v-for="x in sources" :key="x.label" :class="x.state === 'available' && 'is-on'">
+          <i aria-hidden="true" /><span class="gi-k">{{ x.label }}</span
+          ><span class="gi-state">{{ SAYS[x.state] }}</span>
+        </li>
+      </ul>
+      <p v-if="unnamed" class="gi-gap">No prompt or model identified in the run.</p>
 
       <div v-if="facts.prompt" class="gi-block" :title="`From ${facts.promptNode} #6`">
         <div class="gi-head">
@@ -129,6 +142,34 @@ const gaps = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  color: var(--color-base-foreground);
+}
+.gi-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gi-sources li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.gi-sources i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent);
+}
+.gi-sources li.is-on i {
+  background: var(--color-status-running);
+}
+.gi-state {
+  margin-left: auto;
+  color: var(--color-muted-foreground);
+}
+.gi-sources li.is-on .gi-state {
   color: var(--color-base-foreground);
 }
 .gi-gap {
